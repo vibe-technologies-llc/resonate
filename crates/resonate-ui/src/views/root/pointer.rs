@@ -28,7 +28,7 @@ impl RootView {
         self.disarm();
         let let_go = self.controls.lets_go(window, cx)
             | self.standing_controls.lets_go(window, cx)
-            | self.remote_controls.lets_go(window, cx);
+            | self.remotely.controls.lets_go(window, cx);
         if let_go {
             cx.notify();
         }
@@ -38,8 +38,8 @@ impl RootView {
         let library = self.library.read(cx);
         let mut stamp = AHasher::default();
         self.pane.hash(&mut stamp);
-        self.settings_category.hash(&mut stamp);
-        self.settings_page.hash(&mut stamp);
+        self.settings_shown.category.hash(&mut stamp);
+        self.settings_shown.page.hash(&mut stamp);
         self.player.read(cx).queued().revision.hash(&mut stamp);
         library.albums().identity().hash(&mut stamp);
         library.artists().identity().hash(&mut stamp);
@@ -70,13 +70,13 @@ impl RootView {
         self.controls
             .caption_of_the_focused(window)
             .or_else(|| self.standing_controls.caption_of_the_focused(window))
-            .or_else(|| self.remote_controls.caption_of_the_focused(window))
+            .or_else(|| self.remotely.controls.caption_of_the_focused(window))
     }
 
     pub(super) fn hints_are_wanted(&self, cx: &App) -> bool {
         self.pointer_inside
-            && self.grabbed.is_none()
-            && self.held_band.is_none()
+            && self.rails.grabbed.is_none()
+            && self.rails.held_band.is_none()
             && !self.something_stands_over_the_pane()
             && !cx.has_active_drag()
     }
@@ -116,7 +116,7 @@ impl RootView {
     }
 
     pub(super) fn composition_watch(&self) -> Canvas<()> {
-        let search = self.search.clone();
+        let search = self.typed.search.clone();
         let focus = self.focus.clone();
         let welcomed = !self.something_stands_over_the_pane();
         canvas(
@@ -141,7 +141,7 @@ impl RootView {
         self.pointer_inside = inside;
         if !inside {
             self.lyrics.update(cx, |model, _| model.open_out(false));
-            self.seek_pointed = None;
+            self.rails.seek_pointed = None;
         }
         cx.notify();
     }
@@ -233,8 +233,8 @@ impl RootView {
         self.goes_forward.clear();
 
         if matches!(selection, Selection::Artist(_)) {
-            self.artist_shows = ArtistShows::default();
-            self.ordering = None;
+            self.shows.artist = ArtistShows::default();
+            self.orders.ordering = None;
         }
         self.library
             .update(cx, |library, cx| library.select(selection, cx));

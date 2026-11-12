@@ -415,7 +415,7 @@ mod driven {
                 root.update(cx, |root, cx| root.stop_typing(cx));
             });
             self.settle();
-            assert!(self.read(|root, _| root.type_ahead.typed().is_none()));
+            assert!(self.read(|root, _| root.typing.ahead.typed().is_none()));
         }
     }
 
@@ -494,7 +494,7 @@ mod driven {
         assert_eq!(queue.len(), rows);
         assert_eq!(reach(driven), Some(Reach::at(Shift::Queue, 1)));
         assert!(driven.read(|root, cx| {
-            root.type_ahead.typed().is_none() && root.search.read(cx).text().is_empty()
+            root.typing.ahead.typed().is_none() && root.typed.search.read(cx).text().is_empty()
         }));
     }
 
@@ -732,7 +732,7 @@ mod driven {
 
         offering_a_party(&mut driven);
 
-        assert!(driven.read(|root, _| root.party_offered.is_some()));
+        assert!(driven.read(|root, _| root.social.party_offered.is_some()));
         assert!(focused_is(&mut driven, "not-joining-the-party"));
         assert!(!focused_is(&mut driven, "join-the-party"));
         assert!(joining.joined.lock().is_empty(), "nothing joins unasked");
@@ -740,7 +740,7 @@ mod driven {
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
 
-        assert!(driven.read(|root, _| root.party_offered.is_none()));
+        assert!(driven.read(|root, _| root.social.party_offered.is_none()));
         assert!(
             joining.joined.lock().is_empty(),
             "no key confirms a join, enter included"
@@ -762,7 +762,7 @@ mod driven {
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
 
-        assert!(driven.read(|root, _| root.party_offered.is_none()));
+        assert!(driven.read(|root, _| root.social.party_offered.is_none()));
         assert!(joining.joined.lock().is_empty());
     }
 
@@ -781,7 +781,7 @@ mod driven {
         driven.settle();
         driven.settle();
 
-        assert!(driven.read(|root, _| root.party_offered.is_none()));
+        assert!(driven.read(|root, _| root.social.party_offered.is_none()));
         assert_eq!(
             *joining.joined.lock(),
             vec![(A_PARTY_LINK.to_owned(), zone)]
@@ -820,7 +820,7 @@ mod driven {
 
         offering_a_list(&mut driven);
 
-        assert!(driven.read(|root, _| root.list_offered.is_some()));
+        assert!(driven.read(|root, _| root.social.list_offered.is_some()));
         assert!(focused_is(&mut driven, "not-joining-the-list"));
         assert!(!focused_is(&mut driven, "join-the-list"));
         assert!(joining.accepted.lock().is_empty(), "nothing joins unasked");
@@ -828,7 +828,7 @@ mod driven {
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
 
-        assert!(driven.read(|root, _| root.list_offered.is_none()));
+        assert!(driven.read(|root, _| root.social.list_offered.is_none()));
         assert!(
             joining.accepted.lock().is_empty(),
             "no key confirms a join, enter included"
@@ -852,7 +852,7 @@ mod driven {
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
 
-        assert!(driven.read(|root, _| root.list_offered.is_none()));
+        assert!(driven.read(|root, _| root.social.list_offered.is_none()));
         assert!(joining.accepted.lock().is_empty());
     }
 
@@ -868,7 +868,7 @@ mod driven {
         driven.settle();
         driven.settle();
 
-        assert!(driven.read(|root, _| root.list_offered.is_none()));
+        assert!(driven.read(|root, _| root.social.list_offered.is_none()));
         assert_eq!(*joining.accepted.lock(), vec![A_LIST_LINK.to_owned()]);
     }
 
@@ -969,11 +969,15 @@ mod driven {
 
         driven.cx.simulate_keystrokes("cmd-,");
         assert_eq!(driven.read(|root, _| root.pane), Pane::Settings);
-        assert!(
+        assert!(driven.cx.update(|window, cx| {
             driven
-                .cx
-                .update(|window, cx| driven.root.read(cx).finding.read(cx).is_focused(window))
-        );
+                .root
+                .read(cx)
+                .typed
+                .finding
+                .read(cx)
+                .is_focused(window)
+        }));
     }
 
     #[gpui::test]
@@ -985,7 +989,7 @@ mod driven {
 
         assert_eq!(driven.read(|root, _| root.pane), Pane::Settings);
         assert_eq!(
-            driven.read(|root, _| root.settings_category),
+            driven.read(|root, _| root.settings_shown.category),
             SettingsCategory::About
         );
     }

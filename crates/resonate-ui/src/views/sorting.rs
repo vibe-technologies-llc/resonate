@@ -163,13 +163,14 @@ fn order_typed<O: Ordering>(
         cx.stop_propagation();
 
         let now = Instant::now();
-        if this.ordering_typed.ran_out_by(now) {
-            this.ordering_typed.cleared();
+        if this.orders.ordering_typed.ran_out_by(now) {
+            this.orders.ordering_typed.cleared();
         }
-        this.ordering_typed.took(letter, now);
+        this.orders.ordering_typed.took(letter, now);
 
         let named: Vec<&str> = O::EVERY.iter().map(|order| order.named()).collect();
         let Some(at) = this
+            .orders
             .ordering_typed
             .typed()
             .and_then(|typed| typed_onto(&named, held_at, typed))
@@ -188,14 +189,14 @@ impl RootView {
         at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        self.ordering = Some(ordered);
-        self.ordering_at = at + point(px(0.0), px(BELOW_ITS_CONTROL));
-        self.ordering_typed.cleared();
+        self.orders.ordering = Some(ordered);
+        self.orders.ordering_at = at + point(px(0.0), px(BELOW_ITS_CONTROL));
+        self.orders.ordering_typed.cleared();
         cx.notify();
     }
 
     pub(crate) fn close_the_order(&mut self, cx: &mut Context<Self>) {
-        self.ordering = None;
+        self.orders.ordering = None;
         cx.notify();
     }
 
@@ -251,7 +252,7 @@ impl RootView {
             .child(
                 deferred(
                     anchored()
-                        .position(self.ordering_at)
+                        .position(self.orders.ordering_at)
                         .snap_to_window_with_margin(px(KEPT_FROM_THE_WINDOW_EDGE))
                         .child(motion::lifted_in(card, "order-sheet-arrives")),
                 )
@@ -285,7 +286,7 @@ impl RootView {
                 .gap_0p5()
                 .min_h(px(0.0))
                 .overflow_y_scroll()
-                .track_scroll(&self.ordering_scroll),
+                .track_scroll(&self.scrolls.ordering),
             |orders, (at, order)| {
                 let chosen = order_by.clone();
                 orders.child(self.in_the_pane_ring(
@@ -376,7 +377,7 @@ impl RootView {
                     .child(orders)
                     .child(
                         Scrollbars::of(cx)
-                            .vertical("order-scrollbar", self.ordering_scroll.clone()),
+                            .vertical("order-scrollbar", self.scrolls.ordering.clone()),
                     ),
             )
             .child(kit::rule().mx_1())
@@ -384,7 +385,7 @@ impl RootView {
     }
 
     fn hold_the_order_at(&self, at: usize, window: &mut Window, cx: &mut Context<Self>) {
-        self.ordering_scroll.scroll_to_item(at);
+        self.scrolls.ordering.scroll_to_item(at);
         self.carry_the_ring_onto(order_row_id(at), window, cx);
     }
 
@@ -743,8 +744,8 @@ pub(crate) fn favourites_sorted(this: &RootView, cx: &Context<RootView>) -> Sort
 pub(crate) fn playlist_sorted(this: &RootView) -> Sorted {
     Sorted {
         number: Sortable::Number,
-        by: row_column(this.row_order),
-        reading: this.row_reading,
+        by: row_column(this.orders.row_order),
+        reading: this.orders.row_reading,
         offers: ROW_COLUMNS,
         saying: words::sorting::column_hint(),
         press: |this, column, cx| {
@@ -752,8 +753,8 @@ pub(crate) fn playlist_sorted(this: &RootView) -> Sorted {
                 return;
             };
             let wanted = row_order(column);
-            let reading = if this.row_order == wanted {
-                this.row_reading.flipped()
+            let reading = if this.orders.row_order == wanted {
+                this.orders.row_reading.flipped()
             } else {
                 Direction::Ascending
             };
@@ -766,14 +767,14 @@ pub(crate) fn playlist_sorted(this: &RootView) -> Sorted {
 pub(crate) fn queue_sorted(this: &RootView) -> Sorted {
     Sorted {
         number: Sortable::Number,
-        by: row_column(this.queue_order),
-        reading: this.queue_reading,
+        by: row_column(this.orders.queue_order),
+        reading: this.orders.queue_reading,
         offers: ROW_COLUMNS,
         saying: words::sorting::column_hint(),
         press: |this, column, cx| {
             let wanted = row_order(column);
-            let reading = if this.queue_order == wanted {
-                this.queue_reading.flipped()
+            let reading = if this.orders.queue_order == wanted {
+                this.orders.queue_reading.flipped()
             } else {
                 Direction::Ascending
             };

@@ -71,7 +71,7 @@ impl RootView {
     }
 
     pub(crate) fn toggle_bitrate_graph(&mut self, cx: &mut Context<Self>) {
-        self.bitrate_graph = !self.bitrate_graph;
+        self.shows.bitrate_graph = !self.shows.bitrate_graph;
         cx.notify();
     }
 }

@@ -11,15 +11,16 @@ impl RootView {
     }
 
     pub(super) fn contact_left(&mut self, cx: &mut Context<Self>) {
-        if self.contact.read(cx).text().trim() != cx.global::<ResonateApp>().online.contact {
+        if self.typed.contact.read(cx).text().trim() != cx.global::<ResonateApp>().online.contact {
             self.take_the_contact(cx);
             cx.notify();
         }
     }
 
     pub(super) fn take_the_contact(&mut self, cx: &mut Context<Self>) {
-        let given = self.contact.read(cx).text().trim().to_owned();
-        self.contact
+        let given = self.typed.contact.read(cx).text().trim().to_owned();
+        self.typed
+            .contact
             .update(cx, |contact, cx| contact.hold(given.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| global.online.contact = given.clone());
 
@@ -39,15 +40,18 @@ impl RootView {
     }
 
     pub(super) fn acoustid_key_left(&mut self, cx: &mut Context<Self>) {
-        if self.acoustid.read(cx).text().trim() != cx.global::<ResonateApp>().online.acoustid_key {
+        if self.typed.acoustid.read(cx).text().trim()
+            != cx.global::<ResonateApp>().online.acoustid_key
+        {
             self.take_the_acoustid_key(cx);
             cx.notify();
         }
     }
 
     pub(super) fn take_the_acoustid_key(&mut self, cx: &mut Context<Self>) {
-        let given = self.acoustid.read(cx).text().trim().to_owned();
-        self.acoustid
+        let given = self.typed.acoustid.read(cx).text().trim().to_owned();
+        self.typed
+            .acoustid
             .update(cx, |key, cx| key.hold(given.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| global.online.acoustid_key = given.clone());
 
@@ -61,10 +65,12 @@ impl RootView {
     }
 
     pub(crate) fn leave_acoustid_key(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.acoustid.read(cx).is_focused(window) {
+        if !self.typed.acoustid.read(cx).is_focused(window) {
             return;
         }
-        if self.acoustid.read(cx).text().trim() != cx.global::<ResonateApp>().online.acoustid_key {
+        if self.typed.acoustid.read(cx).text().trim()
+            != cx.global::<ResonateApp>().online.acoustid_key
+        {
             self.acoustid_key_given(window, cx);
             return;
         }
@@ -74,7 +80,9 @@ impl RootView {
 
     pub(crate) fn put_back_acoustid(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let stored = cx.global::<ResonateApp>().online.acoustid_key.to_owned();
-        self.acoustid.update(cx, |field, cx| field.hold(stored, cx));
+        self.typed
+            .acoustid
+            .update(cx, |field, cx| field.hold(stored, cx));
         self.leave_acoustid_key(window, cx);
     }
 
@@ -85,15 +93,16 @@ impl RootView {
     }
 
     pub(super) fn audd_token_left(&mut self, cx: &mut Context<Self>) {
-        if self.audd.read(cx).text().trim() != cx.global::<ResonateApp>().online.audd_token {
+        if self.typed.audd.read(cx).text().trim() != cx.global::<ResonateApp>().online.audd_token {
             self.take_the_audd_token(cx);
             cx.notify();
         }
     }
 
     pub(super) fn take_the_audd_token(&mut self, cx: &mut Context<Self>) {
-        let given = self.audd.read(cx).text().trim().to_owned();
-        self.audd
+        let given = self.typed.audd.read(cx).text().trim().to_owned();
+        self.typed
+            .audd
             .update(cx, |token, cx| token.hold(given.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| global.online.audd_token = given.clone());
 
@@ -107,10 +116,10 @@ impl RootView {
     }
 
     pub(crate) fn leave_audd_token(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.audd.read(cx).is_focused(window) {
+        if !self.typed.audd.read(cx).is_focused(window) {
             return;
         }
-        if self.audd.read(cx).text().trim() != cx.global::<ResonateApp>().online.audd_token {
+        if self.typed.audd.read(cx).text().trim() != cx.global::<ResonateApp>().online.audd_token {
             self.audd_token_given(window, cx);
             return;
         }
@@ -120,7 +129,9 @@ impl RootView {
 
     pub(crate) fn put_back_audd(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let stored = cx.global::<ResonateApp>().online.audd_token.to_owned();
-        self.audd.update(cx, |field, cx| field.hold(stored, cx));
+        self.typed
+            .audd
+            .update(cx, |field, cx| field.hold(stored, cx));
         self.leave_audd_token(window, cx);
     }
 
@@ -131,7 +142,7 @@ impl RootView {
     }
 
     pub(super) fn listenbrainz_token_left(&mut self, cx: &mut Context<Self>) {
-        if self.listenbrainz.read(cx).text().trim()
+        if self.typed.listenbrainz.read(cx).text().trim()
             != cx.global::<ResonateApp>().online.listenbrainz_token
         {
             self.take_the_listenbrainz_token(cx);
@@ -140,8 +151,9 @@ impl RootView {
     }
 
     pub(super) fn take_the_listenbrainz_token(&mut self, cx: &mut Context<Self>) {
-        let given = self.listenbrainz.read(cx).text().trim().to_owned();
-        self.listenbrainz
+        let given = self.typed.listenbrainz.read(cx).text().trim().to_owned();
+        self.typed
+            .listenbrainz
             .update(cx, |token, cx| token.hold(given.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.online.listenbrainz_token = given.clone();
@@ -163,11 +175,11 @@ impl RootView {
             return;
         };
         if token.is_empty() {
-            self.token_checked = Task::ready(());
+            self.accounts._token_checked = Task::ready(());
             return;
         }
 
-        self.token_checked = cx.spawn(async move |this, cx| {
+        self.accounts._token_checked = cx.spawn(async move |this, cx| {
             let held = cx
                 .background_executor()
                 .spawn(async move { scrobblers.under(token).token_held() })
@@ -178,10 +190,10 @@ impl RootView {
     }
 
     pub(crate) fn leave_listenbrainz_token(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.listenbrainz.read(cx).is_focused(window) {
+        if !self.typed.listenbrainz.read(cx).is_focused(window) {
             return;
         }
-        if self.listenbrainz.read(cx).text().trim()
+        if self.typed.listenbrainz.read(cx).text().trim()
             != cx.global::<ResonateApp>().online.listenbrainz_token
         {
             self.listenbrainz_token_given(window, cx);
@@ -197,13 +209,15 @@ impl RootView {
             .online
             .listenbrainz_token
             .to_owned();
-        self.listenbrainz
+        self.typed
+            .listenbrainz
             .update(cx, |field, cx| field.hold(stored, cx));
         self.leave_listenbrainz_token(window, cx);
     }
 
     pub(crate) fn clear_listenbrainz_token(&self, cx: &mut Context<Self>) {
-        self.listenbrainz
+        self.typed
+            .listenbrainz
             .update(cx, |token, cx| token.hold(String::new(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.online.listenbrainz_token = String::new();
@@ -211,22 +225,24 @@ impl RootView {
     }
 
     pub(crate) fn clear_audd_token(&self, cx: &mut Context<Self>) {
-        self.audd
+        self.typed
+            .audd
             .update(cx, |token, cx| token.hold(String::new(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| global.online.audd_token = String::new());
     }
 
     pub(crate) fn clear_acoustid_key(&self, cx: &mut Context<Self>) {
-        self.acoustid
+        self.typed
+            .acoustid
             .update(cx, |key, cx| key.hold(String::new(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| global.online.acoustid_key = String::new());
     }
 
     pub(crate) fn leave_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.contact.read(cx).is_focused(window) {
+        if !self.typed.contact.read(cx).is_focused(window) {
             return;
         }
-        if self.contact.read(cx).text().trim() != cx.global::<ResonateApp>().online.contact {
+        if self.typed.contact.read(cx).text().trim() != cx.global::<ResonateApp>().online.contact {
             self.contact_given(window, cx);
             return;
         }
@@ -236,12 +252,14 @@ impl RootView {
 
     pub(crate) fn put_back_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let stored = cx.global::<ResonateApp>().online.contact.to_owned();
-        self.contact.update(cx, |field, cx| field.hold(stored, cx));
+        self.typed
+            .contact
+            .update(cx, |field, cx| field.hold(stored, cx));
         self.leave_contact(window, cx);
     }
 
     pub(crate) fn leave_typed_root(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.typed_root.read(cx).is_focused(window) {
+        if !self.typed.root.read(cx).is_focused(window) {
             return;
         }
         window.focus(&self.focus, cx);
@@ -249,10 +267,10 @@ impl RootView {
     }
 
     pub(crate) fn leave_organising(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.organising.read(cx).is_focused(window) {
+        if !self.typed.organising.read(cx).is_focused(window) {
             return;
         }
-        if self.organising.read(cx).text().trim() != cx.global::<ResonateApp>().organise_as {
+        if self.typed.organising.read(cx).text().trim() != cx.global::<ResonateApp>().organise_as {
             self.layout_given(window, cx);
             return;
         }
@@ -262,13 +280,15 @@ impl RootView {
 
     pub(crate) fn put_back_organising(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let stored = cx.global::<ResonateApp>().organise_as.clone();
-        self.organising
+        self.typed
+            .organising
             .update(cx, |field, cx| field.hold(stored, cx));
         self.leave_organising(window, cx);
     }
 
     pub(crate) fn clear_contact(&self, cx: &mut Context<Self>) {
-        self.contact
+        self.typed
+            .contact
             .update(cx, |contact, cx| contact.hold(String::new(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| global.online.contact = String::new());
     }

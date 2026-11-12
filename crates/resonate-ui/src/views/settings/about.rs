@@ -64,7 +64,7 @@ impl RootView {
             move |this, _, cx| this.check_for_updates(!checks, cx),
             cx,
         ));
-        if let Some(newer) = self.newer.clone() {
+        if let Some(newer) = self.settings_shown.newer.clone() {
             let page = newer.page.clone();
             let version = newer.version.clone();
             rows = rows.child(kit::row(
@@ -106,8 +106,8 @@ impl RootView {
         if checks {
             self.look_for_a_newer_release(cx);
         } else {
-            self.looking_for_updates = Task::ready(());
-            self.newer = None;
+            self.settings_shown.looking_for_updates = Task::ready(());
+            self.settings_shown.newer = None;
         }
         cx.notify();
     }
@@ -122,18 +122,18 @@ impl RootView {
             global.update_dismissed = Some(version.to_owned());
         });
         self.store(&Setting::UpdateDismissed(version.to_owned()), cx);
-        self.newer = None;
+        self.settings_shown.newer = None;
         cx.notify();
     }
 
     pub(crate) fn look_for_a_newer_release(&mut self, cx: &mut Context<Self>) {
         let app = cx.global::<ResonateApp>();
         let Some(updates) = app.updates.clone().filter(|_| app.check_for_updates) else {
-            self.looking_for_updates = Task::ready(());
+            self.settings_shown.looking_for_updates = Task::ready(());
             return;
         };
 
-        self.looking_for_updates = cx.spawn(async move |this, cx| {
+        self.settings_shown.looking_for_updates = cx.spawn(async move |this, cx| {
             loop {
                 let reaching = cx.update(|cx| cx.global::<ResonateApp>().online.enabled);
                 let asking = Arc::clone(&updates);
@@ -158,10 +158,10 @@ impl RootView {
         let newer = newer
             .filter(|_| app.check_for_updates)
             .filter(|newer| dismissed.as_deref() != Some(newer.version.as_str()));
-        let told_already = newer == self.newer;
-        self.newer = newer;
+        let told_already = newer == self.settings_shown.newer;
+        self.settings_shown.newer = newer;
 
-        if let Some(newer) = self.newer.as_ref().filter(|_| !told_already) {
+        if let Some(newer) = self.settings_shown.newer.as_ref().filter(|_| !told_already) {
             toast::tell(
                 Notice::Noted(words::settings_about::newer_is_out_toast(
                     newer.version.to_string(),
@@ -194,7 +194,7 @@ impl RootView {
             words::settings_about::every_setting(),
             if armed {
                 words::settings_about::ask_again()
-            } else if self.reset_everything_landed {
+            } else if self.settings_shown.reset_everything_landed {
                 words::settings_about::put_back()
             } else {
                 words::settings_about::start_again()
@@ -223,7 +223,7 @@ impl RootView {
 
     fn arm_the_reset(&mut self, cx: &mut Context<Self>) {
         self.arm(Armed::ResetEverything);
-        self.reset_everything_landed = false;
+        self.settings_shown.reset_everything_landed = false;
         cx.notify();
     }
 
@@ -232,7 +232,7 @@ impl RootView {
             self.put_back(group, cx);
         }
         self.lower(&Armed::ResetEverything);
-        self.reset_everything_landed = true;
+        self.settings_shown.reset_everything_landed = true;
         cx.notify();
     }
 }
@@ -292,7 +292,7 @@ mod tests {
         let mut driven = opened_with(cx, &released);
 
         look(&mut driven);
-        driven.until(|root, _| root.newer.is_some());
+        driven.until(|root, _| root.settings_shown.newer.is_some());
         let told = driven.read(|_, cx| toast::showing_text(cx));
         assert_eq!(
             told.as_deref(),
@@ -300,14 +300,14 @@ mod tests {
         );
 
         driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
+        driven.focus(|root| &root.typed.finding);
         driven.cx.simulate_input("updates");
         driven.settle();
         assert!(driven.cx.debug_bounds("open-the-release").is_some());
         driven.click("dismiss-the-release");
         driven.settle();
 
-        assert!(driven.read(|root, _| root.newer.is_none()));
+        assert!(driven.read(|root, _| root.settings_shown.newer.is_none()));
         assert_eq!(
             driven.read(|_, cx| cx.global::<ResonateApp>().update_dismissed.clone()),
             Some("99.0.0".to_owned())
@@ -315,7 +315,7 @@ mod tests {
         look(&mut driven);
         driven.until(|_, _| released.asked.load(Ordering::Relaxed) == 2);
         driven.settle();
-        assert!(driven.read(|root, _| root.newer.is_none()));
+        assert!(driven.read(|root, _| root.settings_shown.newer.is_none()));
     }
 
     #[gpui::test]
@@ -324,7 +324,7 @@ mod tests {
         let mut driven = opened_with(cx, &released);
 
         look(&mut driven);
-        driven.until(|root, _| root.newer.is_some());
+        driven.until(|root, _| root.settings_shown.newer.is_some());
         let root = driven.root.clone();
         driven
             .cx
@@ -332,7 +332,7 @@ mod tests {
         look(&mut driven);
         driven.settle();
 
-        assert!(driven.read(|root, _| root.newer.is_none()));
+        assert!(driven.read(|root, _| root.settings_shown.newer.is_none()));
         assert!(!driven.read(|_, cx| cx.global::<ResonateApp>().check_for_updates));
         assert_eq!(released.asked.load(Ordering::Relaxed), 1);
     }

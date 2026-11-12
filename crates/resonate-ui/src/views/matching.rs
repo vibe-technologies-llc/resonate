@@ -123,8 +123,8 @@ impl RootView {
     ) {
         self.close_the_menu(cx);
         self.matching = Some(Matching::opened_on(track));
-        self.typed_isrc.update(cx, |typed, cx| typed.clear(cx));
-        self.typed_words.update(cx, |typed, cx| {
+        self.typed.isrc.update(cx, |typed, cx| typed.clear(cx));
+        self.typed.words.update(cx, |typed, cx| {
             typed.open_with(title.to_string(), cx);
             typed.take_focus(window, cx);
         });
@@ -133,8 +133,8 @@ impl RootView {
 
     pub(crate) fn leave_the_matching(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.matching = None;
-        self.typed_isrc.update(cx, |typed, cx| typed.clear(cx));
-        self.typed_words.update(cx, |typed, cx| typed.clear(cx));
+        self.typed.isrc.update(cx, |typed, cx| typed.clear(cx));
+        self.typed.words.update(cx, |typed, cx| typed.clear(cx));
         window.focus(&self.focus, cx);
         cx.notify();
     }
@@ -146,7 +146,7 @@ impl RootView {
         };
         matching.asking(asked);
         let track = matching.track;
-        let words = self.typed_words.read(cx).text().trim().to_owned();
+        let words = self.typed.words.read(cx).text().trim().to_owned();
         let asking = self
             .library
             .update(cx, |library, cx| library.recordings_like(track, words, cx));
@@ -199,7 +199,7 @@ impl RootView {
         let Some(track) = self.matching.as_ref().map(|matching| matching.track) else {
             return;
         };
-        let typed = self.typed_isrc.read(cx).text().trim().to_owned();
+        let typed = self.typed.isrc.read(cx).text().trim().to_owned();
         let Ok(isrc) = Isrc::new(&typed) else {
             self.report(
                 Notice::Trouble(words::matching::not_an_isrc().to_owned()),
@@ -287,7 +287,7 @@ impl RootView {
             .flex()
             .items_center()
             .gap_2()
-            .child(Self::typed_into(&self.typed_words, "matching-words"))
+            .child(Self::typed_into(&self.typed.words, "matching-words"))
             .child(self.in_the_pane_ring(
                 kit::button(
                     "search-for-likely-recordings",
@@ -303,12 +303,12 @@ impl RootView {
             .id("likely-recordings")
             .max_h(px(LIKELY_LIST_AT_MOST))
             .overflow_y_scroll()
-            .track_scroll(&self.likely_scroll)
+            .track_scroll(&self.scrolls.likely)
             .child(self.likely_rows(&likely, cx));
         let found = div()
             .relative()
             .child(found)
-            .child(Scrollbars::of(cx).vertical("likely-scrollbar", self.likely_scroll.clone()));
+            .child(Scrollbars::of(cx).vertical("likely-scrollbar", self.scrolls.likely.clone()));
         let isrc_heading = div()
             .id("matching-isrc-heading")
             .headed(3, words::matching::isrc_heading())
@@ -321,7 +321,7 @@ impl RootView {
             .flex()
             .items_center()
             .gap_2()
-            .child(Self::typed_into(&self.typed_isrc, "isrc-field"))
+            .child(Self::typed_into(&self.typed.isrc, "isrc-field"))
             .child(self.in_the_pane_ring(
                 kit::button(
                     "give-the-isrc",

@@ -179,9 +179,9 @@ impl RootView {
             return;
         }
         self.naming = None;
-        self.ordering = None;
+        self.orders.ordering = None;
         self.adding = Some(holding);
-        self.name.update(cx, |name, cx| {
+        self.typed.name.update(cx, |name, cx| {
             name.clear(cx);
             name.take_focus(window, cx);
         });
@@ -195,7 +195,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         self.adding = None;
-        self.ordering = None;
+        self.orders.ordering = None;
         self.naming = Some(naming);
 
         let found = naming
@@ -205,12 +205,12 @@ impl RootView {
             .as_ref()
             .and_then(|found| found.query.clone())
             .unwrap_or_default();
-        self.query_sort = query.sort;
-        self.query_reading = query.reading;
-        self.query_cap = query.limit;
+        self.orders.query_sort = query.sort;
+        self.orders.query_reading = query.reading;
+        self.orders.query_cap = query.limit;
 
         let held = found.map_or_else(String::new, |found| found.name);
-        self.name.update(cx, |name, cx| {
+        self.typed.name.update(cx, |name, cx| {
             name.set_text(held, cx);
             name.take_focus(window, cx);
         });
@@ -230,7 +230,8 @@ impl RootView {
             .unwrap_or_default();
 
         self.show_everything(cx);
-        self.search
+        self.typed
+            .search
             .update(cx, |search, cx| search.set_text(text, cx));
         self.set_pane(Pane::Tracks, cx);
         self.name_a_playlist(Naming::Query(Some(playlist)), window, cx);
@@ -253,13 +254,13 @@ impl RootView {
         let kept = playlist
             .and_then(|playlist| self.saved(playlist, cx))
             .and_then(|found| found.kept);
-        self.keeping = kept.is_some();
+        self.orders.keeping = kept.is_some();
         let Kept { order, reading } = kept.unwrap_or(Kept {
             order: RowOrder::default(),
             reading: Direction::default(),
         });
-        self.row_order = order;
-        self.row_reading = reading;
+        self.orders.row_order = order;
+        self.orders.row_reading = reading;
     }
 
     pub(crate) fn put_in_order(
@@ -269,9 +270,9 @@ impl RootView {
         reading: Direction,
         cx: &mut Context<Self>,
     ) {
-        self.row_order = order;
-        self.row_reading = reading;
-        let kept = self.keeping.then_some(Kept { order, reading });
+        self.orders.row_order = order;
+        self.orders.row_reading = reading;
+        let kept = self.orders.keeping.then_some(Kept { order, reading });
 
         self.library.update(cx, |library, cx| match kept {
             Some(kept) => library.keep_playlist_in_order(playlist, Some(kept), cx),
@@ -287,13 +288,13 @@ impl RootView {
         keeping: bool,
         cx: &mut Context<Self>,
     ) {
-        if self.keeping == keeping {
+        if self.orders.keeping == keeping {
             return;
         }
-        self.keeping = keeping;
+        self.orders.keeping = keeping;
         let kept = keeping.then_some(Kept {
-            order: self.row_order,
-            reading: self.row_reading,
+            order: self.orders.row_order,
+            reading: self.orders.row_reading,
         });
 
         self.library.update(cx, |library, cx| {
@@ -323,20 +324,20 @@ impl RootView {
     }
 
     pub(crate) fn sort_a_search(&mut self, sort: SortOrder, cx: &mut Context<Self>) {
-        self.query_sort = sort;
-        self.query_reading = sort.reads();
+        self.orders.query_sort = sort;
+        self.orders.query_reading = sort.reads();
         self.let_go_of_a_reach_the_rows_left(cx);
         cx.notify();
     }
 
     pub(crate) fn read_a_search(&mut self, reading: Direction, cx: &mut Context<Self>) {
-        self.query_reading = reading;
+        self.orders.query_reading = reading;
         self.let_go_of_a_reach_the_rows_left(cx);
         cx.notify();
     }
 
     pub(crate) fn cap_a_search(&mut self, cap: Option<usize>, cx: &mut Context<Self>) {
-        self.query_cap = cap;
+        self.orders.query_cap = cap;
         cx.notify();
     }
 
@@ -347,13 +348,13 @@ impl RootView {
     pub(crate) fn stop_naming(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.naming = None;
         self.adding = None;
-        self.name.update(cx, |name, cx| name.clear(cx));
+        self.typed.name.update(cx, |name, cx| name.clear(cx));
         window.focus(&self.focus, cx);
         cx.notify();
     }
 
     pub(super) fn name_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let given = self.name.read(cx).text().trim().to_owned();
+        let given = self.typed.name.read(cx).text().trim().to_owned();
         if given.is_empty() {
             return;
         }
@@ -374,9 +375,9 @@ impl RootView {
                     .to_owned();
                 let query = SavedQuery {
                     text: (!text.is_empty()).then_some(text),
-                    sort: self.query_sort,
-                    reading: self.query_reading,
-                    limit: self.query_cap,
+                    sort: self.orders.query_sort,
+                    reading: self.orders.query_reading,
+                    limit: self.orders.query_cap,
                 };
                 self.library.update(cx, |library, cx| match saved {
                     Some(playlist) => library.revise_query(playlist, given, query, cx),

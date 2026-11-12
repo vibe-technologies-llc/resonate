@@ -112,13 +112,13 @@ impl RootView {
     }
 
     pub(crate) fn close_wrapped(&mut self, cx: &mut Context<Self>) {
-        self.wrapped = None;
-        self.reading_wrapped = None;
+        self.social.wrapped = None;
+        self.social.reading_wrapped = None;
         cx.notify();
     }
 
     pub(crate) fn turn_the_slide(&mut self, slides: isize, cx: &mut Context<Self>) -> bool {
-        let Some(deck) = self.wrapped.as_mut() else {
+        let Some(deck) = self.social.wrapped.as_mut() else {
             return false;
         };
         if deck.turned_by(slides) {
@@ -133,11 +133,11 @@ impl RootView {
         let history = cx.global::<ResonateApp>().history_kept;
         let read = cx.background_spawn(async move { reviewed(&library, year, history) });
 
-        self.reading_wrapped = Some(cx.spawn(async move |this, cx| {
+        self.social.reading_wrapped = Some(cx.spawn(async move |this, cx| {
             let answer = read.await;
             let taken = this.update(cx, |this, cx| {
                 match answer {
-                    Ok(Some(deck)) => this.wrapped = Some(deck),
+                    Ok(Some(deck)) => this.social.wrapped = Some(deck),
                     Ok(None) => toast::tell(
                         Notice::Noted(words::wrapped::nothing_played().to_owned()),
                         cx,
@@ -157,7 +157,7 @@ impl RootView {
     }
 
     fn copy_the_year(&self, cx: &mut Context<Self>) {
-        let Some(deck) = self.wrapped.as_ref() else {
+        let Some(deck) = self.social.wrapped.as_ref() else {
             return;
         };
 
@@ -166,7 +166,7 @@ impl RootView {
     }
 
     fn save_the_card(&self, cx: &mut Context<Self>) {
-        let Some(deck) = self.wrapped.as_ref() else {
+        let Some(deck) = self.social.wrapped.as_ref() else {
             return;
         };
         let review = Arc::clone(&deck.review);
@@ -229,7 +229,7 @@ impl RootView {
     }
 
     pub(crate) fn wrapped_sheet(&self, cx: &mut Context<Self>) -> Div {
-        let Some(deck) = self.wrapped.as_ref() else {
+        let Some(deck) = self.social.wrapped.as_ref() else {
             return div();
         };
         let slide = deck.slides.get(deck.at).cloned();
@@ -676,7 +676,7 @@ mod tests {
 
         driven.cx.update(|window, cx| {
             root.update(cx, |root, cx| {
-                root.wrapped = Some(a_deck());
+                root.social.wrapped = Some(a_deck());
                 window.focus(&root.focus, cx);
                 cx.notify();
             });
@@ -688,27 +688,27 @@ mod tests {
         driven.cx.simulate_keystrokes("right");
         driven.settle();
         assert_eq!(
-            driven.read(|root, _| root.wrapped.as_ref().map(|deck| deck.at)),
+            driven.read(|root, _| root.social.wrapped.as_ref().map(|deck| deck.at)),
             Some(1)
         );
 
         driven.cx.simulate_keystrokes("left left");
         driven.settle();
         assert_eq!(
-            driven.read(|root, _| root.wrapped.as_ref().map(|deck| deck.at)),
+            driven.read(|root, _| root.social.wrapped.as_ref().map(|deck| deck.at)),
             Some(0)
         );
 
         driven.click("wrapped-next");
         assert_eq!(
-            driven.read(|root, _| root.wrapped.as_ref().map(|deck| deck.at)),
+            driven.read(|root, _| root.social.wrapped.as_ref().map(|deck| deck.at)),
             Some(1)
         );
 
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
 
-        assert!(driven.read(|root, _| root.wrapped.is_none()));
+        assert!(driven.read(|root, _| root.social.wrapped.is_none()));
         assert_eq!(driven.read(|root, _| root.pane), pane);
     }
 

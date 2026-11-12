@@ -239,7 +239,7 @@ impl RootView {
     }
 
     pub(crate) fn hero_side(&self) -> f32 {
-        let measured = self.hero_height.get();
+        let measured = self.rooms.hero_height.get();
         if measured > px(0.0) {
             measured / px(1.0)
         } else {
@@ -272,8 +272,8 @@ impl RootView {
             Region::Header => self.header(window, cx).into_any_element(),
             Region::Sidebar => self.sidebar(window, cx).into_any_element(),
             Region::Pane => {
-                self.grid_width.seen_in(window.viewport_size().width);
-                self.finding_holds_the_caret = self.finding.read(cx).is_focused(window);
+                self.rooms.grid_width.seen_in(window.viewport_size().width);
+                self.finding_holds_the_caret = self.typed.finding.read(cx).is_focused(window);
                 let shown = self.pane_shown(cx);
                 let named = match self.search_in_front(cx) {
                     Some(_) => words::root::search_region(),

@@ -25,13 +25,14 @@ impl RootView {
 
     pub(crate) fn focus_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_pane(Pane::Settings, cx);
-        self.finding
+        self.typed
+            .finding
             .update(cx, |finding, cx| finding.take_focus_and_select(window, cx));
         cx.notify();
     }
 
     pub(crate) fn leave_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.finding.read(cx).is_focused(window) {
+        if !self.typed.finding.read(cx).is_focused(window) {
             return;
         }
         window.focus(&self.focus, cx);
@@ -82,11 +83,11 @@ impl RootView {
         if let Some(pane) = shows.pane() {
             self.set_pane(pane, cx);
         }
-        if self.search_shows != shows {
-            self.ordering = None;
+        if self.shows.search != shows {
+            self.orders.ordering = None;
             self.reach = None;
         }
-        self.search_shows = shows;
+        self.shows.search = shows;
         cx.notify();
     }
 
@@ -106,9 +107,9 @@ impl RootView {
         self.stop_typing(cx);
         let opens_the_queue = pane == Pane::Queue && self.pane != Pane::Queue;
         if self.pane != pane {
-            self.ordering = None;
+            self.orders.ordering = None;
             if let Some(shows) = SearchShows::in_place_of(pane) {
-                self.search_shows = shows;
+                self.shows.search = shows;
             }
         }
         self.pane = pane;
@@ -167,7 +168,7 @@ impl RootView {
         if let Some(landed) = landed {
             self.reach = Some(Reach::spanning(shift, landed.first(), landed.last()));
         }
-        self.landed_by_a_jump = None;
+        self.typing.landed_by_a_jump = None;
         cx.notify();
     }
 
@@ -189,14 +190,14 @@ impl RootView {
     }
 
     pub(crate) fn show_settings(&mut self, category: Category, cx: &mut Context<Self>) {
-        let left_a_page = self.settings_page.take().is_some();
-        let moved = self.settings_category != category;
+        let left_a_page = self.settings_shown.page.take().is_some();
+        let moved = self.settings_shown.category != category;
         if moved {
-            self.settings_category = category;
+            self.settings_shown.category = category;
             self.remember_current_settings_category(cx);
         }
         if moved || left_a_page {
-            self.settings_scroll.set_offset(Point::default());
+            self.scrolls.settings.set_offset(Point::default());
         }
         self.disarm();
         cx.notify();

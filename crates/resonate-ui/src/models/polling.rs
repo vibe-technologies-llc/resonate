@@ -52,23 +52,28 @@ impl LibraryModel {
     }
 
     pub fn is_polling(&self) -> bool {
-        self.work.polling().is_some()
+        self.running.work.polling().is_some()
     }
 
     pub fn is_stopping_poll(&self) -> bool {
-        self.work
+        self.running
+            .work
             .polling()
             .is_some_and(|progress| progress.is_cancelled())
     }
 
     pub fn is_waiting_on_the_meter(&self) -> bool {
-        self.work
+        self.running
+            .work
             .polling()
             .is_some_and(|progress| progress.is_waiting_on_the_meter())
     }
 
     pub fn poll_stats(&self) -> Option<PollStats> {
-        self.work.polling().map(|progress| progress.snapshot())
+        self.running
+            .work
+            .polling()
+            .map(|progress| progress.snapshot())
     }
 
     pub fn poll(&mut self, cx: &mut Context<Self>) {
@@ -90,7 +95,7 @@ impl LibraryModel {
     }
 
     fn owe_a_poll(&mut self, options: PollOptions) {
-        self.poll_owed = Some(match self.poll_owed {
+        self.running.poll_owed = Some(match self.running.poll_owed {
             Some(owed) if owed.every_want => owed,
             Some(_) | None => options,
         });
@@ -112,15 +117,16 @@ impl LibraryModel {
     ) -> bool {
         if prompted == Prompted::OnItsOwn
             && !options.every_want
-            && self.polling_every_provider
+            && self.choices.polling_every_provider
             && self
+                .running
                 .work
                 .polling()
                 .is_some_and(|progress| progress.wants_changed())
         {
             return true;
         }
-        if self.work.is_busy() {
+        if self.running.work.is_busy() {
             if prompted == Prompted::ByHand {
                 toast::tell(
                     Notice::Trouble(words::models::already_walking().to_owned()),
@@ -141,7 +147,7 @@ impl LibraryModel {
         self.library.deliver_into(delivery_folder(cx));
         let handle = match self.library.poll(providers, options) {
             Ok(handle) => handle,
-            Err(resonate_library::Error::AlreadyAsking { .. }) if self.keeping.is_some() => {
+            Err(resonate_library::Error::AlreadyAsking { .. }) if self.keeps.pass.is_some() => {
                 tracing::debug!("the keep pass gives way, and this poll follows it");
                 self.owe_a_poll(options);
                 return false;
@@ -169,11 +175,11 @@ impl LibraryModel {
             }
         };
 
-        self.work = Work::Polling(Arc::clone(handle.progress()));
-        self.polling_every_provider = asking == Asking::EveryProvider;
+        self.running.work = Work::Polling(Arc::clone(handle.progress()));
+        self.choices.polling_every_provider = asking == Asking::EveryProvider;
         cx.notify();
 
-        self._poll = cx.spawn(async move |this, cx| {
+        self.running._poll = cx.spawn(async move |this, cx| {
             let mut followed = Followed::default();
             while !handle.is_finished() {
                 cx.background_executor().timer(SCAN_POLL).await;
@@ -190,9 +196,9 @@ impl LibraryModel {
             }
 
             let finished = this.update(cx, |this, cx| {
-                this.work = Work::Nothing;
+                this.running.work = Work::Nothing;
                 if handle.progress().owes_a_poll() {
-                    this.poll_owed.get_or_insert(PollOptions::default());
+                    this.running.poll_owed.get_or_insert(PollOptions::default());
                 }
                 this.take_up_what_waited(cx);
                 this.keep_what_is_owed(cx);
@@ -206,17 +212,17 @@ impl LibraryModel {
                             this.enrich_new_songs(cx);
                         }
                         if !summary.cancelled {
-                            this.providers_unheard =
+                            this.outreach.providers_unheard =
                                 summary.stats.refused > 0 || summary.stats.late > 0;
-                            this.unheard_in_a_row =
-                                if this.providers_unheard && summary.stats.kept == 0 {
-                                    this.unheard_in_a_row.saturating_add(1)
+                            this.outreach.unheard_in_a_row =
+                                if this.outreach.providers_unheard && summary.stats.kept == 0 {
+                                    this.outreach.unheard_in_a_row.saturating_add(1)
                                 } else {
                                     0
                                 };
                         }
                         let told_by_the_downloads =
-                            prompted == Prompted::OnItsOwn && !this.downloads.is_empty();
+                            prompted == Prompted::OnItsOwn && !this.delivered.downloads.is_empty();
                         if let Some(notice) =
                             polled(&summary, prompted).filter(|_| !told_by_the_downloads)
                         {

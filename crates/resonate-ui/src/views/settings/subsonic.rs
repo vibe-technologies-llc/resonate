@@ -162,8 +162,8 @@ impl Account {
 impl RootView {
     fn account_field(&self, service: Service, account: Account) -> &Entity<Field> {
         match service {
-            Service::Subsonic => &self.subsonic[account.nth()],
-            Service::Jellyfin => &self.jellyfin[account.nth()],
+            Service::Subsonic => &self.typed.subsonic[account.nth()],
+            Service::Jellyfin => &self.typed.jellyfin[account.nth()],
         }
     }
 
@@ -263,13 +263,14 @@ impl RootView {
     }
 
     pub(crate) fn an_account_field_is_focused(&self, window: &Window, cx: &App) -> bool {
-        self.subsonic
+        self.typed
+            .subsonic
             .iter()
-            .chain(&self.jellyfin)
-            .chain(&self.tidal)
-            .chain(&self.lastfm)
-            .chain(&self.youtube_music)
-            .chain(std::iter::once(&self.spotify_client))
+            .chain(&self.typed.jellyfin)
+            .chain(&self.typed.tidal)
+            .chain(&self.typed.lastfm)
+            .chain(&self.typed.youtube_music)
+            .chain(std::iter::once(&self.typed.spotify_client))
             .any(|field| field.read(cx).is_focused(window))
     }
 

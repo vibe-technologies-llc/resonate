@@ -64,7 +64,7 @@ impl LibraryModel {
     }
 
     pub fn look_for_missing_covers(&mut self, cx: &mut Context<Self>) {
-        if self.enriching.is_some() || !self.can_enrich() {
+        if self.enrichment.running.is_some() || !self.can_enrich() {
             return;
         }
         self.edited_then(
@@ -84,11 +84,11 @@ impl LibraryModel {
         if roots.is_empty() {
             return;
         }
-        if self.work.is_busy() {
+        if self.running.work.is_busy() {
             for root in roots {
                 let waiting = RootWaiting::ToAdd(root);
-                if !self.roots_waiting.contains(&waiting) {
-                    self.roots_waiting.push(waiting);
+                if !self.running.roots_waiting.contains(&waiting) {
+                    self.running.roots_waiting.push(waiting);
                 }
             }
             cx.notify();
@@ -98,7 +98,7 @@ impl LibraryModel {
     }
 
     pub fn roots_waiting(&self) -> &[RootWaiting] {
-        &self.roots_waiting
+        &self.running.roots_waiting
     }
 
     pub fn file_once_scanned(
@@ -110,22 +110,22 @@ impl LibraryModel {
         if files.is_empty() {
             return;
         }
-        match &mut self.to_file {
+        match &mut self.delivered.to_file {
             Some(waiting) => {
                 waiting.layout = layout;
                 waiting.files.extend(files);
             }
-            None => self.to_file = Some(ToFile { layout, files }),
+            None => self.delivered.to_file = Some(ToFile { layout, files }),
         }
         cx.notify();
     }
 
     pub(super) fn take_up_what_waited(&mut self, cx: &mut Context<Self>) {
-        if self.work.is_busy() {
+        if self.running.work.is_busy() {
             return;
         }
-        if self.roots_waiting.is_empty() {
-            if let Some(ToFile { layout, files }) = self.to_file.take() {
+        if self.running.roots_waiting.is_empty() {
+            if let Some(ToFile { layout, files }) = self.delivered.to_file.take() {
                 self.file(
                     OrganiseOptions {
                         layout,
@@ -138,23 +138,25 @@ impl LibraryModel {
                 );
                 return;
             }
-            if let Some(options) = self.poll_owed.take() {
+            if let Some(options) = self.running.poll_owed.take() {
                 self.fetch_what_was_wanted(options, cx);
             }
             return;
         }
         let forgotten = self
+            .running
             .roots_waiting
             .iter()
             .position(|waiting| matches!(waiting, RootWaiting::ToForget(_)));
         if let Some(at) = forgotten {
-            let RootWaiting::ToForget(root) = self.roots_waiting.remove(at) else {
+            let RootWaiting::ToForget(root) = self.running.roots_waiting.remove(at) else {
                 return;
             };
             self.forget_root(root, cx);
             return;
         }
         let added: Vec<PathBuf> = self
+            .running
             .roots_waiting
             .drain(..)
             .filter_map(|waiting| match waiting {
@@ -176,7 +178,7 @@ impl LibraryModel {
         prompted: Prompted,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.work.is_busy() {
+        if self.running.work.is_busy() {
             return false;
         }
         let handle = match walk(&self.library, roots, reading, prompted) {
@@ -197,10 +199,10 @@ impl LibraryModel {
             }
         };
 
-        self.work = Work::Scanning(Arc::clone(handle.progress()));
+        self.running.work = Work::Scanning(Arc::clone(handle.progress()));
         cx.notify();
 
-        self._scan = cx.spawn(async move |this, cx| {
+        self.running._scan = cx.spawn(async move |this, cx| {
             let mut polled = 0;
             while !handle.is_finished() {
                 cx.background_executor().timer(SCAN_POLL).await;
@@ -219,7 +221,7 @@ impl LibraryModel {
             }
 
             let finished = this.update(cx, |this, cx| {
-                this.work = Work::Nothing;
+                this.running.work = Work::Nothing;
                 this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {

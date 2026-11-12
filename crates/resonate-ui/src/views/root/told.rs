@@ -75,7 +75,8 @@ impl RootView {
 
     pub(super) fn lift_the_playing_row(&self, cx: &App) {
         if let Some(top) = self.queue_parts(cx).opens_at() {
-            self.queue_rows
+            self.scrolls
+                .queue_rows
                 .scroll_to_item_strict(top, ScrollStrategy::Top);
         }
     }
@@ -127,10 +128,10 @@ impl RootView {
     }
 
     pub(crate) fn draw_the_artists_as(&mut self, drawn: ArtistsDrawn, cx: &mut Context<Self>) {
-        if self.artists_drawn == drawn {
+        if self.shows.artists == drawn {
             return;
         }
-        self.artists_drawn = drawn;
+        self.shows.artists = drawn;
         cx.update_global::<ResonateApp, _>(|global, _| global.artists_drawn = drawn);
         self.store(&Setting::ArtistsDrawn(drawn), cx);
         cx.notify();

@@ -10,7 +10,7 @@ impl LibraryModel {
     pub fn remember(&mut self, tracks: &[Track]) {
         self.revision = self.revision.wrapping_add(1);
         for track in tracks {
-            self.named.insert(track.id, Named::of(track));
+            self.naming.named.insert(track.id, Named::of(track));
         }
     }
 

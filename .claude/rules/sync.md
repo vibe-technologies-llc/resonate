@@ -715,11 +715,11 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   `NothingMirrored`, an unknown zone `NoSuchRemoteZone`; like every `resonate sync` it needs the
   catalog's `sync.lock`, so it runs where no window syncs.
 - **The window drives from the Device sync pane** (`views/settings/sync.rs`): an online device's row
-  carries *Drive*, which sets `RootView::driving` and draws, under the device list, each zone it
+  carries *Drive*, which sets `Remotely::driving` and draws, under the device list, each zone it
   mirrors: name and volume, song and place with previous, play or pause, next, quieter and louder
   (`VOLUME_STEP`, a tenth); a seek rail (`driven_rail`: a press seeks there, its keys and a reader's
   actions step by `DRIVEN_SEEK_STEP`, 5 s, a reader's SetValue lands it, the rail's bounds kept per
-  zone in `RootView::driving_rails`); and the mirrored rows (`driven_row`, `rows_shown`: from
+  zone in `Remotely::driving_rails`); and the mirrored rows (`driven_row`, `rows_shown`: from
   `DRIVEN_ROWS_BEFORE_THE_ONE_PLAYING` above the row playing, `DRIVEN_ROWS_AT_FIRST`, 12, until *N
   more* adds `DRIVEN_ROWS_MORE`), a press on one jumping to it, with up, down and remove marks, up and
   down offered only where the queue has a neighbour. `resonate_ui::Syncing` has `watch` (renews the

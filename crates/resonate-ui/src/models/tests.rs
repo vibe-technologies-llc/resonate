@@ -171,7 +171,7 @@ fn a_song_pressed_while_a_pass_runs_waits_for_it_and_is_asked_by_the_next_pass(
     keeping.until_asked(1);
     keeping.pressed("two");
     let queued = keeping.model.clone();
-    keeping.driven.until(|_, cx| queued.read(cx).keep_owed);
+    keeping.driven.until(|_, cx| queued.read(cx).keeps.owed);
     assert_eq!(keeping.queued(), 2);
     assert_eq!(
         keeping.asked.lock().clone(),
@@ -214,7 +214,7 @@ fn a_poll_asked_for_during_a_pass_goes_first_and_the_pass_is_begun_again_after_i
     let owing = keeping.model.clone();
     keeping
         .driven
-        .until(|_, cx| owing.read(cx).poll_owed.is_some());
+        .until(|_, cx| owing.read(cx).running.poll_owed.is_some());
 
     keeping.released.store(true, Ordering::Relaxed);
     keeping.until_asked(2);
@@ -243,7 +243,7 @@ fn a_pass_that_gave_way_owes_the_poll_it_gave_way_to_and_a_pass_after_it(cx: &mu
 
     let (owes_a_pass, owes_a_poll) = keeping.driven.cx.update(|_, cx| {
         let library = model.read(cx);
-        (library.keep_owed, library.poll_owed.is_some())
+        (library.keeps.owed, library.running.poll_owed.is_some())
     });
     assert!(owes_a_pass);
     assert!(owes_a_poll);
@@ -256,7 +256,7 @@ fn a_pass_stopped_leaves_the_rest_queued_and_owes_nothing(cx: &mut TestAppContex
     keeping.until_asked(1);
     keeping.pressed("two");
     let model = keeping.model.clone();
-    keeping.driven.until(|_, cx| model.read(cx).keep_owed);
+    keeping.driven.until(|_, cx| model.read(cx).keeps.owed);
 
     keeping
         .driven
@@ -426,7 +426,7 @@ fn the_pass_ends_once(keeping: &mut Keeping, turned: impl FnOnce(&mut Online)) {
     keeping.until_asked(1);
     keeping.pressed("two");
     let model = keeping.model.clone();
-    keeping.driven.until(|_, cx| model.read(cx).keep_owed);
+    keeping.driven.until(|_, cx| model.read(cx).keeps.owed);
 
     keeping.driven.cx.update(|_, cx| {
         cx.update_global::<ResonateApp, _>(|global, _| turned(&mut global.online));
@@ -460,12 +460,12 @@ fn a_stop_is_not_undone_by_a_pass_that_gave_way_or_was_turned_away(cx: &mut Test
     let ended_stopped = |library: &mut LibraryModel,
                          ended: resonate_library::Result<KeepSummary>,
                          cx: &mut Context<LibraryModel>| {
-        library.keeping = Some(KeepPass {
+        library.keeps.pass = Some(KeepPass {
             stop: Arc::new(AtomicBool::new(true)),
             left: 0,
         });
         library.keep_pass_ended(Ok(ended), cx);
-        library.keep_owed
+        library.keeps.owed
     };
 
     let (after_a_yield, after_a_refusal) = keeping.driven.cx.update(|_, cx| {

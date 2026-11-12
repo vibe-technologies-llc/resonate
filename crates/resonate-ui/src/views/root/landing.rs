@@ -250,50 +250,61 @@ impl RootView {
     pub(super) fn show_row(&self, shift: Shift, row: usize, cx: &App) {
         match shift {
             Shift::Queue => self
+                .scrolls
                 .queue_rows
                 .scroll_to_item(self.queue_parts(cx).line_of(row), ScrollStrategy::Center),
             Shift::Playlist(_) => self
+                .scrolls
                 .playlist_rows
                 .scroll_to_item(row, ScrollStrategy::Center),
             Shift::Listing(Listed::Tracks) => {
-                self.track_rows.scroll_to_item(row, ScrollStrategy::Center);
+                self.scrolls
+                    .track_rows
+                    .scroll_to_item(row, ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Albums) => {
-                self.album_rows
+                self.scrolls
+                    .album_rows
                     .scroll_to_item(row / self.grid_columns(), ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Artists) => {
-                let at = match self.artists_drawn {
+                let at = match self.shows.artists {
                     ArtistsDrawn::List => row,
                     ArtistsDrawn::Grid => row / self.grid_columns(),
                 };
-                self.artist_rows.scroll_to_item(at, ScrollStrategy::Center);
+                self.scrolls
+                    .artist_rows
+                    .scroll_to_item(at, ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Playlists) => {
-                let at = match self.playlists_drawn {
+                let at = match self.shows.playlists {
                     PlaylistsDrawn::List => row,
                     PlaylistsDrawn::Grid => row / self.grid_columns(),
                 };
-                self.all_playlist_rows
+                self.scrolls
+                    .all_playlist_rows
                     .scroll_to_item(at, ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Favourites) => {
-                self.favourite_rows
+                self.scrolls
+                    .favourite_rows
                     .scroll_to_item(row, ScrollStrategy::Center);
             }
             Shift::Listing(Listed::FavouriteArtists | Listed::FavouriteAlbums) => {
-                self.reached_unseen.set(true);
+                self.rooms.reached_unseen.set(true);
             }
             Shift::Listing(Listed::Missing) => {
-                self.missing_rows
+                self.scrolls
+                    .missing_rows
                     .scroll_to_item(row, ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Suggested) => {
-                self.suggestion_rows
+                self.scrolls
+                    .suggestion_rows
                     .scroll_to_item(row, ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Top | Listed::Offered | Listed::Heard) => {
-                self.reached_unseen.set(true);
+                self.rooms.reached_unseen.set(true);
             }
         }
     }

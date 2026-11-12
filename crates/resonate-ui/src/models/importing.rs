@@ -18,36 +18,43 @@ impl LibraryModel {
     }
 
     pub fn is_importing(&self) -> bool {
-        self.work.importing().is_some()
+        self.running.work.importing().is_some()
     }
 
     pub fn is_keeping(&self) -> bool {
-        self.work
+        self.running
+            .work
             .importing()
             .is_some_and(|(pass, _)| pass.applies())
     }
 
     pub fn is_stopping_import(&self) -> bool {
-        self.work
+        self.running
+            .work
             .importing()
             .is_some_and(|(_, progress)| progress.is_cancelled())
     }
 
     pub fn import_stats(&self) -> Option<ImportStats> {
-        match self.work.importing() {
+        match self.running.work.importing() {
             Some((_, progress)) => Some(progress.snapshot()),
-            None => self.imported.as_ref().map(|(_, summary)| summary.stats),
+            None => self
+                .passes
+                .imported
+                .as_ref()
+                .map(|(_, summary)| summary.stats),
         }
     }
 
     pub fn imported(&self) -> Option<(Pass, &ImportSummary)> {
-        self.imported
+        self.passes
+            .imported
             .as_ref()
             .map(|(pass, summary)| (*pass, summary))
     }
 
     pub const fn previewed_import(&self) -> Planned {
-        self.previewed_import
+        self.passes.previewed_import
     }
 
     pub(crate) fn heard_playing(&mut self, playing: bool) {
@@ -55,13 +62,13 @@ impl LibraryModel {
             return;
         }
         self.playing = playing;
-        if let Work::Importing(_, progress) = &self.work {
+        if let Work::Importing(_, progress) = &self.running.work {
             progress.hold_to(workers_beside(playing));
         }
     }
 
     pub fn import(&mut self, pass: Pass, cx: &mut Context<Self>) {
-        if self.work.is_busy() {
+        if self.running.work.is_busy() {
             toast::tell(
                 Notice::Trouble(words::models::already_walking().to_owned()),
                 cx,
@@ -90,12 +97,12 @@ impl LibraryModel {
         };
 
         handle.progress().hold_to(workers_beside(self.playing));
-        self.work = Work::Importing(pass, Arc::clone(handle.progress()));
-        self.imported = None;
-        self.previewed_import = Planned::Not;
+        self.running.work = Work::Importing(pass, Arc::clone(handle.progress()));
+        self.passes.imported = None;
+        self.passes.previewed_import = Planned::Not;
         cx.notify();
 
-        self._import = cx.spawn(async move |this, cx| {
+        self.running._import = cx.spawn(async move |this, cx| {
             while !handle.is_finished() {
                 cx.background_executor().timer(SCAN_POLL).await;
                 if this.update(cx, |_, cx| cx.notify()).is_err() {
@@ -104,15 +111,16 @@ impl LibraryModel {
             }
 
             let finished = this.update(cx, |this, cx| {
-                this.work = Work::Nothing;
+                this.running.work = Work::Nothing;
                 this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {
-                        this.previewed_import = Planned::after(pass, summary.cancelled, read_at);
+                        this.passes.previewed_import =
+                            Planned::after(pass, summary.cancelled, read_at);
                         if pass.applies() {
                             toast::tell(vaulted(&summary), cx);
                         }
-                        this.imported = Some((pass, summary));
+                        this.passes.imported = Some((pass, summary));
                     }
                     Err(error) => {
                         tracing::error!(%error, "the tracks were not kept in the vault");

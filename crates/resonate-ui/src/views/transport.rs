@@ -280,7 +280,7 @@ impl RootView {
             .current
             .and_then(|track| Some(track.duration?.to_duration(track.source.rate)));
         Grain::across(
-            f32::from(self.seek_rail.width()) * window.scale_factor(),
+            f32::from(self.rails.seek.width()) * window.scale_factor(),
             duration,
         )
     }
@@ -385,7 +385,7 @@ impl RootView {
             RepeatMode::Track => RepeatMode::Off,
         };
         let kept = status_kept(
-            f32::from(self.status_room.get()),
+            f32::from(self.rooms.status.get()),
             StatusWidths {
                 toggle: theme::toggle_control(),
                 icon: theme::toggle_icon(),
@@ -405,7 +405,7 @@ impl RootView {
             .items_center()
             .justify_end()
             .gap_1()
-            .child(kit::measures_its_width(self.status_room.clone()))
+            .child(kit::measures_its_width(self.rooms.status.clone()))
             .child(self.queue_button(cx))
             .when(kept.shuffle, |cluster| {
                 cluster.child(self.shuffle_button(shuffle, state.smart_shuffle, cx))
@@ -596,7 +596,7 @@ impl RootView {
                     .flex_1()
                     .min_w(px(0.0))
                     .gap_0p5()
-                    .child(kit::measures_its_width(self.playing_room.clone()))
+                    .child(kit::measures_its_width(self.rooms.playing.clone()))
                     .child(words)
                     .when_some(signal, |panel, signal| {
                         panel.child(self.signal_path(signal, &playing, sink, cx))
@@ -615,7 +615,7 @@ impl RootView {
                 "playing-artist",
                 "playing-album",
                 playing,
-                self.playing_room.get(),
+                self.rooms.playing.get(),
                 cx,
             ))
     }
@@ -652,7 +652,7 @@ impl RootView {
                         "playing-title",
                         kit::cut_to_fit(
                             playing.title.clone(),
-                            self.playing_room.get() - px(theme::row_control() + TITLE_GAP),
+                            self.rooms.playing.get() - px(theme::row_control() + TITLE_GAP),
                             theme::ui(FontWeight::MEDIUM),
                             px(theme::text_base()),
                             cx,
@@ -677,7 +677,7 @@ impl RootView {
         playing: &Playing,
         cx: &mut Context<Self>,
     ) -> Div {
-        let room = self.heading_room.get();
+        let room = self.rooms.heading.get();
         let title = kit::cut_to_fit(
             playing.title.clone(),
             room,
@@ -700,7 +700,7 @@ impl RootView {
             .flex_1()
             .min_w(px(theme::heading_name()))
             .gap_1()
-            .child(kit::measures_its_width(self.heading_room.clone()))
+            .child(kit::measures_its_width(self.rooms.heading.clone()))
             .child(kit::linked_title(self.opens(
                 of_the_title,
                 title,
@@ -835,7 +835,7 @@ impl RootView {
             (None, None) => (0.0, None),
         };
         let kept = signal_kept(
-            f32::from(self.playing_room.get()),
+            f32::from(self.rooms.playing.get()),
             SignalWidths {
                 lead,
                 quality: quality_width,
@@ -1238,7 +1238,9 @@ impl RootView {
         rate: SampleRate,
     ) -> Option<Pointed> {
         let duration = duration?;
-        let fraction = self.grabbed_fraction(Handle::Seek).or(self.seek_pointed)?;
+        let fraction = self
+            .grabbed_fraction(Handle::Seek)
+            .or(self.rails.seek_pointed)?;
         Some(Pointed {
             fraction,
             reading: format::clock(along(duration, fraction), rate).into(),
@@ -1253,7 +1255,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let elapsed = format::clock(position, rate);
-        let showing_left = self.showing_time_left && duration.is_some();
+        let showing_left = self.shows.time_left && duration.is_some();
         let far_end = match duration {
             Some(duration) if showing_left => {
                 format!("{MINUS}{}", format::left(position, duration, rate))
@@ -1294,7 +1296,7 @@ impl RootView {
                             "seek-far-end",
                             end.cursor_pointer().said_as(Role::Button, hint).names(hint),
                             |this, _, cx| {
-                                this.showing_time_left = !this.showing_time_left;
+                                this.shows.time_left = !this.shows.time_left;
                                 cx.notify();
                             },
                             cx,

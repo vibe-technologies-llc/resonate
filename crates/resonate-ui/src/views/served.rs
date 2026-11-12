@@ -188,7 +188,9 @@ impl RootView {
                         this.server.update(cx, |server, cx| {
                             server.back(cx);
                         });
-                        this.server_search.update(cx, |field, cx| field.clear(cx));
+                        this.typed
+                            .server_search
+                            .update(cx, |field, cx| field.clear(cx));
                     },
                     cx,
                 ))
@@ -252,7 +254,9 @@ impl RootView {
     fn choose_a_service(&mut self, index: usize, cx: &mut Context<Self>) {
         self.server
             .update(cx, |server, cx| server.choose(index, cx));
-        self.server_search.update(cx, |field, cx| field.clear(cx));
+        self.typed
+            .server_search
+            .update(cx, |field, cx| field.clear(cx));
     }
 
     fn server_search_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -263,9 +267,10 @@ impl RootView {
                 theme::search_icon(),
                 theme::faint(),
             ))
-            .child(self.server_search.clone())
+            .child(self.typed.server_search.clone())
             .on_click(cx.listener(|this, _, window, cx| {
-                this.server_search
+                this.typed
+                    .server_search
                     .update(cx, |field, cx| field.take_focus(window, cx));
                 cx.notify();
             }))
@@ -283,7 +288,7 @@ impl RootView {
         Scrollbars::of(cx)
             .around(
                 "server-scrollbar",
-                self.server_rows.clone(),
+                self.scrolls.server_rows.clone(),
                 uniform_list(
                     "server-rows",
                     shown,
@@ -299,7 +304,7 @@ impl RootView {
                             .collect()
                     }),
                 )
-                .track_scroll(&self.server_rows)
+                .track_scroll(&self.scrolls.server_rows)
                 .h_full()
                 .w_full(),
             )
@@ -509,7 +514,7 @@ impl RootView {
     }
 
     pub(crate) fn search_the_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let words = self.server_search.read(cx).text().trim().to_owned();
+        let words = self.typed.server_search.read(cx).text().trim().to_owned();
         self.server.update(cx, |server, cx| {
             if words.is_empty() {
                 server.leave_the_search(cx);
@@ -1250,7 +1255,7 @@ mod tests {
             .cx
             .simulate_resize(gpui::size(px(theme::WINDOW_MIN_WIDTH), shortest));
         driven.settle();
-        assert!(driven.read(|root, _| root.sidebar_scroll.max_offset().y) > px(0.0));
+        assert!(driven.read(|root, _| root.scrolls.sidebar.max_offset().y) > px(0.0));
 
         let categories = driven.centre_of("tab-albums");
         driven.scroll_at(categories, SCROLLED_PAST_EVERY_CATEGORY);
@@ -1264,16 +1269,17 @@ mod tests {
     fn other_devices_make_way_for_the_services_row_as_for_every_category(cx: &mut TestAppContext) {
         let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
         driven.root.update(&mut driven.cx, |root, cx| {
-            root.remote_songs = vec![remote::tests::song()];
+            root.remotely.songs = vec![remote::tests::song()];
             cx.notify();
         });
         driven.settle();
-        let room_with_the_cards = driven.read(|root, _| root.sidebar_scroll.bounds().size.height);
+        let room_with_the_cards = driven.read(|root, _| root.scrolls.sidebar.bounds().size.height);
         driven.click("toggle-other-devices");
-        let room = driven.read(|root, _| root.sidebar_scroll.bounds().size.height);
+        let room = driven.read(|root, _| root.scrolls.sidebar.bounds().size.height);
         driven.click("toggle-other-devices");
         let categories = driven.read(|root, _| {
-            root.sidebar_scroll
+            root.scrolls
+                .sidebar
                 .bounds_for_item(0)
                 .expect("the categories")
                 .size
@@ -1289,9 +1295,9 @@ mod tests {
         ));
         driven.settle();
 
-        assert!(driven.read(|root, _| root.remote_collapsed));
+        assert!(driven.read(|root, _| root.remotely.collapsed));
         assert_eq!(
-            driven.read(|root, _| root.sidebar_scroll.max_offset().y),
+            driven.read(|root, _| root.scrolls.sidebar.max_offset().y),
             px(0.0)
         );
         driven.click("tab-server");

@@ -44,7 +44,7 @@ impl RootView {
             }
             _ => {}
         }
-        self.landed_by_a_jump = None;
+        self.typing.landed_by_a_jump = None;
         self.show_row(shift, to, cx);
         cx.notify();
     }
@@ -210,7 +210,7 @@ impl RootView {
         let kept = self.took_out.keeping_all(&queued, &runs);
 
         self.reach = Reach::after_dropping_runs(Shift::Queue, &runs, queued.len());
-        self.landed_by_a_jump = None;
+        self.typing.landed_by_a_jump = None;
 
         self.send_by_position(Command::RemoveAll(runs), cx);
         if let Some(kept) = kept {
@@ -231,7 +231,7 @@ impl RootView {
                 let held = self.library.read(cx).entries().len();
                 let runs = chosen.runs().to_vec();
                 self.reach = Reach::after_dropping_runs(shift, &runs, held);
-                self.landed_by_a_jump = None;
+                self.typing.landed_by_a_jump = None;
                 self.library.update(cx, |library, cx| {
                     library.remove_runs_from_playlist(playlist, runs, cx);
                 });
@@ -258,7 +258,7 @@ impl RootView {
         };
 
         self.reach = Reach::after_dropping(shift, rows, held);
-        self.landed_by_a_jump = None;
+        self.typing.landed_by_a_jump = None;
         cx.notify();
     }
 

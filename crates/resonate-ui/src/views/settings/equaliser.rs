@@ -245,6 +245,7 @@ impl RootView {
     ) -> Stateful<Div> {
         let drawn = self.equaliser.update(cx, |model, _| model.drawn(rate));
         let widest = self
+            .rails
             .held_band
             .map_or_else(|| widest_drawn(&drawn), |held| held.widest);
 
@@ -291,7 +292,7 @@ impl RootView {
                 drawn,
                 widest,
                 handles,
-                Rc::clone(&self.curve_plotted),
+                Rc::clone(&self.rails.curve_plotted),
             ))
             .child(marked_levels(widest))
             .children(marked_frequencies())
@@ -488,7 +489,7 @@ impl RootView {
                     .on_mouse_down_out(cx.listener(|this, _, window, cx| {
                         this.leave_figure(window, cx);
                     }))
-                    .child(self.figure.clone()),
+                    .child(self.typed.figure.clone()),
             );
         }
 
@@ -616,7 +617,7 @@ impl RootView {
             .when(reachable, |body| {
                 body.child(self.text_field(
                     "look-for-a-device",
-                    &self.looking,
+                    &self.typed.looking,
                     |this, window, cx| this.let_go_of_the_field(window, cx),
                     cx,
                 ))
@@ -767,7 +768,7 @@ impl RootView {
                 words::settings_equaliser::keep_as(),
                 self.text_field(
                     "measure-profile-name",
-                    &self.measured_as,
+                    &self.typed.measured_as,
                     |this, window, cx| this.let_go_of_the_field(window, cx),
                     cx,
                 ),
@@ -840,7 +841,7 @@ impl RootView {
             .sink_in_use()
             .map(|sink| sink.name.clone());
         let from = self.listen.read(cx).from().clone();
-        let typed = self.measured_as.read(cx).text().trim().to_owned();
+        let typed = self.typed.measured_as.read(cx).text().trim().to_owned();
         let called = if typed.is_empty() {
             None
         } else {
@@ -1037,7 +1038,7 @@ impl RootView {
     pub(crate) fn wear_the_measurers(&mut self, measurers: Measurers, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.measurers = measurers.clone());
 
-        let typed = self.looking.read(cx).text().to_owned();
+        let typed = self.typed.looking.read(cx).text().to_owned();
         let sink = self.the_sink_in_use(cx);
         self.equaliser.update(cx, |model, cx| {
             model.prefer(measurers);
@@ -1507,7 +1508,7 @@ impl RootView {
         binding: Option<Binding>,
         cx: &mut Context<Self>,
     ) {
-        self.held_band = None;
+        self.rails.held_band = None;
         self.equaliser
             .update(cx, |model, _| model.bind(sink.as_ref(), binding.clone()));
         let written = match sink {
@@ -1601,7 +1602,7 @@ impl RootView {
     }
 
     fn press_the_curve(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        let plotted = self.curve_plotted.get();
+        let plotted = self.rails.curve_plotted.get();
         let plot = Plot::of(plotted);
         let (x, y) = Self::at(position);
 
@@ -1609,7 +1610,7 @@ impl RootView {
         if let Some(row) = plot.nearest(&bands, x, y) {
             self.equaliser
                 .update(cx, |model, _| model.choose(Some(row)));
-            self.held_band = Some(HeldBand {
+            self.rails.held_band = Some(HeldBand {
                 row,
                 widest: plotted.widest,
             });
@@ -1623,7 +1624,7 @@ impl RootView {
             .equaliser
             .update(cx, |model, cx| model.add_at(placed, cx));
         if let Some(row) = added {
-            self.held_band = Some(HeldBand {
+            self.rails.held_band = Some(HeldBand {
                 row,
                 widest: plotted.widest,
             });
@@ -1633,10 +1634,10 @@ impl RootView {
     }
 
     pub(crate) fn drag_a_band(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        let Some(held) = self.held_band else {
+        let Some(held) = self.rails.held_band else {
             return;
         };
-        let plotted = self.curve_plotted.get();
+        let plotted = self.rails.curve_plotted.get();
         let plot = Plot::within(plotted.bounds, held.widest, plotted.lift);
         let (x, y) = Self::at(position);
         let placed = plot.placed(x, y);
@@ -1651,16 +1652,16 @@ impl RootView {
     }
 
     fn tell_the_engine_at_most_so_often(&mut self, cx: &mut Context<Self>) {
-        if let Some(untold) = self.band_untold.as_mut() {
+        if let Some(untold) = self.rails.band_untold.as_mut() {
             *untold = true;
             return;
         }
         self.tell_the_engine(cx);
-        self.band_untold = Some(false);
-        self.band_retuning = cx.spawn(async move |this, cx| {
+        self.rails.band_untold = Some(false);
+        self.rails.band_retuning = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(DRAG_TOLD_EVERY).await;
             let _ = this.update(cx, |this, cx| {
-                if this.band_untold.take() == Some(true) {
+                if this.rails.band_untold.take() == Some(true) {
                     this.tell_the_engine_at_most_so_often(cx);
                 }
             });
@@ -1668,13 +1669,13 @@ impl RootView {
     }
 
     pub(crate) fn let_the_band_go(&mut self, cx: &mut Context<Self>) {
-        if self.held_band.take().is_some() {
+        if self.rails.held_band.take().is_some() {
             cx.notify();
         }
     }
 
     fn take_a_band_out_at(&mut self, position: Point<Pixels>, cx: &mut Context<Self>) {
-        let plot = Plot::of(self.curve_plotted.get());
+        let plot = Plot::of(self.rails.curve_plotted.get());
         let (x, y) = Self::at(position);
         let bands = self.equaliser.read(cx).shown_bands();
         if let Some(row) = plot.nearest(&bands, x, y) {
@@ -1683,7 +1684,7 @@ impl RootView {
     }
 
     fn turn_a_q_at(&mut self, event: &ScrollEvent, cx: &mut Context<Self>) -> bool {
-        let plot = Plot::of(self.curve_plotted.get());
+        let plot = Plot::of(self.rails.curve_plotted.get());
         let (x, y) = Self::at(event.position);
         let bands = self.equaliser.read(cx).shown_bands();
         let Some(row) = plot.nearest(&bands, x, y) else {
@@ -1733,7 +1734,7 @@ impl RootView {
         bindings: Bindings,
         cx: &mut Context<Self>,
     ) {
-        self.held_band = None;
+        self.rails.held_band = None;
         self.equaliser
             .update(cx, |model, _| model.rebound(bindings));
         self.follow_the_binding(cx);
@@ -1753,7 +1754,7 @@ impl RootView {
             model.edit_cell(row, cell);
             model.written(Editing { row, cell })
         });
-        self.figure.update(cx, |figure, cx| {
+        self.typed.figure.update(cx, |figure, cx| {
             figure.open_with(written, cx);
             figure.take_focus(window, cx);
         });
@@ -1764,13 +1765,14 @@ impl RootView {
         let Some(editing) = self.equaliser.read(cx).editing() else {
             return;
         };
-        let typed = self.figure.read(cx).text().to_owned();
+        let typed = self.typed.figure.read(cx).text().to_owned();
         let taken = self
             .equaliser
             .update(cx, |model, cx| model.take(editing, &typed, cx));
 
         if taken {
-            self.figure
+            self.typed
+                .figure
                 .update(cx, |figure, cx| figure.open_with(String::new(), cx));
             self.controls.lets_go(window, cx);
             self.tell_the_engine(cx);
@@ -1779,11 +1781,12 @@ impl RootView {
     }
 
     pub(crate) fn leave_figure(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.figure.read(cx).is_focused(window) {
+        if !self.typed.figure.read(cx).is_focused(window) {
             return;
         }
         self.equaliser.update(cx, |model, _| model.leave_cell());
-        self.figure
+        self.typed
+            .figure
             .update(cx, |figure, cx| figure.open_with(String::new(), cx));
         self.controls.lets_go(window, cx);
         cx.notify();
@@ -1793,7 +1796,7 @@ impl RootView {
         let Some(editing) = self.equaliser.read(cx).editing() else {
             return;
         };
-        let typed = self.figure.read(cx).text().to_owned();
+        let typed = self.typed.figure.read(cx).text().to_owned();
         let taken = self
             .equaliser
             .update(cx, |model, cx| model.take(editing, &typed, cx));
@@ -1803,7 +1806,8 @@ impl RootView {
         } else {
             self.equaliser.update(cx, |model, _| model.leave_cell());
         }
-        self.figure
+        self.typed
+            .figure
             .update(cx, |figure, cx| figure.open_with(String::new(), cx));
         cx.notify();
     }
@@ -1837,7 +1841,7 @@ impl RootView {
     }
 
     fn drop_a_band(&mut self, row: usize, cx: &mut Context<Self>) {
-        self.held_band = None;
+        self.rails.held_band = None;
         self.equaliser
             .update(cx, |model, cx| model.drop_a_band(row, cx));
         self.tell_the_engine(cx);
@@ -1862,7 +1866,7 @@ impl RootView {
     }
 
     fn fit_the_preamp_to_the_queue(&mut self, cx: &mut Context<Self>) {
-        self.fitting_the_preamp = Fitting::idle();
+        self.settings_shown.fitting_the_preamp = Fitting::idle();
         let Some(shown) = self.equaliser.read(cx).shown().cloned() else {
             return;
         };
@@ -1906,7 +1910,7 @@ impl RootView {
                 }
             });
         });
-        self.fitting_the_preamp = Fitting::measuring(watch, landing);
+        self.settings_shown.fitting_the_preamp = Fitting::measuring(watch, landing);
     }
 
     fn import_a_profile(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
@@ -1984,7 +1988,7 @@ impl RootView {
     }
 
     pub(crate) fn look_for_a_device(&mut self, cx: &mut Context<Self>) {
-        let typed = self.looking.read(cx).text().to_owned();
+        let typed = self.typed.looking.read(cx).text().to_owned();
         let sink = self.the_sink_in_use(cx);
         self.equaliser
             .update(cx, |model, cx| model.look(&typed, sink.as_ref(), cx));
@@ -1992,7 +1996,9 @@ impl RootView {
     }
 
     pub(crate) fn leave_looking(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.looking.update(cx, |looking, cx| looking.clear(cx));
+        self.typed
+            .looking
+            .update(cx, |looking, cx| looking.clear(cx));
         self.look_for_a_device(cx);
         window.focus(&self.focus, cx);
     }
@@ -2094,35 +2100,38 @@ const BINAURAL_FILE: &str = "binaural-response.wav";
 
 impl RootView {
     fn room_is_crossed(&self) -> bool {
-        self.room_shape
+        self.settings_shown
+            .room_shape
             .as_ref()
             .is_some_and(|(_, crossed)| *crossed)
     }
 
     fn look_at_the_room(&mut self, file: &Path, cx: &mut Context<Self>) {
         if self
+            .settings_shown
             .room_shape
             .as_ref()
             .is_some_and(|(seen, _)| seen == file)
         {
             return;
         }
-        self.room_shape = Some((file.to_path_buf(), false));
+        self.settings_shown.room_shape = Some((file.to_path_buf(), false));
         let reading = file.to_path_buf();
         let speakers = speakers_worn(cx);
         let read = cx.background_executor().spawn({
             let reading = reading.clone();
             async move { read_impulse(&Sources::local(), &MediaLocation::local(&reading), speakers) }
         });
-        self.looking_at_the_room = cx.spawn(async move |this, cx| {
+        self.settings_shown.looking_at_the_room = cx.spawn(async move |this, cx| {
             let crossed = matches!(read.await, Ok(Some(impulse)) if impulse.is_crossed());
             let _ = this.update(cx, |this, cx| {
                 if this
+                    .settings_shown
                     .room_shape
                     .as_ref()
                     .is_some_and(|(seen, _)| *seen == reading)
                 {
-                    this.room_shape = Some((reading, crossed));
+                    this.settings_shown.room_shape = Some((reading, crossed));
                     cx.notify();
                 }
             });
@@ -2488,7 +2497,7 @@ impl RootView {
                 words::settings_equaliser::kept_not().to_owned()
             })
         });
-        self.reading_the_room = cx.spawn(async move |this, cx| {
+        self.settings_shown.reading_the_room = cx.spawn(async move |this, cx| {
             let assembled = assembled.await;
             let _ = this.update(cx, |this, cx| match assembled {
                 Ok(()) => this.correct_the_room(Some(kept), cx),
@@ -2499,7 +2508,7 @@ impl RootView {
 
     pub(crate) fn correct_the_room(&mut self, file: Option<PathBuf>, cx: &mut Context<Self>) {
         let Some(file) = file else {
-            self.reading_the_room = Task::ready(());
+            self.settings_shown.reading_the_room = Task::ready(());
             cx.update_global::<ResonateApp, _>(|global, _| global.convolution = None);
             self.send(Command::SetConvolution(None), cx);
             self.store(&Setting::Convolution(None), cx);
@@ -2511,11 +2520,11 @@ impl RootView {
         let read = cx.background_executor().spawn(async move {
             read_impulse(&Sources::local(), &MediaLocation::local(&reading), speakers)
         });
-        self.reading_the_room = cx.spawn(async move |this, cx| {
+        self.settings_shown.reading_the_room = cx.spawn(async move |this, cx| {
             let read = read.await;
             let _ = this.update(cx, |this, cx| match read {
                 Ok(Some(impulse)) => {
-                    this.room_shape = Some((file.clone(), impulse.is_crossed()));
+                    this.settings_shown.room_shape = Some((file.clone(), impulse.is_crossed()));
                     cx.update_global::<ResonateApp, _>(|global, _| {
                         global.convolution = Some(file.clone());
                     });

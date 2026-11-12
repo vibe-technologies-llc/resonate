@@ -109,7 +109,7 @@ impl RootView {
                     .gap_2()
                     .child(div().flex_1().min_w(px(0.0)).child(self.text_field(
                         "typed-root",
-                        &self.typed_root,
+                        &self.typed.root,
                         |this, window, cx| this.leave_typed_root(window, cx),
                         cx,
                     )))
@@ -145,7 +145,7 @@ impl RootView {
     }
 
     pub(crate) fn root_typed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let typed = self.typed_root.read(cx).text().trim().to_owned();
+        let typed = self.typed.root.read(cx).text().trim().to_owned();
         if typed.is_empty() {
             self.leave_typed_root(window, cx);
             return;
@@ -153,30 +153,32 @@ impl RootView {
         let folder = spelt_out_from_home(&typed);
         let looked = folder.clone();
 
-        self.looking_at_the_typed_root = cx.spawn_in(window, async move |this, cx| {
-            let there = cx
-                .background_executor()
-                .spawn(async move { looked.is_dir() })
-                .await;
+        self.settings_shown.looking_at_the_typed_root =
+            cx.spawn_in(window, async move |this, cx| {
+                let there = cx
+                    .background_executor()
+                    .spawn(async move { looked.is_dir() })
+                    .await;
 
-            let _ = this.update_in(cx, |this, window, cx| {
-                if !there {
-                    this.report(
-                        Notice::Trouble(words::settings_library::folder_is_not_a_folder(
-                            resonate_core::path_text::shown(&folder),
-                        )),
-                        cx,
-                    );
-                    return;
-                }
-                this.typed_root
-                    .update(cx, |typed, cx| typed.hold(String::new(), cx));
-                this.library
-                    .update(cx, |library, cx| library.add_roots(vec![folder], cx));
-                this.leave_typed_root(window, cx);
-                cx.notify();
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if !there {
+                        this.report(
+                            Notice::Trouble(words::settings_library::folder_is_not_a_folder(
+                                resonate_core::path_text::shown(&folder),
+                            )),
+                            cx,
+                        );
+                        return;
+                    }
+                    this.typed
+                        .root
+                        .update(cx, |typed, cx| typed.hold(String::new(), cx));
+                    this.library
+                        .update(cx, |library, cx| library.add_roots(vec![folder], cx));
+                    this.leave_typed_root(window, cx);
+                    cx.notify();
+                });
             });
-        });
     }
 
     fn folder(&self, root: &Path, primary: Option<&Path>, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -324,7 +326,7 @@ impl RootView {
 
     pub(crate) fn ask_to_forget_the_folder(&mut self, root: PathBuf, cx: &mut Context<Self>) {
         if self.folder_armed() == Some(&root) {
-            self.armed = None;
+            self.settings_shown.armed = None;
             let held = cx.global::<ResonateApp>().music_folder.clone();
             if held.is_some_and(|primary| primary.starts_with(&root)) {
                 self.forget_the_music_folder(cx);
@@ -772,7 +774,7 @@ impl RootView {
             cx.notify();
             return;
         }
-        self.armed = None;
+        self.settings_shown.armed = None;
         self.keep_the_history(kept, cx);
         cx.notify();
     }
@@ -938,10 +940,11 @@ impl RootView {
 
 impl RootView {
     pub(super) fn organising_group(&mut self, cx: &mut Context<Self>) -> Rows {
-        let typed = self.organising.read(cx).text().trim().to_owned();
+        let typed = self.typed.organising.read(cx).text().trim().to_owned();
         let refused = Layout::read(&typed).err().map(|error| error.to_string());
         let unreadable = refused.is_some();
-        self.organising
+        self.typed
+            .organising
             .update(cx, |organising, cx| organising.refusing(unreadable, cx));
         let library = self.library.read(cx);
         let busy = library.is_busy();
@@ -965,7 +968,7 @@ impl RootView {
                     words::settings_library::template_label(),
                     self.text_field(
                         "organise-as",
-                        &self.organising,
+                        &self.typed.organising,
                         |this, window, cx| this.leave_organising(window, cx),
                         cx,
                     ),
@@ -1114,7 +1117,7 @@ impl RootView {
 
     fn file_them(&mut self, pass: Pass, cx: &mut Context<Self>) {
         self.lower(&Armed::MoveTheFiles);
-        let typed = self.organising.read(cx).text().trim().to_owned();
+        let typed = self.typed.organising.read(cx).text().trim().to_owned();
 
         match Layout::read(&typed) {
             Ok(layout) => self
@@ -1129,7 +1132,7 @@ impl RootView {
     }
 
     pub(crate) fn layout_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let given = self.organising.read(cx).text().trim().to_owned();
+        let given = self.typed.organising.read(cx).text().trim().to_owned();
 
         match Layout::read(&given) {
             Ok(_) => {
@@ -1145,7 +1148,7 @@ impl RootView {
     }
 
     pub(crate) fn layout_left(&mut self, cx: &mut Context<Self>) {
-        let given = self.organising.read(cx).text().trim().to_owned();
+        let given = self.typed.organising.read(cx).text().trim().to_owned();
         if given == cx.global::<ResonateApp>().organise_as {
             return;
         }
@@ -1161,7 +1164,8 @@ impl RootView {
     }
 
     pub(crate) fn set_organise_as(&mut self, template: String, cx: &mut Context<Self>) {
-        self.organising
+        self.typed
+            .organising
             .update(cx, |organising, cx| organising.hold(template.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| global.organise_as = template.clone());
         self.library
@@ -1517,7 +1521,7 @@ impl RootView {
     }
 
     fn naming_a_vault(&self, cx: &mut Context<Self>) -> Rows {
-        let named = self.vault_named.clone();
+        let named = self.settings_shown.vault_named.clone();
 
         kit::rows()
             .child(match &named {
@@ -1551,12 +1555,12 @@ impl RootView {
         let made = cx
             .background_executor()
             .spawn(async move { Vault::make(&making).map(drop) });
-        self.making_the_vault = cx.spawn(async move |this, cx| {
+        self.settings_shown.making_the_vault = cx.spawn(async move |this, cx| {
             let made = made.await;
             let _ = this.update(cx, |this, cx| match made {
                 Ok(()) => {
                     this.store(&Setting::Vault(folder.clone()), cx);
-                    this.vault_named = Some(folder);
+                    this.settings_shown.vault_named = Some(folder);
                     cx.notify();
                 }
                 Err(error) => {

@@ -268,7 +268,7 @@ pub(crate) fn queue_items(entries: &[PlaylistEntry], beside: &QueueRows) -> Vec<
 
 impl RootView {
     pub(crate) fn playlists_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        self.shared_lists = cx
+        self.social.shared_lists = cx
             .global::<ResonateApp>()
             .together
             .as_ref()
@@ -303,12 +303,12 @@ impl RootView {
                 )
             }
         } else {
-            match self.playlists_drawn {
+            match self.shows.playlists {
                 PlaylistsDrawn::Grid => self.playlist_grid(saved, playing, cx),
                 PlaylistsDrawn::List => Scrollbars::of(cx)
                     .around(
                         "playlists-scrollbar",
-                        self.all_playlist_rows.clone(),
+                        self.scrolls.all_playlist_rows.clone(),
                         uniform_list(
                             "playlists",
                             saved.len(),
@@ -330,7 +330,7 @@ impl RootView {
                                 rows
                             }),
                         )
-                        .track_scroll(&self.all_playlist_rows)
+                        .track_scroll(&self.scrolls.all_playlist_rows)
                         .h_full()
                         .w_full(),
                     )
@@ -380,8 +380,8 @@ impl RootView {
         let columns = self.grid_columns();
         let held = saved.len();
         let rows = held.div_ceil(columns.max(1));
-        let measured = self.grid_width.clone();
-        let laid_out = self.grid_width.get() > px(0.0);
+        let measured = self.rooms.grid_width.clone();
+        let laid_out = self.rooms.grid_width.get() > px(0.0);
 
         div()
             .relative()
@@ -424,26 +424,26 @@ impl RootView {
                                 .collect()
                         }),
                     )
-                    .track_scroll(&self.all_playlist_rows)
+                    .track_scroll(&self.scrolls.all_playlist_rows)
                     .h_full()
                     .w_full(),
                 )
             })
-            .child(
-                Scrollbars::of(cx)
-                    .vertical("playlist-grid-scrollbar", self.all_playlist_rows.clone()),
-            )
+            .child(Scrollbars::of(cx).vertical(
+                "playlist-grid-scrollbar",
+                self.scrolls.all_playlist_rows.clone(),
+            ))
             .into_any_element()
     }
 
     fn playlists_drawn_as(&self, cx: &mut Context<Self>) -> Div {
-        let drawn = self.playlists_drawn;
+        let drawn = self.shows.playlists;
         let choice = |as_: PlaylistsDrawn, label: &'static str, cx: &mut Context<Self>| {
             self.in_the_pane_ring(
                 kit::segment(("playlists-drawn", as_ as usize), label, drawn == as_)
                     .names(as_.saying()),
                 move |this, _, cx| {
-                    this.playlists_drawn = as_;
+                    this.shows.playlists = as_;
                     cx.notify();
                 },
                 cx,
@@ -573,7 +573,7 @@ impl RootView {
     }
 
     fn search_shape(&self, cx: &mut Context<Self>) -> Div {
-        let cap = self.query_cap;
+        let cap = self.orders.query_cap;
 
         let mut caps = kit::segmented();
         for (index, held) in CAPS.into_iter().enumerate() {
@@ -585,8 +585,8 @@ impl RootView {
         }
         let ordered_as = format!(
             "{} · {}",
-            self.query_sort.named(),
-            self.query_sort.read(self.query_reading)
+            self.orders.query_sort.named(),
+            self.orders.query_sort.read(self.orders.query_reading)
         );
 
         div()
@@ -614,8 +614,8 @@ impl RootView {
 
     pub(crate) fn search_in_order(&self, cx: &mut Context<Self>) -> Div {
         self.order_choices(
-            self.query_sort,
-            self.query_reading,
+            self.orders.query_sort,
+            self.orders.query_reading,
             |this, order, cx| this.sort_a_search(order, cx),
             |this, reading, cx| this.read_a_search(reading, cx),
             cx,
@@ -627,10 +627,12 @@ impl RootView {
             .flex_1()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(|this, _, window, cx| {
-                this.name.update(cx, |name, cx| name.take_focus(window, cx));
+                this.typed
+                    .name
+                    .update(cx, |name, cx| name.take_focus(window, cx));
                 cx.notify();
             }))
-            .child(self.name.clone())
+            .child(self.typed.name.clone())
             .child(kit::figure("enter").text_color(rgb(theme::faint())))
     }
 
@@ -653,7 +655,7 @@ impl RootView {
             self.nothing_in_the_playlist(opened, rows, cx)
         } else {
             let held = Arc::clone(&entries);
-            let scroll = self.playlist_rows.clone();
+            let scroll = self.scrolls.playlist_rows.clone();
             let listing = uniform_list(
                 "playlist-entries",
                 entries.len(),
@@ -696,7 +698,10 @@ impl RootView {
                 cx,
             )
             .child(listing)
-            .child(Scrollbars::of(cx).vertical("playlist-scrollbar", self.playlist_rows.clone()))
+            .child(
+                Scrollbars::of(cx)
+                    .vertical("playlist-scrollbar", self.scrolls.playlist_rows.clone()),
+            )
             .into_any_element()
         };
 
@@ -708,7 +713,7 @@ impl RootView {
                     true,
                     rows.control_count(),
                     sorting::playlist_sorted(self),
-                    &self.columns_fit,
+                    &self.rooms.columns_fit,
                     &self.controls,
                     cx,
                 ))
@@ -1038,7 +1043,7 @@ impl RootView {
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.name_a_playlist(Naming::Rename(opened), window, cx);
                     }))
-                    .child(kit::hero_title(name, self.hero_width.get())),
+                    .child(kit::hero_title(name, self.rooms.hero_width.get())),
             )
             .child(
                 self.in_the_pane_ring(
@@ -1071,8 +1076,8 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .gap_1()
-            .child(kit::measures_its_width(self.hero_width.clone()))
-            .child(kit::measures_its_height(self.hero_height.clone()))
+            .child(kit::measures_its_width(self.rooms.hero_width.clone()))
+            .child(kit::measures_its_height(self.rooms.hero_height.clone()))
             .child(kit::eyebrow(eyebrow))
             .child(name_selector)
             .child(kit::subtitle(under))
@@ -1106,7 +1111,7 @@ impl RootView {
     }
 
     pub(crate) fn rows_in_order(&self, opened: PlaylistId, cx: &mut Context<Self>) -> Div {
-        let keeping = self.keeping;
+        let keeping = self.orders.keeping;
         let mut keeps = kit::segmented().w_full();
         for (index, (label, wanted, saying)) in keeping_choices().into_iter().enumerate() {
             keeps = keeps.child(
@@ -1127,10 +1132,10 @@ impl RootView {
         }
 
         self.order_choices(
-            self.row_order,
-            self.row_reading,
-            move |this, order, cx| this.put_in_order(opened, order, this.row_reading, cx),
-            move |this, reading, cx| this.put_in_order(opened, this.row_order, reading, cx),
+            self.orders.row_order,
+            self.orders.row_reading,
+            move |this, order, cx| this.put_in_order(opened, order, this.orders.row_reading, cx),
+            move |this, reading, cx| this.put_in_order(opened, this.orders.row_order, reading, cx),
             cx,
         )
         .child(kit::rule().mx_1())
@@ -1242,7 +1247,7 @@ impl RootView {
         let span = entry.span();
         let title = drawn.title.clone();
         let artist = drawn.artist.clone();
-        let fitted = self.columns_fit.shown();
+        let fitted = self.rooms.columns_fit.shown();
         let entry_id = listing::keyed_by("entry", &(&entry.cut, index));
         let listed = row(current)
             .id(entry_id)
@@ -1427,7 +1432,7 @@ impl RootView {
                     .collect()
             }),
         )
-        .track_scroll(&self.picker_rows)
+        .track_scroll(&self.scrolls.picker_rows)
         .w_full()
         .h(theme::width(theme::row_height() * shown as f32));
 
@@ -1467,7 +1472,7 @@ impl RootView {
                                     .child(rows)
                                     .child(Scrollbars::of(cx).vertical(
                                         "playlist-picker-scrollbar",
-                                        self.picker_rows.clone(),
+                                        self.scrolls.picker_rows.clone(),
                                     )),
                             ),
                     )
@@ -1676,6 +1681,7 @@ impl RootView {
         let pinned = playlist.pinned.is_some();
         let kind = kind_of(playlist);
         let shared_as = self
+            .social
             .shared_lists
             .iter()
             .find(|(shared, _)| *shared == playlist.id)
@@ -1873,6 +1879,7 @@ impl RootView {
         let cell_id = ElementId::from(("playlist-cell", id.get() as usize));
         let pointed = pointed::is_pointed_at(&cell_id);
         let about = match self
+            .social
             .shared_lists
             .iter()
             .find(|(shared, _)| *shared == playlist.id)

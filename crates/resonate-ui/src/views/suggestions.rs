@@ -58,7 +58,7 @@ impl RootView {
             .gap_8()
             .p(px(SHELF_PADDING))
             .overflow_y_scroll()
-            .track_scroll(&self.suggestions_scroll);
+            .track_scroll(&self.scrolls.suggestions);
         let shelved = in_shelf_order(&offered);
         for kind in SuggestionKind::ALL {
             let cards: Vec<AnyElement> = shelved
@@ -110,10 +110,10 @@ impl RootView {
                         .flex_1()
                         .min_w(px(0.0))
                         .min_h(px(0.0))
-                        .child(kit::measures_the_grid(self.grid_width.clone()))
+                        .child(kit::measures_the_grid(self.rooms.grid_width.clone()))
                         .child(Scrollbars::of(cx).around(
                             "suggestions-scrollbar",
-                            self.suggestions_scroll.clone(),
+                            self.scrolls.suggestions.clone(),
                             shelves,
                         )),
                 )
@@ -159,8 +159,8 @@ impl RootView {
                         frame
                             .child(browser::reached_ring())
                             .child(kit::brought_into_view(
-                                self.suggestions_scroll.clone(),
-                                Rc::clone(&self.reached_unseen),
+                                self.scrolls.suggestions.clone(),
+                                Rc::clone(&self.rooms.reached_unseen),
                             ))
                     })
                     .child(
@@ -251,7 +251,7 @@ impl RootView {
     }
 
     pub(crate) fn cards_a_page(&self) -> usize {
-        let seen = self.suggestions_scroll.bounds().size;
+        let seen = self.scrolls.suggestions.bounds().size;
         let down = f32::from(seen.height) / (self.grid_row() + theme::grid_gap());
 
         self.grid_columns() * (down.max(1.0) as usize)
@@ -316,7 +316,7 @@ impl RootView {
                         .flex_1()
                         .min_w(px(0.0))
                         .gap_1()
-                        .child(kit::measures_its_height(self.hero_height.clone()))
+                        .child(kit::measures_its_height(self.rooms.hero_height.clone()))
                         .child(kit::eyebrow(words::suggestions::suggestion_of(
                             suggestion.reason.kind().name(),
                         )))
@@ -337,14 +337,14 @@ impl RootView {
                 true,
                 TRACK_CONTROLS,
                 sorting::unsorted(),
-                &self.columns_fit,
+                &self.rooms.columns_fit,
                 &self.controls,
                 cx,
             ))
             .child(
                 Scrollbars::of(cx).around(
                     "suggestion-tracks-scrollbar",
-                    self.suggestion_rows.clone(),
+                    self.scrolls.suggestion_rows.clone(),
                     uniform_list(
                         "suggestion-tracks",
                         shown,
@@ -375,7 +375,7 @@ impl RootView {
                             drawn
                         }),
                     )
-                    .track_scroll(&self.suggestion_rows)
+                    .track_scroll(&self.scrolls.suggestion_rows)
                     .h_full()
                     .w_full(),
                 ),

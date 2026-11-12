@@ -118,13 +118,14 @@ impl Rail {
 impl RootView {
     const fn rail_of(&self, handle: Handle) -> &Rail {
         match handle {
-            Handle::Seek => &self.seek_rail,
-            Handle::Volume => &self.volume_rail,
+            Handle::Seek => &self.rails.seek,
+            Handle::Volume => &self.rails.volume,
         }
     }
 
     pub(crate) fn grabbed_fraction(&self, handle: Handle) -> Option<f32> {
-        self.grabbed
+        self.rails
+            .grabbed
             .filter(|grab| grab.handle == handle)
             .map(|grab| grab.fraction)
     }
@@ -144,7 +145,7 @@ impl RootView {
             return;
         };
         let track = self.player.read(cx).state().current.map(|track| track.id);
-        self.grabbed = Some(Grab {
+        self.rails.grabbed = Some(Grab {
             handle,
             fraction,
             track,
@@ -153,7 +154,7 @@ impl RootView {
     }
 
     fn drag(&mut self, at: Point<Pixels>, modifiers: Modifiers, cx: &mut Context<Self>) {
-        let Some(grab) = self.grabbed else {
+        let Some(grab) = self.rails.grabbed else {
             return;
         };
         let Some(fraction) = self
@@ -167,12 +168,12 @@ impl RootView {
             return;
         }
 
-        self.grabbed = Some(Grab { fraction, ..grab });
+        self.rails.grabbed = Some(Grab { fraction, ..grab });
         self.dragged(grab.handle, fraction, cx);
     }
 
     fn release(&mut self, cx: &mut Context<Self>) {
-        let Some(grab) = self.grabbed.take() else {
+        let Some(grab) = self.rails.grabbed.take() else {
             return;
         };
         let playing = self.player.read(cx).state().current.map(|track| track.id);
@@ -196,7 +197,7 @@ impl RootView {
     }
 
     pub(crate) fn drag_surface(&self, cx: &mut Context<Self>) -> Div {
-        let held = self.grabbed.is_some() || self.held_band.is_some();
+        let held = self.rails.grabbed.is_some() || self.rails.held_band.is_some();
 
         div()
             .absolute()
@@ -222,9 +223,9 @@ impl RootView {
     }
 
     fn pointed_along(&mut self, at: Point<Pixels>, cx: &mut Context<Self>) {
-        let fraction = self.seek_rail.fraction_at(at);
-        if self.seek_pointed != fraction {
-            self.seek_pointed = fraction;
+        let fraction = self.rails.seek.fraction_at(at);
+        if self.rails.seek_pointed != fraction {
+            self.rails.seek_pointed = fraction;
             cx.notify();
         }
     }
@@ -249,7 +250,7 @@ impl RootView {
     }
 
     pub(crate) fn pointer_left_the_seek_rail(&mut self, cx: &mut Context<Self>) {
-        if self.seek_pointed.take().is_some() {
+        if self.rails.seek_pointed.take().is_some() {
             cx.notify();
         }
     }
@@ -429,7 +430,7 @@ mod tests {
                     .current
                     .expect("a paused track");
                 let wanted = Frames(current.duration.expect("a length").get() * 3 / 4);
-                root.grabbed = Some(Grab {
+                root.rails.grabbed = Some(Grab {
                     handle: Handle::Seek,
                     fraction: 0.75,
                     track: Some(current.id),
@@ -441,7 +442,7 @@ mod tests {
                     current.position
                 );
                 assert_eq!(model.shown_position(), Some(wanted));
-                assert!(root.grabbed.is_none());
+                assert!(root.rails.grabbed.is_none());
                 (wanted, model.engine())
             })
         });
@@ -461,7 +462,7 @@ mod tests {
                     .current
                     .expect("a paused track");
                 for fraction in [0.5, 0.25] {
-                    root.grabbed = Some(Grab {
+                    root.rails.grabbed = Some(Grab {
                         handle: Handle::Seek,
                         fraction,
                         track: Some(current.id),

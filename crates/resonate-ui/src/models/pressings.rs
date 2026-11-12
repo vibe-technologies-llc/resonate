@@ -18,20 +18,21 @@ use crate::{toast, words};
 
 impl LibraryModel {
     pub fn pressings_of(&self, album: AlbumId) -> Option<&Pressings> {
-        self.pressings
+        self.detail
+            .pressings
             .as_ref()
             .filter(|(held, _)| *held == album)
             .map(|(_, pressings)| pressings)
     }
 
     pub fn ask_for_pressings(&mut self, album: AlbumId, group: Mbid, cx: &mut Context<Self>) {
-        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+        let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             return;
         };
-        self.pressings = Some((album, Pressings::Asking));
+        self.detail.pressings = Some((album, Pressings::Asking));
         cx.notify();
 
-        self._pressings = cx.spawn(async move |this, cx| {
+        self.detail._pressings = cx.spawn(async move |this, cx| {
             let asked = cx
                 .background_executor()
                 .spawn(async move { reference.release_group(&group) })
@@ -58,11 +59,12 @@ impl LibraryModel {
                     }
                 };
                 if this
+                    .detail
                     .pressings
                     .as_ref()
                     .is_some_and(|(held, _)| *held == album)
                 {
-                    this.pressings = Some((album, answered));
+                    this.detail.pressings = Some((album, answered));
                     cx.notify();
                 }
             });
@@ -71,13 +73,13 @@ impl LibraryModel {
     }
 
     pub fn ask_for_releases(&mut self, album: AlbumId, cx: &mut Context<Self>) {
-        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+        let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             return;
         };
         let Some(held) = self.album_of(album) else {
             return;
         };
-        let release = self.release.as_ref();
+        let release = self.detail.release.as_ref();
         let asked = ReleaseAsked {
             title: held.title.clone(),
             artist: held.artist.clone(),
@@ -86,10 +88,10 @@ impl LibraryModel {
             catalog_number: release.and_then(|release| release.catalog_number.clone()),
             wording: Wording::Words,
         };
-        self.pressings = Some((album, Pressings::Asking));
+        self.detail.pressings = Some((album, Pressings::Asking));
         cx.notify();
 
-        self._pressings = cx.spawn(async move |this, cx| {
+        self.detail._pressings = cx.spawn(async move |this, cx| {
             let asked = cx
                 .background_executor()
                 .spawn(async move { reference.find_release(&asked) })
@@ -116,11 +118,12 @@ impl LibraryModel {
             };
             let landed = this.update(cx, |this, cx| {
                 if this
+                    .detail
                     .pressings
                     .as_ref()
                     .is_some_and(|(held, _)| *held == album)
                 {
-                    this.pressings = Some((album, answered));
+                    this.detail.pressings = Some((album, answered));
                     cx.notify();
                 }
             });
@@ -129,10 +132,10 @@ impl LibraryModel {
     }
 
     pub fn take_pressing(&mut self, album: AlbumId, release: Mbid, cx: &mut Context<Self>) {
-        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+        let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             return;
         };
-        self.pressings = None;
+        self.detail.pressings = None;
         self.edited(
             Wanted::Everything,
             Change::TakePressing,
@@ -150,7 +153,7 @@ impl LibraryModel {
         track: TrackId,
         cx: &mut Context<Self>,
     ) -> Option<Task<resonate_library::Result<Vec<Recording>>>> {
-        let reference = self.reference.clone().filter(|_| self.online)?;
+        let reference = self.reference.clone().filter(|_| self.choices.online)?;
         let library = Arc::clone(&self.library);
         Some(
             cx.background_executor()
@@ -165,7 +168,7 @@ impl LibraryModel {
         release: Mbid,
         cx: &mut Context<Self>,
     ) {
-        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+        let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             return;
         };
         self.edited(
@@ -186,7 +189,7 @@ impl LibraryModel {
         words: String,
         cx: &mut Context<Self>,
     ) -> Option<Task<resonate_library::Result<Vec<Recording>>>> {
-        let reference = self.reference.clone().filter(|_| self.online)?;
+        let reference = self.reference.clone().filter(|_| self.choices.online)?;
         let library = Arc::clone(&self.library);
         Some(
             cx.background_executor()
@@ -200,7 +203,7 @@ impl LibraryModel {
         recording: Arc<Recording>,
         cx: &mut Context<Self>,
     ) {
-        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+        let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             return;
         };
         self.edited(
@@ -235,7 +238,7 @@ impl LibraryModel {
             },
             move |this, edited, cx| {
                 if edited == Edited::Landed {
-                    this.sought.track(track);
+                    this.enrichment.sought.track(track);
                     this.enrich(false, cx);
                 }
             },
@@ -256,7 +259,7 @@ impl LibraryModel {
             },
             move |this, edited, cx| {
                 if edited == Edited::Landed && due.load(Ordering::Relaxed) {
-                    this.sought.track(track);
+                    this.enrichment.sought.track(track);
                     this.enrich(false, cx);
                 }
             },
@@ -265,7 +268,7 @@ impl LibraryModel {
     }
 
     pub fn read_the_rest_of(&mut self, artist: ArtistId, cx: &mut Context<Self>) {
-        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+        let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             return;
         };
         self.edited(

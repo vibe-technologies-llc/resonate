@@ -35,22 +35,24 @@ impl LibraryModel {
     fn forget_albums_the_catalog_moved_under(&mut self) {
         let now = self.library.rows_stamp();
         if !self
+            .naming
             .read_albums_at
             .is_some_and(|held| held.still_holds_at(now))
         {
-            self.read_albums = Recent::new(ALBUMS_HELD);
+            self.naming.read_albums = Recent::new(ALBUMS_HELD);
         }
-        self.read_albums_at = Some(now);
+        self.naming.read_albums_at = Some(now);
     }
 
     fn forget_what_the_catalog_may_have_changed(&mut self) {
-        self.covers.forget_where(Option::is_none);
-        self.portraits.forget_where(Option::is_none);
-        self.read_albums.forget_where(|_| true);
+        self.pictures.covers.forget_where(Option::is_none);
+        self.pictures.portraits.forget_where(Option::is_none);
+        self.naming.read_albums.forget_where(|_| true);
     }
 
     fn name_what_is_held_again(&mut self, cx: &mut Context<Self>) {
         let held: Vec<(QueueItem, Option<Track>)> = self
+            .naming
             .named
             .entries()
             .map(|(id, named)| {
@@ -67,7 +69,7 @@ impl LibraryModel {
         }
 
         let library = Arc::clone(&self.library);
-        self._naming_again = cx.spawn(async move |this, cx| {
+        self.naming._again = cx.spawn(async move |this, cx| {
             let (held, read) = cx
                 .background_executor()
                 .spawn(async move {
@@ -80,11 +82,12 @@ impl LibraryModel {
                 let mut changed = false;
                 for ((item, before), track) in held.into_iter().zip(read) {
                     let standing = this
+                        .naming
                         .named
                         .peek(&item.id)
                         .is_some_and(|now| now.names(&item) && now.track == before);
                     if standing && track != before {
-                        this.named.insert(
+                        this.naming.named.insert(
                             item.id,
                             Named {
                                 location: item.location,
@@ -121,25 +124,25 @@ impl LibraryModel {
         Asked {
             text: (!self.query.is_empty()).then(|| self.query.clone()),
             meant: None,
-            as_typed: self.as_typed,
+            as_typed: self.outreach.as_typed,
             album,
             artist,
-            opened: self.opened,
-            order: self.order,
-            reading: self.reading,
+            opened: self.shelf.opened,
+            order: self.shelf.order,
+            reading: self.shelf.reading,
             sorting: self.sorting,
-            reach: self.reach,
-            held: match self.page_moved {
+            reach: self.browse.reach,
+            held: match self.browse.page_moved {
                 true => Held::default(),
                 false => Held {
-                    albums: self.albums.len(),
-                    artists: self.artists.len(),
-                    tracks: Reached::of(&self.tracks),
-                    scoped: Reached::of(&self.scoped),
+                    albums: self.browse.albums.len(),
+                    artists: self.browse.artists.len(),
+                    tracks: Reached::of(&self.browse.tracks),
+                    scoped: Reached::of(&self.browse.scoped),
                 },
             },
             window: self.window,
-            heard: self.statistics_shown,
+            heard: self.charts.shown,
         }
     }
 
@@ -205,9 +208,9 @@ impl LibraryModel {
                 if self.take(loaded) == Grew::Moved {
                     self.read(Wanted::ThePage, cx);
                 }
-                for (written, favourite) in mem::take(&mut self.favours_written) {
-                    if self.favoured.get(&written) == Some(&favourite) {
-                        self.favoured.remove(&written);
+                for (written, favourite) in mem::take(&mut self.favours.written) {
+                    if self.favours.favoured.get(&written) == Some(&favourite) {
+                        self.favours.favoured.remove(&written);
                     }
                 }
                 if gone == Some(self.selection) {
@@ -248,10 +251,10 @@ impl LibraryModel {
                     .as_ref()
                     .map_or(self.query.as_str(), |meant| meant.searched.as_str()),
             );
-            self.meant = loaded.meant;
+            self.outreach.meant = loaded.meant;
         }
         if let Some(browsed) = loaded.browsed {
-            self.page_moved = false;
+            self.browse.page_moved = false;
             self.take_the_listing(browsed);
             return Grew::Renewed;
         }
@@ -261,7 +264,7 @@ impl LibraryModel {
         let grew = self.take_the_growth(grown);
         match grew {
             Grew::Same => {}
-            Grew::Moved => self.page_moved = true,
+            Grew::Moved => self.browse.page_moved = true,
             Grew::Renewed => {
                 self.index_the_favourites();
                 self.restate_the_listing();
@@ -272,112 +275,117 @@ impl LibraryModel {
     }
 
     fn take_the_wants(&mut self, wants: WantsRead) {
-        self.wanted = wants.wanted;
-        self.next_try = wants.next_try;
-        if !mem::replace(&mut self.downloads_restored, true) {
-            self.downloads.restored(wants.unfinished);
+        self.wishes.wanted = wants.wanted;
+        self.outreach.next_try = wants.next_try;
+        if !mem::replace(&mut self.delivered.restored, true) {
+            self.delivered.downloads.restored(wants.unfinished);
         }
-        self.downloads.followed(&wants.standings);
+        self.delivered.downloads.followed(&wants.standings);
         if let Some(track) = self
+            .delivered
             .downloads
             .landed_to_play(&wants.standings, Instant::now())
         {
             self.arrived = Some(track);
         }
-        self.standings = wants.standings;
+        self.wishes.standings = wants.standings;
     }
 
     fn take_the_shelves(&mut self, shelves: Shelves) {
         if let Some(wants) = shelves.wants {
             self.take_the_wants(wants);
         }
-        if renewed(&mut self.missing_tracks, shelves.missing_tracks) {
-            self.missing_track_rows = missing_track_rows(
-                self.missing_tracks
+        if renewed(&mut self.gaps.tracks, shelves.missing_tracks) {
+            self.gaps.track_rows = missing_track_rows(
+                self.gaps
+                    .tracks
                     .iter()
                     .map(|track| (track.album, track.disc)),
             )
             .into();
         }
-        if renewed(&mut self.unheld_releases, shelves.unheld_releases) {
-            self.unheld_release_rows =
-                unheld_release_rows(self.unheld_releases.iter().map(|release| release.artist))
-                    .into();
+        if renewed(&mut self.gaps.releases, shelves.unheld_releases) {
+            self.gaps.release_rows =
+                unheld_release_rows(self.gaps.releases.iter().map(|release| release.artist)).into();
         }
-        self.missing = shelves.missing;
-        self.dismissed = shelves.dismissed;
-        renewed(&mut self.playlists, shelves.playlists);
-        renewed(&mut self.lists, shelves.lists);
-        self.pictured = shelves.pictured;
-        renewed(&mut self.pinned, shelves.pinned);
-        self.held = shelves.held;
-        renewed(&mut self.entries, shelves.entries);
-        if self.held.is_none() {
-            self.opened = None;
+        self.gaps.missing = shelves.missing;
+        self.gaps.dismissed = shelves.dismissed;
+        renewed(&mut self.shelf.playlists, shelves.playlists);
+        renewed(&mut self.shelf.lists, shelves.lists);
+        self.shelf.pictured = shelves.pictured;
+        renewed(&mut self.shelf.pinned, shelves.pinned);
+        self.shelf.held = shelves.held;
+        renewed(&mut self.shelf.entries, shelves.entries);
+        if self.shelf.held.is_none() {
+            self.shelf.opened = None;
         }
     }
 
     fn take_the_growth(&mut self, grown: Grown) -> Grew {
         let Grown { from, page } = grown;
-        let albums = grew(&mut self.albums, from.albums, page.albums);
+        let albums = grew(&mut self.browse.albums, from.albums, page.albums);
         if albums == Grew::Renewed {
             self.index_the_albums();
         }
         let grew = albums
-            .and(grew(&mut self.artists, from.artists, page.artists))
-            .and(grew(&mut self.tracks, from.tracks.rows, page.tracks))
-            .and(grew(&mut self.scoped, from.scoped.rows, page.scoped));
+            .and(grew(&mut self.browse.artists, from.artists, page.artists))
+            .and(grew(&mut self.browse.tracks, from.tracks.rows, page.tracks))
+            .and(grew(&mut self.browse.scoped, from.scoped.rows, page.scoped));
         if from == Held::default() {
-            self.page_moved = false;
+            self.browse.page_moved = false;
         }
         grew
     }
 
     fn forget_the_listing(&mut self) {
-        self.albums = Rows::default();
-        self.artists = Rows::default();
-        self.tracks = Rows::default();
-        self.scoped = Rows::default();
-        self.albums_counted = 0;
-        self.artists_counted = 0;
-        self.tracks_measured = Measured::default();
-        self.scoped_measured = Measured::default();
+        self.browse.albums = Rows::default();
+        self.browse.artists = Rows::default();
+        self.browse.tracks = Rows::default();
+        self.browse.scoped = Rows::default();
+        self.browse.albums_counted = 0;
+        self.browse.artists_counted = 0;
+        self.browse.tracks_measured = Measured::default();
+        self.browse.scoped_measured = Measured::default();
         self.index_the_albums();
         self.restate_the_listing();
     }
 
     fn take_the_page(&mut self, paged: Paged) {
-        if rows_renewed(&mut self.albums, paged.albums) {
+        if rows_renewed(&mut self.browse.albums, paged.albums) {
             self.index_the_albums();
         }
-        rows_renewed(&mut self.artists, paged.artists);
-        rows_renewed(&mut self.tracks, paged.tracks);
-        rows_renewed(&mut self.scoped, paged.scoped);
+        rows_renewed(&mut self.browse.artists, paged.artists);
+        rows_renewed(&mut self.browse.tracks, paged.tracks);
+        rows_renewed(&mut self.browse.scoped, paged.scoped);
     }
 
     pub(super) fn take_what_was_heard(&mut self, heard: Heard) {
-        self.most_listened = Arc::new(heard.most_listened);
-        if renewed(&mut self.by_day, heard.by_day) {
-            self.charted = Arc::new(Chart::of(&self.by_day, SystemTime::now(), BARS_AT_MOST));
+        self.charts.most_listened = Arc::new(heard.most_listened);
+        if renewed(&mut self.charts.by_day, heard.by_day) {
+            self.charts.charted = Arc::new(Chart::of(
+                &self.charts.by_day,
+                SystemTime::now(),
+                BARS_AT_MOST,
+            ));
         }
-        self.habits = Arc::new(heard.habits);
+        self.charts.habits = Arc::new(heard.habits);
     }
 
     pub(crate) fn statistics_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
-        self.statistics_shown = shown;
-        if shown && self.heard_owed {
+        self.charts.shown = shown;
+        if shown && self.charts.owed {
             self.read(Wanted::Everything, cx);
         }
     }
 
     fn take_the_listing(&mut self, browsed: Browsed) {
         self.take_the_page(browsed.paged);
-        renewed(&mut self.favourite_albums, browsed.favourite_albums);
-        renewed(&mut self.favourite_artists, browsed.favourite_artists);
-        renewed(&mut self.favourite_tracks, browsed.favourite_tracks);
+        renewed(&mut self.favours.albums, browsed.favourite_albums);
+        renewed(&mut self.favours.artists, browsed.favourite_artists);
+        renewed(&mut self.favours.tracks, browsed.favourite_tracks);
         if let Some(standing) = browsed.standing {
-            self.statistics = standing.statistics;
-            self.heard_owed = standing.heard.is_none();
+            self.charts.statistics = standing.statistics;
+            self.charts.owed = standing.heard.is_none();
             if let Some(heard) = standing.heard {
                 self.take_what_was_heard(heard);
             }
@@ -387,22 +395,22 @@ impl LibraryModel {
                 self.hidden = Arc::new(standing.hidden);
             }
         }
-        self.sung = browsed.sung;
-        renewed(&mut self.kept_songs, browsed.kept_songs);
-        renewed(&mut self.kept_albums, browsed.kept_albums);
-        self.kept_for = browsed.kept_for;
-        renewed(&mut self.songs_not_held, browsed.songs_not_held);
-        renewed(&mut self.albums_not_held, browsed.albums_not_held);
-        self.albums_counted = browsed.albums_counted;
-        self.artists_counted = browsed.artists_counted;
-        self.tracks_measured = browsed.tracks_measured;
-        self.scoped_measured = browsed.scoped_measured;
-        renewed(&mut self.release_tracks, browsed.release_tracks);
-        self.release = browsed.release;
-        self.artist = browsed.artist;
-        renewed(&mut self.artist_albums, browsed.artist_albums);
-        self.artist_totals = browsed.artist_totals;
-        self.album = browsed.album;
+        self.browse.sung = browsed.sung;
+        renewed(&mut self.unheld.kept_songs, browsed.kept_songs);
+        renewed(&mut self.unheld.kept_albums, browsed.kept_albums);
+        self.unheld.kept_for = browsed.kept_for;
+        renewed(&mut self.unheld.songs, browsed.songs_not_held);
+        renewed(&mut self.unheld.albums, browsed.albums_not_held);
+        self.browse.albums_counted = browsed.albums_counted;
+        self.browse.artists_counted = browsed.artists_counted;
+        self.browse.tracks_measured = browsed.tracks_measured;
+        self.browse.scoped_measured = browsed.scoped_measured;
+        renewed(&mut self.detail.release_tracks, browsed.release_tracks);
+        self.detail.release = browsed.release;
+        self.detail.artist = browsed.artist;
+        renewed(&mut self.detail.artist_albums, browsed.artist_albums);
+        self.detail.artist_totals = browsed.artist_totals;
+        self.detail.album = browsed.album;
         self.instead = browsed.instead;
         self.index_the_favourites();
         self.restate_the_listing();
@@ -410,32 +418,34 @@ impl LibraryModel {
     }
 
     fn index_the_albums(&mut self) {
-        self.album_at.clear();
-        for (at, album) in self.albums.iter().enumerate() {
-            self.album_at.insert(album.id, at);
+        self.browse.album_at.clear();
+        for (at, album) in self.browse.albums.iter().enumerate() {
+            self.browse.album_at.insert(album.id, at);
         }
     }
 
     fn index_the_favourites(&mut self) {
-        self.favourite_album_ids.clear();
-        self.favourite_artist_ids.clear();
+        self.favours.album_ids.clear();
+        self.favours.artist_ids.clear();
 
         for album in self
+            .detail
             .album
             .iter()
-            .chain(self.albums.iter())
-            .chain(self.favourite_albums.iter())
+            .chain(self.browse.albums.iter())
+            .chain(self.favours.albums.iter())
             .filter(|album| album.favourite.is_some())
         {
-            self.favourite_album_ids.insert(album.id);
+            self.favours.album_ids.insert(album.id);
         }
         for artist in self
+            .browse
             .artists
             .iter()
-            .chain(self.favourite_artists.iter())
+            .chain(self.favours.artists.iter())
             .filter(|artist| artist.favourite.is_some())
         {
-            self.favourite_artist_ids.insert(artist.id);
+            self.favours.artist_ids.insert(artist.id);
         }
     }
 
@@ -446,6 +456,7 @@ impl LibraryModel {
         self.warmed = true;
 
         let wanted: Vec<AlbumId> = self
+            .browse
             .albums
             .iter()
             .filter(|album| album.has_cover_art)
@@ -463,9 +474,10 @@ impl LibraryModel {
                 let Ok(sized) = this.update(cx, |this, _| {
                     let sized = AtSide {
                         key: id,
-                        side: Drawn::InAGrid.side(this.scale),
+                        side: Drawn::InAGrid.side(this.pictures.scale),
                     };
-                    (!this.covers.holds(&sized) && !this.decoding.holds(&sized)).then_some(sized)
+                    (!this.pictures.covers.holds(&sized) && !this.pictures.decoding.holds(&sized))
+                        .then_some(sized)
                 }) else {
                     return;
                 };
@@ -485,7 +497,7 @@ impl LibraryModel {
 
                 let landed = this.update(cx, |this, cx| {
                     let decoded = picture_or_trouble(read, words::models::read_a_cover(), cx);
-                    this.covers.insert(sized, decoded).forget(cx);
+                    this.pictures.covers.insert(sized, decoded).forget(cx);
                     cx.notify();
                 });
                 if landed.is_err() {

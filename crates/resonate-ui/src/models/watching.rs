@@ -20,7 +20,7 @@ use super::{
 impl LibraryModel {
     pub(super) fn watch_the_inbox(&mut self, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
-        self._watching_inbox = cx.spawn(async move |this, cx| {
+        self.watchers._inbox = cx.spawn(async move |this, cx| {
             let mut watched: Option<(PathBuf, Option<RootsWatch>)> = None;
             let mut owed = false;
             loop {
@@ -71,16 +71,16 @@ impl LibraryModel {
 
     pub(super) fn watch_the_roots(&mut self, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
-        self._watching_roots = cx.spawn(async move |this, cx| {
+        self.watchers._roots = cx.spawn(async move |this, cx| {
             let mut watching = Watching::default();
             let mut owed: Vec<PathBuf> = Vec::new();
             let mut changed_while_closed = true;
             let mut looked_at = None;
             loop {
                 cx.background_executor().timer(ROOTS_LOOKED_AT_EVERY).await;
-                let Ok((busy, seen)) =
-                    this.update(cx, |this, _| (this.work.is_busy(), this.window_seen))
-                else {
+                let Ok((busy, seen)) = this.update(cx, |this, _| {
+                    (this.running.work.is_busy(), this.window_seen)
+                }) else {
                     return;
                 };
                 if !roots_looked_at_now(seen, looked_at) {
@@ -159,9 +159,9 @@ impl LibraryModel {
 
     pub(crate) fn take_what_a_model_offered(&mut self, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
-        let before = mem::replace(&mut self._taking_offers, Task::ready(()));
+        let before = mem::replace(&mut self.watchers._offers, Task::ready(()));
 
-        self._taking_offers = cx.spawn(async move |this, cx| {
+        self.watchers._offers = cx.spawn(async move |this, cx| {
             before.await;
             let taken = cx
                 .background_executor()
@@ -182,7 +182,7 @@ impl LibraryModel {
     pub(super) fn watch_for_writes_elsewhere(&mut self, cx: &mut Context<Self>) {
         self.take_what_a_model_offered(cx);
         let library = Arc::clone(&self.library);
-        self._watching = cx.spawn(async move |this, cx| {
+        self.watchers._writes = cx.spawn(async move |this, cx| {
             let mut loaded = library.written_elsewhere();
             let mut seen = loaded;
             loop {
@@ -215,14 +215,15 @@ impl LibraryModel {
     pub(super) fn ask_when_due(&mut self, cx: &mut Context<Self>) {
         let at = self.next_asked_at();
         if self
+            .outreach
             .asking_at
             .is_some_and(|scheduled| scheduled <= at && scheduled > Instant::now())
         {
             return;
         }
-        self.asking_at = Some(at);
+        self.outreach.asking_at = Some(at);
 
-        self._asking = cx.spawn(async move |this, cx| {
+        self.outreach._task = cx.spawn(async move |this, cx| {
             let mut at = at;
             loop {
                 cx.background_executor()
@@ -231,7 +232,7 @@ impl LibraryModel {
                 let Ok(next) = this.update(cx, |this, cx| {
                     this.poll_as(Prompted::OnItsOwn, cx);
                     let next = this.next_asked_at();
-                    this.asking_at = Some(next);
+                    this.outreach.asking_at = Some(next);
                     next
                 }) else {
                     return;
@@ -244,12 +245,12 @@ impl LibraryModel {
     fn next_asked_at(&self) -> Instant {
         let now = Instant::now();
         let latest = now + ASKED_EVERY;
-        let due = self.next_try.map_or(latest, |at| {
+        let due = self.outreach.next_try.map_or(latest, |at| {
             now + at.duration_since(SystemTime::now()).unwrap_or_default()
         });
 
-        due.max(self.asks_from)
-            .max(now + retried_after(self.unheard_in_a_row))
+        due.max(self.outreach.asks_from)
+            .max(now + retried_after(self.outreach.unheard_in_a_row))
             .min(latest)
     }
 }

@@ -32,7 +32,7 @@ impl LibraryModel {
                     this.counted = Some(counted.listen);
                     if let Some(track) = counted.track {
                         this.revision = this.revision.wrapping_add(1);
-                        this.named.insert(track.id, Named::of(&track));
+                        this.naming.named.insert(track.id, Named::of(&track));
                         this.reload(cx);
                     }
                 }
@@ -63,9 +63,9 @@ impl LibraryModel {
 
     pub fn track_passed(&mut self, heard: Duration, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
-        let before = mem::replace(&mut self._passed, Task::ready(()));
+        let before = mem::replace(&mut self.running._passed, Task::ready(()));
 
-        self._passed = cx.spawn(async move |this, cx| {
+        self.running._passed = cx.spawn(async move |this, cx| {
             before.await;
             let kept = cx
                 .background_executor()

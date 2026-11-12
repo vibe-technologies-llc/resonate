@@ -14,17 +14,18 @@ use crate::{
 
 impl RootView {
     pub(super) fn enter_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.search
+        self.typed
+            .search
             .update(cx, |search, cx| search.take_focus_and_select(window, cx));
         cx.notify();
     }
 
     pub(super) fn go_to_the_results(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.search.read(cx).is_focused(window) {
+        if !self.typed.search.read(cx).is_focused(window) {
             return;
         }
         if self.library.read(cx).is_reading_the_search() {
-            self.waiting_for_the_results = true;
+            self.typing.waiting_for_the_results = true;
             self.library
                 .update(cx, |library, cx| library.read_the_search_now(cx));
             return;
@@ -33,7 +34,7 @@ impl RootView {
     }
 
     pub(super) fn reach_the_first_result(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.search.read(cx).is_focused(window) {
+        if !self.typed.search.read(cx).is_focused(window) {
             return;
         }
         window.focus(&self.focus, cx);
@@ -43,7 +44,7 @@ impl RootView {
     }
 
     pub(super) fn tab_onward(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.search.read(cx).is_focused(window) {
+        if self.typed.search.read(cx).is_focused(window) {
             self.go_to_the_results(window, cx);
         } else {
             self.step_the_focus(true, window, cx);
@@ -52,7 +53,7 @@ impl RootView {
 
     pub(super) fn tab_past_the_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.focus.is_focused(window) && !self.something_stands_over_the_pane() {
-            let search = self.search.focus_handle(cx);
+            let search = self.typed.search.focus_handle(cx);
             search.focus(window, cx);
         }
         self.step_the_focus(true, window, cx);
@@ -60,7 +61,7 @@ impl RootView {
 
     pub(super) fn tab_back_to_the_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.focus.is_focused(window) && !self.something_stands_over_the_pane() {
-            let search = self.search.focus_handle(cx);
+            let search = self.typed.search.focus_handle(cx);
             search.focus(window, cx);
             return;
         }
@@ -68,7 +69,7 @@ impl RootView {
     }
 
     pub(super) fn leave_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.search.read(cx).is_focused(window) {
+        if !self.typed.search.read(cx).is_focused(window) {
             return;
         }
         window.focus(&self.focus, cx);
@@ -79,34 +80,38 @@ impl RootView {
         if self.close_the_menu(cx) {
             return;
         }
-        if self.zone_name.read(cx).is_focused(window) {
+        if self.typed.zone_name.read(cx).is_focused(window) {
             self.stop_naming_the_zone(window, cx);
             return;
         }
-        if self.finding.read(cx).is_focused(window) {
-            self.finding.update(cx, |finding, cx| finding.clear(cx));
+        if self.typed.finding.read(cx).is_focused(window) {
+            self.typed
+                .finding
+                .update(cx, |finding, cx| finding.clear(cx));
             self.leave_filter(window, cx);
             return;
         }
-        if self.server_search.read(cx).is_focused(window) {
-            self.server_search.update(cx, |field, cx| field.clear(cx));
+        if self.typed.server_search.read(cx).is_focused(window) {
+            self.typed
+                .server_search
+                .update(cx, |field, cx| field.clear(cx));
             window.focus(&self.focus, cx);
             cx.notify();
             return;
         }
-        if self.contact.read(cx).is_focused(window) {
+        if self.typed.contact.read(cx).is_focused(window) {
             self.put_back_contact(window, cx);
             return;
         }
-        if self.acoustid.read(cx).is_focused(window) {
+        if self.typed.acoustid.read(cx).is_focused(window) {
             self.put_back_acoustid(window, cx);
             return;
         }
-        if self.audd.read(cx).is_focused(window) {
+        if self.typed.audd.read(cx).is_focused(window) {
             self.put_back_audd(window, cx);
             return;
         }
-        if self.listenbrainz.read(cx).is_focused(window) {
+        if self.typed.listenbrainz.read(cx).is_focused(window) {
             self.put_back_listenbrainz(window, cx);
             return;
         }
@@ -114,48 +119,54 @@ impl RootView {
             self.put_back_the_account(window, cx);
             return;
         }
-        if self.discord_app.read(cx).is_focused(window) {
+        if self.typed.discord_app.read(cx).is_focused(window) {
             self.leave_discord_app(window, cx);
             return;
         }
-        if self.discord_icon.read(cx).is_focused(window) {
+        if self.typed.discord_icon.read(cx).is_focused(window) {
             self.leave_discord_icon(window, cx);
             return;
         }
-        if [&self.sync_server, &self.sync_device, &self.sync_code]
-            .iter()
-            .any(|field| field.read(cx).is_focused(window))
+        if [
+            &self.typed.sync_server,
+            &self.typed.sync_device,
+            &self.typed.sync_code,
+        ]
+        .iter()
+        .any(|field| field.read(cx).is_focused(window))
         {
             self.leave_sync_field(window, cx);
             return;
         }
-        if self.minimum_length.read(cx).is_focused(window) {
+        if self.typed.minimum_length.read(cx).is_focused(window) {
             let length = cx
                 .global::<ResonateApp>()
                 .library
                 .music_filters()
                 .minimum_length;
-            self.minimum_length
+            self.typed
+                .minimum_length
                 .update(cx, |field, cx| field.hold(length.seconds().to_string(), cx));
             window.focus(&self.focus, cx);
             cx.notify();
             return;
         }
-        if self.organising.read(cx).is_focused(window) {
+        if self.typed.organising.read(cx).is_focused(window) {
             self.put_back_organising(window, cx);
             return;
         }
-        if self.typed_root.read(cx).is_focused(window) {
-            self.typed_root
+        if self.typed.root.read(cx).is_focused(window) {
+            self.typed
+                .root
                 .update(cx, |typed, cx| typed.hold(String::new(), cx));
             self.leave_typed_root(window, cx);
             return;
         }
-        if self.figure.read(cx).is_focused(window) {
+        if self.typed.figure.read(cx).is_focused(window) {
             self.leave_figure(window, cx);
             return;
         }
-        if self.looking.read(cx).is_focused(window) {
+        if self.typed.looking.read(cx).is_focused(window) {
             self.leave_looking(window, cx);
             return;
         }
@@ -172,7 +183,7 @@ impl RootView {
             return;
         }
         if self.pane == Pane::Settings
-            && self.finding.read(cx).text().is_empty()
+            && self.typed.finding.read(cx).text().is_empty()
             && self.leave_the_settings_page(cx)
         {
             window.focus(&self.focus, cx);
@@ -181,13 +192,13 @@ impl RootView {
 
         self.reach = None;
         window.focus(&self.focus, cx);
-        if self.search.read(cx).text().is_empty() {
+        if self.typed.search.read(cx).text().is_empty() {
             let scoped = self.library.read(cx).selection() != Selection::Everything;
             if scoped || self.goes_back_to_a_scope(cx) {
                 self.step_back(cx);
             }
         } else {
-            self.search.update(cx, |search, cx| search.clear(cx));
+            self.typed.search.update(cx, |search, cx| search.clear(cx));
         }
         cx.notify();
     }
@@ -213,7 +224,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         self.show_everything(cx);
-        self.search.update(cx, |search, cx| {
+        self.typed.search.update(cx, |search, cx| {
             search.take_focus(window, cx);
             search.set_text(instead, cx);
         });
@@ -237,19 +248,19 @@ impl RootView {
             }
             self.set_pane(Pane::Tracks, cx);
         }
-        self.search_shows = SearchShows::Top;
-        self.ordering = None;
+        self.shows.search = SearchShows::Top;
+        self.orders.ordering = None;
     }
 
     pub(super) fn leave_the_scroll_for_the_search(&mut self) {
-        self.left_for_the_search = self
+        self.typing.left_for_the_search = self
             .pane
             .lands_where_it_was_left()
             .then(|| (self.pane, self.top_row()));
     }
 
     pub(super) fn land_where_the_search_began(&mut self) {
-        let began = self.left_for_the_search.take();
+        let began = self.typing.left_for_the_search.take();
         self.landing_on = began
             .filter(|(pane, _)| *pane == self.pane)
             .map(|(_, at)| at)
@@ -274,7 +285,7 @@ impl RootView {
         if query.is_empty() {
             self.land_where_the_search_began();
         }
-        self.search_scroll.set_offset(point(px(0.0), px(0.0)));
+        self.scrolls.search.set_offset(point(px(0.0), px(0.0)));
         self.read_from_the_top(cx);
         if self
             .reach
@@ -292,8 +303,8 @@ impl RootView {
         if self.library.read(cx).opened() != opened {
             self.read_the_kept_order(opened, cx);
         }
-        self.playlist_rows = match opened {
-            Some(id) => self.left_at.entry(id).or_default().clone(),
+        self.scrolls.playlist_rows = match opened {
+            Some(id) => self.scrolls.left_at.entry(id).or_default().clone(),
             None => UniformListScrollHandle::default(),
         };
         self.library
@@ -311,13 +322,15 @@ impl RootView {
             .iter()
             .map(|playlist| playlist.id)
             .collect();
-        self.left_at.retain(|id, _| held.contains(id));
+        self.scrolls.left_at.retain(|id, _| held.contains(id));
     }
 
     pub(super) fn read_from_the_top(&mut self, cx: &App) {
-        self.playlist_rows = UniformListScrollHandle::default();
+        self.scrolls.playlist_rows = UniformListScrollHandle::default();
         if let Some(opened) = self.library.read(cx).opened() {
-            self.left_at.insert(opened, self.playlist_rows.clone());
+            self.scrolls
+                .left_at
+                .insert(opened, self.scrolls.playlist_rows.clone());
         }
     }
 }

@@ -794,7 +794,7 @@ mod tests {
         driven.play(&[folder.tone("tone.wav", 2)]);
 
         let path = driven.bounds_of("signal-path");
-        let room = driven.read(|root, _| root.playing_room.get());
+        let room = driven.read(|root, _| root.rooms.playing.get());
 
         assert!(path.size.width > px(0.0));
         assert!(
@@ -889,7 +889,8 @@ mod tests {
             "the drag did not carry the band right and down: {added:?} to {moved:?}"
         );
 
-        let (x, y) = driven.read(|root, _| Plot::of(root.curve_plotted.get()).handle(moved[0]));
+        let (x, y) =
+            driven.read(|root, _| Plot::of(root.rails.curve_plotted.get()).handle(moved[0]));
         driven.right_click_at(point(px(x), px(y)));
         assert!(
             driven
@@ -961,7 +962,7 @@ mod tests {
                 cell: BandCell::Gain,
             };
             (
-                root.figure.read(cx).text().to_owned(),
+                root.typed.figure.read(cx).text().to_owned(),
                 root.equaliser.read(cx).written(editing),
             )
         });
@@ -997,19 +998,19 @@ mod tests {
     ) {
         let folder = Folder::new();
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
-        driven.focus(|root| &root.search);
+        driven.focus(|root| &root.typed.search);
         driven.cx.simulate_input("dark");
         driven.cx.simulate_keystrokes("secondary-a");
         driven.cx.simulate_input("x");
         assert_eq!(
-            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
             "x"
         );
 
         driven.cx.simulate_keystrokes("secondary-z");
 
         assert_eq!(
-            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
             "dark"
         );
     }
@@ -1044,13 +1045,13 @@ mod tests {
         });
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
 
-        driven.focus(|root| &root.search);
+        driven.focus(|root| &root.typed.search);
         driven.cx.simulate_input("dark");
         driven.cx.dispatch_action(crate::views::field::Undo);
         driven.settle();
 
         assert_eq!(
-            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
             ""
         );
         assert_eq!(driven.queue().len(), 1);
@@ -1084,7 +1085,7 @@ mod tests {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Time"]);
         let mut driven = Driven::opened_in(cx, library, &folder);
-        let ordering = |driven: &mut Driven| driven.read(|root, _| root.ordering);
+        let ordering = |driven: &mut Driven| driven.read(|root, _| root.orders.ordering);
         let title = SortOrder::ALL
             .iter()
             .position(|order| *order == SortOrder::Title)
@@ -1165,10 +1166,10 @@ mod tests {
         assert_eq!(order(&mut driven).tracks, SortOrder::Artist);
         pressed(&mut driven, "a");
         assert_eq!(order(&mut driven).tracks, SortOrder::DateAdded);
-        assert!(driven.read(|root, _| root.ordering.is_some()));
+        assert!(driven.read(|root, _| root.orders.ordering.is_some()));
 
         pressed(&mut driven, "enter");
-        assert_eq!(driven.read(|root, _| root.ordering), None);
+        assert_eq!(driven.read(|root, _| root.orders.ordering), None);
 
         driven.click("order-tracks");
         driven.settle();
@@ -1176,7 +1177,7 @@ mod tests {
         pressed(&mut driven, "a");
         assert_eq!(order(&mut driven).tracks, SortOrder::Played);
         pressed(&mut driven, "escape");
-        assert_eq!(driven.read(|root, _| root.ordering), None);
+        assert_eq!(driven.read(|root, _| root.orders.ordering), None);
     }
 
     #[gpui::test]
@@ -1401,13 +1402,16 @@ mod tests {
         zone_shown(&mut driven, ZoneId::FIRST);
         driven.root.update(&mut driven.cx, |root, _| {
             root.reach = Some(crate::views::reorder::Reach::at(Shift::Queue, 2));
-            root.landed_by_a_jump = Some(crate::views::reorder::Reach::at(Shift::Queue, 2));
+            root.typing.landed_by_a_jump = Some(crate::views::reorder::Reach::at(Shift::Queue, 2));
         });
 
         zone_shown(&mut driven, second);
 
         assert_eq!(driven.read(|root, _| root.reach.clone()), None);
-        assert_eq!(driven.read(|root, _| root.landed_by_a_jump.clone()), None);
+        assert_eq!(
+            driven.read(|root, _| root.typing.landed_by_a_jump.clone()),
+            None
+        );
     }
 
     #[gpui::test]
@@ -1748,7 +1752,7 @@ mod tests {
         let mut driven = Driven::opened_in(cx, library, &folder);
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
-        driven.focus(|root| &root.search);
+        driven.focus(|root| &root.typed.search);
         driven.cx.simulate_input("echoes");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
 
@@ -1782,14 +1786,14 @@ mod tests {
         });
         driven.settle();
 
-        assert!(driven.read(|root, _| root.keeping));
+        assert!(driven.read(|root, _| root.orders.keeping));
 
         driven.root.update(&mut driven.cx, |root, cx| {
             root.show_playlist(Some(other), cx);
         });
         driven.settle();
 
-        assert!(!driven.read(|root, _| root.keeping));
+        assert!(!driven.read(|root, _| root.orders.keeping));
     }
 
     #[gpui::test]
@@ -2473,7 +2477,7 @@ mod tests {
             "the song was not copied"
         );
         assert!(song.is_file(), "the original was taken away");
-        assert!(driven.read(|root, _| root.taking_in.is_none()));
+        assert!(driven.read(|root, _| root.dropped.taking_in.is_none()));
     }
 
     #[gpui::test]
@@ -2532,10 +2536,10 @@ mod tests {
 
         assert_eq!(driven.read(|root, _| root.pane), Pane::Settings);
         assert_eq!(
-            driven.read(|root, _| root.settings_category),
+            driven.read(|root, _| root.settings_shown.category),
             SettingsCategory::Library
         );
-        assert!(driven.read(|root, _| root.taking_in.is_none()));
+        assert!(driven.read(|root, _| root.dropped.taking_in.is_none()));
     }
 
     #[gpui::test]
@@ -2543,12 +2547,12 @@ mod tests {
         let mut driven = Driven::open(cx, catalog());
         driven.settle();
 
-        let roomy = driven.read(|root, _| root.sidebar_scroll.max_offset().y);
+        let roomy = driven.read(|root, _| root.scrolls.sidebar.max_offset().y);
 
         driven.cx.simulate_resize(size(px(WIDE), px(300.0)));
         driven.settle();
 
-        let squeezed = driven.read(|root, _| root.sidebar_scroll.max_offset().y);
+        let squeezed = driven.read(|root, _| root.scrolls.sidebar.max_offset().y);
 
         let settings = driven.bounds_of("tab-settings");
 
@@ -2575,9 +2579,9 @@ mod tests {
         });
         driven.settle();
 
-        assert!(driven.read(|root, _| root.incoming.is_some()));
+        assert!(driven.read(|root, _| root.dropped.incoming.is_some()));
 
-        driven.until(|root, _| root.incoming.is_none());
+        driven.until(|root, _| root.dropped.incoming.is_none());
     }
 
     #[gpui::test]
@@ -2886,7 +2890,7 @@ mod tests {
         driven.settle();
 
         assert_eq!(
-            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
             "rush of"
         );
         assert!(
@@ -2897,7 +2901,7 @@ mod tests {
             let root = driven.root.clone();
             driven
                 .cx
-                .update(|window, cx| root.read(cx).search.read(cx).is_focused(window))
+                .update(|window, cx| root.read(cx).typed.search.read(cx).is_focused(window))
         };
         assert!(
             search_focused(&mut driven),
@@ -2907,7 +2911,7 @@ mod tests {
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
         assert_eq!(
-            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
             "",
             "escape left a search typed at the window standing"
         );
@@ -2926,9 +2930,10 @@ mod tests {
         use crate::views::field::Composing;
 
         let mut driven = Driven::open(cx, catalog());
-        let search = driven.read(|root, _| root.search.clone());
-        let text =
-            |driven: &mut Driven| driven.read(|root, cx| root.search.read(cx).text().to_owned());
+        let search = driven.read(|root, _| root.typed.search.clone());
+        let text = |driven: &mut Driven| {
+            driven.read(|root, cx| root.typed.search.read(cx).text().to_owned())
+        };
 
         driven.cx.update(|window, cx| {
             Composing::at_the_window(search.clone(), true)
@@ -2936,7 +2941,7 @@ mod tests {
         });
         driven.settle();
         assert_eq!(text(&mut driven), "ka");
-        assert!(driven.read(|root, cx| root.search.read(cx).holds_a_preedit()));
+        assert!(driven.read(|root, cx| root.typed.search.read(cx).holds_a_preedit()));
 
         driven.cx.update(|window, cx| {
             Composing::at_the_window(search.clone(), true)
@@ -2950,7 +2955,7 @@ mod tests {
         });
         driven.settle();
         assert_eq!(text(&mut driven), "\u{304b}");
-        assert!(!driven.read(|root, cx| root.search.read(cx).holds_a_preedit()));
+        assert!(!driven.read(|root, cx| root.typed.search.read(cx).holds_a_preedit()));
 
         driven.cx.update(|window, cx| {
             Composing::at_the_window(search.clone(), true)
@@ -2972,7 +2977,7 @@ mod tests {
         use crate::views::field::Composing;
 
         let mut driven = Driven::open(cx, catalog());
-        let search = driven.read(|root, _| root.search.clone());
+        let search = driven.read(|root, _| root.typed.search.clone());
 
         driven.cx.update(|window, cx| {
             Composing::at_the_window(search, false)
@@ -2981,7 +2986,7 @@ mod tests {
         driven.settle();
 
         assert_eq!(
-            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
             ""
         );
     }
@@ -2995,8 +3000,8 @@ mod tests {
         use crate::edit::LONGEST_CONTENT;
 
         let mut driven = Driven::open(cx, catalog());
-        driven.focus(|root| &root.search);
-        let search = driven.read(|root, _| root.search.clone());
+        driven.focus(|root| &root.typed.search);
+        let search = driven.read(|root, _| root.typed.search.clone());
 
         driven.cx.update(|window, cx| {
             search.update(cx, |field, cx| {
@@ -3004,7 +3009,7 @@ mod tests {
             });
         });
         assert_eq!(
-            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
             "a b c"
         );
 
@@ -3019,7 +3024,7 @@ mod tests {
             search.update(cx, |field, cx| field.marked_text_range(window, cx))
         });
         assert_eq!(
-            driven.read(|root, cx| root.search.read(cx).text().len()),
+            driven.read(|root, cx| root.typed.search.read(cx).text().len()),
             LONGEST_CONTENT
         );
         assert_eq!(marked, Some(LONGEST_CONTENT - 2..LONGEST_CONTENT));
@@ -3036,12 +3041,12 @@ mod tests {
         let typed = |driven: &mut Driven, text: &str| {
             let root = driven.root.clone();
             driven.cx.update(|_, cx| {
-                let field = root.read(cx).contact.clone();
+                let field = root.read(cx).typed.contact.clone();
                 field.update(cx, |field, cx| field.hold(text.to_owned(), cx));
             });
         };
 
-        driven.focus(|root| &root.contact);
+        driven.focus(|root| &root.typed.contact);
         typed(&mut driven, "me@example.test");
         driven.cx.update(|window, cx| {
             let root = driven.root.clone();
@@ -3050,7 +3055,7 @@ mod tests {
         driven.settle();
         assert_eq!(contact(&mut driven), "me@example.test");
 
-        driven.focus(|root| &root.contact);
+        driven.focus(|root| &root.typed.contact);
         typed(&mut driven, "someone@else.test");
         driven.cx.update(|window, cx| {
             let root = driven.root.clone();
@@ -3059,7 +3064,7 @@ mod tests {
         driven.settle();
         assert_eq!(contact(&mut driven), "me@example.test");
         assert_eq!(
-            driven.read(|root, cx| root.contact.read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.contact.read(cx).text().to_owned()),
             "me@example.test"
         );
     }
@@ -3067,7 +3072,7 @@ mod tests {
     fn showing_settings(driven: &mut Driven, category: SettingsCategory) {
         driven.root.update(&mut driven.cx, |root, cx| {
             root.set_pane(Pane::Settings, cx);
-            root.settings_category = category;
+            root.settings_shown.category = category;
             cx.notify();
         });
         driven.settle();
@@ -3089,7 +3094,13 @@ mod tests {
 
         let mut driven = Driven::open(cx, catalog());
         let place = |driven: &mut Driven| {
-            driven.read(|root, _| (root.pane, root.settings_category, root.settings_page))
+            driven.read(|root, _| {
+                (
+                    root.pane,
+                    root.settings_shown.category,
+                    root.settings_shown.page,
+                )
+            })
         };
         driven.click("tab-settings");
         driven.click("category-Equaliser");
@@ -3148,7 +3159,7 @@ mod tests {
 
         let mut driven = Driven::open(cx, catalog());
         driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
+        driven.focus(|root| &root.typed.finding);
         driven.cx.simulate_input("autoeq");
         driven.settle();
 
@@ -3156,9 +3167,9 @@ mod tests {
 
         assert_eq!(
             driven.read(|root, cx| (
-                root.settings_category,
-                root.settings_page,
-                root.finding.read(cx).text().to_owned()
+                root.settings_shown.category,
+                root.settings_shown.page,
+                root.typed.finding.read(cx).text().to_owned()
             )),
             (
                 SettingsCategory::Equaliser,
@@ -3190,7 +3201,7 @@ mod tests {
         let mut driven = Driven::open(cx, catalog());
         showing_settings(&mut driven, SettingsCategory::Online);
 
-        typed_into(&mut driven, |root| &root.contact, "me@example.test");
+        typed_into(&mut driven, |root| &root.typed.contact, "me@example.test");
         driven.cx.simulate_keystrokes("tab");
         driven.settle();
 
@@ -3201,7 +3212,7 @@ mod tests {
         assert!(
             !driven.cx.update(|window, cx| {
                 let root = driven.root.read(cx);
-                root.contact.read(cx).is_focused(window)
+                root.typed.contact.read(cx).is_focused(window)
             }),
             "the contact kept the caret"
         );
@@ -3215,7 +3226,7 @@ mod tests {
 
         showing_settings(&mut driven, SettingsCategory::Recognition);
 
-        typed_into(&mut driven, |root| &root.acoustid, "a-key");
+        typed_into(&mut driven, |root| &root.typed.acoustid, "a-key");
         driven.cx.simulate_keystrokes("tab");
         driven.settle();
 
@@ -3224,7 +3235,7 @@ mod tests {
             "a-key"
         );
 
-        typed_into(&mut driven, |root| &root.audd, "an-audd");
+        typed_into(&mut driven, |root| &root.typed.audd, "an-audd");
         driven.cx.simulate_keystrokes("tab");
         driven.settle();
 
@@ -3235,7 +3246,7 @@ mod tests {
 
         showing_settings(&mut driven, SettingsCategory::Accounts);
 
-        typed_into(&mut driven, |root| &root.listenbrainz, "a-token");
+        typed_into(&mut driven, |root| &root.typed.listenbrainz, "a-token");
         driven.cx.simulate_keystrokes("tab");
         driven.settle();
 
@@ -3256,13 +3267,21 @@ mod tests {
         };
         let before = filed_as(&mut driven);
 
-        typed_into(&mut driven, |root| &root.organising, "{artist}/{title}");
+        typed_into(
+            &mut driven,
+            |root| &root.typed.organising,
+            "{artist}/{title}",
+        );
         driven.cx.simulate_keystrokes("tab");
         driven.settle();
 
         assert_eq!(filed_as(&mut driven), "{artist}/{title}");
 
-        typed_into(&mut driven, |root| &root.organising, "{album}/{title}");
+        typed_into(
+            &mut driven,
+            |root| &root.typed.organising,
+            "{album}/{title}",
+        );
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
 
@@ -3280,20 +3299,20 @@ mod tests {
 
         typed_into(
             &mut driven,
-            |root| &root.typed_root,
+            |root| &root.typed.root,
             &dropped.path().display().to_string(),
         );
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
 
         assert_eq!(
-            driven.read(|root, cx| root.typed_root.read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.root.read(cx).text().to_owned()),
             ""
         );
 
         typed_into(
             &mut driven,
-            |root| &root.typed_root,
+            |root| &root.typed.root,
             &kept.path().display().to_string(),
         );
         driven.cx.simulate_keystrokes("tab");
@@ -4648,7 +4667,7 @@ mod tests {
                 && !library.albums().is_empty()
         });
 
-        driven.focus(|root| &root.search);
+        driven.focus(|root| &root.typed.search);
         for key in [
             "down",
             "secondary-shift-down",
@@ -4777,7 +4796,7 @@ mod tests {
         driven.settle();
 
         assert_eq!(
-            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
             "rush of"
         );
     }
@@ -4789,7 +4808,8 @@ mod tests {
         let mut driven = Driven::open(cx, catalog());
         driven.cx.simulate_keystrokes("secondary-f");
         driven.settle();
-        let lit = |driven: &mut Driven| driven.read(|root, cx| root.search.read(cx).caret_is_lit());
+        let lit =
+            |driven: &mut Driven| driven.read(|root, cx| root.typed.search.read(cx).caret_is_lit());
         let mut seen_dark = false;
         for _ in 0..40 {
             driven.cx.executor().advance_clock(FRAME * 4);
@@ -4946,7 +4966,8 @@ mod tests {
         let middle = point(px(WIDE * 0.6), px(TALL * 0.5));
         driven.scroll_at(middle, 1_000.0);
         driven.scroll_at(middle, 37.0);
-        let left_at = driven.read(|root, _| root.track_rows.0.borrow().base_handle.offset().y);
+        let left_at =
+            driven.read(|root, _| root.scrolls.track_rows.0.borrow().base_handle.offset().y);
         assert!(left_at < px(-500.0), "the list did not scroll: {left_at:?}");
 
         (driven, left_at)
@@ -4956,19 +4977,20 @@ mod tests {
     fn clearing_a_search_lands_the_tracks_where_they_were_scrolled(cx: &mut TestAppContext) {
         let (mut driven, left_at) = eighty_tracks_scrolled(cx);
 
-        driven.focus(|root| &root.search);
+        driven.focus(|root| &root.typed.search);
         driven.cx.simulate_input("track 7");
         driven.settle();
         driven.click("search-songs");
         driven.read(|root, _| {
-            let base = root.track_rows.0.borrow().base_handle.clone();
+            let base = root.scrolls.track_rows.0.borrow().base_handle.clone();
             base.set_offset(point(px(0.0), px(0.0)));
         });
         driven.cx.simulate_keystrokes("escape");
         driven.until(|root, _| root.landing_on.is_none());
         driven.settle();
 
-        let landed = driven.read(|root, _| root.track_rows.0.borrow().base_handle.offset().y);
+        let landed =
+            driven.read(|root, _| root.scrolls.track_rows.0.borrow().base_handle.offset().y);
         assert!(
             (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
             "clearing the search landed at {landed:?} where the list was left at {left_at:?}"
@@ -4998,7 +5020,8 @@ mod tests {
         let middle = point(px(WIDE * 0.6), px(TALL * 0.5));
         driven.scroll_at(middle, 1_000.0);
         driven.scroll_at(middle, 37.0);
-        let left_at = driven.read(|root, _| root.track_rows.0.borrow().base_handle.offset().y);
+        let left_at =
+            driven.read(|root, _| root.scrolls.track_rows.0.borrow().base_handle.offset().y);
         assert!(left_at < px(-500.0), "the list did not scroll: {left_at:?}");
 
         let root = driven.root.clone();
@@ -5014,7 +5037,8 @@ mod tests {
         driven.until(|root, _| root.landing_on.is_none());
         driven.settle();
 
-        let landed = driven.read(|root, _| root.track_rows.0.borrow().base_handle.offset().y);
+        let landed =
+            driven.read(|root, _| root.scrolls.track_rows.0.borrow().base_handle.offset().y);
         assert!(
             (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
             "the way back landed at {landed:?} where the list was left at {left_at:?}"
@@ -5084,9 +5108,9 @@ mod tests {
     fn texts(driven: &mut Driven) -> (String, String, String) {
         driven.read(|root, cx| {
             (
-                root.search.read(cx).text().to_owned(),
-                root.listenbrainz.read(cx).text().to_owned(),
-                root.looking.read(cx).text().to_owned(),
+                root.typed.search.read(cx).text().to_owned(),
+                root.typed.listenbrainz.read(cx).text().to_owned(),
+                root.typed.looking.read(cx).text().to_owned(),
             )
         })
     }
@@ -5098,7 +5122,7 @@ mod tests {
         let mut driven = Driven::open(cx, catalog());
         driven.click("tab-settings");
         driven.click("category-Accounts");
-        driven.focus(|root| &root.listenbrainz);
+        driven.focus(|root| &root.typed.listenbrainz);
 
         driven.cx.simulate_input("token");
         driven.settle();
@@ -5148,7 +5172,7 @@ mod tests {
     }
 
     fn type_into(driven: &mut Driven, nth: usize, typed: &str) {
-        driven.focus(move |root| &root.lastfm[nth]);
+        driven.focus(move |root| &root.typed.lastfm[nth]);
         driven.cx.simulate_input(typed);
         driven.settle();
     }
@@ -5167,7 +5191,7 @@ mod tests {
         let session =
             |_: &RootView, cx: &gpui::App| cx.global::<ResonateApp>().online.lastfm_session.clone();
         driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
+        driven.focus(|root| &root.typed.finding);
         driven.cx.simulate_input("last.fm");
         driven.settle();
 
@@ -5176,11 +5200,11 @@ mod tests {
         type_into(&mut driven, 1, "a wrong secret");
         driven.cx.simulate_keystrokes("enter");
         driven.click("lastfm-sign-in");
-        driven.until(|root, _| !root.lastfm_signing.is_asking());
+        driven.until(|root, _| !root.accounts.lastfm.is_asking());
 
         assert_eq!(driven.read(session), "");
 
-        driven.focus(|root| &root.lastfm[1]);
+        driven.focus(|root| &root.typed.lastfm[1]);
         driven.cx.simulate_keystrokes("secondary-a backspace");
         type_into(&mut driven, 1, "a secret");
         driven.cx.simulate_keystrokes("enter");
@@ -5561,7 +5585,7 @@ mod tests {
             });
         });
         driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
+        driven.focus(|root| &root.typed.finding);
         driven.cx.simulate_input("youtube music");
         driven.settle();
 
@@ -5571,7 +5595,7 @@ mod tests {
 
         driven.click("youtube-music-track");
         driven.settle();
-        driven.focus(|root| &root.youtube_music[0]);
+        driven.focus(|root| &root.typed.youtube_music[0]);
         driven.cx.simulate_input("firefox");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -5636,11 +5660,11 @@ mod tests {
             });
         });
         driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
+        driven.focus(|root| &root.typed.finding);
         driven.cx.simulate_input("jellyfin");
         driven.settle();
         for (nth, typed) in [(0, "http://music.local:8096"), (2, "sesame")] {
-            driven.focus(move |root| &root.jellyfin[nth]);
+            driven.focus(move |root| &root.typed.jellyfin[nth]);
             driven.cx.simulate_input(typed);
             driven.cx.simulate_keystrokes("enter");
             driven.settle();
@@ -5671,11 +5695,11 @@ mod tests {
             assert!(online.jellyfin_password.is_empty());
         });
         assert_eq!(
-            driven.read(|root, cx| root.jellyfin[2].read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.jellyfin[2].read(cx).text().to_owned()),
             ""
         );
         assert_eq!(
-            driven.read(|root, cx| root.jellyfin[1].read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.jellyfin[1].read(cx).text().to_owned()),
             "listener"
         );
     }
@@ -5728,9 +5752,11 @@ mod tests {
         let mut driven = jellyfin_shown(cx, signs_in);
         let stopped = driven.cx.update(|_, cx| {
             driven.root.update(cx, |root, cx| {
-                root.jellyfin_quick.shown_waiting("123456".to_owned());
+                root.accounts
+                    .jellyfin_quick
+                    .shown_waiting("123456".to_owned());
                 cx.notify();
-                root.jellyfin_quick.stopping()
+                root.accounts.jellyfin_quick.stopping()
             })
         });
         driven.settle();
@@ -5762,7 +5788,7 @@ mod tests {
         driven.click("jellyfin-quick-connect");
         driven.until(|_, cx| cx.global::<ResonateApp>().online.jellyfin_token == "token-1");
 
-        driven.focus(|root| &root.jellyfin[2]);
+        driven.focus(|root| &root.typed.jellyfin[2]);
         driven.cx.simulate_input("another");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -5835,7 +5861,7 @@ mod tests {
             });
         });
         driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
+        driven.focus(|root| &root.typed.finding);
         driven.cx.simulate_input("youtube music");
         driven.settle();
         driven.click("youtube-music-track");
@@ -5867,7 +5893,7 @@ mod tests {
             );
         });
         assert_eq!(
-            driven.read(|root, cx| root.youtube_music[0].read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.youtube_music[0].read(cx).text().to_owned()),
             "/data/resonate/youtube-music-cookies.txt"
         );
     }
@@ -5877,7 +5903,7 @@ mod tests {
         let signs_in = SignsInToYoutubeOnce::answering(crate::YoutubeMusicSignIn::Closed);
         let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
         let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
-        driven.focus(|root| &root.youtube_music[0]);
+        driven.focus(|root| &root.typed.youtube_music[0]);
         driven.cx.simulate_input("firefox");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -5903,7 +5929,7 @@ mod tests {
         });
         let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
         let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
-        driven.focus(|root| &root.youtube_music[0]);
+        driven.focus(|root| &root.typed.youtube_music[0]);
         driven.cx.simulate_input("firefox");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -5974,7 +6000,7 @@ mod tests {
             });
         });
         driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
+        driven.focus(|root| &root.typed.finding);
         driven.cx.simulate_input("spotify client");
         driven.settle();
 
@@ -5987,7 +6013,7 @@ mod tests {
             "with no client ID nothing is asked"
         );
 
-        driven.focus(|root| &root.spotify_client);
+        driven.focus(|root| &root.typed.spotify_client);
         driven.cx.simulate_input("registered");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -6060,7 +6086,7 @@ mod tests {
         driven.settle();
 
         assert_eq!(
-            driven.read(|root, cx| root.spotify_client.read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.spotify_client.read(cx).text().to_owned()),
             "registered"
         );
         assert_eq!(
@@ -6083,10 +6109,10 @@ mod tests {
         };
         let mut driven = Driven::open(cx, Arc::clone(&library));
         driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
+        driven.focus(|root| &root.typed.finding);
         driven.cx.simulate_input("listenbrainz token");
         driven.settle();
-        driven.focus(|root| &root.listenbrainz);
+        driven.focus(|root| &root.typed.listenbrainz);
         driven.cx.simulate_input("token");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -6125,7 +6151,7 @@ mod tests {
         driven.click("category-Equaliser");
         driven.scroll("settings", 6000.0);
         driven.click("settings-page-headphone-correction");
-        driven.focus(|root| &root.looking);
+        driven.focus(|root| &root.typed.looking);
         driven.cx.simulate_input("hd 650");
         driven.settle();
         let before = texts(&mut driven);
@@ -6246,7 +6272,7 @@ mod tests {
         };
         let mut driven = Driven::open(cx, catalog());
         driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
+        driven.focus(|root| &root.typed.finding);
         driven.cx.simulate_input("listened");
         driven.settle();
 
@@ -6307,11 +6333,11 @@ mod tests {
     fn the_wheel_scrolls_the_settings_body(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
         driven.click("tab-settings");
-        let before = driven.read(|root, _| root.settings_scroll.offset().y);
+        let before = driven.read(|root, _| root.scrolls.settings.offset().y);
 
         driven.scroll("settings", 400.0);
 
-        let after = driven.read(|root, _| root.settings_scroll.offset().y);
+        let after = driven.read(|root, _| root.scrolls.settings.offset().y);
         assert!(
             after < before,
             "the body did not scroll: {before:?} to {after:?}"
@@ -6745,7 +6771,7 @@ mod tests {
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| root.calibrate_with(Some(chosen), cx));
         });
-        typed_into(&mut driven, |root| &root.measured_as, "Bedroom");
+        typed_into(&mut driven, |root| &root.typed.measured_as, "Bedroom");
         scrolled_to(&mut driven, "measure-the-room");
 
         driven.click("measure-the-room");

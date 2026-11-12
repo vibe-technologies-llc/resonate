@@ -193,7 +193,7 @@ fn step_card((icon, name, what): (Icon, &'static str, &'static str)) -> Div {
 
 impl RootView {
     pub(crate) fn watch_the_party(&mut self, cx: &mut Context<Self>) {
-        self.party_redraws = Some(cx.spawn(async move |this, cx| {
+        self.social.party_redraws = Some(cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(PANE_REDRAWN_EVERY).await;
                 if this.update(cx, |_, cx| cx.notify()).is_err() {
@@ -204,7 +204,7 @@ impl RootView {
     }
 
     pub(crate) fn party_pane(&mut self, cx: &mut Context<Self>) -> Div {
-        if self.party_redraws.is_none() {
+        if self.social.party_redraws.is_none() {
             self.watch_the_party(cx);
         }
         let together = cx.global::<ResonateApp>().together.clone();
@@ -233,8 +233,8 @@ impl RootView {
             .min_h(px(0.0))
             .child(Scrollbars::of(cx).around(
                 "party-scrollbar",
-                self.party_scroll.clone(),
-                page.overflow_y_scroll().track_scroll(&self.party_scroll),
+                self.scrolls.party.clone(),
+                page.overflow_y_scroll().track_scroll(&self.scrolls.party),
             ))
             .into_any_element()
     }

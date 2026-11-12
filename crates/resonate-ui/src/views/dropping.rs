@@ -237,7 +237,8 @@ fn what_becomes_of(looks: Looks) -> (Icon, &'static str, bool) {
 
 impl RootView {
     pub(crate) fn is_already_weighing(&self, paths: &[PathBuf]) -> bool {
-        self.incoming
+        self.dropped
+            .incoming
             .as_ref()
             .is_some_and(|incoming| incoming.paths == paths)
     }
@@ -247,8 +248,8 @@ impl RootView {
             return;
         }
 
-        let first = self.incoming.is_none();
-        self.incoming = Some(Incoming {
+        let first = self.dropped.incoming.is_none();
+        self.dropped.incoming = Some(Incoming {
             paths: paths.to_vec(),
             weighed: None,
         });
@@ -261,7 +262,7 @@ impl RootView {
     }
 
     fn weigh_the_drag(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
-        self.weighing_the_drag = cx.spawn(async move |this, cx| {
+        self.dropped.weighing_the_drag = cx.spawn(async move |this, cx| {
             let held = paths.clone();
             let weighed = cx
                 .background_executor()
@@ -269,6 +270,7 @@ impl RootView {
                 .await;
             let _ = this.update(cx, |this, cx| {
                 if let Some(incoming) = this
+                    .dropped
                     .incoming
                     .as_mut()
                     .filter(|incoming| incoming.paths == paths)
@@ -282,23 +284,27 @@ impl RootView {
 
     pub(crate) fn music_folder_is_there(&mut self, cx: &mut Context<Self>) -> Option<bool> {
         let folder = cx.global::<ResonateApp>().music_folder.clone()?;
-        if self.music_folder_standing.is_due_for(&folder) {
+        if self
+            .settings_shown
+            .music_folder_standing
+            .is_due_for(&folder)
+        {
             self.look_at_the_music_folder(folder.clone(), cx);
         }
-        self.music_folder_standing.of(&folder)
+        self.settings_shown.music_folder_standing.of(&folder)
     }
 
     fn look_at_the_music_folder(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
-        self.music_folder_standing.looking = true;
-        self.looking_at_the_music_folder = cx.spawn(async move |this, cx| {
+        self.settings_shown.music_folder_standing.looking = true;
+        self.settings_shown.looking_at_the_music_folder = cx.spawn(async move |this, cx| {
             let looked = folder.clone();
             let there = cx
                 .background_executor()
                 .spawn(async move { looked.is_dir() })
                 .await;
             let _ = this.update(cx, |this, cx| {
-                let moved = this.music_folder_standing.of(&folder) != Some(there);
-                this.music_folder_standing = FolderStanding {
+                let moved = this.settings_shown.music_folder_standing.of(&folder) != Some(there);
+                this.settings_shown.music_folder_standing = FolderStanding {
                     seen: Some(Seen {
                         folder,
                         there,
@@ -314,14 +320,14 @@ impl RootView {
     }
 
     fn watch_the_drag(&mut self, cx: &mut Context<Self>) {
-        self.watching_the_drag = cx.spawn(async move |this, cx| {
+        self.dropped.watching_the_drag = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(DRAG_LOOKED_AT_EVERY).await;
                 let left = this.update(cx, |this, cx| {
                     if cx.has_active_drag() {
                         return false;
                     }
-                    this.incoming = None;
+                    this.dropped.incoming = None;
                     cx.notify();
                     true
                 });
@@ -334,6 +340,7 @@ impl RootView {
 
     pub(crate) fn dropped(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
         let known = self
+            .dropped
             .incoming
             .take()
             .filter(|incoming| incoming.paths == paths)
@@ -353,7 +360,7 @@ impl RootView {
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
-                let busy = this.taking_in.is_some();
+                let busy = this.dropped.taking_in.is_some();
                 let landed = verdict(Some(&weighed), folder.as_deref(), there, busy);
                 this.land_the_drop(landed, paths, cx);
             });
@@ -411,7 +418,7 @@ impl RootView {
             }
         };
 
-        self.taking_in = Some(TakingIn {
+        self.dropped.taking_in = Some(TakingIn {
             progress: Arc::clone(handle.progress()),
             into: into.clone(),
         });
@@ -419,7 +426,7 @@ impl RootView {
         let copying = cx.global::<ResonateApp>().copying.clone();
         copying.hold(handle);
 
-        self._taking_in = cx.spawn(async move |this, cx| {
+        self.dropped._taking_in = cx.spawn(async move |this, cx| {
             let handle = loop {
                 cx.background_executor().timer(COPY_LOOKED_AT_EVERY).await;
                 if this.update(cx, |_, cx| cx.notify()).is_err() {
@@ -433,7 +440,7 @@ impl RootView {
             };
 
             let finished = this.update(cx, |this, cx| {
-                this.taking_in = None;
+                this.dropped.taking_in = None;
                 match handle.join() {
                     Ok(summary) => this.took_in(&summary, &into, cx),
                     Err(error) => {
@@ -475,21 +482,21 @@ impl RootView {
     }
 
     pub(crate) fn stop_copying(&mut self, cx: &mut Context<Self>) {
-        if let Some(taking) = &self.taking_in {
+        if let Some(taking) = &self.dropped.taking_in {
             taking.progress.cancel();
             cx.notify();
         }
     }
 
     pub(crate) fn drop_overlay(&mut self, cx: &mut Context<Self>) -> Option<Div> {
-        let incoming = self.incoming.clone()?;
+        let incoming = self.dropped.incoming.clone()?;
         let there = self.music_folder_is_there(cx);
         let folder = cx.global::<ResonateApp>().music_folder.clone();
         let verdict = verdict(
             incoming.weighed.as_deref(),
             folder.as_deref(),
             there,
-            self.taking_in.is_some(),
+            self.dropped.taking_in.is_some(),
         );
         let weighed = incoming.weighed.unwrap_or_default();
         let ready_says = if cx.global::<ResonateApp>().file_dropped {
@@ -608,7 +615,7 @@ impl RootView {
     }
 
     pub(crate) fn copying_pill(&self, cx: &mut Context<Self>) -> Option<AnimationElement<Div>> {
-        let taking = self.taking_in.as_ref()?;
+        let taking = self.dropped.taking_in.as_ref()?;
         let stats = taking.progress.snapshot();
         let stopping = taking.progress.is_cancelled();
         let reached = (stats.seen_to() + 1).min(stats.found.max(1));

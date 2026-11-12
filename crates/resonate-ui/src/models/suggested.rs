@@ -9,7 +9,8 @@ use crate::{toast, words};
 
 impl LibraryModel {
     pub(super) fn asking_for(&self) -> Vec<WantId> {
-        self.work
+        self.running
+            .work
             .polling()
             .map_or_else(Vec::new, |progress| progress.asking_all())
     }

@@ -8,13 +8,13 @@ use super::{LibraryModel, PageLearning, Selection, Wanted, told::albums_of};
 
 impl LibraryModel {
     pub(super) fn learn_the_songs_of(&mut self, artist: ArtistId, cx: &mut Context<Self>) {
-        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+        let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             return;
         };
         let library = Arc::clone(&self.library);
         let (told, mut heard) = unbounded::<usize>();
 
-        self._learning = cx.spawn(async move |this, cx| {
+        self.watchers._learning = cx.spawn(async move |this, cx| {
             let learning = cx.background_executor().spawn(async move {
                 library.learn_the_songs_of_artist(
                     reference.as_ref(),
@@ -47,10 +47,10 @@ impl LibraryModel {
 
     pub fn ask_about(&self, album: Option<AlbumId>, artist: Option<ArtistId>) {
         if let Some(artist) = artist {
-            self.sought.artist(artist);
+            self.enrichment.sought.artist(artist);
         }
         if let Some(album) = album {
-            self.sought.album(album);
+            self.enrichment.sought.album(album);
         }
     }
 
@@ -58,9 +58,9 @@ impl LibraryModel {
         let Selection::Artist(artist) = self.selection else {
             return;
         };
-        for album in albums_of(&self.scoped).iter().rev() {
-            self.sought.album(*album);
+        for album in albums_of(&self.browse.scoped).iter().rev() {
+            self.enrichment.sought.album(*album);
         }
-        self.sought.artist(artist);
+        self.enrichment.sought.artist(artist);
     }
 }

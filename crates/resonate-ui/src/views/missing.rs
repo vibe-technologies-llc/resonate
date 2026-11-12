@@ -71,7 +71,7 @@ impl RootView {
         let can_enrich = library.can_enrich();
         let narrowed = library.narrowing().is_some();
         let reads = library.search().reads();
-        let shows = self.missing_shows.within(tracks.len(), releases.len());
+        let shows = self.shows.missing.within(tracks.len(), releases.len());
         let both = !tracks.is_empty() && !releases.is_empty();
         let summary = match shows {
             MissingShows::Tracks => words::missing::tracks_missing_from_albums(
@@ -155,7 +155,7 @@ impl RootView {
                 pane.child(
                     Scrollbars::of(cx).around(
                         "missing-scrollbar",
-                        self.missing_rows.clone(),
+                        self.scrolls.missing_rows.clone(),
                         uniform_list(
                             match shows {
                                 MissingShows::Tracks => "missing-tracks",
@@ -218,7 +218,7 @@ impl RootView {
                                 drawn
                             }),
                         )
-                        .track_scroll(&self.missing_rows)
+                        .track_scroll(&self.scrolls.missing_rows)
                         .h_full()
                         .w_full()
                         .pt_1p5()
@@ -230,16 +230,16 @@ impl RootView {
     }
 
     pub(crate) fn show_what_is_missing(&mut self, shows: MissingShows, cx: &mut Context<Self>) {
-        if self.missing_shows != shows {
+        if self.shows.missing != shows {
             self.let_go_of_the_reach_in(Shift::Listing(Listed::Missing));
         }
-        self.missing_shows = shows;
+        self.shows.missing = shows;
         cx.notify();
     }
 
     pub(crate) fn missing_rows_shown(&self, cx: &App) -> Arc<[MissingRow]> {
         let library = self.library.read(cx);
-        match self.missing_shows.within(
+        match self.shows.missing.within(
             library.missing_tracks().len(),
             library.unheld_releases().len(),
         ) {

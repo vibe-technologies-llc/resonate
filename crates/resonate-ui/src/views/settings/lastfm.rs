@@ -116,7 +116,7 @@ impl LastfmAccount {
 
 impl RootView {
     fn lastfm_field(&self, account: LastfmAccount) -> &Entity<Field> {
-        &self.lastfm[account.nth()]
+        &self.typed.lastfm[account.nth()]
     }
 
     fn lastfm_given(
@@ -226,16 +226,16 @@ impl RootView {
             );
             return;
         };
-        if self.lastfm_signing.asking {
+        if self.accounts.lastfm.asking {
             return;
         }
 
         self.keep_the_typed_application(cx);
         let stopped = Arc::new(AtomicBool::new(false));
-        self.lastfm_signing.stopped = Arc::clone(&stopped);
-        self.lastfm_signing.asking = true;
+        self.accounts.lastfm.stopped = Arc::clone(&stopped);
+        self.accounts.lastfm.asking = true;
         cx.notify();
-        self.lastfm_signing.task = Some(cx.spawn(async move |this, cx| {
+        self.accounts.lastfm.task = Some(cx.spawn(async move |this, cx| {
             let asked_for = cx
                 .background_executor()
                 .spawn(async move { scrobblers.lastfm_approval(&asked) })
@@ -250,7 +250,7 @@ impl RootView {
             };
             let address = approval.address().to_owned();
             let shown = this.update(cx, |this, cx| {
-                this.lastfm_signing.waiting = Some(address.clone());
+                this.accounts.lastfm.waiting = Some(address.clone());
                 cx.open_url(&address);
                 cx.notify();
             });
@@ -267,10 +267,10 @@ impl RootView {
     }
 
     fn stop_signing_in_to_lastfm(&mut self, cx: &mut Context<Self>) {
-        self.lastfm_signing.stopped.store(true, Ordering::SeqCst);
-        self.lastfm_signing.asking = false;
-        self.lastfm_signing.waiting = None;
-        self.lastfm_signing.task = None;
+        self.accounts.lastfm.stopped.store(true, Ordering::SeqCst);
+        self.accounts.lastfm.asking = false;
+        self.accounts.lastfm.waiting = None;
+        self.accounts.lastfm.task = None;
         cx.notify();
     }
 
@@ -279,8 +279,8 @@ impl RootView {
         answered: resonate_library::Result<Option<LastfmSession>>,
         cx: &mut Context<Self>,
     ) {
-        self.lastfm_signing.asking = false;
-        self.lastfm_signing.waiting = None;
+        self.accounts.lastfm.asking = false;
+        self.accounts.lastfm.waiting = None;
         let notice = match answered {
             Ok(Some(LastfmSession { name, key })) => {
                 cx.update_global::<ResonateApp, _>(|global, _| {
@@ -289,7 +289,7 @@ impl RootView {
                 self.store(&Setting::LastfmSession(key), cx);
                 Notice::Done(words::settings_lastfm::signed_in_as(&name))
             }
-            Ok(None) if self.lastfm_signing.stopped.load(Ordering::SeqCst) => {
+            Ok(None) if self.accounts.lastfm.stopped.load(Ordering::SeqCst) => {
                 cx.notify();
                 return;
             }
@@ -322,7 +322,7 @@ impl RootView {
         let app = cx.global::<ResonateApp>();
         let signed_in = !app.online.lastfm_session.trim().is_empty();
         let reachable = app.scrobblers.is_some() && app.online.enabled;
-        let asking = self.lastfm_signing.asking;
+        let asking = self.accounts.lastfm.asking;
 
         let mut body = kit::rows();
         for account in LastfmAccount::ALL {
@@ -350,7 +350,7 @@ impl RootView {
                 )))
                 .note(words::settings_lastfm::signed_in_note());
         }
-        if let Some(address) = self.lastfm_signing.waiting.clone() {
+        if let Some(address) = self.accounts.lastfm.waiting.clone() {
             return body
                 .child(
                     kit::action_row()

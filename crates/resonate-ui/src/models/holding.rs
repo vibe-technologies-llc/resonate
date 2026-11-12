@@ -25,12 +25,12 @@ impl LibraryModel {
 
     #[cfg(test)]
     pub(crate) fn names_held(&self) -> usize {
-        self.named.entries().count()
+        self.naming.named.entries().count()
     }
 
     #[cfg(test)]
     pub(crate) fn is_drawing_covers(&self) -> bool {
-        !self.decoding.is_idle()
+        !self.pictures.decoding.is_idle()
     }
 
     pub fn track_of(&mut self, item: &QueueItem) -> Option<Track> {
@@ -39,12 +39,13 @@ impl LibraryModel {
 
     fn named_track(&mut self, item: &QueueItem) -> Option<&Track> {
         let stands = self
+            .naming
             .named
             .get(&item.id)
             .is_some_and(|held| held.names(item));
         if !stands {
             let found = self.scanned(item);
-            self.named.insert(
+            self.naming.named.insert(
                 item.id,
                 Named {
                     location: item.location.clone(),
@@ -54,7 +55,7 @@ impl LibraryModel {
             );
         }
 
-        self.named.peek(&item.id)?.track.as_ref()
+        self.naming.named.peek(&item.id)?.track.as_ref()
     }
 
     pub(crate) fn scanned_playing(&mut self, item: &QueueItem) -> Option<ScannedPlaying> {
@@ -130,7 +131,7 @@ impl LibraryModel {
         if let Some(listed) = self.album_of(id) {
             return Some(from(listed));
         }
-        if let Some(held) = self.read_albums.get(&id) {
+        if let Some(held) = self.naming.read_albums.get(&id) {
             return held.as_ref().map(from);
         }
         let read = self.library.album(id).unwrap_or_else(|error| {
@@ -138,7 +139,7 @@ impl LibraryModel {
             None
         });
         let answer = read.as_ref().map(from);
-        self.read_albums.insert(id, read);
+        self.naming.read_albums.insert(id, read);
         answer
     }
 }

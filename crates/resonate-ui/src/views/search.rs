@@ -483,7 +483,7 @@ impl RootView {
         let unscoped = library.selection() == Selection::Everything;
 
         (browsing && searching && unscoped && self.adding_songs_to.is_none())
-            .then_some(self.search_shows)
+            .then_some(self.shows.search)
     }
 
     pub(crate) fn follow_link(
@@ -976,7 +976,7 @@ impl RootView {
             .min_h(px(0.0))
             .pb_6()
             .overflow_y_scroll()
-            .track_scroll(&self.search_scroll);
+            .track_scroll(&self.scrolls.search);
 
         if !tracks.is_empty() {
             let mut rows = div().flex().flex_col();
@@ -1074,7 +1074,7 @@ impl RootView {
 
         pane.child(Scrollbars::of(cx).around(
             "top-results-scrollbar",
-            self.search_scroll.clone(),
+            self.scrolls.search.clone(),
             sections,
         ))
         .into_any_element()
@@ -1197,16 +1197,17 @@ impl RootView {
 
     fn brought_into_view(&self, strip: Option<&'static str>) -> impl IntoElement {
         let across = strip.map(|strip| {
-            self.shelf_scrolls
+            self.scrolls
+                .shelves
                 .borrow_mut()
                 .entry(strip)
                 .or_default()
                 .clone()
         });
         kit::brought_into_view_within(
-            Some(self.search_scroll.clone()),
+            Some(self.scrolls.search.clone()),
             across,
-            Rc::clone(&self.reached_unseen),
+            Rc::clone(&self.rooms.reached_unseen),
         )
     }
 
@@ -1237,7 +1238,8 @@ impl RootView {
 
     fn strip(&self, id: &'static str, cells: Vec<AnyElement>, cx: &mut Context<Self>) -> Div {
         let scroll = self
-            .shelf_scrolls
+            .scrolls
+            .shelves
             .borrow_mut()
             .entry(id)
             .or_default()

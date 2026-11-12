@@ -100,7 +100,7 @@ impl LibraryModel {
             return;
         }
         let library = Arc::clone(&self.library);
-        self._keeping = cx.spawn(async move |this, cx| {
+        self.keeps._running = cx.spawn(async move |this, cx| {
             let queued = cx
                 .background_executor()
                 .spawn(async move { library.keeps_pending() })
@@ -116,14 +116,14 @@ impl LibraryModel {
     }
 
     pub(super) fn keep_what_is_owed(&mut self, cx: &mut Context<Self>) {
-        if mem::take(&mut self.keep_owed) {
+        if mem::take(&mut self.keeps.owed) {
             self.keep_what_is_queued(cx);
         }
     }
 
     pub(super) fn keep_what_is_queued(&mut self, cx: &mut Context<Self>) {
-        if self.keeping.is_some() || self.work.polling().is_some() {
-            self.keep_owed = true;
+        if self.keeps.pass.is_some() || self.running.work.polling().is_some() {
+            self.keeps.owed = true;
             return;
         }
         self.library.deliver_into(delivery_folder(cx));
@@ -148,7 +148,7 @@ impl LibraryModel {
                 return;
             }
         };
-        self.keeping = Some(KeepPass { stop, left: 0 });
+        self.keeps.pass = Some(KeepPass { stop, left: 0 });
         cx.notify();
         self.follow_the_keep(handle, cx);
     }
@@ -159,7 +159,7 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) {
         let library = Arc::clone(&self.library);
-        self._keeping = cx.spawn(async move |this, cx| {
+        self.keeps._running = cx.spawn(async move |this, cx| {
             while !handle.is_finished() {
                 cx.background_executor().timer(KEEPS_LOOKED_AT_EVERY).await;
                 let reading = Arc::clone(&library);
@@ -199,7 +199,7 @@ impl LibraryModel {
                 return;
             }
         };
-        let Some(pass) = self.keeping.as_mut() else {
+        let Some(pass) = self.keeps.pass.as_mut() else {
             return;
         };
         let settled_one = left < pass.left;
@@ -218,7 +218,8 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) {
         let stopped = self
-            .keeping
+            .keeps
+            .pass
             .take()
             .is_some_and(|pass| pass.stop.load(Ordering::Relaxed));
         match ended {
@@ -236,7 +237,7 @@ impl LibraryModel {
                 if stopped {
                     self.tell_what_was_kept(cx);
                 } else {
-                    self.keep_owed = true;
+                    self.keeps.owed = true;
                     self.keep_again_after(OWED_ASKED_AGAIN_AFTER, cx);
                 }
                 self.take_up_what_waited(cx);
@@ -265,50 +266,50 @@ impl LibraryModel {
         if summary.landed > 0 {
             self.enrich_new_songs(cx);
         }
-        self.keep_tally.landed += summary.landed;
-        self.keep_tally.gone += summary.gone;
-        self.keep_tally.unkept += summary.unkept;
-        self.keep_tally.stopped_by.clone_from(&summary.stopped_by);
-        self.keep_tally.stopped.clone_from(&summary.stopped);
+        self.keeps.tally.landed += summary.landed;
+        self.keeps.tally.gone += summary.gone;
+        self.keeps.tally.unkept += summary.unkept;
+        self.keeps.tally.stopped_by.clone_from(&summary.stopped_by);
+        self.keeps.tally.stopped.clone_from(&summary.stopped);
         if summary.yielded {
-            self.keep_owed = true;
-            self.poll_owed.get_or_insert(PollOptions::default());
+            self.keeps.owed = true;
+            self.running.poll_owed.get_or_insert(PollOptions::default());
         } else {
             self.tell_what_was_kept(cx);
         }
     }
 
     fn tell_what_was_kept(&mut self, cx: &mut Context<Self>) {
-        if let Some(notice) = kept(&mem::take(&mut self.keep_tally)) {
+        if let Some(notice) = kept(&mem::take(&mut self.keeps.tally)) {
             toast::tell(notice, cx);
         }
     }
 
     fn keep_again_after(&mut self, waiting: Duration, cx: &mut Context<Self>) {
-        self._keep_again = cx.spawn(async move |this, cx| {
+        self.keeps._again = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(waiting).await;
             let _ = this.update(cx, |this, cx| this.keep_what_is_owed(cx));
         });
     }
 
     pub fn keeps_left(&self) -> Option<u64> {
-        self.keeping.as_ref().map(|pass| pass.left)
+        self.keeps.pass.as_ref().map(|pass| pass.left)
     }
 
     pub fn stop_keeping(&mut self, cx: &mut Context<Self>) {
-        let Some(pass) = &self.keeping else {
+        let Some(pass) = &self.keeps.pass else {
             return;
         };
         pass.stop.store(true, Ordering::Relaxed);
-        self.keep_owed = false;
+        self.keeps.owed = false;
         cx.notify();
     }
 
     pub(super) fn ask_what_is_owed_after(&mut self, waiting: Duration, cx: &mut Context<Self>) {
-        self._owed = cx.spawn(async move |this, cx| {
+        self.running._owed = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(waiting).await;
             let _ = this.update(cx, |this, cx| {
-                if !this.work.is_busy() {
+                if !this.running.work.is_busy() {
                     this.take_up_what_waited(cx);
                 }
             });

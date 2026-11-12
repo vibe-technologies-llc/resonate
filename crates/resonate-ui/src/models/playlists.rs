@@ -11,7 +11,8 @@ use crate::words;
 
 impl LibraryModel {
     pub fn held_entries_of(&self, id: PlaylistId) -> Option<Vec<PlaylistEntry>> {
-        (self.opened == Some(id) && self.narrowing().is_none()).then(|| self.entries.to_vec())
+        (self.shelf.opened == Some(id) && self.narrowing().is_none())
+            .then(|| self.shelf.entries.to_vec())
     }
 
     pub fn playing_playlist(&self, queue: QueueStamp) -> Option<PlaylistId> {
@@ -23,12 +24,12 @@ impl LibraryModel {
     }
 
     pub fn open_playlist(&mut self, opened: Option<PlaylistId>, cx: &mut Context<Self>) {
-        if self.opened == opened {
+        if self.shelf.opened == opened {
             return;
         }
-        self.opened = opened;
-        self.held = None;
-        self.entries = Arc::default();
+        self.shelf.opened = opened;
+        self.shelf.held = None;
+        self.shelf.entries = Arc::default();
         self.reload_playlists(cx);
     }
 
@@ -90,10 +91,10 @@ impl LibraryModel {
     }
 
     pub fn drop_playlist(&mut self, id: PlaylistId, cx: &mut Context<Self>) {
-        if self.opened == Some(id) {
-            self.opened = None;
-            self.held = None;
-            self.entries = Arc::default();
+        if self.shelf.opened == Some(id) {
+            self.shelf.opened = None;
+            self.shelf.held = None;
+            self.shelf.entries = Arc::default();
         }
         self.edit(
             Change::Playlist,

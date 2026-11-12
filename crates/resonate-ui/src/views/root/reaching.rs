@@ -23,8 +23,8 @@ impl RootView {
             selection: library.selection(),
             sorting: library.sorting(),
             playlists: (library.playlist_order(), library.playlist_reading()),
-            opened_rows: (self.row_order, self.row_reading),
-            search: (self.query_sort, self.query_reading),
+            opened_rows: (self.orders.row_order, self.orders.row_reading),
+            search: (self.orders.query_sort, self.orders.query_reading),
             shelves: (library.favourited().artists, library.favourited().albums),
         }
     }
@@ -286,7 +286,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let held = self.reach.as_ref().filter(|reach| reach.shift == shift);
-        self.landed_by_a_jump = None;
+        self.typing.landed_by_a_jump = None;
         self.reach = Some(match (extending, held) {
             (true, Some(reach)) => reach.widened_to(row),
             _ => Reach::at(shift, row),
@@ -477,16 +477,16 @@ impl RootView {
 
     pub(super) fn rows_a_page(&self, shift: Shift) -> usize {
         let listing = match shift {
-            Shift::Queue => &self.queue_rows,
-            Shift::Playlist(_) => &self.playlist_rows,
-            Shift::Listing(Listed::Tracks) => &self.track_rows,
-            Shift::Listing(Listed::Albums) => &self.album_rows,
-            Shift::Listing(Listed::Artists) => &self.artist_rows,
-            Shift::Listing(Listed::Playlists) => &self.all_playlist_rows,
-            Shift::Listing(Listed::Favourites) => &self.favourite_rows,
+            Shift::Queue => &self.scrolls.queue_rows,
+            Shift::Playlist(_) => &self.scrolls.playlist_rows,
+            Shift::Listing(Listed::Tracks) => &self.scrolls.track_rows,
+            Shift::Listing(Listed::Albums) => &self.scrolls.album_rows,
+            Shift::Listing(Listed::Artists) => &self.scrolls.artist_rows,
+            Shift::Listing(Listed::Playlists) => &self.scrolls.all_playlist_rows,
+            Shift::Listing(Listed::Favourites) => &self.scrolls.favourite_rows,
             Shift::Listing(Listed::FavouriteArtists | Listed::FavouriteAlbums) => return 1,
-            Shift::Listing(Listed::Missing) => &self.missing_rows,
-            Shift::Listing(Listed::Suggested) => &self.suggestion_rows,
+            Shift::Listing(Listed::Missing) => &self.scrolls.missing_rows,
+            Shift::Listing(Listed::Suggested) => &self.scrolls.suggestion_rows,
             Shift::Listing(Listed::Top) => {
                 return search::SONGS_AT_THE_TOP + search::FOUND_AT_THE_TOP;
             }
@@ -501,9 +501,9 @@ impl RootView {
 
         let in_a_grid = shift == Shift::Listing(Listed::Albums)
             || (shift == Shift::Listing(Listed::Artists)
-                && self.artists_drawn == ArtistsDrawn::Grid)
+                && self.shows.artists == ArtistsDrawn::Grid)
             || (shift == Shift::Listing(Listed::Playlists)
-                && self.playlists_drawn == PlaylistsDrawn::Grid);
+                && self.shows.playlists == PlaylistsDrawn::Grid);
         if in_a_grid {
             return ((shown / self.grid_row()) as usize).max(1) * self.grid_columns();
         }

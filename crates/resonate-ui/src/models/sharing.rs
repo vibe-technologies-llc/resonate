@@ -11,7 +11,7 @@ use crate::{clipboard, toast, words};
 
 impl LibraryModel {
     pub fn share_file(&mut self, track: TrackId, cx: &mut Context<Self>) {
-        let Some(reference) = self.reference.clone().filter(|_| self.online) else {
+        let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             toast::tell(
                 Notice::Noted(words::models::turn_online_on_to_upload_a_file().to_owned()),
                 cx,
@@ -69,9 +69,9 @@ impl LibraryModel {
 
     pub fn share_each(&mut self, tracks: Vec<TrackId>, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
-        let reference = self.reference.clone().filter(|_| self.online);
+        let reference = self.reference.clone().filter(|_| self.choices.online);
 
-        self._shared = cx.spawn(async move |this, cx| {
+        self.watchers._shared = cx.spawn(async move |this, cx| {
             let read = cx
                 .background_executor()
                 .spawn(async move {

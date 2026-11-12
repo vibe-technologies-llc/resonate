@@ -61,13 +61,13 @@ impl RootView {
             .flex_1()
             .min_w(px(theme::heading_name()))
             .gap_1()
-            .child(kit::measures_its_width(self.inspected_room.clone()))
+            .child(kit::measures_its_width(self.rooms.inspected.clone()))
             .child(kit::linked_title(copied_on_a_right_click(
                 self.opens(
                     "inspected-title",
                     kit::cut_to_fit(
                         playing.title.clone(),
-                        self.inspected_room.get(),
+                        self.rooms.inspected.get(),
                         theme::ui(FontWeight::SEMIBOLD),
                         px(theme::text_xl()),
                         cx,
@@ -82,7 +82,7 @@ impl RootView {
                 "inspected-artist",
                 "inspected-album",
                 &playing,
-                self.inspected_room.get(),
+                self.rooms.inspected.get(),
                 cx,
             ));
 
@@ -102,7 +102,7 @@ impl RootView {
         let sink = output
             .and_then(|output| model.sinks().iter().find(|sink| sink.id == output.sink))
             .map(|sink| sink.description.clone());
-        let graphing = self.bitrate_graph;
+        let graphing = self.shows.bitrate_graph;
         let state = model.state().clone();
         let heard = self.playing(&state, Some(&digest), cx).heard;
         let heading = self.inspected(&state, &digest, cx);
@@ -145,14 +145,14 @@ impl RootView {
             .min_w(px(0.0))
             .p_6()
             .overflow_y_scroll()
-            .track_scroll(&self.inspector_scroll)
+            .track_scroll(&self.scrolls.inspector)
             .child(column.child(tags(&digest.info.tags, carried)));
 
         kit::pane()
             .child(heading)
             .child(Scrollbars::of(cx).around(
                 "inspector-scrollbar",
-                self.inspector_scroll.clone(),
+                self.scrolls.inspector.clone(),
                 pane,
             ))
             .into_any_element()

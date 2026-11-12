@@ -40,17 +40,17 @@ impl TakesOver {
 impl RootView {
     pub(crate) fn offer_a_party(&mut self, link: String, cx: &mut Context<Self>) {
         self.close_the_menu(cx);
-        self.party_offered = Some(link);
+        self.social.party_offered = Some(link);
         cx.notify();
     }
 
     pub(crate) fn not_joining_the_party(&mut self, cx: &mut Context<Self>) {
-        self.party_offered = None;
+        self.social.party_offered = None;
         cx.notify();
     }
 
     fn join_the_offered_party(&mut self, cx: &mut Context<Self>) {
-        let Some(link) = self.party_offered.take() else {
+        let Some(link) = self.social.party_offered.take() else {
             return;
         };
         cx.notify();

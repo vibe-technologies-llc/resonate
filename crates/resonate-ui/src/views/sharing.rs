@@ -62,14 +62,14 @@ fn person_said(person: &SharedPerson) -> SharedString {
 
 impl RootView {
     pub(crate) fn open_sharing(&mut self, playlist: PlaylistId, cx: &mut Context<Self>) {
-        self.sharing = Some(Sharing {
+        self.social.sharing = Some(Sharing {
             playlist,
             armed: Armed::Nothing,
         });
         if let Some(together) = together_of(cx) {
             together.watch(Some(playlist));
         }
-        self.sharing_redraws = Some(cx.spawn(async move |this, cx| {
+        self.social.sharing_redraws = Some(cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(SHEET_REDRAWN_EVERY).await;
                 if this.update(cx, |_, cx| cx.notify()).is_err() {
@@ -81,8 +81,8 @@ impl RootView {
     }
 
     pub(crate) fn close_sharing(&mut self, cx: &mut Context<Self>) {
-        self.sharing = None;
-        self.sharing_redraws = None;
+        self.social.sharing = None;
+        self.social.sharing_redraws = None;
         if let Some(together) = together_of(cx) {
             together.watch(None);
         }
@@ -90,7 +90,7 @@ impl RootView {
     }
 
     pub(crate) fn sharing_sheet(&self, cx: &mut Context<Self>) -> Div {
-        let Some(sharing) = self.sharing.clone() else {
+        let Some(sharing) = self.social.sharing.clone() else {
             return div();
         };
         let together = together_of(cx);
@@ -411,7 +411,7 @@ impl RootView {
     }
 
     fn arming(&mut self, wanted: Armed, cx: &mut Context<Self>) -> bool {
-        let Some(sharing) = self.sharing.as_mut() else {
+        let Some(sharing) = self.social.sharing.as_mut() else {
             return false;
         };
         if sharing.armed == wanted {

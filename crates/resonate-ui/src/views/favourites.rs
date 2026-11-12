@@ -173,14 +173,14 @@ impl RootView {
                 true,
                 TRACK_CONTROLS,
                 sorting::favourites_sorted(self, cx),
-                &self.columns_fit,
+                &self.rooms.columns_fit,
                 &self.controls,
                 cx,
             ))
             .child(
                 Scrollbars::of(cx).around(
                     "favourites-scrollbar",
-                    self.favourite_rows.clone(),
+                    self.scrolls.favourite_rows.clone(),
                     uniform_list(
                         "favourite-tracks",
                         held,
@@ -208,7 +208,7 @@ impl RootView {
                             drawn
                         }),
                     )
-                    .track_scroll(&self.favourite_rows)
+                    .track_scroll(&self.scrolls.favourite_rows)
                     .h_full()
                     .w_full(),
                 ),

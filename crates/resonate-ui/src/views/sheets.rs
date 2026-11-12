@@ -157,9 +157,9 @@ impl RootView {
     pub(crate) fn sheet_in_front(&self) -> Option<Sheet> {
         if self.deleting.is_some() {
             Some(Sheet::Deleting)
-        } else if self.party_offered.is_some() {
+        } else if self.social.party_offered.is_some() {
             Some(Sheet::Offering)
-        } else if self.list_offered.is_some() {
+        } else if self.social.list_offered.is_some() {
             Some(Sheet::OfferingAList)
         } else if self.listening_open {
             Some(Sheet::Listening)
@@ -171,11 +171,11 @@ impl RootView {
             Some(Sheet::Naming)
         } else if self.record.is_some() {
             Some(Sheet::Recording)
-        } else if self.wrapped.is_some() {
+        } else if self.social.wrapped.is_some() {
             Some(Sheet::Wrapped)
-        } else if self.sharing.is_some() {
+        } else if self.social.sharing.is_some() {
             Some(Sheet::Sharing)
-        } else if self.ordering.is_some() {
+        } else if self.orders.ordering.is_some() {
             Some(Sheet::Ordering)
         } else if self.menu.is_some() {
             Some(Sheet::Menu)
@@ -257,7 +257,7 @@ impl RootView {
                     || here == self.menu_focus
                     || self.controls.owns(&here)
                     || self.standing_controls.owns(&here)
-                    || self.remote_controls.owns(&here)
+                    || self.remotely.controls.owns(&here)
                     || self.sheet_panels.owns(&here)
             }
         }

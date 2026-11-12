@@ -130,7 +130,7 @@ impl RootView {
             .gap_0p5()
             .max_h(px(theme::downloads_height()))
             .overflow_y_scroll()
-            .track_scroll(&self.downloads_scroll)
+            .track_scroll(&self.scrolls.downloads)
             .when_some(keeping, |list, left| list.child(self.keep_row(left, cx)));
         for (at, (download, fetching)) in rows.into_iter().enumerate() {
             list = list.child(self.download_row(at, &download, fetching, cx));
@@ -206,7 +206,7 @@ impl RootView {
                 .child(
                     div().relative().child(list).child(
                         Scrollbars::of(cx)
-                            .vertical("downloads-scrollbar", self.downloads_scroll.clone()),
+                            .vertical("downloads-scrollbar", self.scrolls.downloads.clone()),
                     ),
                 ),
             "downloads-arrives",

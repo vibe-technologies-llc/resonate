@@ -150,7 +150,7 @@ impl RootView {
     pub(super) fn row_height_of(&self, pane: Pane) -> f32 {
         match pane {
             Pane::Albums => self.grid_row(),
-            Pane::Artists if self.artists_drawn == ArtistsDrawn::Grid => self.grid_row(),
+            Pane::Artists if self.shows.artists == ArtistsDrawn::Grid => self.grid_row(),
             Pane::Artists => theme::tall_row_height(),
             _ => theme::row_height(),
         }
@@ -158,10 +158,10 @@ impl RootView {
 
     pub(super) fn scroll_of(&self, pane: Pane) -> &UniformListScrollHandle {
         match pane {
-            Pane::Artists => &self.artist_rows,
-            Pane::Albums => &self.album_rows,
-            Pane::Queue => &self.queue_rows,
-            Pane::Playlists => &self.playlist_rows,
+            Pane::Artists => &self.scrolls.artist_rows,
+            Pane::Albums => &self.scrolls.album_rows,
+            Pane::Queue => &self.scrolls.queue_rows,
+            Pane::Playlists => &self.scrolls.playlist_rows,
             Pane::Tracks
             | Pane::Statistics
             | Pane::Party
@@ -172,8 +172,8 @@ impl RootView {
             | Pane::Inspector
             | Pane::Visualiser
             | Pane::Analysis
-            | Pane::Settings => &self.track_rows,
-            Pane::Server => &self.server_rows,
+            | Pane::Settings => &self.scrolls.track_rows,
+            Pane::Server => &self.scrolls.server_rows,
         }
     }
 }

@@ -14,12 +14,14 @@ impl RootView {
     }
 
     pub(super) fn volume_now(&self, cx: &App) -> f32 {
-        self.volume_aimed
+        self.rails
+            .volume_aimed
             .unwrap_or_else(|| self.player.read(cx).state().volume.get())
     }
 
     pub(crate) fn muted_at(&self, cx: &App) -> Option<Volume> {
-        self.muted_from
+        self.rails
+            .muted_from
             .filter(|_| self.player.read(cx).state().volume == Volume::MUTE)
     }
 
@@ -60,8 +62,8 @@ impl RootView {
         if heard_at == Volume::MUTE {
             return;
         }
-        self.volume_aimed = None;
-        self.muted_from = Some(heard_at);
+        self.rails.volume_aimed = None;
+        self.rails.muted_from = Some(heard_at);
         self.send(Command::SetVolume(Volume::MUTE), cx);
         cx.notify();
     }
@@ -70,12 +72,12 @@ impl RootView {
         let Ok(volume) = Volume::new(position.clamp(0.0, 1.0)) else {
             return;
         };
-        self.muted_from = None;
+        self.rails.muted_from = None;
         self.send(Command::SetVolume(volume), cx);
-        self.volume_aimed = Some(volume.get());
-        self.volume_unkept = Some((self.switcher.selected(), volume));
+        self.rails.volume_aimed = Some(volume.get());
+        self.rails.volume_unkept = Some((self.switcher.selected(), volume));
 
-        self.volume_settled = cx.spawn(async move |this, cx| {
+        self.rails.volume_settled = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(VOLUME_SETTLE).await;
             let stored = this.update(cx, |this, cx| this.keep_the_volume(cx));
             let _ = stored;
@@ -83,14 +85,14 @@ impl RootView {
     }
 
     pub(crate) fn keep_the_volume(&mut self, cx: &mut Context<Self>) {
-        self.volume_aimed = None;
+        self.rails.volume_aimed = None;
         if let Some(volume) = self.volume_to_keep() {
             self.store_for(ZoneId::FIRST, &Setting::Volume(volume), cx);
         }
     }
 
     pub(super) fn volume_to_keep(&mut self) -> Option<Volume> {
-        let (zone, volume) = self.volume_unkept.take()?;
+        let (zone, volume) = self.rails.volume_unkept.take()?;
         zone.is_first().then_some(volume)
     }
 

@@ -11,30 +11,34 @@ use crate::{toast, words};
 
 impl LibraryModel {
     pub fn is_enriching(&self) -> bool {
-        self.enriching.is_some()
+        self.enrichment.running.is_some()
     }
 
     pub fn shows_the_lookup(&self) -> bool {
-        self.enriching.is_some()
-            && self.lookup_asked.is_some_and(|asked| match asked.prompted {
-                Prompted::ByHand | Prompted::ByTheInbox => true,
-                Prompted::OnItsOwn => asked.began.elapsed() >= A_QUIET_LOOKUP_SHOWS_AFTER,
-            })
+        self.enrichment.running.is_some()
+            && self
+                .enrichment
+                .asked
+                .is_some_and(|asked| match asked.prompted {
+                    Prompted::ByHand | Prompted::ByTheInbox => true,
+                    Prompted::OnItsOwn => asked.began.elapsed() >= A_QUIET_LOOKUP_SHOWS_AFTER,
+                })
     }
 
     pub fn enrich_stats(&self) -> Option<EnrichStats> {
-        match &self.enriching {
+        match &self.enrichment.running {
             Some(progress) => Some(progress.snapshot()),
-            None => self.looked_up.map(|summary| summary.stats),
+            None => self.enrichment.looked_up.map(|summary| summary.stats),
         }
     }
 
     pub fn looked_up(&self) -> Option<EnrichSummary> {
-        self.looked_up
+        self.enrichment.looked_up
     }
 
     pub fn is_stopping_enrich(&self) -> bool {
-        self.enriching
+        self.enrichment
+            .running
             .as_ref()
             .is_some_and(|progress| progress.is_cancelled())
     }
@@ -43,9 +47,9 @@ impl LibraryModel {
         let asked = EnrichOptions {
             refresh,
             at_most: None,
-            sought: Arc::clone(&self.sought),
-            studies: self.studies,
-            lyrics: self.lyrics,
+            sought: Arc::clone(&self.enrichment.sought),
+            studies: self.choices.studies,
+            lyrics: self.choices.lyrics,
             pace: Pace::Background,
         };
         self.enrich_with(asked, Prompted::ByHand, cx);
@@ -55,16 +59,16 @@ impl LibraryModel {
         let asked = EnrichOptions {
             refresh,
             at_most: None,
-            sought: Arc::clone(&self.sought),
-            studies: self.studies,
-            lyrics: self.lyrics,
+            sought: Arc::clone(&self.enrichment.sought),
+            studies: self.choices.studies,
+            lyrics: self.choices.lyrics,
             pace: Pace::Background,
         };
         self.enrich_with(asked, Prompted::OnItsOwn, cx);
     }
 
     pub fn hurry_the_lookup(&mut self, cx: &mut Context<Self>) {
-        match &self.enriching {
+        match &self.enrichment.running {
             Some(progress) => {
                 progress.hurry();
                 cx.notify();
@@ -73,9 +77,9 @@ impl LibraryModel {
                 let asked = EnrichOptions {
                     refresh: false,
                     at_most: None,
-                    sought: Arc::clone(&self.sought),
-                    studies: self.studies,
-                    lyrics: self.lyrics,
+                    sought: Arc::clone(&self.enrichment.sought),
+                    studies: self.choices.studies,
+                    lyrics: self.choices.lyrics,
                     pace: Pace::Hurried,
                 };
                 self.enrich_with(asked, Prompted::ByHand, cx);
@@ -84,17 +88,18 @@ impl LibraryModel {
     }
 
     pub fn is_hurried(&self) -> bool {
-        self.enriching
+        self.enrichment
+            .running
             .as_ref()
             .is_some_and(|progress| progress.is_hurried())
     }
 
     pub(super) fn enrich_new_songs(&mut self, cx: &mut Context<Self>) {
-        if !self.after_scan || !self.can_enrich() {
+        if !self.choices.after_scan || !self.can_enrich() {
             return;
         }
-        if self.enriching.is_some() {
-            self.enrich_owed = true;
+        if self.enrichment.running.is_some() {
+            self.enrichment.owed = true;
         } else {
             self.enrich_on_its_own(false, cx);
         }
@@ -104,7 +109,7 @@ impl LibraryModel {
         EnrichOptions {
             refresh: false,
             at_most: None,
-            sought: Arc::clone(&self.sought),
+            sought: Arc::clone(&self.enrichment.sought),
             studies: false,
             lyrics: false,
             pace: Pace::Background,
@@ -117,7 +122,7 @@ impl LibraryModel {
         prompted: Prompted,
         cx: &mut Context<Self>,
     ) {
-        if self.enriching.is_some() || !self.online {
+        if self.enrichment.running.is_some() || !self.choices.online {
             return;
         }
         let Some(reference) = self.for_the_pass.reference.clone() else {
@@ -140,16 +145,16 @@ impl LibraryModel {
             }
         };
 
-        self.enriching = Some(Arc::clone(handle.progress()));
-        self.lookup_asked = Some(LookupAsked {
+        self.enrichment.running = Some(Arc::clone(handle.progress()));
+        self.enrichment.asked = Some(LookupAsked {
             prompted,
             began: Instant::now(),
         });
-        self.enrich_owed = false;
-        self.looked_up = None;
+        self.enrichment.owed = false;
+        self.enrichment.looked_up = None;
         cx.notify();
 
-        self._enrich = cx.spawn(async move |this, cx| {
+        self.enrichment._task = cx.spawn(async move |this, cx| {
             let mut polled = 0;
             while !handle.is_finished() {
                 cx.background_executor().timer(SCAN_POLL).await;
@@ -168,14 +173,14 @@ impl LibraryModel {
             }
 
             let finished = this.update(cx, |this, cx| {
-                this.enriching = None;
-                this.lookup_asked = None;
-                let owed = mem::take(&mut this.enrich_owed);
+                this.enrichment.running = None;
+                this.enrichment.asked = None;
+                let owed = mem::take(&mut this.enrichment.owed);
                 let mut finished = false;
                 match handle.join() {
                     Ok(summary) => {
                         finished = !summary.cancelled && summary.stopped_by.is_none();
-                        this.looked_up = Some(summary);
+                        this.enrichment.looked_up = Some(summary);
                         if let Some(notice) = looked_up(&summary, prompted) {
                             toast::tell(notice, cx);
                         }
@@ -222,8 +227,8 @@ impl LibraryModel {
     }
 
     pub fn stop_enrich(&mut self, cx: &mut Context<Self>) {
-        self.enrich_owed = false;
-        let Some(progress) = self.enriching.as_ref() else {
+        self.enrichment.owed = false;
+        let Some(progress) = self.enrichment.running.as_ref() else {
             return;
         };
         progress.cancel();
@@ -231,7 +236,7 @@ impl LibraryModel {
     }
 
     pub fn stop_scan(&mut self, cx: &mut Context<Self>) {
-        let Some(progress) = self.work.scanning() else {
+        let Some(progress) = self.running.work.scanning() else {
             return;
         };
         progress.cancel();

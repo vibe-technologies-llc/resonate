@@ -406,10 +406,10 @@ impl RootView {
                         .flex_1()
                         .min_w(px(0.0))
                         .min_h(px(0.0))
-                        .child(kit::measures_the_grid(self.grid_width.clone()))
+                        .child(kit::measures_the_grid(self.rooms.grid_width.clone()))
                         .child(Scrollbars::of(cx).around(
                             "statistics-scrollbar",
-                            self.statistics_scroll.clone(),
+                            self.scrolls.statistics.clone(),
                             self.what_was_heard(&heard, cx),
                         )),
                 )
@@ -476,7 +476,7 @@ impl RootView {
     }
 
     fn what_was_heard(&mut self, heard: &Heard<'_>, cx: &mut Context<Self>) -> Stateful<Div> {
-        let wide = f32::from(self.grid_width.get()) >= theme::statistics_two_columns();
+        let wide = f32::from(self.rooms.grid_width.get()) >= theme::statistics_two_columns();
         let Heard {
             counts,
             listened,
@@ -496,7 +496,7 @@ impl RootView {
             .gap_4()
             .p_6()
             .overflow_y_scroll()
-            .track_scroll(&self.statistics_scroll)
+            .track_scroll(&self.scrolls.statistics)
             .child(the_headline(wide, counts, habits, days_spanned))
             .children(self.number_ones(wide, listened, cx))
             .child(charted(chart))
@@ -667,8 +667,8 @@ impl RootView {
             let drawn = self.listened_row(kind, placed, held, opens(held.id), cx);
             listed = listed.child(reorder::marked(drawn, reached).when(reached, |row| {
                 row.child(kit::brought_into_view(
-                    self.statistics_scroll.clone(),
-                    Rc::clone(&self.reached_unseen),
+                    self.scrolls.statistics.clone(),
+                    Rc::clone(&self.rooms.reached_unseen),
                 ))
             }));
         }
@@ -689,7 +689,7 @@ impl RootView {
     }
 
     pub(crate) fn heard_a_page(&self) -> usize {
-        let seen = f32::from(self.statistics_scroll.bounds().size.height);
+        let seen = f32::from(self.scrolls.statistics.bounds().size.height);
 
         ((seen / theme::tall_row_height()) as usize).max(1)
     }

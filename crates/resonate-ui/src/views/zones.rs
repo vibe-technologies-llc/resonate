@@ -297,7 +297,7 @@ impl RootView {
             return;
         };
         self.keep_the_volume(cx);
-        self.volume_settled = Task::ready(());
+        self.rails.volume_settled = Task::ready(());
         self.switcher.select(id);
         if player.entity_id() == self.player.entity_id() {
             return;
@@ -309,12 +309,12 @@ impl RootView {
         let shown = self.player.clone();
         self.visualiser
             .update(cx, |visualiser, cx| visualiser.follow(shown, cx));
-        self.volume_aimed = None;
-        self.muted_from = None;
-        self.grabbed = None;
+        self.rails.volume_aimed = None;
+        self.rails.muted_from = None;
+        self.rails.grabbed = None;
         self.reach = None;
-        self.landed_by_a_jump = None;
-        self.seek_pointed = None;
+        self.typing.landed_by_a_jump = None;
+        self.rails.seek_pointed = None;
         self.queue_names = QueueNames::default();
         self.took_out = TakenBack::default();
         cx.notify();
@@ -407,7 +407,7 @@ impl RootView {
             .map(ToString::to_string)
             .unwrap_or_default();
         self.naming_the_zone = Some(selected);
-        self.zone_name.update(cx, |field, cx| {
+        self.typed.zone_name.update(cx, |field, cx| {
             field.set_text(held, cx);
             field.take_focus_and_select(window, cx);
         });
@@ -418,7 +418,7 @@ impl RootView {
         let Some(id) = self.naming_the_zone else {
             return;
         };
-        let Some(name) = ZoneName::given(self.zone_name.read(cx).text()) else {
+        let Some(name) = ZoneName::given(self.typed.zone_name.read(cx).text()) else {
             self.stop_naming_the_zone(window, cx);
             return;
         };
@@ -443,7 +443,7 @@ impl RootView {
         if self.naming_the_zone.take().is_none() {
             return;
         }
-        self.zone_name.update(cx, |field, cx| field.clear(cx));
+        self.typed.zone_name.update(cx, |field, cx| field.clear(cx));
         window.focus(&self.focus, cx);
         cx.notify();
     }
@@ -468,7 +468,7 @@ impl RootView {
                 .on_mouse_down_out(cx.listener(|this, _, window, cx| {
                     this.stop_naming_the_zone(window, cx);
                 }))
-                .child(self.zone_name.clone())
+                .child(self.typed.zone_name.clone())
                 .into_any_element();
         }
 

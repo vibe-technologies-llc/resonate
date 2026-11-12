@@ -198,7 +198,7 @@ impl RootView {
             .gap_4()
             .p_6()
             .overflow_y_scroll()
-            .track_scroll(&self.analysis_scroll)
+            .track_scroll(&self.scrolls.analysis)
             .children(leading)
             .child(verdict_card(analysis))
             .child(
@@ -249,7 +249,7 @@ impl RootView {
             .children(trailing);
 
         Scrollbars::of(cx)
-            .around("analysis-scrollbar", self.analysis_scroll.clone(), pane)
+            .around("analysis-scrollbar", self.scrolls.analysis.clone(), pane)
             .into_any_element()
     }
 }

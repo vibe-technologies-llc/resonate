@@ -169,7 +169,7 @@ fn each_category_opens_onto_the_controls_it_holds(cx: &mut TestAppContext) {
     for (category, control) in DRAWN {
         pane.category(category);
 
-        let opened = pane.driven.read(|root, _| root.settings_category);
+        let opened = pane.driven.read(|root, _| root.settings_shown.category);
         assert_eq!(opened, category);
         pane.reach(control);
     }
@@ -195,7 +195,7 @@ fn every_page_opens_in_its_own_category_and_leaving_it_returns_to_the_category(
 
         let (category, shown) = pane
             .driven
-            .read(|root, _| (root.settings_category, root.settings_page));
+            .read(|root, _| (root.settings_shown.category, root.settings_shown.page));
         assert_eq!((category, shown), (page.category(), Some(page)));
 
         let left = pane
@@ -203,7 +203,7 @@ fn every_page_opens_in_its_own_category_and_leaving_it_returns_to_the_category(
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.leave_the_settings_page(cx)));
         assert!(left);
-        assert_eq!(pane.driven.read(|root, _| root.settings_page), None);
+        assert_eq!(pane.driven.read(|root, _| root.settings_shown.page), None);
     }
 }
 
@@ -314,7 +314,8 @@ fn the_library_page_writes_the_vault_a_folder_is_made_into(cx: &mut TestAppConte
 
     assert_eq!(written, [stored(Setting::Vault(named.clone()))]);
     assert_eq!(
-        pane.driven.read(|root, _| root.vault_named.clone()),
+        pane.driven
+            .read(|root, _| root.settings_shown.vault_named.clone()),
         Some(named)
     );
 }
@@ -337,7 +338,11 @@ fn the_library_page_refuses_a_vault_inside_a_folder_the_library_scans(cx: &mut T
     pane.driven.settle();
 
     assert_eq!(*pane.written.lock(), Vec::new());
-    assert_eq!(pane.driven.read(|root, _| root.vault_named.clone()), None);
+    assert_eq!(
+        pane.driven
+            .read(|root, _| root.settings_shown.vault_named.clone()),
+        None
+    );
 }
 
 #[gpui::test]
@@ -383,11 +388,11 @@ fn the_accounts_page_writes_a_user_typed_and_refuses_a_server_that_is_not_one(
     let mut pane = Pane::open(cx);
     pane.category(Category::Accounts);
 
-    let written = pane.typing_into(|root| &root.subsonic[1], "alice", 1);
+    let written = pane.typing_into(|root| &root.typed.subsonic[1], "alice", 1);
     assert_eq!(written, [stored(Setting::SubsonicUser("alice".to_owned()))]);
 
     pane.forgetting_what_was_written();
-    pane.driven.focus(|root| &root.subsonic[0]);
+    pane.driven.focus(|root| &root.typed.subsonic[0]);
     pane.driven.cx.simulate_input("nonsense");
     pane.driven.cx.simulate_keystrokes("enter");
     pane.driven.settle();

@@ -10,15 +10,15 @@ use crate::ResonateApp;
 
 impl LibraryModel {
     pub const fn is_online(&self) -> bool {
-        self.online
+        self.choices.online
     }
 
     pub fn set_online(&mut self, online: bool, cx: &mut Context<Self>) {
-        if self.online == online {
+        if self.choices.online == online {
             return;
         }
-        self.online = online;
-        self.unreached_for = None;
+        self.choices.online = online;
+        self.outreach.unreached_for = None;
         self.ask_elsewhere_after(Duration::ZERO, cx);
         self.restate_the_listing();
         if online {
@@ -29,14 +29,14 @@ impl LibraryModel {
     }
 
     pub const fn resumes(&self) -> bool {
-        self.resume
+        self.choices.resume
     }
 
     pub fn set_resume(&mut self, resume: bool, cx: &mut Context<Self>) {
-        if self.resume == resume {
+        if self.choices.resume == resume {
             return;
         }
-        self.resume = resume;
+        self.choices.resume = resume;
         if !resume {
             let library = Arc::clone(&self.library);
             self.keep_after_what_was_kept(cx, move || {
@@ -50,7 +50,7 @@ impl LibraryModel {
 
     pub fn age_the_history(&mut self, kept: HistoryKept, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
-        self._aged = cx.background_executor().spawn(async move {
+        self.watchers._aged = cx.background_executor().spawn(async move {
             if let Err(error) = library.age_the_history(kept) {
                 tracing::warn!(%error, "the history could not be aged");
             }
@@ -107,46 +107,46 @@ impl LibraryModel {
         cx: &Context<Self>,
         keep: impl FnOnce() + Send + 'static,
     ) {
-        let before = std::mem::replace(&mut self._kept, Task::ready(()));
-        self._kept = cx.background_executor().spawn(async move {
+        let before = std::mem::replace(&mut self.watchers._kept, Task::ready(()));
+        self.watchers._kept = cx.background_executor().spawn(async move {
             before.await;
             keep();
         });
     }
 
     pub const fn enriches_after_scan(&self) -> bool {
-        self.after_scan
+        self.choices.after_scan
     }
 
     pub const fn studies(&self) -> bool {
-        self.studies
+        self.choices.studies
     }
 
     pub fn set_studies(&mut self, studies: bool, cx: &mut Context<Self>) {
-        if self.studies == studies {
+        if self.choices.studies == studies {
             return;
         }
-        self.studies = studies;
+        self.choices.studies = studies;
         cx.notify();
     }
 
     pub const fn fetches_lyrics(&self) -> bool {
-        self.lyrics
+        self.choices.lyrics
     }
 
     pub fn set_lyrics(&mut self, lyrics: bool, cx: &mut Context<Self>) {
-        if self.lyrics == lyrics {
+        if self.choices.lyrics == lyrics {
             return;
         }
-        self.lyrics = lyrics;
+        self.choices.lyrics = lyrics;
         cx.notify();
     }
 
     pub fn set_after_scan(&mut self, after_scan: bool, cx: &mut Context<Self>) {
-        if self.after_scan == after_scan {
+        if self.choices.after_scan == after_scan {
             return;
         }
-        self.after_scan = after_scan;
+        self.choices.after_scan = after_scan;
         cx.notify();
     }
 
@@ -155,11 +155,11 @@ impl LibraryModel {
     }
 
     pub fn can_enrich(&self) -> bool {
-        self.online && self.for_the_pass.reference.is_some()
+        self.choices.online && self.for_the_pass.reference.is_some()
     }
 
     pub(crate) fn follows_links(&self) -> Option<(Arc<Library>, Arc<dyn Reference>)> {
-        let reference = self.reference.clone().filter(|_| self.online)?;
+        let reference = self.reference.clone().filter(|_| self.choices.online)?;
 
         Some((Arc::clone(&self.library), reference))
     }

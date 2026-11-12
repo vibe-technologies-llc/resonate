@@ -178,7 +178,7 @@ impl YoutubeMusicField {
 
 impl RootView {
     fn youtube_music_field(&self, named: YoutubeMusicField) -> &Entity<Field> {
-        &self.youtube_music[named.nth()]
+        &self.typed.youtube_music[named.nth()]
     }
 
     fn youtube_music_given(
@@ -289,15 +289,15 @@ impl RootView {
         };
         let online = app.online.clone();
 
-        self.youtube_music_check.asking = true;
+        self.accounts.youtube_music_check.asking = true;
         cx.notify();
-        self.youtube_music_check.task = cx.spawn(async move |this, cx| {
+        self.accounts.youtube_music_check.task = cx.spawn(async move |this, cx| {
             let answered = cx
                 .background_executor()
                 .spawn(async move { checks(&online) })
                 .await;
             let told = this.update(cx, |this, cx| {
-                this.youtube_music_check.asking = false;
+                this.accounts.youtube_music_check.asking = false;
                 this.report(notice_of(answered), cx);
                 cx.notify();
             });
@@ -322,15 +322,15 @@ impl RootView {
             return;
         };
 
-        self.youtube_music_sign_in.asking = true;
+        self.accounts.youtube_music_sign_in.asking = true;
         cx.notify();
-        self.youtube_music_sign_in.task = cx.spawn(async move |this, cx| {
+        self.accounts.youtube_music_sign_in.task = cx.spawn(async move |this, cx| {
             let answered = cx
                 .background_executor()
                 .spawn(async move { signs_in.sign_in() })
                 .await;
             let told = this.update(cx, |this, cx| {
-                this.youtube_music_sign_in.asking = false;
+                this.accounts.youtube_music_sign_in.asking = false;
                 this.report(notice_of_the_sign_in(&answered), cx);
                 if let YoutubeMusicSignIn::SignedIn { cookies } = answered {
                     this.hold_the_youtube_music_cookies(cookies, cx);
@@ -347,9 +347,9 @@ impl RootView {
             return;
         };
 
-        self.youtube_music_sign_in.asking = true;
+        self.accounts.youtube_music_sign_in.asking = true;
         cx.notify();
-        self.youtube_music_sign_in.task = cx.spawn(async move |this, cx| {
+        self.accounts.youtube_music_sign_in.task = cx.spawn(async move |this, cx| {
             let gone = cx
                 .background_executor()
                 .spawn({
@@ -358,7 +358,7 @@ impl RootView {
                 })
                 .await;
             let told = this.update(cx, |this, cx| {
-                this.youtube_music_sign_in.asking = false;
+                this.accounts.youtube_music_sign_in.asking = false;
                 let held = cx
                     .global::<ResonateApp>()
                     .online
@@ -389,7 +389,7 @@ impl RootView {
         }
         let reachable = app.online.enabled && app.online.youtube_music;
         let kept = signs_in.names_the_window_jar(&app.online.youtube_music_cookies);
-        let asking = self.youtube_music_sign_in.asking;
+        let asking = self.accounts.youtube_music_sign_in.asking;
         let label = match (asking, kept) {
             (true, _) => words::settings_youtube_music::signing_in_label(),
             (false, true) => words::settings_youtube_music::sign_in_again_label(),
@@ -435,7 +435,7 @@ impl RootView {
         let app = cx.global::<ResonateApp>();
         let reachable =
             app.checks_youtube_music.is_some() && app.online.enabled && app.online.youtube_music;
-        let asking = self.youtube_music_check.asking;
+        let asking = self.accounts.youtube_music_check.asking;
 
         action(
             "youtube-music-check",

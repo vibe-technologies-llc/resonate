@@ -74,10 +74,10 @@ impl RootView {
 
         let asked_at = address.clone();
         let stopped = Arc::new(AtomicBool::new(false));
-        self.jellyfin_quick.stopped = Arc::clone(&stopped);
-        self.jellyfin_quick.shown = Shown::Asking;
+        self.accounts.jellyfin_quick.stopped = Arc::clone(&stopped);
+        self.accounts.jellyfin_quick.shown = Shown::Asking;
         cx.notify();
-        self.jellyfin_quick.task = cx.spawn(async move |this, cx| {
+        self.accounts.jellyfin_quick.task = cx.spawn(async move |this, cx| {
             let beginning = Arc::clone(&signs_in);
             let begun = cx
                 .background_executor()
@@ -92,7 +92,7 @@ impl RootView {
                         Notice::Trouble(words::settings_jellyfin::not_begun().to_owned())
                     };
                     let told = this.update(cx, |this, cx| {
-                        this.jellyfin_quick.shown = Shown::Idle;
+                        this.accounts.jellyfin_quick.shown = Shown::Idle;
                         this.report(said, cx);
                         cx.notify();
                     });
@@ -102,7 +102,7 @@ impl RootView {
             };
             let waiting_on = code.clone();
             let shown = this.update(cx, |this, cx| {
-                this.jellyfin_quick.shown = Shown::Waiting(code);
+                this.accounts.jellyfin_quick.shown = Shown::Waiting(code);
                 cx.notify();
             });
             if shown.is_err() {
@@ -113,7 +113,7 @@ impl RootView {
                 .spawn(async move { signs_in.approved(&waiting_on, &stopped) })
                 .await;
             let told = this.update(cx, |this, cx| {
-                this.jellyfin_quick.shown = Shown::Idle;
+                this.accounts.jellyfin_quick.shown = Shown::Idle;
                 let moved = cx.global::<ResonateApp>().online.jellyfin.trim() != asked_at;
                 if !moved {
                     this.quick_connected(answered, cx);
@@ -125,9 +125,12 @@ impl RootView {
     }
 
     pub(super) fn stop_quick_connect(&mut self, cx: &mut Context<Self>) {
-        self.jellyfin_quick.stopped.store(true, Ordering::SeqCst);
-        self.jellyfin_quick.shown = Shown::Idle;
-        self.jellyfin_quick.task = Task::ready(());
+        self.accounts
+            .jellyfin_quick
+            .stopped
+            .store(true, Ordering::SeqCst);
+        self.accounts.jellyfin_quick.shown = Shown::Idle;
+        self.accounts.jellyfin_quick.task = Task::ready(());
         cx.notify();
     }
 
@@ -152,10 +155,10 @@ impl RootView {
 
     fn keep_the_jellyfin_session(&mut self, session: JellyfinSession, cx: &mut Context<Self>) {
         let name = session.name.clone();
-        self.jellyfin[1]
+        self.typed.jellyfin[1]
             .clone()
             .update(cx, |field, cx| field.hold(name.clone(), cx));
-        self.jellyfin[2]
+        self.typed.jellyfin[2]
             .clone()
             .update(cx, |field, cx| field.hold(String::new(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {
@@ -211,7 +214,7 @@ impl RootView {
             return div();
         }
         let reachable = app.online.enabled;
-        match self.jellyfin_quick.shown.clone() {
+        match self.accounts.jellyfin_quick.shown.clone() {
             Shown::Idle => kit::action_row().child(action(
                 "jellyfin-quick-connect",
                 words::settings_jellyfin::sign_in_with_quick_connect(),

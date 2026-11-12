@@ -19,10 +19,12 @@ impl LibraryModel {
         let Some(reference) = self.reference.clone() else {
             return;
         };
-        if self.wanting.contains_key(&found.recording) {
+        if self.wishes.wanting.contains_key(&found.recording) {
             return;
         }
-        self.downloads.landing(found.clone(), SystemTime::now());
+        self.delivered
+            .downloads
+            .landing(found.clone(), SystemTime::now());
         cx.notify();
         let library = Arc::clone(&self.library);
         let recording = found.recording.clone();
@@ -52,20 +54,22 @@ impl LibraryModel {
             let was_wanted = wanted.is_ok();
 
             let landed = this.update(cx, |this, cx| {
-                if let Some(finished) = this.wanting.remove(&found.recording) {
+                if let Some(finished) = this.wishes.wanting.remove(&found.recording) {
                     finished.detach();
                 }
                 match wanted.map(|wanted| wanted.wanted) {
                     Ok(want) => {
                         let fetched_by = this.fetched_by(cx);
-                        this.downloads.wanted(&found.recording, want, fetched_by);
+                        this.delivered
+                            .downloads
+                            .wanted(&found.recording, want, fetched_by);
                         if fetched_by == Fetcher::AProvider && !awaiting_the_providers {
                             this.fetch_what_was_wanted(PollOptions::default(), cx);
                         }
                     }
                     Err(error) => {
                         tracing::error!(%error, "a song found elsewhere could not be wanted");
-                        this.downloads.unwanted(&found.recording);
+                        this.delivered.downloads.unwanted(&found.recording);
                     }
                 }
                 this.read(Wanted::Everything, cx);
@@ -92,30 +96,33 @@ impl LibraryModel {
                 cover_what_was_wanted(&this, cx, covered_by, covering_with, covering).await;
             }
         });
-        self.wanting.insert(recording, wanting);
+        self.wishes.wanting.insert(recording, wanting);
     }
 
     pub fn fetch_and_play(&mut self, found: Found, cx: &mut Context<Self>) {
         let recording = found.recording.clone();
         self.want_found(found, cx);
         let landing = self
+            .delivered
             .downloads
             .of(&recording)
             .is_some_and(|download| self.fetching(download).is_underway());
         if landing {
-            self.downloads.play_once_landed(recording, Instant::now());
+            self.delivered
+                .downloads
+                .play_once_landed(recording, Instant::now());
         }
     }
 
     pub fn is_awaited(&self, recording: &Mbid) -> bool {
-        self.downloads.is_awaited(recording)
+        self.delivered.downloads.is_awaited(recording)
     }
 
     pub fn want_album(&mut self, group: Mbid, pressing: Option<Mbid>, cx: &mut Context<Self>) {
         let Some(reference) = self.reference.clone() else {
             return;
         };
-        if self.albums_wanted.contains_key(&group) {
+        if self.unheld.albums_wanted.contains_key(&group) {
             return;
         }
         let library = Arc::clone(&self.library);
@@ -137,14 +144,14 @@ impl LibraryModel {
                 .and_then(|wanted| wanted.covering.clone());
 
             let landed = this.update(cx, |this, cx| {
-                if let Some(finished) = this.albums_wanted.remove(&group) {
+                if let Some(finished) = this.unheld.albums_wanted.remove(&group) {
                     finished.detach();
                 }
                 match wanted.map(|wanted| wanted.wanted) {
                     Ok(wanted) => {
                         let fetched_by = this.fetched_by(cx);
                         let now = SystemTime::now();
-                        this.album_songs.insert(
+                        this.unheld.album_songs.insert(
                             group,
                             wanted
                                 .iter()
@@ -153,8 +160,10 @@ impl LibraryModel {
                         );
                         for (song, want) in wanted {
                             let recording = song.recording.clone();
-                            this.downloads.landing(song, now);
-                            this.downloads.wanted(&recording, want, fetched_by);
+                            this.delivered.downloads.landing(song, now);
+                            this.delivered
+                                .downloads
+                                .wanted(&recording, want, fetched_by);
                         }
                         if fetched_by == Fetcher::AProvider {
                             this.fetch_what_was_wanted(PollOptions::default(), cx);
@@ -174,7 +183,7 @@ impl LibraryModel {
                 cover_what_was_wanted(&this, cx, covered_by, covering_with, covering).await;
             }
         });
-        self.albums_wanted.insert(held_under, wanting);
+        self.unheld.albums_wanted.insert(held_under, wanting);
         cx.notify();
     }
 
@@ -186,7 +195,7 @@ impl LibraryModel {
         let Some(reference) = self.reference.clone() else {
             return Task::ready(None);
         };
-        if !self.albums_opening.insert(group.clone()) {
+        if !self.unheld.albums_opening.insert(group.clone()) {
             return Task::ready(None);
         }
         cx.notify();
@@ -203,7 +212,7 @@ impl LibraryModel {
 
             let opened = this
                 .update(cx, |this, cx| {
-                    this.albums_opening.remove(&group);
+                    this.unheld.albums_opening.remove(&group);
                     match landed {
                         Ok(landed) => {
                             this.read(Wanted::Everything, cx);
@@ -240,7 +249,7 @@ impl LibraryModel {
         let Some(reference) = self.reference.clone() else {
             return Task::ready(None);
         };
-        if !self.artists_opening.insert(found.mbid.clone()) {
+        if !self.unheld.artists_opening.insert(found.mbid.clone()) {
             return Task::ready(None);
         }
         cx.notify();
@@ -256,7 +265,7 @@ impl LibraryModel {
                 .await;
 
             this.update(cx, |this, cx| {
-                this.artists_opening.remove(&found.mbid);
+                this.unheld.artists_opening.remove(&found.mbid);
                 match landed {
                     Ok(artist) => {
                         this.read(Wanted::Everything, cx);
@@ -278,7 +287,7 @@ impl LibraryModel {
     }
 
     pub fn want_missing_tracks(&mut self, album: AlbumId, cx: &mut Context<Self>) {
-        if !self.albums_missing_tracks_wanted.insert(album) {
+        if !self.unheld.albums_missing_tracks_wanted.insert(album) {
             return;
         }
 
@@ -290,7 +299,7 @@ impl LibraryModel {
                 .await;
 
             let landed = this.update(cx, |this, cx| {
-                this.albums_missing_tracks_wanted.remove(&album);
+                this.unheld.albums_missing_tracks_wanted.remove(&album);
                 this.wants_landed(
                     wanted,
                     words::models::download_the_missing_tracks(),
@@ -305,22 +314,23 @@ impl LibraryModel {
     }
 
     pub fn is_opening_album(&self, group: &Mbid) -> bool {
-        self.albums_opening.contains(group)
+        self.unheld.albums_opening.contains(group)
     }
 
     pub fn is_opening_artist(&self, artist: &Mbid) -> bool {
-        self.artists_opening.contains(artist)
+        self.unheld.artists_opening.contains(artist)
     }
 
     pub fn fetching_album(&self, group: &Mbid) -> Option<Fetching> {
-        if self.albums_wanted.contains_key(group) {
+        if self.unheld.albums_wanted.contains_key(group) {
             return Some(Fetching::Landing);
         }
         let fetching: Vec<Fetching> = self
+            .unheld
             .album_songs
             .get(group)?
             .iter()
-            .filter_map(|recording| self.downloads.of(recording))
+            .filter_map(|recording| self.delivered.downloads.of(recording))
             .map(|download| self.fetching(download))
             .collect();
 
@@ -339,14 +349,15 @@ impl LibraryModel {
     }
 
     pub(crate) fn told_album(&self, group: &Mbid) -> Option<SharedString> {
-        if self.albums_wanted.contains_key(group) {
+        if self.unheld.albums_wanted.contains_key(group) {
             return Some(Fetching::Landing.saying());
         }
         let songs: Vec<&Download> = self
+            .unheld
             .album_songs
             .get(group)?
             .iter()
-            .filter_map(|recording| self.downloads.of(recording))
+            .filter_map(|recording| self.delivered.downloads.of(recording))
             .collect();
         if songs.is_empty() {
             return None;

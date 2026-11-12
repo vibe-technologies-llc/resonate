@@ -21,17 +21,17 @@ impl ListOffered {
 impl RootView {
     pub(crate) fn offer_a_shared_list(&mut self, offered: ListOffered, cx: &mut Context<Self>) {
         self.close_the_menu(cx);
-        self.list_offered = Some(offered);
+        self.social.list_offered = Some(offered);
         cx.notify();
     }
 
     pub(crate) fn not_joining_the_list(&mut self, cx: &mut Context<Self>) {
-        self.list_offered = None;
+        self.social.list_offered = None;
         cx.notify();
     }
 
     fn join_the_offered_list(&mut self, cx: &mut Context<Self>) {
-        let Some(offered) = self.list_offered.take() else {
+        let Some(offered) = self.social.list_offered.take() else {
             return;
         };
         cx.notify();
@@ -39,7 +39,7 @@ impl RootView {
     }
 
     pub(crate) fn list_offer_sheet(&self, cx: &mut Context<Self>) -> Div {
-        let Some(offered) = self.list_offered.as_ref() else {
+        let Some(offered) = self.social.list_offered.as_ref() else {
             return div();
         };
         let asking = offered.asking();

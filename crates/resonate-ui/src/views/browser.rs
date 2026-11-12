@@ -271,8 +271,8 @@ impl RootView {
         let columns = self.grid_columns();
         let held = albums.len();
         let rows = listed.div_ceil(columns.max(1));
-        let measured = self.grid_width.clone();
-        let laid_out = self.grid_width.get() > px(0.0);
+        let measured = self.rooms.grid_width.clone();
+        let laid_out = self.rooms.grid_width.get() > px(0.0);
         if laid_out {
             self.land_where_it_was_left(rows);
         }
@@ -343,13 +343,14 @@ impl RootView {
                                         },
                                     ),
                                 )
-                                .track_scroll(&self.album_rows)
+                                .track_scroll(&self.scrolls.album_rows)
                                 .h_full()
                                 .w_full(),
                             )
                         })
                         .child(
-                            Scrollbars::of(cx).vertical("album-scrollbar", self.album_rows.clone()),
+                            Scrollbars::of(cx)
+                                .vertical("album-scrollbar", self.scrolls.album_rows.clone()),
                         ),
                 )
             })
@@ -370,11 +371,11 @@ impl RootView {
     }
 
     pub(crate) fn grid_columns(&self) -> usize {
-        columns_across(f32::from(self.grid_width.get()))
+        columns_across(f32::from(self.rooms.grid_width.get()))
     }
 
     pub(crate) fn grid_side(&self) -> f32 {
-        side_across(f32::from(self.grid_width.get()))
+        side_across(f32::from(self.rooms.grid_width.get()))
     }
 
     pub(crate) fn grid_row(&self) -> f32 {
@@ -688,7 +689,7 @@ impl RootView {
         let counted = self.library.read(cx).artists_counted() as usize;
         let held = artists.len();
         let listed = self.library.read(cx).artists_listed();
-        let drawn = self.artists_drawn;
+        let drawn = self.shows.artists;
         if drawn == ArtistsDrawn::List {
             self.land_where_it_was_left(listed);
         }
@@ -749,7 +750,7 @@ impl RootView {
                 pane.child(
                     Scrollbars::of(cx).around(
                         "artist-scrollbar",
-                        self.artist_rows.clone(),
+                        self.scrolls.artist_rows.clone(),
                         uniform_list(
                             "artists",
                             listed,
@@ -848,7 +849,7 @@ impl RootView {
                                 rows
                             }),
                         )
-                        .track_scroll(&self.artist_rows)
+                        .track_scroll(&self.scrolls.artist_rows)
                         .h_full()
                         .w_full(),
                     ),
@@ -912,7 +913,7 @@ impl RootView {
             Selection::Artist(artist) => {
                 let library = self.library.read(cx);
                 let held = library.artist_albums().len() + library.albums_not_held().len();
-                (self.artist_shows.within(held) == ArtistShows::Records)
+                (self.shows.artist.within(held) == ArtistShows::Records)
                     .then(|| self.artist_records(artist, cx))
             }
             Selection::Everything | Selection::Album(_) => None,
@@ -926,7 +927,7 @@ impl RootView {
             .when_some(records, |pane, records| {
                 pane.child(Scrollbars::of(cx).around(
                     "artist-records-scrollbar",
-                    self.artist_records_scroll.clone(),
+                    self.scrolls.artist_records.clone(),
                     records,
                 ))
             })
@@ -940,7 +941,7 @@ impl RootView {
                         TRACK_CONTROLS
                     },
                     sorting::tracks_sorted(self, cx),
-                    &self.columns_fit,
+                    &self.rooms.columns_fit,
                     &self.controls,
                     cx,
                 ))
@@ -950,7 +951,7 @@ impl RootView {
                 pane.child(
                     Scrollbars::of(cx).around(
                         "track-scrollbar",
-                        self.track_rows.clone(),
+                        self.scrolls.track_rows.clone(),
                         uniform_list(
                             "tracks",
                             listed,
@@ -1043,7 +1044,7 @@ impl RootView {
                                 drawn
                             }),
                         )
-                        .track_scroll(&self.track_rows)
+                        .track_scroll(&self.scrolls.track_rows)
                         .h_full()
                         .w_full(),
                     ),
@@ -1087,7 +1088,7 @@ impl RootView {
                     .map_or_else(Lit::new, |name| search.lit(name, Column::Artist)),
             )
         };
-        let fitted = self.columns_fit.shown();
+        let fitted = self.rooms.columns_fit.shown();
         let number = match (in_an_album, track.track_number) {
             (true, Some(number)) => SharedString::from(number.to_string()),
             (true, None) => SharedString::new_static(""),
@@ -1411,7 +1412,7 @@ impl RootView {
             _ => None,
         };
         let mark = self.want_mark(asks, cx);
-        let fitted = self.columns_fit.shown();
+        let fitted = self.rooms.columns_fit.shown();
         let (title, lit_title, lit_artist) = match &beside {
             Beside::AnAlbum | Beside::ARun => (title, Lit::new(), Lit::new()),
             Beside::ASearch { .. } => {
@@ -1698,8 +1699,8 @@ impl RootView {
             .read(cx)
             .artists_listed()
             .div_ceil(columns.max(1));
-        let measured = self.grid_width.clone();
-        let laid_out = self.grid_width.get() > px(0.0);
+        let measured = self.rooms.grid_width.clone();
+        let laid_out = self.rooms.grid_width.get() > px(0.0);
         if laid_out {
             self.land_where_it_was_left(rows);
         }
@@ -1741,12 +1742,14 @@ impl RootView {
                                 .collect()
                         }),
                     )
-                    .track_scroll(&self.artist_rows)
+                    .track_scroll(&self.scrolls.artist_rows)
                     .h_full()
                     .w_full(),
                 )
             })
-            .child(Scrollbars::of(cx).vertical("artist-scrollbar", self.artist_rows.clone()))
+            .child(
+                Scrollbars::of(cx).vertical("artist-scrollbar", self.scrolls.artist_rows.clone()),
+            )
     }
 
     fn artist_cell(
@@ -2061,10 +2064,10 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .gap_1()
-            .child(kit::measures_its_width(self.hero_width.clone()))
-            .child(kit::measures_its_height(self.hero_height.clone()))
+            .child(kit::measures_its_width(self.rooms.hero_width.clone()))
+            .child(kit::measures_its_height(self.rooms.hero_height.clone()))
             .child(kit::eyebrow(words::browser::album()))
-            .child(kit::hero_title(title, self.hero_width.get()))
+            .child(kit::hero_title(title, self.rooms.hero_width.get()))
             .when_some(owner, |column, (artist, name)| {
                 column.child(
                     div()
@@ -2146,7 +2149,7 @@ impl RootView {
         let records = library.artist_albums().len();
         let any_records = records + library.albums_not_held().len();
         let tracks = library.listed().rows as usize;
-        let shows = self.artist_shows.within(any_records);
+        let shows = self.shows.artist.within(any_records);
 
         let side = self.hero_side();
         let portrait = match self.library.update(cx, |library, cx| {
@@ -2166,19 +2169,25 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .gap_1()
-            .child(kit::measures_its_width(self.hero_width.clone()))
-            .child(kit::measures_its_height(self.hero_height.clone()))
+            .child(kit::measures_its_width(self.rooms.hero_width.clone()))
+            .child(kit::measures_its_height(self.rooms.hero_height.clone()))
             .child(kit::eyebrow(words::browser::artist()))
             .child(kit::hero_title(
                 SharedString::from(name),
-                self.hero_width.get(),
+                self.rooms.hero_width.get(),
             ))
             .child(kit::subtitle(under))
             .when_some(profile, |column, profile| {
                 column.child(kit::subtitle(profile))
             })
             .when_some(
-                heard_on(self, "artist-heard-on", services, self.hero_width.get(), cx),
+                heard_on(
+                    self,
+                    "artist-heard-on",
+                    services,
+                    self.rooms.hero_width.get(),
+                    cx,
+                ),
                 Div::child,
             )
             .child(
@@ -2282,9 +2291,9 @@ impl RootView {
     }
 
     fn show_of_the_artist(&mut self, shows: ArtistShows, cx: &mut Context<Self>) {
-        self.artist_shows = shows;
+        self.shows.artist = shows;
         if shows == ArtistShows::Records {
-            self.ordering = None;
+            self.orders.ordering = None;
         }
         cx.notify();
     }
@@ -2670,7 +2679,7 @@ impl RootView {
             .flex_1()
             .min_h(px(0.0))
             .overflow_y_scroll()
-            .track_scroll(&self.artist_records_scroll)
+            .track_scroll(&self.scrolls.artist_records)
             .child(
                 div()
                     .relative()
@@ -2681,7 +2690,7 @@ impl RootView {
                     .px_6()
                     .pt_5()
                     .pb_6()
-                    .child(kit::measures_the_grid(self.grid_width.clone()))
+                    .child(kit::measures_the_grid(self.rooms.grid_width.clone()))
                     .children(cells),
             )
     }
@@ -2854,7 +2863,7 @@ impl RootView {
             .child(kit::brought_into_view_within(
                 None,
                 Some(scroll.clone()),
-                Rc::clone(&self.reached_unseen),
+                Rc::clone(&self.rooms.reached_unseen),
             ))
             .into_any_element()
     }
@@ -2868,7 +2877,8 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let scroll = self
-            .shelf_scrolls
+            .scrolls
+            .shelves
             .borrow_mut()
             .entry(id)
             .or_default()
@@ -2896,7 +2906,8 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let scroll = self
-            .shelf_scrolls
+            .scrolls
+            .shelves
             .borrow_mut()
             .entry(id)
             .or_default()
@@ -5308,7 +5319,7 @@ mod tests {
             };
             let mut driven = Driven::reaching(cx, library, &folder, reaching);
 
-            let search = driven.read(|root, _| root.search.clone());
+            let search = driven.read(|root, _| root.typed.search.clone());
             driven.cx.update(|_, cx| {
                 search.update(cx, |search, cx| {
                     search.set_text("You F O by stela cole".to_owned(), cx);
@@ -5348,7 +5359,7 @@ mod tests {
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
             Driven::scanned(&library, &folder);
             let mut driven = Driven::opened_in(cx, library, &folder);
-            let search = driven.read(|root, _| root.search.clone());
+            let search = driven.read(|root, _| root.typed.search.clone());
 
             for sidebar in [
                 "queue",
@@ -5398,7 +5409,7 @@ mod tests {
             };
             let mut driven = Driven::reaching(cx, library, &folder, reaching);
 
-            let search = driven.read(|root, _| root.search.clone());
+            let search = driven.read(|root, _| root.typed.search.clone());
             driven.cx.update(|_, cx| {
                 search.update(cx, |search, cx| search.set_text("heroes".to_owned(), cx));
             });
@@ -5471,7 +5482,7 @@ mod tests {
             let cell: &'static str =
                 Box::leak(format!("album-found-{HEROES_TONIGHT_GROUP}").into_boxed_str());
 
-            let search = driven.read(|root, _| root.search.clone());
+            let search = driven.read(|root, _| root.typed.search.clone());
             driven.cx.update(|_, cx| {
                 search.update(cx, |search, cx| search.set_text("heroes".to_owned(), cx));
             });
@@ -5680,7 +5691,7 @@ mod tests {
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
 
-            let search = driven.read(|root, _| root.search.clone());
+            let search = driven.read(|root, _| root.typed.search.clone());
             driven.cx.update(|window, cx| {
                 cx.write_to_clipboard(ClipboardItem::new_string(format!(
                     "https://www.deezer.com/en/playlist/{NCS_PLAYLIST}"
@@ -5690,7 +5701,7 @@ mod tests {
             driven.until(|_, _| !asked.lock().is_empty());
 
             assert_eq!(
-                driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+                driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
                 ""
             );
             assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
@@ -5723,7 +5734,7 @@ mod tests {
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
 
-            let search = driven.read(|root, _| root.search.clone());
+            let search = driven.read(|root, _| root.typed.search.clone());
             driven.cx.update(|window, cx| {
                 cx.write_to_clipboard(ClipboardItem::new_string(
                     "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT?si=a1".to_owned(),
@@ -5733,7 +5744,7 @@ mod tests {
             driven.until(|_, _| !asked.lock().is_empty());
 
             assert_eq!(
-                driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+                driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
                 "",
                 "the link was neither kept in the box nor swapped for the song's name"
             );
@@ -5766,7 +5777,7 @@ mod tests {
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
 
-            let search = driven.read(|root, _| root.search.clone());
+            let search = driven.read(|root, _| root.typed.search.clone());
             driven.cx.update(|window, cx| {
                 cx.write_to_clipboard(ClipboardItem::new_string(format!(
                     "https://musicbrainz.org/release-group/{HEROES_TONIGHT_GROUP}"
@@ -5776,7 +5787,7 @@ mod tests {
             driven.until(|_, _| !asked.lock().is_empty());
 
             assert_eq!(
-                driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+                driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
                 "",
                 "the album link was taken for words to search"
             );
@@ -5975,7 +5986,7 @@ mod tests {
             });
             let found = driven
                 .read(|root, cx| TopRun::of(root.library.read(cx)).row_of(TopEntry::Found(0)));
-            driven.focus(|root| &root.search);
+            driven.focus(|root| &root.typed.search);
             for _ in 0..=found {
                 driven.cx.simulate_keystrokes("down");
             }
@@ -6018,7 +6029,7 @@ mod tests {
             let top = Shift::Listing(Listed::Top);
 
             assert_eq!(run.len(), 3);
-            driven.focus(|root| &root.search);
+            driven.focus(|root| &root.typed.search);
             driven.cx.simulate_keystrokes("down");
             driven.settle();
             assert!(
@@ -6061,7 +6072,7 @@ mod tests {
             driven.click("tab-tracks");
             let top = Shift::Listing(Listed::Top);
 
-            driven.focus(|root| &root.search);
+            driven.focus(|root| &root.typed.search);
             driven.cx.simulate_input("zebra");
             assert!(
                 driven.read(|root, cx| root.library.read(cx).is_reading_the_search()),

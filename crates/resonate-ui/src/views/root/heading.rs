@@ -115,7 +115,7 @@ impl RootView {
     }
 
     pub(super) fn search_field(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
-        let search = self.search.read(cx);
+        let search = self.typed.search.read(cx);
         let searching = search.is_focused(window);
         let empty = search.text().is_empty();
 
@@ -155,11 +155,12 @@ impl RootView {
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_mouse_down_out(cx.listener(|this, _, window, cx| this.leave_search(window, cx)))
             .on_click(cx.listener(|this, _, window, cx| {
-                this.search
+                this.typed
+                    .search
                     .update(cx, |search, cx| search.take_focus(window, cx));
                 cx.notify();
             }))
-            .child(self.search.clone())
+            .child(self.typed.search.clone())
             .when(!empty, |field| field.child(self.clear_search(cx)))
             .when(empty && !searching, |field| {
                 field.child(kit::figure(key!(find)).text_color(rgb(theme::faint())))
@@ -169,7 +170,7 @@ impl RootView {
         menu::opens_a_menu(
             box_of_words,
             |this, at, cx| {
-                let holding = this.search.read(cx).holds_a_selection();
+                let holding = this.typed.search.read(cx).holds_a_selection();
 
                 Menu::at(at)
                     .when_some(holding.then_some(()), |menu, ()| {
@@ -178,7 +179,9 @@ impl RootView {
                             words::root::cut(),
                             key!(cut),
                             |this, window, cx| {
-                                this.search.update(cx, |field, cx| field.cuts(window, cx));
+                                this.typed
+                                    .search
+                                    .update(cx, |field, cx| field.cuts(window, cx));
                             },
                         )
                         .under(
@@ -186,7 +189,9 @@ impl RootView {
                             words::root::copy(),
                             key!(copy),
                             |this, window, cx| {
-                                this.search.update(cx, |field, cx| field.copies(window, cx));
+                                this.typed
+                                    .search
+                                    .update(cx, |field, cx| field.copies(window, cx));
                             },
                         )
                     })
@@ -195,7 +200,9 @@ impl RootView {
                         words::root::paste(),
                         key!(paste),
                         |this, window, cx| {
-                            this.search.update(cx, |field, cx| field.pastes(window, cx));
+                            this.typed
+                                .search
+                                .update(cx, |field, cx| field.pastes(window, cx));
                         },
                     )
                     .under(
@@ -203,7 +210,8 @@ impl RootView {
                         words::root::select_all(),
                         key!(select_everything),
                         |this, window, cx| {
-                            this.search
+                            this.typed
+                                .search
                                 .update(cx, |field, cx| field.selects_everything(window, cx));
                         },
                     )
@@ -227,7 +235,7 @@ impl RootView {
             .hover(|button| button.bg(rgb(theme::hover())))
             .names(words::root::clear_search_hint(key!(leave)))
             .on_click(cx.listener(|this, _, window, cx| {
-                this.search.update(cx, |search, cx| {
+                this.typed.search.update(cx, |search, cx| {
                     search.take_focus(window, cx);
                     search.clear(cx);
                 });
@@ -339,12 +347,12 @@ impl RootView {
                             .flex_1()
                             .min_h(px(0.0))
                             .overflow_y_scroll()
-                            .track_scroll(&self.sidebar_scroll)
+                            .track_scroll(&self.scrolls.sidebar)
                             .child(content),
                     )
                     .child(
                         Scrollbars::of(cx)
-                            .vertical("sidebar-scrollbar", self.sidebar_scroll.clone()),
+                            .vertical("sidebar-scrollbar", self.scrolls.sidebar.clone()),
                     ),
             )
             .child(foot)

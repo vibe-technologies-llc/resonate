@@ -18,8 +18,8 @@ use crate::held::Rows;
 impl LibraryModel {
     pub(crate) const fn listed(&self) -> Measured {
         match self.selection {
-            Selection::Everything => self.tracks_measured,
-            Selection::Album(_) | Selection::Artist(_) => self.scoped_measured,
+            Selection::Everything => self.browse.tracks_measured,
+            Selection::Album(_) | Selection::Artist(_) => self.browse.scoped_measured,
         }
     }
 
@@ -28,15 +28,15 @@ impl LibraryModel {
     }
 
     pub(crate) const fn albums_counted(&self) -> u32 {
-        self.albums_counted
+        self.browse.albums_counted
     }
 
     pub(crate) const fn artists_counted(&self) -> u32 {
-        self.artists_counted
+        self.browse.artists_counted
     }
 
     pub(crate) const fn tracks_counted(&self) -> u32 {
-        self.tracks_measured.rows
+        self.browse.tracks_measured.rows
     }
 
     pub(crate) fn catalog(&self) -> Arc<Library> {
@@ -92,10 +92,10 @@ impl LibraryModel {
     }
 
     pub(crate) fn reach_further(&mut self, drawn_to: usize, held: usize, cx: &mut Context<Self>) {
-        if held < self.reach || drawn_to + LOOK_AHEAD < held {
+        if held < self.browse.reach || drawn_to + LOOK_AHEAD < held {
             return;
         }
-        self.reach = reach_covering(self.reach, drawn_to);
+        self.browse.reach = reach_covering(self.browse.reach, drawn_to);
         self.read(Wanted::ThePage, cx);
     }
 
@@ -104,18 +104,18 @@ impl LibraryModel {
     }
 
     pub fn played_from(&self, row: usize) -> Option<(Arc<[Track]>, usize)> {
-        if self.rows.is_empty() {
+        if self.browse.rows.is_empty() {
             return Some((self.listing().whole(), row));
         }
-        self.played_from_held(held_at(&self.rows, row)?)
+        self.played_from_held(held_at(&self.browse.rows, row)?)
     }
 
     pub fn played_from_held(&self, held: usize) -> Option<(Arc<[Track]>, usize)> {
         let listing = self.listing();
-        if self.rows.is_empty() {
+        if self.browse.rows.is_empty() {
             return Some((listing.whole(), held));
         }
-        let order = held_in(&self.rows);
+        let order = held_in(&self.browse.rows);
         let start = order.iter().position(|at| *at == held)?;
         let played = order
             .iter()
@@ -128,7 +128,7 @@ impl LibraryModel {
     pub(crate) fn as_drawn(&self) -> AsDrawn {
         match self.selection {
             Selection::Album(_) => AsDrawn::Album {
-                release_tracks: Arc::clone(&self.release_tracks),
+                release_tracks: Arc::clone(&self.detail.release_tracks),
                 arranging: self.arranging(),
             },
             Selection::Everything | Selection::Artist(_) => AsDrawn::Listed,
@@ -143,9 +143,9 @@ impl LibraryModel {
     }
 
     pub fn listed_rows(&self) -> usize {
-        match self.rows.is_empty() {
+        match self.browse.rows.is_empty() {
             true => self.listing().len().max(self.listed().rows as usize),
-            false => self.rows.len(),
+            false => self.browse.rows.len(),
         }
     }
 
@@ -154,10 +154,10 @@ impl LibraryModel {
 
         rows.into_iter()
             .filter_map(|row| {
-                let held = if self.rows.is_empty() {
+                let held = if self.browse.rows.is_empty() {
                     row
                 } else {
-                    held_at(&self.rows, row)?
+                    held_at(&self.browse.rows, row)?
                 };
                 listing.get(held).cloned()
             })
@@ -166,52 +166,62 @@ impl LibraryModel {
 
     pub fn albums_at(&self, rows: impl IntoIterator<Item = usize>) -> Vec<AlbumId> {
         rows.into_iter()
-            .filter_map(|row| self.albums.get(row).map(|album| album.id))
+            .filter_map(|row| self.browse.albums.get(row).map(|album| album.id))
             .collect()
     }
 
     pub fn playlists_at(&self, rows: impl IntoIterator<Item = usize>) -> Vec<PlaylistId> {
         rows.into_iter()
-            .filter_map(|row| self.playlists.get(row).map(|playlist| playlist.id))
+            .filter_map(|row| self.shelf.playlists.get(row).map(|playlist| playlist.id))
             .collect()
     }
 
     pub fn artists_at(&self, rows: impl IntoIterator<Item = usize>) -> Vec<ArtistId> {
         rows.into_iter()
-            .filter_map(|row| self.artists.get(row).map(|artist| artist.id))
+            .filter_map(|row| self.browse.artists.get(row).map(|artist| artist.id))
             .collect()
     }
 
     pub(crate) fn albums_listed(&self) -> usize {
-        self.albums.len().max(self.albums_counted as usize)
+        self.browse
+            .albums
+            .len()
+            .max(self.browse.albums_counted as usize)
     }
 
     pub(crate) fn artists_listed(&self) -> usize {
-        self.artists.len().max(self.artists_counted as usize)
+        self.browse
+            .artists
+            .len()
+            .max(self.browse.artists_counted as usize)
     }
 
     pub fn albums(&self) -> Rows<Album> {
-        self.albums.clone()
+        self.browse.albums.clone()
     }
 
     pub fn artists(&self) -> Rows<Artist> {
-        self.artists.clone()
+        self.browse.artists.clone()
     }
 
     pub fn tracks(&self) -> Rows<Track> {
-        self.tracks.clone()
+        self.browse.tracks.clone()
     }
 
     pub fn listing(&self) -> Rows<Track> {
         match self.selection {
-            Selection::Everything => self.tracks.clone(),
-            Selection::Album(_) | Selection::Artist(_) => self.scoped.clone(),
+            Selection::Everything => self.browse.tracks.clone(),
+            Selection::Album(_) | Selection::Artist(_) => self.browse.scoped.clone(),
         }
     }
 
     pub fn album_of(&self, id: AlbumId) -> Option<&Album> {
-        self.scoped_album(id)
-            .or_else(|| self.album_at.get(&id).and_then(|at| self.albums.get(*at)))
+        self.scoped_album(id).or_else(|| {
+            self.browse
+                .album_at
+                .get(&id)
+                .and_then(|at| self.browse.albums.get(*at))
+        })
     }
 
     pub fn roots(&self) -> &[PathBuf] {
@@ -219,55 +229,58 @@ impl LibraryModel {
     }
 
     pub fn playlists(&self) -> &[Playlist] {
-        &self.playlists
+        &self.shelf.playlists
     }
 
     pub fn saved_playlists(&self) -> Arc<[Playlist]> {
-        Arc::clone(&self.playlists)
+        Arc::clone(&self.shelf.playlists)
     }
 
     pub fn pinned(&self) -> Arc<[NamedPlaylist]> {
-        Arc::clone(&self.pinned)
+        Arc::clone(&self.shelf.pinned)
     }
 
     pub fn pictured(&self, id: PlaylistId) -> Arc<[AlbumId]> {
-        self.pictured.get(&id).map_or_else(Arc::default, Arc::clone)
+        self.shelf
+            .pictured
+            .get(&id)
+            .map_or_else(Arc::default, Arc::clone)
     }
 
     pub fn lists(&self) -> Arc<[Playlist]> {
-        Arc::clone(&self.lists)
+        Arc::clone(&self.shelf.lists)
     }
 
     pub fn entries(&self) -> Arc<[PlaylistEntry]> {
-        Arc::clone(&self.entries)
+        Arc::clone(&self.shelf.entries)
     }
 
     pub const fn opened(&self) -> Option<PlaylistId> {
-        self.opened
+        self.shelf.opened
     }
 
     pub const fn playlist_order(&self) -> PlaylistOrder {
-        self.order
+        self.shelf.order
     }
 
     pub const fn playlist_reading(&self) -> Direction {
-        self.reading
+        self.shelf.reading
     }
 
     pub fn order_playlists(&mut self, order: PlaylistOrder, cx: &mut Context<Self>) {
-        if self.order == order {
+        if self.shelf.order == order {
             return;
         }
-        self.order = order;
-        self.reading = order.reads();
+        self.shelf.order = order;
+        self.shelf.reading = order.reads();
         self.reload_playlists(cx);
     }
 
     pub fn read_playlists(&mut self, reading: Direction, cx: &mut Context<Self>) {
-        if self.reading == reading {
+        if self.shelf.reading == reading {
             return;
         }
-        self.reading = reading;
+        self.shelf.reading = reading;
         self.reload_playlists(cx);
     }
 
@@ -344,19 +357,20 @@ impl LibraryModel {
     }
 
     fn read_listings_again(&mut self, cx: &mut Context<Self>) {
-        self.reach = PAGE;
+        self.browse.reach = PAGE;
         self.read(Wanted::TheSearch, cx);
     }
 
     pub fn opened_playlist(&self) -> Option<&Playlist> {
-        self.held.as_ref()
+        self.shelf.held.as_ref()
     }
 
     pub fn saved_playlist(&self, id: PlaylistId) -> Option<&Playlist> {
-        self.held
+        self.shelf
+            .held
             .as_ref()
             .filter(|held| held.id == id)
-            .or_else(|| self.playlists.iter().find(|held| held.id == id))
+            .or_else(|| self.shelf.playlists.iter().find(|held| held.id == id))
     }
 
     pub fn narrowing(&self) -> Option<&str> {
@@ -364,12 +378,12 @@ impl LibraryModel {
     }
 
     pub const fn meant(&self) -> Option<&Meant> {
-        self.meant.as_ref()
+        self.outreach.meant.as_ref()
     }
 
     pub fn search_as_typed(&mut self, cx: &mut Context<Self>) {
-        self.as_typed = true;
-        self.meant = None;
+        self.outreach.as_typed = true;
+        self.outreach.meant = None;
         self.search = Search::read(&self.query);
         self.read_after(Duration::ZERO, Wanted::TheSearch, cx);
         cx.notify();
@@ -395,10 +409,10 @@ impl LibraryModel {
         if self.query == query {
             return;
         }
-        self.as_typed = false;
+        self.outreach.as_typed = false;
         self.search = Search::read(&query);
         self.query = query;
-        self.reach = PAGE;
+        self.browse.reach = PAGE;
         self.read_after(SEARCH_SETTLE, Wanted::TheSearch, cx);
         self.ask_elsewhere_after(ASKED_ELSEWHERE_AFTER, cx);
         self.restate_the_listing();
@@ -420,11 +434,11 @@ impl LibraryModel {
             }
         }
         self.selection = selection;
-        self.songs_not_held = Arc::default();
-        self.albums_not_held = Arc::default();
+        self.unheld.songs = Arc::default();
+        self.unheld.albums = Arc::default();
         self.ask_elsewhere_after(Duration::ZERO, cx);
         self.restate_the_listing();
-        self.reach = PAGE;
+        self.browse.reach = PAGE;
         self.read(Wanted::TheSearch, cx);
     }
 }

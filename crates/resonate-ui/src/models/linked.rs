@@ -13,7 +13,7 @@ use crate::{toast, words};
 
 impl LibraryModel {
     pub(super) fn keep_the_linked_in_step(&mut self, cx: &mut Context<Self>) {
-        self._keeping_in_step = cx.spawn(async move |this, cx| {
+        self.watchers._linked = cx.spawn(async move |this, cx| {
             let mut waiting = LINKS_LOOKED_AT_FIRST_AFTER;
             loop {
                 cx.background_executor().timer(waiting).await;
@@ -45,9 +45,9 @@ impl LibraryModel {
             );
             return;
         };
-        let before = mem::replace(&mut self._refreshing, Task::ready(()));
+        let before = mem::replace(&mut self.watchers._refreshing, Task::ready(()));
 
-        self._refreshing = cx.spawn(async move |this, cx| {
+        self.watchers._refreshing = cx.spawn(async move |this, cx| {
             before.await;
             let read = cx
                 .background_executor()

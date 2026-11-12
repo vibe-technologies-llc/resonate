@@ -112,10 +112,11 @@ impl RootView {
     }
 
     pub(crate) fn settings(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let narrowing = Narrowing::of(self.finding.read(cx).text());
-        let category = self.settings_category;
+        let narrowing = Narrowing::of(self.typed.finding.read(cx).text());
+        let category = self.settings_shown.category;
         let page = self
-            .settings_page
+            .settings_shown
+            .page
             .filter(|page| page.category() == category && !narrowing.narrows());
         let standing = self.standing(cx);
         let rail = self.categories(&narrowing, cx);
@@ -137,12 +138,12 @@ impl RootView {
                             .child(rail)
                             .child(Scrollbars::of(cx).vertical(
                                 "settings-categories-scrollbar",
-                                self.settings_rail_scroll.clone(),
+                                self.scrolls.settings_rail.clone(),
                             )),
                     )
                     .child(Scrollbars::of(cx).around(
                         "settings-scrollbar",
-                        self.settings_scroll.clone(),
+                        self.scrolls.settings.clone(),
                         body,
                     )),
             )
@@ -214,7 +215,7 @@ impl RootView {
     }
 
     fn filter_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        let typed = !self.finding.read(cx).text().is_empty();
+        let typed = !self.typed.finding.read(cx).text().is_empty();
 
         kit::framed_field("find-a-setting", self.finding_holds_the_caret)
             .w(theme::width(theme::picker_width()))
@@ -224,7 +225,7 @@ impl RootView {
                 theme::search_icon(),
                 theme::faint(),
             ))
-            .child(self.finding.clone())
+            .child(self.typed.finding.clone())
             .when_else(
                 typed,
                 |field| field.child(self.clear_filter(cx)),
@@ -233,7 +234,8 @@ impl RootView {
                 },
             )
             .on_click(cx.listener(|this, _, window, cx| {
-                this.finding
+                this.typed
+                    .finding
                     .update(cx, |finding, cx| finding.take_focus(window, cx));
                 cx.notify();
             }))
@@ -261,8 +263,11 @@ impl RootView {
         self.in_the_pane_ring(
             clear,
             |this, window, cx| {
-                this.finding.update(cx, |finding, cx| finding.clear(cx));
-                this.finding
+                this.typed
+                    .finding
+                    .update(cx, |finding, cx| finding.clear(cx));
+                this.typed
+                    .finding
                     .update(cx, |finding, cx| finding.take_focus(window, cx));
                 cx.notify();
             },
@@ -271,7 +276,7 @@ impl RootView {
     }
 
     fn categories(&self, narrowing: &Narrowing, cx: &mut Context<Self>) -> Stateful<Div> {
-        let chosen = self.settings_category;
+        let chosen = self.settings_shown.category;
         let mut rail = div()
             .id("settings-categories")
             .named_as(Role::TabList, words::settings_pane::categories(), "")
@@ -286,7 +291,7 @@ impl RootView {
             .border_r_1()
             .border_color(rgb(theme::border()))
             .overflow_y_scroll()
-            .track_scroll(&self.settings_rail_scroll)
+            .track_scroll(&self.scrolls.settings_rail)
             .h_full();
 
         for category in Category::ALL {
@@ -436,7 +441,7 @@ impl RootView {
             .min_w(px(0.0))
             .min_h(px(0.0))
             .overflow_y_scroll()
-            .track_scroll(&self.settings_scroll)
+            .track_scroll(&self.scrolls.settings)
             .child(motion::faded_in(
                 div()
                     .flex()
@@ -514,28 +519,30 @@ impl RootView {
 
     pub(crate) fn open_the_settings_page(&mut self, page: Page, cx: &mut Context<Self>) {
         self.show_settings(page.category(), cx);
-        self.settings_page = Some(page);
-        self.settings_scroll.set_offset(Point::default());
+        self.settings_shown.page = Some(page);
+        self.scrolls.settings.set_offset(Point::default());
         cx.notify();
     }
 
     pub(crate) fn leave_the_settings_page(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.settings_page.take().is_none() {
+        if self.settings_shown.page.take().is_none() {
             return false;
         }
-        self.settings_scroll.set_offset(Point::default());
+        self.scrolls.settings.set_offset(Point::default());
         self.disarm();
         cx.notify();
         true
     }
 
     fn open_the_place(&mut self, category: Category, page: Option<Page>, cx: &mut Context<Self>) {
-        self.finding.update(cx, |finding, cx| finding.clear(cx));
+        self.typed
+            .finding
+            .update(cx, |finding, cx| finding.clear(cx));
         match page {
             Some(page) => self.open_the_settings_page(page, cx),
             None => {
                 self.show_settings(category, cx);
-                self.settings_scroll.set_offset(Point::default());
+                self.scrolls.settings.set_offset(Point::default());
             }
         }
     }
@@ -844,10 +851,10 @@ impl RootView {
         let presence = cx.global::<ResonateApp>().presence.clone();
         let synchronised = cx.global::<ResonateApp>().synchronised.clone();
         let measurer_given = !cx.global::<ResonateApp>().measurers.is_empty();
-        let contact_given = !self.contact.read(cx).text().trim().is_empty();
-        let key_given = !self.acoustid.read(cx).text().trim().is_empty();
-        let token_given = !self.audd.read(cx).text().trim().is_empty();
-        let submitting_given = !self.listenbrainz.read(cx).text().trim().is_empty();
+        let contact_given = !self.typed.contact.read(cx).text().trim().is_empty();
+        let key_given = !self.typed.acoustid.read(cx).text().trim().is_empty();
+        let token_given = !self.typed.audd.read(cx).text().trim().is_empty();
+        let submitting_given = !self.typed.listenbrainz.read(cx).text().trim().is_empty();
         let lastfm_given = {
             let online = &cx.global::<ResonateApp>().online;
             [
@@ -861,7 +868,7 @@ impl RootView {
         let listen = self.listen.read(cx);
         let listening_from = listen.from().clone();
         let listening_for = listen.length();
-        let template_given = self.organising.read(cx).text().trim() != DEFAULT_LAYOUT;
+        let template_given = self.typed.organising.read(cx).text().trim() != DEFAULT_LAYOUT;
         let inbox_given = self.library.read(cx).inbox().is_some();
         let music_folder_given = cx.global::<ResonateApp>().music_folder.is_some();
         let file_dropped = cx.global::<ResonateApp>().file_dropped;
@@ -870,25 +877,33 @@ impl RootView {
             || cx.global::<ResonateApp>().speaker_elevation != SpeakerElevation::LEVEL
             || cx.global::<ResonateApp>().head_yaw != HeadYaw::AHEAD;
         let subsonic_given = self
+            .typed
             .subsonic
             .iter()
             .any(|field| !field.read(cx).text().trim().is_empty());
         let jellyfin_given = self
+            .typed
             .jellyfin
             .iter()
             .any(|field| !field.read(cx).text().trim().is_empty());
         let tidal_given = TidalAccount::ALL
             .into_iter()
             .filter(|account| account.is_tidals())
-            .any(|account| !self.tidal[account.nth()].read(cx).text().trim().is_empty())
+            .any(|account| {
+                !self.typed.tidal[account.nth()]
+                    .read(cx)
+                    .text()
+                    .trim()
+                    .is_empty()
+            })
             || cx.global::<ResonateApp>().online.hosted_services;
-        let resonate_key_given = !self.tidal[TidalAccount::HifiSecret.nth()]
+        let resonate_key_given = !self.typed.tidal[TidalAccount::HifiSecret.nth()]
             .read(cx)
             .text()
             .trim()
             .is_empty();
 
-        let spotify_given = !self.spotify_client.read(cx).text().trim().is_empty()
+        let spotify_given = !self.typed.spotify_client.read(cx).text().trim().is_empty()
             || !cx
                 .global::<ResonateApp>()
                 .online
@@ -900,6 +915,7 @@ impl RootView {
             online.youtube_music
                 || !online.youtube_music_keep_order
                 || self
+                    .typed
                     .youtube_music
                     .iter()
                     .any(|field| !field.read(cx).text().trim().is_empty())
@@ -965,41 +981,41 @@ impl RootView {
 
     pub(crate) fn disarm(&mut self) {
         self.lower_every_armed_press();
-        self.reset_everything_landed = false;
+        self.settings_shown.reset_everything_landed = false;
     }
 
     fn holds_a_press_armed(&self) -> bool {
-        self.armed.is_some()
+        self.settings_shown.armed.is_some()
     }
 
     pub(super) fn lower_every_armed_press(&mut self) {
-        self.armed = None;
-        self.pairing_shown = false;
+        self.settings_shown.armed = None;
+        self.settings_shown.pairing_shown = false;
     }
 
     pub(crate) fn is_armed(&self, armed: &Armed) -> bool {
-        self.armed.as_ref() == Some(armed)
+        self.settings_shown.armed.as_ref() == Some(armed)
     }
 
     pub(crate) fn arm(&mut self, armed: Armed) {
-        self.armed = Some(armed);
+        self.settings_shown.armed = Some(armed);
     }
 
     pub(crate) fn lower(&mut self, armed: &Armed) {
         if self.is_armed(armed) {
-            self.armed = None;
+            self.settings_shown.armed = None;
         }
     }
 
     pub(crate) const fn history_armed(&self) -> Option<HistoryKept> {
-        match &self.armed {
+        match &self.settings_shown.armed {
             Some(Armed::AgeTheHistory(kept)) => Some(*kept),
             _ => None,
         }
     }
 
     pub(crate) fn folder_armed(&self) -> Option<&PathBuf> {
-        match &self.armed {
+        match &self.settings_shown.armed {
             Some(Armed::ForgetTheFolder(root)) => Some(root),
             _ => None,
         }

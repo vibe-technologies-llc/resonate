@@ -1084,7 +1084,7 @@ service offers it.
 - **In the window** a press writes the row on the background executor and starts a pass on a
   `resonate-keep` thread of its own, no `Work`, since a pass may last hours and a scan may run under it
   (`LibraryModel::keep`, `keep_mix`). **A press during a pass is never dropped and never starts a second
-  one**: the pass read its queue at its start, so `keep_owed` is set and the pass after it takes the
+  one**: the pass read its queue at its start, so `Keeps::owed` is set and the pass after it takes the
   song up; a press during a poll waits for the poll, and a pass another process refused is tried again
   `OWED_ASKED_AGAIN_AFTER` later. A poll asked for meanwhile is owed and goes first, a
   pass that gave way following it. A pass runs at open only where `keeps_pending` (rows queued and landed files a root owes a read) is above zero and
@@ -1094,7 +1094,7 @@ service offers it.
   (`a_service_that_keeps_songs_is_asked_for_its_first_page_only_once_the_pane_is_shown`). *Stop* in the *Downloads* panel cancels it, the rest queued for the next open,
   and so does turning `youtube-music` or `online` off, heard within a second
   (`keep_only_while_turned_on`); neither is undone by a yield or a refusal. What a pass that gave way
-  did is added to `keep_tally` and told in one toast when a pass ends without yielding
+  did is added to `Keeps::tally` and told in one toast when a pass ends without yielding
   (`a_song_pressed_while_a_pass_runs_waits_for_it_and_is_asked_by_the_next_pass`,
   `a_poll_asked_for_during_a_pass_goes_first_and_the_pass_is_begun_again_after_it`,
   `what_was_left_queued_is_taken_up_at_open_only_while_youtube_music_is_on`).

@@ -8,17 +8,17 @@ use super::{Change, Edited, LibraryModel, Wanted, arranged::Named};
 
 impl LibraryModel {
     pub fn favour(&mut self, what: Favoured, favourite: bool, cx: &mut Context<Self>) {
-        self.favoured.insert(what, favourite);
+        self.favours.favoured.insert(what, favourite);
         let mut named_before = None;
         if let Favoured::Track(id) = what
-            && let Some(before) = self.named.get(&id).cloned()
+            && let Some(before) = self.naming.named.get(&id).cloned()
             && before.track.is_some()
         {
             let mut named = before.clone();
             if let Some(track) = named.track.as_mut() {
                 track.favourite = favourite.then(SystemTime::now);
             }
-            self.named.insert(id, named);
+            self.naming.named.insert(id, named);
             self.revision = self.revision.wrapping_add(1);
             named_before = Some((id, before));
         }
@@ -30,7 +30,7 @@ impl LibraryModel {
             move |library| library.favour(what, favourite).map(|_| None),
             move |this, edited, _| match edited {
                 Edited::Failed => this.unfavour_what_did_not_save(what, named_before),
-                Edited::Landed => this.favours_written.push((what, favourite)),
+                Edited::Landed => this.favours.written.push((what, favourite)),
             },
             cx,
         );
@@ -41,9 +41,9 @@ impl LibraryModel {
         what: Favoured,
         named_before: Option<(TrackId, Named)>,
     ) {
-        self.favoured.remove(&what);
+        self.favours.favoured.remove(&what);
         if let Some((id, before)) = named_before {
-            self.named.insert(id, before);
+            self.naming.named.insert(id, before);
         }
         self.revision = self.revision.wrapping_add(1);
     }

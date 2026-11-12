@@ -178,7 +178,7 @@ impl RootView {
                 words::settings_filters::minimum_length_in_seconds(),
                 self.text_field(
                     "minimum-length",
-                    &self.minimum_length,
+                    &self.typed.minimum_length,
                     |this, window, cx| this.leave_minimum_length(window, cx),
                     cx,
                 ),
@@ -187,7 +187,7 @@ impl RootView {
     }
 
     fn leave_minimum_length(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.minimum_length.read(cx).is_focused(window) {
+        if !self.typed.minimum_length.read(cx).is_focused(window) {
             return;
         }
         let held = cx
@@ -195,7 +195,7 @@ impl RootView {
             .library
             .music_filters()
             .minimum_length;
-        if self.minimum_length.read(cx).text().trim() != held.seconds().to_string() {
+        if self.typed.minimum_length.read(cx).text().trim() != held.seconds().to_string() {
             self.minimum_length_given(window, cx);
         } else {
             window.focus(&self.focus, cx);
@@ -204,6 +204,7 @@ impl RootView {
 
     pub(crate) fn minimum_length_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let parsed = self
+            .typed
             .minimum_length
             .read(cx)
             .text()
@@ -234,7 +235,7 @@ impl RootView {
             minimum_length,
             ..library.music_filters()
         });
-        self.minimum_length.update(cx, |field, cx| {
+        self.typed.minimum_length.update(cx, |field, cx| {
             field.hold(minimum_length.seconds().to_string(), cx)
         });
         self.library.update(cx, |library, cx| library.reload(cx));
@@ -336,24 +337,24 @@ mod tests {
             library.music_filters().extensions,
             MusicExtensions::default()
         );
-        driven.focus(|root| &root.minimum_length);
+        driven.focus(|root| &root.typed.minimum_length);
         let root = driven.root.clone();
         driven.cx.update(|_, cx| {
-            let field = root.read(cx).minimum_length.clone();
+            let field = root.read(cx).typed.minimum_length.clone();
             field.update(cx, |field, cx| field.hold("600".to_owned(), cx));
         });
         driven.cx.simulate_keystrokes("enter");
         assert_eq!(library.music_filters().minimum_length.seconds(), 600);
-        driven.focus(|root| &root.minimum_length);
+        driven.focus(|root| &root.typed.minimum_length);
         driven.cx.update(|_, cx| {
-            let field = root.read(cx).minimum_length.clone();
+            let field = root.read(cx).typed.minimum_length.clone();
             field.update(cx, |field, cx| field.hold("601".to_owned(), cx));
         });
         driven.cx.simulate_keystrokes("enter");
         assert_eq!(library.music_filters().minimum_length.seconds(), 600);
         driven.cx.simulate_keystrokes("escape");
         assert_eq!(
-            driven.read(|root, cx| root.minimum_length.read(cx).text().to_owned()),
+            driven.read(|root, cx| root.typed.minimum_length.read(cx).text().to_owned()),
             "600"
         );
         driven

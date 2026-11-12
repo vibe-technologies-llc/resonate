@@ -518,7 +518,7 @@ tested.
   Nothing is added to the audio callback. Ending the test, or any edit of the curve, sends the
   real `Equalisation` again (`tell_the_engine`). The test needs a curve bound to the device in use
   (a toast says so), uses the shown profile `at_rate` the stream rate, and its state
-  (`RootView::audition`) lives for the run only.
+  (`SettingsShown::audition`) lives for the run only.
 - **The pane shows what the listener needs and no more**: the trial and score with the chance of
   that by guessing, a line of verdicts per trial, how the levels were matched, and which arm is
   playing; an X is heard but never named, and the verdict of the last answer is shown after it.
@@ -693,7 +693,7 @@ tested.
 - **`EngineConfig::convolution`, `Command::SetConvolution`, key `convolution`.**
   `OutputPlan::convolution` makes the plan `Converted`; a change rebinds at the position, no retune.
   The binary reads the file at start, `explain` names it; the *Room correction* page's *The room's response* group reads
-  one on a background thread. `RootView::reading_the_room` is one task: a second pick replaces it,
+  one on a background thread. `SettingsShown::reading_the_room` is one task: a second pick replaces it,
   *Stop correcting* drops it, so the last gesture wins. One response for all devices, no binding.
 - **The fit of the preamp covers it** (*Fit the preamp to the music*): the decode runs the
   `Convolver` before the stage and the bound multiplies its response in.
@@ -1209,7 +1209,7 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   an `Unmeasured` that `is_stopped` is told *The measurement was stopped; nothing was kept*, not as
   a failure), *Choose a calibration…* with the file's name and *Remove* (`EqualiserModel::calibration`,
   read in the run as any measurement by `Store::response_in`; one that will not read is told and
-  nothing is played) and a *Keep as* field (`RootView::measured_as`, the profile's name through
+  nothing is played) and a *Keep as* field (`Typed::measured_as`, the profile's name through
   `ProfileName::new`, `measured` where blank, a name refused told in a toast and nothing played).
   `EqualiserModel::measure_the_room(Sounding { rig, through, from, called })` runs the seam, the fit toward the *Fit toward* target and the
   keep as the profile named (`measured`) on the background executor (`_sounded`, apart from the other

@@ -103,7 +103,7 @@ impl RootView {
                 words::settings_desktop::application_id(),
                 self.text_field(
                     "discord-app",
-                    &self.discord_app,
+                    &self.typed.discord_app,
                     |this, window, cx| this.leave_discord_app(window, cx),
                     cx,
                 ),
@@ -151,7 +151,7 @@ impl RootView {
                 words::settings_desktop::icon(),
                 self.text_field(
                     "discord-icon",
-                    &self.discord_icon,
+                    &self.typed.discord_icon,
                     |this, window, cx| this.leave_discord_icon(window, cx),
                     cx,
                 ),
@@ -194,7 +194,7 @@ impl RootView {
     }
 
     pub(crate) fn discord_app_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let typed = self.discord_app.read(cx).text().trim().to_owned();
+        let typed = self.typed.discord_app.read(cx).text().trim().to_owned();
         let app = AppId::parse(&typed);
         if app.is_none() && !typed.is_empty() {
             self.report(
@@ -204,7 +204,8 @@ impl RootView {
             return;
         }
         let held = app.map(|app| app.to_string()).unwrap_or_default();
-        self.discord_app
+        self.typed
+            .discord_app
             .update(cx, |field, cx| field.hold(held, cx));
         self.present(|presence| presence.app = app, &Setting::DiscordApp(app), cx);
 
@@ -218,7 +219,7 @@ impl RootView {
     }
 
     pub(crate) fn leave_discord_app(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.discord_app.read(cx).is_focused(window) {
+        if !self.typed.discord_app.read(cx).is_focused(window) {
             return;
         }
         window.focus(&self.focus, cx);
@@ -226,7 +227,7 @@ impl RootView {
     }
 
     pub(crate) fn discord_icon_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let typed = self.discord_icon.read(cx).text().trim().to_owned();
+        let typed = self.typed.discord_icon.read(cx).text().trim().to_owned();
         let icon = resonate_core::Icon::parse(&typed);
         if icon.is_none() && !typed.is_empty() {
             self.report(
@@ -235,7 +236,8 @@ impl RootView {
             );
             return;
         }
-        self.discord_icon
+        self.typed
+            .discord_icon
             .update(cx, |field, cx| field.hold(typed, cx));
         self.present(
             |presence| presence.icon.clone_from(&icon),
@@ -253,7 +255,7 @@ impl RootView {
     }
 
     pub(crate) fn leave_discord_icon(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.discord_icon.read(cx).is_focused(window) {
+        if !self.typed.discord_icon.read(cx).is_focused(window) {
             return;
         }
         window.focus(&self.focus, cx);
@@ -261,7 +263,8 @@ impl RootView {
     }
 
     pub(crate) fn put_discord_back(&mut self, cx: &mut Context<Self>) {
-        self.discord_app
+        self.typed
+            .discord_app
             .update(cx, |field, cx| field.hold(String::new(), cx));
         self.presented(
             |presence| {
@@ -273,7 +276,8 @@ impl RootView {
     }
 
     pub(crate) fn put_discord_shows_back(&mut self, cx: &mut Context<Self>) {
-        self.discord_icon
+        self.typed
+            .discord_icon
             .update(cx, |field, cx| field.hold(String::new(), cx));
         self.presented(
             |presence| {

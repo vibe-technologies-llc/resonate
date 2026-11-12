@@ -50,24 +50,28 @@ impl LibraryModel {
         let fetched_by = self.fetched_by(cx);
         let now = SystemTime::now();
         let owner = self
+            .detail
             .album
             .as_ref()
             .and_then(|album| album.artist.clone())
             .unwrap_or_default();
         let album_title = self
+            .detail
             .album
             .as_ref()
             .map(|album| album.title.clone())
             .unwrap_or_default();
         let performer = self
+            .detail
             .album
             .as_ref()
             .and_then(|album| album.artist_id)
             .map(Performer::Held);
-        let pressing = self.release.as_ref();
+        let pressing = self.detail.release.as_ref();
 
         for (release_track, want) in wanted {
             let Some(row) = self
+                .detail
                 .release_tracks
                 .iter()
                 .find(|row| row.id == *release_track)
@@ -100,8 +104,10 @@ impl LibraryModel {
                 performer: performer.clone(),
                 isrcs: Vec::new(),
             };
-            self.downloads.landing(found, now);
-            self.downloads.wanted(&recording, *want, fetched_by);
+            self.delivered.downloads.landing(found, now);
+            self.delivered
+                .downloads
+                .wanted(&recording, *want, fetched_by);
         }
     }
 

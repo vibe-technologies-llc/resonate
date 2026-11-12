@@ -376,7 +376,7 @@ impl RootView {
             .as_ref()
             .map(|syncing| syncing.shown())
             .filter(|shown| !shown.code.is_empty());
-        let revealed = self.pairing_shown;
+        let revealed = self.settings_shown.pairing_shown;
 
         let mut body = kit::rows();
         if let Some(shown) = shown {
@@ -499,7 +499,7 @@ impl RootView {
                 .note(words::settings_sync::pairing_note());
             if self.is_armed(&Armed::RegenerateTheCode) {
                 body = body.child(note(words::settings_sync::armed_to_regenerate()));
-            } else if self.code_regenerated {
+            } else if self.settings_shown.code_regenerated {
                 body = body.child(note(words::settings_sync::regenerated()));
             }
         } else {
@@ -510,7 +510,7 @@ impl RootView {
                 words::settings_sync::join_another_devices_code(),
                 self.text_field(
                     "sync-code",
-                    &self.sync_code,
+                    &self.typed.sync_code,
                     |this, window, cx| this.leave_sync_field(window, cx),
                     cx,
                 ),
@@ -545,7 +545,7 @@ impl RootView {
         if devices.iter().all(|device| device.this) {
             body = body.child(note(words::settings_sync::no_other_device()));
         }
-        if let Some((id, name)) = self.driving.clone() {
+        if let Some((id, name)) = self.remotely.driving.clone() {
             body = body.child(self.driven_zones(&id, &name, cx));
         }
         body
@@ -553,11 +553,11 @@ impl RootView {
 
     fn drive_the_device(&mut self, id: &str, name: &str, cx: &mut Context<Self>) {
         let syncing = cx.global::<ResonateApp>().syncing.clone();
-        if let Some((held, _)) = self.driving.take() {
+        if let Some((held, _)) = self.remotely.driving.take() {
             if let Some(syncing) = syncing.as_ref() {
                 syncing.unwatch(&held);
             }
-            self.driving_redraws = None;
+            self.remotely.driving_redraws = None;
             if held == id {
                 cx.notify();
                 return;
@@ -570,14 +570,14 @@ impl RootView {
             );
             return;
         }
-        self.driving = Some((id.to_owned(), name.to_owned()));
-        self.driving_rows = DRIVEN_ROWS_AT_FIRST;
-        self.driving_redraws = Some(cx.spawn(async move |this, cx| {
+        self.remotely.driving = Some((id.to_owned(), name.to_owned()));
+        self.remotely.driving_rows = DRIVEN_ROWS_AT_FIRST;
+        self.remotely.driving_redraws = Some(cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(DRIVEN_REDRAWN_EVERY).await;
                 let driving = this.update(cx, |this, cx| {
                     cx.notify();
-                    this.driving.is_some()
+                    this.remotely.driving.is_some()
                 });
                 if !driving.unwrap_or(false) {
                     return;
@@ -733,7 +733,12 @@ impl RootView {
     ) -> Option<Stateful<Div>> {
         let length = zone.length.filter(|length| !length.is_zero())?;
         let filled = (zone.position.as_secs_f32() / length.as_secs_f32()).clamp(0.0, 1.0);
-        let rail = self.driving_rails.entry(zone.zone).or_default().clone();
+        let rail = self
+            .remotely
+            .driving_rails
+            .entry(zone.zone)
+            .or_default()
+            .clone();
         let painted = rail.painted_as();
         let (position, at) = (zone.position, zone.zone);
         let control = format!("sync-drive-seek-{at}");
@@ -857,7 +862,7 @@ impl RootView {
     }
 
     fn driven_rows(&mut self, id: &str, zone: &RemoteZoneShown, cx: &mut Context<Self>) -> Div {
-        let shown = rows_shown(zone, self.driving_rows);
+        let shown = rows_shown(zone, self.remotely.driving_rows);
         let more = zone.rows.len().saturating_sub(shown.len());
         let mut list = div().flex().flex_col();
         for (row, song) in shown {
@@ -875,7 +880,8 @@ impl RootView {
                     Tone::Ghost,
                 ),
                 move |this, _, cx| {
-                    this.driving_rows = this.driving_rows.saturating_add(DRIVEN_ROWS_MORE);
+                    this.remotely.driving_rows =
+                        this.remotely.driving_rows.saturating_add(DRIVEN_ROWS_MORE);
                     cx.notify();
                 },
                 cx,
@@ -1020,7 +1026,7 @@ impl RootView {
 
     pub(super) fn sync_connection_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let synchronised = cx.global::<ResonateApp>().synchronised.clone();
-        let chosen = Route::of(&synchronised, self.own_server_asked);
+        let chosen = Route::of(&synchronised, self.settings_shown.own_server_asked);
 
         let mut routes = kit::segmented();
         for (index, route) in Route::ALL.into_iter().enumerate() {
@@ -1045,7 +1051,7 @@ impl RootView {
                 words::settings_sync::server(),
                 self.text_field(
                     "sync-server",
-                    &self.sync_server,
+                    &self.typed.sync_server,
                     |this, window, cx| this.leave_sync_field(window, cx),
                     cx,
                 ),
@@ -1055,7 +1061,7 @@ impl RootView {
             words::settings_sync::device_name(),
             self.text_field(
                 "sync-device",
-                &self.sync_device,
+                &self.typed.sync_device,
                 |this, window, cx| this.leave_sync_field(window, cx),
                 cx,
             ),
@@ -1064,7 +1070,7 @@ impl RootView {
             words::settings_sync::your_name_on_shared_playlists_and(),
             self.text_field(
                 "shared-name",
-                &self.shared_name,
+                &self.typed.shared_name,
                 |this, window, cx| this.leave_sync_field(window, cx),
                 cx,
             ),
@@ -1184,7 +1190,7 @@ impl RootView {
     }
 
     fn show_the_pairing(&mut self, shown: bool, cx: &mut Context<Self>) {
-        self.pairing_shown = shown;
+        self.settings_shown.pairing_shown = shown;
         cx.notify();
     }
 
@@ -1243,6 +1249,7 @@ impl RootView {
             let id = device.id.clone();
             let name = device.name.clone();
             let driven = self
+                .remotely
                 .driving
                 .as_ref()
                 .is_some_and(|(held, _)| *held == device.id);
@@ -1290,8 +1297,8 @@ impl RootView {
 
     fn regenerate_the_code(&mut self, cx: &mut Context<Self>) {
         self.lower(&Armed::RegenerateTheCode);
-        self.code_regenerated = true;
-        self.pairing_shown = false;
+        self.settings_shown.code_regenerated = true;
+        self.settings_shown.pairing_shown = false;
         self.store(&Setting::SyncKey(String::new()), cx);
         self.report(
             Notice::Done(words::settings_sync::regenerated().to_owned()),
@@ -1318,7 +1325,7 @@ impl RootView {
     }
 
     fn take_the_route(&mut self, route: Route, cx: &mut Context<Self>) {
-        self.own_server_asked = route == Route::Own;
+        self.settings_shown.own_server_asked = route == Route::Own;
         let nearby_only = route == Route::Nearby;
         if cx.global::<ResonateApp>().synchronised.nearby_only != nearby_only {
             self.set_sync_nearby_only(nearby_only, cx);
@@ -1330,7 +1337,8 @@ impl RootView {
             .trim()
             .is_empty();
         if route == Route::Hosted && given {
-            self.sync_server
+            self.typed
+                .sync_server
                 .update(cx, |field, cx| field.hold(String::new(), cx));
             self.synchronise(
                 |synchronised| synchronised.server.clear(),
@@ -1391,15 +1399,16 @@ impl RootView {
     }
 
     pub(crate) fn sync_server_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let typed = self.sync_server.read(cx).text().trim().to_owned();
-        self.sync_server
+        let typed = self.typed.sync_server.read(cx).text().trim().to_owned();
+        self.typed
+            .sync_server
             .update(cx, |field, cx| field.hold(typed.clone(), cx));
         let said = if typed.is_empty() {
             words::settings_sync::devices_sync_through_resonates_server()
         } else {
             words::settings_sync::devices_sync_through_that_server()
         };
-        self.own_server_asked = !typed.is_empty();
+        self.settings_shown.own_server_asked = !typed.is_empty();
         self.synchronise(
             |synchronised| synchronised.server.clone_from(&typed),
             &Setting::SyncServer(typed.clone()),
@@ -1410,8 +1419,9 @@ impl RootView {
     }
 
     pub(crate) fn shared_name_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let typed = self.shared_name.read(cx).text().trim().to_owned();
-        self.shared_name
+        let typed = self.typed.shared_name.read(cx).text().trim().to_owned();
+        self.typed
+            .shared_name
             .update(cx, |field, cx| field.hold(typed.clone(), cx));
         self.synchronise(
             |synchronised| synchronised.shared_name.clone_from(&typed),
@@ -1425,8 +1435,9 @@ impl RootView {
     }
 
     pub(crate) fn sync_device_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let typed = self.sync_device.read(cx).text().trim().to_owned();
-        self.sync_device
+        let typed = self.typed.sync_device.read(cx).text().trim().to_owned();
+        self.typed
+            .sync_device
             .update(cx, |field, cx| field.hold(typed.clone(), cx));
         self.synchronise(
             |synchronised| synchronised.device.clone_from(&typed),
@@ -1441,7 +1452,7 @@ impl RootView {
     }
 
     pub(crate) fn sync_code_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let typed = self.sync_code.read(cx).text().trim().to_owned();
+        let typed = self.typed.sync_code.read(cx).text().trim().to_owned();
         if typed.is_empty() {
             return;
         }
@@ -1456,7 +1467,8 @@ impl RootView {
             );
             return;
         }
-        self.sync_code
+        self.typed
+            .sync_code
             .update(cx, |field, cx| field.hold(String::new(), cx));
         self.store(&Setting::SyncKey(typed), cx);
         self.report(
@@ -1468,10 +1480,10 @@ impl RootView {
 
     pub(crate) fn leave_sync_field(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let focused = [
-            &self.sync_code,
-            &self.sync_device,
-            &self.shared_name,
-            &self.sync_server,
+            &self.typed.sync_code,
+            &self.typed.sync_device,
+            &self.typed.shared_name,
+            &self.typed.sync_server,
         ]
         .iter()
         .any(|field| field.read(cx).is_focused(window));
@@ -1484,10 +1496,12 @@ impl RootView {
 
     pub(crate) fn put_the_connection_back(&mut self, cx: &mut Context<Self>) {
         let built = Synchronised::default();
-        self.own_server_asked = false;
-        self.sync_server
+        self.settings_shown.own_server_asked = false;
+        self.typed
+            .sync_server
             .update(cx, |field, cx| field.hold(String::new(), cx));
-        self.sync_device
+        self.typed
+            .sync_device
             .update(cx, |field, cx| field.hold(String::new(), cx));
         self.store(&Setting::SyncNearbyOnly(built.nearby_only), cx);
         self.synchronise(
@@ -1667,7 +1681,7 @@ mod tests {
             cx.update_global::<ResonateApp, _>(|app, _| app.syncing = Some(seam));
         });
         driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
+        driven.focus(|root| &root.typed.finding);
         driven.cx.simulate_input("your devices");
         driven.settle();
         (driven, stage)
@@ -1683,7 +1697,7 @@ mod tests {
     ) {
         let (mut driven, stage) = opened_on_the_sync_group(cx);
         stage.second.store(true, Ordering::Relaxed);
-        driven.until(|root, _| root.remote_songs.len() == 2);
+        driven.until(|root, _| root.remotely.songs.len() == 2);
 
         driven.click("remote-desk-1-previous");
         driven.click("remote-phone-7-toggle");
@@ -1693,7 +1707,8 @@ mod tests {
         driven.cx.update(|window, cx| {
             let next = root
                 .read(cx)
-                .remote_controls
+                .remotely
+                .controls
                 .handle("remote-phone-7-next")
                 .expect("the remote controls survive a pane change");
             window.focus(&next, cx);
@@ -1706,7 +1721,7 @@ mod tests {
         assert!(
             driven
                 .cx
-                .update(|window, cx| !root.read(cx).remote_controls.holds_the_caret(window))
+                .update(|window, cx| !root.read(cx).remotely.controls.holds_the_caret(window))
         );
         assert_eq!(
             *stage.pressed.lock(),
@@ -1719,11 +1734,11 @@ mod tests {
         assert!(driven.read(|root, cx| root.player.read(cx).state().current.is_none()));
 
         stage.refused.store(true, Ordering::Relaxed);
-        driven.until(|root, _| root.remote_songs.len() == 1);
+        driven.until(|root, _| root.remotely.songs.len() == 1);
         driven.settle();
         assert!(driven.cx.debug_bounds("remote-phone-7-toggle").is_none());
         stage.away.store(true, Ordering::Relaxed);
-        driven.until(|root, _| root.remote_songs.is_empty());
+        driven.until(|root, _| root.remotely.songs.is_empty());
         assert!(
             stage
                 .unwatched
@@ -1811,7 +1826,7 @@ mod tests {
         );
 
         driven.click("tab-settings");
-        driven.focus(|root| &root.finding);
+        driven.focus(|root| &root.typed.finding);
         driven.cx.simulate_input("driven by your other devices");
         driven.settle();
         driven.click("sync-control-1");

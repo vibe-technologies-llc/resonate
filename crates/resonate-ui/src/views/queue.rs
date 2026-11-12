@@ -568,11 +568,11 @@ impl RootView {
         let parts = self.queue_parts(cx);
         let from = self.playing_from(cx);
         let queued = queue.len();
-        let height = self.queue_height.get();
+        let height = self.rooms.queue_height.get();
         let shown = (f32::from(height) / theme::row_height()) as usize;
         let lines = parts.lines() + parts.room_below(shown);
         let heading = self.queue_heading(&queue, cx);
-        let scroll = self.queue_rows.clone();
+        let scroll = self.scrolls.queue_rows.clone();
         let reaching = self
             .reaching(Shift::Queue)
             .map(|rows| Reaching::of(&queue, rows));
@@ -584,7 +584,7 @@ impl RootView {
                 true,
                 ROW_CONTROLS,
                 sorting::queue_sorted(self),
-                &self.columns_fit,
+                &self.rooms.columns_fit,
                 &self.controls,
                 cx,
             ))
@@ -604,7 +604,9 @@ impl RootView {
                     lines,
                     cx,
                 )
-                .child(kit::measures_its_height(Rc::clone(&self.queue_height)))
+                .child(kit::measures_its_height(Rc::clone(
+                    &self.rooms.queue_height,
+                )))
                 .when(height > px(0.0), |rows| {
                     rows.child(
                         uniform_list(
@@ -681,7 +683,7 @@ impl RootView {
                                     let artist = drawn.artist.clone();
                                     let menued = Arc::clone(&holding);
                                     let queued_as = item.id.get();
-                                    let fitted = this.columns_fit.shown();
+                                    let fitted = this.rooms.columns_fit.shown();
                                     let listed = row(current)
                                         .id(("queued", queued_as))
                                         .debug_selector(move || format!("queued-{queued_as}"))
@@ -854,7 +856,9 @@ impl RootView {
                         .w_full(),
                     )
                 })
-                .child(Scrollbars::of(cx).vertical("queue-scrollbar", self.queue_rows.clone())),
+                .child(
+                    Scrollbars::of(cx).vertical("queue-scrollbar", self.scrolls.queue_rows.clone()),
+                ),
             )
             .into_any_element()
     }
@@ -1127,10 +1131,10 @@ impl RootView {
 
     pub(crate) fn queue_in_order(&self, cx: &mut Context<Self>) -> Div {
         self.order_choices(
-            self.queue_order,
-            self.queue_reading,
+            self.orders.queue_order,
+            self.orders.queue_reading,
             |this, order, cx| this.put_the_queue_in_order(order, Direction::Ascending, cx),
-            |this, reading, cx| this.put_the_queue_in_order(this.queue_order, reading, cx),
+            |this, reading, cx| this.put_the_queue_in_order(this.orders.queue_order, reading, cx),
             cx,
         )
     }
@@ -1141,8 +1145,8 @@ impl RootView {
         reading: Direction,
         cx: &mut Context<Self>,
     ) {
-        self.queue_order = order;
-        self.queue_reading = reading;
+        self.orders.queue_order = order;
+        self.orders.queue_reading = reading;
 
         let queued = self.player.read(cx).queued();
         if queued.rows.len() < 2 {

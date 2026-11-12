@@ -978,7 +978,7 @@ impl RootView {
                 .gap_0p5()
                 .max_h(px(EARLIER_DRAWN_AT_MOST))
                 .overflow_y_scroll()
-                .track_scroll(&self.heard_earlier_scroll),
+                .track_scroll(&self.scrolls.heard_earlier),
             |rows, (at, found)| {
                 let finding = found.clone();
                 rows.child(self.in_the_pane_ring(
@@ -1002,10 +1002,10 @@ impl RootView {
                     .relative()
                     .mx(px(-EARLIER_ROW_INSET))
                     .child(rows)
-                    .child(
-                        Scrollbars::of(cx)
-                            .vertical("heard-earlier-scrollbar", self.heard_earlier_scroll.clone()),
-                    ),
+                    .child(Scrollbars::of(cx).vertical(
+                        "heard-earlier-scrollbar",
+                        self.scrolls.heard_earlier.clone(),
+                    )),
             )
     }
 }
@@ -1215,7 +1215,7 @@ mod tests {
         assert!(!driven.read(|root, _| root.listening_open));
         assert_eq!(driven.read(|root, _| root.pane), Pane::Settings);
         assert_eq!(
-            driven.read(|root, _| root.settings_category),
+            driven.read(|root, _| root.settings_shown.category),
             SettingsCategory::Online
         );
     }
