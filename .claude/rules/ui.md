@@ -11,6 +11,12 @@ paths:
 `Reference` arrives only as the trait object the binary hands `run` in `Lookups`; the online crate
 is never named.
 
+**`LibraryModel` is one type over many files**: `models.rs` holds its fields, `new` and the types
+they are made of, and `models/` one `impl LibraryModel` a subject (`listing`, `found`, `wanting`,
+`playlists`, `reading`, `scanning`, `enriching`, `polling`, `keeping`, `filing`, `pictures`, …) beside
+`told.rs` (what a pass says when it ends), `arranged.rs` (rows as drawn), `watched.rs` (the
+background readers) and `tests.rs`. A method another file calls is `pub(super)`.
+
 ## Chrome and input
 
 - **Title names what plays.** `RootView::name_the_window` sets *Echoes — Pink Floyd · Resonate*

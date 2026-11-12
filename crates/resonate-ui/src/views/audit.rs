@@ -236,6 +236,8 @@ mod words {
         "wrapped_card/markup.rs",
     ];
 
+    const ONLY_UNDER_TEST: &[&str] = &["models/tests.rs"];
+
     const STILL_TO_MOVE: &[&str] = &[];
 
     #[test]
@@ -248,7 +250,9 @@ mod words {
             .iter()
             .filter(|(path, _)| {
                 let path = path.to_string_lossy();
-                !STILL_TO_MOVE.contains(&path.as_ref()) && !NOT_WORDS.contains(&path.as_ref())
+                !STILL_TO_MOVE.contains(&path.as_ref())
+                    && !NOT_WORDS.contains(&path.as_ref())
+                    && !ONLY_UNDER_TEST.contains(&path.as_ref())
             })
             .flat_map(|(path, prose)| {
                 prose
