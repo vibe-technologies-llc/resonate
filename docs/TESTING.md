@@ -174,10 +174,13 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `downloads.rs`), and the two already differ: the desktop registers `resonate` beside `hifi-api`
   where the phones turn a keyed hifi-api account into `resonate` alone; which is meant decides the
   one construction `resonate-library` could hold
-- [M] The vault builds two JPEG XL encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder`
-  for a JPEG's transcode, though `jxl-encoder` 0.3.4 encodes losslessly and carries an ICC profile,
-  which would let a cover with a profile become JXL too (`vault.md` keeps it as it came); whether it
-  is as small and as fast as zune at its highest effort is unmeasured
+- [M · blocked: jxl-oxide reading jxl-encoder's ANS-coded output] The vault builds two JPEG XL
+  encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder` for a JPEG's transcode. Measured on
+  600 to 1400 px covers, `jxl-encoder` 0.3.4's lossless effort 7 is about half zune's size (0.6 to
+  2.6 s a cover; effort 9 a further 20 % for ten times the time) and would let a cover with an ICC
+  profile become JXL too, and libjxl's `djxl` reads it back bit for bit; but `jxl-oxide` 0.12.6, which
+  validates every cover and draws it back, fails from effort 3 up (`UnexpectedEof` rendering ANS
+  entropy coding), and without ANS the output is no smaller than zune's and twenty times slower
 
 ## Later: Packaging
 - [S · blocked: tooling] The sync server's RPM spec has never run: no `rpmbuild` here, and its
