@@ -36,8 +36,6 @@ are in [ROADMAP.md](ROADMAP.md).
   a scrolling list, and *Download all missing* makes hundreds of rows
 - [S] The moving field behind Now Playing keeps drawing at its full rate under a sheet raised inside
   the cover (the sleep timer, zones, the playlist picker), beside the sheet's own presentation
-- [S] `LyricLayerView.wake` draws a frame at every clock reading though its display link is already
-  ticking, so a playing word-synced sheet is rendered two or three times a poll
 
 ## Later: Analysis
 - [S] `TruePeakMeter` multiplies out the phase at whole samples (weights of one tap of 1 and the rest 0, so the

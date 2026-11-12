@@ -173,7 +173,13 @@ final class LyricLayerView: UIView {
     private func clockMoved() {
         watching = false
         watchClock()
+        guard !ticking else { return }
         wake()
+    }
+
+    private var ticking: Bool {
+        guard let link else { return false }
+        return !link.isPaused
     }
 
     private func forgetLayout() {

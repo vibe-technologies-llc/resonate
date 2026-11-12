@@ -1459,8 +1459,10 @@ track change, pause or drift past 250 ms takes the position as is): the position
 per display frame from the 250 ms poll's reading, never held between polls, and never read from
 `Features.tick`. The pane's body never reads `PlayClock`: `LyricSetting` carries the clock and the
 playing song (`LyricHeard`), and `LyricLayerView` watches `positionMs` itself
-(`withObservationTracking`, renewed at each change) and draws at once, so a poll redraws a frame,
-not the pane's SwiftUI body; nor does it read the whole environment, the accent being resolved in
+(`withObservationTracking`, renewed at each change) and draws at once only while its link is
+paused (a ticking link's next frame reads the clock anyway, and drawing at every reading too
+rendered a playing word-synced sheet two or three times a poll), so a poll redraws a frame, not the
+pane's SwiftUI body; nor does it read the whole environment, the accent being resolved in
 values holding only the scheme and contrast. **The frame drawn is the frame of the tick drawing it**: `kept_lyric_frame` answers
 from the sheet Rust already holds (a lock and the arithmetic, no SQLite) on the main actor inside the
 tick, so the word sweep moves every display frame; only a sheet not yet held is asked on its own
