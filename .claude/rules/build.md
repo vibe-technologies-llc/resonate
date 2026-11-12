@@ -44,7 +44,7 @@ paths:
   binary, `resonate-wasapi` and `resonate-codec` reach it directly. The macOS lines read
   `cargo tree --target aarch64-apple-darwin`: PipeWire, Wayland, WASAPI, `resonate-win32` and the
   `windows` crate stay out of the binary's tree; `resonate-apple` reaches no workspace crate there
-  or on iOS, and is named by `resonate-coreaudio`, `resonate-listen` and `resonate-mpris` (on iOS by
+  or on iOS, and is named by `resonate-coreaudio`, `resonate-listen`, `resonate-mpris` and `resonate-codec` (on iOS by
   `resonate-coreaudio` and `resonate-mobile`) alone; `resonate-coreaudio` reaches core, audio, words
   and `resonate-apple` alone; `resonate-listen` reaches those and `resonate-dsp` there, never a
   backend crate. `RUSTFLAGS` is emptied over `target-cpu=native` in the Linux and macOS jobs; the

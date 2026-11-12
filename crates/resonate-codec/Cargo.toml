@@ -24,6 +24,9 @@ tracing.workspace = true
 [target.'cfg(unix)'.dependencies]
 rustix.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+resonate-apple.workspace = true
+
 [target.'cfg(windows)'.dependencies]
 fs4.workspace = true
 resonate-win32.workspace = true

@@ -2523,6 +2523,33 @@ fn winding_down_cancels_the_pass_walking_the_tree_and_waits_for_it_to_let_go() -
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn a_name_a_mac_hands_back_decomposed_is_catalogued_composed_and_still_opens() -> Result<()> {
+    let tree = Tree::new();
+    let decomposed = tree.path().join("Bjo\u{308}rk").join("Je\u{301}ga.wav");
+    let composed = tree.path().join("Bj\u{f6}rk").join("J\u{e9}ga.wav");
+    fs::create_dir(tree.path().join("Bjo\u{308}rk")).expect("a folder named decomposed");
+    fs::write(&decomposed, Wav::new().text(TITLE, "Joga").build())
+        .expect("a file named decomposed");
+
+    let library = Library::open_in_memory()?;
+    let first = scan(&library, &options(&tree))?;
+    let second = scan(&library, &options(&tree))?;
+    let tracks = all(&library)?;
+    let track = tracks.first().expect("the track was catalogued");
+
+    assert_eq!(first.added, 1, "got {:?}", first);
+    assert_eq!(second.added, 0, "got {:?}", second);
+    assert_eq!(track.location.as_path(), Some(composed.as_path()));
+    assert!(resonate_codec::probe(&Sources::local(), &track.location).is_ok());
+    assert_eq!(
+        library.track_at(&decomposed, None)?.map(|found| found.id),
+        Some(track.id)
+    );
+    Ok(())
+}
+
 #[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn a_file_with_a_name_that_is_not_text_is_catalogued_and_opens_under_the_name_it_has() -> Result<()>

@@ -5,6 +5,8 @@ mod buffers;
 #[cfg(any(target_vendor = "apple", test))]
 mod clock;
 #[cfg(target_os = "macos")]
+mod cloning;
+#[cfg(target_os = "macos")]
 mod device;
 #[cfg(any(target_vendor = "apple", test))]
 mod error;
@@ -41,6 +43,7 @@ pub use crate::{
 };
 #[cfg(target_os = "macos")]
 pub use crate::{
+    cloning::clone_file,
     device::{Device, OfferedFormat, RateRange, Stream, Transport},
     hog::{Hog, Pid},
     listening::{Listening, Told, notify_on_the_hals_own_thread, told_of_the_system},

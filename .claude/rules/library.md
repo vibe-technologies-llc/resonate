@@ -339,6 +339,13 @@ rows read via `Player::media` like any unscanned row.
   `NoAudioTrack`), `Undecodable` (`NoDecoder`, `DsdCompressed`, unrepresentable properties or
   packets), `Unreadable` for the rest (`Io`, `Symphonia` residual: where a corrupt file lands). The
   match on `resonate_codec::Error` is exhaustive, so a new codec variant fails to compile here.
+- **A Mac's name is kept composed.** HFS+ hands names back decomposed (NFD) and APFS keeps a name
+  as it was made, while a typed folder, a tag or a playlist sheet spells it composed; both open a
+  file by either form. So on macOS alone `resonate_core::naming::composed` takes a path to NFC
+  where the walk names an entry and where a root is registered, and `store::path_text` composes
+  every path it binds, so a lookup by a decomposed spelling finds the composed row; elsewhere both
+  are the identity, a Linux name being its bytes
+  (`a_name_a_mac_hands_back_decomposed_is_catalogued_composed_and_still_opens`).
 - **A path is stored as text through `resonate_core::path_text`, so a name that is not UTF-8 is
   catalogued and comes back byte for byte.** `store::path_text(&Path)` is the one way a path becomes
   a bound text (`Cow`, borrowed for every UTF-8 path, so existing rows and the sort order are as
@@ -1298,7 +1305,9 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   damaged or mismatched record writes nothing and the copy goes, a copy with no such record is not
   this build's to touch (`a_track_torn_by_a_dead_writer_is_finished_from_the_whole_copy_kept_outside_its_folder`,
   `only_a_dead_writers_copy_staged_outside_the_tracks_folder_is_swept`). The copy is a clone
-  (`cloned_beside`, `FICLONE`) where the filesystem shares extents. **Where it cannot clone, an edit
+  (`cloned_beside`: `FICLONE` on Linux, `resonate_apple::clone_file` on macOS, which `clonefile`s
+  to the fresh staged name and then holds it, a volume that is not APFS refusing) where the
+  filesystem shares extents. **Where it cannot clone, an edit
   that leaves the audio where it is lands in the file itself**: `landed_in_place` has lofty write
   into an `Overlay` (4 KiB in-memory pages); `Overlay::land` writes back only the differing pages
   and `sync_data`s, at most `MOST_BYTES_WRITTEN_IN_PLACE` (32 MiB) of them. **The overlay holds

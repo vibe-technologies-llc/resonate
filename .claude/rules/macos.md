@@ -75,8 +75,8 @@ output device. It is checked two ways:
 
 `resonate-apple` is the third crate whose lints allow `unsafe_code` (approved by the listener;
 `dependencies.md` has its shape, crates and features). It is empty off Apple targets, reaches no
-workspace crate and is reached by `resonate-coreaudio`, `resonate-listen` and `resonate-mpris` on
-macOS and by `resonate-coreaudio` and `resonate-mobile` on iOS, which the layering job holds.
+workspace crate and is reached by `resonate-coreaudio`, `resonate-listen`, `resonate-mpris` and
+`resonate-codec` on macOS and by `resonate-coreaudio` and `resonate-mobile` on iOS, which the layering job holds.
 
 - **One unit for both systems.** `Unit::{playing, hearing}` is the AudioUnit sequence iOS's RemoteIO
   output and macOS's HAL output and input share (`Component::{RemoteIo, HalOutput}`), tested on

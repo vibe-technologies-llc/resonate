@@ -22,7 +22,7 @@ use resonate_codec::{
     TagSet, mend_a_cut_short_write, names_a_cut_short_write, probe_scanned, read_cue,
     the_best_a_cue_names, the_folder_a_cue_names, the_one_a_cue_names,
 };
-use resonate_core::{MediaLocation, TrackId};
+use resonate_core::{MediaLocation, TrackId, naming};
 use rusqlite::params;
 
 use crate::{
@@ -732,10 +732,10 @@ fn roots(inner: &Inner, wanted: &[PathBuf]) -> Result<Vec<Root>> {
             if !root.is_dir() {
                 return Err(Error::RootNotADirectory { path: root.clone() });
             }
-            let path = root.canonicalize().map_err(|source| Error::Io {
+            let path = naming::composed(root.canonicalize().map_err(|source| Error::Io {
                 path: root.clone(),
                 source,
-            })?;
+            })?);
             let id = store::register_root(transaction, &path)?;
 
             resolved.retain(|held| !held.path.starts_with(&path));
@@ -836,7 +836,7 @@ fn sizes_of_files_not_catalogued(
         for entry in entries {
             let entry = entry.ok()?;
             let kind = entry.file_type().ok()?;
-            let path = entry.path();
+            let path = naming::composed(entry.path());
             if is_passed_over(&path) {
                 continue;
             }
@@ -987,7 +987,7 @@ fn walk(walking: &Walking<'_>, visited: &mut Visited, mounted: &mut Vec<PathBuf>
             if progress.is_cancelled() {
                 return Ok(false);
             }
-            let path = entry.path();
+            let path = naming::composed(entry.path());
             if is_passed_over(&path) {
                 continue;
             }
@@ -1218,7 +1218,7 @@ fn audio_below(walking: &Walking<'_>, folder: &Path) -> Vec<(PathBuf, Metadata)>
                 !kind.is_dir() && (walking.options.follow_symlinks || !kind.is_symlink())
             })
         })
-        .map(|entry| entry.path())
+        .map(|entry| naming::composed(entry.path()))
         .filter(|path| is_audio(path) && !is_passed_over(path))
         .filter_map(|path| {
             let metadata = fs::metadata(&path).ok()?;

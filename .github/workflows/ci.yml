@@ -283,7 +283,7 @@ jobs:
           only_on aarch64-apple-darwin resonate-coreaudio resonate-core resonate-audio resonate-apple resonate-words
           only_on aarch64-apple-darwin resonate-apple
           only_on aarch64-apple-ios resonate-apple
-          reached_directly_on aarch64-apple-darwin resonate-apple resonate-coreaudio resonate-listen resonate-mobile resonate-mpris
+          reached_directly_on aarch64-apple-darwin resonate-apple resonate-codec resonate-coreaudio resonate-listen resonate-mobile resonate-mpris
           reached_directly_on aarch64-apple-ios resonate-apple resonate-coreaudio resonate-mobile
           only_on aarch64-apple-darwin resonate-listen resonate-core resonate-audio resonate-apple resonate-dsp resonate-words
           check "resonate-listen on macOS" "$(held_by -p resonate-listen --target aarch64-apple-darwin -e normal)" \

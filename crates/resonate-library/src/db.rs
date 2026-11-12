@@ -18,7 +18,7 @@ use resonate_core::{
     AlbumId, ArtistId, Calendar, ChannelCount, ChannelLayout, Chromaprint, FrameSpan, Frames, Gate,
     KeptZone, ListenId, MediaLocation, PlaylistId, QueueStamp, ReleaseTrackId, Reordered,
     Resumable, Resumption, SampleFormat, SampleRate, Span, StreamSpec, TrackId, Volume, WantId,
-    ZoneId, ZoneName, wrapped::YearReview,
+    ZoneId, ZoneName, naming, wrapped::YearReview,
 };
 use resonate_providers::Providers;
 use resonate_vault::{Compacting, Encoding, HeldFile, Kept as VaultKept, Replacing, VaultFiles};
@@ -2509,10 +2509,10 @@ impl Library {
                 path: path.to_path_buf(),
             });
         }
-        let canonical = path.canonicalize().map_err(|source| Error::Io {
+        let canonical = naming::composed(path.canonicalize().map_err(|source| Error::Io {
             path: path.to_path_buf(),
             source,
-        })?;
+        })?);
         let _walking = self.inner.walk_the_tree()?;
 
         self.inner
@@ -2520,7 +2520,8 @@ impl Library {
     }
 
     pub fn remove_root(&self, path: &Path) -> Result<bool> {
-        let canonical = path.canonicalize().unwrap_or_else(|_| sheet::settled(path));
+        let canonical =
+            naming::composed(path.canonicalize().unwrap_or_else(|_| sheet::settled(path)));
         let _walking = self.inner.walk_the_tree()?;
 
         self.inner.write(|transaction| {

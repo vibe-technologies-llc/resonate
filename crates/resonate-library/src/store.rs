@@ -14,7 +14,7 @@ use resonate_codec::{
 };
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
-    StreamSpec, TrackId, path_text, title_words,
+    StreamSpec, TrackId, naming, path_text, title_words,
     titles::{Rating, bare, rating_in_the_title},
     words_of_a_name,
 };
@@ -2661,7 +2661,7 @@ fn title(record: &TrackRecord) -> String {
 }
 
 pub fn path_text(path: &Path) -> Cow<'_, str> {
-    path_text::encoded(path)
+    naming::composed_text(path_text::encoded(path))
 }
 
 pub fn path_of(text: &str) -> PathBuf {

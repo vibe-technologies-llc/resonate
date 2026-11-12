@@ -1,11 +1,49 @@
 use std::{
     borrow::Cow,
     ffi::{OsStr, OsString},
+    path::PathBuf,
 };
+
+use unicode_normalization::{UnicodeNormalization, is_nfc};
 
 use crate::os_bytes;
 
 pub const NAME_BYTES_AT_MOST: usize = 255;
+
+#[cfg(target_os = "macos")]
+pub fn composed(path: PathBuf) -> PathBuf {
+    nfc_composed(path)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn composed(path: PathBuf) -> PathBuf {
+    path
+}
+
+#[cfg(target_os = "macos")]
+pub fn composed_text(text: Cow<'_, str>) -> Cow<'_, str> {
+    nfc_composed_text(text)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn composed_text(text: Cow<'_, str>) -> Cow<'_, str> {
+    text
+}
+
+pub fn nfc_composed(path: PathBuf) -> PathBuf {
+    match path.to_str() {
+        Some(text) if !is_nfc(text) => PathBuf::from(text.nfc().collect::<String>()),
+        _ => path,
+    }
+}
+
+pub fn nfc_composed_text(text: Cow<'_, str>) -> Cow<'_, str> {
+    if is_nfc(&text) {
+        text
+    } else {
+        Cow::Owned(text.nfc().collect())
+    }
+}
 
 pub fn cut_to_leave(name: &OsStr, room: usize) -> Cow<'_, OsStr> {
     let budget = NAME_BYTES_AT_MOST.saturating_sub(room);
@@ -40,6 +78,23 @@ pub fn named_within(before: &str, name: &OsStr, after: impl AsRef<OsStr>) -> OsS
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_name_handed_back_decomposed_is_composed_and_a_composed_one_is_kept_as_it_was() {
+        let decomposed = PathBuf::from("/Music/Bjo\u{308}rk/Je\u{301}ga.flac");
+        let composed_already = PathBuf::from("/Music/Bj\u{f6}rk/J\u{e9}ga.flac");
+
+        let composed = nfc_composed(decomposed);
+        let kept = nfc_composed_text(Cow::Borrowed("Bj\u{f6}rk"));
+
+        assert_eq!(composed, composed_already);
+        assert_eq!(nfc_composed(composed_already.clone()), composed_already);
+        assert!(matches!(kept, Cow::Borrowed(_)));
+        assert_eq!(
+            nfc_composed_text(Cow::Borrowed("Bjo\u{308}rk")),
+            "Bj\u{f6}rk"
+        );
+    }
 
     #[test]
     fn a_name_that_fits_is_kept_whole() {

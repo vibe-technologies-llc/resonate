@@ -44,10 +44,12 @@ the main queue, never run synchronously), each at the version gpui's tree alread
 second copy is built. `NowPlaying` holds no Objective-C object: each call fetches the shared center
 inside its block, so it is `Send` and `Sync` and may be dropped on any thread. `mach_absolute_time` and `mach_timebase_info` are declared
 by hand, since `libc` deprecates its own and `mach2` would be a second copy beside gpui's, and so
-is the run-loop selector and the Network framework's path monitor (`PathMonitor`, its update handler a
-`block2` block on a `dispatch2` queue), the one constant behind `objc2-core-audio`'s deprecated feature. It is
+is the run-loop selector, the one constant behind `objc2-core-audio`'s deprecated feature, and so
+are the Network framework's path monitor (`PathMonitor`, its update handler a `block2` block on a
+`dispatch2` queue) and `clonefile` (`clone_file`, a tag write's staged copy cloned on APFS). It is
 reached by `resonate-coreaudio`, on macOS `resonate-listen` (the microphone and the measuring
-sweep) and `resonate-mpris` (Now Playing, `macos.md`) and, on iOS, `resonate-mobile` alone.
+sweep), `resonate-mpris` (Now Playing and the path monitor, `macos.md`) and `resonate-codec` (the
+clone, `library.md`) and, on iOS, `resonate-mobile` alone.
 
 `resonate-win32` takes the `windows` crate (the `Win32_*` features it calls, listed in its manifest,
 `Win32_System_Console` only under its `console` feature) and `windows-core` (`std`, for

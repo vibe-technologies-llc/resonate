@@ -6990,6 +6990,7 @@ dependencies = [
  "lofty",
  "opus-rs",
  "parking_lot 0.13.0",
+ "resonate-apple",
  "resonate-core",
  "resonate-win32",
  "rustfft",

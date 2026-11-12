@@ -1362,7 +1362,23 @@ fn cloned_beside(path: &Path) -> io::Result<Option<Staged>> {
     Ok(Some(staged))
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "android")))]
+#[cfg(target_os = "macos")]
+fn cloned_beside(path: &Path) -> io::Result<Option<Staged>> {
+    let staged = staged_in(folder_of(path), path);
+    if let Err(error) = resonate_apple::clone_file(path, &staged) {
+        tracing::trace!(path = %path.display(), %error, "the file cannot be cloned");
+        return Ok(None);
+    }
+    match Held::resumed(&staged) {
+        Ok(held) => Ok(Some(Staged { path: staged, held })),
+        Err(error) => {
+            let _ = fs::remove_file(&staged);
+            Err(error)
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
 fn cloned_beside(_: &Path) -> io::Result<Option<Staged>> {
     Ok(None)
 }
