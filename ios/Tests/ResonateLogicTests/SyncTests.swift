@@ -63,7 +63,9 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
         playlists: false,
         everything: false,
         meteredAllowed: false,
-        control: .everything
+        control: .everything,
+        stun: "",
+        certificate: ""
     )
 }
 

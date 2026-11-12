@@ -1,3 +1,4 @@
+import ResonateLogic
 import ResonateNative
 import SwiftUI
 
