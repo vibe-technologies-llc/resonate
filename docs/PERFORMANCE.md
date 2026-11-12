@@ -34,8 +34,6 @@ are in [ROADMAP.md](ROADMAP.md).
   transfers again each time
 - [S] Every download job row holds three or four glass buttons, each a glass surface of its own in
   a scrolling list, and *Download all missing* makes hundreds of rows
-- [S] The moving field behind Now Playing keeps drawing at its full rate under a sheet raised inside
-  the cover (the sleep timer, zones, the playlist picker), beside the sheet's own presentation
 
 ## Later: Analysis
 - [S] `TruePeakMeter` multiplies out the phase at whole samples (weights of one tap of 1 and the rest 0, so the

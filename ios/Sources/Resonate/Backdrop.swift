@@ -15,16 +15,18 @@ struct BackdropView: View {
     let track: Track?
     let moving: Bool
     let resting: Bool
+    let beneathASheet: Bool
     @State private var palette: Palette?
     @State private var rendering: BackdropRendering
     @State private var lowPower = ProcessInfo.processInfo.sparesFrames
     @State private var visible = false
     @State private var listening = false
 
-    init(track: Track?, moving: Bool = true, resting: Bool = false) {
+    init(track: Track?, moving: Bool = true, resting: Bool = false, beneathASheet: Bool = false) {
         self.track = track
         self.moving = moving
         self.resting = resting
+        self.beneathASheet = beneathASheet
         let recalled = track.flatMap { PaletteMemory.recalled(Self.key(of: $0)) }
         _palette = State(initialValue: recalled ?? (moving ? Self.accentPalette() : nil))
         _rendering = State(initialValue: BackdropPipeline.finished ?? .loading)
@@ -116,14 +118,15 @@ struct BackdropView: View {
     private var motion: BackdropMotion {
         guard phase == .active, !resting else { return .dormant }
         if reduceMotion { return .still }
-        return .flowing(framesPerSecond: Self.rate(sounding: sounding, lowPower: lowPower))
+        return .flowing(framesPerSecond: Self.rate(sounding: sounding, lowPower: lowPower, beneathASheet: beneathASheet))
     }
 
     private var sounding: Bool {
         library.transport == .playing
     }
 
-    private static func rate(sounding: Bool, lowPower: Bool) -> Int {
+    private static func rate(sounding: Bool, lowPower: Bool, beneathASheet: Bool) -> Int {
+        if beneathASheet { return lowPower ? 15 : 30 }
         switch (sounding, lowPower) {
         case (true, false): 120
         case (true, true): 60

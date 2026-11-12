@@ -211,7 +211,7 @@ struct NowPlayingView: View {
                 .allowsHitTesting(false)
             }
             .padding(.horizontal, Self.gutter)
-            .background(NowPlayingField(track: track, rest: rest))
+            .background(NowPlayingField(track: track, rest: rest, asks: asks))
             .task { await open() }
             .safeAreaInset(edge: .top) { StatusBanner() }
             .toolbar {
@@ -1454,11 +1454,19 @@ final class FieldRest {
 }
 
 struct NowPlayingField: View {
+    @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
     let track: Track?
     let rest: FieldRest
+    let asks: PlayerAsks
 
     var body: some View {
-        BackdropView(track: track, resting: rest.opening || rest.reshaping)
+        BackdropView(track: track, resting: rest.opening || rest.reshaping, beneathASheet: sheetRaised)
+    }
+
+    private var sheetRaised: Bool {
+        navigation.sleepTimer || navigation.zones || navigation.addingToPlaylist != nil || library.features.sharing != nil
+            || asks.picked != nil
     }
 }
 

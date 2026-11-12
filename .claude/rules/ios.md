@@ -1337,6 +1337,9 @@ in; it never opens on another colour first.
   fall to rest. Held by `PlayingBarsTests`.
 - **Frame rate** follows what is moving (`BackdropView.rate`): 120 fps while playing, 60 paused,
   half that in Low Power Mode or a serious or critical thermal state (`ProcessInfo.sparesFrames`);
+  30 (15 sparing frames) while a sheet is raised inside Now Playing's cover (`beneathASheet`: the
+  sleep timer, zones, a playlist picker, sharing), which `NowPlayingField` reads, so the field
+  half-hidden and dimmed behind it gives the sheet's presentation its frames;
   an inactive or backgrounded scene, or a view out of its window, draws nothing. The glass over the
   field is composited again at every frame the field draws, which a 120 Hz frame holds only with the
   rest of Now Playing cheap: the Metal layer is opaque (the shader writes alpha 1, so the compositor
