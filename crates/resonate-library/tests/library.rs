@@ -31252,3 +31252,98 @@ fn a_track_asked_in_vain_is_asked_again_at_once_when_the_listener_asks() -> Resu
     assert_eq!(again.stats.tracks, 1);
     Ok(())
 }
+
+#[test]
+fn weighing_a_vault_reads_every_object_back_and_notes_it_validated() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write(
+        "dogs.wav",
+        &Wav::new().text(TITLE, "Dogs").frames(8_820).build(),
+    );
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&tree))?;
+    vaulted(&library, true)?;
+
+    let weighed = library.weigh_the_vault(false)?;
+
+    assert_eq!(weighed.objects, 2);
+    assert_eq!(weighed.objects_held, 2);
+    assert!(weighed.objects_moved.is_empty());
+    assert!(weighed.unreached.is_empty());
+    assert!(weighed.mended.is_none());
+    assert!(!weighed.has_something_to_mend());
+    assert!(
+        library
+            .vault_objects()?
+            .iter()
+            .all(|object| object.validated)
+    );
+    Ok(())
+}
+
+#[test]
+fn weighing_an_empty_vault_finds_nothing_to_weigh() -> Result<()> {
+    let held = Tree::new();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+
+    let weighed = library.weigh_the_vault(true)?;
+
+    assert!(weighed.held_nothing());
+    assert!(weighed.mended.is_none());
+    Ok(())
+}
+
+#[test]
+fn weighing_a_vault_without_a_vault_is_refused() -> Result<()> {
+    let library = Library::open_in_memory()?;
+
+    assert!(matches!(
+        library.weigh_the_vault(false),
+        Err(resonate_library::Error::NoVault)
+    ));
+    Ok(())
+}
+
+#[test]
+fn an_object_that_no_longer_reads_back_is_found_and_only_mended_when_asked() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&tree))?;
+    vaulted(&library, true)?;
+    let object = library.vault_objects()?.remove(0);
+    fs::write(&object.path, b"no longer what went in").expect("an object overwritten");
+
+    let found = library.weigh_the_vault(false)?;
+
+    assert_eq!(found.objects_moved, std::slice::from_ref(&object.path));
+    assert_eq!(found.objects_held, 0);
+    assert!(found.has_something_to_mend());
+    assert!(found.mended.is_none());
+    let row = all(&library)?.remove(0);
+    assert!(
+        library
+            .stand_in()
+            .stands_in(&row.location, row.span)
+            .is_some(),
+        "a check that only looked pointed a row back"
+    );
+
+    let mended = library
+        .weigh_the_vault(true)?
+        .mended
+        .expect("the mending is told");
+
+    assert_eq!(mended.released.released, 1);
+    assert_eq!(mended.released.stranded, 0);
+    assert!(
+        library
+            .stand_in()
+            .stands_in(&row.location, row.span)
+            .is_none()
+    );
+    Ok(())
+}

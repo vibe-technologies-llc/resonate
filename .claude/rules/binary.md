@@ -276,7 +276,7 @@ what follows describes Unix, where `signals.rs` and termios are used.
   (`ScanHandle` etc. aliases); a dying thread answers `Error::Stopped { pass }` after the panic
   message goes to an error record (`pass::what_it_said`), so a new pass is an alias plus a
   `PassKind` variant.
-- **`vault --verify`** ends `ObjectsUnverified { moved, unreached }`: an object that will not read
+- **`vault --verify`** (the weighing is `Library::weigh_the_vault`, which the window's Vault group runs too; the binary only prints its `VaultWeighing`) ends `ObjectsUnverified { moved, unreached }`: an object that will not read
   back is noted unvalidated; one the vault cannot reach (`Vault::failed_itself`) is said apart and
   left as the catalog had it. Covers are weighed too (`Vault::verify_cover`). `--verify --apply`
   mends what did not read back: each track of such an object is pointed back at its own file where

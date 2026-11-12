@@ -1488,6 +1488,7 @@ impl RootView {
             .imported()
             .filter(|(pass, _)| !pass.applies())
             .map(|(_, summary)| wanted_rows(summary));
+        let tending = self.tending_rows(busy, cx);
 
         kit::rows()
             .child(folder_row(&root))
@@ -1511,6 +1512,7 @@ impl RootView {
             })
             .when_some(listed, |body, listed| body.children(listed))
             .when_some(told, |body, told| body.child(note(told)))
+            .children(tending)
             .note(words::settings_library::vault_note())
     }
 

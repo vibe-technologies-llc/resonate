@@ -6,6 +6,7 @@ paths:
   - "crates/resonate-library/src/supply.rs"
   - "crates/resonate/src/vault.rs"
   - "crates/resonate-ui/src/views/settings/library.rs"
+  - "crates/resonate-ui/src/views/settings/tending.rs"
 ---
 
 # The vault
@@ -348,6 +349,25 @@ gaining `Vault`, the `vault_objects` and `kept_tags` tables; their schema is in 
   exists, counting the rest in `Released::stranded`. Objects wait for `--prune`, the one deleting
   gesture. Both are previews until `--apply` (`vault_release_foretold`, `vault_prune_foretold`;
   `Vault::staging_a_sweep_would_take` counts staging unswept). Covers stay.
+- **`Library::weigh_the_vault` is the one check and mend, for the terminal and the window.** It reads
+  every object and cover back (`Vault::verify`, `verify_cover`), notes each object validated or
+  not, and returns a `VaultWeighing` (counts, the paths that did not read back, `VaultUnreached`
+  for what `Vault::failed_itself` says is the vault's own failing, the WAVE objects packed before
+  the frames); with `mending` it also repacks those in frames (`VaultReframed`) and, where
+  something did not read back, points the tracks back at their files and lets the albums go of the
+  covers (`VaultMended`). `vault --verify` prints it; it takes no `Walk` guard itself, only the
+  release it ends in does.
+- **The window's Vault group tends the vault in four rows** (`views/settings/tending.rs`, `Tend`):
+  *Check the vault* (*Check*, then *Mend*), *Prune*, *Release* and *Compact covers*, each *Count* then
+  the act, the same preview-then-apply split as the terminal's `--apply`. A count runs the
+  `_foretold` function (or `weigh_the_vault(false)`) on the background executor and stays in the
+  group as a line under its row (`Tending::counted`); the act is greyed until a count found
+  something to do (`Told::acts`), takes two presses (`Armed::TendTheVault`, one armed at a time
+  like every destructive press) and ends as a toast, taking every count down since the catalog has
+  moved and reloading the library. One row runs at a time and all are greyed while a scan, import
+  or other pass is busy; a pass refused by the `Walk` guard (`Error::AlreadyWalking`) is a toast
+  saying so. Release is over every root, as the terminal's with no `--root`; the terminal keeps
+  the roots and `--at-most` of an import.
 - **`retag` passes a vaulted row over** (`Unwritten::Vaulted`); **`organise` does not** (vault keyed
   by content).
 - **An album holds a cover where it holds either column**: `ALBUM_COLUMNS` and `asking_albums` read

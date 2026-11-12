@@ -128,9 +128,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · 0.9.0] The window has no page for identical songs: `resonate dedupe` and the phones'
   *Identical songs* fold them, and the window calls neither (the copies a device fetch leaves are
   folded from the terminal alone)
-- [M · 0.9.0] The window's Vault group imports and chooses a folder alone: checking the vault, and
-  pruning, releasing and compacting it (`vault --verify`, `--prune`, `--release`, `--compact`) are
-  the terminal's
+- [S · 0.9.0] The window's vault check and mend cannot be stopped or watched: `weigh_the_vault`
+  reads every object and cover back with no cancel flag and no progress, and the group shows only
+  *Checking…* until it ends, as long as the vault is large
 
 ## Sync and together
 - [M · 0.9.0] A phone cannot name a STUN server or the server's certificate: `SyncConfig` carries

@@ -16,6 +16,7 @@ mod processing;
 pub(crate) mod spotify;
 mod subsonic;
 pub(crate) mod sync;
+mod tending;
 mod tidal;
 mod youtube_music;
 
@@ -40,6 +41,7 @@ pub(crate) use crate::views::{
         lastfm::{LastfmAccount, LastfmSigning},
         spotify::SpotifyState,
         subsonic::{Account, Service},
+        tending::{Tend, Tending},
         tidal::{SigningIn, TidalAccount},
         youtube_music::{CheckingYoutubeMusic, SigningInToYoutubeMusic, YoutubeMusicField},
     },
@@ -1276,6 +1278,7 @@ pub(crate) enum Armed {
     WalkTheTagsBack,
     WriteTheTags,
     KeepTheTracks,
+    TendTheVault(Tend),
     DiscardTheCurve,
     TellTheEarlierPlays,
     AgeTheHistory(HistoryKept),
