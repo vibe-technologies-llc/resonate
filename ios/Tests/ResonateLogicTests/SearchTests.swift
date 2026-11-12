@@ -16,6 +16,12 @@ func found(_ count: UInt32 = 1, completions: [String] = [], title: String = "Ech
     )
 }
 
+actor Favoured {
+    private(set) var on = false
+
+    func turnOn() { on = true }
+}
+
 actor Asked {
     private(set) var texts: [String] = []
 
@@ -93,6 +99,32 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
         await eventually { search.hasAnswer }
 
         #expect(await asked.texts == ["flo"])
+    }
+
+    @Test func aRefreshThatOnlyReranksTheSameSongsKeepsTheOrderShown() async {
+        let favoured = Favoured()
+        let search = model { _ in
+            let ranked = await favoured.on
+                ? [track(2, title: "Two", favourite: true), track(1, title: "One"), track(3, title: "Three")]
+                : [track(1, title: "One"), track(2, title: "Two"), track(3, title: "Three")]
+            return LibrarySearch(tracks: ranked, trackCount: 3, albums: [], artists: [], reads: [], didYouMean: nil, completions: [])
+        }
+
+        search.text = "song"
+        await eventually { search.hasAnswer }
+        await favoured.turnOn()
+        search.refresh()
+        await eventually { search.found.tracks.contains { $0.favourite } }
+
+        #expect(search.found.tracks.map(\.id) == [1, 2, 3])
+        #expect(search.found.tracks[1].favourite)
+    }
+
+    @Test func aRefreshThatChangesWhichSongsMatchShowsTheNewOrder() {
+        let shown = LibrarySearch(tracks: [track(1), track(2)], trackCount: 2, albums: [], artists: [], reads: [], didYouMean: nil, completions: [])
+        let answer = LibrarySearch(tracks: [track(3), track(1)], trackCount: 2, albums: [], artists: [], reads: [], didYouMean: nil, completions: [])
+
+        #expect(SearchModel.steadied(answer, as: shown).tracks.map(\.id) == [3, 1])
     }
 
     @Test func anAnswerToTextTypedPastIsRefusedWhateverOrderTheyLand() async {

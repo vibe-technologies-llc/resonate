@@ -1143,7 +1143,11 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   next lands; blank text asks nothing. Rows light matched text through `highlights`, its UTF-16
   ranges turned into `String` indices by `NSRange` and widened to whole characters (`lit`). A
   catalog read that changed what is shown, or a favourite, asks again without the settle; an answer
-  equal to the one shown (compared off the main actor) assigns nothing. The completions offered
+  equal to the one shown (compared off the main actor) assigns nothing. **A refresh never reorders
+  the songs shown** (`SearchModel.steadied`): the ranking puts favourites ahead among equal matches,
+  so a heart tapped on a result moved it up under the finger; an answer to the same text holding the
+  same songs keeps the order shown with the rows read, and only one whose songs differ is shown in
+  its own order. The completions offered
   (`offeredCompletions`) are folded once as an answer lands, not at each read.
 - **Songs** searches with scopes Top (five songs, six albums, six artists, each with *See all*),
   Songs, Albums and Artists; *Did you mean* where nothing matched; the grammar's `reads` as chips;

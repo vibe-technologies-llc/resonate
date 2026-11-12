@@ -69,8 +69,19 @@ public final class SearchModel {
     }
 
     @concurrent
-    private static func same(_ answer: LibrarySearch, as shown: LibrarySearch) async -> Bool {
-        answer == shown
+    private static func changed(_ answer: LibrarySearch, from shown: LibrarySearch) async -> LibrarySearch? {
+        let steadied = steadied(answer, as: shown)
+        return steadied == shown ? nil : steadied
+    }
+
+    public nonisolated static func steadied(_ answer: LibrarySearch, as shown: LibrarySearch) -> LibrarySearch {
+        guard answer.tracks.count == shown.tracks.count, answer.tracks.map(\.id) != shown.tracks.map(\.id) else { return answer }
+        let read = Dictionary(answer.tracks.map { ($0.id, $0) }, uniquingKeysWith: { kept, _ in kept })
+        let kept = shown.tracks.compactMap { read[$0.id] }
+        guard kept.count == answer.tracks.count, Set(kept.map(\.id)).count == kept.count else { return answer }
+        var steadied = answer
+        steadied.tracks = kept
+        return steadied
     }
 
     private func show(_ answer: LibrarySearch, answering query: String) {
@@ -133,9 +144,10 @@ public final class SearchModel {
                 let answer = try await answering(query)
                 guard asked == generation else { return }
                 let shown = found
-                let unchanged = answered == query ? await Self.same(answer, as: shown) : false
+                let refreshed = answered == query
+                let changed = refreshed ? await Self.changed(answer, from: shown) : answer
                 guard asked == generation else { return }
-                if !unchanged { show(answer, answering: query) }
+                if let changed { show(changed, answering: query) }
             } catch {
                 guard asked == generation else { return }
                 reporting(error)
