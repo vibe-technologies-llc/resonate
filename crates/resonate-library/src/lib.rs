@@ -151,7 +151,7 @@ pub use crate::{
     outcomes::{Outcome, Section},
     pass::{
         Cancelling, EnrichHandle, ImportHandle, OrganiseHandle, PassHandle, PassKind, PollHandle,
-        RetagHandle, ScanHandle, TakeInHandle,
+        RetagHandle, ScanHandle, TakeInHandle, VaultWeighingHandle,
     },
     playlist::{Filled, Mirrored, cuts_listed_in},
     query::{
@@ -220,5 +220,8 @@ pub use crate::{
     undo::{Edit, Maker, Undoable},
     versions::{Quality, SongHeard, TheSong, VersionSought, better_held, rated_held, rating_of},
     watch::RootsWatch,
-    weighing::{VaultMended, VaultReframed, VaultUnreached, VaultWeighing},
+    weighing::{
+        VaultMended, VaultReframed, VaultUnreached, VaultWeighing, VaultWeighingProgress,
+        VaultWeighingStats,
+    },
 };

@@ -270,7 +270,7 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
 }
 
 fn verify(library: &Library, mending: bool) -> Result<()> {
-    let weighed = library.weigh_the_vault(mending)?;
+    let weighed = until_told(library.weigh_the_vault(mending)?)?;
     if weighed.held_nothing() {
         said!("{}", words::vault::nothing_to_weigh());
         return Ok(());
@@ -303,6 +303,8 @@ fn verify(library: &Library, mending: bool) -> Result<()> {
             weighed.objects,
         )
     );
+
+    finished(PassKind::Weigh, weighed.cancelled)?;
 
     told_reframing(&weighed, mending);
 

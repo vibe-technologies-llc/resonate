@@ -8,7 +8,7 @@ use std::{
 use crate::{
     EnrichProgress, EnrichSummary, Error, ImportProgress, ImportSummary, OrganiseProgress,
     OrganiseSummary, PollProgress, PollSummary, Result, RetagProgress, RetagSummary, ScanProgress,
-    ScanSummary, TakeInProgress, TakeInSummary,
+    ScanSummary, TakeInProgress, TakeInSummary, VaultWeighing, VaultWeighingProgress,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -20,6 +20,7 @@ pub enum PassKind {
     Retag,
     Import,
     TakeIn,
+    Weigh,
 }
 
 pub trait Cancelling: Send + Sync {
@@ -103,6 +104,7 @@ pub type OrganiseHandle = PassHandle<OrganiseProgress, OrganiseSummary>;
 pub type RetagHandle = PassHandle<RetagProgress, RetagSummary>;
 pub type ImportHandle = PassHandle<ImportProgress, ImportSummary>;
 pub type TakeInHandle = PassHandle<TakeInProgress, TakeInSummary>;
+pub type VaultWeighingHandle = PassHandle<VaultWeighingProgress, VaultWeighing>;
 
 #[cfg(test)]
 mod tests {

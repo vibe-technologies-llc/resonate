@@ -356,11 +356,18 @@ gaining `Vault`, the `vault_objects` and `kept_tags` tables; their schema is in 
   the frames); with `mending` it also repacks those in frames (`VaultReframed`) and, where
   something did not read back, points the tracks back at their files and lets the albums go of the
   covers (`VaultMended`). `vault --verify` prints it; it takes no `Walk` guard itself, only the
-  release it ends in does.
+  release it ends in does. It is a pass of its own (`PassKind::Weigh`, a `VaultWeighingHandle` on a
+  thread): `VaultWeighingProgress` holds the count to weigh (objects and covers, set once read) and
+  how many are weighed, and a `cancel` that is heard before each object, each cover and each repack;
+  a stopped weighing returns what it had with `VaultWeighing::cancelled` and never mends (the
+  terminal ends `Error::Cancelled` on Ctrl-C through `until_told`).
 - **The window's Vault group tends the vault in four rows** (`views/settings/tending.rs`, `Tend`):
   *Check the vault* (*Check*, then *Mend*), *Prune*, *Release* and *Compact covers*, each *Count* then
   the act, the same preview-then-apply split as the terminal's `--apply`. A count runs the
-  `_foretold` function (or `weigh_the_vault(false)`) on the background executor and stays in the
+  `_foretold` function on the background executor; *Check* and *Mend* hold the weighing's handle
+  instead, polling it every 150 ms to show *Checked N of M* under the row with a *Stop* beside it
+  (`stop-checking-the-vault`, `Tending::weighing`), a stopped one telling what it read and that it
+  stopped. A count stays in the
   group as a line under its row (`Tending::counted`); the act is greyed until a count found
   something to do (`Told::acts`), takes two presses (`Armed::TendTheVault`, one armed at a time
   like every destructive press) and ends as a toast, taking every count down since the catalog has

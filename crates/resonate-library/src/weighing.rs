@@ -1,8 +1,62 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
+    thread,
+};
 
 use resonate_vault::{Form, Reframing, Vault};
 
-use crate::{Error, Library, Released, Result};
+use crate::{
+    Error, Library, Released, Result,
+    pass::{Cancelling, PassHandle, PassKind, VaultWeighingHandle},
+};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct VaultWeighingStats {
+    pub to_weigh: u64,
+    pub weighed: u64,
+}
+
+#[derive(Debug, Default)]
+pub struct VaultWeighingProgress {
+    to_weigh: AtomicU64,
+    weighed: AtomicU64,
+    cancelled: AtomicBool,
+}
+
+impl VaultWeighingProgress {
+    pub fn snapshot(&self) -> VaultWeighingStats {
+        VaultWeighingStats {
+            to_weigh: self.to_weigh.load(Ordering::Relaxed),
+            weighed: self.weighed.load(Ordering::Relaxed),
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Relaxed)
+    }
+
+    fn counted(&self, to_weigh: u64) {
+        self.to_weigh.store(to_weigh, Ordering::Relaxed);
+    }
+
+    fn weighed_one(&self) {
+        self.weighed.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+impl Cancelling for VaultWeighingProgress {
+    fn cancel(&self) {
+        VaultWeighingProgress::cancel(self);
+    }
+}
 
 #[derive(Debug)]
 pub struct VaultUnreached {
@@ -34,6 +88,7 @@ pub struct VaultWeighing {
     pub unframed: Vec<PathBuf>,
     pub reframed: Option<VaultReframed>,
     pub mended: Option<VaultMended>,
+    pub cancelled: bool,
 }
 
 impl VaultWeighing {
@@ -51,7 +106,23 @@ impl VaultWeighing {
 }
 
 impl Library {
-    pub fn weigh_the_vault(&self, mending: bool) -> Result<VaultWeighing> {
+    pub fn weigh_the_vault(&self, mending: bool) -> Result<VaultWeighingHandle> {
+        if self.vault().is_none() {
+            return Err(Error::NoVault);
+        }
+
+        let library = self.shared();
+        let progress = Arc::new(VaultWeighingProgress::default());
+        let owned = Arc::clone(&progress);
+        let thread = thread::Builder::new()
+            .name("resonate-weigh".to_owned())
+            .spawn(move || library.weigh(mending, &progress))
+            .map_err(|source| Error::ThreadSpawn { source })?;
+
+        Ok(PassHandle::of(PassKind::Weigh, owned, thread))
+    }
+
+    fn weigh(&self, mending: bool, progress: &VaultWeighingProgress) -> Result<VaultWeighing> {
         let vault = self.vault().ok_or(Error::NoVault)?;
         let refused = |source| Error::Vault {
             path: vault.root().to_path_buf(),
@@ -68,9 +139,14 @@ impl Library {
         if weighed.held_nothing() {
             return Ok(weighed);
         }
+        progress.counted(weighed.objects + weighed.covers);
 
         let mut moved_keys = Vec::new();
         for object in &objects {
+            if progress.is_cancelled() {
+                weighed.cancelled = true;
+                return Ok(weighed);
+            }
             let reads_back = match vault.verify(&object.path, object.form) {
                 Ok(reads_back) => reads_back,
                 Err(error) if vault.failed_itself(&error) => {
@@ -78,6 +154,7 @@ impl Library {
                         path: object.path.clone(),
                         error,
                     });
+                    progress.weighed_one();
                     continue;
                 }
                 Err(error) => {
@@ -95,10 +172,15 @@ impl Library {
                 moved_keys.push(object.key);
                 weighed.objects_moved.push(object.path.clone());
             }
+            progress.weighed_one();
         }
 
         let mut covers_moved_keys = Vec::new();
         for cover in &covers {
+            if progress.is_cancelled() {
+                weighed.cancelled = true;
+                return Ok(weighed);
+            }
             match vault.verify_cover(&cover.path) {
                 Ok(true) => weighed.covers_held += 1,
                 Ok(false) => {
@@ -117,6 +199,7 @@ impl Library {
                     weighed.covers_moved.push(cover.path.clone());
                 }
             }
+            progress.weighed_one();
         }
 
         if !mending {
@@ -124,7 +207,11 @@ impl Library {
         }
 
         if !weighed.unframed.is_empty() {
-            weighed.reframed = Some(reframe(vault, &weighed.unframed)?);
+            weighed.reframed = Some(reframe(vault, &weighed.unframed, progress)?);
+            if progress.is_cancelled() {
+                weighed.cancelled = true;
+                return Ok(weighed);
+            }
         }
         if weighed.failing() > 0 {
             weighed.mended = Some(VaultMended {
@@ -150,9 +237,16 @@ fn packed_before_the_frames(vault: &Vault, form: Form, path: &Path) -> bool {
             .unwrap_or(false)
 }
 
-fn reframe(vault: &Vault, unframed: &[PathBuf]) -> Result<VaultReframed> {
+fn reframe(
+    vault: &Vault,
+    unframed: &[PathBuf],
+    progress: &VaultWeighingProgress,
+) -> Result<VaultReframed> {
     let mut reframed = VaultReframed::default();
     for path in unframed {
+        if progress.is_cancelled() {
+            break;
+        }
         let outcome = vault.reframe(path).map_err(|source| Error::Vault {
             path: path.clone(),
             source: Box::new(source),

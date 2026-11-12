@@ -1,7 +1,9 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
-use gpui::{Context, Div, Task, div, prelude::*};
-use resonate_library::{Compacted, Library, Pruned, Released, VaultWeighing};
+use gpui::{Context, Div, Stateful, Task, div, prelude::*};
+use resonate_library::{
+    Compacted, Library, Pruned, Released, VaultWeighing, VaultWeighingProgress, VaultWeighingStats,
+};
 
 use crate::{
     Notice, Pass, format,
@@ -14,6 +16,8 @@ use crate::{
     },
     words,
 };
+
+const WEIGHING_LOOKED_AT_EVERY: Duration = Duration::from_millis(150);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum Tend {
@@ -103,7 +107,7 @@ impl Tend {
         let applies = pass.applies();
 
         Ok(match self {
-            Self::Check => Tended::Weighed(library.weigh_the_vault(applies)?),
+            Self::Check => Tended::Weighed(library.weigh_the_vault(applies)?.join()?),
             Self::Prune if applies => Tended::Pruned(library.prune_the_vault()?),
             Self::Prune => Tended::Pruned(library.vault_prune_foretold()?),
             Self::Release if applies => Tended::Released(library.release_from_vault(&[])?),
@@ -146,6 +150,12 @@ fn weighing_told(weighed: &VaultWeighing, pass: Pass) -> Told {
             acts: false,
         };
     }
+    if weighed.cancelled {
+        return Told {
+            text: words::settings_tending::stopped_before_it_finished(checked_told(weighed)),
+            acts: false,
+        };
+    }
     if pass.applies() {
         let mended = weighed.mended.unwrap_or_default();
         let repacked = weighed
@@ -162,15 +172,7 @@ fn weighing_told(weighed: &VaultWeighing, pass: Pass) -> Told {
             acts: false,
         };
     }
-    let mut parts = vec![words::settings_tending::checked(
-        weighed.covers,
-        weighed.covers_held,
-        weighed.covers_moved.len(),
-        weighed.objects_held,
-        weighed.objects_moved.len(),
-        weighed.objects,
-        weighed.unreached.len(),
-    )];
+    let mut parts = vec![checked_told(weighed)];
     if !weighed.unframed.is_empty() {
         parts.push(words::settings_tending::packed_as_one_frame(
             weighed.unframed.len(),
@@ -181,6 +183,24 @@ fn weighing_told(weighed: &VaultWeighing, pass: Pass) -> Told {
         text: parts.join(" · "),
         acts: weighed.has_something_to_mend(),
     }
+}
+
+fn checked_told(weighed: &VaultWeighing) -> String {
+    words::settings_tending::checked(
+        weighed.covers,
+        weighed.covers_held,
+        weighed.covers_moved.len(),
+        weighed.objects_held,
+        weighed.objects_moved.len(),
+        weighed.objects,
+        weighed.unreached.len(),
+    )
+}
+
+fn weighing_progress_told(stats: VaultWeighingStats) -> Option<String> {
+    (stats.to_weigh > 0).then(|| {
+        words::settings_tending::checked_so_far(stats.weighed.min(stats.to_weigh), stats.to_weigh)
+    })
 }
 
 fn pruning_told(pruned: Pruned, pass: Pass) -> Told {
@@ -244,6 +264,7 @@ fn compacting_told(compacted: Compacted, pass: Pass) -> Told {
 pub(crate) struct Tending {
     running: Option<(Tend, Pass)>,
     counted: BTreeMap<Tend, Told>,
+    weighing: Option<Arc<VaultWeighingProgress>>,
     task: Task<()>,
 }
 
@@ -252,6 +273,7 @@ impl Default for Tending {
         Self {
             running: None,
             counted: BTreeMap::new(),
+            weighing: None,
             task: Task::ready(()),
         }
     }
@@ -264,6 +286,10 @@ impl Tending {
 
     pub(crate) fn counted(&self, tend: Tend) -> Option<&Told> {
         self.counted.get(&tend)
+    }
+
+    pub(crate) fn weighing(&self) -> Option<&Arc<VaultWeighingProgress>> {
+        self.weighing.as_ref()
     }
 }
 
@@ -283,6 +309,10 @@ impl RootView {
         let running = self.tending.running();
         let previewing = running == Some((tend, Pass::Preview));
         let applying = running == Some((tend, Pass::Apply));
+        let progress = (tend == Tend::Check && (previewing || applying))
+            .then(|| self.tending.weighing().map(|weighing| weighing.snapshot()))
+            .flatten()
+            .and_then(weighing_progress_told);
 
         let preview = action(
             tend.id(Pass::Preview),
@@ -293,6 +323,8 @@ impl RootView {
             self,
             cx,
         );
+        let stop =
+            (tend == Tend::Check && (previewing || applying)).then(|| self.stop_tending_row(cx));
         let apply = action(
             tend.id(Pass::Apply),
             tend.label(Pass::Apply, applying, armed),
@@ -316,10 +348,65 @@ impl RootView {
             .child(kit::row(
                 tend.name(),
                 tend.under(),
-                kit::actions().child(preview).child(apply),
+                kit::actions().children(stop).child(preview).child(apply),
             ))
+            .when_some(progress, |body, progress| body.child(note(progress)))
             .when_some(counted, |body, counted| body.child(note(counted.text)))
             .when(armed, |body| body.child(note(tend.asking_again())))
+    }
+
+    fn stop_tending_row(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let stopping = self
+            .tending
+            .weighing()
+            .is_some_and(|weighing| weighing.is_cancelled());
+
+        action(
+            "stop-checking-the-vault",
+            if stopping {
+                words::settings_tending::stopping()
+            } else {
+                words::settings_tending::stop()
+            },
+            Icon::Stop,
+            stopping,
+            |this, _, cx| this.stop_tending_the_vault(cx),
+            self,
+            cx,
+        )
+    }
+
+    pub(crate) fn stop_tending_the_vault(&mut self, cx: &mut Context<Self>) {
+        if let Some(weighing) = self.tending.weighing() {
+            weighing.cancel();
+            cx.notify();
+        }
+    }
+
+    fn weigh_the_vault(&mut self, pass: Pass, library: &Library, cx: &mut Context<Self>) {
+        let handle = match library.weigh_the_vault(pass.applies()) {
+            Ok(handle) => handle,
+            Err(error) => {
+                self.tended(Tend::Check, pass, Err(error), cx);
+                return;
+            }
+        };
+
+        self.tending.weighing = Some(Arc::clone(handle.progress()));
+        self.tending.running = Some((Tend::Check, pass));
+        self.tending.task = cx.spawn(async move |this, cx| {
+            while !handle.is_finished() {
+                cx.background_executor()
+                    .timer(WEIGHING_LOOKED_AT_EVERY)
+                    .await;
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    return;
+                }
+            }
+            let done = handle.join().map(Tended::Weighed);
+            let _ = this.update(cx, |this, cx| this.tended(Tend::Check, pass, done, cx));
+        });
+        cx.notify();
     }
 
     pub(crate) fn tend_to_the_vault(&mut self, tend: Tend, pass: Pass, cx: &mut Context<Self>) {
@@ -329,6 +416,11 @@ impl RootView {
         }
 
         let library = self.library.read(cx).catalog();
+        if tend == Tend::Check {
+            self.weigh_the_vault(pass, &library, cx);
+            return;
+        }
+
         let done = cx
             .background_executor()
             .spawn(async move { tend.run(&library, pass) });
@@ -348,6 +440,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         self.tending.running = None;
+        self.tending.weighing = None;
         match done {
             Ok(done) if pass.applies() => {
                 self.tending.counted.clear();
@@ -371,7 +464,7 @@ mod tests {
     use std::sync::Arc;
 
     use gpui::TestAppContext;
-    use resonate_library::{ImportOptions, Sources, Vault};
+    use resonate_library::{ImportOptions, Sources, Vault, VaultWeighingStats};
 
     use super::{super::pages::pressed, *};
     use crate::driven::{Driven, Folder};
@@ -447,6 +540,8 @@ mod tests {
 
         assert_eq!(ids.len(), 8);
     }
+
+    const LONG_ENOUGH_TO_STOP_IN_SECONDS: u32 = 240;
 
     fn a_vault_holding_two_songs(
         cx: &mut TestAppContext,
@@ -524,6 +619,109 @@ mod tests {
 
         assert!(!driven.read(|root, _| root.is_armed(&Armed::TendTheVault(Tend::Check))));
         assert!(stands_in(&library, "Echoes") && stands_in(&library, "Time"));
+    }
+
+    fn a_vault_holding_two_long_songs(
+        cx: &mut TestAppContext,
+    ) -> (Driven, Arc<Library>, Folder, Folder) {
+        let music = Folder::new();
+        let held = Folder::new();
+        music.tone("Echoes.wav", LONG_ENOUGH_TO_STOP_IN_SECONDS);
+        music.tone("Time.wav", LONG_ENOUGH_TO_STOP_IN_SECONDS + 1);
+        let vault = Arc::new(Vault::make(held.path()).expect("a vault"));
+        let library =
+            Arc::new(Library::open_in_memory_with_vault(Arc::clone(&vault)).expect("a catalog"));
+        Driven::scanned(&library, &music);
+        library
+            .import(
+                Arc::new(Sources::local()),
+                ImportOptions {
+                    apply: true,
+                    ..ImportOptions::default()
+                },
+            )
+            .expect("an import starts")
+            .join()
+            .expect("an import ends");
+
+        let mut driven = Driven::open(cx, Arc::clone(&library));
+        driven.click("tab-settings");
+        driven.click("category-Library");
+        (driven, library, music, held)
+    }
+
+    #[test]
+    fn a_weighing_under_way_says_how_far_it_has_come_and_says_nothing_before_it_has_counted() {
+        let begun = VaultWeighingStats {
+            to_weigh: 0,
+            weighed: 0,
+        };
+        let under_way = VaultWeighingStats {
+            to_weigh: 12,
+            weighed: 5,
+        };
+
+        assert_eq!(weighing_progress_told(begun), None);
+        assert_eq!(
+            weighing_progress_told(under_way),
+            Some(words::settings_tending::checked_so_far(5, 12))
+        );
+        assert_eq!(
+            words::settings_tending::checked_so_far(5, 12),
+            "Checked 5 of 12"
+        );
+    }
+
+    #[test]
+    fn a_weighing_that_was_stopped_says_so_and_offers_nothing_to_mend() {
+        let stopped = Tended::Weighed(VaultWeighing {
+            objects: 3,
+            objects_held: 1,
+            objects_moved: vec!["broken".into()],
+            cancelled: true,
+            ..VaultWeighing::default()
+        });
+
+        let told = stopped.told(Pass::Preview);
+        let mended = stopped.told(Pass::Apply);
+
+        assert!(!told.acts);
+        assert!(told.text.starts_with("checked 3 · read back 1"));
+        assert!(told.text.ends_with("stopped before it finished"));
+        assert!(mended.text.ends_with("stopped before it finished"));
+    }
+
+    #[gpui::test]
+    fn a_check_shows_how_far_it_has_come_and_stop_ends_it_before_the_vault_is_read(
+        cx: &mut TestAppContext,
+    ) {
+        let (mut driven, _library, _music, _held) = a_vault_holding_two_long_songs(cx);
+
+        pressed(&mut driven, "check-the-vault");
+        driven.until(|root, _| {
+            root.tending
+                .weighing()
+                .is_some_and(|weighing| weighing.snapshot().to_weigh == 2)
+        });
+        let watched = driven.read(|root, _| root.tending.weighing().cloned().expect("a weighing"));
+        assert_eq!(
+            driven.read(|root, _| root.tending.running()),
+            Some((Tend::Check, Pass::Preview))
+        );
+        assert!(!watched.is_cancelled());
+
+        pressed(&mut driven, "stop-checking-the-vault");
+        assert!(driven.read(|root, _| {
+            root.tending
+                .weighing()
+                .is_some_and(|weighing| weighing.is_cancelled())
+        }));
+        let told = counted(&mut driven, Tend::Check);
+
+        assert!(!told.acts);
+        assert!(told.text.ends_with("stopped before it finished"));
+        assert!(driven.read(|root, _| root.tending.weighing().is_none()));
+        assert!(watched.snapshot().weighed < watched.snapshot().to_weigh);
     }
 
     #[gpui::test]

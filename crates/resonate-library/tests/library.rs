@@ -46,7 +46,7 @@ use resonate_library::{
     SheetScope, Sidecar, SongLink, SongToKeep, SongsAsked, SortOrder, Sought, Sources, StreamAsked,
     Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
     TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Upkeep, Vault,
-    Version, Waits, Window, Wording, Written,
+    VaultWeighingStats, Version, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -31305,7 +31305,7 @@ fn weighing_a_vault_reads_every_object_back_and_notes_it_validated() -> Result<(
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
-    let weighed = library.weigh_the_vault(false)?;
+    let weighed = library.weigh_the_vault(false)?.join()?;
 
     assert_eq!(weighed.objects, 2);
     assert_eq!(weighed.objects_held, 2);
@@ -31323,11 +31323,82 @@ fn weighing_a_vault_reads_every_object_back_and_notes_it_validated() -> Result<(
 }
 
 #[test]
+fn a_weighing_counts_what_it_has_read_back_against_everything_it_will() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+    tree.write(
+        "dogs.wav",
+        &Wav::new().text(TITLE, "Dogs").frames(8_820).build(),
+    );
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&tree))?;
+    vaulted(&library, true)?;
+
+    let handle = library.weigh_the_vault(false)?;
+    let watched = Arc::clone(handle.progress());
+    let weighed = handle.join()?;
+
+    assert!(!weighed.cancelled);
+    assert!(!watched.is_cancelled());
+    assert_eq!(
+        watched.snapshot(),
+        VaultWeighingStats {
+            to_weigh: 2,
+            weighed: 2
+        }
+    );
+    Ok(())
+}
+
+#[test]
+fn a_weighing_stopped_early_says_so_and_mends_nothing() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    for index in 0..40 {
+        tree.write(
+            &format!("{index}.wav"),
+            &Wav::new()
+                .text(TITLE, &format!("Song {index}"))
+                .frames(4_410 + index)
+                .build(),
+        );
+    }
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&tree))?;
+    vaulted(&library, true)?;
+    let broken = library.vault_objects()?.remove(0);
+    fs::write(&broken.path, b"no longer what went in").expect("an object overwritten");
+
+    let handle = library.weigh_the_vault(true)?;
+    let watched = Arc::clone(handle.progress());
+    handle.cancel();
+    let weighed = handle.join()?;
+
+    assert!(watched.is_cancelled());
+    assert!(weighed.cancelled, "the weighing outran the cancel");
+    assert!(watched.snapshot().weighed < watched.snapshot().to_weigh);
+    assert_eq!(weighed.objects, 40);
+    assert!(weighed.objects_held + (weighed.objects_moved.len() as u64) < weighed.objects);
+    assert!(weighed.mended.is_none());
+    assert!(weighed.reframed.is_none());
+    let row = all(&library)?.remove(0);
+    assert!(
+        library
+            .stand_in()
+            .stands_in(&row.location, row.span)
+            .is_some(),
+        "a stopped mend pointed a row back"
+    );
+    Ok(())
+}
+
+#[test]
 fn weighing_an_empty_vault_finds_nothing_to_weigh() -> Result<()> {
     let held = Tree::new();
     let (library, _vault) = opened_with_a_vault(&held)?;
 
-    let weighed = library.weigh_the_vault(true)?;
+    let weighed = library.weigh_the_vault(true)?.join()?;
 
     assert!(weighed.held_nothing());
     assert!(weighed.mended.is_none());
@@ -31356,7 +31427,7 @@ fn an_object_that_no_longer_reads_back_is_found_and_only_mended_when_asked() -> 
     let object = library.vault_objects()?.remove(0);
     fs::write(&object.path, b"no longer what went in").expect("an object overwritten");
 
-    let found = library.weigh_the_vault(false)?;
+    let found = library.weigh_the_vault(false)?.join()?;
 
     assert_eq!(found.objects_moved, std::slice::from_ref(&object.path));
     assert_eq!(found.objects_held, 0);
@@ -31373,6 +31444,7 @@ fn an_object_that_no_longer_reads_back_is_found_and_only_mended_when_asked() -> 
 
     let mended = library
         .weigh_the_vault(true)?
+        .join()?
         .mended
         .expect("the mending is told");
 
