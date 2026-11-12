@@ -163,9 +163,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `PICTURES_WAITING_AT_MOST` and `PERFORMERS_WEIGHED_AT_MOST`) beside `resonate-library`'s
   `enrich.rs`; the strict rules are shared, the queueing, backoff and stopping are not, so a fix to
   one is made twice. One pass over a small catalog trait both catalogs fill
-- [L] Two more files every change lands in: `Library`'s `impl` in `db.rs` (some 7 400
-  lines and 294 public functions, the search compiled to SQL among them, though `sourced.rs` and
-  `supply.rs` already hold parts of it) and `impl Engine` (some 3 950 lines and 196 methods beside
+- [L] One more file every change lands in: `impl Engine` (some 3 950 lines and 196 methods beside
   `arms.rs` and `splicing.rs`)
 - [L] A setting is spelled in some nine files (`enrich-on-metered`: the binary's `config.rs`,
   `error.rs` and `settings.rs`, the window's `settings.rs` and four panes, the man page), with

@@ -2586,7 +2586,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   preview started, or `Outdated`. Every reload's `landed` weighs a shown preview against
   `Library::plans_stamp`; stamp moved = drop rows and counts, grey *Apply*, say the catalog moved. The
   stamp is a counter on the writer connection (temp triggers over the columns a plan reads,
-  `PLANNED_FROM` in `db.rs`) beside `PRAGMA data_version` for another process: a lookup landing a
+  `PLANNED_FROM` in `db/mod.rs`) beside `PRAGMA data_version` for another process: a lookup landing a
   release or a scan reading a file anew takes the preview down; a counted play or favourite does not.
   **The tags part draws the plan, not a count of it**: `listed` = first `WRITES_SHOWN` (12) of
   `Retagging::writes`, one raised row per file over the fields to be written, *and N more*; the count

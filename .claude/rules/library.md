@@ -12,6 +12,13 @@ paths:
 local `MediaLocation`s; nothing keyed by source. Another source brings its own catalog; its queue
 rows read via `Player::media` like any unscanned row.
 
+**`Library` is one type over many files** (`db/`): `mod.rs` holds the connection pool, the watches
+and the schema's triggers, `statements.rs` the SQL every part shares (and its macros, so it is
+declared first), `searched.rs` the search compiled to SQL, `ordered.rs` the orderings, `rows.rs` what
+reads a row back, and each other file one `impl Library` of a subject (`tracks`, `listed`,
+`playlists`, `syncing`, `vault`, `filing`, `following`, `wants`, `enriching`, `studied`, …), its tests
+in `db/tests.rs`. A method another file calls is `pub(super)`.
+
 ## Schema and grouping
 
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
@@ -900,7 +907,7 @@ rows read via `Player::media` like any unscanned row.
 - **Billed by the release where one landed, by tags until then.** `albums.title` = what the scan
   read, never rewritten by a landing (half of `store::album_key` and `sleeve_key`).
   `albums.release_title` = the reference's answer, written by `land_release` alone; the
-  `album_title!` macro in `db.rs`, `coalesce(a.release_title, a.title)`, is the billed title
+  `album_title!` macro in `db/statements.rs`, `coalesce(a.release_title, a.title)`, is the billed title
   listings, sorts, wants and `organise` destinations read.
 - **Landing a release is one transaction, pairing its rows a second.** `land_release` writes release
   columns, fills `year` only where the scan left none, stamps `answered`, deletes and reinserts
@@ -1791,7 +1798,7 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   `format:`. An unknown field or unreadable value reads as the words as written: never a parse
   failure. Numeric readers are overflow-safe. `Display for Term` is canonical and reads back as the
   same term. `is:hires` = lossless above CD (`CD_SAMPLE_RATE` 44 100, `CD_SAMPLE_DEPTH` 16, in
-  `db.rs`); `depth:` reads the stored `SampleFormat` (24 valid bits for float).
+  `db/statements.rs`); `depth:` reads the stored `SampleFormat` (24 valid bits for float).
 - **Terms narrow on what the catalog stored; two are ages.** `added:`, `played:` measure from query
   time (month 30 days, year 365), so a saved query answers differently tomorrow. `plays:` is a count
   (`plays:0` never heard); `heard:` = `played:`. `@` windows the count over `listens`, not the
