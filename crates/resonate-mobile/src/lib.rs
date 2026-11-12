@@ -41,6 +41,8 @@ mod rewriting;
 mod room;
 mod saved_searches;
 mod search;
+#[cfg(test)]
+mod search_parity;
 mod served;
 mod sharing;
 mod spotify;

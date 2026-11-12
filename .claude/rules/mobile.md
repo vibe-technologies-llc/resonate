@@ -805,6 +805,15 @@ step would move them.
 ## Checks
 
 `cargo test -p resonate-mobile` runs on the host.
+`search_parity.rs` (test-only) scans a table of songs into a real `resonate-library` catalog, shapes their
+rows by SQL, builds the same songs in the document catalog and asks both every kind of term the grammar
+reads (`added`, `plays` with and without a window, `played`, `year`, `length`, `rate`, `depth`, every
+`Codec`, every `Shape`, each under all five comparisons, ranges, denials and mixes), requiring the same
+songs back from the desktop's SQL and the phones' `term_holds` and `shaped`
+(`the_desktops_sql_and_the_phones_memory_answer_every_term_of_the_grammar_alike`); a `Term` added to one and
+not the other fails there, and the table must ask every kind
+(`the_table_asks_every_kind_of_term_the_grammar_has`). The two reads of a year differ by design (the album's
+and the song's own `date`), so the table gives an album one song.
 `every_word_the_phones_show_is_said_through_the_catalog` refuses a prose literal anywhere in the
 crate's sources (`language.md`'s *The checks*). The queue edit tests drive a real engine over
 a backend with no device (a paused queue never binds a stream; `Harness::sounding` lists one sink
@@ -948,6 +957,24 @@ the song itself; only a queue swaps it. Both phones draw it (`android.md`'s and 
 another version*), choosing and then playing the song, which the swap turns into its version
 (`a_version_chosen_is_queued_in_place_of_its_song_and_forgotten_with_it`,
 `a_catalog_of_before_versions_were_chosen_keeps_its_songs_and_gains_the_table`).
+
+## Reaching a private server
+
+`SyncConfig.stun` (a `host` or `host:port`, blank asks none) and `SyncConfig.certificate` (the name of the
+certificate kept, blank trusting none) are the desktop's `sync-stun` and `sync-server-certificate`
+(`sync.md`). The certificate's PEM is the boundary's: `sync_keep_certificate(pem)` stages it beside the
+ledger, requires `resonate_sync::check_trusted_certificate` to find at least one certificate every root
+store accepts and only then renames it over `sync-server-certificate.pem`, so a refused file
+(`Error::SyncCertificate`) leaves the one kept as it was; `sync_forget_certificate` removes it. `sync_start`,
+called with sync on or off, records the pair as `Syncing::reaching` (`Reaching::of`: the kept file's path when
+`certificate` is named, the trimmed STUN or none), which `Sync` and shared playlists receive as `trusted` and
+`stun` and a party as `trusted`, so a `resonate-server` behind a private authority pairs a phone and a phone on
+a `ws` or `wss` server offers its public address. A certificate named but gone fails the start with the sync
+crate's `TrustedCertificate`
+(`a_certificate_kept_is_trusted_by_sync_and_by_parties_and_one_forgotten_is_not`,
+`a_file_that_is_no_certificate_is_refused_and_leaves_the_kept_one_alone`,
+`a_certificate_named_but_gone_stops_sync_from_starting`). Both phones keep the name and the STUN in their
+sync preferences and choose the PEM as a document (`android.md`, `ios.md`).
 
 ## Hosted services on the phones
 

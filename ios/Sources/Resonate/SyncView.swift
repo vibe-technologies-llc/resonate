@@ -537,8 +537,13 @@ struct SyncSongsPage: View {
 }
 
 struct SyncConnectionPage: View {
+    private static let certificateTypes: [UTType] =
+        [UTType(filenameExtension: "pem"), UTType(filenameExtension: "crt"), .x509Certificate, .plainText, .data].compactMap { $0 }
+
     @Environment(Library.self) private var library
     @State private var chosen: SyncRoute?
+    @State private var choosingCertificate = false
+    @State private var stun = ""
     @State private var server = ""
     @State private var device = ""
     @State private var sharedName = ""
@@ -578,6 +583,45 @@ struct SyncConnectionPage: View {
                         Text("sync.route.own.address")
                     }
                 }
+                if route != .nearby {
+                    Section {
+                        TextField("sync.stun.prompt", text: $stun)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Button("sync.stun.save") {
+                            guard var next = features.syncConfig else { return }
+                            next.stun = trimmed(stun)
+                            features.saveSync(next)
+                        }
+                        .disabled(trimmed(stun) == config.stun)
+                    } header: {
+                        Text("sync.stun")
+                    } footer: {
+                        Text("sync.stun.footer")
+                    }
+                }
+                if route == .own {
+                    Section {
+                        LabeledContent("sync.certificate") {
+                            Text(config.certificate.isEmpty ? said("sync.certificate.none") : config.certificate)
+                        }
+                        Button("sync.certificate.choose") { choosingCertificate = true }
+                        if !config.certificate.isEmpty {
+                            Button("sync.certificate.forget", role: .destructive) { features.forgetSyncCertificate() }
+                        }
+                    } header: {
+                        Text("sync.certificate")
+                    } footer: {
+                        Text("sync.certificate.footer")
+                    }
+                    .fileImporter(isPresented: $choosingCertificate, allowedContentTypes: Self.certificateTypes) { result in
+                        switch result {
+                        case .success(let url): features.keepSyncCertificate(url)
+                        case .failure(let failure): library.report(failure)
+                        }
+                    }
+                }
                 Section {
                     TextField("common.name", text: $device, prompt: Text("iPhone"))
                     Button("sync.connection.save-name") {
@@ -607,6 +651,7 @@ struct SyncConnectionPage: View {
             sharedName = features.together.name
             guard let config = features.syncConfig else { return }
             server = config.server
+            stun = config.stun
             device = config.device
         }
     }

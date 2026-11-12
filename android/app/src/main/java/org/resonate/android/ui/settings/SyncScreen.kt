@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Autorenew
@@ -67,6 +69,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -119,10 +122,14 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
 
     val nameForOthers = features.together.nameForOthers
 
-    fun saveNames(device: String, server: String, forOthers: String) {
-        change { it.copy(device = device.trim(), server = server.trim()) }
+    fun saveNames(device: String, server: String, stun: String, forOthers: String) {
+        change { it.copy(device = device.trim(), server = server.trim(), stun = stun.trim()) }
         if (forOthers.trim() != nameForOthers.value) features.together.nameForOthers(forOthers)
     }
+
+    fun keepCertificate(uri: Uri) = features.keepSyncCertificate(uri)
+
+    fun forgetCertificate() = features.forgetSyncCertificate()
 
     fun join(code: String) = features.joinSync(code)
 
@@ -171,6 +178,15 @@ private fun destinationOf(folders: List<MusicFolder>, chosen: String?): MusicFol
         ?: writable.firstOrNull { it.uri != MusicDocuments.downloads }
 }
 
+private val CERTIFICATE_DOCUMENTS =
+    arrayOf(
+        "application/x-pem-file",
+        "application/x-x509-ca-cert",
+        "application/pkix-cert",
+        "text/plain",
+        "application/octet-stream",
+    )
+
 private enum class Asking {
     JOIN,
     NEW_GROUP,
@@ -197,6 +213,10 @@ fun SyncScreen() {
     var driving by rememberSaveable { mutableStateOf<String?>(null) }
     var joinCode by rememberSaveable { mutableStateOf("") }
     val copy = rememberCopy()
+    val certificatePicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) model.keepCertificate(uri)
+        }
     val words = words()
     val pairingCode = stringResource(R.string.sync_pairing_code)
     LaunchedEffect(Unit) { model.refreshFolders() }
@@ -208,6 +228,7 @@ fun SyncScreen() {
         }
         var device by rememberSaveable(config.device) { mutableStateOf(config.device) }
         var server by rememberSaveable(config.server) { mutableStateOf(config.server) }
+        var stun by rememberSaveable(config.stun) { mutableStateOf(config.stun) }
         var forOthers by rememberSaveable(keptNameForOthers) { mutableStateOf(keptNameForOthers) }
         LaunchedEffect(config.key) { showCode = false }
         val code = status?.code?.ifEmpty { null } ?: config.key
@@ -490,14 +511,55 @@ fun SyncScreen() {
                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
                         modifier = Modifier.testTag("sync-server"),
                     )
+                    Field(
+                        value = stun,
+                        onValueChange = { stun = it },
+                        label = stringResource(R.string.sync_stun),
+                        supporting = stringResource(R.string.sync_stun_detail),
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
+                        modifier = Modifier.testTag("sync-stun"),
+                    )
                 }
                 val unsaved =
-                    namesUnsaved(config, device, server) || forOthers.trim() != keptNameForOthers
+                    namesUnsaved(config, device, server, stun) ||
+                        forOthers.trim() != keptNameForOthers
                 ButtonRow {
-                    Button(onClick = { model.saveNames(device, server, forOthers) }, enabled = unsaved) {
+                    Button(
+                        onClick = { model.saveNames(device, server, stun, forOthers) },
+                        enabled = unsaved,
+                    ) {
                         Text(
                             stringResource(if (unsaved) R.string.sync_save else R.string.sync_saved)
                         )
+                    }
+                }
+            }
+            if (!config.nearbyOnly) {
+                item(key = "certificate") {
+                    SettingRow(
+                        title = stringResource(R.string.sync_certificate),
+                        icon = Icons.Rounded.Key,
+                        supporting =
+                            if (config.certificate.isEmpty())
+                                stringResource(R.string.sync_certificate_none)
+                            else stringResource(R.string.sync_certificate_kept, config.certificate),
+                        modifier = Modifier.testTag("sync-certificate"),
+                    )
+                    ButtonRow {
+                        if (config.certificate.isNotEmpty()) {
+                            TextButton(
+                                onClick = model::forgetCertificate,
+                                modifier = Modifier.testTag("sync-certificate-forget"),
+                            ) {
+                                Text(stringResource(R.string.sync_certificate_forget))
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = { certificatePicker.launch(CERTIFICATE_DOCUMENTS) },
+                            modifier = Modifier.testTag("sync-certificate-choose"),
+                        ) {
+                            Text(stringResource(R.string.sync_certificate_choose))
+                        }
                     }
                 }
             }

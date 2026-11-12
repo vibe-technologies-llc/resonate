@@ -54,19 +54,35 @@ pub fn trusted_roots(extra: Option<&Path>) -> Result<RootCertStore> {
     }
     roots.add_parsable_certificates(system.certs);
     if let Some(path) = extra {
-        let certificates = CertificateDer::pem_file_iter(path)
-            .and_then(Iterator::collect::<std::result::Result<Vec<_>, _>>)
-            .map_err(|source| Error::TrustedCertificate {
-                path: path.to_path_buf(),
-                source,
-            })?;
-        for certificate in certificates {
-            roots
-                .add(certificate)
-                .map_err(|source| Error::tls(TlsOp::Roots, source))?;
-        }
+        add_pem_file(&mut roots, path)?;
     }
     Ok(roots)
+}
+
+pub fn check_trusted_certificate(path: &Path) -> Result<()> {
+    let mut roots = RootCertStore::empty();
+    match add_pem_file(&mut roots, path)? {
+        0 => Err(Error::NoTrustedCertificate {
+            path: path.to_path_buf(),
+        }),
+        _ => Ok(()),
+    }
+}
+
+fn add_pem_file(roots: &mut RootCertStore, path: &Path) -> Result<usize> {
+    let certificates = CertificateDer::pem_file_iter(path)
+        .and_then(Iterator::collect::<std::result::Result<Vec<_>, _>>)
+        .map_err(|source| Error::TrustedCertificate {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    let count = certificates.len();
+    for certificate in certificates {
+        roots
+            .add(certificate)
+            .map_err(|source| Error::tls(TlsOp::Roots, source))?;
+    }
+    Ok(count)
 }
 
 pub fn to_the_server(roots: RootCertStore) -> Result<ClientConfig> {
@@ -293,5 +309,60 @@ pub async fn read_frame_at_most(stream: &mut RecvStream, most: usize) -> Result<
             std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
         )),
         Err(quinn::ReadExactError::ReadError(source)) => Err(Error::stream(StreamOp::Read, source)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, fs, process};
+
+    use super::*;
+
+    const CERTIFICATE: &str = "-----BEGIN CERTIFICATE-----
+MIIBPzCB8qADAgECAhQ2UC2u+5Ud0LZcMNd3IY9deEf6OzAFBgMrZXAwGDEWMBQG
+A1UEAwwNcmVzb25hdGUudGVzdDAgFw0yNjExMTIwMDAzMjdaGA8yMTI2MTAxOTAw
+MDMyN1owGDEWMBQGA1UEAwwNcmVzb25hdGUudGVzdDAqMAUGAytlcAMhAAyUqYvN
+3rvd0dg8J3gtCUtJyBYYd5xJNxqEE0YZxwUMo0wwSjAdBgNVHQ4EFgQUb9E2UNGs
+KXN3jTCYsyQRXfJo9KowDwYDVR0TAQH/BAUwAwEB/zAYBgNVHREEETAPgg1yZXNv
+bmF0ZS50ZXN0MAUGAytlcANBAFZ/s8JwQNWvIr2EU4Qr0GS2S2fA9XPGO5Tr7moO
+uRACi1+SkHU377h5XBXccA0ghqVn5cUhYbvxj5+8g3VD/Ak=
+-----END CERTIFICATE-----
+";
+
+    fn kept(name: &str, text: &str) -> std::path::PathBuf {
+        let folder = env::temp_dir().join(format!("resonate-quic-{}-{name}", process::id()));
+        fs::create_dir_all(&folder).expect("a folder");
+        let path = folder.join("certificate.pem");
+        fs::write(&path, text).expect("a file");
+        path
+    }
+
+    #[test]
+    fn a_pem_certificate_is_trusted_and_a_file_without_one_is_refused() {
+        let good = kept("good", CERTIFICATE);
+        let empty = kept("empty", "nothing here\n");
+        let garbage = kept(
+            "garbage",
+            "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n",
+        );
+        let missing = good.with_file_name("absent.pem");
+
+        assert!(check_trusted_certificate(&good).is_ok());
+        assert!(matches!(
+            check_trusted_certificate(&empty),
+            Err(Error::NoTrustedCertificate { .. })
+        ));
+        assert!(matches!(
+            check_trusted_certificate(&garbage),
+            Err(Error::Tls {
+                op: TlsOp::Roots,
+                ..
+            })
+        ));
+        assert!(matches!(
+            check_trusted_certificate(&missing),
+            Err(Error::TrustedCertificate { .. })
+        ));
+        assert!(trusted_roots(Some(&good)).is_ok());
     }
 }

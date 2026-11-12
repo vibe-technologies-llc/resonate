@@ -597,7 +597,7 @@ will not open is left out of the holdings.
   socket), or `Nowhere`, the listener's
   *This network only* (`sync-nearby-only` on; off by default): nothing is dialled, the standing is `Standing::Nearby` from the start, and
   devices meet only as *Nearby* says. `sync-server-certificate` adds a PEM to the system and built-in
-  roots (a private CA, the tests' self-signed server).
+  roots (a private CA, the tests' self-signed server); `check_trusted_certificate` is the same reading that refuses a file holding no certificate, which the phones run before they keep one (`mobile.md`'s *Reaching a private server*).
 
 ## The desktop continues a handoff
 

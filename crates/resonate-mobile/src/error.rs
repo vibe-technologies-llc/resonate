@@ -346,6 +346,17 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("{}", words::errors::sync_certificate(source.to_string()))]
+    SyncCertificate {
+        #[source]
+        source: Box<resonate_sync::Error>,
+    },
+    #[error("{}", words::errors::sync_certificate_file(op.to_string()))]
+    SyncCertificateFile {
+        op: StoreOp,
+        #[source]
+        source: io::Error,
+    },
     #[error("{}", words::errors::layout_unreadable(source.to_string()))]
     LayoutUnreadable {
         #[source]

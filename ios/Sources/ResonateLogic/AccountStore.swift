@@ -182,7 +182,9 @@ public struct AccountStore: Sendable {
             playlists: flag("sync-playlists", false),
             everything: flag("sync-everything", false),
             meteredAllowed: flag("sync-metered-allowed", false),
-            control: SyncControls.of(plain.string(forKey: "sync-control"))
+            control: SyncControls.of(plain.string(forKey: "sync-control")),
+            stun: plain.string(forKey: "sync-stun") ?? "",
+            certificate: plain.string(forKey: "sync-certificate") ?? ""
         )
     }
 
@@ -199,5 +201,7 @@ public struct AccountStore: Sendable {
         plain.set(config.everything, forKey: "sync-everything")
         plain.set(config.meteredAllowed, forKey: "sync-metered-allowed")
         plain.set(SyncControls.spelt(config.control), forKey: "sync-control")
+        plain.set(config.stun, forKey: "sync-stun")
+        plain.set(config.certificate, forKey: "sync-certificate")
     }
 }

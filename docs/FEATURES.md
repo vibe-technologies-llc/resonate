@@ -133,11 +133,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   *Checking…* until it ends, as long as the vault is large
 
 ## Sync and together
-- [M · 0.9.0] A phone cannot name a STUN server or the server's certificate: `SyncConfig` carries
-  neither and `resonate-mobile`'s `sync.rs` hands `trusted: None` and `stun: None` to sync and to
-  shared playlists, so a `resonate-server` behind a private CA pairs no phone, and a phone on a
-  `ws` or `wss` server never offers a public address to punch with; the desktop passes both
-  (`sync-server-certificate`, `sync-stun`)
 
 ## Formats
 - [M · blocked: ape-decoder] A 32-bit stereo Monkey's Audio, integer or float, is refused:

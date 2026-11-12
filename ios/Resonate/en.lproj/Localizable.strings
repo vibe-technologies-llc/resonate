@@ -1284,6 +1284,8 @@
 "settings.spotify.summary" = "Your playlists and liked songs, with an app you register";
 "settings.sync-connection.inner.device-name" = "Device name";
 "settings.sync-connection.inner.resonate-server" = "Resonate server";
+"settings.sync-connection.inner.server-certificate" = "Server certificate";
+"settings.sync-connection.inner.stun-server" = "STUN server";
 "settings.sync-connection.inner.this-network-only" = "This network only";
 "settings.sync-connection.inner.your-own-server" = "Your own server";
 "settings.sync-connection.summary" = "How this iPhone reaches your devices";
@@ -1421,6 +1423,11 @@
 "suggestions.shelf.yours" = "Yours";
 "sync.answer.alone" = "Synced · no other device is online";
 "sync.background.fetching" = "Fetching songs from your devices";
+"sync.certificate" = "Server certificate";
+"sync.certificate.choose" = "Choose a certificate";
+"sync.certificate.footer" = "A certificate in PEM form, trusted beside the authorities this iPhone already trusts. Needed for a server behind a private authority.";
+"sync.certificate.forget" = "Forget the certificate";
+"sync.certificate.none" = "None";
 "sync.connection.device-name" = "This iPhone's name";
 "sync.connection.device-name.footer" = "What your other devices call this iPhone.";
 "sync.connection.save-name" = "Save name";
@@ -1526,6 +1533,10 @@
 "sync.state.refused" = "Refused";
 "sync.state.starting" = "Starting…";
 "sync.state.up-to-date" = "Up to date";
+"sync.stun" = "Public address";
+"sync.stun.footer" = "A STUN server, as host or host:port, that tells this iPhone its public address when the server is a web socket. Empty asks none.";
+"sync.stun.prompt" = "host or host:port";
+"sync.stun.save" = "Save STUN server";
 "sync.syncing" = "Syncing…";
 "sync.title" = "Device sync";
 "sync.transfer.failed" = "Could not be fetched";

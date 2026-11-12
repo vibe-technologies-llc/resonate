@@ -1311,6 +1311,8 @@ dispatcher, never the main thread. Background tasks of `LibraryFeatures` share a
 `CoroutineExceptionHandler` that logs and says the failure, and `Resonate.attempt` catches every
 native failure, a `LinkageError` included, so a screen never waits for ever.
 
+**Device sync names a STUN server and a certificate for a private server** (`SyncScreen`): *STUN server* is a field beside *Sync server*, saved with the names (`namesUnsaved` weighs it) as `sync-stun`; *Server certificate* is a row with *Choose a certificate* (`OpenDocument`, read to at most `SYNC_CERTIFICATE_BYTES_AT_MOST` by `LibraryFeatures.keepSyncCertificate` and handed to `sync_keep_certificate`) and *Forget*, its file name kept as `sync-certificate`; both are hidden under *This network only* (`mobile.md`'s *Reaching a private server*).
+
 **Download accounts are a list** (`ProviderAccountBook`, `ProviderAccountRecords`, `ProviderAccountStore`):
 any number of Monochrome, hifi-api, Subsonic and Jellyfin accounts, each its own row with its own switch, and at
 most one TIDAL account, because the boundary hands back one renewed refresh token
