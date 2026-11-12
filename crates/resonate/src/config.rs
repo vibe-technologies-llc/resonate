@@ -748,32 +748,33 @@ impl Config {
 
     #[cfg(any(feature = "online", feature = "ui", test))]
     pub fn online_enabled(&self) -> bool {
-        self.online.unwrap_or(true)
+        ConfigKey::Online.switched(self.online)
     }
 
     #[cfg(any(feature = "online", feature = "ui"))]
     pub fn hosted_services_allowed(&self) -> bool {
-        self.hosted_services.unwrap_or(true)
+        ConfigKey::HostedServices.switched(self.hosted_services)
     }
 
     #[cfg(any(feature = "online", feature = "ui", test))]
     pub fn turns_youtube_music_on(&self) -> bool {
-        self.youtube_music.unwrap_or(false)
+        ConfigKey::YoutubeMusic.switched(self.youtube_music)
     }
 
     #[cfg(any(feature = "online", feature = "ui", test))]
     pub fn keeps_youtubes_order(&self) -> bool {
-        self.youtube_music_keep_order.unwrap_or(true)
+        ConfigKey::YoutubeMusicKeepOrder.switched(self.youtube_music_keep_order)
     }
 
     #[cfg(any(feature = "sync", test))]
     pub fn syncs(&self) -> bool {
-        self.sync.unwrap_or(true) && (self.online.unwrap_or(true) || self.syncs_nearby_only())
+        ConfigKey::Sync.switched(self.sync)
+            && (ConfigKey::Online.switched(self.online) || self.syncs_nearby_only())
     }
 
     #[cfg(any(feature = "sync", feature = "ui", test))]
     pub fn syncs_nearby_only(&self) -> bool {
-        self.sync_nearby_only.unwrap_or(false)
+        ConfigKey::SyncNearbyOnly.switched(self.sync_nearby_only)
     }
 
     #[cfg(feature = "online")]
@@ -792,38 +793,38 @@ impl Config {
     }
 
     pub fn enriches_after_scan(&self) -> bool {
-        self.enrich_after_scan.unwrap_or(true)
+        ConfigKey::EnrichAfterScan.switched(self.enrich_after_scan)
     }
 
     #[cfg(any(feature = "online", feature = "ui", test))]
     pub fn enriches_on_metered(&self) -> bool {
-        self.enrich_on_metered.unwrap_or(false)
+        ConfigKey::EnrichOnMetered.switched(self.enrich_on_metered)
     }
 
     #[cfg(any(feature = "online", feature = "ui"))]
     pub fn mirrors_musicbrainz(&self) -> bool {
-        self.musicbrainz_mirror.unwrap_or(false)
+        ConfigKey::MusicbrainzMirror.switched(self.musicbrainz_mirror)
     }
 
     pub fn stalls_downloads_on_metered(&self) -> bool {
-        self.stall_downloads_on_metered.unwrap_or(false)
+        ConfigKey::StallDownloadsOnMetered.switched(self.stall_downloads_on_metered)
     }
 
     pub fn studies(&self) -> bool {
-        self.study.unwrap_or(true)
+        ConfigKey::Study.switched(self.study)
     }
 
     pub fn fetches_lyrics(&self) -> bool {
-        self.fetch_lyrics.unwrap_or(true)
+        ConfigKey::FetchLyrics.switched(self.fetch_lyrics)
     }
 
     #[cfg(feature = "ui")]
     pub fn chooses_lyrics_by_the_locale(&self) -> bool {
-        self.lyrics_language_from_locale.unwrap_or(false)
+        ConfigKey::LyricsLanguageFromLocale.switched(self.lyrics_language_from_locale)
     }
 
     pub fn identifies_by_sound(&self) -> bool {
-        self.identify_by_sound.unwrap_or(false)
+        ConfigKey::IdentifyBySound.switched(self.identify_by_sound)
     }
 
     pub fn skip_under_repeat(&self) -> SkipUnderRepeat {
@@ -865,15 +866,15 @@ impl Config {
     }
 
     pub fn equaliser_on(&self) -> bool {
-        self.equaliser.unwrap_or(false)
+        ConfigKey::Equaliser.switched(self.equaliser)
     }
 
     pub fn resumes(&self) -> bool {
-        self.resume.unwrap_or(true)
+        ConfigKey::Resume.switched(self.resume)
     }
 
     pub fn looks_for_renderers(&self) -> bool {
-        self.renderers.unwrap_or(false)
+        ConfigKey::Renderers.switched(self.renderers)
     }
 
     pub fn renderers_vouched_for(&self) -> Vouched {
@@ -897,12 +898,12 @@ impl Config {
     }
 
     pub fn notifies(&self) -> bool {
-        self.notify.unwrap_or(true)
+        ConfigKey::Notify.switched(self.notify)
     }
 
     #[cfg(feature = "ui")]
     pub fn checks_for_updates(&self) -> bool {
-        self.check_for_updates.unwrap_or(true)
+        ConfigKey::CheckForUpdates.switched(self.check_for_updates)
     }
 
     #[cfg(feature = "ui")]
@@ -917,12 +918,12 @@ impl Config {
 
     #[cfg(feature = "ui")]
     pub fn scrolls_the_volume(&self) -> bool {
-        self.scroll_volume.unwrap_or(true)
+        ConfigKey::ScrollVolume.switched(self.scroll_volume)
     }
 
     #[cfg(feature = "ui")]
     pub fn navigates_with_mouse_buttons(&self) -> bool {
-        self.mouse_navigation.unwrap_or(true)
+        ConfigKey::MouseNavigation.switched(self.mouse_navigation)
     }
 
     #[cfg(any(feature = "ui", test))]
@@ -952,7 +953,7 @@ impl Config {
 
     #[cfg(feature = "ui")]
     pub fn files_what_is_dropped(&self) -> bool {
-        self.file_dropped.unwrap_or(true)
+        ConfigKey::FileDropped.switched(self.file_dropped)
     }
 
     #[cfg(feature = "ui")]
@@ -993,12 +994,12 @@ impl Config {
 
     #[cfg(feature = "ui")]
     pub fn remembers_tab(&self) -> bool {
-        self.remember_tab.unwrap_or(true)
+        ConfigKey::RememberTab.switched(self.remember_tab)
     }
 
     #[cfg(feature = "ui")]
     pub fn remembers_window_size(&self) -> bool {
-        self.remember_window_size.unwrap_or(true)
+        ConfigKey::RememberWindowSize.switched(self.remember_window_size)
     }
 
     #[cfg(feature = "ui")]
@@ -1009,7 +1010,7 @@ impl Config {
 
     #[cfg(feature = "ui")]
     pub fn remembers_settings_category(&self) -> bool {
-        self.remember_settings_category.unwrap_or(true)
+        ConfigKey::RememberSettingsCategory.switched(self.remember_settings_category)
     }
 
     #[cfg(feature = "ui")]

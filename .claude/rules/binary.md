@@ -309,7 +309,10 @@ help names no folder, since `build.rs` writes one man page for every system;
 CLI flag > file > `EngineConfig` defaults; an unknown key warns via `tracing`. Every key is a
 `ConfigKey` variant (`ConfigKey::ALL`, in `resonate-core` so the window's `Setting::key` names the
 same key the file is written under, with no table between them): a bad value names its key without
-prose in an error. Keys
+prose in an error. **A switch's default is said once**: `ConfigKey::on_unless_said` answers it
+for every on/off key, `ConfigKey::switched` reads a stored value over it, and both `Config`'s
+readers and the window's `defaults.rs` constants are written through it; `settings::stored` writes
+under `Setting::key`, so no setting's key is named twice. Keys
 with a flag: the `global` ones plus `volume`; the rest only pane and file. Defaults and meanings:
 `config.rs` and `views/settings/`; below are the decisions.
 

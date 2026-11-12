@@ -112,7 +112,9 @@ impl Settings for File {
                     metered::allow_lookups(*allowed);
                 }
                 #[cfg(feature = "online")]
-                SettingChange::Forget(ConfigKey::EnrichOnMetered) => metered::allow_lookups(false),
+                SettingChange::Forget(ConfigKey::EnrichOnMetered) => {
+                    metered::allow_lookups(ConfigKey::EnrichOnMetered.switched(None));
+                }
                 #[cfg(feature = "online")]
                 SettingChange::Store(Setting::MusicbrainzMirror(mirrors)) => {
                     crate::musicbrainz::follow(
@@ -124,14 +126,14 @@ impl Settings for File {
                 SettingChange::Forget(ConfigKey::MusicbrainzMirror) => {
                     crate::musicbrainz::follow(
                         &config::load(Some(&self.path)).unwrap_or_default(),
-                        false,
+                        ConfigKey::MusicbrainzMirror.switched(None),
                     );
                 }
                 SettingChange::Store(Setting::StallDownloadsOnMetered(stalls)) => {
                     metered::stall_downloads(*stalls);
                 }
                 SettingChange::Forget(ConfigKey::StallDownloadsOnMetered) => {
-                    metered::stall_downloads(false);
+                    metered::stall_downloads(ConfigKey::StallDownloadsOnMetered.switched(None));
                 }
                 _ => {}
             }
@@ -141,254 +143,176 @@ impl Settings for File {
 }
 
 fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<()> {
-    let (key, value): (ConfigKey, Option<Value>) = match setting {
+    let key = setting.key();
+    let value: Option<Value> = match setting {
         Setting::EqualiserFor { sink, binding } => {
             return written_as_a_binding(setting, bound(editing, sink, binding.as_ref()));
         }
         Setting::EqualiserMeasurerFor { sink, measurer } => {
             return written_as_a_binding(setting, preferred(editing, sink, measurer.as_deref()));
         }
-        Setting::EqualiserMeasurer(measurer) => given_or_cleared(
-            ConfigKey::EqualiserMeasurer,
-            measurer.as_deref().unwrap_or(""),
-        ),
-        Setting::EqualiserProfile(binding) => (
-            ConfigKey::EqualiserProfile,
-            binding.as_ref().map(config::written),
-        ),
-        Setting::Sink(name) => (
-            ConfigKey::Sink,
-            name.as_ref().map(|name| name.as_str().into()),
-        ),
-        Setting::Quality(quality) => (ConfigKey::Quality, Some(quality_text(*quality).into())),
-        Setting::FilterPhase(phase) => (ConfigKey::FilterPhase, Some(phase_text(*phase).into())),
-        Setting::TruePeak(guarded) => (ConfigKey::TruePeak, Some((*guarded).into())),
-        Setting::Restoration(restoration) => {
-            (ConfigKey::RestoreLossy, Some(restoration.as_str().into()))
-        }
-        Setting::Crossfeed(crossfeed) => (ConfigKey::Crossfeed, Some(crossfeed.as_str().into())),
-        Setting::Dither(dither) => (ConfigKey::Dither, Some(dither_text(*dither).into())),
-        Setting::NoiseShaping(shaping) => {
-            (ConfigKey::NoiseShaping, Some(shaping_text(*shaping).into()))
-        }
-        Setting::ReplayGain(mode) => (ConfigKey::ReplayGain, Some(replay_gain_text(*mode).into())),
-        Setting::PreAmp(trim) => (ConfigKey::ReplayGainPreAmp, Some(decibels_of(*trim).into())),
-        Setting::Untagged(trim) => (
-            ConfigKey::ReplayGainUntagged,
-            Some(decibels_of(*trim).into()),
-        ),
-        Setting::BitPerfect(wanted) => (ConfigKey::BitPerfect, Some((*wanted).into())),
-        Setting::Dop(marked) => (ConfigKey::Dop, Some((*marked).into())),
-        Setting::DsdLikePcm(raised) => (ConfigKey::DsdLikePcm, Some((*raised).into())),
-        Setting::DeviceVolume(handed) => (ConfigKey::DeviceVolume, Some((*handed).into())),
-        Setting::ForceGraphRate(forced) => (ConfigKey::ForceGraphRate, Some((*forced).into())),
-        Setting::BluetoothWake(on) => (ConfigKey::BluetoothWake, Some((*on).into())),
+        Setting::EqualiserMeasurer(measurer) => given_or_cleared(measurer.as_deref().unwrap_or("")),
+        Setting::EqualiserProfile(binding) => binding.as_ref().map(config::written),
+        Setting::Sink(name) => name.as_ref().map(|name| name.as_str().into()),
+        Setting::Quality(quality) => Some(quality_text(*quality).into()),
+        Setting::FilterPhase(phase) => Some(phase_text(*phase).into()),
+        Setting::TruePeak(guarded) => Some((*guarded).into()),
+        Setting::Restoration(restoration) => Some(restoration.as_str().into()),
+        Setting::Crossfeed(crossfeed) => Some(crossfeed.as_str().into()),
+        Setting::Dither(dither) => Some(dither_text(*dither).into()),
+        Setting::NoiseShaping(shaping) => Some(shaping_text(*shaping).into()),
+        Setting::ReplayGain(mode) => Some(replay_gain_text(*mode).into()),
+        Setting::PreAmp(trim) => Some(decibels_of(*trim).into()),
+        Setting::Untagged(trim) => Some(decibels_of(*trim).into()),
+        Setting::BitPerfect(wanted) => Some((*wanted).into()),
+        Setting::Dop(marked) => Some((*marked).into()),
+        Setting::DsdLikePcm(raised) => Some((*raised).into()),
+        Setting::DeviceVolume(handed) => Some((*handed).into()),
+        Setting::ForceGraphRate(forced) => Some((*forced).into()),
+        Setting::BluetoothWake(on) => Some((*on).into()),
         Setting::BluetoothLead(lead) => {
             let millis = i64::try_from(lead.as_millis())
                 .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
-            (ConfigKey::BluetoothLeadMs, Some(millis.into()))
+            Some(millis.into())
         }
         Setting::BluetoothAwake(awake) => {
             let seconds = i64::try_from(awake.as_secs())
                 .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
-            (ConfigKey::BluetoothAwakeS, Some(seconds.into()))
+            Some(seconds.into())
         }
         Setting::Buffer(held) => {
             let millis = i64::try_from(held.as_millis())
                 .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
-            (ConfigKey::BufferMs, Some(millis.into()))
+            Some(millis.into())
         }
-        Setting::Volume(volume) => (ConfigKey::Volume, Some(as_typed(volume.get()).into())),
-        Setting::Theme(theme) => (ConfigKey::Theme, Some(theme.as_str().into())),
-        Setting::Accent(accent) => (
-            ConfigKey::Accent,
-            accent.map(|accent| accent.as_str().into()),
-        ),
-        Setting::TextSize(size) => (ConfigKey::TextSize, Some(size.as_str().into())),
-        Setting::Language(chosen) => (ConfigKey::Language, Some(chosen.as_str().into())),
-        Setting::FollowDesktopScheme(follows) => {
-            (ConfigKey::FollowDesktopScheme, Some((*follows).into()))
+        Setting::Volume(volume) => Some(as_typed(volume.get()).into()),
+        Setting::Theme(theme) => Some(theme.as_str().into()),
+        Setting::Accent(accent) => accent.map(|accent| accent.as_str().into()),
+        Setting::TextSize(size) => Some(size.as_str().into()),
+        Setting::Language(chosen) => Some(chosen.as_str().into()),
+        Setting::FollowDesktopScheme(follows) => Some((*follows).into()),
+        Setting::FollowDesktopTextSize(follows) => Some((*follows).into()),
+        Setting::Online(enabled) => Some((*enabled).into()),
+        Setting::EnrichAfterScan(after_scan) => Some((*after_scan).into()),
+        Setting::EnrichOnMetered(allowed) => Some((*allowed).into()),
+        Setting::MusicbrainzMirror(mirrors) => Some((*mirrors).into()),
+        Setting::StallDownloadsOnMetered(stalls) => Some((*stalls).into()),
+        Setting::Study(studies) => Some((*studies).into()),
+        Setting::FetchLyrics(fetches) => Some((*fetches).into()),
+        Setting::LyricsByTheLocale(chooses) => Some((*chooses).into()),
+        Setting::IdentifyBySound(hears) => Some((*hears).into()),
+        Setting::SkipUnderRepeat(skip) => Some((*skip == SkipUnderRepeat::RepeatsTheQueue).into()),
+        Setting::PreviousRestarts(previous) => {
+            Some((*previous == PreviousRestarts::RestartsTheTrack).into())
         }
-        Setting::FollowDesktopTextSize(follows) => {
-            (ConfigKey::FollowDesktopTextSize, Some((*follows).into()))
-        }
-        Setting::Online(enabled) => (ConfigKey::Online, Some((*enabled).into())),
-        Setting::EnrichAfterScan(after_scan) => {
-            (ConfigKey::EnrichAfterScan, Some((*after_scan).into()))
-        }
-        Setting::EnrichOnMetered(allowed) => (ConfigKey::EnrichOnMetered, Some((*allowed).into())),
-        Setting::MusicbrainzMirror(mirrors) => {
-            (ConfigKey::MusicbrainzMirror, Some((*mirrors).into()))
-        }
-        Setting::StallDownloadsOnMetered(stalls) => {
-            (ConfigKey::StallDownloadsOnMetered, Some((*stalls).into()))
-        }
-        Setting::Study(studies) => (ConfigKey::Study, Some((*studies).into())),
-        Setting::FetchLyrics(fetches) => (ConfigKey::FetchLyrics, Some((*fetches).into())),
-        Setting::LyricsByTheLocale(chooses) => {
-            (ConfigKey::LyricsLanguageFromLocale, Some((*chooses).into()))
-        }
-        Setting::IdentifyBySound(hears) => (ConfigKey::IdentifyBySound, Some((*hears).into())),
-        Setting::SkipUnderRepeat(skip) => (
-            ConfigKey::SkipRepeatsQueue,
-            Some((*skip == SkipUnderRepeat::RepeatsTheQueue).into()),
-        ),
-        Setting::PreviousRestarts(previous) => (
-            ConfigKey::PreviousRestarts,
-            Some((*previous == PreviousRestarts::RestartsTheTrack).into()),
-        ),
-        Setting::ShuffleStyle(style) => (ConfigKey::ShuffleStyle, Some(style.as_str().into())),
-        Setting::ShuffleSpreadsArtists(spreads) => {
-            (ConfigKey::ShuffleSpreadsArtists, Some((*spreads).into()))
-        }
-        Setting::ShuffleSpreadsAlbums(spreads) => {
-            (ConfigKey::ShuffleSpreadsAlbums, Some((*spreads).into()))
-        }
-        Setting::ShuffleFreshFirst(fresh) => (ConfigKey::ShuffleFreshFirst, Some((*fresh).into())),
+        Setting::ShuffleStyle(style) => Some(style.as_str().into()),
+        Setting::ShuffleSpreadsArtists(spreads) => Some((*spreads).into()),
+        Setting::ShuffleSpreadsAlbums(spreads) => Some((*spreads).into()),
+        Setting::ShuffleFreshFirst(fresh) => Some((*fresh).into()),
         Setting::Contact(contact) => {
             let contact = contact.trim();
-            (
-                ConfigKey::Contact,
-                (!contact.is_empty()).then(|| contact.into()),
-            )
+            (!contact.is_empty()).then(|| contact.into())
         }
         Setting::AcoustidKey(key) => {
             let key = key.trim();
-            (
-                ConfigKey::AcoustidKey,
-                (!key.is_empty()).then(|| key.into()),
-            )
+            (!key.is_empty()).then(|| key.into())
         }
         Setting::AuddToken(token) => {
             let token = token.trim();
-            (
-                ConfigKey::AuddToken,
-                (!token.is_empty()).then(|| token.into()),
-            )
+            (!token.is_empty()).then(|| token.into())
         }
         Setting::ListenbrainzToken(token) => {
             let token = token.trim();
-            (
-                ConfigKey::ListenbrainzToken,
-                (!token.is_empty()).then(|| token.into()),
+            (!token.is_empty()).then(|| token.into())
+        }
+        Setting::LastfmKey(key) => given_or_cleared(key),
+        Setting::LastfmSecret(secret) => given_or_cleared(secret),
+        Setting::LastfmSession(session) => given_or_cleared(session),
+        Setting::ListenFrom(from) => Some(from.written().into()),
+        Setting::ListenFor(length) => {
+            Some(i64::try_from(length.as_secs()).unwrap_or(i64::MAX).into())
+        }
+        Setting::Equaliser(on) => Some((*on).into()),
+        Setting::Renderers(on) => Some((*on).into()),
+        Setting::FlacAbove96kFor(renderers) => (!renderers.is_empty()).then(|| {
+            Value::Array(
+                renderers
+                    .iter()
+                    .map(|renderer| renderer.as_str())
+                    .collect::<Array>(),
             )
+        }),
+        Setting::Resume(keeps) => Some((*keeps).into()),
+        Setting::HistoryKept(kept) => Some(match kept {
+            HistoryKept::Forever => kept.to_string().into(),
+            HistoryKept::Days(days) => i64::from(days.get()).into(),
+        }),
+        Setting::Notify(tells) => Some((*tells).into()),
+        Setting::CheckForUpdates(checks) => Some((*checks).into()),
+        Setting::UpdateDismissed(version) => given_or_cleared(version),
+        Setting::Discord(on) => Some((*on).into()),
+        Setting::DiscordApp(app) => app.map(|app| app.to_string().into()),
+        Setting::DiscordShows(shown) => Some(shown.as_str().into()),
+        Setting::DiscordArt(pictured) => Some(pictured.as_str().into()),
+        Setting::DiscordIcon(icon) => icon.as_ref().map(|icon| icon.as_str().into()),
+        Setting::DiscordProgress(shown) => Some((*shown).into()),
+        Setting::DiscordPaused(stays) => Some((*stays).into()),
+        Setting::Sync(on) => Some((*on).into()),
+        Setting::SyncNearbyOnly(on) => Some((*on).into()),
+        Setting::SyncServer(given) => given_or_cleared(given),
+        Setting::SyncKey(given) => given_or_cleared(given),
+        Setting::SyncDevice(given) => given_or_cleared(given),
+        Setting::SharedName(given) => given_or_cleared(given),
+        Setting::SyncSongs(songs) => {
+            Some(Value::Array(songs.named().into_iter().collect::<Array>()))
         }
-        Setting::LastfmKey(key) => given_or_cleared(ConfigKey::LastfmKey, key),
-        Setting::LastfmSecret(secret) => given_or_cleared(ConfigKey::LastfmSecret, secret),
-        Setting::LastfmSession(session) => given_or_cleared(ConfigKey::LastfmSession, session),
-        Setting::ListenFrom(from) => (ConfigKey::ListenFrom, Some(from.written().into())),
-        Setting::ListenFor(length) => (
-            ConfigKey::ListenFor,
-            Some(i64::try_from(length.as_secs()).unwrap_or(i64::MAX).into()),
-        ),
-        Setting::Equaliser(on) => (ConfigKey::Equaliser, Some((*on).into())),
-        Setting::Renderers(on) => (ConfigKey::Renderers, Some((*on).into())),
-        Setting::FlacAbove96kFor(renderers) => (
-            ConfigKey::FlacAbove96kFor,
-            (!renderers.is_empty()).then(|| {
-                Value::Array(
-                    renderers
-                        .iter()
-                        .map(|renderer| renderer.as_str())
-                        .collect::<Array>(),
-                )
-            }),
-        ),
-        Setting::Resume(keeps) => (ConfigKey::Resume, Some((*keeps).into())),
-        Setting::HistoryKept(kept) => (
-            ConfigKey::HistoryKept,
-            Some(match kept {
-                HistoryKept::Forever => kept.to_string().into(),
-                HistoryKept::Days(days) => i64::from(days.get()).into(),
-            }),
-        ),
-        Setting::Notify(tells) => (ConfigKey::Notify, Some((*tells).into())),
-        Setting::CheckForUpdates(checks) => (ConfigKey::CheckForUpdates, Some((*checks).into())),
-        Setting::UpdateDismissed(version) => given_or_cleared(ConfigKey::UpdateDismissed, version),
-        Setting::Discord(on) => (ConfigKey::Discord, Some((*on).into())),
-        Setting::DiscordApp(app) => (ConfigKey::DiscordApp, app.map(|app| app.to_string().into())),
-        Setting::DiscordShows(shown) => (ConfigKey::DiscordShows, Some(shown.as_str().into())),
-        Setting::DiscordArt(pictured) => (ConfigKey::DiscordArt, Some(pictured.as_str().into())),
-        Setting::DiscordIcon(icon) => (
-            ConfigKey::DiscordIcon,
-            icon.as_ref().map(|icon| icon.as_str().into()),
-        ),
-        Setting::DiscordProgress(shown) => (ConfigKey::DiscordProgress, Some((*shown).into())),
-        Setting::DiscordPaused(stays) => (ConfigKey::DiscordPaused, Some((*stays).into())),
-        Setting::Sync(on) => (ConfigKey::Sync, Some((*on).into())),
-        Setting::SyncNearbyOnly(on) => (ConfigKey::SyncNearbyOnly, Some((*on).into())),
-        Setting::SyncServer(given) => given_or_cleared(ConfigKey::SyncServer, given),
-        Setting::SyncKey(given) => given_or_cleared(ConfigKey::SyncKey, given),
-        Setting::SyncDevice(given) => given_or_cleared(ConfigKey::SyncDevice, given),
-        Setting::SharedName(given) => given_or_cleared(ConfigKey::SharedName, given),
-        Setting::SyncSongs(songs) => (
-            ConfigKey::SyncSongs,
-            Some(Value::Array(songs.named().into_iter().collect::<Array>())),
-        ),
-        Setting::SyncControl(trust) => (ConfigKey::SyncControl, Some(trust.as_str().into())),
-        Setting::MinimiseButton(shown) => (ConfigKey::MinimiseButton, Some((*shown).into())),
-        Setting::MaximiseButton(shown) => (ConfigKey::MaximiseButton, Some((*shown).into())),
-        Setting::ScrollVolume(scrolls) => (ConfigKey::ScrollVolume, Some((*scrolls).into())),
-        Setting::MouseNavigation(enabled) => (ConfigKey::MouseNavigation, Some((*enabled).into())),
-        Setting::ReducedMotion(reduced) => (ConfigKey::ReducedMotion, Some((*reduced).into())),
-        Setting::FileDropped(files) => (ConfigKey::FileDropped, Some((*files).into())),
-        Setting::Scrollbars(mode) => (ConfigKey::Scrollbars, Some(mode.as_str().into())),
-        Setting::SpectrumTilt(tilt) => (ConfigKey::SpectrumTilt, Some(tilt.as_str().into())),
-        Setting::SpectrumFloor(floor) => (ConfigKey::SpectrumFloor, Some(floor.as_str().into())),
-        Setting::SpectrumBands(bands) => (ConfigKey::SpectrumBands, Some(bands.as_str().into())),
-        Setting::SpectrumFalls(falls) => (ConfigKey::SpectrumFalls, Some(falls.as_str().into())),
-        Setting::SuggestionsTab(shown) => (ConfigKey::SuggestionsTab, Some((*shown).into())),
-        Setting::MissingTab(shown) => (ConfigKey::MissingTab, Some((*shown).into())),
-        Setting::TabCounts(shown) => (ConfigKey::TabCounts, Some((*shown).into())),
-        Setting::RememberTab(remember) => (ConfigKey::RememberTab, Some((*remember).into())),
-        Setting::LastTab(tab) => (ConfigKey::LastTab, Some(tab.as_str().into())),
-        Setting::ArtistsDrawn(drawn) => (ConfigKey::ArtistsDrawn, Some(drawn.as_str().into())),
-        Setting::RememberWindowSize(remember) => {
-            (ConfigKey::RememberWindowSize, Some((*remember).into()))
-        }
-        Setting::WindowSize(size) => (
-            ConfigKey::WindowSize,
-            Some(format!("{}x{}", size.width(), size.height()).into()),
-        ),
-        Setting::RememberSettingsCategory(remember) => (
-            ConfigKey::RememberSettingsCategory,
-            Some((*remember).into()),
-        ),
-        Setting::LastSettingsCategory(category) => (
-            ConfigKey::LastSettingsCategory,
-            Some(category.as_str().into()),
-        ),
-        Setting::OrganiseAs(template) => (ConfigKey::OrganiseAs, Some(template.as_str().into())),
+        Setting::SyncControl(trust) => Some(trust.as_str().into()),
+        Setting::MinimiseButton(shown) => Some((*shown).into()),
+        Setting::MaximiseButton(shown) => Some((*shown).into()),
+        Setting::ScrollVolume(scrolls) => Some((*scrolls).into()),
+        Setting::MouseNavigation(enabled) => Some((*enabled).into()),
+        Setting::ReducedMotion(reduced) => Some((*reduced).into()),
+        Setting::FileDropped(files) => Some((*files).into()),
+        Setting::Scrollbars(mode) => Some(mode.as_str().into()),
+        Setting::SpectrumTilt(tilt) => Some(tilt.as_str().into()),
+        Setting::SpectrumFloor(floor) => Some(floor.as_str().into()),
+        Setting::SpectrumBands(bands) => Some(bands.as_str().into()),
+        Setting::SpectrumFalls(falls) => Some(falls.as_str().into()),
+        Setting::SuggestionsTab(shown) => Some((*shown).into()),
+        Setting::MissingTab(shown) => Some((*shown).into()),
+        Setting::TabCounts(shown) => Some((*shown).into()),
+        Setting::RememberTab(remember) => Some((*remember).into()),
+        Setting::LastTab(tab) => Some(tab.as_str().into()),
+        Setting::ArtistsDrawn(drawn) => Some(drawn.as_str().into()),
+        Setting::RememberWindowSize(remember) => Some((*remember).into()),
+        Setting::WindowSize(size) => Some(format!("{}x{}", size.width(), size.height()).into()),
+        Setting::RememberSettingsCategory(remember) => Some((*remember).into()),
+        Setting::LastSettingsCategory(category) => Some(category.as_str().into()),
+        Setting::OrganiseAs(template) => Some(template.as_str().into()),
         Setting::Inbox(folder) => {
             let folder = folder
                 .to_str()
                 .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })?;
-            (ConfigKey::Inbox, Some(folder.into()))
+            Some(folder.into())
         }
         Setting::Vault(folder) => {
             let folder = folder
                 .to_str()
                 .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })?;
-            (ConfigKey::Vault, Some(folder.into()))
+            Some(folder.into())
         }
-        Setting::MusicExtensions(extensions) => (
-            ConfigKey::MusicExtensions,
-            Some(Value::Array(
-                extensions
-                    .selected()
-                    .map(|extension| format!(".{extension}"))
-                    .collect::<Array>(),
-            )),
-        ),
-        Setting::MinimumLength(length) => (
-            ConfigKey::MinimumLength,
-            Some(i64::from(length.seconds()).into()),
-        ),
+        Setting::MusicExtensions(extensions) => Some(Value::Array(
+            extensions
+                .selected()
+                .map(|extension| format!(".{extension}"))
+                .collect::<Array>(),
+        )),
+        Setting::MinimumLength(length) => Some(i64::from(length.seconds()).into()),
         Setting::MusicFolder(folder) => {
             let folder = folder
                 .to_str()
                 .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })?;
-            (ConfigKey::MusicFolder, Some(folder.into()))
+            Some(folder.into())
         }
         Setting::Convolution(held) => {
             let held = held
@@ -398,45 +322,33 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
                         .ok_or(resonate_ui::Error::SettingNotStored { key: setting.key() })
                 })
                 .transpose()?;
-            (ConfigKey::Convolution, held.map(Into::into))
+            held.map(Into::into)
         }
-        Setting::SpeakerAngle(angle) => (
-            ConfigKey::SpeakerAngle,
-            Some(i64::from(angle.degrees()).into()),
-        ),
-        Setting::SpeakerElevation(elevation) => (
-            ConfigKey::SpeakerElevation,
-            Some(i64::from(elevation.degrees()).into()),
-        ),
-        Setting::HeadYaw(yaw) => (ConfigKey::HeadYaw, Some(i64::from(yaw.degrees()).into())),
-        Setting::Subsonic(given) => given_or_cleared(ConfigKey::Subsonic, given),
-        Setting::SubsonicUser(given) => given_or_cleared(ConfigKey::SubsonicUser, given),
-        Setting::SubsonicPassword(given) => given_or_cleared(ConfigKey::SubsonicPassword, given),
-        Setting::Jellyfin(given) => given_or_cleared(ConfigKey::Jellyfin, given),
-        Setting::JellyfinUser(given) => given_or_cleared(ConfigKey::JellyfinUser, given),
-        Setting::JellyfinPassword(given) => given_or_cleared(ConfigKey::JellyfinPassword, given),
-        Setting::JellyfinToken(given) => given_or_cleared(ConfigKey::JellyfinToken, given),
-        Setting::JellyfinUserId(given) => given_or_cleared(ConfigKey::JellyfinUserId, given),
-        Setting::JellyfinDevice(given) => given_or_cleared(ConfigKey::JellyfinDevice, given),
-        Setting::TidalClientId(given) => given_or_cleared(ConfigKey::TidalClientId, given),
-        Setting::TidalClientSecret(given) => given_or_cleared(ConfigKey::TidalClientSecret, given),
-        Setting::TidalRefreshToken(given) => given_or_cleared(ConfigKey::TidalRefreshToken, given),
-        Setting::SpotifyClientId(given) => given_or_cleared(ConfigKey::SpotifyClientId, given),
-        Setting::SpotifyRefreshToken(given) => {
-            given_or_cleared(ConfigKey::SpotifyRefreshToken, given)
-        }
-        Setting::HifiApi(given) => given_or_cleared(ConfigKey::HifiApi, given),
-        Setting::HifiSecret(given) => given_or_cleared(ConfigKey::HifiSecret, given),
-        Setting::Monochrome(given) => given_or_cleared(ConfigKey::Monochrome, given),
-        Setting::HostedServices(allowed) => (ConfigKey::HostedServices, Some((*allowed).into())),
-        Setting::YoutubeMusic(on) => (ConfigKey::YoutubeMusic, Some((*on).into())),
-        Setting::YoutubeMusicCookies(given) => {
-            given_or_cleared(ConfigKey::YoutubeMusicCookies, given)
-        }
-        Setting::YtDlp(given) => given_or_cleared(ConfigKey::YtDlp, given),
-        Setting::YoutubeMusicKeepOrder(on) => {
-            (ConfigKey::YoutubeMusicKeepOrder, Some((*on).into()))
-        }
+        Setting::SpeakerAngle(angle) => Some(i64::from(angle.degrees()).into()),
+        Setting::SpeakerElevation(elevation) => Some(i64::from(elevation.degrees()).into()),
+        Setting::HeadYaw(yaw) => Some(i64::from(yaw.degrees()).into()),
+        Setting::Subsonic(given) => given_or_cleared(given),
+        Setting::SubsonicUser(given) => given_or_cleared(given),
+        Setting::SubsonicPassword(given) => given_or_cleared(given),
+        Setting::Jellyfin(given) => given_or_cleared(given),
+        Setting::JellyfinUser(given) => given_or_cleared(given),
+        Setting::JellyfinPassword(given) => given_or_cleared(given),
+        Setting::JellyfinToken(given) => given_or_cleared(given),
+        Setting::JellyfinUserId(given) => given_or_cleared(given),
+        Setting::JellyfinDevice(given) => given_or_cleared(given),
+        Setting::TidalClientId(given) => given_or_cleared(given),
+        Setting::TidalClientSecret(given) => given_or_cleared(given),
+        Setting::TidalRefreshToken(given) => given_or_cleared(given),
+        Setting::SpotifyClientId(given) => given_or_cleared(given),
+        Setting::SpotifyRefreshToken(given) => given_or_cleared(given),
+        Setting::HifiApi(given) => given_or_cleared(given),
+        Setting::HifiSecret(given) => given_or_cleared(given),
+        Setting::Monochrome(given) => given_or_cleared(given),
+        Setting::HostedServices(allowed) => Some((*allowed).into()),
+        Setting::YoutubeMusic(on) => Some((*on).into()),
+        Setting::YoutubeMusicCookies(given) => given_or_cleared(given),
+        Setting::YtDlp(given) => given_or_cleared(given),
+        Setting::YoutubeMusicKeepOrder(on) => Some((*on).into()),
     };
 
     written(editing, key, value);
@@ -461,9 +373,9 @@ fn forgotten(editing: &mut Editing<'_>, key: ConfigKey) {
     }
 }
 
-fn given_or_cleared(key: ConfigKey, given: &str) -> (ConfigKey, Option<Value>) {
+fn given_or_cleared(given: &str) -> Option<Value> {
     let given = given.trim();
-    (key, (!given.is_empty()).then(|| given.into()))
+    (!given.is_empty()).then(|| given.into())
 }
 
 fn as_typed(single: f32) -> f64 {

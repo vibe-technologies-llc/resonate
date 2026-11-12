@@ -4,8 +4,8 @@ use std::{
 };
 
 use resonate_core::{
-    Appearance, Presence, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor,
-    SpectrumTilt,
+    Appearance, ConfigKey, Presence, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls,
+    SpectrumFloor, SpectrumTilt,
 };
 use resonate_engine::{
     Command, EngineConfig, OutputSettings, PreviousRestarts, SkipUnderRepeat, SmartShuffle,
@@ -16,25 +16,26 @@ use resonate_words::LanguageChoice;
 
 use crate::{Synchronised, Tabs, WindowButtons, views::settings::find::Group};
 
-pub(crate) const ONLINE: bool = true;
-pub(crate) const ENRICH_AFTER_SCAN: bool = true;
-pub(crate) const ENRICH_ON_METERED: bool = false;
-pub(crate) const MUSICBRAINZ_MIRROR: bool = false;
-pub(crate) const STALL_DOWNLOADS_ON_METERED: bool = false;
-pub(crate) const STUDY: bool = true;
-pub(crate) const BY_SOUND: bool = false;
-pub(crate) const FETCH_LYRICS: bool = true;
-pub(crate) const LYRICS_BY_THE_LOCALE: bool = false;
-pub(crate) const RESUME: bool = true;
+pub(crate) const ONLINE: bool = ConfigKey::Online.switched(None);
+pub(crate) const ENRICH_AFTER_SCAN: bool = ConfigKey::EnrichAfterScan.switched(None);
+pub(crate) const ENRICH_ON_METERED: bool = ConfigKey::EnrichOnMetered.switched(None);
+pub(crate) const MUSICBRAINZ_MIRROR: bool = ConfigKey::MusicbrainzMirror.switched(None);
+pub(crate) const STALL_DOWNLOADS_ON_METERED: bool =
+    ConfigKey::StallDownloadsOnMetered.switched(None);
+pub(crate) const STUDY: bool = ConfigKey::Study.switched(None);
+pub(crate) const BY_SOUND: bool = ConfigKey::IdentifyBySound.switched(None);
+pub(crate) const FETCH_LYRICS: bool = ConfigKey::FetchLyrics.switched(None);
+pub(crate) const LYRICS_BY_THE_LOCALE: bool = ConfigKey::LyricsLanguageFromLocale.switched(None);
+pub(crate) const RESUME: bool = ConfigKey::Resume.switched(None);
 pub(crate) const HISTORY_KEPT: HistoryKept = HistoryKept::Forever;
-pub(crate) const NOTIFY: bool = true;
-pub(crate) const CHECK_FOR_UPDATES: bool = true;
+pub(crate) const NOTIFY: bool = ConfigKey::Notify.switched(None);
+pub(crate) const CHECK_FOR_UPDATES: bool = ConfigKey::CheckForUpdates.switched(None);
 pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
-pub(crate) const SCROLL_VOLUME: bool = true;
-pub(crate) const MOUSE_NAVIGATION: bool = true;
+pub(crate) const SCROLL_VOLUME: bool = ConfigKey::ScrollVolume.switched(None);
+pub(crate) const MOUSE_NAVIGATION: bool = ConfigKey::MouseNavigation.switched(None);
 pub(crate) const REDUCED_MOTION: bool = false;
 
-pub(crate) const FILE_DROPPED: bool = true;
+pub(crate) const FILE_DROPPED: bool = ConfigKey::FileDropped.switched(None);
 pub(crate) const SCROLLBARS: ScrollbarMode = ScrollbarMode::AutoHidden;
 pub(crate) const LANGUAGE: LanguageChoice = LanguageChoice::System;
 pub(crate) const SPECTRAL: Spectral = Spectral {
@@ -44,9 +45,10 @@ pub(crate) const SPECTRAL: Spectral = Spectral {
     falls: SpectrumFalls::Middling,
 };
 pub(crate) const TABS: Tabs = Tabs::AS_BUILT;
-pub(crate) const REMEMBER_TAB: bool = true;
-pub(crate) const REMEMBER_WINDOW_SIZE: bool = true;
-pub(crate) const REMEMBER_SETTINGS_CATEGORY: bool = true;
+pub(crate) const REMEMBER_TAB: bool = ConfigKey::RememberTab.switched(None);
+pub(crate) const REMEMBER_WINDOW_SIZE: bool = ConfigKey::RememberWindowSize.switched(None);
+pub(crate) const REMEMBER_SETTINGS_CATEGORY: bool =
+    ConfigKey::RememberSettingsCategory.switched(None);
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Standing {

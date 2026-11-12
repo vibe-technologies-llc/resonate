@@ -421,6 +421,45 @@ impl ConfigKey {
         }
     }
 
+    pub const fn on_unless_said(self) -> Option<bool> {
+        match self {
+            Self::Online
+            | Self::HostedServices
+            | Self::YoutubeMusicKeepOrder
+            | Self::Sync
+            | Self::EnrichAfterScan
+            | Self::Study
+            | Self::FetchLyrics
+            | Self::Resume
+            | Self::Notify
+            | Self::CheckForUpdates
+            | Self::ScrollVolume
+            | Self::MouseNavigation
+            | Self::FileDropped
+            | Self::RememberTab
+            | Self::RememberWindowSize
+            | Self::RememberSettingsCategory => Some(true),
+            Self::YoutubeMusic
+            | Self::SyncNearbyOnly
+            | Self::EnrichOnMetered
+            | Self::MusicbrainzMirror
+            | Self::StallDownloadsOnMetered
+            | Self::LyricsLanguageFromLocale
+            | Self::IdentifyBySound
+            | Self::Equaliser
+            | Self::Renderers => Some(false),
+            _ => None,
+        }
+    }
+
+    pub const fn switched(self, said: Option<bool>) -> bool {
+        match (said, self.on_unless_said()) {
+            (Some(said), _) => said,
+            (None, Some(on)) => on,
+            (None, None) => false,
+        }
+    }
+
     pub fn parse(key: &str) -> Option<Self> {
         Self::ALL
             .into_iter()
@@ -431,5 +470,19 @@ impl ConfigKey {
 impl fmt::Display for ConfigKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ConfigKey;
+
+    #[test]
+    fn a_switch_is_what_was_said_and_else_what_it_is_unless_said() {
+        assert!(ConfigKey::Online.switched(None));
+        assert!(!ConfigKey::Online.switched(Some(false)));
+        assert!(!ConfigKey::EnrichOnMetered.switched(None));
+        assert!(ConfigKey::EnrichOnMetered.switched(Some(true)));
+        assert_eq!(ConfigKey::Sink.on_unless_said(), None);
     }
 }
