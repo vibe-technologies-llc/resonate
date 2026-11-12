@@ -1569,7 +1569,10 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   (so a collision never folds), and a class of two or more is
   a song and its copies, whatever the names or folders. Which file is kept is deterministic: a
   name not ending ` (N)` before one that does, then the path that sorts first, so the choice does
-  not depend on scan order or row ids; the phones keep the song playing, else the first row. A file ending
+  not depend on scan order or row ids (`kept_first` over `names_a_numbered_copy`, `identical.rs`); the
+  phones keep the song playing, else by the same `kept_first` on the file's name. What a fold hands
+  over stays each catalog's own (`copies::handed_over` over `tracks` by path, the phones' over
+  `documents` and the tables referring to one), since the two schemas share no row. A file ending
   ` (N)` that joins no class is `Copies::differing` and stays. It is a plain call to run off
   the window's thread (the CLI and `LibraryModel::find_identical_songs` do). `fold_copies` hands each copy's plays, last
   play, favourite, listens, playlist entries, queue rows and `songs_received` row to the song in

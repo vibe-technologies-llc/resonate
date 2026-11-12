@@ -174,8 +174,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `downloads.rs`), and the two already differ: the desktop registers `resonate` beside `hifi-api`
   where the phones turn a keyed hifi-api account into `resonate` alone; which is meant decides the
   one construction `resonate-library` could hold
-- [M] Identical songs are found by one `identical_among` now, but folded by two paths: the desktop's
-  `copies::handed_over` and the phones' `fold_identical_songs` (`deleting.rs`, over `handed_over`)
 - [M] The vault builds two JPEG XL encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder`
   for a JPEG's transcode, though `jxl-encoder` 0.3.4 encodes losslessly and carries an ICC profile,
   which would let a cover with a profile become JXL too (`vault.md` keeps it as it came); whether it

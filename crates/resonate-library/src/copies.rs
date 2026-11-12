@@ -8,9 +8,11 @@ use std::{
 use resonate_core::{MediaLocation, TrackId};
 use rusqlite::{Connection, ToSql, Transaction, params};
 
-use crate::{Error, Result, StoreOp, identical::identical_among, store};
-
-const NUMBERED_AT_MOST: u32 = 999;
+use crate::{
+    Error, Result, StoreOp,
+    identical::{identical_among, names_a_numbered_copy},
+    store,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IdenticalCopy {
@@ -185,21 +187,9 @@ fn whole_files(connection: &Connection) -> Result<BTreeMap<PathBuf, Whole>> {
 }
 
 fn is_numbered(path: &Path) -> bool {
-    let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
-        return false;
-    };
-    let Some((before, after)) = stem.rsplit_once(" (") else {
-        return false;
-    };
-    let Some(digits) = after.strip_suffix(')') else {
-        return false;
-    };
-    !before.is_empty()
-        && !digits.is_empty()
-        && digits.bytes().all(|byte| byte.is_ascii_digit())
-        && digits
-            .parse::<u32>()
-            .is_ok_and(|nth| nth <= NUMBERED_AT_MOST)
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(names_a_numbered_copy)
 }
 
 #[cfg(test)]

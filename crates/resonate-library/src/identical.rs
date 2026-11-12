@@ -5,6 +5,32 @@ use std::{
 };
 
 const COMPARED_AT_ONCE: usize = 256 * 1024;
+const NUMBERED_AT_MOST: u32 = 999;
+
+pub fn names_a_numbered_copy(file_name: &str) -> bool {
+    let stem = file_name
+        .rsplit_once('.')
+        .map_or(file_name, |(stem, _)| stem);
+    let Some((before, after)) = stem.rsplit_once(" (") else {
+        return false;
+    };
+    let Some(digits) = after.strip_suffix(')') else {
+        return false;
+    };
+    !before.is_empty()
+        && !digits.is_empty()
+        && digits.bytes().all(|byte| byte.is_ascii_digit())
+        && digits
+            .parse::<u32>()
+            .is_ok_and(|nth| nth <= NUMBERED_AT_MOST)
+}
+
+pub fn kept_first<T>(class: &mut [T], file_name: impl Fn(&T) -> &str) {
+    class.sort_by(|one, other| {
+        let (one, other) = (file_name(one), file_name(other));
+        (names_a_numbered_copy(one), one).cmp(&(names_a_numbered_copy(other), other))
+    });
+}
 
 pub fn identical_among<T, R: Read>(
     sharing_a_size: Vec<T>,
@@ -84,6 +110,18 @@ fn filled(stream: &mut impl Read, into: &mut [u8]) -> io::Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_copy_kept_is_the_one_whose_name_no_copy_numbered_then_the_first_by_name() {
+        let mut class = ["b (1).flac", "b (2).flac", "b.flac", "a (3).flac"];
+
+        kept_first(&mut class, |name| name);
+
+        assert_eq!(class, ["b.flac", "a (3).flac", "b (1).flac", "b (2).flac"]);
+        assert!(!names_a_numbered_copy("Track (Live).flac"));
+        assert!(!names_a_numbered_copy("(1).flac"));
+        assert!(!names_a_numbered_copy("Song (1000).flac"));
+    }
 
     fn opened(bytes: &&'static [u8]) -> Option<&'static [u8]> {
         Some(*bytes)

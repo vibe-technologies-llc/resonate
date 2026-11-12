@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use resonate_library::identical_among;
+use resonate_library::{identical_among, kept_first};
 use rusqlite::{OptionalExtension, Transaction};
 
 use crate::{
@@ -175,6 +175,7 @@ fn kept_among(mut alike: Vec<Track>, playing: Option<&str>) -> Option<IdenticalS
     if alike.len() < 2 {
         return None;
     }
+    kept_first(&mut alike, |track| track.name.as_str());
     let kept_at = playing
         .and_then(|uri| alike.iter().position(|track| track.uri == uri))
         .unwrap_or(0);
@@ -311,6 +312,25 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    fn named(name: &str) -> Track {
+        Track {
+            uri: format!("content://test/{name}"),
+            name: name.into(),
+            ..Track::default()
+        }
+    }
+
+    #[test]
+    fn the_copy_kept_is_the_one_playing_else_the_one_no_copy_numbered_as_on_the_desktop() {
+        let alike = || vec![named("Song (1).flac"), named("Song.flac")];
+
+        let kept = kept_among(alike(), None).expect("two alike");
+        let playing = kept_among(alike(), Some("content://test/Song (1).flac")).expect("two alike");
+
+        assert_eq!(kept.kept.name, "Song.flac");
+        assert_eq!(playing.kept.name, "Song (1).flac");
+    }
 
     fn queued(titles: &[&str], row: u32, position_ms: u64) -> (Catalog, Vec<Track>) {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");

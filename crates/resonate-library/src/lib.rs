@@ -129,7 +129,7 @@ pub use crate::{
     foresight::FORESEEN_FOR,
     hearing::{RefusedBefore, Refusing, Reply, either_way},
     history::{Aged, HistoryKept},
-    identical::identical_among,
+    identical::{identical_among, kept_first},
     import::{
         ImportOptions, ImportPlan, ImportProgress, ImportStats, ImportSummary, Passed, Passing,
         Vaulted, Wanted,

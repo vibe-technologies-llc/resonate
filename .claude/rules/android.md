@@ -1010,7 +1010,9 @@ songs grouped by size (the stamp a scan kept, else measured through the document
 download, a landing or an opened file is indexed with none), then through the library's `identical_among` (a streamed digest of the whole file, then
 confirmed byte for byte, so equal sizes or equal digests alone never match)
 (`songs_whose_files_hold_the_same_bytes_are_found_and_one_alike_in_size_alone_is_not`). The copy
-playing is kept, else the first indexed (`the_copy_playing_is_the_one_kept`); an unreadable file is
+playing is kept, else the one the desktop would keep (`kept_first`: a name not ending ` (N)`, then
+the name that sorts first; `the_copy_playing_is_the_one_kept`,
+`the_copy_kept_is_the_one_playing_else_the_one_no_copy_numbered_as_on_the_desktop`); an unreadable file is
 left out. `fold_identical_songs(kept, copies)`, called after the copies' files are gone, hands each
 copy's favourite, playlist rows, listens, lyrics and studies to the one kept (`handed_over`, the
 missing-song merge) and drops its queue rows
