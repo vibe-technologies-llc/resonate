@@ -312,11 +312,13 @@ fn the_release_workflow_attaches_the_macos_disk_image_and_publishes_without_it_w
 
     assert!(
         workflow.contains("runs-on: macos-latest")
-            && workflow.contains("packaging/macos/build.sh \"$VERSION\" assets"),
+            && workflow.contains("packaging/macos/build.sh \"$VERSION\" assets \"$ARCHITECTURE\"")
+            && workflow.contains("architecture: [aarch64, x86_64]"),
         "release.yml does not build the disk image on a Mac"
     );
     assert!(
-        workflow.contains("name: resonate-macos-aarch64") && workflow.contains("assets/*.dmg"),
+        workflow.contains("name: resonate-macos-${{ matrix.architecture }}")
+            && workflow.contains("assets/*.dmg"),
         "release.yml's disk image would not be collected with the other assets"
     );
     assert!(
@@ -330,8 +332,13 @@ fn the_release_workflow_attaches_the_macos_disk_image_and_publishes_without_it_w
         "a failed disk image would keep every other asset off the release"
     );
     assert!(
-        script.contains("resonate-$version-aarch64-macos.dmg"),
+        script.contains("resonate-$version-$named-macos.dmg"),
         "the macOS recipe names its disk image for something other than the version and the architecture"
+    );
+    assert!(
+        workflow.contains("needs.macos-dmg.result == 'success'")
+            && workflow.find("fill-cask.sh") < workflow.find("sha256sum -- *"),
+        "the cask would be filled from images a failed job never built, or left out of SHA256SUMS"
     );
 }
 

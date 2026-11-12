@@ -1,7 +1,8 @@
 Resonate for macOS
 
-Drag Resonate onto the Applications folder beside it, then open it from there. It is built for
-Apple Silicon and needs macOS 13 or later.
+Drag Resonate onto the Applications folder beside it, then open it from there. It needs macOS 13
+or later. The image named aarch64 is for Apple Silicon and the one named x86_64_v3 for an Intel
+Mac (every Intel Mac macOS 13 runs on has the instructions it is built for).
 
 This build is signed ad hoc and is not notarised by Apple, so the first time it is opened macOS
 says it cannot check it. Open System Settings, Privacy & Security, scroll to the message about
@@ -31,5 +32,6 @@ Its manual pages and shell completions are in Resonate.app/Contents/Resources.
 
 resonate-signin beside it is the YouTube Music sign-in window: Settings, Accounts, YouTube Music,
 Sign in opens it on Google's own page and keeps the account's cookies for yt-dlp alone. A window
-opened from the Finder or the Dock does not read your shell's PATH, so where yt-dlp came from
-Homebrew, name its full path under Settings, Accounts, YouTube Music.
+opened from the Finder or the Dock does not read your shell's PATH, so yt-dlp is also looked for
+in Homebrew's folders; where it lives anywhere else, name its full path under Settings, Accounts,
+YouTube Music.

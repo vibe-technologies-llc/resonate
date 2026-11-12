@@ -286,12 +286,22 @@ fn the_bundle_asks_for_the_system_the_build_targets() {
 }
 
 #[test]
-fn the_build_script_builds_apple_silicon_over_the_checkouts_native_flags() {
+fn the_build_script_builds_apple_silicon_and_intel_over_the_checkouts_native_flags() {
     let build = packaging(BUILD_SCRIPT);
+    let triples: Vec<&str> = build
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("triple="))
+        .collect();
+    let flags: Vec<&str> = build
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("flags="))
+        .collect();
 
-    assert!(holds_the_line(&build, "export RUSTFLAGS=\"\""));
-    assert_eq!(assigned(&build, "triple"), Some("aarch64-apple-darwin"));
-    assert!(!build.contains("target-cpu=native") && !build.contains("x86_64"));
+    assert!(holds_the_line(&build, "export RUSTFLAGS=\"$flags\""));
+    assert_eq!(triples, ["aarch64-apple-darwin", "x86_64-apple-darwin"]);
+    assert_eq!(flags, ["\"\"", "\"-C target-cpu=x86-64-v3\""]);
+    assert_eq!(assigned(&build, "architecture"), Some("${3:-aarch64}"));
+    assert!(!build.contains("target-cpu=native"));
     for package in [
         "--package resonate --bin resonate",
         "--package resonate-signin",
@@ -305,9 +315,45 @@ fn the_build_script_builds_apple_silicon_over_the_checkouts_native_flags() {
         );
     }
     assert!(
-        build.contains("resonate-$version-aarch64-macos.dmg"),
+        build.contains("resonate-$version-$named-macos.dmg")
+            && holds_the_line(&build, "        named=aarch64")
+            && holds_the_line(&build, "        named=x86_64_v3"),
         "build.sh names its disk image for something other than the version and the architecture"
     );
+}
+
+#[test]
+fn the_cask_names_the_two_images_build_sh_makes_and_every_placeholder_is_filled() {
+    let cask = packaging("macos/resonate.rb");
+    let filling = packaging("macos/fill-cask.sh");
+
+    for placeholder in [
+        "@VERSION@",
+        "@REPOSITORY_URL@",
+        "@DOWNLOAD_URL@",
+        "@ARM64_IMAGE_SHA256@",
+        "@X64_IMAGE_SHA256@",
+    ] {
+        assert!(
+            cask.contains(placeholder),
+            "the cask holds no {placeholder}"
+        );
+        assert!(
+            filling.contains(placeholder),
+            "fill-cask.sh never fills {placeholder}"
+        );
+    }
+    assert!(
+        cask.contains("arch arm: \"aarch64\", intel: \"x86_64_v3\"")
+            && cask.contains("resonate-#{version}-#{arch}-macos.dmg"),
+        "the cask names images build.sh does not make"
+    );
+    assert!(
+        filling.contains("resonate-$version-aarch64-macos.dmg")
+            && filling.contains("resonate-$version-x86_64_v3-macos.dmg"),
+        "fill-cask.sh weighs images build.sh does not make"
+    );
+    assert!(!cask.contains("github.com") && !filling.contains("github.com"));
 }
 
 #[test]

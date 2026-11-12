@@ -3,6 +3,7 @@ set -euo pipefail
 
 version=${1:-}
 output=${2:-assets}
+architecture=${3:-aarch64}
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 root=$(cd "$here/../.." && pwd)
@@ -15,14 +16,29 @@ test -n "$version"
 numeric=$(printf '%s' "$version" | sed -n 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*$/\1/p')
 test -n "$numeric"
 
-triple=aarch64-apple-darwin
+case "$architecture" in
+    aarch64)
+        triple=aarch64-apple-darwin
+        named=aarch64
+        flags=""
+        ;;
+    x86_64)
+        triple=x86_64-apple-darwin
+        named=x86_64_v3
+        flags="-C target-cpu=x86-64-v3"
+        ;;
+    *)
+        echo "usage: build.sh [VERSION] [OUTPUT] [aarch64|x86_64]" >&2
+        exit 2
+        ;;
+esac
 inter_archive=https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip
 inter_sha256=9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e
 jetbrains_mono_archive=https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip
 jetbrains_mono_sha256=6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf
 images_tried_at_most=3
 
-export RUSTFLAGS=""
+export RUSTFLAGS="$flags"
 export MACOSX_DEPLOYMENT_TARGET=13.0
 
 rustup target add "$triple"
@@ -74,7 +90,7 @@ ln -s /Applications "$staging/Applications"
 cp "$here/README.txt" LICENSE COPYRIGHT "$staging/"
 
 mkdir -p "$output"
-image="$output/resonate-$version-aarch64-macos.dmg"
+image="$output/resonate-$version-$named-macos.dmg"
 tried=0
 until hdiutil create -volname Resonate -srcfolder "$staging" -format UDZO -ov "$image" >/dev/null; do
     tried=$((tried + 1))

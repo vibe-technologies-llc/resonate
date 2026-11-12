@@ -140,13 +140,15 @@ for them.
 
 Notifications (no bus `Desk` is opened and none is made for a Mac); recording the desktop's sound; Game Mode;
 playing on with the window closed; the launcher's icon following the accent (`plain_launcher.rs`
-does nothing, as on Windows); a Homebrew cask.
+does nothing, as on Windows).
 
 ## Release
 
-`packaging/macos/build.sh` builds `Resonate.app` for `aarch64-apple-darwin` at
-`MACOSX_DEPLOYMENT_TARGET=13.0` and wraps it as `resonate-<version>-aarch64-macos.dmg`
-(`packaging.md`, `release.md`); `release.yml`'s `macos-dmg` job runs it on `macos-latest`. The
+`packaging/macos/build.sh` builds `Resonate.app` for `aarch64-apple-darwin` or
+`x86_64-apple-darwin` at `MACOSX_DEPLOYMENT_TARGET=13.0` and wraps it as
+`resonate-<version>-aarch64-macos.dmg` or `resonate-<version>-x86_64_v3-macos.dmg`
+(`packaging.md`, `release.md`); `release.yml`'s `macos-dmg` job runs it on `macos-latest` for each,
+and `publish` fills the Homebrew cask over both. The
 bundle is signed ad hoc always, since an Apple Silicon binary must carry a signature to run, and
 with a Developer ID and the notary only where the repository holds the secrets; none exists, so a
 first run meets Gatekeeper and `README.txt` says how to open it. **Nothing here has run**: the

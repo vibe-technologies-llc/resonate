@@ -20,17 +20,20 @@ list; `resonate-config.toml.5`, the settings file's manual, is written by hand a
 `binary.md` for what holds its keys in step). Desktop
 entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
 
-`packaging/macos/` is the Apple Silicon disk image's recipe (`macos.md`), not a package either:
+`packaging/macos/` is the Apple Silicon and Intel disk images' recipe (`macos.md`), not a package
+either:
 
-- **`build.sh [VERSION] [OUTPUT]`** builds `resonate` and `resonate-signin` for
-  `aarch64-apple-darwin` in two `cargo` runs (`RUSTFLAGS=""`, `MACOSX_DEPLOYMENT_TARGET=13.0`; the
-  version read from `Cargo.toml` where none is given) and assembles `Resonate.app`:
+- **`build.sh [VERSION] [OUTPUT] [aarch64|x86_64]`** builds `resonate` and `resonate-signin` for
+  `aarch64-apple-darwin` (the default, `RUSTFLAGS=""`) or `x86_64-apple-darwin` (`-C
+  target-cpu=x86-64-v3`: every Intel Mac macOS 13 supports has AVX2) in two `cargo` runs
+  (`MACOSX_DEPLOYMENT_TARGET=13.0`; the version read from `Cargo.toml` where none is given) and
+  assembles `Resonate.app`:
   `Contents/MacOS` holds both programs, `Contents/Info.plist` is the template with `@VERSION@`
   filled by the version's `major.minor.patch`, and `Contents/Resources` holds `resonate.icns`, the
   licence, the man pages (`man/man1`, `man/man5`), the completions (`completions/`) and the two
   faces (`Fonts/`, where the window looks for them). It signs the application, stages it beside a
   link to `/Applications`, the README and the licence, and makes
-  `resonate-<version>-aarch64-macos.dmg` with `hdiutil` (`UDZO`; tried up to three times, a hosted
+  `resonate-<version>-aarch64-macos.dmg` or `resonate-<version>-x86_64_v3-macos.dmg` with `hdiutil` (`UDZO`; tried up to three times, a hosted
   runner's `hdiutil` now and then finding the folder busy), then signs the image.
 - **`sign.sh APPLICATION` and `sign.sh --image DISK_IMAGE`** sign ad hoc where no certificate is
   set (`codesign --sign -`: an Apple Silicon program runs only signed) and say so, the image being
@@ -42,6 +45,10 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
   `RESONATE_MACOS_NOTARY_ISSUER` as well, the image is sent to the notary (`notarytool submit
   --wait`) and the ticket stapled to it. The bundle's main program is signed by signing the
   bundle, never apart, and nothing is signed `--deep`.
+- **`resonate.rb` is a Homebrew cask** over both images (`arch arm: "aarch64", intel:
+  "x86_64_v3"`, macOS 13 or later), linking `resonate` onto the path with its man pages and
+  completions; **`fill-cask.sh`** fills its version, repository and the two images' SHA-256 at
+  release (`release.md`; `the_cask_names_the_two_images_build_sh_makes_and_every_placeholder_is_filled`).
 - **`Info.plist`** names the bundle `org.resonate.Resonate` (`APP_USER_MODEL_ID`), asks for macOS
   13.0, declares one *Audio* document type at rank `Alternate` (it claims no default) over
   `public.audio` and an imported `org.resonate.audio` listing every `AUDIO_EXTENSIONS` entry, takes
@@ -86,8 +93,9 @@ entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
   `RUSTFLAGS` replaces `build.rustflags`). The release assets (spec, release PKGBUILDs, DEB script)
   build for `x86-64-v3` and nothing else: `ExclusiveArch: x86_64`, `arch=('x86_64')`, `amd64`, the
   requirement said in the Arch `pkgdesc` and the DEB description
-  (`every_release_recipe_builds_for_x86_64_v3_alone`). The macOS recipe empties `RUSTFLAGS`, which
-  leaves `aarch64-apple-darwin` at the target's own baseline. The `-git` PKGBUILDs append `native` in
+  (`every_release_recipe_builds_for_x86_64_v3_alone`). The macOS recipe empties `RUSTFLAGS` for Apple
+  Silicon, which leaves `aarch64-apple-darwin` at the target's own baseline, and sets x86-64-v3
+  for Intel. The `-git` PKGBUILDs append `native` in
   `build` and `check` (AUR builds target the building machine) and keep `aarch64`; the Flatpak
   keeps its own baseline (`x86-64` / `generic`) and is no release asset.
 - **Spec: `--locked`, built from a source archive** of the release tag, prefixed

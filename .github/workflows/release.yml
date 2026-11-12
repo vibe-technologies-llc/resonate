@@ -231,10 +231,14 @@ jobs:
           if-no-files-found: error
 
   macos-dmg:
-    name: macOS disk image
+    name: macOS disk image (${{ matrix.architecture }})
     needs: release
     runs-on: macos-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [aarch64, x86_64]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -250,10 +254,11 @@ jobs:
           RESONATE_MACOS_NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
           RESONATE_MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           RESONATE_MACOS_NOTARY_ISSUER: ${{ secrets.MACOS_NOTARY_ISSUER }}
-        run: packaging/macos/build.sh "$VERSION" assets
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: packaging/macos/build.sh "$VERSION" assets "$ARCHITECTURE"
       - uses: actions/upload-artifact@v7
         with:
-          name: resonate-macos-aarch64
+          name: resonate-macos-${{ matrix.architecture }}
           path: assets/*.dmg
           if-no-files-found: error
 
@@ -337,6 +342,12 @@ jobs:
           VERSION: ${{ needs.release.outputs.version }}
           REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
         run: ./packaging/windows/fill-manifests.sh "$VERSION" "$REPOSITORY_URL" assets assets
+      - name: Fill the Homebrew cask
+        if: needs.macos-dmg.result == 'success'
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: ./packaging/macos/fill-cask.sh "$VERSION" "$REPOSITORY_URL" assets assets
       - name: Take the iOS files from the draft, else carry the last AltStore source forward
         if: needs.release.outputs.tag != ''
         env:

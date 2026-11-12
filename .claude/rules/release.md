@@ -75,16 +75,23 @@ paths:
   is a manual step the maintainer takes after the release is published**: a pull request of the
   winget folder to winget-pkgs (`wingetcreate` or `winget validate` first), and the JSON
   added to a Scoop bucket. A candidate (`-rcN`) is not submitted.
-- **The macOS file is `resonate-<version>-aarch64-macos.dmg`**: `Resonate.app` for Apple Silicon
-  alone (`aarch64-apple-darwin`, macOS 13 or later) beside a link to `/Applications`, the licence
-  and a README, from `packaging/macos/build.sh` on `macos-latest` (`packaging.md`). The
+- **The macOS files are `resonate-<version>-aarch64-macos.dmg` and
+  `resonate-<version>-x86_64_v3-macos.dmg`**: `Resonate.app` for Apple Silicon
+  (`aarch64-apple-darwin`) or an Intel Mac (`x86_64-apple-darwin` at x86-64-v3), macOS 13 or
+  later, beside a link to `/Applications`, the licence and a README, from `packaging/macos/build.sh`
+  on `macos-latest`, one matrix leg each (`packaging.md`). The
   application is signed with a Developer ID (`sign.sh`, hardened runtime) only where the repository
   holds `MACOS_CERTIFICATE_BASE64` (a Developer ID Application `.p12`, base64) and
   `MACOS_CERTIFICATE_PASSWORD`, and the image notarised and stapled only where it also holds
   `MACOS_NOTARY_KEY_BASE64` (an App Store Connect API key, the `.p8`, base64),
   `MACOS_NOTARY_KEY_ID` and `MACOS_NOTARY_ISSUER`; none exists, so the application is signed ad
   hoc and Gatekeeper refuses a first run until the listener allows it under Privacy & Security,
-  which the README walks through. No Homebrew cask is made.
+  which the README walks through.
+- **`resonate-<version>-cask.rb` is filled from `packaging/macos/resonate.rb`** by `fill-cask.sh`
+  in the `publish` job, only where both images were built: the version, the repository URL of the
+  running workflow and each image's SHA-256. **Adding it to a Homebrew tap is a manual step** the
+  maintainer takes after the release is published, as winget and Scoop are; a candidate is not
+  added.
 - **The APK is a signed release build**: `assembleRelease` under the repository's signing secrets,
   then `apksigner verify` (`build.md` has the job). The keystore is removed at the end of the job
   and its secrets are never echoed.
