@@ -60,6 +60,7 @@ impl MobilePlayer {
             if items.is_empty() {
                 return Ok(None);
             }
+            let items = self.as_chosen(items, queued.rows.iter().map(AsRef::as_ref))?;
             if queued.rows.is_empty() {
                 return Ok(Some(Command::Resume(paused_on_the_first(items))));
             }

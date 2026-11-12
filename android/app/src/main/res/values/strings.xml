@@ -634,6 +634,9 @@
     <string name="sheet_add_to_queue">Add to queue</string>
     <string name="sheet_share_link">Share link</string>
     <string name="sheet_edit_tags">Edit tags</string>
+    <string name="sheet_find_another_version">Find another version</string>
+    <string name="versions_play_own_copy">Play your own copy again</string>
+    <string name="versions_looking">Looking in your library and on your services…</string>
     <string name="sheet_equaliser">Equaliser</string>
     <string name="sheet_audio_output">Audio output</string>
     <string name="sheet_visualizer">Visualizer</string>

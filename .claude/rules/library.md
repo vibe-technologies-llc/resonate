@@ -515,8 +515,16 @@ rows read via `Player::media` like any unscanned row.
   binary's `versions::played_as_chosen` (`resonate play`, `resonate playlist`, `queue --playlist`,
   files the window opens with, and a playlist activated over the bus, which `play_playlist` reaches),
   and MCP's `add_to_queue` (`catalog::rows_played`). A served version is queued under an id minted
-  beside the rows. A playlist keeps the song itself: only a queue swaps it. The phones' catalog has no
-  `versions_chosen`, so nothing there swaps
+  beside the rows. A playlist keeps the song itself: only a queue swaps it. The phones keep a table of the same
+  shape in their own catalog and swap at the boundary (`mobile.md`'s *Another version of a song*).
+  **Whether a song is another version of a track is one arithmetic, the library's** (`versions.rs`,
+  shared by the window's `better.rs` and the phones' `versions.rs`): `VersionSought::offered_for` (a
+  higher quality, and each rating the track is not), `Quality` (lossless, significant bits, rate; a
+  copy is above only where no count is lower and one is higher), `TheSong` (the folded bare title,
+  artist and length within 3 s of a `SongHeard`, and the rating rule: Explicit must be marked, Clean
+  may be unmarked only beside an explicit track), `better_held` and `rated_held`
+  (`a_served_song_betters_a_lossy_track_only_where_it_is_lossless_and_the_same_song`,
+  `a_clean_version_of_an_explicit_song_may_be_unmarked_and_an_explicit_one_must_be_marked`)
   (`a_song_with_a_version_chosen_is_played_as_that_version_only_where_the_row_is_the_song`,
   `a_song_with_a_version_chosen_is_played_as_that_version_from_the_terminal_and_a_playlist`,
   `a_song_with_a_version_chosen_is_queued_as_that_version_and_kept_as_itself_in_a_playlist`,

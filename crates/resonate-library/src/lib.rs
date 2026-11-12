@@ -68,6 +68,7 @@ mod trash;
 mod undo;
 mod unreplacing;
 mod vaulted;
+mod versions;
 mod volumes;
 mod watch;
 mod weighing;
@@ -217,6 +218,7 @@ pub use crate::{
         TakeInProgress, TakeInStats, TakeInSummary, take_in, weigh,
     },
     undo::{Edit, Maker, Undoable},
+    versions::{Quality, SongHeard, TheSong, VersionSought, better_held, rated_held, rating_of},
     watch::RootsWatch,
     weighing::{VaultMended, VaultReframed, VaultUnreached, VaultWeighing},
 };

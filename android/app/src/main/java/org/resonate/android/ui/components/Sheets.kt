@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Speaker
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ColorScheme
@@ -105,6 +106,7 @@ class Sheets(val snackbar: SnackbarHostState) {
     var searching by mutableStateOf<SearchEditing?>(null)
     var deleting by mutableStateOf<List<Track>?>(null)
     var editingTags by mutableStateOf<List<Track>?>(null)
+    var versions by mutableStateOf<Track?>(null)
     var listening by mutableStateOf(false)
     var sleeping by mutableStateOf(false)
     var worn by mutableStateOf<ColorScheme?>(null)
@@ -199,6 +201,7 @@ fun SheetHost() {
         sheets.searching?.let { request -> SavedSearchDialog(request) { sheets.searching = null } }
         sheets.deleting?.let { tracks -> DeleteSongsDialog(tracks) { sheets.deleting = null } }
         sheets.editingTags?.let { tracks -> TagEditorSheet(tracks) { sheets.editingTags = null } }
+        sheets.versions?.let { track -> VersionsSheet(track) { sheets.versions = null } }
         if (sheets.listening) ListenSheet { sheets.listening = false }
     }
 }
@@ -300,6 +303,12 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
             })
             add(SheetAction(Icons.Rounded.Share, words.string(R.string.sheet_share_link)) {
                 resonate.shareLink(track, scope)
+            })
+            add(SheetAction(
+                Icons.Rounded.SwapHoriz,
+                words.string(R.string.sheet_find_another_version),
+            ) {
+                sheets.versions = track
             })
             if (resonate.features.tags.writable(track)) {
                 add(SheetAction(Icons.Rounded.Edit, words.string(R.string.sheet_edit_tags)) {

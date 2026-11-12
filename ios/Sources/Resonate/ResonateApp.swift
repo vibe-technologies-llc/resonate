@@ -60,12 +60,14 @@ final class Navigation {
     var filters = false
     var listening = false
     var tagging: TagEditing?
+    var versioning: VersionsOf?
     var deleting: SongsToDelete?
     var addingToPlaylist: PickedTracks?
     private(set) var queuedFelt = 0
     private(set) var heartFelt = 0
     private(set) var landedFelt = 0
     @ObservationIgnored private var taggingAfterPlayer: TagEditing?
+    @ObservationIgnored private var versioningAfterPlayer: VersionsOf?
     var songsGrouping = Grouping.songs
     var librarySection = LibrarySection.home
 
@@ -104,7 +106,21 @@ final class Navigation {
         nowPlaying = false
     }
 
+    func findVersions(_ track: Track) {
+        let looking = VersionsOf(track: track)
+        guard nowPlaying else {
+            versioning = looking
+            return
+        }
+        versioningAfterPlayer = looking
+        nowPlaying = false
+    }
+
     func playerClosed() {
+        if let waiting = versioningAfterPlayer {
+            versioningAfterPlayer = nil
+            versioning = waiting
+        }
         guard let waiting = taggingAfterPlayer else { return }
         taggingAfterPlayer = nil
         tagging = waiting
@@ -267,6 +283,11 @@ struct RootView: View {
         .sheet(item: $navigation.tagging) { editing in
             TagEditorSheet(tracks: editing.tracks).sheetSized(.long)
         }
+        .sheet(item: $navigation.versioning) { looking in
+            VersionsSheet(track: looking.track)
+                .sheetSized()
+                .presentationDetents([.medium, .large])
+        }
         .modifier(SharingSheet(insidePlayer: false))
         .modifier(PairingOffer(insidePlayer: false))
         .modifier(PartyOffer(insidePlayer: false))
@@ -304,6 +325,7 @@ struct RootView: View {
             navigation.listening = false
             navigation.choosingFolder = false
             navigation.tagging = nil
+            navigation.versioning = nil
             library.features.sharing = nil
         }
         .environment(navigation)
