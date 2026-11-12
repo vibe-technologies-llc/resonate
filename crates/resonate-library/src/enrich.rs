@@ -22,6 +22,7 @@ use crate::{
     RecordingAsked, RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked,
     ReleaseGroup, ReleaseMatch, Result, TrackToAsk, Wording, credits, elsewhere,
     enriched::{folded_title, stripped_title},
+    hearing::{RefusedBefore, Refusing, Reply, either_way},
     learning::{self, Learner},
     model::CoverFrom,
     pass::{Cancelling, EnrichHandle, PassHandle, PassKind},
@@ -66,9 +67,6 @@ impl Fruitless {
         i64::from(matches!(self, Self::Refused))
     }
 }
-
-#[derive(Clone, Copy)]
-struct Refusals(u32);
 
 const STRICT_SCORE: u8 = 95;
 
@@ -399,8 +397,7 @@ fn run(
         progress,
         pictures: &pictures,
         claims: &claims,
-        refusals: Cell::new(0),
-        refused_in_a_row: Cell::new(0),
+        refusing: Refusing::default(),
         pictured: RefCell::new(AHashSet::new()),
         covered: RefCell::new(AHashSet::new()),
         unheld_covered: RefCell::new(AHashSet::new()),
@@ -833,11 +830,6 @@ fn note_finished(library: &Library) {
     if let Err(error) = library.note_enrichment_finished() {
         tracing::warn!(%error, "the next run may pick up a pass that has already finished");
     }
-}
-
-enum Heard<T> {
-    Answered(T),
-    Refused,
 }
 
 enum ReleasesRead {
@@ -1674,8 +1666,7 @@ struct Pass<'a> {
     progress: &'a EnrichProgress,
     pictures: &'a Pictures,
     claims: &'a Claims,
-    refusals: Cell<u32>,
-    refused_in_a_row: Cell<u32>,
+    refusing: Refusing,
     pictured: RefCell<AHashSet<ArtistId>>,
     covered: RefCell<AHashSet<AlbumId>>,
     unheld_covered: RefCell<AHashSet<Mbid>>,
@@ -1703,8 +1694,8 @@ impl Learner for PassLearning<'_, '_> {
 
     fn weigh<T>(&self, answered: Result<T>) -> Result<Option<T>> {
         Ok(match self.pass.heard(answered)? {
-            Heard::Answered(value) => Some(value),
-            Heard::Refused => None,
+            Reply::Answered(value) => Some(value),
+            Reply::Refused => None,
         })
     }
 
@@ -1895,58 +1886,16 @@ impl Pass<'_> {
         })
     }
 
-    fn heard<T>(&self, answered: Result<T>) -> Result<Heard<T>> {
-        match answered {
-            Ok(value) => {
-                self.refused_in_a_row.set(0);
-                Ok(Heard::Answered(value))
-            }
-            Err(Error::Refused { op, status }) => {
-                tracing::warn!(?op, status, "the reference refused a lookup");
-                self.note_a_refusal(op)?;
-                Ok(Heard::Refused)
-            }
-            Err(Error::Unreadable { op }) => {
-                tracing::warn!(
-                    ?op,
-                    "the reference answered with something this build cannot read"
-                );
-                self.note_a_refusal(op)?;
-                Ok(Heard::Refused)
-            }
-            Err(Error::TooLarge { op, limit }) => {
-                tracing::warn!(
-                    ?op,
-                    limit,
-                    "the reference answered with a document too large to read, which asking again would not change"
-                );
-                Ok(Heard::Refused)
-            }
-            Err(other) => Err(other),
-        }
+    fn heard<T>(&self, answered: Result<T>) -> Result<Reply<T>> {
+        self.refusing.heard(answered, || self.progress.refuse())
     }
 
-    fn note_a_refusal(&self, op: LookupOp) -> Result<()> {
-        self.refusals.set(self.refusals.get().saturating_add(1));
-        self.progress.refuse();
-        let refusals = self.refused_in_a_row.get().saturating_add(1);
-        self.refused_in_a_row.set(refusals);
-        if refusals >= REFUSALS_THAT_END_A_PASS {
-            return Err(Error::RefusedInARow { op, refusals });
-        }
-        Ok(())
+    fn refusals(&self) -> RefusedBefore {
+        self.refusing.since()
     }
 
-    fn refusals(&self) -> Refusals {
-        Refusals(self.refusals.get())
-    }
-
-    fn fruitlessly(&self, since: Refusals) -> Fruitless {
-        if self.refusals.get() > since.0 {
-            Fruitless::Refused
-        } else {
-            Fruitless::Missed
-        }
+    fn fruitlessly(&self, since: RefusedBefore) -> Fruitless {
+        self.refusing.fruitlessly(since)
     }
 
     fn rematch(&self, album: AlbumId) -> Result<()> {
@@ -1962,45 +1911,45 @@ impl Pass<'_> {
         let since = self.refusals();
         if let Some(mbid) = &album.mbid {
             match self.heard(self.reference.release(mbid))? {
-                Heard::Answered(Some(release)) => {
+                Reply::Answered(Some(release)) => {
                     return self.take_release(album, release, since, Pressing::AsHeld);
                 }
-                Heard::Answered(None) => tracing::debug!(
+                Reply::Answered(None) => tracing::debug!(
                     album = %album.id,
                     %mbid,
                     "the reference holds no release under the tagged id, so the album is searched for"
                 ),
-                Heard::Refused => return self.nothing_landed(album, since),
+                Reply::Refused => return self.nothing_landed(album, since),
             }
         }
         match self.find_release(album)? {
-            Heard::Answered(Identified::Found(mbid)) => {
+            Reply::Answered(Identified::Found(mbid)) => {
                 return self.land_release(album, &mbid, since, Pressing::Fitted(Fit::Exact));
             }
-            Heard::Answered(Identified::Group(group)) => {
+            Reply::Answered(Identified::Group(group)) => {
                 return self.land_group(album, &group, since);
             }
-            Heard::Answered(Identified::Nothing) => {}
-            Heard::Refused => return self.nothing_landed(album, since),
+            Reply::Answered(Identified::Nothing) => {}
+            Reply::Refused => return self.nothing_landed(album, since),
         }
         if let Some(group) = &album.group {
             match self.heard(self.reference.release_group(group))? {
-                Heard::Answered(Some(found)) => return self.settle_group(album, &found, since),
-                Heard::Answered(None) => tracing::debug!(
+                Reply::Answered(Some(found)) => return self.settle_group(album, &found, since),
+                Reply::Answered(None) => tracing::debug!(
                     album = %album.id,
                     %group,
                     "the reference holds no release group under the tagged id, so one is searched for"
                 ),
-                Heard::Refused => return self.nothing_landed(album, since),
+                Reply::Refused => return self.nothing_landed(album, since),
             }
         }
         match self.find_group(album)? {
-            Heard::Answered(Some(group)) => self.land_group(album, &group, since),
-            Heard::Answered(None) | Heard::Refused => self.nothing_landed(album, since),
+            Reply::Answered(Some(group)) => self.land_group(album, &group, since),
+            Reply::Answered(None) | Reply::Refused => self.nothing_landed(album, since),
         }
     }
 
-    fn find_release(&self, album: &AlbumToAsk) -> Result<Heard<Identified>> {
+    fn find_release(&self, album: &AlbumToAsk) -> Result<Reply<Identified>> {
         self.found_either_way(
             Looking::for_an_album(album),
             |wording| self.reference.find_release(&release_asked(album, wording)),
@@ -2008,7 +1957,7 @@ impl Pass<'_> {
         )
     }
 
-    fn find_group(&self, album: &AlbumToAsk) -> Result<Heard<Option<Mbid>>> {
+    fn find_group(&self, album: &AlbumToAsk) -> Result<Reply<Option<Mbid>>> {
         self.found_either_way(
             Looking::for_an_album(album),
             |wording| {
@@ -2024,36 +1973,28 @@ impl Pass<'_> {
         looking: Looking<'_>,
         ask: impl Fn(Wording) -> Result<Vec<T>>,
         weigh: impl Fn(Vec<T>) -> Result<W>,
-    ) -> Result<Heard<W>> {
-        let found = match self.heard(ask(Wording::Phrase))? {
-            Heard::Answered(found) => found,
-            Heard::Refused => return Ok(Heard::Refused),
-        };
-        let phrased = weigh(found)?;
-        if phrased.landed() {
-            return Ok(Heard::Answered(phrased));
-        }
-
-        looking.note_the_phrase_landed_nothing();
-        match self.heard(ask(Wording::Words))? {
-            Heard::Answered(found) => weigh(found).map(Heard::Answered),
-            Heard::Refused => Ok(Heard::Refused),
-        }
+    ) -> Result<Reply<W>> {
+        either_way(
+            |wording| self.heard(ask(wording)),
+            weigh,
+            Landed::landed,
+            || looking.note_the_phrase_landed_nothing(),
+        )
     }
 
-    fn nothing_landed(&self, album: &AlbumToAsk, since: Refusals) -> Result<()> {
+    fn nothing_landed(&self, album: &AlbumToAsk, since: RefusedBefore) -> Result<()> {
         if self.fruitlessly(since) == Fruitless::Missed {
             EnrichProgress::count(&self.progress.albums_unmatched);
         }
         self.stamp_the_unlanded(album, since)
     }
 
-    fn rejected_by_the_listener(&self, album: &AlbumToAsk, since: Refusals) -> Result<()> {
+    fn rejected_by_the_listener(&self, album: &AlbumToAsk, since: RefusedBefore) -> Result<()> {
         EnrichProgress::count(&self.progress.albums_rejected);
         self.stamp_the_unlanded(album, since)
     }
 
-    fn stamp_the_unlanded(&self, album: &AlbumToAsk, since: Refusals) -> Result<()> {
+    fn stamp_the_unlanded(&self, album: &AlbumToAsk, since: RefusedBefore) -> Result<()> {
         self.library
             .stamp_album_asked(album.id, self.fruitlessly(since))?;
         if album.has_release_rows {
@@ -2066,16 +2007,16 @@ impl Pass<'_> {
         &self,
         album: &AlbumToAsk,
         mbid: &Mbid,
-        since: Refusals,
+        since: RefusedBefore,
         pressing: Pressing,
     ) -> Result<()> {
         match self.heard(self.reference.release(mbid))? {
-            Heard::Answered(Some(release)) => self.take_release(album, release, since, pressing),
-            Heard::Answered(None) => {
+            Reply::Answered(Some(release)) => self.take_release(album, release, since, pressing),
+            Reply::Answered(None) => {
                 tracing::debug!(album = %album.id, %mbid, "the reference holds no release under this id");
                 self.nothing_landed(album, since)
             }
-            Heard::Refused => self.nothing_landed(album, since),
+            Reply::Refused => self.nothing_landed(album, since),
         }
     }
 
@@ -2083,7 +2024,7 @@ impl Pass<'_> {
         &self,
         album: &AlbumToAsk,
         release: Release,
-        since: Refusals,
+        since: RefusedBefore,
         pressing: Pressing,
     ) -> Result<()> {
         if self.library.refuses(album.id, &release.id)? {
@@ -2103,14 +2044,14 @@ impl Pass<'_> {
         self.credits(&release.credit)
     }
 
-    fn land_group(&self, album: &AlbumToAsk, group: &Mbid, since: Refusals) -> Result<()> {
+    fn land_group(&self, album: &AlbumToAsk, group: &Mbid, since: RefusedBefore) -> Result<()> {
         match self.heard(self.reference.release_group(group))? {
-            Heard::Answered(Some(found)) => self.settle_group(album, &found, since),
-            Heard::Answered(None) => {
+            Reply::Answered(Some(found)) => self.settle_group(album, &found, since),
+            Reply::Answered(None) => {
                 tracing::debug!(album = %album.id, %group, "the reference holds no release group under this id");
                 self.nothing_landed(album, since)
             }
-            Heard::Refused => self.nothing_landed(album, since),
+            Reply::Refused => self.nothing_landed(album, since),
         }
     }
 
@@ -2118,7 +2059,7 @@ impl Pass<'_> {
         &self,
         album: &AlbumToAsk,
         found: &ReleaseGroup,
-        since: Refusals,
+        since: RefusedBefore,
     ) -> Result<()> {
         match closest_release(found, album) {
             Some((release, fit)) => {
@@ -2136,7 +2077,12 @@ impl Pass<'_> {
         }
     }
 
-    fn take_group(&self, album: &AlbumToAsk, group: &ReleaseGroup, since: Refusals) -> Result<()> {
+    fn take_group(
+        &self,
+        album: &AlbumToAsk,
+        group: &ReleaseGroup,
+        since: RefusedBefore,
+    ) -> Result<()> {
         if self.library.refuses(album.id, &group.id)? {
             tracing::debug!(
                 album = %album.id,
@@ -2260,14 +2206,14 @@ impl Pass<'_> {
             return Ok(None);
         };
         match self.heard(self.reference.recordings_of_isrc(isrc))? {
-            Heard::Answered(found) => {
+            Reply::Answered(found) => {
                 let Some((named, certainty)) = best_recording(found, track) else {
                     return Ok(None);
                 };
                 let whole = self.told_where_it_sits(named)?;
                 Ok(Some((whole, certainty)))
             }
-            Heard::Refused => Ok(None),
+            Reply::Refused => Ok(None),
         }
     }
 
@@ -2302,8 +2248,8 @@ impl Pass<'_> {
         )?;
 
         Ok(match found {
-            Heard::Answered(found) => found.map(|recording| (recording, Certainty::Nearly)),
-            Heard::Refused => None,
+            Reply::Answered(found) => found.map(|recording| (recording, Certainty::Nearly)),
+            Reply::Refused => None,
         })
     }
 
@@ -2401,12 +2347,12 @@ impl Pass<'_> {
 
     fn recording(&self, mbid: &Mbid) -> Result<Option<Recording>> {
         match self.heard(self.reference.recording(mbid))? {
-            Heard::Answered(Some(recording)) => Ok(Some(recording)),
-            Heard::Answered(None) => {
+            Reply::Answered(Some(recording)) => Ok(Some(recording)),
+            Reply::Answered(None) => {
                 tracing::debug!(%mbid, "the reference holds no recording under this id");
                 Ok(None)
             }
-            Heard::Refused => Ok(None),
+            Reply::Refused => Ok(None),
         }
     }
 
@@ -2415,7 +2361,7 @@ impl Pass<'_> {
         track: &TrackToAsk,
         recording: &Recording,
         certainty: Certainty,
-        since: Refusals,
+        since: RefusedBefore,
     ) -> Result<()> {
         let album = self.album_under(track)?;
         let release = best_release(recording, album.as_ref());
@@ -2481,8 +2427,8 @@ impl Pass<'_> {
                 continue;
             }
             let found = match self.heard(self.reference.find_artist(member))? {
-                Heard::Answered(found) => top_artist(found, member),
-                Heard::Refused => return Ok(()),
+                Reply::Answered(found) => top_artist(found, member),
+                Reply::Refused => return Ok(()),
             };
             if let Some(mbid) = found {
                 self.library.bill_an_artist(member, &mbid)?;
@@ -2493,8 +2439,8 @@ impl Pass<'_> {
 
     fn discography(&self, artist: ArtistId, mbid: &Mbid) -> Result<ReleasesRead> {
         let held = match self.heard(self.reference.release_groups_of(mbid, 0)) {
-            Ok(Heard::Answered(held)) => held,
-            Ok(Heard::Refused) => return Ok(ReleasesRead::Refused),
+            Ok(Reply::Answered(held)) => held,
+            Ok(Reply::Refused) => return Ok(ReleasesRead::Refused),
             Err(ended) => {
                 self.library
                     .stamp_artist_asked(artist, Fruitless::Refused)?;
@@ -2514,21 +2460,21 @@ impl Pass<'_> {
     fn profile_of(&self, artist: &ArtistToAsk) -> Result<Option<ArtistProfile>> {
         if let Some(mbid) = &artist.mbid {
             match self.heard(self.reference.artist(mbid))? {
-                Heard::Answered(Some(profile)) => return Ok(Some(profile)),
-                Heard::Answered(None) => tracing::debug!(
+                Reply::Answered(Some(profile)) => return Ok(Some(profile)),
+                Reply::Answered(None) => tracing::debug!(
                     artist = %artist.id,
                     %mbid,
                     "the reference holds no artist under the tagged id, so the artist is searched for"
                 ),
-                Heard::Refused => return Ok(None),
+                Reply::Refused => return Ok(None),
             }
         }
         let Some(mbid) = self.find_artist(artist)? else {
             return Ok(None);
         };
         match self.heard(self.reference.artist(&mbid))? {
-            Heard::Answered(Some(profile)) => Ok(Some(profile)),
-            Heard::Answered(None) => {
+            Reply::Answered(Some(profile)) => Ok(Some(profile)),
+            Reply::Answered(None) => {
                 tracing::debug!(
                     artist = %artist.id,
                     %mbid,
@@ -2536,14 +2482,14 @@ impl Pass<'_> {
                 );
                 Ok(None)
             }
-            Heard::Refused => Ok(None),
+            Reply::Refused => Ok(None),
         }
     }
 
     fn find_artist(&self, artist: &ArtistToAsk) -> Result<Option<Mbid>> {
         match self.heard(self.reference.find_artist(&artist.name))? {
-            Heard::Answered(found) => Ok(top_artist(found, &artist.name)),
-            Heard::Refused => Ok(None),
+            Reply::Answered(found) => Ok(top_artist(found, &artist.name)),
+            Reply::Refused => Ok(None),
         }
     }
 

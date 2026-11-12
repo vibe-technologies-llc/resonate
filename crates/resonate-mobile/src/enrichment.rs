@@ -19,10 +19,10 @@ use resonate_library::{
     A_THUMBNAIL_BELOW, Agreement, AlbumToAsk, BETTERED_AFTER, COVERS_ASKED_AGAIN_AFTER, Certainty,
     Fingerprints, Fruitless, Identified, KeptLyrics, LookupOp, LyricText, LyricsAsked,
     MISSED_AGAIN_AFTER, PORTRAITS_ASKED_AGAIN_AFTER, RECOGNITIONS_REFUSED_BEFORE_GIVING_UP,
-    REFUSALS_THAT_END_A_PASS, Recording, Reference, Release, ReleaseGroup, TrackToAsk, WAITS,
-    Wording, best_recording, best_release, betters, closest_release, due_again, due_parameters,
-    group_asked, needs_its_releases_told, recording_asked, release_asked, the_strict_recording,
-    top_group, top_release,
+    REFUSALS_THAT_END_A_PASS, Recording, Reference, RefusedBefore, Refusing, Release, ReleaseGroup,
+    Reply, TrackToAsk, WAITS, Wording, best_recording, best_release, betters, closest_release,
+    due_again, due_parameters, either_way, group_asked, needs_its_releases_told, recording_asked,
+    release_asked, the_strict_recording, top_group, top_release,
 };
 use resonate_online::{AcoustId, Client, Online};
 use rusqlite::{OptionalExtension, params, params_from_iter, types::Value};
@@ -437,11 +437,6 @@ impl From<Error> for Ended {
 
 type Asked<T> = std::result::Result<T, Ended>;
 
-enum Heard<T> {
-    Answered(T),
-    Refused,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Ask {
     Album(String),
@@ -732,8 +727,7 @@ struct Pass<'a> {
     told: &'a Told,
     tally: &'a Tally,
     pictures: &'a Pictures,
-    refusals: Cell<u32>,
-    refused_in_a_row: Cell<u32>,
+    refusing: Refusing,
     covered: RefCell<BTreeSet<String>>,
     pictured: RefCell<BTreeSet<String>>,
     first: RefCell<BTreeSet<Ask>>,
@@ -754,8 +748,7 @@ impl<'a> Pass<'a> {
             told,
             tally,
             pictures,
-            refusals: Cell::new(0),
-            refused_in_a_row: Cell::new(0),
+            refusing: Refusing::default(),
             covered: RefCell::new(BTreeSet::new()),
             pictured: RefCell::new(BTreeSet::new()),
             first: RefCell::new(BTreeSet::new()),
@@ -934,44 +927,22 @@ impl<'a> Pass<'a> {
         &self,
         op: LookupOp,
         asked: impl FnOnce(&dyn Reference) -> resonate_library::Result<T>,
-    ) -> Asked<Heard<T>> {
+    ) -> Asked<Reply<T>> {
         self.go_on()?;
-        match asked(&*self.asking.reference) {
-            Ok(answer) => {
-                self.refused_in_a_row.set(0);
-                Ok(Heard::Answered(answer))
-            }
-            Err(
-                resonate_library::Error::Refused { .. }
-                | resonate_library::Error::Unreadable { .. },
-            ) => {
-                tracing::debug!(?op, "the reference refused a lookup");
-                self.note_a_refusal()?;
-                Ok(Heard::Refused)
-            }
-            Err(resonate_library::Error::TooLarge { .. }) => Ok(Heard::Refused),
+        let answered = asked(&*self.asking.reference);
+        match self
+            .refusing
+            .heard(answered, || Tally::count(&self.tally.refused, 1))
+        {
+            Ok(reply) => Ok(reply),
+            Err(resonate_library::Error::RefusedInARow { .. }) => Err(Ended::Refused),
             Err(_) if !self.asking.is_reaching() => Err(Ended::Offline),
             Err(source) => Err(Ended::Unreachable(Box::new(Error::reference(op, source)))),
         }
     }
 
-    fn note_a_refusal(&self) -> Asked<()> {
-        self.refusals.set(self.refusals.get().saturating_add(1));
-        Tally::count(&self.tally.refused, 1);
-        let refused = self.refused_in_a_row.get().saturating_add(1);
-        self.refused_in_a_row.set(refused);
-        if refused >= REFUSALS_THAT_END_A_PASS {
-            return Err(Ended::Refused);
-        }
-        Ok(())
-    }
-
-    fn fruitlessly(&self, since: u32) -> Fruitless {
-        if self.refusals.get() > since {
-            Fruitless::Refused
-        } else {
-            Fruitless::Missed
-        }
+    fn fruitlessly(&self, since: RefusedBefore) -> Fruitless {
+        self.refusing.fruitlessly(since)
     }
 
     fn either_way<T, W>(
@@ -980,20 +951,12 @@ impl<'a> Pass<'a> {
         asked: impl Fn(&dyn Reference, Wording) -> resonate_library::Result<Vec<T>>,
         weighed: impl Fn(Vec<T>) -> W,
         landed: impl Fn(&W) -> bool,
-    ) -> Asked<Heard<W>> {
-        let phrased = match self.ask(op, |reference| asked(reference, Wording::Phrase))? {
-            Heard::Answered(found) => weighed(found),
-            Heard::Refused => return Ok(Heard::Refused),
-        };
-        if landed(&phrased) {
-            return Ok(Heard::Answered(phrased));
-        }
-
-        Ok(
-            match self.ask(op, |reference| asked(reference, Wording::Words))? {
-                Heard::Answered(found) => Heard::Answered(weighed(found)),
-                Heard::Refused => Heard::Refused,
-            },
+    ) -> Asked<Reply<W>> {
+        either_way(
+            |wording| self.ask(op, |reference| asked(reference, wording)),
+            |found| Ok(weighed(found)),
+            landed,
+            || {},
         )
     }
 
@@ -1002,13 +965,13 @@ impl<'a> Pass<'a> {
             return Ok(());
         };
         let album = &held.album;
-        let since = self.refusals.get();
+        let since = self.refusing.since();
 
         if let Some(mbid) = &album.mbid {
             match self.ask(LookupOp::Release, |reference| reference.release(mbid))? {
-                Heard::Answered(Some(release)) => return self.take_release(&held, &release),
-                Heard::Answered(None) => {}
-                Heard::Refused => return self.album_missed(&held, since),
+                Reply::Answered(Some(release)) => return self.take_release(&held, &release),
+                Reply::Answered(None) => {}
+                Reply::Refused => return self.album_missed(&held, since),
             }
         }
         let found = self.either_way(
@@ -1018,22 +981,22 @@ impl<'a> Pass<'a> {
             |identified| *identified != Identified::Nothing,
         )?;
         match found {
-            Heard::Answered(Identified::Found(release)) => {
+            Reply::Answered(Identified::Found(release)) => {
                 return self.land_release(&held, &release, since);
             }
-            Heard::Answered(Identified::Group(group)) => {
+            Reply::Answered(Identified::Group(group)) => {
                 return self.land_group(&held, &group, since);
             }
-            Heard::Answered(Identified::Nothing) => {}
-            Heard::Refused => return self.album_missed(&held, since),
+            Reply::Answered(Identified::Nothing) => {}
+            Reply::Refused => return self.album_missed(&held, since),
         }
         if let Some(group) = &album.group {
             match self.ask(LookupOp::ReleaseGroup, |reference| {
                 reference.release_group(group)
             })? {
-                Heard::Answered(Some(found)) => return self.settle_group(&held, &found, since),
-                Heard::Answered(None) => {}
-                Heard::Refused => return self.album_missed(&held, since),
+                Reply::Answered(Some(found)) => return self.settle_group(&held, &found, since),
+                Reply::Answered(None) => {}
+                Reply::Refused => return self.album_missed(&held, since),
             }
         }
         let grouped = self.either_way(
@@ -1043,34 +1006,39 @@ impl<'a> Pass<'a> {
             Option::is_some,
         )?;
         match grouped {
-            Heard::Answered(Some(group)) => self.land_group(&held, &group, since),
-            Heard::Answered(None) | Heard::Refused => self.album_missed(&held, since),
+            Reply::Answered(Some(group)) => self.land_group(&held, &group, since),
+            Reply::Answered(None) | Reply::Refused => self.album_missed(&held, since),
         }
     }
 
-    fn album_missed(&self, held: &AlbumHeld, since: u32) -> Asked<()> {
+    fn album_missed(&self, held: &AlbumHeld, since: RefusedBefore) -> Asked<()> {
         self.catalog
             .stamp_album_asked(&held.key, self.fruitlessly(since), SystemTime::now())?;
         Ok(())
     }
 
-    fn land_release(&self, held: &AlbumHeld, release: &Mbid, since: u32) -> Asked<()> {
+    fn land_release(&self, held: &AlbumHeld, release: &Mbid, since: RefusedBefore) -> Asked<()> {
         match self.ask(LookupOp::Release, |reference| reference.release(release))? {
-            Heard::Answered(Some(release)) => self.take_release(held, &release),
-            Heard::Answered(None) | Heard::Refused => self.album_missed(held, since),
+            Reply::Answered(Some(release)) => self.take_release(held, &release),
+            Reply::Answered(None) | Reply::Refused => self.album_missed(held, since),
         }
     }
 
-    fn land_group(&self, held: &AlbumHeld, group: &Mbid, since: u32) -> Asked<()> {
+    fn land_group(&self, held: &AlbumHeld, group: &Mbid, since: RefusedBefore) -> Asked<()> {
         match self.ask(LookupOp::ReleaseGroup, |reference| {
             reference.release_group(group)
         })? {
-            Heard::Answered(Some(found)) => self.settle_group(held, &found, since),
-            Heard::Answered(None) | Heard::Refused => self.album_missed(held, since),
+            Reply::Answered(Some(found)) => self.settle_group(held, &found, since),
+            Reply::Answered(None) | Reply::Refused => self.album_missed(held, since),
         }
     }
 
-    fn settle_group(&self, held: &AlbumHeld, group: &ReleaseGroup, since: u32) -> Asked<()> {
+    fn settle_group(
+        &self,
+        held: &AlbumHeld,
+        group: &ReleaseGroup,
+        since: RefusedBefore,
+    ) -> Asked<()> {
         match closest_release(group, &held.album) {
             Some((release, _)) => {
                 let release = release.id.clone();
@@ -1158,7 +1126,7 @@ impl<'a> Pass<'a> {
         let Some(held) = self.catalog.track_to_ask(id)? else {
             return Ok(());
         };
-        let since = self.refusals.get();
+        let since = self.refusing.since();
 
         let found = match self.by_isrc(&held.track)? {
             Some(found) => Some(found),
@@ -1184,11 +1152,11 @@ impl<'a> Pass<'a> {
         match self.ask(LookupOp::Isrc, |reference| {
             reference.recordings_of_isrc(isrc)
         })? {
-            Heard::Answered(found) => match best_recording(found, track) {
+            Reply::Answered(found) => match best_recording(found, track) {
                 Some((named, certainty)) => Ok(Some((self.told_where_it_sits(named)?, certainty))),
                 None => Ok(None),
             },
-            Heard::Refused => Ok(None),
+            Reply::Refused => Ok(None),
         }
     }
 
@@ -1215,11 +1183,11 @@ impl<'a> Pass<'a> {
             Option::is_some,
         )?;
         match found {
-            Heard::Answered(Some(top)) => Ok(Some((
+            Reply::Answered(Some(top)) => Ok(Some((
                 self.told_where_it_sits(top.into_recording())?,
                 Certainty::Nearly,
             ))),
-            Heard::Answered(None) | Heard::Refused => Ok(None),
+            Reply::Answered(None) | Reply::Refused => Ok(None),
         }
     }
 
@@ -1233,13 +1201,18 @@ impl<'a> Pass<'a> {
     fn recording(&self, mbid: &Mbid) -> Asked<Option<Recording>> {
         Ok(
             match self.ask(LookupOp::Recording, |reference| reference.recording(mbid))? {
-                Heard::Answered(found) => found,
-                Heard::Refused => None,
+                Reply::Answered(found) => found,
+                Reply::Refused => None,
             },
         )
     }
 
-    fn take_recording(&self, held: &TrackHeld, recording: &Recording, since: u32) -> Asked<()> {
+    fn take_recording(
+        &self,
+        held: &TrackHeld,
+        recording: &Recording,
+        since: RefusedBefore,
+    ) -> Asked<()> {
         let album = match &held.album {
             Some(key) => self.catalog.album_to_ask(key)?,
             None => None,
@@ -1277,10 +1250,10 @@ impl<'a> Pass<'a> {
                 .stamp_artist_asked(mbid, Fruitless::Missed, SystemTime::now())?;
             return Ok(());
         };
-        let since = self.refusals.get();
+        let since = self.refusing.since();
 
         match self.ask(LookupOp::Artist, |reference| reference.artist(&id))? {
-            Heard::Answered(Some(profile)) => {
+            Reply::Answered(Some(profile)) => {
                 let now = SystemTime::now();
                 self.catalog
                     .keep_artist(mbid, &information_of(&profile), now)?;
@@ -1295,7 +1268,7 @@ impl<'a> Pass<'a> {
                 }
                 Ok(())
             }
-            Heard::Answered(None) | Heard::Refused => {
+            Reply::Answered(None) | Reply::Refused => {
                 self.catalog.stamp_artist_asked(
                     mbid,
                     self.fruitlessly(since),

@@ -13,6 +13,7 @@ mod filed;
 mod filters;
 mod fingerprint;
 mod foresight;
+mod hearing;
 mod hinted;
 mod history;
 mod identical;
@@ -125,6 +126,7 @@ pub use crate::{
     filters::{MinimumLength, MusicExtensions, MusicFilters},
     fingerprint::{Fingerprinters, Fingerprints, NoFingerprints, Printed, Recognition, Sounded},
     foresight::FORESEEN_FOR,
+    hearing::{RefusedBefore, Refusing, Reply, either_way},
     history::{Aged, HistoryKept},
     identical::identical_among,
     import::{

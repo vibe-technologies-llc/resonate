@@ -808,8 +808,8 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   is this build's. Failures, via `Pass::heard`: `Error::Unreachable` ends the pass and stamps
   nothing (`EnrichSummary::stopped_by` names the `LookupOp`); `Refused`, `Unreadable` count in
   `refusals`, stamp `asked`, carry on **until `REFUSALS_THAT_END_A_PASS` (10) in a row**
-  (`Pass::refused_in_a_row`; any answer resets it; the tenth is `Error::RefusedInARow`, ending the
-  pass, the row being asked unstamped). `TooLarge` is a refusal not counting toward the streak. An
+  (`Refusing`, `hearing.rs`, which the phones' pass holds too; any answer resets it; the tenth is
+  `Error::RefusedInARow`, ending the pass, the row being asked unstamped). `TooLarge` is a refusal not counting toward the streak. An
   album, track or artist gathered or removed while asked about answers
   `UnknownAlbum`/`UnknownTrack`/`UnknownArtist`, which `passed_over_if_gone` logs and passes over.
   Any other error ending the pass cancels its progress and rests the picture, study and lyric
@@ -847,7 +847,12 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `group_asked`, `REFUSALS_THAT_END_A_PASS`, `due_again` with `due_parameters` (the clause over
   `?1`..`?5` and the values it binds), `COVERS_ASKED_AGAIN_AFTER`, `PORTRAITS_ASKED_AGAIN_AFTER`,
   `A_THUMBNAIL_BELOW` and `betters` are public. `Pass` calls the same functions, so a rule changed
-  here changes `resonate-mobile`'s pass too (`android.md`).
+  here changes `resonate-mobile`'s pass too (`android.md`). **So is how an answer is heard**
+  (`hearing.rs`): `Refusing::heard` reads a lookup's result into a `Reply` (answered or refused),
+  counting `Refused` and `Unreadable` toward the run and ending it, `Refusing::fruitlessly` tells a
+  refusal from a miss since a `RefusedBefore`, and `either_way` asks the phrase and then the words;
+  both passes hold one `Refusing` and ask through `either_way`, so the stopping and the second
+  wording are written once.
 - **A rejected match is taken away, never landed again.** `Library::forget_the_match` records the
   album's release (group where landed as group alone) in `refused_releases`; clears the landing's
   writes (ids, release title, date, country, kind, disambiguation, `front_cover`, archive cover);
