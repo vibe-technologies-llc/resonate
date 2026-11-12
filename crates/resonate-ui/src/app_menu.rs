@@ -6,7 +6,7 @@ use crate::{
         Minimise, Next, Previous, Quit, ShowAll, Stop, ToggleFullScreen, ToggleMute,
         TogglePlayPause, ToggleQueue, ToggleShuffle, VolumeDown, VolumeUp, WINDOW_TITLE, Zoom,
     },
-    views::field::{CopySelection, CutSelection, PasteClipboard, SelectEverything},
+    views::field::{CopySelection, CutSelection, PasteClipboard, Redo, SelectEverything, Undo},
     words,
 };
 
@@ -45,6 +45,9 @@ fn the_apps_own() -> Menu {
 
 fn editing() -> Menu {
     Menu::new(words::app_menu::edit()).items([
+        MenuItem::os_action(words::app_menu::undo(), Undo, OsAction::Undo),
+        MenuItem::os_action(words::app_menu::redo(), Redo, OsAction::Redo),
+        MenuItem::separator(),
         MenuItem::os_action(words::app_menu::cut(), CutSelection, OsAction::Cut),
         MenuItem::os_action(words::app_menu::copy(), CopySelection, OsAction::Copy),
         MenuItem::os_action(words::app_menu::paste(), PasteClipboard, OsAction::Paste),
@@ -97,7 +100,7 @@ mod tests {
     use gpui::{Action, Keymap, MenuItem, OperatingSystem};
 
     use super::menus;
-    use crate::app;
+    use crate::{app, words};
 
     const THE_NAME_GPUI_LISTS_THE_WINDOWS_UNDER: &str = "Window";
 
@@ -133,6 +136,25 @@ mod tests {
                 !asked[..place].contains(name),
                 "{name} stands in the menu twice"
             );
+        }
+    }
+
+    #[test]
+    fn every_item_of_the_playback_and_edit_menus_shows_a_key_on_a_mac() {
+        let keymap = Keymap::new(app::bindings(OperatingSystem::Mac));
+
+        for menu in menus().into_iter().filter(|menu| {
+            menu.name == words::app_menu::playback() || menu.name == words::app_menu::edit()
+        }) {
+            for item in menu.items {
+                if let MenuItem::Action { action, .. } = item {
+                    assert!(
+                        keymap.bindings_for_action(action.as_ref()).next().is_some(),
+                        "{} stands in the menu with no key beside it",
+                        action.name()
+                    );
+                }
+            }
         }
     }
 

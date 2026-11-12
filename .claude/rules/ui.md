@@ -84,16 +84,21 @@ is never named.
 - **The menu bar is data, laid out on every system and kept by macOS alone.** `app_menu::lay_out`
   calls `cx.set_menus` after the keys are bound (gpui reads each item's key off the keymap, the
   earliest binding of its action): *Resonate* (About, Settings…, Services, Hide, Hide others, Show
-  all, Quit), *Edit* (Cut, Copy, Paste, Select all, as `OsAction`s over the field's actions, so
-  the system's own panels take ⌘V), *Playback* (Play or pause, Stop, Next, Previous, Shuffle,
+  all, Quit), *Edit* (Undo, Redo, Cut, Copy, Paste, Select all, as `OsAction`s over the field's
+  actions, so the system's own panels take ⌘V), *Playback* (Play or pause, Stop, Next, Previous, Shuffle,
   Repeat, Louder, Quieter, Mute), *View* (Queue, Search, Listen, Full screen) and *Window*
   (Minimise, Zoom, Close), its words `words/en/app_menu.ftl`. `Hide`, `HideOthers` and `ShowAll`
   are answered by the app (`cx.on_action`), `About` (the About category), `Minimise`, `Zoom`,
   `CloseTheWindow` and `ToggleFullScreen` by `RootView` beside `Quit`. **A menu item fires
-  whatever holds the caret**, gpui's menu dispatch reading no key context, so: *Undo* and *Redo*
-  are left out (they would walk a library edit back while a field is typed in); *Play or pause* is
-  `TogglePlayPause`, which a Mac binds to no key, never `PlayPauseUnlessTyping`'s `space`; and no
-  action in the menu is bound to a key without Command or Control
+  whatever holds the caret**, gpui's menu dispatch reading no key context but walking the focus
+  path, so: *Undo* and *Redo* are the field's own `Undo` and `Redo`, which a field holding the
+  caret takes first and `RootView` otherwise answers as `undo_edit`/`redo_edit`, so a menu undo
+  never walks a library edit back while a field is typed in
+  (`the_menus_undo_walks_the_field_back_while_it_holds_the_caret_and_the_queue_back_otherwise`);
+  *Play or pause* is `TogglePlayPause`, which a Mac binds to ⌘↩ (`answering_as_a_mac_expects`),
+  never `PlayPauseUnlessTyping`'s `space`; every item of *Edit* and *Playback* shows a key on a Mac
+  (`every_item_of_the_playback_and_edit_menus_shows_a_key_on_a_mac`); and no action in the menu is
+  bound to a key without Command or Control
   (`a_key_the_menu_shows_beside_an_item_is_never_one_a_listener_types`). The *Window* menu is
   found by gpui under the literal name `Window`
   (`the_menu_a_mac_lists_its_windows_under_is_named_as_gpui_looks_for_it`), so a language that
@@ -851,7 +856,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   (`ctrl-m`), shuffle (`ctrl-h`), choosing a reached row apart (`ctrl-space`) and the panes
   (`ctrl-tab`, `ctrl-shift-tab`), whose Command forms are the system's (Minimise, Hide, Spotlight,
   the app switcher). macOS alone binds `answering_as_a_mac_expects`: Hide (⌘H), Hide others
-  (⌥⌘H), Minimise (⌘M), Close (⌘W) and Full screen (⌃⌘F); ⌘Q is the quit key and ⌘, the settings
+  (⌥⌘H), Minimise (⌘M), Close (⌘W), Full screen (⌃⌘F) and Play or pause (⌘↩); ⌘Q is the quit key and ⌘, the settings
   filter (`secondary-,`: gpui names that key `,` on every system, so the `ctrl-comma` once bound
   answered nothing). In a field a Mac moves and deletes by word with Option, reaches either end
   with Command and its arrows, and takes Emacs' `ctrl-a`, `e`, `b`, `f`, `d` and `h`

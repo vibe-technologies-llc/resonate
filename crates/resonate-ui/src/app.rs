@@ -892,6 +892,7 @@ fn answering_as_a_mac_expects() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-m", Minimise, None),
         KeyBinding::new("cmd-w", CloseTheWindow, None),
         KeyBinding::new("ctrl-cmd-f", ToggleFullScreen, None),
+        KeyBinding::new("cmd-enter", TogglePlayPause, None),
     ]
 }
 
@@ -1635,6 +1636,7 @@ mod tests {
         assert_eq!(bound_to("cmd-q", mac), ["Quit"]);
         assert_eq!(bound_to("cmd-,", mac), ["FocusFilter"]);
         assert_eq!(bound_to("ctrl-cmd-f", mac), ["ToggleFullScreen"]);
+        assert_eq!(bound_to("cmd-enter", mac), ["TogglePlayPause"]);
         assert!(bound_to("cmd-space", mac).is_empty());
         assert!(bound_to("cmd-tab", mac).is_empty());
         assert!(bound_to("cmd-shift-tab", mac).is_empty());

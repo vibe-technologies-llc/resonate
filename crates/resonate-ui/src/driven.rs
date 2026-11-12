@@ -1014,6 +1014,48 @@ mod tests {
         );
     }
 
+    #[gpui::test]
+    fn the_menus_undo_walks_the_field_back_while_it_holds_the_caret_and_the_queue_back_otherwise(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let one = folder.tone("one.wav", 1);
+        let two = folder.tone("two.wav", 1);
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        driven.play(&[one, two.clone()]);
+        driven.cx.simulate_keystrokes("secondary-u");
+        driven.settle();
+        let root = driven.root.clone();
+
+        let location = MediaLocation::local(&two);
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.take_out_of_the_queue(&location, None, cx);
+            })
+        });
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
+        driven.cx.dispatch_action(crate::views::field::Undo);
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.take_out_of_the_queue(&location, None, cx);
+            })
+        });
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
+        driven.focus(|root| &root.search);
+        driven.cx.simulate_input("dark");
+        driven.cx.dispatch_action(crate::views::field::Undo);
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.search.read(cx).text().to_owned()),
+            ""
+        );
+        assert_eq!(driven.queue().len(), 1);
+    }
+
     fn named_by(name: &str) -> &'static str {
         Box::leak(name.to_owned().into_boxed_str())
     }

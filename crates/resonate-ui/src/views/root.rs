@@ -65,7 +65,7 @@ use crate::{
         chrome,
         dropping::{FolderStanding, Incoming, TakingIn},
         favourites::Shelved,
-        field::{Blurred, Caught, Composing, Field, Submitted},
+        field::{self, Blurred, Caught, Composing, Field, Submitted},
         focus::Controls,
         hint::{self, Names},
         kit::{self, Casts as _, EndsInAnEllipsis},
@@ -6293,6 +6293,8 @@ impl Render for RootView {
             }))
             .on_action(cx.listener(|this, _: &UndoEdit, _, cx| this.undo_edit(cx)))
             .on_action(cx.listener(|this, _: &RedoEdit, _, cx| this.redo_edit(cx)))
+            .on_action(cx.listener(|this, _: &field::Undo, _, cx| this.undo_edit(cx)))
+            .on_action(cx.listener(|this, _: &field::Redo, _, cx| this.redo_edit(cx)))
             .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
                 this.enter_search(window, cx);
             }))
