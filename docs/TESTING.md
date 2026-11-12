@@ -125,7 +125,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.8.1] `resonate-win32`'s real side behind its seam has run nowhere: the sequencing is held by
+- [S · 0.9.1] `resonate-win32`'s real side behind its seam has run nowhere: the sequencing is held by
   the fakes on every host and the real implementations only cross-checked by `cargo xwin`, so a
   Windows run of `cargo test -p resonate-win32 --features console` (the end-of-search code, the Game
   Mode value, the line-input flags) is still owed
