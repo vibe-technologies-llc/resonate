@@ -1805,7 +1805,14 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   alone* or *Shared by every output*), the graph, the band
   chips and *Add band*, the selected band's card, *Preamp*, *Presets* and *Corrections*. *Reset
   curve* is in the toolbar's menu, confirmed: no bands, a 0 dB preamp, no name, the switch left as
-  it is. There are no modes.
+  it is. There are no modes. **A drag wakes the graph and the band card alone**: the draft, the
+  chosen band and every action live in `EqualiserEditor` (an observable the page keeps), which
+  derives `bandCount`, `selected`, `preampDb`, `hasBands` and `presetName` from the draft and the
+  committed curve, each assigned only where it moved, and the sections take the editor, never a
+  closure made in the page's body: `EqualiserGraphRow` and `ChosenBandCard` read the draft,
+  `BandChipsRow` the count and selection, `PreampSection` the preamp, `PresetsSection` the preset's
+  name, so a handle or slider sample twenty times a second rebuilds neither the chips, the preamp
+  nor the presets.
 - **Every edit switches the equaliser on and clears the curve's name** (`edited`): a handle, a slider,
   a typed value, a filter type, *Add band*, *Remove*, the preamp and *Fit*; a preset replaces the
   curve, names it and switches it on, as a correction loaded does; only the switch turns it off.

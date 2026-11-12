@@ -4,75 +4,179 @@ import ResonateNative
 import SwiftUI
 import UniformTypeIdentifiers
 
+@MainActor
+@Observable
+final class EqualiserEditor {
+    private static let octaves = tenBandCurve(preampDb: 0, gainsDb: [])
+    private static let settle: Duration = .seconds(1)
+
+    private(set) var draft = EqualiserDraft() {
+        didSet { reshape() }
+    }
+    private(set) var committed: EqualiserCurve? {
+        didSet { reshape() }
+    }
+    var chosen: Int? {
+        didSet { reshape() }
+    }
+    private(set) var bandCount = 0
+    private(set) var selected: Int?
+    private(set) var preampDb: Float = 0
+    private(set) var hasBands = false
+    private(set) var presetName = ""
+    @ObservationIgnored private var settling: Task<Void, Never>?
+    @ObservationIgnored private weak var library: Library?
+
+    var base: EqualiserCurve? { committed.map(draft.shown(over:)) }
+    var shaped: EqualiserCurve? { base.map { EqualiserShown.curve($0, octaves: Self.octaves) } }
+
+    func arrived(_ now: EqualiserCurve?, in library: Library) {
+        self.library = library
+        if committed != now { committed = now }
+        changeDraft { $0.arrived(now) }
+    }
+
+    func hold(_ moving: EqualiserCurve) {
+        changeDraft { $0.hold(moving) }
+    }
+
+    func holdPreamp(_ preamp: Float) {
+        guard let base else { return }
+        hold(Self.with(base, preamp: preamp))
+    }
+
+    func drop() {
+        changeDraft { $0.drop() }
+    }
+
+    func edited(_ curve: EqualiserCurve) {
+        var next = curve
+        next.name = ""
+        commit(next, switchingOn: true)
+    }
+
+    func editPreamp(_ preamp: Float) {
+        guard let base else { return }
+        edited(Self.with(base, preamp: preamp))
+    }
+
+    func apply(_ preset: EqualiserPreset) {
+        chosen = nil
+        commit(preset.curve, switchingOn: true)
+    }
+
+    func add(limits: EqualiserLimits) {
+        guard let curve = shaped, let band = BandPlacement.added(to: curve, limits: limits) else { return }
+        var next = curve
+        next.bands.append(band)
+        chosen = next.bands.count - 1
+        edited(next)
+    }
+
+    func remove(_ index: Int) {
+        guard var next = shaped, next.bands.indices.contains(index) else { return }
+        next.bands.remove(at: index)
+        chosen = BandSelection.afterRemoving(index, leaving: next.bands.count)
+        edited(next)
+    }
+
+    func reset() {
+        chosen = nil
+        commit(.flat, switchingOn: false)
+    }
+
+    func fit() {
+        guard let library, let curve = base else { return }
+        let rate = library.clock.outputRate
+        let asked: UInt32? = rate > 0 ? rate : nil
+        Task {
+            do {
+                let player = try await library.player()
+                let fitted = try await Work.aside { try player.fittedPreamp(curve: curve, rateHz: asked) }
+                edited(Self.with(curve, preamp: fitted))
+                let measured = try await Work.aside { try player.fittedPreampToTheQueue(curve: curve) }
+                guard let measured, let shown = base, shown.bands == curve.bands, shown.preampDb == fitted else { return }
+                edited(Self.with(shown, preamp: measured))
+            } catch {
+                library.report(error)
+            }
+        }
+    }
+
+    private func commit(_ curve: EqualiserCurve, switchingOn: Bool) {
+        changeDraft { $0.release(curve) }
+        settling?.cancel()
+        settling = Task { [weak self] in
+            try? await Task.sleep(for: Self.settle)
+            guard !Task.isCancelled else { return }
+            self?.changeDraft { $0.settle(curve) }
+        }
+        library?.updatePreferences { current in
+            var next = current
+            next.equaliser = curve
+            if switchingOn { next.equaliserEnabled = true }
+            return next
+        }
+    }
+
+    private func changeDraft(_ change: (inout EqualiserDraft) -> Void) {
+        var next = draft
+        change(&next)
+        if next != draft { draft = next }
+    }
+
+    private func reshape() {
+        let shaped = shaped
+        let count = shaped?.bands.count ?? 0
+        let shown = BandSelection.shown(chosen, among: count)
+        let preamp = base?.preampDb ?? 0
+        let banded = !(base?.bands.isEmpty ?? true)
+        let preset = shaped?.presetName ?? ""
+        if bandCount != count { bandCount = count }
+        if selected != shown { selected = shown }
+        if preampDb != preamp { preampDb = preamp }
+        if hasBands != banded { hasBands = banded }
+        if presetName != preset { presetName = preset }
+    }
+
+    private static func with(_ curve: EqualiserCurve, preamp: Float) -> EqualiserCurve {
+        var next = curve
+        next.preampDb = preamp
+        return next
+    }
+}
+
 struct EqualiserView: View {
     @Environment(Library.self) private var library
-    @State private var draft = EqualiserDraft()
-    @State private var chosen: Int?
+    @State private var editor = EqualiserEditor()
     @State private var response = EqualiserResponse()
-    @State private var settling: Task<Void, Never>?
     @State private var confirmingReset = false
     static let limits = equaliserLimits()
     static let presets = equaliserPresets()
-    private static let octaves = tenBandCurve(preampDb: 0, gainsDb: [])
-    private static let settle: Duration = .seconds(1)
 
     var body: some View {
         let committed = library.preferences?.equaliser
         ThemedForm {
             if let settings = library.preferences {
-                let base = draft.shown(over: settings.equaliser)
-                let shaped = EqualiserShown.curve(base, octaves: Self.octaves)
-                let selected = BandSelection.shown(chosen, among: shaped.bands.count)
                 EqualiserSwitches(enabled: settings.equaliserEnabled, summary: settings.equaliser.summary)
                 Section {
                     GraphFrame {
-                        EqualiserGraph(
-                            curve: shaped,
-                            response: response,
-                            limits: Self.limits,
-                            selected: selected,
-                            choose: { chosen = $0 },
-                            edit: { draft.hold($0) },
-                            commit: { edited($0) },
-                            discard: { draft.drop() }
-                        )
+                        EqualiserGraphRow(editor: editor, response: response)
                     }
                     .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 4, trailing: 8))
                     .listRowSeparator(.hidden)
-                    BandChips(
-                        count: shaped.bands.count,
-                        selected: selected,
-                        full: shaped.bands.count >= Int(Self.limits.bandsAtMost),
-                        choose: { chosen = $0 },
-                        add: { add(to: shaped) }
-                    )
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 16))
-                    .listRowSeparator(.hidden)
-                    if let selected {
-                        BandCard(
-                            band: shaped.bands[selected],
-                            number: selected + 1,
-                            limits: Self.limits,
-                            moving: { draft.hold(shaped.replacing(selected, with: $0)) },
-                            change: { edited(shaped.replacing(selected, with: $0)) },
-                            remove: { remove(selected, from: shaped) }
-                        )
-                        .id(selected)
-                    }
+                    BandChipsRow(editor: editor)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 16))
+                        .listRowSeparator(.hidden)
+                    ChosenBandCard(editor: editor)
                 }
-                PreampSection(
-                    curve: base,
-                    limits: Self.limits,
-                    moving: { preamp in draft.hold(with(base, preamp: preamp)) },
-                    change: { preamp in edited(with(base, preamp: preamp)) },
-                    fit: { fit(base) }
-                )
-                PresetsSection(presets: Self.presets, chosen: shaped.presetName, choose: apply)
+                PreampSection(editor: editor)
+                PresetsSection(editor: editor)
                 CorrectionsSection()
             }
         }
         .navigationTitle("equaliser.title")
-        .background { ResponseTracing(curve: committed.map { draft.shown(over: $0) }, response: response) }
+        .background { ResponseTracing(editor: editor, response: response) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("equaliser.more", systemImage: "ellipsis") {
@@ -81,91 +185,70 @@ struct EqualiserView: View {
                 }
             }
         }
-        .onChange(of: committed) { _, now in draft.arrived(now) }
+        .onChange(of: committed, initial: true) { _, now in editor.arrived(now, in: library) }
         .confirmationDialog("equaliser.reset.question", isPresented: $confirmingReset, titleVisibility: .visible) {
-            Button("equaliser.reset", role: .destructive) { reset() }
+            Button("equaliser.reset", role: .destructive) { editor.reset() }
         } message: {
             Text("equaliser.reset.message")
         }
     }
+}
 
-    private func with(_ curve: EqualiserCurve, preamp: Float) -> EqualiserCurve {
-        var next = curve
-        next.preampDb = preamp
-        return next
-    }
+private struct EqualiserGraphRow: View {
+    let editor: EqualiserEditor
+    let response: EqualiserResponse
 
-    private func commit(_ curve: EqualiserCurve, switchingOn: Bool) {
-        draft.release(curve)
-        settling?.cancel()
-        settling = Task {
-            try? await Task.sleep(for: Self.settle)
-            guard !Task.isCancelled else { return }
-            draft.settle(curve)
-        }
-        library.updatePreferences { current in
-            var next = current
-            next.equaliser = curve
-            if switchingOn { next.equaliserEnabled = true }
-            return next
+    var body: some View {
+        if let shaped = editor.shaped {
+            EqualiserGraph(
+                curve: shaped,
+                response: response,
+                limits: EqualiserView.limits,
+                selected: editor.selected,
+                choose: { editor.chosen = $0 },
+                edit: { editor.hold($0) },
+                commit: { editor.edited($0) },
+                discard: { editor.drop() }
+            )
         }
     }
+}
 
-    private func edited(_ curve: EqualiserCurve) {
-        var next = curve
-        next.name = ""
-        commit(next, switchingOn: true)
+private struct BandChipsRow: View {
+    let editor: EqualiserEditor
+
+    var body: some View {
+        BandChips(
+            count: editor.bandCount,
+            selected: editor.selected,
+            full: editor.bandCount >= Int(EqualiserView.limits.bandsAtMost),
+            choose: { editor.chosen = $0 },
+            add: { editor.add(limits: EqualiserView.limits) }
+        )
     }
+}
 
-    private func apply(_ preset: EqualiserPreset) {
-        chosen = nil
-        commit(preset.curve, switchingOn: true)
-    }
+private struct ChosenBandCard: View {
+    let editor: EqualiserEditor
 
-    private func add(to curve: EqualiserCurve) {
-        guard let band = BandPlacement.added(to: curve, limits: Self.limits) else { return }
-        var next = curve
-        next.bands.append(band)
-        chosen = next.bands.count - 1
-        edited(next)
-    }
-
-    private func remove(_ index: Int, from curve: EqualiserCurve) {
-        guard curve.bands.indices.contains(index) else { return }
-        var next = curve
-        next.bands.remove(at: index)
-        chosen = BandSelection.afterRemoving(index, leaving: next.bands.count)
-        edited(next)
-    }
-
-    private func reset() {
-        chosen = nil
-        commit(.flat, switchingOn: false)
-    }
-
-    private func fit(_ curve: EqualiserCurve) {
-        let rate = library.clock.outputRate
-        let asked: UInt32? = rate > 0 ? rate : nil
-        Task {
-            do {
-                let player = try await library.player()
-                let fitted = try await Work.aside { try player.fittedPreamp(curve: curve, rateHz: asked) }
-                edited(with(curve, preamp: fitted))
-                let measured = try await Work.aside { try player.fittedPreampToTheQueue(curve: curve) }
-                guard let measured, let shown = library.preferences.map({ draft.shown(over: $0.equaliser) }),
-                      shown.bands == curve.bands, shown.preampDb == fitted
-                else { return }
-                edited(with(shown, preamp: measured))
-            } catch {
-                library.report(error)
-            }
+    var body: some View {
+        if let selected = editor.selected, let shaped = editor.shaped, shaped.bands.indices.contains(selected) {
+            BandCard(
+                band: shaped.bands[selected],
+                number: selected + 1,
+                limits: EqualiserView.limits,
+                moving: { editor.hold(shaped.replacing(selected, with: $0)) },
+                change: { editor.edited(shaped.replacing(selected, with: $0)) },
+                remove: { editor.remove(selected) }
+            )
+            .id(selected)
         }
     }
 }
 
 private struct ResponseTracing: View {
     @Environment(Library.self) private var library
-    let curve: EqualiserCurve?
+    let editor: EqualiserEditor
     let response: EqualiserResponse
 
     private struct Traced: Equatable {
@@ -176,7 +259,7 @@ private struct ResponseTracing: View {
     var body: some View {
         Color.clear
             .accessibilityHidden(true)
-            .onChange(of: Traced(curve: curve, rate: library.clock.outputRate), initial: true) { _, traced in
+            .onChange(of: Traced(curve: editor.base, rate: library.clock.outputRate), initial: true) { _, traced in
                 guard let curve = traced.curve else { return }
                 response.follow(curve, rate: traced.rate > 0 ? traced.rate : nil)
             }
@@ -499,25 +582,22 @@ extension MeasuredSlider where Accessory == EmptyView {
 }
 
 private struct PreampSection: View {
-    let curve: EqualiserCurve
-    let limits: EqualiserLimits
-    let moving: (Float) -> Void
-    let change: (Float) -> Void
-    let fit: () -> Void
+    let editor: EqualiserEditor
 
     var body: some View {
+        let preamp = editor.preampDb
         Section {
             MeasuredSlider(
-                axis: .preamp(around: curve.preampDb, limits: limits),
-                value: curve.preampDb,
-                moving: moving,
-                commit: change
+                axis: .preamp(around: preamp, limits: EqualiserView.limits),
+                value: preamp,
+                moving: { editor.holdPreamp($0) },
+                commit: { editor.editPreamp($0) }
             ) {
-                Button("equaliser.preamp.fit", action: fit)
+                Button("equaliser.preamp.fit") { editor.fit() }
                     .font(.subheadline.weight(.semibold))
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
-                    .disabled(curve.bands.isEmpty)
+                    .disabled(!editor.hasBands)
                     .accessibilityLabel("equaliser.preamp.fit.spoken")
             }
         } header: {
@@ -530,11 +610,11 @@ private struct PreampSection: View {
 
 private struct PresetsSection: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let presets: [EqualiserPreset]
-    let chosen: String
-    let choose: (EqualiserPreset) -> Void
+    let editor: EqualiserEditor
+    private let presets = EqualiserView.presets
 
     var body: some View {
+        let chosen = editor.presetName
         let preset = presets.first { $0.name == chosen }
         Section {
             ScrollViewReader { proxy in
@@ -559,9 +639,9 @@ private struct PresetsSection: View {
     }
 
     private func chip(_ preset: EqualiserPreset, mark: String) -> some View {
-        let isChosen = preset.name == chosen
+        let isChosen = preset.name == editor.presetName
         return Button {
-            choose(preset)
+            editor.apply(preset)
         } label: {
             Label(preset.name, systemImage: mark)
                 .font(.subheadline.weight(.medium))

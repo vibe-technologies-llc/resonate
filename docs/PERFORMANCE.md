@@ -15,11 +15,6 @@ are in [ROADMAP.md](ROADMAP.md).
   #62455)
 
 ## iOS
-- [M] The equaliser page re-evaluates every section at each paced drag sample: `EqualiserView.body`
-  reads the draft and hands every section closures made in that body, so a handle or slider drag
-  rebuilds the band chips, the band card, the preamp and the presets twenty times a second; the
-  draft wants an observable only the graph and the band card read, and the sections an action
-  object that compares equal across bodies, as Now Playing's `PlayerAsks` is
 - [M] Songs and the add-songs sheet hand SwiftUI the whole filtered library as one `ForEach`, whose
   ids are gathered and diffed on the main thread at every publish (several milliseconds past ten
   thousand songs); the queue is a window (`QueueParts`), these are not
