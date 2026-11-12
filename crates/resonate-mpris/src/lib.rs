@@ -66,13 +66,12 @@ mod words {
 #[cfg(target_os = "linux")]
 pub use gaming::watch_game_mode;
 
-#[cfg(fuzzing)]
-pub use crate::fuzzing::read_what_a_peer_says;
-
 #[cfg(windows)]
 pub use crate::costing::watch_the_meter;
 #[cfg(windows)]
 pub use crate::error::WindowsOp;
+#[cfg(fuzzing)]
+pub use crate::fuzzing::read_what_a_peer_says;
 #[cfg(unix)]
 pub use crate::metered::{meter_of_network_manager, watch_the_meter};
 #[cfg(all(unix, not(target_os = "macos")))]
