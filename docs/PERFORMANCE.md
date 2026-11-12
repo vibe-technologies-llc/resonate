@@ -23,10 +23,6 @@ are in [ROADMAP.md](ROADMAP.md).
 - [M] Songs and the add-songs sheet hand SwiftUI the whole filtered library as one `ForEach`, whose
   ids are gathered and diffed on the main thread at every publish (several milliseconds past ten
   thousand songs); the queue is a window (`QueueParts`), these are not
-- [S] An `.inactive` blip (Control Centre, a banner, the App Switcher) flips `Features.foreground`,
-  which nudges the poll, restarts the enrichment watch, the wants loop and the linked-playlist loop
-  (its ten-minute cadence starting over), toggles the visualizer tap and queues a save; they should
-  act on `.background` and back alone, as `cameForward` does
 - [S] The remote-device page rebuilds its list twice a second while the driven device plays:
   `sync_watch` answers the position played on to the moment asked, so the read never equals what is
   shown and every zone and visible row is evaluated again; the position wants an observable of its

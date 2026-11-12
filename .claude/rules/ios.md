@@ -177,7 +177,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   serial lane (`Work.inSession`); the main actor only applies the answer.
   The catalog is read in a task of its own beside the poll, so the restored mini player and the lock
   screen's info and commands never wait on a large library.
-  The poll reads the snapshot every 250 ms while the scene is active and
+  The poll reads the snapshot every 250 ms while the scene is in the foreground and
   playing (or loading, or analysing, or for 2 s after a command: `nudgePoll` wakes it at once),
   100 ms in the last 1.5 s of a playing song in the foreground (so an automatic change is seen, and its rate asked, at once), 1 s paused in the foreground and 2 s in the background whatever plays: the engine's own events wake it (`PlayerWake`, a `PlayerWatch` registered when the player opens, `wakePoll`; a wake that lands while a snapshot is in flight is owed, `wakeOwed`, so the next sleep is skipped), so a song that changes by itself is seen at once with the app asleep, and listening is counted in the boundary (`mobile.md`), not by the poll,
   and saves every 5 s, as Android does, on a lane of its own (`Work.inSaving`), so a queue rewrite
@@ -225,8 +225,11 @@ sync seals its records and talks QUIC (TLS) of its own.
   Favourites filter, change the shown array where it stands inside `withMutation`
   (`Library.editShownQueue`), never through the property's `get` and `set`, which copied the whole
   array, every `Track` retained, on the main actor at each swipe. The three library searches ask again only when a catalog
-  read changed what is shown. `Features.foreground` acts only on a change, so the scene passing
-  through `.inactive` on its way to `.background` nudges no poll twice.
+  read changed what is shown. `Features.foreground` is set only as the scene becomes active and
+  as it enters `.background`, never at `.inactive`, and acts only on a change: an `.inactive` blip
+  (Control Centre, a banner, the App Switcher) nudges no poll, restarts no enrichment watch, wants
+  loop or linked-playlist loop (whose ten-minute cadence would start over), toggles no visualizer
+  tap and queues no save, as `cameForward` acts on coming back from `.background` alone.
 - **What moves every tick lives in `PlayClock`** (`library.clock`): position, duration, sleep time
   left, output rate, underruns and clamped samples. `snapshot` is assigned only when something else changed, and
   `currentId`/`currentQueueId` only when the song does, so a list that marks the playing row is not

@@ -26,15 +26,16 @@ struct ResonateApp: App {
                 .onOpenURL { library.open($0) }
         }
         .onChange(of: phase) { _, now in
-            library.features.foreground = now == .active
             switch now {
             case .active:
+                library.features.foreground = true
                 library.features.cameForward()
                 library.prepareNowPlaying()
             case .background:
+                library.features.foreground = false
                 library.features.wentToBackground()
                 library.save()
-            default: library.save()
+            default: break
             }
         }
     }
