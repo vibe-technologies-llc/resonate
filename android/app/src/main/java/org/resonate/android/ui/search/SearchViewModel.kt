@@ -398,6 +398,10 @@ class SearchViewModel(private val resonate: Resonate) : ViewModel() {
         root(query.value)
     }
 
+    fun join(link: String) {
+        features.together.arrive(link)
+    }
+
     private fun root(text: String) {
         mutableTrail.value = mutableTrail.value.rooted(text)
         if (!features.online.value) return

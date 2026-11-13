@@ -2,6 +2,7 @@ package org.resonate.android.ui.search
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.resonate.android.English
@@ -84,6 +85,28 @@ class SearchLogicTest {
         assertTrue(isLink("spotify:track:1"))
         assertFalse(isLink("http"))
         assertFalse(isLink("copper sun"))
+    }
+
+    @Test
+    fun anInvitationIsALinkThatIsNotSearchedForAndIsToldApart() {
+        val playlist = "resonate://shared/E-ABCDE?server=wss%3A%2F%2Fexample.org"
+        val party = " RESONATE://party/ABCDE "
+        val hostedPage = "https://resonate.tecnio.dev/s/#E-ABCDE"
+        val otherPage = "https://example.org/p/#ABCDE"
+
+        assertEquals(Invitation.PLAYLIST, invitationIn(playlist))
+        assertEquals(Invitation.PARTY, invitationIn(party))
+        assertEquals(Invitation.PLAYLIST, invitationIn(hostedPage))
+        assertEquals(Invitation.PARTY, invitationIn(otherPage))
+        assertNull(invitationIn("https://open.spotify.com/playlist/1"))
+        assertNull(invitationIn("resonate://pair/ABCDE"))
+        assertNull(invitationIn("shared playlist"))
+        listOf(playlist, party, hostedPage, otherPage).forEach {
+            assertTrue(isLink(it))
+            assertFalse(isOnlineLink(it))
+        }
+        assertTrue(isOnlineLink("https://open.spotify.com/playlist/1"))
+        assertEquals(listOf("a"), keptSearch(listOf("a"), playlist))
     }
 
     @Test

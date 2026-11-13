@@ -75,5 +75,5 @@ data class OnlineTrail(val views: List<OnlineView> = listOf(OnlineView.Top)) {
     fun back(): OnlineTrail = if (nested) copy(views = views.dropLast(1)) else this
 
     fun rooted(query: String): OnlineTrail =
-        OnlineTrail(listOf(if (isLink(query)) OnlineView.Link(query.trim()) else OnlineView.Top))
+        OnlineTrail(listOf(if (isOnlineLink(query)) OnlineView.Link(query.trim()) else OnlineView.Top))
 }

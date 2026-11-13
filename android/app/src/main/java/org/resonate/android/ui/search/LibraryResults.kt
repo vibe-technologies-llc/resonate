@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.GroupAdd
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.History
@@ -124,6 +125,8 @@ fun LibraryResults(
     val recent by model.recent.collectAsStateWithLifecycle()
     val online by model.online.collectAsStateWithLifecycle()
     val onlineFound by model.onlineTop.collectAsStateWithLifecycle()
+    val typed by model.typed.collectAsStateWithLifecycle()
+    val invitation = invitationIn(typed)
     val navigator = LocalNavigator.current
     val sheets = LocalSheets.current
     val showing =
@@ -149,6 +152,22 @@ fun LibraryResults(
             modifier = Modifier.widthIn(max = ContentWidth).fillMaxSize().testTag("library-results"),
         ) {
             item(key = "download") { DownloadCard(model.downloads) }
+            if (invitation != null) {
+                item(key = "invitation") {
+                    EmptyState(
+                        Icons.Rounded.GroupAdd,
+                        stringResource(
+                            if (invitation == Invitation.PARTY) R.string.search_invitation_party
+                            else R.string.search_invitation_playlist
+                        ),
+                        Modifier.fillParentMaxHeight(0.7f),
+                        detail = stringResource(R.string.search_invitation_detail),
+                        action = stringResource(R.string.search_invitation_join),
+                        onAction = { model.join(typed) },
+                    )
+                }
+                return@LazyColumn
+            }
             when (val current = shown) {
                 LibraryShown.Idle ->
                     browse(

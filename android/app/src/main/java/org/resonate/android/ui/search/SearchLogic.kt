@@ -17,11 +17,35 @@ const val TOP_SONGS = 5
 const val TOP_SHELF = 8
 
 private val linkPrefixes = listOf("http://", "https://", "spotify:")
+private val webPrefixes = listOf("http://", "https://")
+private const val SHARED_LIST_LINK = "resonate://shared/"
+private const val PARTY_LINK = "resonate://party/"
+private const val SHARED_LIST_PAGE = "/s/#"
+private const val PARTY_PAGE = "/p/#"
+
+enum class Invitation {
+    PLAYLIST,
+    PARTY,
+}
+
+fun invitationIn(text: String): Invitation? {
+    val lowered = text.trim().lowercase(Locale.ROOT)
+    val onTheWeb = webPrefixes.any { lowered.startsWith(it) }
+    return when {
+        lowered.startsWith(SHARED_LIST_LINK) -> Invitation.PLAYLIST
+        lowered.startsWith(PARTY_LINK) -> Invitation.PARTY
+        onTheWeb && lowered.contains(SHARED_LIST_PAGE) -> Invitation.PLAYLIST
+        onTheWeb && lowered.contains(PARTY_PAGE) -> Invitation.PARTY
+        else -> null
+    }
+}
 
 fun isLink(text: String): Boolean {
     val lowered = text.trim().lowercase(Locale.ROOT)
-    return linkPrefixes.any { lowered.startsWith(it) }
+    return invitationIn(text) != null || linkPrefixes.any { lowered.startsWith(it) }
 }
+
+fun isOnlineLink(text: String): Boolean = isLink(text) && invitationIn(text) == null
 
 fun keptSearch(recent: List<String>, text: String): List<String> {
     val query = text.trim()

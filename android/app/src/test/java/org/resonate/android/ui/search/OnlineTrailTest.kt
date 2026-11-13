@@ -58,6 +58,14 @@ class OnlineTrailTest {
     }
 
     @Test
+    fun anInvitationRootsNoLinkViewSoNoMusicIsLookedFor() {
+        val trail = OnlineTrail().rooted("resonate://shared/E-ABCDE")
+
+        assertEquals(OnlineView.Top, trail.top)
+        assertEquals(OnlineView.Top, trail.rooted("https://resonate.tecnio.dev/p/#ABCDE").top)
+    }
+
+    @Test
     fun eachViewAsksForWhatItShows() {
         assertEquals(OnlineRequest.Songs("night"), shows(OnlineView.Found(OnlineKind.SONGS), " night "))
         assertEquals(OnlineRequest.Albums("night"), shows(OnlineView.Found(OnlineKind.ALBUMS), "night"))

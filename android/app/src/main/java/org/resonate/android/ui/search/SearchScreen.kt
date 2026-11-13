@@ -87,7 +87,7 @@ fun SearchScreen() {
     val model = resonateViewModel { SearchViewModel(it) }
     val trail by model.trail.collectAsStateWithLifecycle()
     val typed by model.typed.collectAsStateWithLifecycle()
-    val onlinePage = trail.nested || isLink(typed)
+    val onlinePage = trail.nested || isOnlineLink(typed)
     val libraryGrid = rememberLazyListState()
     val onlineScroll = remember { OnlineScroll() }
     var acting by remember { mutableStateOf<SearchSong?>(null) }
