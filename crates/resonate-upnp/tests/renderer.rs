@@ -16,8 +16,9 @@ use std::{
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
 use resonate_audio::{
-    AudioSource, Backend, Error as SinkError, HardwareVolume, LatencyRequest, MediaRole, Opener,
-    SinkChange, SinkId, SinkInfo, SinkResult, SinkStream, StreamEvent, StreamRequest, Surveyor,
+    AudioSource, Backend, Error as SinkError, HardwareVolume, LatencyRequest, Learnt, MediaRole,
+    Opener, Plays, SinkChange, SinkId, SinkInfo, SinkResult, SinkStream, StreamEvent,
+    StreamRequest, Surveyor, Trial, TrialVerdict, Unplayed,
 };
 use resonate_codec::{DecodeStatus, Decoder, Sources};
 use resonate_core::{
@@ -92,14 +93,22 @@ struct Heard {
     fetch_ended: bool,
     searches: usize,
     udn: Option<&'static str>,
+    decodes_at_most: Option<(u32, u16)>,
+    undecodable: bool,
 }
 
 impl Heard {
+    fn decodes(&self) -> Option<bool> {
+        let (hz, channels) = self.decodes_at_most?;
+        let (rate, count) = shape_of(&self.fetched)?;
+        Some(rate <= hz && count <= channels)
+    }
+
     fn actions(&self) -> Vec<&str> {
         self.calls
             .iter()
             .map(|(action, _)| action.as_str())
-            .filter(|action| *action != "GetPositionInfo")
+            .filter(|action| *action != "GetPositionInfo" && *action != "GetTransportInfo")
             .collect()
     }
 
@@ -175,6 +184,11 @@ impl Fake {
             every: Duration::from_secs(3_600),
             serving_on: IpAddr::V4(Ipv4Addr::LOCALHOST),
         }
+    }
+
+    fn decoding_at_most(self, hz: u32, channels: u16) -> Self {
+        self.heard.lock().decodes_at_most = Some((hz, channels));
+        self
     }
 
     fn description_address(&self) -> Located {
@@ -335,6 +349,7 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
         "SetAVTransportURI" => {
             let mut heard = heard.lock();
             heard.offered = between(&body, "<CurrentURI>", "</CurrentURI>");
+            heard.undecodable = false;
             if let Some(offered) = heard.offered.clone() {
                 heard.offers.push(offered);
             }
@@ -348,8 +363,25 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
             fetch(heard);
             String::new()
         }
+        "GetTransportInfo" => {
+            let heard = heard.lock();
+            let (state, status) = match (heard.undecodable, heard.fetching.is_some()) {
+                (true, _) => ("STOPPED", "ERROR_OCCURRED"),
+                (false, true) => ("PLAYING", "OK"),
+                (false, false) => ("STOPPED", "OK"),
+            };
+            format!(
+                "<CurrentTransportState>{state}</CurrentTransportState><CurrentTransportStatus>{status}</CurrentTransportStatus><CurrentSpeed>1</CurrentSpeed>"
+            )
+        }
         "GetPositionInfo" => {
-            let heard_for = heard.lock().heard_for();
+            let held = heard.lock();
+            let heard_for = if held.undecodable {
+                Duration::ZERO
+            } else {
+                held.heard_for()
+            };
+            drop(held);
             format!("<Track>1</Track><RelTime>{}</RelTime>", clock(heard_for))
         }
         _ => String::new(),
@@ -362,6 +394,21 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
         envelope.len()
     );
     let _ = stream.write_all(answer.as_bytes());
+}
+
+fn shape_of(fetched: &[u8]) -> Option<(u32, u16)> {
+    if fetched.starts_with(b"fLaC") {
+        let info = fetched.get(18..21)?;
+        let rate = u32::from(info[0]) << 12 | u32::from(info[1]) << 4 | u32::from(info[2]) >> 4;
+        let channels = u16::from((info[2] >> 1) & 0b111) + 1;
+        return Some((rate, channels));
+    }
+    if fetched.starts_with(b"RIFF") {
+        let channels = u16::from_le_bytes([*fetched.get(22)?, *fetched.get(23)?]);
+        let rate = u32::from_le_bytes(fetched.get(24..28)?.try_into().ok()?);
+        return Some((rate, channels));
+    }
+    None
 }
 
 fn between(text: &str, open: &str, close: &str) -> Option<String> {
@@ -414,6 +461,11 @@ fn fetch(heard: &Arc<Mutex<Heard>>) {
             };
             let mut heard = heard.lock();
             if heard.fetching.as_ref() != Some(&offered) {
+                return;
+            }
+            if heard.decodes() == Some(false) {
+                heard.undecodable = true;
+                heard.fetch_ended = true;
                 return;
             }
             if head_ends.is_some() {
@@ -1902,4 +1954,182 @@ fn vouching_for_a_renderer_already_found_offers_it_high_rate_flac_at_once_and_vo
     network.vouch(Vouched::default());
 
     assert!(changes.try_recv().is_err());
+}
+
+fn surround(layout: ChannelLayout) -> StreamSpec {
+    StreamSpec::new(SampleRate::HZ_48000, layout, SampleFormat::S24)
+}
+
+#[test]
+fn learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent_high_rate_flac_and_six_channels_bit_for_bit()
+ {
+    let fake = Fake::with(Profile {
+        sink: FLAC_ALONE,
+        openhome: false,
+    });
+    let network = Arc::new(network_vouching(&fake, Vouched::default()));
+    let changes = changes_of(&network);
+    let before = the_renderer(&network);
+    assert!(!before.supports(high_flac()));
+    assert!(!before.supports(surround(ChannelLayout::Surround51)));
+
+    let learning = network.learn(before.id).expect("the renderer is tried");
+
+    assert_eq!(
+        learning.verdicts(),
+        Trial::ALL.map(|trial| (trial, TrialVerdict::Played))
+    );
+    assert_eq!(learning.plays(), Plays::from_iter(Trial::ALL));
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(before.id)));
+    let learnt = the_renderer(&network);
+    assert_eq!(learnt.id, before.id);
+    for spec in [
+        high_flac(),
+        StreamSpec::new(
+            SampleRate::HZ_176400,
+            ChannelLayout::Stereo,
+            SampleFormat::S24,
+        ),
+        surround(ChannelLayout::Surround51),
+        surround(ChannelLayout::Surround71),
+    ] {
+        assert!(
+            learnt.supports(spec),
+            "{spec} was learnt and is not offered"
+        );
+    }
+    {
+        let heard = fake.heard.lock();
+        assert_eq!(
+            stops_and_offers(&heard),
+            (4, 4),
+            "each trial is offered and stopped"
+        );
+        assert!(
+            heard
+                .offers
+                .iter()
+                .all(|offered| offered.ends_with(".flac"))
+        );
+    }
+
+    let backend = Beside::over(
+        Box::new(NoGraph::new()),
+        Arc::clone(&network) as Arc<dyn Neighbours>,
+    );
+    let frames = 192_000 / 4;
+    let stream =
+        pattern_stream(&backend, &learnt, high_flac(), frames).expect("the renderer takes it");
+    stream.set_active(true).expect("plays");
+    stream.drain().expect("drains");
+    fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
+    stream.close().expect("closes");
+
+    let tree = Tree::new();
+    {
+        let heard = fake.heard.lock();
+        assert_eq!(heard.fetched.get(..4), Some(&b"fLaC"[..]));
+        assert_eq!(
+            decoded(&tree, &heard.fetched, SampleFormat::S24),
+            Pattern::expected(2, frames),
+            "192 kHz did not come back from the FLAC as it went in"
+        );
+    }
+
+    let frames = 48_000 / 2;
+    let stream = surround_stream(&backend, &learnt, frames).expect("the renderer takes six");
+    stream.set_active(true).expect("plays");
+    stream.drain().expect("drains");
+    fake.until("the second stream's fetch to end once drained", |heard| {
+        heard.offers.len() == 6
+            && heard.fetching.as_ref() == heard.offers.last()
+            && heard.fetch_ended
+    });
+    stream.close().expect("closes");
+
+    let heard = fake.heard.lock();
+    assert_eq!(
+        decoded(&tree, &heard.fetched, SampleFormat::S24),
+        Pattern::expected(6, frames),
+        "the six channels did not come back from the FLAC as they went in"
+    );
+}
+
+#[test]
+fn a_renderer_that_stops_on_what_it_cannot_decode_is_learnt_to_play_none_of_it() {
+    let fake = Fake::with(Profile {
+        sink: FLAC_ALONE,
+        openhome: false,
+    })
+    .decoding_at_most(96_000, 2);
+    let network = network_vouching(&fake, Vouched::default());
+    let changes = changes_of(&network);
+    let before = the_renderer(&network);
+
+    let learning = network.learn(before.id).expect("the renderer is tried");
+
+    assert_eq!(
+        learning.verdicts(),
+        [
+            (
+                Trial::FlacAt192kHz,
+                TrialVerdict::Unplayed(Unplayed::Errored)
+            ),
+            (
+                Trial::FlacAt176kHz,
+                TrialVerdict::Unplayed(Unplayed::Errored)
+            ),
+            (
+                Trial::SixChannels,
+                TrialVerdict::Unplayed(Unplayed::Errored)
+            ),
+            (Trial::EightChannels, TrialVerdict::Untried),
+        ]
+    );
+    assert!(learning.plays().is_empty());
+    assert!(changes.try_recv().is_err(), "nothing learnt moves nothing");
+    assert_eq!(the_renderer(&network), before);
+    assert_eq!(stops_and_offers(&fake.heard.lock()), (3, 3));
+}
+
+#[test]
+fn a_renderer_a_stream_holds_is_not_tried_and_teaching_what_was_learnt_offers_it_at_once() {
+    let fake = Fake::with(Profile {
+        sink: FLAC_ALONE,
+        openhome: false,
+    });
+    let network = Arc::new(network_vouching(&fake, Vouched::default()));
+    let sink = the_renderer(&network);
+    let backend = Beside::over(
+        Box::new(NoGraph::new()),
+        Arc::clone(&network) as Arc<dyn Neighbours>,
+    );
+    let stream =
+        pattern_stream(&backend, &sink, stereo_sixteen(), 44_100).expect("the renderer takes it");
+
+    assert!(matches!(
+        network.learn(sink.id),
+        Err(resonate_upnp::Error::InUse(held)) if held == sink.id
+    ));
+
+    stream.close().expect("closes");
+    let changes = changes_of(&network);
+    let learnt: Learnt = [(sink.name.clone(), Plays::from_iter([Trial::FlacAt192kHz]))]
+        .into_iter()
+        .collect();
+
+    network.teach(learnt.clone());
+
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(sink.id)));
+    assert!(the_renderer(&network).supports(high_flac()));
+    assert!(!the_renderer(&network).supports(surround(ChannelLayout::Surround51)));
+
+    network.teach(learnt);
+
+    assert!(changes.try_recv().is_err());
+
+    network.teach(Learnt::default());
+
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(sink.id)));
+    assert!(!the_renderer(&network).supports(high_flac()));
 }

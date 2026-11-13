@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use clap::ValueEnum;
 use resonate_core::Trim;
 use resonate_engine::{
-    DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality, ReplayGainMode,
-    SkipUnderRepeat,
+    DitherKind, FilterPhase, NodeName, NoiseShaping, Plays, PreviousRestarts, Quality,
+    ReplayGainMode, SkipUnderRepeat,
 };
 use resonate_eq::Binding;
 use resonate_library::HistoryKept;
@@ -70,6 +70,20 @@ fn preferred(
         }
         None => {
             editing.clear_in_table(ConfigKey::EqualiserMeasurerFor, sink.as_str());
+            Ok(())
+        }
+    }
+}
+
+fn learnt(editing: &mut Editing<'_>, sink: &NodeName, plays: Option<&Plays>) -> crate::Result<()> {
+    match plays {
+        Some(plays) => editing.store_in_table(
+            ConfigKey::FormatsLearntFor,
+            sink.as_str(),
+            config::learnt_written(plays),
+        ),
+        None => {
+            editing.clear_in_table(ConfigKey::FormatsLearntFor, sink.as_str());
             Ok(())
         }
     }
@@ -157,6 +171,9 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         }
         Setting::EqualiserMeasurerFor { sink, measurer } => {
             return written_as_a_binding(setting, preferred(editing, sink, measurer.as_deref()));
+        }
+        Setting::FormatsLearntFor { sink, plays } => {
+            return written_as_a_binding(setting, learnt(editing, sink, plays.as_ref()));
         }
         Setting::EqualiserMeasurer(measurer) => given_or_cleared(measurer.as_deref().unwrap_or("")),
         Setting::EqualiserProfile(binding) => binding.as_ref().map(config::written),
@@ -446,6 +463,7 @@ mod tests {
         Accent, AppId, HeadYaw, Pictured, Presence, RemoteTrust, Shown, SpeakerAngle,
         SpeakerElevation, TextSize, Theme, os_bytes,
     };
+    use resonate_engine::Trial;
 
     use super::*;
 
@@ -720,6 +738,38 @@ mod tests {
         );
         assert_eq!(cleared.equaliser_measurer_for(Some(&dac)), Some("Rtings"));
         assert!(!text.contains("equaliser-measurer-for"), "{text}");
+    }
+
+    #[test]
+    fn what_the_pane_learnt_of_a_device_reads_back_and_goes_when_forgotten() {
+        let folder = env::temp_dir().join(format!(
+            "resonate-settings-formats-learnt-{}",
+            process::id()
+        ));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone());
+        let renderer = NodeName::new("upnp:uuid:streamer");
+        let plays = Plays::from_iter([Trial::FlacAt192kHz, Trial::SixChannels]);
+
+        file.apply(&[SettingChange::Store(Setting::FormatsLearntFor {
+            sink: renderer.clone(),
+            plays: Some(plays.clone()),
+        })])
+        .expect("a writable temporary directory");
+        let learnt = config::load(Some(&path)).expect("the file reads back");
+
+        file.apply(&[SettingChange::Store(Setting::FormatsLearntFor {
+            sink: renderer.clone(),
+            plays: None,
+        })])
+        .expect("a writable temporary directory");
+        let forgotten = config::load(Some(&path)).expect("the file reads back");
+        let text = fs::read_to_string(&path).expect("the file is there");
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(learnt.formats_learnt_for().of([&renderer]), Some(&plays));
+        assert!(forgotten.formats_learnt_for().is_empty());
+        assert!(!text.contains("formats-learnt-for"), "{text}");
     }
 
     #[test]

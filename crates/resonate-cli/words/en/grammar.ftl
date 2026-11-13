@@ -131,6 +131,7 @@ sub-sinks = Print the sinks the sound system advertises, and the rates it will s
 sub-sinks-renderers = Search the local network for UPnP media renderers and Google Cast receivers too and list them beside the sound server's sinks, whatever the renderers key says
 sub-sinks-renderers-at = Reach the UPnP media renderer whose description is at this http address, sending no search to the network unless --renderers asks for one: for a network that drops multicast; repeatable, and the renderers-at key holds addresses for every run
 sub-sinks-cast-at = Reach the Google Cast receiver at this IP address or host name (port 8009 unless one is given), sending no search to the network unless --renderers asks for one: for a network that drops multicast; repeatable, and the cast-at key holds addresses for every run
+sub-sinks-learn = Try the UPnP renderer or Google Cast receiver of this name (as the listing names it) with a few seconds of silence in FLAC at 192 and 176.4 kHz and in 5.1 and 7.1, keep in formats-learnt-for what it played, and offer it those formats from then on; nothing may play to it meanwhile
 sub-scan = Scan library roots and exit. With no paths, rescans every registered root
 sub-roots = Print the library roots a bare `scan` will walk
 sub-enrich = Ask the reference about every album and artist not asked lately, and keep what it answers

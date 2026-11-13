@@ -7,6 +7,7 @@ mod frame;
 mod fuzzing;
 mod given;
 mod json;
+mod learning;
 mod link;
 mod stream;
 mod tls;
@@ -15,12 +16,14 @@ mod words {
     include!(concat!(env!("OUT_DIR"), "/words.rs"));
 }
 
+pub use resonate_audio::CAST_NODES;
+
 #[cfg(fuzzing)]
 pub use crate::fuzzing::read_what_a_receiver_says;
 pub use crate::{
     bonjour::CAST_SERVICE,
     casting::{Casting, Finding, Searching},
-    device::{CAST_NODES, CAST_PORT, CastId, Device, Found, MEDIA_RECEIVER},
+    device::{CAST_PORT, CastId, Device, Found, MEDIA_RECEIVER},
     error::{Asked, Error, LinkOp, Refusal, Result},
     given::{Given, Host},
 };

@@ -19,8 +19,9 @@ use resonate_core::{
     SpectrumFalls, SpectrumFloor, SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume,
 };
 use resonate_engine::{
-    Crossfeed, DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality,
-    ReplayGainMode, Restoration, ShuffleStyle, SinkInfo, SkipUnderRepeat,
+    Crossfeed, DitherKind, FilterPhase, Learning, Learnt, NodeName, NoiseShaping, Plays,
+    PreviousRestarts, Quality, ReplayGainMode, Restoration, ShuffleStyle, SinkInfo,
+    SkipUnderRepeat, Unlearnt,
 };
 use resonate_eq::Binding;
 use resonate_library::{Cut, HistoryKept, MinimumLength, MusicExtensions};
@@ -232,6 +233,10 @@ pub enum Setting {
     SpeakerElevation(SpeakerElevation),
     Renderers(bool),
     FlacAbove96kFor(BTreeSet<NodeName>),
+    FormatsLearntFor {
+        sink: NodeName,
+        plays: Option<Plays>,
+    },
     HeadYaw(HeadYaw),
     Resume(bool),
     HistoryKept(HistoryKept),
@@ -373,6 +378,7 @@ impl Setting {
             Self::SpeakerElevation(_) => ConfigKey::SpeakerElevation,
             Self::Renderers(_) => ConfigKey::Renderers,
             Self::FlacAbove96kFor(_) => ConfigKey::FlacAbove96kFor,
+            Self::FormatsLearntFor { .. } => ConfigKey::FormatsLearntFor,
             Self::HeadYaw(_) => ConfigKey::HeadYaw,
             Self::Resume(_) => ConfigKey::Resume,
             Self::HistoryKept(_) => ConfigKey::HistoryKept,
@@ -931,6 +937,7 @@ pub struct Stored {
     pub by_sound: Arc<AtomicBool>,
     pub lyrics_by_the_locale: Arc<AtomicBool>,
     pub flac_above_96k_for: BTreeSet<NodeName>,
+    pub formats_learnt_for: Learnt,
     pub convolution: Option<PathBuf>,
     pub speaker_angle: SpeakerAngle,
     pub speaker_elevation: SpeakerElevation,
@@ -1008,6 +1015,8 @@ pub trait Renderers: Send + Sync {
     fn looking(&self) -> bool;
     fn look(&self, on: bool);
     fn vouch(&self, renderers: &BTreeSet<NodeName>);
+    fn learn(&self, sink: &NodeName) -> std::result::Result<Learning, Unlearnt>;
+    fn teach(&self, learnt: &Learnt);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

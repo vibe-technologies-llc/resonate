@@ -22,8 +22,8 @@ use resonate_core::{
 #[cfg(any(feature = "ui", test))]
 use resonate_core::{Appearance, Following};
 use resonate_engine::{
-    Crossfeed, DitherKind, FilterPhase, NodeName, NoiseShaping, PreviousRestarts, Quality,
-    ReplayGainMode, Restoration, ShuffleStyle, SkipUnderRepeat, SmartShuffle,
+    Crossfeed, DitherKind, FilterPhase, Learnt, NodeName, NoiseShaping, Plays, PreviousRestarts,
+    Quality, ReplayGainMode, Restoration, ShuffleStyle, SkipUnderRepeat, SmartShuffle, Trial,
 };
 use resonate_eq::{Binding, ProfileName};
 use resonate_library::{HistoryKept, Layout, MinimumLength, MusicExtensions, MusicFilters};
@@ -297,6 +297,7 @@ pub struct Config {
     pub resume: Option<bool>,
     pub renderers: Option<bool>,
     pub flac_above_96k_for: BTreeSet<NodeName>,
+    pub formats_learnt_for: Learnt,
     pub renderers_at: BTreeSet<Located>,
     pub cast_at: BTreeSet<Given>,
     pub history_kept: Option<HistoryKept>,
@@ -451,6 +452,7 @@ impl fmt::Debug for Config {
             resume,
             renderers,
             flac_above_96k_for,
+            formats_learnt_for,
             renderers_at,
             cast_at,
             history_kept,
@@ -594,6 +596,7 @@ impl fmt::Debug for Config {
             .field("resume", resume)
             .field("renderers", renderers)
             .field("flac_above_96k_for", flac_above_96k_for)
+            .field("formats_learnt_for", formats_learnt_for)
             .field("renderers_at", renderers_at)
             .field("cast_at", cast_at)
             .field("history_kept", history_kept)
@@ -895,6 +898,10 @@ impl Config {
 
     pub fn renderers_vouched_for(&self) -> Vouched {
         Vouched::flac_at_any_rate(self.flac_above_96k_for.iter().filter_map(Udn::from_node))
+    }
+
+    pub const fn formats_learnt_for(&self) -> &Learnt {
+        &self.formats_learnt_for
     }
 
     pub const fn renderers_at(&self) -> &BTreeSet<Located> {
@@ -1429,6 +1436,7 @@ impl Config {
             ConfigKey::Resume => config.resume = Some(at.boolean(value)?),
             ConfigKey::Renderers => config.renderers = Some(at.boolean(value)?),
             ConfigKey::FlacAbove96kFor => config.flac_above_96k_for = node_names(at, value)?,
+            ConfigKey::FormatsLearntFor => config.formats_learnt_for = learnt(at, value)?,
             ConfigKey::RenderersAt => config.renderers_at = renderer_addresses(at, value)?,
             ConfigKey::CastAt => config.cast_at = cast_addresses(at, value)?,
             ConfigKey::HistoryKept => {
@@ -1656,6 +1664,42 @@ fn node_names(at: At<'_>, value: &Item) -> Result<BTreeSet<NodeName>> {
                 .ok_or_else(|| at.mistyped(ValueKind::Text))
         })
         .collect()
+}
+
+fn learnt(at: At<'_>, value: &Item) -> Result<Learnt> {
+    let mut learnt = Learnt::default();
+
+    for (named, plays) in at.table(value)?.iter() {
+        let Some(spellings) = plays.as_array() else {
+            tracing::warn!(
+                device = named,
+                path = %at.path.display(),
+                "ignoring what was learnt of a device that is not a list of formats"
+            );
+            continue;
+        };
+        let mut played = Vec::new();
+        for spelling in spellings {
+            match spelling.as_str().and_then(Trial::spelled) {
+                Some(trial) => played.push(trial),
+                None => tracing::warn!(
+                    device = named,
+                    path = %at.path.display(),
+                    "ignoring a format learnt of a device that this build does not know"
+                ),
+            }
+        }
+        learnt.insert(NodeName::new(named.trim()), Plays::from_iter(played));
+    }
+    Ok(learnt)
+}
+
+pub fn learnt_written(plays: &Plays) -> toml_edit::Value {
+    plays
+        .trials()
+        .map(Trial::spelling)
+        .collect::<toml_edit::Array>()
+        .into()
 }
 
 fn renderer_addresses(at: At<'_>, value: &Item) -> Result<BTreeSet<Located>> {
@@ -2993,6 +3037,64 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn what_was_learnt_of_each_device_reads_back_and_a_spelling_this_build_does_not_know_is_passed_over()
+     {
+        let config = read(
+            r#"[formats-learnt-for]
+"upnp:uuid:one" = ["flac-192000", "channels-6", "channels-12"]
+"cast:abc" = []
+"cast:def" = "flac-192000"
+"#,
+        )
+        .expect("a well formed document");
+
+        assert_eq!(
+            config
+                .formats_learnt_for()
+                .of([&NodeName::new("upnp:uuid:one")]),
+            Some(&Plays::from_iter([Trial::FlacAt192kHz, Trial::SixChannels]))
+        );
+        assert_eq!(
+            config.formats_learnt_for().of([&NodeName::new("cast:abc")]),
+            Some(&Plays::default())
+        );
+        assert_eq!(
+            config.formats_learnt_for().of([&NodeName::new("cast:def")]),
+            None
+        );
+        assert!(Config::default().formats_learnt_for().is_empty());
+        assert!(matches!(
+            read("formats-learnt-for = [7]").expect_err("a list is not a table"),
+            Error::ConfigType {
+                key: ConfigKey::FormatsLearntFor,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn what_was_learnt_is_written_in_the_spellings_it_is_read_back_from() {
+        let scratch = Scratch::new();
+        let plays = Plays::from_iter([Trial::FlacAt176kHz, Trial::EightChannels]);
+
+        store_in_table(
+            &scratch.path,
+            ConfigKey::FormatsLearntFor,
+            "upnp:uuid:one",
+            learnt_written(&plays),
+        )
+        .expect("a writable file");
+        let config = load(Some(&scratch.path)).expect("the file reads back");
+
+        assert_eq!(
+            config
+                .formats_learnt_for()
+                .of([&NodeName::new("upnp:uuid:one")]),
+            Some(&plays)
+        );
     }
 
     #[test]

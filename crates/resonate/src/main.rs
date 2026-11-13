@@ -123,6 +123,7 @@ use std::{
 
 use resonate_cli as cli;
 use resonate_codec::Sources;
+use resonate_engine::NodeName;
 use resonate_library::{
     Aged, DeliveryFolder, EnrichOptions, HistoryKept, Library, ListeningService, StudyFilter,
     Upkeep, Vault, VaultFiles,
@@ -152,7 +153,7 @@ use crate::{
     roots::{forget, roots},
     scanning::{enrich, scan},
     served::Served,
-    sinks::list_sinks,
+    sinks::{Learning, learn_what_it_plays, list_sinks},
     tagging::{dedupe, tag},
     vocabulary::Meaning,
 };
@@ -249,6 +250,22 @@ fn run() -> Result<()> {
             renderers,
             renderers_at,
             cast_at,
+            learn: Some(wanted),
+        }) => learn_what_it_plays(
+            &config,
+            &Learning {
+                settings: &settings_path(&cli)?,
+                wanted: NodeName::new(wanted.trim()),
+            },
+            *renderers,
+            renderers_at,
+            cast_at,
+        ),
+        Some(Sub::Sinks {
+            renderers,
+            renderers_at,
+            cast_at,
+            learn: None,
         }) => list_sinks(&cli, &config, *renderers, renderers_at, cast_at),
         Some(Sub::Explain { path }) => explain(&cli, &config, &local_path(path)),
         Some(Sub::Info { path, graph }) => info::print(

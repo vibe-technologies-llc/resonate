@@ -13,13 +13,13 @@ use std::{
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use parking_lot::Mutex;
 use resonate_audio::{
-    AudioSource, HardwareVolume, Plugged, SinkChange, SinkId, SinkInfo, SinkPort, SinkResult,
-    SinkStream, StreamRequest,
+    AudioSource, HardwareVolume, Learning, Learnt, Plugged, SinkChange, SinkId, SinkInfo, SinkPort,
+    SinkResult, SinkStream, StreamRequest,
 };
 use resonate_core::{Gain, Volume};
 
 use crate::{
-    Error, Located, Neighbours, Renderer, Result, ServeOp, Vouched, carriage,
+    Error, Located, Neighbours, Renderer, Result, ServeOp, Vouched, carriage, learning,
     serve::Server,
     ssdp,
     stream::{self, Holders},
@@ -75,6 +75,7 @@ struct Shared {
     holders: Holders,
     known: Mutex<Known>,
     vouched: Mutex<Vouched>,
+    learnt: Mutex<Learnt>,
     located: Mutex<BTreeSet<Located>>,
     multicasting: AtomicBool,
     round: Mutex<()>,
@@ -115,6 +116,7 @@ impl Network {
             holders: Holders::default(),
             known: Mutex::new(Known::default()),
             vouched: Mutex::new(Vouched::default()),
+            learnt: Mutex::new(Learnt::default()),
             located: Mutex::new(BTreeSet::new()),
             multicasting: AtomicBool::new(false),
             round: Mutex::new(()),
@@ -138,6 +140,33 @@ impl Network {
         let previous = mem::replace(&mut *self.shared.vouched.lock(), vouched);
         let changes = self.shared.described_again_where_vouching_moved(&previous);
         self.shared.announce(&changes);
+    }
+
+    pub fn teach(&self, learnt: Learnt) {
+        let _one_at_a_time = self.shared.round.lock();
+        *self.shared.learnt.lock() = learnt;
+        let changes = self.shared.taught_again();
+        self.shared.announce(&changes);
+    }
+
+    pub fn learn(&self, sink: SinkId) -> Result<Learning> {
+        let renderer = self.renderer(sink)?;
+        self.start_server()?;
+        let server = self
+            .shared
+            .server
+            .lock()
+            .clone()
+            .ok_or(Error::NoSuchRenderer(sink))?;
+        let learning = learning::learn(&renderer, sink, &server, &self.shared.holders)?;
+        let _one_at_a_time = self.shared.round.lock();
+        self.shared
+            .learnt
+            .lock()
+            .insert(renderer.node_name(), learning.plays());
+        let changes = self.shared.taught_again();
+        self.shared.announce(&changes);
+        Ok(learning)
     }
 
     pub fn locate(&self, location: Located) -> Result<()> {
@@ -422,7 +451,7 @@ impl Shared {
                 }
                 described_from_the_search += 1;
             }
-            match Renderer::reached(location.clone(), &vouched) {
+            match self.described(location.clone(), &vouched) {
                 Ok(renderer) => reached.push((renderer, sighted)),
                 Err(error) => {
                     tracing::debug!(%error, %location, "a device at an address is not a renderer this player can stream to");
@@ -449,7 +478,7 @@ impl Shared {
             return Ok(());
         }
         let vouched = self.vouched.lock().clone();
-        let renderer = Renderer::reached(location.clone(), &vouched)?;
+        let renderer = self.described(location.clone(), &vouched)?;
         let change = self.known.lock().admit(renderer, false).1;
         self.announce(&change.into_iter().collect::<Vec<_>>());
         Ok(())
@@ -470,7 +499,7 @@ impl Shared {
             .collect();
         let mut changes = Vec::new();
         for (id, location, heard) in moved {
-            match Renderer::reached(location.clone(), &vouched) {
+            match self.described(location.clone(), &vouched) {
                 Ok(renderer) => {
                     let (admitted, _) = self.known.lock().admit(renderer, heard);
                     changes.push(SinkChange::Reformatted(admitted));
@@ -479,6 +508,27 @@ impl Shared {
                     tracing::warn!(%error, %location, sink = id.get(), "a renderer could not be described again after the vouching moved");
                 }
             }
+        }
+        changes
+    }
+
+    fn described(&self, location: Located, vouched: &Vouched) -> Result<Renderer> {
+        let renderer = Renderer::reached(location, vouched)?;
+        let learnt = self.learnt.lock();
+        Ok(renderer.taught(learnt.of([&renderer.node_name()])))
+    }
+
+    fn taught_again(&self) -> Vec<SinkChange> {
+        let learnt = self.learnt.lock().clone();
+        let mut known = self.known.lock();
+        let mut changes = Vec::new();
+        for (id, held) in &mut known.held {
+            let plays = learnt.of([&held.renderer.node_name()]);
+            if held.renderer.plays() == plays.filter(|plays| !plays.is_empty()) {
+                continue;
+            }
+            held.renderer = Arc::new(held.renderer.taught(plays));
+            changes.push(SinkChange::Reformatted(*id));
         }
         changes
     }

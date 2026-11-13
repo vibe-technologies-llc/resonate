@@ -1,18 +1,20 @@
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 #[cfg(feature = "ui")]
 use std::{sync::Arc, thread};
 
 use resonate_cast::Given;
 use resonate_core::{SampleRate, Volume};
 use resonate_engine::{
-    HardwareVolume, NodeName, Player, Plugged, SinkError, SinkFormats, SinkInfo,
+    HardwareVolume, NodeName, Player, Plugged, SinkError, SinkFormats, SinkInfo, Trial,
+    TrialVerdict, Unplayed,
 };
 use resonate_library::{Failure, Failures};
 use resonate_upnp::Located;
 
 use crate::{
+    ConfigKey,
     cli::Cli,
-    config::Config,
+    config::{self, Config},
     error::{Error, Result},
     rendering,
     rendering::{Asked, Rendering},
@@ -126,6 +128,89 @@ fn with_receiver_addresses(
     Ok(config)
 }
 
+fn asked(renderers: bool, renderers_at: &[String], cast_at: &[String]) -> Asked {
+    if renderers {
+        Asked::Network
+    } else if renderers_at.is_empty() && cast_at.is_empty() {
+        Asked::Nothing
+    } else {
+        Asked::Addresses
+    }
+}
+
+pub(crate) struct Learning<'a> {
+    pub settings: &'a Path,
+    pub wanted: NodeName,
+}
+
+pub(crate) fn learn_what_it_plays(
+    config: &Config,
+    learning: &Learning<'_>,
+    renderers: bool,
+    renderers_at: &[String],
+    cast_at: &[String],
+) -> Result<()> {
+    let config = with_receiver_addresses(config, renderers_at, cast_at)?;
+    let rendering = Rendering::of(
+        &config,
+        Some(&learning.wanted),
+        asked(renderers, renderers_at, cast_at),
+    );
+    let Some(sink) = rendering
+        .sinks()
+        .into_iter()
+        .find(|sink| sink.is_named(&learning.wanted))
+    else {
+        return Err(Error::NotANetworkDevice(learning.wanted.clone()));
+    };
+
+    said!("{}", words::sinks::trying(sink.description.as_str()));
+    let heard = rendering.learn(&sink.name)?;
+    for (trial, verdict) in heard.learning.verdicts() {
+        said!(
+            "{}",
+            words::sinks::heard(trial_named(*trial), verdict_named(*verdict))
+        );
+    }
+
+    config::store_in_table(
+        learning.settings,
+        ConfigKey::FormatsLearntFor,
+        heard.sink.name.as_str(),
+        config::learnt_written(&heard.learning.plays()),
+    )?;
+    said!(
+        "{}",
+        words::sinks::kept(
+            learning.settings.display().to_string(),
+            heard.sink.description.as_str()
+        )
+    );
+    Ok(())
+}
+
+fn trial_named(trial: Trial) -> &'static str {
+    match trial {
+        Trial::FlacAt192kHz => words::sinks::flac_at_192(),
+        Trial::FlacAt176kHz => words::sinks::flac_at_176(),
+        Trial::SixChannels => words::sinks::six_channels(),
+        Trial::EightChannels => words::sinks::eight_channels(),
+    }
+}
+
+fn verdict_named(verdict: TrialVerdict) -> &'static str {
+    match verdict {
+        TrialVerdict::Played => words::sinks::played(),
+        TrialVerdict::Untried => words::sinks::untried(),
+        TrialVerdict::Unplayed(Unplayed::Refused) => words::sinks::refused(),
+        TrialVerdict::Unplayed(Unplayed::NeverFetched) => words::sinks::never_fetched(),
+        TrialVerdict::Unplayed(Unplayed::StoppedFetching) => words::sinks::stopped_fetching(),
+        TrialVerdict::Unplayed(Unplayed::Errored) => words::sinks::errored(),
+        TrialVerdict::Unplayed(Unplayed::NotPlaying) => words::sinks::not_playing(),
+        TrialVerdict::Unplayed(Unplayed::ClockStill) => words::sinks::clock_still(),
+    }
+}
+
 pub(crate) fn list_sinks(
     cli: &Cli,
     config: &Config,
@@ -135,13 +220,7 @@ pub(crate) fn list_sinks(
 ) -> Result<()> {
     let mut sinks = surveyed::sinks()?;
     let config = with_receiver_addresses(config, renderers_at, cast_at)?;
-    let asked = if renderers {
-        Asked::Network
-    } else if renderers_at.is_empty() && cast_at.is_empty() {
-        Asked::Nothing
-    } else {
-        Asked::Addresses
-    };
+    let asked = asked(renderers, renderers_at, cast_at);
     sinks.extend(Rendering::of(&config, wanted_sink(cli, &config).as_ref(), asked).sinks());
 
     let mut table = Table::new(vec![

@@ -54,6 +54,7 @@ pub enum ConfigKey {
     Resume,
     Renderers,
     FlacAbove96kFor,
+    FormatsLearntFor,
     RenderersAt,
     CastAt,
     HistoryKept,
@@ -142,7 +143,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 137] = [
+    pub const ALL: [Self; 138] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -195,6 +196,7 @@ impl ConfigKey {
         Self::Resume,
         Self::Renderers,
         Self::FlacAbove96kFor,
+        Self::FormatsLearntFor,
         Self::RenderersAt,
         Self::CastAt,
         Self::HistoryKept,
@@ -342,6 +344,7 @@ impl ConfigKey {
             Self::Resume => "resume",
             Self::Renderers => "renderers",
             Self::FlacAbove96kFor => "flac-above-96k-for",
+            Self::FormatsLearntFor => "formats-learnt-for",
             Self::RenderersAt => "renderers-at",
             Self::CastAt => "cast-at",
             Self::HistoryKept => "history-kept",

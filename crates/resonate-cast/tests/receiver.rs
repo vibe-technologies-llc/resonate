@@ -16,8 +16,9 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use parking_lot::Mutex;
 use resonate_audio::{
-    AudioSource, Backend, Error as SinkError, HardwareVolume, LatencyRequest, MediaRole, Opener,
-    SinkChange, SinkId, SinkInfo, SinkResult, SinkStream, StreamEvent, StreamRequest, Surveyor,
+    AudioSource, Backend, Error as SinkError, HardwareVolume, LatencyRequest, Learnt, MediaRole,
+    Opener, Plays, SinkChange, SinkId, SinkInfo, SinkResult, SinkStream, StreamEvent,
+    StreamRequest, Surveyor, Trial, TrialVerdict, Unplayed,
 };
 use resonate_cast::{CAST_SERVICE, CastId, Casting, Finding, Found, Given, Searching};
 use resonate_codec::{DecodeStatus, Decoder, Sources};
@@ -117,9 +118,22 @@ struct Heard {
     fetching: Option<String>,
     fetched: Vec<u8>,
     fetch_ended: bool,
+    decodes_at_most: Option<(u32, u16)>,
 }
 
 impl Heard {
+    fn cannot_decode(&self) -> bool {
+        let Some((hz, channels)) = self.decodes_at_most else {
+            return false;
+        };
+        let Some(info) = self.fetched.get(18..21) else {
+            return false;
+        };
+        let rate = u32::from(info[0]) << 12 | u32::from(info[1]) << 4 | u32::from(info[2]) >> 4;
+        let count = u16::from((info[2] >> 1) & 0b111) + 1;
+        rate > hz || count > channels
+    }
+
     fn kinds(&self) -> Vec<&str> {
         self.asked
             .iter()
@@ -201,6 +215,11 @@ impl Fake {
         });
 
         Self { at, heard }
+    }
+
+    fn decoding_at_most(self, hz: u32, channels: u16) -> Self {
+        self.heard.lock().decodes_at_most = Some((hz, channels));
+        self
     }
 
     fn found(&self) -> Found {
@@ -505,6 +524,15 @@ fn fetch(heard: &Arc<Mutex<Heard>>, offered: String) {
             };
             let mut heard = heard.lock();
             if heard.fetching.as_ref() != Some(&offered) {
+                return;
+            }
+            if heard.cannot_decode() {
+                heard.fetching = None;
+                if let Some(playing) = heard.playing.as_mut() {
+                    playing.since = None;
+                    playing.state = "IDLE";
+                    playing.idle = Some("ERROR");
+                }
                 return;
             }
             if head_ended {
@@ -1425,4 +1453,224 @@ fn a_receiver_named_by_its_mdns_id_keeps_that_name_when_browsing_stops_with_its_
         sink.aliases,
         [NodeName::new(format!("cast:{}", CastId::at(fake.at)))]
     );
+}
+
+fn high_flac() -> StreamSpec {
+    StreamSpec::new(
+        SampleRate::HZ_192000,
+        ChannelLayout::Stereo,
+        SampleFormat::S24,
+    )
+}
+
+fn surround(layout: ChannelLayout) -> StreamSpec {
+    StreamSpec::new(SampleRate::HZ_48000, layout, SampleFormat::S24)
+}
+
+fn twenty_four_bit_pattern(channels: u32, frames: u32) -> Vec<u8> {
+    let mut words = Vec::new();
+    for frame in 0..frames {
+        for channel in 0..channels {
+            let word = ((frame * 131 + channel * 100_003) % 8_000_000) as i32 - 4_000_000;
+            words.extend_from_slice(&word.to_le_bytes());
+        }
+    }
+    words
+}
+
+fn decoded_at_twenty_four_bits(tree: &Tree, flac: &[u8]) -> Vec<u8> {
+    let path = tree.write("fetched-24.flac", flac);
+    let (mut decoder, info) =
+        Decoder::open(&Sources::local(), &MediaLocation::local(&path)).expect("a FLAC stream");
+    decoder.set_output_format(SampleFormat::S24);
+    let mut block = AudioBuffer::empty(StreamSpec::new(
+        info.spec.rate,
+        info.spec.channels,
+        SampleFormat::S24,
+    ));
+    let mut samples = Vec::new();
+    while decoder.next_block(&mut block).expect("a decoded block") != DecodeStatus::EndOfStream {
+        samples.extend_from_slice(block.as_bytes());
+    }
+    samples
+}
+
+fn poured_whole(fake: &Fake, backend: &Beside, sink: &SinkInfo, spec: StreamSpec, pcm: &[u8]) {
+    let loads = fake.heard.lock().count("LOAD");
+    let stream = backend
+        .opener()
+        .open(
+            &request(sink, spec),
+            Box::new(Poured {
+                pcm: pcm.to_vec(),
+                at: 0,
+            }),
+        )
+        .expect("the receiver takes the stream");
+    stream.set_active(true).expect("plays");
+    fake.until("the stream to be loaded", |heard| {
+        heard.count("LOAD") == loads + 1
+    });
+    stream.drain().expect("drains");
+    fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
+    stream.close().expect("closes");
+}
+
+#[test]
+fn learning_what_a_receiver_plays_offers_exactly_what_played_and_it_is_then_sent_high_rate_flac_and_six_channels_bit_for_bit()
+ {
+    let fake = Fake::start();
+    let casting =
+        Arc::new(Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches"));
+    let changes = casting.subscribe();
+    let before = the_receiver(&casting);
+    assert!(!before.supports(high_flac()));
+    assert!(!before.supports(surround(ChannelLayout::Surround51)));
+
+    let learning = casting.learn(before.id).expect("the receiver is tried");
+
+    assert_eq!(
+        learning.verdicts(),
+        Trial::ALL.map(|trial| (trial, TrialVerdict::Played))
+    );
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(before.id)));
+    let learnt = the_receiver(&casting);
+    for spec in [
+        high_flac(),
+        StreamSpec::new(
+            SampleRate::HZ_176400,
+            ChannelLayout::Stereo,
+            SampleFormat::S24,
+        ),
+        surround(ChannelLayout::Surround51),
+        surround(ChannelLayout::Surround71),
+    ] {
+        assert!(
+            learnt.supports(spec),
+            "{spec} was learnt and is not offered"
+        );
+    }
+    {
+        let heard = fake.heard.lock();
+        assert_eq!(heard.count("LOAD"), 4);
+        assert_eq!(heard.count("STOP"), 4, "each trial is stopped");
+        assert_eq!(heard.count("LAUNCH"), 1);
+    }
+
+    let backend = Beside::over(Box::new(NoGraph::new()), Arc::<Casting>::clone(&casting));
+    let tree = Tree::new();
+    let pcm = twenty_four_bit_pattern(2, 192_000 / 4);
+    poured_whole(&fake, &backend, &learnt, high_flac(), &pcm);
+    assert_eq!(
+        decoded_at_twenty_four_bits(&tree, &fake.heard.lock().fetched),
+        pcm,
+        "192 kHz did not come back from the FLAC as it went in"
+    );
+
+    let pcm = twenty_four_bit_pattern(6, 48_000 / 2);
+    poured_whole(
+        &fake,
+        &backend,
+        &learnt,
+        surround(ChannelLayout::Surround51),
+        &pcm,
+    );
+    assert_eq!(
+        decoded_at_twenty_four_bits(&tree, &fake.heard.lock().fetched),
+        pcm,
+        "the six channels did not come back from the FLAC as they went in"
+    );
+}
+
+#[test]
+fn a_receiver_that_fails_what_it_cannot_decode_is_learnt_to_play_none_of_it() {
+    let fake = Fake::start().decoding_at_most(96_000, 2);
+    let casting = Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches");
+    let changes = casting.subscribe();
+    let before = the_receiver(&casting);
+
+    let learning = casting.learn(before.id).expect("the receiver is tried");
+
+    assert_eq!(
+        learning.verdicts(),
+        [
+            (
+                Trial::FlacAt192kHz,
+                TrialVerdict::Unplayed(Unplayed::Errored)
+            ),
+            (
+                Trial::FlacAt176kHz,
+                TrialVerdict::Unplayed(Unplayed::Errored)
+            ),
+            (
+                Trial::SixChannels,
+                TrialVerdict::Unplayed(Unplayed::Errored)
+            ),
+            (Trial::EightChannels, TrialVerdict::Untried),
+        ]
+    );
+    assert!(changes.try_recv().is_err(), "nothing learnt moves nothing");
+    assert_eq!(the_receiver(&casting), before);
+}
+
+#[test]
+fn a_receiver_that_refuses_the_load_is_learnt_to_play_none_of_it() {
+    let fake = Fake::with(Profile {
+        refuses_loads: true,
+    });
+    let casting = Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches");
+    let sink = the_receiver(&casting);
+
+    let learning = casting.learn(sink.id).expect("the receiver is tried");
+
+    assert_eq!(
+        learning.verdict_on(Trial::FlacAt192kHz),
+        Some(TrialVerdict::Unplayed(Unplayed::Refused))
+    );
+    assert!(learning.plays().is_empty());
+}
+
+#[test]
+fn a_receiver_a_stream_holds_is_not_tried_and_teaching_what_was_learnt_offers_it_at_once() {
+    let fake = Fake::start();
+    let casting =
+        Arc::new(Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches"));
+    let sink = the_receiver(&casting);
+    let backend = Beside::over(Box::new(NoGraph::new()), Arc::<Casting>::clone(&casting));
+    let stream = backend
+        .opener()
+        .open(
+            &request(&sink, stereo_sixteen()),
+            Box::new(Poured {
+                pcm: music(RATE as usize),
+                at: 0,
+            }),
+        )
+        .expect("the receiver takes the stream");
+
+    assert!(matches!(
+        casting.learn(sink.id),
+        Err(resonate_cast::Error::InUse(held)) if held == sink.id
+    ));
+
+    stream.close().expect("closes");
+    let changes = casting.subscribe();
+    let learnt: Learnt = [(sink.name.clone(), Plays::from_iter([Trial::SixChannels]))]
+        .into_iter()
+        .collect();
+
+    casting.teach(learnt.clone());
+
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(sink.id)));
+    assert!(the_receiver(&casting).supports(surround(ChannelLayout::Surround51)));
+    assert!(!the_receiver(&casting).supports(high_flac()));
+
+    casting.teach(learnt);
+
+    assert!(changes.try_recv().is_err());
+
+    casting.teach(Learnt::default());
+
+    assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(sink.id)));
+    assert!(!the_receiver(&casting).supports(surround(ChannelLayout::Surround51)));
 }

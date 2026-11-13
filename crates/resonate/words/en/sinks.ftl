@@ -1,0 +1,15 @@
+trying = Trying { $device } with a few seconds of silence in each format; it may play nothing for up to a minute
+flac-at-192 = FLAC at 192 kHz
+flac-at-176 = FLAC at 176.4 kHz
+six-channels = 5.1 at 48 kHz
+eight-channels = 7.1 at 48 kHz
+played = played
+refused = refused it when it was offered
+never-fetched = never fetched it
+stopped-fetching = stopped fetching it
+errored = said it failed
+not-playing = never said it was playing
+clock-still = said it was playing but its clock did not move
+untried = not tried
+heard = { $trial }: { $verdict }
+kept = Kept in { $path }; { $device } is offered what it played from now on

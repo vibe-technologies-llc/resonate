@@ -31,11 +31,12 @@ pub use resonate_analysis::{
     Spectrum, Stereo, Study, Verdict, Watch, Watching, analyse, study,
 };
 pub use resonate_audio::{
-    AudioSource, Backend, CardProfile, DeviceTime, Error as SinkError, GraphTime, HardwareVolume,
-    LatencyRequest, MediaRole, Moment, NodeName, Opener, Plugged, ProfileIndex, RENDERER_NODES,
-    Reshaped, Reshaper, SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, SinkResult,
-    SinkStream, Stamp, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState,
-    StreamVolume, Surveyor, Unreshapable, Words,
+    AudioSource, Backend, CAST_NODES, CardProfile, DeviceTime, Error as SinkError, GraphTime,
+    HardwareVolume, LatencyRequest, Learning, Learnt, MediaRole, Moment, NodeName, Opener, Plays,
+    Plugged, ProfileIndex, RENDERER_NODES, Reshaped, Reshaper, SinkChange, SinkFormats, SinkId,
+    SinkInfo, SinkPort, SinkResult, SinkStream, Stamp, StreamClock, StreamCommand, StreamEvent,
+    StreamRequest, StreamState, StreamVolume, Surveyor, Trial, TrialVerdict, Unlearnt, Unplayed,
+    Unreshapable, Words,
 };
 pub use resonate_codec::{
     BitRate, BoxKind, BoxLayout, Codec, Container, CoverArt, Credits, Drawing, DsdRate, Faststart,

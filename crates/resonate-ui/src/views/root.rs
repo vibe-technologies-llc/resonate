@@ -678,6 +678,11 @@ pub(crate) struct SettingsShown {
     pub(crate) vault_named: Option<PathBuf>,
     pub(crate) newer: Option<crate::Newer>,
     pub(crate) looking_for_updates: Task<()>,
+    pub(crate) trying: Option<(resonate_engine::NodeName, Task<()>)>,
+    pub(crate) heard: Option<(
+        resonate_engine::NodeName,
+        Result<resonate_engine::Learning, resonate_engine::Unlearnt>,
+    )>,
 }
 
 pub(crate) struct Social {

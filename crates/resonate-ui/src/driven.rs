@@ -476,6 +476,7 @@ impl Driven {
                 by_sound: Arc::new(AtomicBool::new(false)),
                 lyrics_by_the_locale: Arc::new(AtomicBool::new(false)),
                 flac_above_96k_for: BTreeSet::new(),
+                formats_learnt_for: resonate_engine::Learnt::default(),
                 convolution: None,
                 speaker_angle: SpeakerAngle::STANDARD,
                 speaker_elevation: SpeakerElevation::LEVEL,

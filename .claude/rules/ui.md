@@ -2290,6 +2290,16 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   holds, then one per name in `ResonateApp::flac_above_96k_for` that no sink answers (so a renderer
   that has left can still be unnamed); it stores the whole set as `Setting::FlacAbove96kFor`, says it
   is read from the next start, and its mark empties the set.
+  `Group::LearntFormats` (*What renderers play*, Output, beside it) is a row per sink whose
+  `NodeName::names_a_network_device` holds (a UPnP renderer or a Cast receiver), then one per name in
+  `ResonateApp::formats_learnt_for` no sink answers, each saying what was learnt (*Not tried yet*,
+  the formats it plays, or none) under a *Learn what it plays* press and, where something was
+  learnt, *Forget what was learnt*. The press runs the blocking `Renderers::learn` on the background
+  executor (`learn_what_it_plays`); while it runs every press is greyed and the device's says it is
+  trying, and the answer (each `Trial`'s verdict, or why nothing was learnt: `Unlearnt`) is drawn
+  under the row (`heard_what_it_plays`), the learnt `Plays` written at once into the global and as
+  `Setting::FormatsLearntFor`; the network already offers it. Forgetting one, or the group's mark
+  forgetting all, hands the remainder to `Renderers::teach`.
 - **The library's folders are one box, and the primary one is chosen in it.** `Group::Folders`
   (*Music folders*, Library category) lists every root as a row of its card: a radio, the folder, a
   `PRIMARY` badge on the chosen one and the forget mark. Pressing a card's radio or name makes that

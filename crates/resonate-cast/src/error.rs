@@ -121,6 +121,10 @@ pub enum Error {
     NoSuchReceiver(SinkId),
     #[error("the Cast receiver takes no stream of {0}")]
     FormatRefused(StreamSpec),
+    #[error(
+        "the Cast receiver known as {0} is playing a stream, so what it plays cannot be learnt now"
+    )]
+    InUse(SinkId),
 }
 
 impl Error {
@@ -137,7 +141,8 @@ impl Error {
             | Self::Browse { .. }
             | Self::Serve { .. }
             | Self::Resolve { .. }
-            | Self::NoSuchReceiver(_) => Operation::Connect,
+            | Self::NoSuchReceiver(_)
+            | Self::InUse(_) => Operation::Connect,
             Self::FormatRefused(_) => Operation::Format,
         }
     }

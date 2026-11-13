@@ -1,4 +1,4 @@
-use resonate_audio::{SinkFormats, Words};
+use resonate_audio::{Plays, SinkFormats, Trial, Words};
 use resonate_core::{ChannelCount, ChannelLayout, SampleFormat, SampleRate, StreamSpec};
 
 const FLAC_KINDS: [&str; 2] = ["audio/flac", "audio/x-flac"];
@@ -251,6 +251,63 @@ fn layouts_of(count: u8) -> Vec<ChannelLayout> {
     }
 }
 
+pub(crate) fn taught(said: &[Carriage], plays: Option<&Plays>) -> Vec<Carriage> {
+    let mut carriages = said.to_vec();
+    let Some(plays) = plays else {
+        return carriages;
+    };
+    if let Some(flac) = carriages
+        .iter_mut()
+        .find(|carriage| carriage.wrapping == Wrapping::Flac)
+    {
+        for rate in plays.rates() {
+            if !flac.rates.contains(&rate) {
+                flac.rates.push(rate);
+            }
+        }
+    }
+    if let Some(at) = surround_tried_in(said) {
+        let carriage = &mut carriages[at];
+        for layout in plays.layouts() {
+            for layout in layouts_of(layout.count().get()) {
+                if !carriage.layouts.contains(&layout) {
+                    carriage.layouts.push(layout);
+                }
+            }
+        }
+    }
+    carriages
+}
+
+pub(crate) fn tried_in(said: &[Carriage], trial: Trial) -> Option<(Carriage, StreamSpec)> {
+    let wrapping = if trial.is_a_rate() {
+        said.iter()
+            .find(|carriage| carriage.wrapping == Wrapping::Flac)?
+            .wrapping
+    } else {
+        said.get(surround_tried_in(said)?)?.wrapping
+    };
+    let format = if wrapping
+        .formats()
+        .iter()
+        .any(|(format, _)| *format == SampleFormat::S24)
+    {
+        SampleFormat::S24
+    } else {
+        SampleFormat::S16
+    };
+    let spec = trial.spec(format);
+    let carriage = Carriage::new(wrapping, vec![spec.rate], vec![spec.channels]);
+    Some((carriage, spec))
+}
+
+fn surround_tried_in(said: &[Carriage]) -> Option<usize> {
+    said.iter().position(|carriage| {
+        carriage.rates.contains(&Trial::SixChannels.rate())
+            && carriage.layouts.contains(&ChannelLayout::Stereo)
+    })
+}
+
 pub(crate) fn unite(carriages: &[Carriage]) -> (Vec<SinkFormats>, Vec<SampleRate>) {
     let mut formats: Vec<SinkFormats> = Vec::new();
     let mut rates: Vec<SampleRate> = Vec::new();
@@ -386,6 +443,53 @@ mod tests {
             SampleFormat::S16
         )));
         assert!(flac.carries(stereo(SampleRate::HZ_48000, SampleFormat::S16)));
+    }
+
+    #[test]
+    fn what_a_renderer_played_joins_the_carriage_it_was_tried_in_and_nothing_else() {
+        let said = accepted("http-get:*:audio/flac:*,http-get:*:audio/wav:*");
+        let plays = Plays::from_iter([Trial::FlacAt192kHz, Trial::SixChannels]);
+
+        let grown = taught(&said, Some(&plays));
+
+        assert!(grown[0].carries(stereo(SampleRate::HZ_192000, SampleFormat::S24)));
+        assert!(!grown[0].carries(stereo(SampleRate::HZ_176400, SampleFormat::S24)));
+        assert!(grown[0].carries(StreamSpec::new(
+            SampleRate::HZ_48000,
+            ChannelLayout::Surround51,
+            SampleFormat::S24
+        )));
+        assert!(!grown[0].carries(StreamSpec::new(
+            SampleRate::HZ_48000,
+            ChannelLayout::Surround71,
+            SampleFormat::S24
+        )));
+        assert_eq!(grown[1], said[1]);
+        assert_eq!(taught(&said, None), said);
+        assert_eq!(taught(&said, Some(&Plays::default())), said);
+    }
+
+    #[test]
+    fn a_rate_is_tried_in_flac_alone_and_surround_in_the_carriage_preferred_at_forty_eight_kilohertz()
+     {
+        let flac = accepted("http-get:*:audio/flac:*,http-get:*:audio/wav:*");
+        let wave = accepted("http-get:*:audio/wav:*");
+        let l16 = accepted("http-get:*:audio/L16;rate=48000:*");
+
+        let (carriage, spec) = tried_in(&flac, Trial::FlacAt192kHz).expect("FLAC is taken");
+        assert_eq!(carriage.wrapping(), Wrapping::Flac);
+        assert_eq!(spec, stereo(SampleRate::HZ_192000, SampleFormat::S24));
+        assert!(carriage.carries(spec));
+
+        assert!(tried_in(&wave, Trial::FlacAt176kHz).is_none());
+        let (carriage, spec) = tried_in(&wave, Trial::EightChannels).expect("WAVE at 48 kHz");
+        assert_eq!(carriage.wrapping(), Wrapping::Wave);
+        assert_eq!(spec.channels, ChannelLayout::Surround71);
+
+        let (carriage, spec) = tried_in(&l16, Trial::SixChannels).expect("L16 at 48 kHz");
+        assert_eq!(carriage.wrapping(), Wrapping::L16);
+        assert_eq!(spec.format, SampleFormat::S16);
+        assert!(carriage.carries(spec));
     }
 
     #[test]

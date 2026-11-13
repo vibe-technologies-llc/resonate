@@ -52,6 +52,8 @@ impl fmt::Display for ProfileIndex {
 
 pub const RENDERER_NODES: &str = "upnp:";
 
+pub const CAST_NODES: &str = "cast:";
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeName(Box<str>);
 
@@ -66,6 +68,14 @@ impl NodeName {
 
     pub fn names_a_upnp_renderer(&self) -> bool {
         self.0.starts_with(RENDERER_NODES)
+    }
+
+    pub fn names_a_cast_receiver(&self) -> bool {
+        self.0.starts_with(CAST_NODES)
+    }
+
+    pub fn names_a_network_device(&self) -> bool {
+        self.names_a_upnp_renderer() || self.names_a_cast_receiver()
     }
 }
 

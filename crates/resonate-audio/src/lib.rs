@@ -3,6 +3,7 @@ mod backend;
 mod changes;
 mod error;
 pub mod handover;
+mod learning;
 mod level;
 mod moment;
 mod reshaping;
@@ -16,12 +17,13 @@ pub use crate::{
     backend::{Backend, Opener, SinkResult, Surveyor},
     changes::changes_between,
     error::{Error, Operation, Result},
+    learning::{Learning, Learnt, Plays, Trial, TrialVerdict, Unlearnt, Unplayed},
     level::{gain_of, scalar_of},
     moment::{DeviceTime, Moment, Stamp},
     reshaping::refusal_of,
     sink::{
-        CardProfile, HardwareVolume, NodeName, Plugged, ProfileIndex, RENDERER_NODES, SinkChange,
-        SinkFormats, SinkId, SinkInfo, SinkPort, Words, sink_id_of,
+        CAST_NODES, CardProfile, HardwareVolume, NodeName, Plugged, ProfileIndex, RENDERER_NODES,
+        SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, Words, sink_id_of,
     },
     source::AudioSource,
     stream::{

@@ -37,7 +37,23 @@ codec are dev-dependencies, for the end-to-end tests.
 - **What a receiver takes is fixed, not asked**: Cast has no protocol-info call, and the Default
   Media Receiver's published support is FLAC up to 96 kHz and 24 bits. `Device::carriage` is
   `Wrapping::Flac` at 44.1, 48, 88.2 and 96 kHz, S16 and S24, stereo alone; the engine resamples
-  above and folds surround down, as for a UPnP renderer that states nothing.
+  above and folds surround down, as for a UPnP renderer that states nothing, unless the receiver
+  was tried.
+- **A receiver tried is offered what it played.** `Casting::learn(sink)` (the binary's
+  `sinks --learn SINK`, the settings pane's *Learn what it plays*) launches the Default Media
+  Receiver once and tries each `Trial` as UPnP's does (`upnp.md`'s *A renderer tried*), each a
+  FLAC `Silence` stream loaded under the title `a_format_tried` (S24; 48 kHz for the channel trials;
+  eight channels only once six played). A refused `LOAD` is `Unplayed::Refused`; then `GET_STATUS`
+  every `TRIAL_ASKED_EVERY` for at most `TRIAL_LASTS_AT_MOST`: an entry `IDLE` with `idleReason`
+  `ERROR` is `Unplayed::Errored` at once, and it played once the feed was pulled
+  `PULLED_AT_LEAST`, its `playerState` is not known to be other than `PLAYING` and its
+  `currentTime` moved `CLOCK_MOVED_AT_LEAST` (the same `Signals`). Each trial ends with a media
+  `STOP` and the token withdrawn. The trials run under the receiver's lane (`Lanes::idle`), so one a
+  stream holds is `Error::InUse`. What played is kept under the receiver's node name in the
+  casting's `Learnt`, looked up under both names a receiver answers to (`cast:` and its id,
+  `cast:at-` and its address), and `Device::carriage` grows by it: the learnt rates and layouts
+  join the one FLAC carriage. `Casting::teach(Learnt)` hands it the `formats-learnt-for` setting,
+  re-describing and announcing `SinkChange::Reformatted` for each receiver whose formats moved.
 
 ## Finding
 
@@ -231,7 +247,15 @@ told, a pause, the volume and the mute turned, the receiver's ping answered and 
 refused load told as refused, a rate the receiver cannot take refused before it is reached, a song
 played through a real `Player` arriving bit for bit, a pause and a volume change reaching it within
 400 ms and the song resuming bit for bit, and a seek loading a fresh address within 400 ms that
-carries the song from where it landed without launching again. A receiver given by a host name is resolved and reached (`localhost` and the fake's port),
+carries the song from where it landed without launching again. Learning holds a receiver that
+plays everything learnt to play all four trials, launched once and stopped after each, told
+`Reformatted` and then sent 192 kHz and six-channel FLAC that decode bit for bit
+(`learning_what_a_receiver_plays_offers_exactly_what_played_and_it_is_then_sent_high_rate_flac_and_six_channels_bit_for_bit`),
+one that goes `IDLE`/`ERROR` on a shape it cannot decode learnt to play none of it
+(`a_receiver_that_fails_what_it_cannot_decode_is_learnt_to_play_none_of_it`), one refusing the
+load learnt the same (`a_receiver_that_refuses_the_load_is_learnt_to_play_none_of_it`), and one a
+stream holds untried while teaching offers and takes back at once
+(`a_receiver_a_stream_holds_is_not_tried_and_teaching_what_was_learnt_offers_it_at_once`). A receiver given by a host name is resolved and reached (`localhost` and the fake's port),
 listed under its address's name, added and forgotten with its name, and a name nothing resolves lists
 nothing and is kept; a receiver given by address and then heard by the browse is renamed under its
 own sink id with the address's name as an alias, told `Reformatted`, and stays listed under its id when

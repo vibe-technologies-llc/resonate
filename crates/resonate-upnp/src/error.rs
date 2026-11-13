@@ -11,6 +11,7 @@ pub enum Action {
     Pause,
     Stop,
     GetPositionInfo,
+    GetTransportInfo,
     GetProtocolInfo,
     GetVolume,
     Volume,
@@ -27,6 +28,7 @@ impl Action {
             Self::Pause => "Pause",
             Self::Stop => "Stop",
             Self::GetPositionInfo => "GetPositionInfo",
+            Self::GetTransportInfo => "GetTransportInfo",
             Self::GetProtocolInfo => "GetProtocolInfo",
             Self::GetVolume => "GetVolume",
             Self::Volume => "Volume",
@@ -42,7 +44,7 @@ impl Action {
             Self::Play => Operation::Start,
             Self::Pause => Operation::Pause,
             Self::Stop => Operation::Close,
-            Self::GetPositionInfo => Operation::Connect,
+            Self::GetPositionInfo | Self::GetTransportInfo => Operation::Connect,
             Self::GetVolume
             | Self::Volume
             | Self::Characteristics
@@ -141,6 +143,8 @@ pub enum Error {
     NoSuchRenderer(SinkId),
     #[error("the renderer takes no stream of {0}")]
     FormatRefused(StreamSpec),
+    #[error("the renderer known as {0} is playing a stream, so what it plays cannot be learnt now")]
+    InUse(SinkId),
 }
 
 impl Error {
@@ -158,7 +162,8 @@ impl Error {
             | Self::UnreadableAddress
             | Self::Search { .. }
             | Self::Serve { .. }
-            | Self::NoSuchRenderer(_) => Operation::Connect,
+            | Self::NoSuchRenderer(_)
+            | Self::InUse(_) => Operation::Connect,
             Self::FormatRefused(_) | Self::Encoding { .. } => Operation::Format,
         }
     }

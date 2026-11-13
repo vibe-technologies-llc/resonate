@@ -1,6 +1,6 @@
 use std::{fmt, net::SocketAddr, time::Duration};
 
-use resonate_audio::NodeName;
+use resonate_audio::{CAST_NODES, NodeName, Plays};
 use resonate_core::{ChannelLayout, SampleRate, Volume};
 use resonate_upnp::{Carriage, Wrapping};
 
@@ -9,8 +9,6 @@ use crate::{
     json::Json,
     link::{ANSWERED_WITHIN, Link, Namespace, RECEIVER},
 };
-
-pub const CAST_NODES: &str = "cast:";
 
 pub const CAST_PORT: u16 = 8009;
 
@@ -70,6 +68,7 @@ pub struct Found {
 pub struct Device {
     found: Found,
     volume: Option<Volume>,
+    plays: Option<Plays>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,6 +88,7 @@ impl Device {
         Ok(Self {
             found,
             volume: status.volume,
+            plays: None,
         })
     }
 
@@ -97,6 +97,7 @@ impl Device {
         Self {
             found,
             volume: None,
+            plays: None,
         }
     }
 
@@ -127,16 +128,29 @@ impl Device {
     pub fn renamed(&self, found: Found) -> Self {
         Self {
             found,
-            volume: self.volume,
+            ..self.clone()
         }
     }
 
-    pub fn carriage() -> Carriage {
-        Carriage::new(
-            Wrapping::Flac,
-            RATES_TAKEN.to_vec(),
-            vec![ChannelLayout::Stereo],
-        )
+    pub fn taught(&self, plays: Option<&Plays>) -> Self {
+        Self {
+            plays: plays.filter(|plays| !plays.is_empty()).cloned(),
+            ..self.clone()
+        }
+    }
+
+    pub const fn plays(&self) -> Option<&Plays> {
+        self.plays.as_ref()
+    }
+
+    pub fn carriage(&self) -> Carriage {
+        let mut rates = RATES_TAKEN.to_vec();
+        let mut layouts = vec![ChannelLayout::Stereo];
+        if let Some(plays) = &self.plays {
+            rates.extend(plays.rates().filter(|rate| !RATES_TAKEN.contains(rate)));
+            layouts.extend(plays.layouts());
+        }
+        Carriage::new(Wrapping::Flac, rates, layouts)
     }
 }
 
@@ -222,6 +236,7 @@ pub(crate) fn set_mute(link: &Link, muted: bool) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use resonate_audio::Trial;
     use resonate_core::{SampleFormat, StreamSpec};
 
     use super::*;
@@ -254,6 +269,36 @@ mod tests {
     }
 
     #[test]
+    fn a_receiver_is_offered_what_it_was_heard_to_play_beside_what_every_receiver_takes() {
+        let at = SocketAddr::from(([192, 168, 1, 20], 8009));
+        let plays = Plays::from_iter([Trial::FlacAt192kHz, Trial::SixChannels]);
+        let device = Device::held_unreached(Found::at(at)).taught(Some(&plays));
+        let carriage = device.carriage();
+
+        assert!(carriage.carries(StreamSpec::new(
+            SampleRate::HZ_192000,
+            ChannelLayout::Stereo,
+            SampleFormat::S24
+        )));
+        assert!(!carriage.carries(StreamSpec::new(
+            SampleRate::HZ_176400,
+            ChannelLayout::Stereo,
+            SampleFormat::S24
+        )));
+        assert!(carriage.carries(StreamSpec::new(
+            SampleRate::HZ_48000,
+            ChannelLayout::Surround51,
+            SampleFormat::S24
+        )));
+        assert!(!carriage.carries(StreamSpec::new(
+            SampleRate::HZ_48000,
+            ChannelLayout::Surround71,
+            SampleFormat::S24
+        )));
+        assert_eq!(device.taught(Some(&Plays::default())).plays(), None);
+    }
+
+    #[test]
     fn a_receiver_given_by_address_is_named_by_it() {
         let at = SocketAddr::from(([192, 168, 1, 20], 8009));
 
@@ -267,7 +312,8 @@ mod tests {
 
     #[test]
     fn a_receiver_takes_stereo_flac_to_ninety_six_kilohertz() {
-        let carriage = Device::carriage();
+        let at = SocketAddr::from(([192, 168, 1, 20], 8009));
+        let carriage = Device::held_unreached(Found::at(at)).carriage();
         let stereo = |rate, format| StreamSpec::new(rate, ChannelLayout::Stereo, format);
 
         assert!(carriage.carries(stereo(SampleRate::HZ_96000, SampleFormat::S24)));

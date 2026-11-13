@@ -11,8 +11,8 @@ use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, unboun
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use parking_lot::Mutex;
 use resonate_audio::{
-    AudioSource, HardwareVolume, Plugged, SinkChange, SinkId, SinkInfo, SinkPort, SinkResult,
-    SinkStream, StreamRequest,
+    AudioSource, HardwareVolume, Learning, Learnt, Plugged, SinkChange, SinkId, SinkInfo, SinkPort,
+    SinkResult, SinkStream, StreamRequest,
 };
 use resonate_core::{Gain, Volume};
 use resonate_upnp::{FirstSearch, Neighbours, Server};
@@ -20,7 +20,7 @@ use resonate_upnp::{FirstSearch, Neighbours, Server};
 use crate::{
     CastId, Device, Error, Found, Given, LinkOp, Result,
     bonjour::{self, CAST_SERVICE},
-    device,
+    device, learning,
     link::Link,
     stream::{self, Lanes},
     words,
@@ -75,6 +75,7 @@ struct Shared {
     server: Mutex<Option<Arc<Server>>>,
     lanes: Lanes,
     known: Mutex<Known>,
+    learnt: Mutex<Learnt>,
     located: Mutex<Located>,
     listeners: Mutex<Vec<Sender<SinkChange>>>,
     turns: Sender<Turn>,
@@ -138,6 +139,7 @@ impl Casting {
             server: Mutex::new(None),
             lanes: Lanes::default(),
             known: Mutex::new(Known::default()),
+            learnt: Mutex::new(Learnt::default()),
             located: Mutex::new(Located::default()),
             listeners: Mutex::new(Vec::new()),
             turns,
@@ -223,6 +225,32 @@ impl Casting {
 
     pub fn is_reaching(&self) -> bool {
         self.looking.lock().is_some()
+    }
+
+    pub fn teach(&self, learnt: Learnt) {
+        *self.shared.learnt.lock() = learnt;
+        let changes = self.shared.taught_again();
+        self.shared.announce(&changes);
+    }
+
+    pub fn learn(&self, sink: SinkId) -> Result<Learning> {
+        let device = self.device(sink)?;
+        let server = self
+            .shared
+            .server
+            .lock()
+            .clone()
+            .ok_or(Error::NoSuchReceiver(sink))?;
+        let learning = learning::learn(&device, sink, &server, &self.shared.lanes)?;
+        let named = self
+            .receivers()
+            .into_iter()
+            .find(|(id, _)| *id == sink)
+            .map_or_else(|| device.node_name(), |(_, now)| now.node_name());
+        self.shared.learnt.lock().insert(named, learning.plays());
+        let changes = self.shared.taught_again();
+        self.shared.announce(&changes);
+        Ok(learning)
     }
 
     pub fn locate(&self, given: impl Into<Given>) -> Result<()> {
@@ -601,10 +629,12 @@ impl Shared {
             if let Some(fullname) = fullname {
                 known.remember(fullname, found.id.clone());
             }
-            let renamed = known
-                .held
-                .get(&sink)
-                .map(|device| Arc::new(device.renamed(found)));
+            let learnt = self.learnt.lock();
+            let renamed = known.held.get(&sink).map(|device| {
+                let renamed = device.renamed(found);
+                let names = [renamed.node_name(), renamed.address_node_name()];
+                Arc::new(renamed.taught(learnt.of(&names)))
+            });
             renamed.map(|device| {
                 known.held.insert(sink, device);
                 SinkChange::Reformatted(sink)
@@ -635,6 +665,8 @@ impl Shared {
             if by_address {
                 known.addressed.insert(id);
             }
+            let names = [device.node_name(), device.address_node_name()];
+            let device = device.taught(self.learnt.lock().of(&names));
             known.held.insert(id, Arc::new(device));
             change
         };
@@ -667,6 +699,22 @@ impl Shared {
         self.announce(change.as_slice());
     }
 
+    fn taught_again(&self) -> Vec<SinkChange> {
+        let learnt = self.learnt.lock().clone();
+        let mut known = self.known.lock();
+        let mut changes = Vec::new();
+        for (id, device) in &mut known.held {
+            let names = [device.node_name(), device.address_node_name()];
+            let plays = learnt.of(&names).filter(|plays| !plays.is_empty());
+            if device.plays() == plays {
+                continue;
+            }
+            *device = Arc::new(device.taught(plays));
+            changes.push(SinkChange::Reformatted(*id));
+        }
+        changes
+    }
+
     fn announce(&self, changes: &[SinkChange]) {
         if changes.is_empty() {
             return;
@@ -688,7 +736,7 @@ fn spawn_failed(source: io::Error) -> Error {
 }
 
 fn sink_of(id: SinkId, device: &Device) -> SinkInfo {
-    let carriage = Device::carriage();
+    let carriage = device.carriage();
     SinkInfo {
         id,
         name: device.node_name(),

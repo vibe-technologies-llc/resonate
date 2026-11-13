@@ -1,11 +1,11 @@
 use std::{collections::BTreeSet, fmt, time::Duration};
 
-use resonate_audio::{NodeName, RENDERER_NODES};
+use resonate_audio::{NodeName, Plays, RENDERER_NODES};
 use resonate_core::{StreamSpec, Volume};
 
 use crate::{
     Action, Carriage, Error, Located, Result,
-    carriage::FlacUnsaid,
+    carriage::{self, FlacUnsaid},
     description::{self, Service},
     soap::{self, Answered, escaped},
 };
@@ -19,6 +19,16 @@ const WAVE_ASSUMED: &str = "http-get:*:audio/wav:*";
 const PERCENT: f32 = 100.0;
 
 const OPENHOME_STEPS_UNSAID: u32 = 100;
+
+const PLAYING: &str = "PLAYING";
+
+const ERROR_OCCURRED: &str = "ERROR_OCCURRED";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Transport {
+    pub(crate) playing: bool,
+    pub(crate) errored: bool,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Udn(Box<str>);
@@ -95,6 +105,8 @@ pub struct Renderer {
     transport: Service,
     rendering: Option<Service>,
     openhome: Option<OpenHomeVolume>,
+    said: Vec<Carriage>,
+    plays: Option<Plays>,
     carriages: Vec<Carriage>,
     volume: Option<Volume>,
 }
@@ -159,9 +171,27 @@ impl Renderer {
             transport: described.transport,
             rendering: described.rendering,
             openhome,
+            said: carriages.clone(),
+            plays: None,
             carriages,
             volume,
         })
+    }
+
+    pub(crate) fn taught(&self, plays: Option<&Plays>) -> Self {
+        Self {
+            plays: plays.filter(|plays| !plays.is_empty()).cloned(),
+            carriages: carriage::taught(&self.said, plays),
+            ..self.clone()
+        }
+    }
+
+    pub(crate) fn plays(&self) -> Option<&Plays> {
+        self.plays.as_ref()
+    }
+
+    pub(crate) fn said(&self) -> &[Carriage] {
+        &self.said
     }
 
     pub const fn udn(&self) -> &Udn {
@@ -244,6 +274,21 @@ impl Renderer {
             action: Action::GetPositionInfo,
         })?;
         Ok(clock_of(time))
+    }
+
+    pub(crate) fn transport(&self) -> Result<Transport> {
+        let answered = soap::call(&self.transport, Action::GetTransportInfo, &[INSTANCE])?;
+        let state = answered
+            .named("CurrentTransportState")
+            .ok_or(Error::Unanswered {
+                action: Action::GetTransportInfo,
+            })?;
+        Ok(Transport {
+            playing: state.trim() == PLAYING,
+            errored: answered
+                .named("CurrentTransportStatus")
+                .is_some_and(|status| status.trim() == ERROR_OCCURRED),
+        })
     }
 
     pub(crate) fn set_volume(&self, volume: Volume) -> Result<()> {
