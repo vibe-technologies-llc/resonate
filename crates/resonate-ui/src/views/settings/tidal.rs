@@ -188,7 +188,7 @@ impl TidalAccount {
     ) -> [Entity<Field>; 6] {
         Self::ALL.map(|account| {
             let field = cx.new(|cx| {
-                let field = Field::new(account.placeholder(), window, cx);
+                let field = Field::new(move || account.placeholder(), window, cx);
                 let mut field = match account {
                     Self::ClientSecret | Self::RefreshToken | Self::HifiSecret => field.masked(),
                     Self::ClientId | Self::HifiApi | Self::Monochrome => field,

@@ -142,7 +142,7 @@ impl Account {
     ) -> [Entity<Field>; 3] {
         Self::ALL.map(|account| {
             let field = cx.new(|cx| {
-                let field = Field::new(account.placeholder(service), window, cx);
+                let field = Field::new(move || account.placeholder(service), window, cx);
                 let mut field = match account {
                     Self::Password => field.masked(),
                     Self::Server | Self::User => field,

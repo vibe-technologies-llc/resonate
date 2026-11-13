@@ -134,7 +134,8 @@ dragged in), `Typed` (every `Field` the root holds), `SettingsShown` (the settin
   (`a_key_the_menu_shows_beside_an_item_is_never_one_a_listener_types`). The *Window* menu is
   found by gpui under the literal name `Window`
   (`the_menu_a_mac_lists_its_windows_under_is_named_as_gpui_looks_for_it`), so a language that
-  renames it loses the system's window list.
+  renames it loses the system's window list. A language chosen in the pane lays the menus out
+  again (`app_menu::say_the_menus`; `language.md`).
 - **A group that says nothing on a system is not offered there.** `Group::is_offered` leaves it
   out of the pane and of the settings search: *Graph rate* and *Bluetooth* are PipeWire's alone
   (hidden on Windows and macOS); *Notifications*, *Metered connections* and *Window buttons* are

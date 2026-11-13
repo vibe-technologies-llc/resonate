@@ -170,7 +170,7 @@ struct Painted {
 pub(crate) struct Field {
     edit: Edit,
     marked: Option<Range<usize>>,
-    placeholder: SharedString,
+    placeholder: Box<dyn Fn() -> &'static str>,
     shown: Shown,
     typed_into: Role,
     focus: FocusHandle,
@@ -185,8 +185,12 @@ pub(crate) struct Field {
 }
 
 impl Field {
+    fn placeholder(&self) -> SharedString {
+        SharedString::new_static((self.placeholder)())
+    }
+
     pub(crate) fn new(
-        placeholder: &'static str,
+        placeholder: impl Fn() -> &'static str + 'static,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -199,7 +203,7 @@ impl Field {
         Self {
             edit: Edit::default(),
             marked: None,
-            placeholder: SharedString::new_static(placeholder),
+            placeholder: Box::new(placeholder),
             shown: Shown::Plainly,
             typed_into: Role::TextInput,
             focus,
@@ -553,13 +557,15 @@ impl Focusable for Field {
 
 impl Render for Field {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let placeholder = self.placeholder();
+
         div()
             .id("field")
-            .named_as(self.typed_into, &self.placeholder, "")
+            .named_as(self.typed_into, &placeholder, "")
             .when_some(self.spoken_value(), |field, value| {
                 field
                     .aria_value(value.clone())
-                    .aria_placeholder(self.placeholder.clone())
+                    .aria_placeholder(placeholder.clone())
                     .read_as_typed(|| self.typing(value))
             })
             .track_focus(&self.focus)
@@ -923,7 +929,7 @@ impl Element for Line {
         let held = field.scrolled_by;
 
         let (text, colour) = if empty && !focused {
-            (field.placeholder.clone(), rgb(theme::faint()).into())
+            (field.placeholder(), rgb(theme::faint()).into())
         } else {
             (SharedString::from(field.shown.text(content)), style.color)
         };
@@ -1132,6 +1138,10 @@ fn scrolled_to_show(caret: Pixels, line: Pixels, visible: Pixels, held: Pixels) 
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::Cell, rc::Rc};
+
+    use gpui::TestAppContext;
+
     use super::*;
 
     fn cells(places: &[(f32, usize)]) -> Vec<(Pixels, usize)> {
@@ -1190,5 +1200,34 @@ mod tests {
         assert_eq!(Shown::Plainly.text(content), content);
         assert_eq!(Shown::Plainly.drawn_at(content, 3), 3);
         assert_eq!(Shown::Plainly.content_at(content, 3), 3);
+    }
+
+    #[gpui::test]
+    fn a_placeholder_is_asked_for_each_time_it_is_drawn_so_a_new_language_reaches_it(
+        cx: &mut TestAppContext,
+    ) {
+        let _worn = crate::theme::alongside();
+        let asked = Rc::new(Cell::new(0));
+        let counting = asked.clone();
+        let field = cx.add_window(|window, cx| {
+            Field::new(
+                move || {
+                    counting.set(counting.get() + 1);
+                    "Search"
+                },
+                window,
+                cx,
+            )
+        });
+
+        let before = asked.get();
+        let first = field.update(cx, |field, _, _| field.placeholder());
+        let after_one = asked.get();
+        let second = field.update(cx, |field, _, _| field.placeholder());
+
+        assert_eq!(first.ok().as_deref(), Some("Search"));
+        assert_eq!(second.ok().as_deref(), Some("Search"));
+        assert_eq!(after_one, before + 1);
+        assert_eq!(asked.get(), before + 2);
     }
 }

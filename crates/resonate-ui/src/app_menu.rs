@@ -14,6 +14,10 @@ pub(crate) fn lay_out(cx: &mut App) {
     cx.on_action(|_: &Hide, cx| cx.hide());
     cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());
     cx.on_action(|_: &ShowAll, cx| cx.unhide_other_apps());
+    say_the_menus(cx);
+}
+
+pub(crate) fn say_the_menus(cx: &mut App) {
     cx.set_menus(menus());
 }
 

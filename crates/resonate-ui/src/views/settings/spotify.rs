@@ -69,7 +69,7 @@ pub(crate) fn field(
 ) -> Entity<Field> {
     let field = cx.new(|cx| {
         let mut field = Field::new(
-            words::settings_spotify::the_client_id_of_your_app(),
+            words::settings_spotify::the_client_id_of_your_app,
             window,
             cx,
         );

@@ -101,7 +101,7 @@ impl LastfmAccount {
     ) -> [Entity<Field>; 2] {
         Self::ALL.map(|account| {
             let field = cx.new(|cx| {
-                let mut field = Field::new(account.placeholder(), window, cx).masked();
+                let mut field = Field::new(move || account.placeholder(), window, cx).masked();
                 field.hold(account.held(online), cx);
                 field
             });

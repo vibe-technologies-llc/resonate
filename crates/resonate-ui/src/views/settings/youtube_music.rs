@@ -160,7 +160,7 @@ impl YoutubeMusicField {
     ) -> [Entity<Field>; 2] {
         Self::ALL.map(|named| {
             let field = cx.new(|cx| {
-                let field = Field::new(named.placeholder(), window, cx);
+                let field = Field::new(move || named.placeholder(), window, cx);
                 let mut field = match named {
                     Self::Cookies => field.masked(),
                     Self::Program => field,

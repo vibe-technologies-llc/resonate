@@ -151,7 +151,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [L] The first language beside English: a `Language` variant, every crate's `words/<tag>/`, Android's `values-<tag>/` and iOS's `<tag>.lproj` (`language.md`).
 - [M] Numbers, dates and month names in the listener's locale: figures are not grouped, and `CivilDate`'s months and the weekdays are English words in a catalog, not the locale's.
 - [M] Right-to-left languages: Fluent's isolation marks are off, and the window's layout is never mirrored.
-- [M] The window speaking a newly chosen language at once, without a restart.
 
 ## Later: Sources and providers
 - [M · blocked: service] A Spotify playlist the account only follows is read off its public page,

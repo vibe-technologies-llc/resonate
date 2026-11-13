@@ -6421,6 +6421,56 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_language_chosen_in_the_pane_is_spoken_and_its_menus_laid_out_again_at_once(
+        cx: &mut TestAppContext,
+    ) {
+        use resonate_words::{Language, LanguageChoice};
+
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Appearance);
+        driven.cx.update(|_, cx| cx.set_menus(Vec::new()));
+        assert!(
+            driven
+                .read(|_, cx| cx.get_menus())
+                .is_some_and(|menus| menus.is_empty())
+        );
+
+        driven.click(named("language", 1));
+        driven.until(|_, cx| {
+            cx.global::<ResonateApp>().language == LanguageChoice::Chosen(Language::English)
+        });
+
+        let menus = driven.read(|_, cx| cx.get_menus()).expect("a menu bar");
+        let names: Vec<_> = menus.iter().map(|menu| menu.name.to_string()).collect();
+
+        assert_eq!(resonate_words::spoken(), Language::English);
+        assert!(names.contains(&crate::words::app_menu::playback().to_owned()));
+        assert!(names.contains(&crate::words::app_menu::edit().to_owned()));
+    }
+
+    #[gpui::test]
+    fn putting_the_language_back_to_the_systems_is_spoken_at_once_too(cx: &mut TestAppContext) {
+        use resonate_words::LanguageChoice;
+
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Appearance);
+        driven.cx.update(|_, cx| cx.set_menus(Vec::new()));
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.speak(LanguageChoice::System, cx);
+        });
+        driven.settle();
+
+        let menus = driven.read(|_, cx| cx.get_menus()).expect("a menu bar");
+
+        assert_eq!(menus.len(), 5);
+        assert_eq!(
+            resonate_words::spoken(),
+            LanguageChoice::System.language(&resonate_words::languages_the_listener_reads())
+        );
+    }
+
+    #[gpui::test]
     fn ending_the_following_of_the_desktop_keeps_the_palette_and_size_worn_at_that_moment(
         cx: &mut TestAppContext,
     ) {

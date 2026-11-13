@@ -170,7 +170,7 @@ impl RootView {
         let menu_focus = cx.focus_handle();
 
         let search = cx.new(|cx| {
-            Field::new(words::root::search_placeholder(), window, cx)
+            Field::new(words::root::search_placeholder, window, cx)
                 .catching(|text| is_a_followed_link(text) || is_an_invitation(text))
                 .searching()
         });
@@ -205,20 +205,20 @@ impl RootView {
         })
         .detach();
 
-        let zone_name = cx.new(|cx| Field::new(words::zones::name_this_zone(), window, cx));
+        let zone_name = cx.new(|cx| Field::new(words::zones::name_this_zone, window, cx));
         cx.subscribe_in(&zone_name, window, |this, _, _: &Submitted, window, cx| {
             this.zone_named(window, cx);
         })
         .detach();
 
-        let name = cx.new(|cx| Field::new(words::root::name_placeholder(), window, cx));
+        let name = cx.new(|cx| Field::new(words::root::name_placeholder, window, cx));
         cx.subscribe_in(&name, window, |this, _, _: &Submitted, window, cx| {
             this.name_given(window, cx);
         })
         .detach();
 
         let contact = cx.new(|cx| {
-            let mut field = Field::new(words::root::contact_placeholder(), window, cx);
+            let mut field = Field::new(words::root::contact_placeholder, window, cx);
             field.hold(online.contact.clone(), cx);
             field
         });
@@ -230,7 +230,7 @@ impl RootView {
             .detach();
 
         let acoustid = cx.new(|cx| {
-            let mut field = Field::new(words::root::acoustid_placeholder(), window, cx).masked();
+            let mut field = Field::new(words::root::acoustid_placeholder, window, cx).masked();
             field.hold(online.acoustid_key.clone(), cx);
             field
         });
@@ -245,7 +245,7 @@ impl RootView {
 
         let replication = cx.new(|cx| {
             let mut field =
-                Field::new(words::root::replication_token_placeholder(), window, cx).masked();
+                Field::new(words::root::replication_token_placeholder, window, cx).masked();
             field.hold(online.musicbrainz_replication_token.clone(), cx);
             field
         });
@@ -263,7 +263,7 @@ impl RootView {
         .detach();
 
         let audd = cx.new(|cx| {
-            let mut field = Field::new(words::root::audd_placeholder(), window, cx).masked();
+            let mut field = Field::new(words::root::audd_placeholder, window, cx).masked();
             field.hold(online.audd_token.clone(), cx);
             field
         });
@@ -275,8 +275,7 @@ impl RootView {
             .detach();
 
         let listenbrainz = cx.new(|cx| {
-            let mut field =
-                Field::new(words::root::listenbrainz_placeholder(), window, cx).masked();
+            let mut field = Field::new(words::root::listenbrainz_placeholder, window, cx).masked();
             field.hold(online.listenbrainz_token.clone(), cx);
             field
         });
@@ -301,7 +300,7 @@ impl RootView {
         let youtube_music = YoutubeMusicField::fields(&online, window, cx);
 
         let discord_app = cx.new(|cx| {
-            let mut field = Field::new(words::root::discord_app_placeholder(), window, cx);
+            let mut field = Field::new(words::root::discord_app_placeholder, window, cx);
             field.hold(
                 presence.app.map(|app| app.to_string()).unwrap_or_default(),
                 cx,
@@ -318,7 +317,7 @@ impl RootView {
         .detach();
 
         let discord_icon = cx.new(|cx| {
-            let mut field = Field::new(words::root::discord_icon_placeholder(), window, cx);
+            let mut field = Field::new(words::root::discord_icon_placeholder, window, cx);
             field.hold(
                 presence
                     .icon
@@ -341,7 +340,7 @@ impl RootView {
         let synchronised = cx.global::<ResonateApp>().synchronised.clone();
         let sync_server = cx.new(|cx| {
             let mut field = Field::new(
-                crate::words::settings_sync::sync_server_placeholder(),
+                crate::words::settings_sync::sync_server_placeholder,
                 window,
                 cx,
             );
@@ -358,7 +357,7 @@ impl RootView {
         .detach();
         let sync_device = cx.new(|cx| {
             let mut field = Field::new(
-                crate::words::settings_sync::sync_device_placeholder(),
+                crate::words::settings_sync::sync_device_placeholder,
                 window,
                 cx,
             );
@@ -375,7 +374,7 @@ impl RootView {
         .detach();
         let shared_name = cx.new(|cx| {
             let mut field = Field::new(
-                crate::words::settings_sync::shared_name_placeholder(),
+                crate::words::settings_sync::shared_name_placeholder,
                 window,
                 cx,
             );
@@ -390,14 +389,14 @@ impl RootView {
             },
         )
         .detach();
-        let party_chat = cx.new(|cx| Field::new(crate::words::party::say_something(), window, cx));
+        let party_chat = cx.new(|cx| Field::new(crate::words::party::say_something, window, cx));
         cx.subscribe_in(&party_chat, window, |this, _, _: &Submitted, window, cx| {
             this.say_in_the_party(window, cx);
         })
         .detach();
         let sync_code = cx.new(|cx| {
             Field::new(
-                crate::words::settings_sync::sync_code_placeholder(),
+                crate::words::settings_sync::sync_code_placeholder,
                 window,
                 cx,
             )
@@ -408,7 +407,7 @@ impl RootView {
         .detach();
 
         let minimum_length = cx.new(|cx| {
-            let mut field = Field::new(words::root::seconds_from_0_to_600(), window, cx);
+            let mut field = Field::new(words::root::seconds_from_0_to_600, window, cx);
             field.hold(
                 cx.global::<ResonateApp>()
                     .library
@@ -430,7 +429,7 @@ impl RootView {
         .detach();
 
         let organising = cx.new(|cx| {
-            let mut field = Field::new(words::root::organising_placeholder(), window, cx);
+            let mut field = Field::new(words::root::organising_placeholder, window, cx);
             field.hold(organise_as, cx);
             field
         });
@@ -442,7 +441,7 @@ impl RootView {
             .detach();
 
         let (typed_words, typed_isrc) = matching::matching_fields(window, cx);
-        let typed_root = cx.new(|cx| Field::new(words::root::typed_root_placeholder(), window, cx));
+        let typed_root = cx.new(|cx| Field::new(words::root::typed_root_placeholder, window, cx));
         cx.subscribe_in(&typed_root, window, |this, _, _: &Submitted, window, cx| {
             this.root_typed(window, cx);
         })
@@ -452,13 +451,8 @@ impl RootView {
         })
         .detach();
 
-        let finding = cx.new(|cx| {
-            Field::new(
-                crate::words::settings_pane::filter_placeholder(),
-                window,
-                cx,
-            )
-        });
+        let finding =
+            cx.new(|cx| Field::new(crate::words::settings_pane::filter_placeholder, window, cx));
         cx.subscribe_in(&finding, window, |this, _, _: &Submitted, window, cx| {
             this.leave_filter(window, cx);
         })
@@ -474,8 +468,7 @@ impl RootView {
         })
         .detach();
 
-        let server_search =
-            cx.new(|cx| Field::new(words::served::search_placeholder(), window, cx));
+        let server_search = cx.new(|cx| Field::new(words::served::search_placeholder, window, cx));
         cx.subscribe_in(
             &server_search,
             window,
@@ -485,7 +478,7 @@ impl RootView {
         )
         .detach();
 
-        let figure = cx.new(|cx| Field::new(words::root::figure_placeholder(), window, cx));
+        let figure = cx.new(|cx| Field::new(words::root::figure_placeholder, window, cx));
         cx.subscribe_in(&figure, window, |this, _, _: &Submitted, window, cx| {
             this.figure_given(window, cx);
         })
@@ -493,14 +486,13 @@ impl RootView {
         cx.subscribe(&figure, |this, _, _: &Blurred, cx| this.figure_left(cx))
             .detach();
 
-        let looking = cx.new(|cx| Field::new(words::root::looking_placeholder(), window, cx));
+        let looking = cx.new(|cx| Field::new(words::root::looking_placeholder, window, cx));
         cx.subscribe_in(&looking, window, |this, _, _: &Submitted, _window, cx| {
             this.look_for_a_device(cx);
         })
         .detach();
 
-        let measured_as =
-            cx.new(|cx| Field::new(words::root::measured_as_placeholder(), window, cx));
+        let measured_as = cx.new(|cx| Field::new(words::root::measured_as_placeholder, window, cx));
 
         let equaliser = cx.new(|cx| {
             let mut model = EqualiserModel::saved_on_leaving(

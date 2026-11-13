@@ -1,5 +1,4 @@
 keeps-its-own = Each palette draws each accent in its own tones, and the ringed swatch is whichever one the palette was built around.
-language-note = A language chosen here is spoken from the next start.
 its-own = Whichever accent this palette was built around
 follow-scheme-note = A palette with a light or dark counterpart is worn as the one the desktop asks for; choosing a palette below wears that palette alone.
 follow-text-size-note = The nearest of the sizes below to the desktop's own text scale; choosing a size below wears that size alone, and it is the one worn when the desktop does not say.

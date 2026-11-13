@@ -475,20 +475,18 @@ impl RootView {
     pub(super) fn language_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let chosen = cx.global::<ResonateApp>().language;
 
-        kit::rows()
-            .child(kit::field(
-                words::settings_appearance::speak(),
-                self.choices(
-                    "language",
-                    chosen,
-                    cx,
-                    |this, chosen: LanguageChoice, cx| {
-                        this.speak(chosen, cx);
-                        this.store(&Setting::Language(chosen), cx);
-                    },
-                ),
-            ))
-            .note(words::settings_appearance::language_note())
+        kit::rows().child(kit::field(
+            words::settings_appearance::speak(),
+            self.choices(
+                "language",
+                chosen,
+                cx,
+                |this, chosen: LanguageChoice, cx| {
+                    this.speak(chosen, cx);
+                    this.store(&Setting::Language(chosen), cx);
+                },
+            ),
+        ))
     }
 
     pub(super) fn mouse_navigation_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -624,6 +622,9 @@ impl RootView {
 
     pub(crate) fn speak(&self, chosen: LanguageChoice, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.language = chosen);
+        resonate_words::speak(chosen.language(&resonate_words::languages_the_listener_reads()));
+        crate::app_menu::say_the_menus(cx);
+        cx.refresh_windows();
         cx.notify();
     }
 

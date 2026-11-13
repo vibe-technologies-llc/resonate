@@ -376,7 +376,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   worn when the desktop says nothing. The pane writes `theme` with `follow-desktop-scheme = false`
   (and `text-size` with `follow-desktop-text-size = false`) when a palette or size is chosen by hand.
 - `language`: `resonate_words::LanguageChoice`, `system` unless a tag is written; read before any
-  subcommand runs (`resonate_words::speak`), the pane's change spoken from the next start
+  subcommand runs (`resonate_words::speak`), the pane's change spoken by the window at once
   (`language.md`).
 - `artists-drawn`: `resonate_core::ArtistsDrawn`, `grid` unless the file says `list`.
 - `spectrum-tilt` (`flat`, `pink`, `steep`), `spectrum-floor` (`60`, `78`, `96` dB under full

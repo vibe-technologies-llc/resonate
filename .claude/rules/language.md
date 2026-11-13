@@ -62,8 +62,20 @@ the code that says the words.
   calls `speak(config.language_spoken())`, so the terminal, the window, notifications and Discord
   speak it. The help is said before the settings are read, so `run` first speaks
   `config::spoken_before_the_grammar`, the `language` key alone (`binary.md`). The Appearance
-  category's *Language* group writes it (`Setting::Language`, `ResonateApp::language`); a change is
-  spoken from the next start, and the group says so.
+  category's *Language* group writes it (`Setting::Language`, `ResonateApp::language`) and speaks
+  the choice at once: `RootView::speak` negotiates it (`LanguageChoice::language` against
+  `languages_the_listener_reads`), calls `resonate_words::speak`, lays the menu bar out again
+  (`app_menu::say_the_menus`) and refreshes every window, which draws uncached, so each word is
+  read again from the catalog of the language now spoken. **Nothing a listener reads is kept in
+  the language it was said in beyond the frame that drew it**: a `Field`'s placeholder is a
+  function (`Field::new` takes `impl Fn() -> &'static str`, so `words::root::search_placeholder`
+  is passed uncalled), a menu is rebuilt by `say_the_menus`, `Area::plain` keeps a string per
+  language. A notice already told stays as it was said; the terminal's own run speaks the
+  language it began in
+  (`a_language_chosen_in_the_pane_is_spoken_and_its_menus_laid_out_again_at_once`,
+  `a_placeholder_is_asked_for_each_time_it_is_drawn_so_a_new_language_reaches_it`). MPRIS
+  notifications, the idle inhibitor's reason and Discord's activity read `spoken()` as each is
+  made, so they follow with no step of their own.
 - **The grammar, the man pages, the desktop entry and the metainfo come out of `resonate-cli`'s
   catalog.** Every help and about is `words::grammar::…` (`grammar.ftl`), clap's headings, flags and
   clap_mangen's section headings `words::said::…`, and the binary's `build.rs` writes each

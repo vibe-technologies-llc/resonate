@@ -69,12 +69,12 @@ pub(crate) fn matching_fields(
     window: &mut Window,
     cx: &mut Context<RootView>,
 ) -> (Entity<Field>, Entity<Field>) {
-    let words = cx.new(|cx| Field::new(words::matching::words_placeholder(), window, cx));
+    let words = cx.new(|cx| Field::new(words::matching::words_placeholder, window, cx));
     cx.subscribe_in(&words, window, |this, _, _: &Submitted, _, cx| {
         this.look_for_likely_recordings(cx);
     })
     .detach();
-    let isrc = cx.new(|cx| Field::new(words::matching::isrc_placeholder(), window, cx));
+    let isrc = cx.new(|cx| Field::new(words::matching::isrc_placeholder, window, cx));
     cx.subscribe_in(&isrc, window, |this, _, _: &Submitted, window, cx| {
         this.isrc_given(window, cx);
     })
