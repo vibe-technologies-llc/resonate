@@ -201,7 +201,7 @@ tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["std", "sink"] }
 httparse = { version = "1.10.1", default-features = false, features = ["std"] }
-mio = { version = "1.2.4", default-features = false, features = ["net", "os-poll"] }
+mio = { version = "1.2.5", default-features = false, features = ["net", "os-poll"] }
 rustls-native-certs = { version = "0.8.5", default-features = false }
 webpki-root-certs = { version = "1.0.12", default-features = false }
 uuid = { version = "1.29.2", default-features = false, features = ["std", "v4"] }
@@ -225,7 +225,7 @@ serde_json = { version = "1.0.154", default-features = false, features = ["std"]
 serde-saphyr = { version = "2.1.1", default-features = false, features = ["deserialize"] }
 
 zbus = {
-    version = "6.2.1",
+    version = "6.3.0",
     default-features = false,
     features = ["default-rt", "proxy", "service"]
 }
