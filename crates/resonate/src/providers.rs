@@ -9,6 +9,11 @@ use resonate_inbox::Inbox;
 #[cfg(feature = "online")]
 use resonate_jellyfin::Jellyfin;
 #[cfg(feature = "online")]
+use resonate_library::{
+    HostedServices, Hosting, JellyfinLogin, Key, Reachable, ServiceAccount, SubsonicLogin,
+    TidalLogin, YoutubeMusicLogin, reachable,
+};
+#[cfg(feature = "online")]
 use resonate_monochrome::Monochrome;
 #[cfg(feature = "online")]
 use resonate_providers::PlaysInPlace;
@@ -94,8 +99,9 @@ pub fn in_place_named(config: &Config, settings: Option<PathBuf>) -> InPlace {
 
 #[cfg(feature = "online")]
 pub fn youtube_music_named(config: &Config, settings: Option<PathBuf>) -> Option<Arc<YtMusic>> {
-    let account = Accounts::of(config).ytmusic?;
-    Some(ytmusic_of(&made_once(settings), &account))
+    let accounts = Accounts::of(config);
+    let login = accounts.youtube_music()?;
+    Some(made_once(settings).youtube_music(login))
 }
 
 #[cfg(all(feature = "ui", feature = "online"))]
@@ -105,86 +111,54 @@ pub fn in_place_given(online: &resonate_ui::Online, settings: Option<PathBuf>) -
 
 #[cfg(feature = "online")]
 fn in_place(accounts: &Accounts, made: &Made) -> InPlace {
-    let mut served: InPlace = Vec::new();
-    if let Some(server) = &accounts.subsonic {
-        served.push(subsonic_of(made, server));
-    }
-    if let Some(server) = &accounts.jellyfin {
-        served.push(jellyfin_of(made, server));
-    }
-    if let Some(account) = &accounts.tidal {
-        served.push(tidal_of(made, account));
-    }
-    if let Some(secret) = &accounts.resonate {
-        served.push(resonate_of(made, secret));
-    }
-    if let Some(hifi) = &accounts.hifi {
-        served.push(hifi_of(made, hifi));
-    }
-    if let Some(monochrome) = &accounts.monochrome {
-        served.push(monochrome_of(made, monochrome));
-    }
-    if let Some(account) = &accounts.ytmusic {
-        served.push(ytmusic_of(made, account));
-    }
-    served
+    accounts
+        .0
+        .iter()
+        .map(|reachable| made.built(reachable).in_place())
+        .collect()
 }
 
 #[cfg(feature = "online")]
-fn subsonic_of(made: &Made, server: &Server) -> Arc<Subsonic> {
-    made.subsonic
-        .made_for(server, |server| Subsonic::at(server.clone()))
+enum Built {
+    Subsonic(Arc<Subsonic>),
+    Jellyfin(Arc<Jellyfin>),
+    Tidal(Arc<Tidal>),
+    HifiApi(Arc<HifiApi>),
+    Monochrome(Arc<Monochrome>),
+    YtMusic(Arc<YtMusic>),
 }
 
 #[cfg(feature = "online")]
-fn jellyfin_of(made: &Made, server: &JellyfinServer) -> Arc<Jellyfin> {
-    made.jellyfin.made_for(server, |server| {
-        Jellyfin::at(resonate_jellyfin::Server {
-            url: server.url.clone(),
-            user: server.user.clone(),
-            password: server.password.clone(),
-            kept: server.kept.clone(),
-        })
-    })
+impl Built {
+    fn in_place(self) -> Arc<dyn PlaysInPlace> {
+        match self {
+            Self::Subsonic(service) => service,
+            Self::Jellyfin(service) => service,
+            Self::Tidal(service) => service,
+            Self::HifiApi(service) => service,
+            Self::Monochrome(service) => service,
+            Self::YtMusic(service) => service,
+        }
+    }
+
+    fn provider(self) -> Option<Arc<dyn resonate_providers::Provider>> {
+        match self {
+            Self::Subsonic(service) => Some(service),
+            Self::Tidal(service) => Some(service),
+            Self::HifiApi(service) => Some(service),
+            Self::Monochrome(service) => Some(service),
+            Self::YtMusic(service) => Some(service),
+            Self::Jellyfin(_) => None,
+        }
+    }
 }
 
 #[cfg(feature = "online")]
-fn tidal_of(made: &Made, account: &Account) -> Arc<Tidal> {
-    made.tidal
-        .made_for(account, |account| made.signed_in(account))
-}
-
-#[cfg(feature = "online")]
-fn resonate_of(made: &Made, secret: &Secret) -> Arc<HifiApi> {
-    made.resonate.made_for(secret, |Secret(key)| {
-        HifiApi::at(resonate_tidal::OWN_SERVER)
-            .with_secret(key)
-            .known_as_resonate()
-    })
-}
-
-#[cfg(feature = "online")]
-fn hifi_of(made: &Made, hifi: &Hosting) -> Arc<HifiApi> {
-    made.hifi.made_for(hifi, |hifi| match hifi {
-        Hosting::Hosted => HifiApi::hosted(),
-        Hosting::Custom(server) => HifiApi::at(server),
-    })
-}
-
-#[cfg(feature = "online")]
-fn monochrome_of(made: &Made, monochrome: &Hosting) -> Arc<Monochrome> {
-    made.monochrome
-        .made_for(monochrome, |monochrome| match monochrome {
-            Hosting::Hosted => Monochrome::hosted(),
-            Hosting::Custom(server) => Monochrome::at(server),
-        })
-}
-
-#[cfg(feature = "online")]
-fn ytmusic_of(made: &Made, account: &YtMusicAccount) -> Arc<YtMusic> {
-    made.ytmusic.made_for(account, |account| {
-        YtMusic::new(Tool::new(account.program.clone(), account.cookies.clone()))
-    })
+fn the_tool_of(login: &YoutubeMusicLogin) -> (Option<PathBuf>, Cookies) {
+    (
+        login.program.as_deref().and_then(config::a_path),
+        Cookies::read(&login.cookies),
+    )
 }
 
 #[cfg(all(feature = "ui", feature = "online"))]
@@ -193,8 +167,9 @@ pub fn checks_youtube_music(settings: Option<PathBuf>) -> Option<resonate_ui::Ch
 
     let made = made_once(settings);
     Some(Arc::new(move |online: &resonate_ui::Online| {
-        let account = Accounts::given(online).ytmusic?;
-        Some(match ytmusic_of(&made, &account).check() {
+        let accounts = Accounts::given(online);
+        let login = accounts.youtube_music()?;
+        Some(match made.youtube_music(login).check() {
             Connection::Premium => resonate_ui::YoutubeMusicConnection::Premium,
             Connection::SignedInWithoutPremium => {
                 resonate_ui::YoutubeMusicConnection::SignedInWithoutPremium
@@ -346,19 +321,73 @@ fn sourced_over(made: Arc<Made>) -> (resonate_ui::Registering, resonate_ui::Unke
 
 #[cfg(feature = "online")]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct Accounts {
-    subsonic: Option<Server>,
-    jellyfin: Option<JellyfinServer>,
-    tidal: Option<Account>,
-    resonate: Option<Secret>,
-    hifi: Option<Hosting>,
-    monochrome: Option<Hosting>,
-    ytmusic: Option<YtMusicAccount>,
-}
+struct Accounts(Vec<Reachable>);
 
 #[cfg(not(feature = "online"))]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Accounts;
+
+#[cfg(feature = "online")]
+struct Typed<'a> {
+    subsonic: [&'a str; 3],
+    jellyfin: [&'a str; 6],
+    tidal: [&'a str; 3],
+    hifi_api: [&'a str; 2],
+    monochrome: &'a str,
+    youtube_music: Option<[&'a str; 2]>,
+    hosted_services: bool,
+}
+
+#[cfg(feature = "online")]
+impl Typed<'_> {
+    fn accounts(self) -> Accounts {
+        let owned = |text: &str| text.to_owned();
+        let [server, user, password] = self.subsonic.map(owned);
+        let subsonic = ServiceAccount::Subsonic {
+            server,
+            user,
+            password,
+        };
+        let [server, user, password, token, user_id, device] = self.jellyfin.map(owned);
+        let jellyfin = ServiceAccount::Jellyfin {
+            server,
+            user,
+            password,
+            token,
+            user_id,
+            device,
+        };
+        let [client_id, client_secret, refresh_token] = self.tidal.map(owned);
+        let tidal = ServiceAccount::Tidal {
+            client_id,
+            client_secret,
+            refresh_token,
+        };
+        let [server, key] = self.hifi_api.map(owned);
+        let hifi_api = ServiceAccount::HifiApi { server, key };
+        let monochrome = ServiceAccount::Monochrome {
+            server: owned(self.monochrome),
+        };
+        let youtube_music =
+            self.youtube_music
+                .map(|[cookies, program]| ServiceAccount::YoutubeMusic {
+                    cookies: owned(cookies),
+                    program: owned(program),
+                });
+
+        Accounts(reachable(
+            [subsonic, jellyfin, tidal, hifi_api, monochrome]
+                .into_iter()
+                .chain(youtube_music),
+            HostedServices::allowed(self.hosted_services),
+        ))
+    }
+}
+
+#[cfg(feature = "online")]
+fn text(value: &Option<String>) -> &str {
+    value.as_deref().unwrap_or_default()
+}
 
 #[cfg(feature = "online")]
 impl Accounts {
@@ -366,39 +395,33 @@ impl Accounts {
         if !config.online_enabled() {
             return Self::default();
         }
-        Self {
-            subsonic: subsonic(
-                config.subsonic.as_deref(),
-                config.subsonic_user.as_deref(),
-                config.subsonic_password.as_deref(),
-            ),
-            jellyfin: jellyfin(
-                config.jellyfin.as_deref(),
-                config.jellyfin_user.as_deref(),
-                config.jellyfin_password.as_deref(),
-                [
-                    config.jellyfin_token.as_deref(),
-                    config.jellyfin_user_id.as_deref(),
-                    config.jellyfin_device.as_deref(),
-                ],
-            ),
-            tidal: tidal(
-                config.tidal_client_id.as_deref(),
-                config.tidal_client_secret.as_deref(),
-                config.tidal_refresh_token.as_deref(),
-            ),
-            resonate: secret(config.hifi_secret.as_deref()),
-            hifi: hosting(config.hifi_api.as_deref(), config.hosted_services_allowed()),
-            monochrome: hosting(
-                config.monochrome.as_deref(),
-                config.hosted_services_allowed(),
-            ),
-            ytmusic: ytmusic(
-                config.turns_youtube_music_on(),
-                config.youtube_music_cookies.as_deref(),
-                config.yt_dlp.as_deref(),
-            ),
+        Typed {
+            subsonic: [
+                text(&config.subsonic),
+                text(&config.subsonic_user),
+                text(&config.subsonic_password),
+            ],
+            jellyfin: [
+                text(&config.jellyfin),
+                text(&config.jellyfin_user),
+                text(&config.jellyfin_password),
+                text(&config.jellyfin_token),
+                text(&config.jellyfin_user_id),
+                text(&config.jellyfin_device),
+            ],
+            tidal: [
+                text(&config.tidal_client_id),
+                text(&config.tidal_client_secret),
+                text(&config.tidal_refresh_token),
+            ],
+            hifi_api: [text(&config.hifi_api), text(&config.hifi_secret)],
+            monochrome: text(&config.monochrome),
+            youtube_music: config
+                .turns_youtube_music_on()
+                .then(|| [text(&config.youtube_music_cookies), text(&config.yt_dlp)]),
+            hosted_services: config.hosted_services_allowed(),
         }
+        .accounts()
     }
 
     #[cfg(feature = "ui")]
@@ -406,36 +429,41 @@ impl Accounts {
         if !online.enabled {
             return Self::default();
         }
-        Self {
-            subsonic: subsonic(
-                Some(&online.subsonic),
-                Some(&online.subsonic_user),
-                Some(&online.subsonic_password),
-            ),
-            jellyfin: jellyfin(
-                Some(&online.jellyfin),
-                Some(&online.jellyfin_user),
-                Some(&online.jellyfin_password),
-                [
-                    Some(&online.jellyfin_token),
-                    Some(&online.jellyfin_user_id),
-                    Some(&online.jellyfin_device),
-                ],
-            ),
-            tidal: tidal(
-                Some(&online.tidal_client_id),
-                Some(&online.tidal_client_secret),
-                Some(&online.tidal_refresh_token),
-            ),
-            resonate: secret(Some(&online.hifi_secret)),
-            hifi: hosting(Some(&online.hifi_api), online.hosted_services),
-            monochrome: hosting(Some(&online.monochrome), online.hosted_services),
-            ytmusic: ytmusic(
-                online.youtube_music,
-                Some(&online.youtube_music_cookies),
-                Some(&online.yt_dlp),
-            ),
+        Typed {
+            subsonic: [
+                &online.subsonic,
+                &online.subsonic_user,
+                &online.subsonic_password,
+            ],
+            jellyfin: [
+                &online.jellyfin,
+                &online.jellyfin_user,
+                &online.jellyfin_password,
+                &online.jellyfin_token,
+                &online.jellyfin_user_id,
+                &online.jellyfin_device,
+            ],
+            tidal: [
+                &online.tidal_client_id,
+                &online.tidal_client_secret,
+                &online.tidal_refresh_token,
+            ],
+            hifi_api: [&online.hifi_api, &online.hifi_secret],
+            monochrome: &online.monochrome,
+            youtube_music: online.youtube_music.then_some([
+                online.youtube_music_cookies.as_str(),
+                online.yt_dlp.as_str(),
+            ]),
+            hosted_services: online.hosted_services,
         }
+        .accounts()
+    }
+
+    fn youtube_music(&self) -> Option<&YoutubeMusicLogin> {
+        self.0.iter().find_map(|reachable| match reachable {
+            Reachable::YoutubeMusic(login) => Some(login),
+            _ => None,
+        })
     }
 }
 
@@ -452,145 +480,14 @@ impl Accounts {
 }
 
 #[cfg(feature = "online")]
-#[cfg(feature = "online")]
-fn given(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned)
-}
-
-#[cfg(feature = "online")]
-fn subsonic(url: Option<&str>, user: Option<&str>, password: Option<&str>) -> Option<Server> {
-    Some(Server {
-        url: given(url)?,
-        user: given(user)?,
-        password: given(password)?,
-    })
-}
-
-#[cfg(feature = "online")]
-#[derive(Clone, PartialEq, Eq)]
-struct JellyfinServer {
-    url: String,
-    user: String,
-    password: String,
-    kept: Option<resonate_jellyfin::KeptSession>,
-}
-
-#[cfg(feature = "online")]
-impl std::fmt::Debug for JellyfinServer {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("JellyfinServer")
-            .field("url", &self.url)
-            .field("user", &self.user)
-            .field("password", &"<withheld>")
-            .field("kept", &self.kept)
-            .finish()
-    }
-}
-
-#[cfg(feature = "online")]
-fn jellyfin(
-    url: Option<&str>,
-    user: Option<&str>,
-    password: Option<&str>,
-    [token, user_id, device]: [Option<&str>; 3],
-) -> Option<JellyfinServer> {
-    let url = given(url)?;
-    let kept =
-        given(token)
-            .zip(given(user_id))
-            .zip(given(device))
-            .map(|((token, user), device)| resonate_jellyfin::KeptSession {
-                token,
-                user,
-                device,
-            });
-    if kept.is_some() {
-        return Some(JellyfinServer {
-            url,
-            user: given(user).unwrap_or_default(),
-            password: String::new(),
-            kept,
-        });
-    }
-    Some(JellyfinServer {
-        url,
-        user: given(user)?,
-        password: given(password)?,
-        kept: None,
-    })
-}
-
-#[cfg(feature = "online")]
-fn tidal(
-    client_id: Option<&str>,
-    client_secret: Option<&str>,
-    refresh_token: Option<&str>,
-) -> Option<Account> {
-    Some(Account {
-        client_id: given(client_id)?,
-        client_secret: given(client_secret),
-        refresh_token: given(refresh_token)?,
-    })
-}
-
-#[cfg(feature = "online")]
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct YtMusicAccount {
-    program: Option<PathBuf>,
-    cookies: Cookies,
-}
-
-#[cfg(feature = "online")]
-fn ytmusic(on: bool, cookies: Option<&str>, program: Option<&str>) -> Option<YtMusicAccount> {
-    on.then(|| YtMusicAccount {
-        program: program.and_then(config::a_path),
-        cookies: Cookies::read(cookies.unwrap_or_default()),
-    })
-}
-
-#[cfg(feature = "online")]
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum Hosting {
-    Hosted,
-    Custom(String),
-}
-
-#[cfg(feature = "online")]
-#[derive(Clone, PartialEq, Eq)]
-struct Secret(String);
-
-#[cfg(feature = "online")]
-impl std::fmt::Debug for Secret {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("<withheld>")
-    }
-}
-
-#[cfg(feature = "online")]
-fn secret(key: Option<&str>) -> Option<Secret> {
-    given(key).map(Secret)
-}
-
-#[cfg(feature = "online")]
-fn hosting(server: Option<&str>, hosted_allowed: bool) -> Option<Hosting> {
-    match given(server) {
-        Some(server) => Some(Hosting::Custom(server)),
-        None => hosted_allowed.then_some(Hosting::Hosted),
-    }
-}
-
-#[cfg(feature = "online")]
 struct Made {
-    subsonic: Kept<Server, Subsonic>,
-    jellyfin: Kept<JellyfinServer, Jellyfin>,
-    tidal: Kept<Account, Tidal>,
-    resonate: Kept<Secret, HifiApi>,
+    subsonic: Kept<SubsonicLogin, Subsonic>,
+    jellyfin: Kept<JellyfinLogin, Jellyfin>,
+    tidal: Kept<TidalLogin, Tidal>,
+    resonate: Kept<Key, HifiApi>,
     hifi: Kept<Hosting, HifiApi>,
     monochrome: Kept<Hosting, Monochrome>,
-    ytmusic: Kept<YtMusicAccount, YtMusic>,
+    ytmusic: Kept<YoutubeMusicLogin, YtMusic>,
     renewed: Arc<Renewed>,
 }
 
@@ -631,11 +528,71 @@ impl Made {
         Keeping(Arc::clone(&self.renewed))
     }
 
-    fn signed_in(&self, account: &Account) -> Tidal {
+    fn signed_in(&self, login: &TidalLogin) -> Tidal {
+        let account = Account {
+            client_id: login.client_id.clone(),
+            client_secret: login.client_secret.clone(),
+            refresh_token: login.refresh_token.clone(),
+        };
         let renewed = Arc::clone(&self.renewed);
         let given = account.refresh_token.clone();
-        Tidal::signed_in(self.renewed.standing_for(account))
+        Tidal::signed_in(self.renewed.standing_for(&account))
             .telling(move |token| renewed.note(given.clone(), token))
+    }
+
+    fn youtube_music(&self, login: &YoutubeMusicLogin) -> Arc<YtMusic> {
+        self.ytmusic.made_for(login, |login| {
+            let (program, cookies) = the_tool_of(login);
+            YtMusic::new(Tool::new(program, cookies))
+        })
+    }
+
+    fn built(&self, reachable: &Reachable) -> Built {
+        match reachable {
+            Reachable::Subsonic(login) => Built::Subsonic(self.subsonic.made_for(login, |login| {
+                Subsonic::at(Server {
+                    url: login.url.clone(),
+                    user: login.user.clone(),
+                    password: login.password.clone(),
+                })
+            })),
+            Reachable::Jellyfin(login) => Built::Jellyfin(self.jellyfin.made_for(login, |login| {
+                Jellyfin::at(resonate_jellyfin::Server {
+                    url: login.url.clone(),
+                    user: login.user.clone(),
+                    password: login.password.clone(),
+                    kept: login
+                        .session
+                        .as_ref()
+                        .map(|session| resonate_jellyfin::KeptSession {
+                            token: session.token.clone(),
+                            user: session.user.clone(),
+                            device: session.device.clone(),
+                        }),
+                })
+            })),
+            Reachable::Tidal(login) => {
+                Built::Tidal(self.tidal.made_for(login, |login| self.signed_in(login)))
+            }
+            Reachable::Resonate(key) => Built::HifiApi(self.resonate.made_for(key, |key| {
+                HifiApi::at(resonate_tidal::OWN_SERVER)
+                    .with_secret(key.as_str())
+                    .known_as_resonate()
+            })),
+            Reachable::HifiApi(hosting) => {
+                Built::HifiApi(self.hifi.made_for(hosting, |hosting| match hosting {
+                    Hosting::Hosted => HifiApi::hosted(),
+                    Hosting::Custom(server) => HifiApi::at(server),
+                }))
+            }
+            Reachable::Monochrome(hosting) => {
+                Built::Monochrome(self.monochrome.made_for(hosting, |hosting| match hosting {
+                    Hosting::Hosted => Monochrome::hosted(),
+                    Hosting::Custom(server) => Monochrome::at(server),
+                }))
+            }
+            Reachable::YoutubeMusic(login) => Built::YtMusic(self.youtube_music(login)),
+        }
     }
 }
 
@@ -719,26 +676,12 @@ impl<Settings: Clone + PartialEq, Made> Kept<Settings, Made> {
 
 #[cfg(feature = "online")]
 fn registry(inbox: Option<&Path>, accounts: &Accounts, made: &Made) -> Providers {
-    let mut providers = with_inbox(inbox);
-    if let Some(server) = &accounts.subsonic {
-        providers = providers.and(subsonic_of(made, server));
-    }
-    if let Some(account) = &accounts.tidal {
-        providers = providers.and(tidal_of(made, account));
-    }
-    if let Some(secret) = &accounts.resonate {
-        providers = providers.and(resonate_of(made, secret));
-    }
-    if let Some(hifi) = &accounts.hifi {
-        providers = providers.and(hifi_of(made, hifi));
-    }
-    if let Some(monochrome) = &accounts.monochrome {
-        providers = providers.and(monochrome_of(made, monochrome));
-    }
-    if let Some(account) = &accounts.ytmusic {
-        providers = providers.and(ytmusic_of(made, account));
-    }
-    providers
+    accounts
+        .0
+        .iter()
+        .filter(|reachable| reachable.fetches_for_wants())
+        .filter_map(|reachable| made.built(reachable).provider())
+        .fold(with_inbox(inbox), Providers::and)
 }
 
 #[cfg(not(feature = "online"))]
@@ -940,7 +883,16 @@ mod tests {
     #[cfg(feature = "online")]
     #[test]
     fn a_jellyfin_account_is_ready_with_a_password_or_a_whole_kept_session() {
-        let ready = |config: &Config| Accounts::of(config).jellyfin.is_some();
+        let jellyfin_of = |config: &Config| {
+            Accounts::of(config)
+                .0
+                .into_iter()
+                .find_map(|reachable| match reachable {
+                    Reachable::Jellyfin(login) => Some(login),
+                    _ => None,
+                })
+        };
+        let ready = |config: &Config| jellyfin_of(config).is_some();
         let address = Config {
             jellyfin: Some("http://music.local:8096".to_owned()),
             ..Config::default()
@@ -959,11 +911,7 @@ mod tests {
         assert!(!ready(&address));
         assert!(ready(&kept));
         assert!(!ready(&half_kept));
-        assert!(
-            Accounts::of(&kept)
-                .jellyfin
-                .is_some_and(|server| server.kept.is_some())
-        );
+        assert!(jellyfin_of(&kept).is_some_and(|login| login.session.is_some()));
     }
 
     #[cfg(feature = "online")]
@@ -999,18 +947,19 @@ mod tests {
         };
 
         let alone = keyed(None, false);
-        assert_eq!(
-            Accounts::of(&alone).resonate,
-            Some(Secret("key".to_owned()))
-        );
-        assert_eq!(Accounts::of(&alone).hifi, None);
+        assert!(Accounts::of(&alone).0.iter().any(
+            |reachable| matches!(reachable, Reachable::Resonate(key) if key.as_str() == "key")
+        ));
         assert!(named(&alone).contains(&"resonate".to_owned()));
         assert!(!named(&alone).contains(&"hifi-api".to_owned()));
 
         let beside = keyed(Some("https://hifi.home.arpa"), true);
-        assert_eq!(
-            Accounts::of(&beside).hifi,
-            Some(Hosting::Custom("https://hifi.home.arpa".to_owned()))
+        assert!(
+            Accounts::of(&beside)
+                .0
+                .contains(&Reachable::HifiApi(Hosting::Custom(
+                    "https://hifi.home.arpa".to_owned()
+                )))
         );
         let order = named(&beside);
         let place = |name: &str| order.iter().position(|each| each == name);
@@ -1018,14 +967,14 @@ mod tests {
         assert!(place("resonate") < place("hifi-api"));
         assert!(place("hifi-api") < place("monochrome"));
 
-        assert_eq!(
+        assert!(
             Accounts::of(&Config {
                 hifi_secret: Some("  ".to_owned()),
                 hosted_services: Some(false),
                 ..Config::default()
             })
-            .resonate,
-            None
+            .0
+            .is_empty()
         );
     }
 
@@ -1050,16 +999,21 @@ mod tests {
             ..Config::default()
         };
         assert!(!named(&unasked).contains(&"hifi-api".to_owned()));
-        assert_eq!(hosting(None, false), None);
-        assert_eq!(hosting(Some("  "), false), None);
 
         let allowed = Config {
             hosted_services: Some(true),
             ..Config::default()
         };
         assert!(named(&allowed).contains(&"hifi-api".to_owned()));
-        assert_eq!(hosting(None, true), Some(Hosting::Hosted));
-        assert_eq!(hosting(Some("  "), true), Some(Hosting::Hosted));
+        let blank = Config {
+            hifi_api: Some("  ".to_owned()),
+            ..allowed.clone()
+        };
+        assert!(
+            Accounts::of(&blank)
+                .0
+                .contains(&Reachable::HifiApi(Hosting::Hosted))
+        );
 
         let offline = Config {
             online: Some(false),
@@ -1077,16 +1031,26 @@ mod tests {
         };
 
         assert!(named(&whole).contains(&"hifi-api".to_owned()));
-        assert!(matches!(
-            Accounts::of(&whole).hifi,
-            Some(Hosting::Custom(_))
-        ));
+        assert!(
+            Accounts::of(&whole)
+                .0
+                .iter()
+                .any(|reachable| matches!(reachable, Reachable::HifiApi(Hosting::Custom(_))))
+        );
 
         let offline = Config {
             online: Some(false),
             ..whole
         };
         assert!(!named(&offline).contains(&"hifi-api".to_owned()));
+    }
+
+    #[cfg(feature = "online")]
+    fn monochrome_of(config: &Config) -> bool {
+        Accounts::of(config)
+            .0
+            .iter()
+            .any(|reachable| matches!(reachable, Reachable::Monochrome(_)))
     }
 
     #[cfg(feature = "online")]
@@ -1097,7 +1061,7 @@ mod tests {
             ..Config::default()
         };
         assert!(!named(&unasked).contains(&"monochrome".to_owned()));
-        assert_eq!(Accounts::of(&unasked).monochrome, None);
+        assert!(!monochrome_of(&unasked));
 
         let allowed = Config {
             hosted_services: Some(true),
@@ -1112,16 +1076,23 @@ mod tests {
                 .position(|name| name == "hifi-api")
                 .map(|hifi| hifi + 1)
         );
-        assert_eq!(Accounts::of(&allowed).monochrome, Some(Hosting::Hosted));
+        assert!(
+            Accounts::of(&allowed)
+                .0
+                .contains(&Reachable::Monochrome(Hosting::Hosted))
+        );
 
         let whole = Config {
             monochrome: Some("https://tracks.home.arpa".to_owned()),
             ..Config::default()
         };
         assert!(named(&whole).contains(&"monochrome".to_owned()));
-        assert_eq!(
-            Accounts::of(&whole).monochrome,
-            Some(Hosting::Custom("https://tracks.home.arpa".to_owned()))
+        assert!(
+            Accounts::of(&whole)
+                .0
+                .contains(&Reachable::Monochrome(Hosting::Custom(
+                    "https://tracks.home.arpa".to_owned()
+                )))
         );
 
         let offline = Config {
@@ -1136,7 +1107,7 @@ mod tests {
     fn youtube_music_is_registered_only_where_it_is_turned_on_and_online_is_on() {
         let unasked = Config::default();
         assert!(!named(&unasked).contains(&"ytmusic".to_owned()));
-        assert_eq!(Accounts::of(&unasked).ytmusic, None);
+        assert_eq!(Accounts::of(&unasked).youtube_music(), None);
 
         let turned_off = Config {
             youtube_music: Some(false),
@@ -1219,14 +1190,15 @@ mod tests {
             ..Config::default()
         };
 
-        let account = Accounts::of(&config).ytmusic.expect("an account");
+        let accounts = Accounts::of(&config);
+        let login = accounts.youtube_music().expect("an account");
 
         assert_eq!(
-            account,
-            YtMusicAccount {
-                program: Some(PathBuf::from("/opt/yt-dlp")),
-                cookies: Cookies::Browser("firefox:/home/a/zen".to_owned()),
-            }
+            the_tool_of(login),
+            (
+                Some(PathBuf::from("/opt/yt-dlp")),
+                Cookies::Browser("firefox:/home/a/zen".to_owned()),
+            )
         );
         assert!(!format!("{:?}", Accounts::of(&config)).contains("/home/a/zen"));
     }
@@ -1234,22 +1206,15 @@ mod tests {
     #[cfg(feature = "online")]
     #[test]
     fn a_youtube_music_account_with_nothing_given_asks_the_path_and_no_cookies() {
-        let account = Accounts::of(&Config {
+        let accounts = Accounts::of(&Config {
             youtube_music: Some(true),
             youtube_music_cookies: Some("  ".to_owned()),
             yt_dlp: Some("  ".to_owned()),
             ..Config::default()
-        })
-        .ytmusic
-        .expect("an account");
+        });
+        let login = accounts.youtube_music().expect("an account");
 
-        assert_eq!(
-            account,
-            YtMusicAccount {
-                program: None,
-                cookies: Cookies::None,
-            }
-        );
+        assert_eq!(the_tool_of(login), (None, Cookies::None));
     }
 
     #[cfg(feature = "online")]
@@ -1306,15 +1271,16 @@ mod tests {
             ..on.clone()
         };
 
+        let accounts = Accounts::given(&on);
         assert_eq!(
-            Accounts::given(&on).ytmusic,
-            Some(YtMusicAccount {
-                program: Some(PathBuf::from("/opt/yt-dlp")),
-                cookies: Cookies::Browser("firefox".to_owned()),
-            })
+            accounts.youtube_music().map(the_tool_of),
+            Some((
+                Some(PathBuf::from("/opt/yt-dlp")),
+                Cookies::Browser("firefox".to_owned()),
+            ))
         );
-        assert_eq!(Accounts::given(&off).ytmusic, None);
-        assert_eq!(Accounts::given(&offline).ytmusic, None);
+        assert_eq!(Accounts::given(&off).youtube_music(), None);
+        assert_eq!(Accounts::given(&offline).youtube_music(), None);
     }
 
     #[cfg(all(feature = "online", feature = "ui"))]
@@ -1408,11 +1374,14 @@ mod tests {
 
         let made = Made::new(None);
         let accounts = Accounts::given(&signed_in);
-        let tidal = |accounts: &Accounts| {
-            made.tidal
-                .made_for(accounts.tidal.as_ref().expect("an account"), |account| {
-                    Tidal::signed_in(account.clone())
-                })
+        let tidal = |accounts: &Accounts| match accounts
+            .0
+            .iter()
+            .find(|reachable| matches!(reachable, Reachable::Tidal(_)))
+            .map(|reachable| made.built(reachable))
+        {
+            Some(Built::Tidal(tidal)) => tidal,
+            _ => panic!("a TIDAL account"),
         };
         let first = tidal(&accounts);
         assert!(Arc::ptr_eq(&first, &tidal(&accounts)));

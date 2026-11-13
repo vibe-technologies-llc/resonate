@@ -4,13 +4,13 @@ use parking_lot::{Mutex, RwLock};
 use resonate_codec::Sources;
 use resonate_core::{MediaLocation, Resumable, Resumption, SourceId, TrackId};
 use resonate_engine::{Command, Placement, QueueItem, QueueRows, Unclaimed};
-use resonate_library::PlayedInPlace;
+use resonate_library::{PlayedInPlace, Reachable};
 use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Song};
 
 use crate::{
     Error, MobilePlayer, Result, Track,
     documents::location,
-    downloads::{DownloadAccount, MusicProvider, failure_of},
+    downloads::{DownloadAccount, failure_of},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -76,6 +76,7 @@ pub struct ServedFound {
 #[derive(Clone)]
 struct Service {
     account: DownloadAccount,
+    reachable: Reachable,
     plays: Arc<dyn PlaysInPlace>,
 }
 
@@ -221,31 +222,33 @@ impl Served {
 
     fn given(
         &self,
-        accounts: Vec<DownloadAccount>,
-        made: impl Fn(DownloadAccount) -> Option<Arc<dyn PlaysInPlace>>,
+        planned: Vec<(DownloadAccount, Reachable)>,
+        made: impl Fn(&Reachable) -> Option<Arc<dyn PlaysInPlace>>,
     ) {
-        let accounts: Vec<DownloadAccount> = accounts.into_iter().filter(is_ready).collect();
         let mut held = self.slot.write();
-        let standing: Vec<&DownloadAccount> = held.iter().map(|service| &service.account).collect();
-        if standing == accounts.iter().collect::<Vec<_>>() {
+        let standing: Vec<&Reachable> = held.iter().map(|service| &service.reachable).collect();
+        if standing
+            == planned
+                .iter()
+                .map(|(_, reachable)| reachable)
+                .collect::<Vec<_>>()
+        {
             return;
         }
         let mut services: Vec<Service> = Vec::new();
-        for account in accounts {
+        for (account, reachable) in planned {
             let kept = held
                 .iter()
-                .find(|service| service.account == account)
+                .find(|service| service.reachable == reachable)
                 .map(|service| Arc::clone(&service.plays));
-            let Some(plays) = kept.or_else(|| made(account.clone())) else {
+            let Some(plays) = kept.or_else(|| made(&reachable)) else {
                 continue;
             };
-            if services
-                .iter()
-                .any(|service| service.plays.scheme() == plays.scheme())
-            {
-                continue;
-            }
-            services.push(Service { account, plays });
+            services.push(Service {
+                account,
+                reachable,
+                plays,
+            });
         }
         *held = services;
         self.known.lock().clear();
@@ -333,21 +336,6 @@ impl Served {
     }
 }
 
-fn is_ready(account: &DownloadAccount) -> bool {
-    let given = |field: &str| !field.trim().is_empty();
-    match account.provider {
-        MusicProvider::Subsonic => {
-            given(&account.server) && given(&account.user) && given(&account.password)
-        }
-        MusicProvider::Jellyfin => {
-            let kept = given(&account.token) && given(&account.user_id) && given(&account.device);
-            given(&account.server) && (kept || (given(&account.user) && given(&account.password)))
-        }
-        MusicProvider::Tidal => given(&account.client_id) && given(&account.refresh_token),
-        MusicProvider::Monochrome | MusicProvider::HifiApi => true,
-    }
-}
-
 fn cover_name(cover: Option<Id>) -> Option<String> {
     cover.map(|cover| cover.as_str().to_owned())
 }
@@ -356,7 +344,9 @@ fn cover_name(cover: Option<Id>) -> Option<String> {
 impl MobilePlayer {
     pub fn serve_from(&self, accounts: Vec<DownloadAccount>) {
         self.served
-            .given(accounts, |account| self.downloads.in_place_of(account));
+            .given(self.downloads.planned(accounts), |reachable| {
+                self.downloads.in_place_of(reachable)
+            });
     }
 
     pub fn served_services(&self) -> Vec<ServedService> {
@@ -607,6 +597,7 @@ mod tests {
     use super::*;
     use crate::{
         catalog::{KeptRow, KeptServed},
+        downloads::MusicProvider,
         harness::{Harness, RATE, silence},
     };
 
@@ -1417,6 +1408,11 @@ mod tests {
     fn a_mix_is_shown_to_the_phones_among_the_albums_and_opens_to_its_songs_by_its_uri() {
         let service = Service {
             account: of(MusicProvider::Tidal, String::new()),
+            reachable: Reachable::Tidal(resonate_library::TidalLogin {
+                client_id: "client".to_owned(),
+                client_secret: None,
+                refresh_token: "token".to_owned(),
+            }),
             plays: Arc::new(Mixing),
         };
         let found = Found {

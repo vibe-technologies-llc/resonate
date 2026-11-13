@@ -1329,8 +1329,9 @@ most one TIDAL account, because the boundary hands back one renewed refresh toke
 and ready (`Readiness`, iOS's `DownloadAccount.readiness`: Monochrome and hifi-api always, Subsonic and Jellyfin
 with a server, user and password, TIDAL with a client ID and refresh token; a Jellyfin account is
 browsed and played in place and never asked for a want, the boundary leaving it out of `find_download`), and `find_download`
-takes every such account in list order, which only breaks ties, the boundary racing them; there is
-no order of the listener's, as on iOS and the desktop. The stored form is version 2, in the
+takes every such account, the boundary registering them in the desktop's one order (`providers.md`'s
+*Writing one*: a listener's own servers before the hosted services) and racing them; there is no order
+of the listener's, as on iOS and the desktop. The stored form is version 2, in the
 `provider-accounts` preferences: `accounts-version`, `accounts-ids` (the ids in order) and per id
 `account-<id>-provider`, `-server`, `-on` in plain text and `-user`, `-password`, `-client-id`,
 `-client-secret`, `-refresh-token` each sealed with AES-GCM under Android Keystore as before. Every

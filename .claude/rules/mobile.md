@@ -783,8 +783,9 @@ session as before.
 where the server has it off or is Emby), `finish_jellyfin_quick_connect` waits on the caller's thread
 for a `JellyfinSession` (token, user id, device, name) or a cancel, and `cancel_jellyfin_quick_connect`
 moves the attempt number on, as TIDAL's sign-in does. `DownloadAccount` carries `token`, `user_id` and
-`device` (`#[uniffi(default = "")]`, so a front end's construction stands); `is_ready` takes a server
-and either a login or the whole session, and `reached()` hands it to the provider as `KeptSession`.
+`device` (`#[uniffi(default = "")]`, so a front end's construction stands); the plan
+(`providers.md`'s *Writing one*) takes a server and either a login or the whole session, and
+`Downloads::reached` hands it to the provider as `KeptSession`.
 Both phones keep the three sealed beside the other fields (Android's records stay version 2, the keys
 optional; iOS's keychain item decodes them as optional), save the account on approval with the
 server's user name and no password, and let the session go when a password is typed.
@@ -866,12 +867,14 @@ iOS, `cargo clippy -p resonate-mobile --target aarch64-apple-ios` with the envir
 played in place* and *Other services played in place*: Subsonic, Jellyfin or Emby, TIDAL, the keyed Resonate server, hifi-api and Monochrome
 browsed and played where they are, never copied into the document catalog. The front end hands the
 download accounts that are on and ready (`serve_from(Vec<DownloadAccount>)`, the list a download is
-given; empty while online is off). The boundary keeps a ready one (`is_ready`: Subsonic's or Jellyfin's server,
-user and password, TIDAL's client id and refresh token) that `Downloads::in_place_of` builds as a
-download would (`Reached`, one construction for both: a hosted Monochrome or hifi-api is left out
-while hosted services are declined, a hifi-api account with a key is the `resonate` service, and a
-TIDAL account hands a rotated token to `refreshed_tidal_token`), the first account a scheme wins. `MusicProvider::Jellyfin` is in-place only: `Downloads::fetches_for_wants` leaves it out of `find`, so a want is never asked of it (`a_jellyfin_server_is_browsed_and_its_song_is_queued_and_played_and_is_never_asked_for_a_want`).
-The list is compared with the one held, so a call with the same accounts builds nothing and every
+given; empty while online is off). `Downloads::planned` turns the accounts into the desktop's plan (`DownloadAccount::service_account`,
+then `resonate_library::planned` under the hosted switch, each service tagged with the account it came
+from, `providers.md`'s *Writing one*: readiness, a hifi-api key as the `resonate` service beside the
+`hifi-api` the account names, one fixed order, the first account of a scheme kept), and
+`Downloads::in_place_of` builds each service as a download would (`Downloads::reached`, one
+construction for both; a TIDAL account hands a rotated token to `refreshed_tidal_token`). Jellyfin is
+in-place only: `Reachable::fetches_for_wants` leaves it out of `find`, so a want is never asked of it (`a_jellyfin_server_is_browsed_and_its_song_is_queued_and_played_and_is_never_asked_for_a_want`).
+The plan is compared with the one held, so a call with the same accounts builds nothing and every
 read may bind first; a service whose account stands keeps its `Arc` (one TIDAL session). One slot
 (`Arc<RwLock<Vec<Service>>>`) is read on each open by a `resonate_library::PlayedInPlace` per scheme of
 `PLAYED_IN_PLACE`, each a `MediaProvider` registered in every `Sources` the boundary makes

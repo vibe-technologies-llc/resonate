@@ -173,11 +173,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the window and the file share one `ConfigKey`, a switch's default is `ConfigKey::on_unless_said`
   and the writer takes the key from `Setting::key`; the typed values and groups in that one table
   would make a new setting one entry
-- [M] The binary and the phones share the provider that plays a service's song in place
-  (`resonate_library::PlayedInPlace`) but each build their providers from settings (`providers.rs`,
-  `downloads.rs`), and the two already differ: the desktop registers `resonate` beside `hifi-api`
-  where the phones turn a keyed hifi-api account into `resonate` alone; which is meant decides the
-  one construction `resonate-library` could hold
 - [M · blocked: jxl-oxide reading jxl-encoder's ANS-coded output] The vault builds two JPEG XL
   encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder` for a JPEG's transcode. Measured on
   600 to 1400 px covers, `jxl-encoder` 0.3.4's lossless effort 7 is about half zune's size (0.6 to

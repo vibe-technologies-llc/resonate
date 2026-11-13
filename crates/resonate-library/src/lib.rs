@@ -51,6 +51,7 @@ mod scan;
 mod schema;
 mod scrobble;
 mod search;
+mod services;
 mod share;
 mod sheet;
 mod sheeted;
@@ -188,6 +189,10 @@ pub use crate::{
     search::{
         Asked, Clause, ClockUnit, Column, Compare, Condition, Grain, Lit, Reach, Search, Shape,
         Term, Word, codec_named,
+    },
+    services::{
+        HostedServices, Hosting, JellyfinLogin, JellyfinSession, Key, Reachable, ServiceAccount,
+        SubsonicLogin, TidalLogin, YoutubeMusicLogin, planned, reachable,
     },
     share::Shared,
     sheet::{

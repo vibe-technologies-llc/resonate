@@ -16,7 +16,9 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_core::{Gate, Isrc, Mbid, SourceId};
-use resonate_library::ANSWERS_WITHIN;
+use resonate_library::{
+    ANSWERS_WITHIN, HostedServices, Hosting, Reachable, ServiceAccount, planned,
+};
 use resonate_providers::{
     Asking, Authorizing, Away, Client, Delivered, Delivery, Identity, Obtained, PlaysInPlace,
     Provider, Providers, Reopened, SignsIn, TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
@@ -84,17 +86,37 @@ pub enum MusicProvider {
     Jellyfin,
 }
 
-fn kept_session(
-    token: String,
-    user: String,
-    device: String,
-) -> Option<resonate_jellyfin::KeptSession> {
-    let given = |field: &str| !field.trim().is_empty();
-    (given(&token) && given(&user) && given(&device)).then_some(resonate_jellyfin::KeptSession {
-        token,
-        user,
-        device,
-    })
+impl DownloadAccount {
+    fn service_account(&self) -> ServiceAccount {
+        let text = Clone::clone;
+        match self.provider {
+            MusicProvider::Subsonic => ServiceAccount::Subsonic {
+                server: text(&self.server),
+                user: text(&self.user),
+                password: text(&self.password),
+            },
+            MusicProvider::Jellyfin => ServiceAccount::Jellyfin {
+                server: text(&self.server),
+                user: text(&self.user),
+                password: text(&self.password),
+                token: text(&self.token),
+                user_id: text(&self.user_id),
+                device: text(&self.device),
+            },
+            MusicProvider::Tidal => ServiceAccount::Tidal {
+                client_id: text(&self.client_id),
+                client_secret: text(&self.client_secret),
+                refresh_token: text(&self.refresh_token),
+            },
+            MusicProvider::HifiApi => ServiceAccount::HifiApi {
+                server: text(&self.server),
+                key: text(&self.password),
+            },
+            MusicProvider::Monochrome => ServiceAccount::Monochrome {
+                server: text(&self.server),
+            },
+        }
+    }
 }
 
 impl fmt::Display for MusicProvider {
@@ -629,87 +651,81 @@ impl Downloads {
             .store(!allowed, Ordering::Release);
     }
 
-    fn is_asked(&self, account: &DownloadAccount) -> bool {
-        let hosted = matches!(
-            account.provider,
-            MusicProvider::Monochrome | MusicProvider::HifiApi
-        ) && account.server.trim().is_empty()
-            && !(account.provider == MusicProvider::HifiApi && !account.password.trim().is_empty());
-        !(hosted && self.hosted_services_declined.load(Ordering::Acquire))
+    pub(crate) fn planned(
+        &self,
+        accounts: Vec<DownloadAccount>,
+    ) -> Vec<(DownloadAccount, Reachable)> {
+        let hosted =
+            HostedServices::allowed(!self.hosted_services_declined.load(Ordering::Acquire));
+        planned(
+            accounts.into_iter().map(|account| {
+                let service = account.service_account();
+                (account, service)
+            }),
+            hosted,
+        )
     }
 
-    fn reached(&self, account: DownloadAccount) -> Reached {
-        let DownloadAccount {
-            provider,
-            server,
-            user,
-            password,
-            client_id,
-            client_secret,
-            refresh_token,
-            token,
-            user_id,
-            device,
-        } = account;
-        let custom = !server.trim().is_empty();
-        match provider {
-            MusicProvider::Monochrome if custom => {
-                Reached::Monochrome(resonate_monochrome::Monochrome::at(&server))
+    fn reached(&self, reachable: &Reachable) -> Option<Reached> {
+        Some(match reachable {
+            Reachable::Monochrome(Hosting::Custom(server)) => {
+                Reached::Monochrome(resonate_monochrome::Monochrome::at(server))
             }
-            MusicProvider::Monochrome => {
+            Reachable::Monochrome(Hosting::Hosted) => {
                 Reached::Monochrome(resonate_monochrome::Monochrome::hosted())
             }
-            MusicProvider::Subsonic => {
+            Reachable::Subsonic(login) => {
                 Reached::Subsonic(resonate_subsonic::Subsonic::at(resonate_subsonic::Server {
-                    url: server,
-                    user,
-                    password,
+                    url: login.url.clone(),
+                    user: login.user.clone(),
+                    password: login.password.clone(),
                 }))
             }
-            MusicProvider::Jellyfin => {
+            Reachable::Jellyfin(login) => {
                 Reached::Jellyfin(resonate_jellyfin::Jellyfin::at(resonate_jellyfin::Server {
-                    url: server,
-                    user,
-                    password,
-                    kept: kept_session(token, user_id, device),
+                    url: login.url.clone(),
+                    user: login.user.clone(),
+                    password: login.password.clone(),
+                    kept: login
+                        .session
+                        .as_ref()
+                        .map(|session| resonate_jellyfin::KeptSession {
+                            token: session.token.clone(),
+                            user: session.user.clone(),
+                            device: session.device.clone(),
+                        }),
                 }))
             }
-            MusicProvider::Tidal => {
+            Reachable::Tidal(login) => {
                 let refreshed = Arc::clone(&self.refreshed);
                 Reached::Tidal(
                     resonate_tidal::Tidal::signed_in(resonate_tidal::Account {
-                        client_id,
-                        client_secret: (!client_secret.is_empty()).then_some(client_secret),
-                        refresh_token,
+                        client_id: login.client_id.clone(),
+                        client_secret: login.client_secret.clone(),
+                        refresh_token: login.refresh_token.clone(),
                     })
                     .telling(move |token| {
                         *refreshed.lock() = Some(token.into_string());
                     }),
                 )
             }
-            MusicProvider::HifiApi if !password.trim().is_empty() => Reached::HifiApi(
+            Reachable::Resonate(key) => Reached::HifiApi(
                 resonate_tidal::HifiApi::at(resonate_tidal::OWN_SERVER)
-                    .with_secret(&password)
+                    .with_secret(key.as_str())
                     .known_as_resonate(),
             ),
-            MusicProvider::HifiApi if custom => {
-                Reached::HifiApi(resonate_tidal::HifiApi::at(&server))
+            Reachable::HifiApi(Hosting::Custom(server)) => {
+                Reached::HifiApi(resonate_tidal::HifiApi::at(server))
             }
-            MusicProvider::HifiApi => Reached::HifiApi(resonate_tidal::HifiApi::hosted()),
-        }
+            Reachable::HifiApi(Hosting::Hosted) => {
+                Reached::HifiApi(resonate_tidal::HifiApi::hosted())
+            }
+            Reachable::YoutubeMusic(_) => return None,
+        })
     }
 
-    fn fetches_for_wants(&self, account: &DownloadAccount) -> bool {
-        account.provider != MusicProvider::Jellyfin && self.is_asked(account)
-    }
-
-    fn provider_of(&self, account: DownloadAccount) -> Option<Box<dyn Provider>> {
-        self.reached(account).provider()
-    }
-
-    pub(crate) fn in_place_of(&self, account: DownloadAccount) -> Option<Arc<dyn PlaysInPlace>> {
-        self.is_asked(&account)
-            .then(|| self.reached(account).in_place())
+    pub(crate) fn in_place_of(&self, reachable: &Reachable) -> Option<Arc<dyn PlaysInPlace>> {
+        self.reached(reachable).map(Reached::in_place)
     }
 
     pub(crate) fn find(
@@ -719,11 +735,12 @@ impl Downloads {
         refused: &BTreeSet<String>,
         reaching: &(dyn Fn() -> bool + Sync),
     ) -> Searched {
-        let accounts: Vec<DownloadAccount> = accounts
+        let planned: Vec<(DownloadAccount, Reachable)> = self
+            .planned(accounts)
             .into_iter()
-            .filter(|account| self.fetches_for_wants(account))
+            .filter(|(_, reachable)| reachable.fetches_for_wants())
             .collect();
-        if accounts.is_empty() {
+        if planned.is_empty() {
             return Searched {
                 offer: job.settled(Err(Error::NoProvider)),
                 tried: Tried::Unheard,
@@ -746,9 +763,9 @@ impl Downloads {
         let heard = Arc::new(Mutex::new(Vec::new()));
         let mut asked = Vec::new();
         let mut providers = Providers::none();
-        for account in accounts {
+        for (account, reachable) in planned {
             let provider = account.provider;
-            let Some(searching) = self.provider_of(account) else {
+            let Some(searching) = self.reached(&reachable).and_then(Reached::provider) else {
                 continue;
             };
             let told = Told {
@@ -1710,8 +1727,13 @@ mod tests {
         };
         let monochrome = account(MusicProvider::Monochrome, "");
 
-        assert!(downloads.is_asked(&keyed));
-        assert!(!downloads.is_asked(&monochrome));
+        let schemes: Vec<&str> = downloads
+            .planned(vec![keyed, monochrome])
+            .iter()
+            .map(|(_, reachable)| reachable.scheme())
+            .collect();
+
+        assert_eq!(schemes, ["resonate"]);
     }
 
     #[test]
