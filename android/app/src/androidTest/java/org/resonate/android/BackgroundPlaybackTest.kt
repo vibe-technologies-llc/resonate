@@ -198,6 +198,7 @@ class BackgroundPlaybackTest {
                         instrumentation.runOnMainSync { playing = controller.playWhenReady }
                         !playing
                     }
+                    Thread.sleep(PAUSE_HEARD_OUT_AND_POLLED_WITHIN_MS)
                     val pausedPosition = library.snapshot.value?.positionMs
                     Thread.sleep(500)
                     assertEquals(pausedPosition, library.snapshot.value?.positionMs)
@@ -235,3 +236,5 @@ class BackgroundPlaybackTest {
         }
     }
 }
+
+private const val PAUSE_HEARD_OUT_AND_POLLED_WITHIN_MS = PollPace.BACKGROUND_MS + 500L

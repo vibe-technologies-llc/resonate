@@ -162,7 +162,7 @@ other level as lists in each folder's extras, and `onGetLibraryRoot` answers par
 styles are supported and carry the root's hints. The session's button preferences
 are Shuffle and Close; a car host's own preferences add Repeat (session commands that toggle the player,
 rebuilt per controller when the mode moves). The notification shows five actions, so a third overflow
-button pushes Close out of it (`BackgroundPlaybackTest`). Tests: `ArtworkUrisTest`, `BrowseStyleTest`. A real car or the Desktop Head Unit is not checked here.
+button pushes Close out of it (`BackgroundPlaybackTest`). That test reads the paused position only a background poll after the pause (`PAUSE_HEARD_OUT_AND_POLLED_WITHIN_MS`): a pause fades out over `FADED_OVER` on frames the graph still pulls (`audio.md`), so the heard place moves on some tens of milliseconds after the transport reads Paused, and the snapshot taken mid-fade is published as the paused one until the next poll, two seconds later in the background. Tests: `ArtworkUrisTest`, `BrowseStyleTest`. A real car or the Desktop Head Unit is not checked here.
 Audio focus loss and noisy-output events pause playback; a transient loss resumes on regaining
 focus if the engine was playing or loading, and a duck is left to the platform
 (`setWillPauseWhenDucked(false)`). The Media3 state is invalidated only when the transport, queue
