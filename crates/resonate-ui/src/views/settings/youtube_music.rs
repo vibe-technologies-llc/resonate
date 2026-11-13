@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use gpui::{
-    AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _, Stateful,
-    Task, Window,
+    App, AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _,
+    Stateful, Task, Window,
 };
 use resonate_core::Switch;
 
@@ -11,10 +11,10 @@ use crate::{
     icons::Icon,
     settings::{Online, YoutubeMusicConnection, YoutubeMusicSignIn},
     views::{
-        field::{Field, Submitted},
+        field::Field,
         kit,
         root::RootView,
-        settings::{Rows, action, note, switch_row},
+        settings::{Entered, Rows, SettingsFields, action, note, switch_row},
     },
     words,
 };
@@ -156,7 +156,7 @@ impl YoutubeMusicField {
     pub(crate) fn fields(
         online: &Online,
         window: &mut Window,
-        cx: &mut Context<RootView>,
+        cx: &mut Context<SettingsFields>,
     ) -> [Entity<Field>; 2] {
         Self::ALL.map(|named| {
             let field = cx.new(|cx| {
@@ -168,33 +168,30 @@ impl YoutubeMusicField {
                 field.hold(named.held(online), cx);
                 field
             });
-            cx.subscribe_in(&field, window, move |this, _, _: &Submitted, window, cx| {
-                this.youtube_music_given(named, window, cx);
-            })
-            .detach();
+            SettingsFields::says_when_entered(&field, Entered::YoutubeMusic(named), cx);
             field
         })
     }
 }
 
 impl RootView {
-    fn youtube_music_field(&self, named: YoutubeMusicField) -> &Entity<Field> {
-        &self.typed.youtube_music[named.nth()]
+    fn youtube_music_field(&self, named: YoutubeMusicField, cx: &App) -> Entity<Field> {
+        self.settings_fields.read(cx).youtube_music[named.nth()].clone()
     }
 
-    fn youtube_music_given(
+    pub(crate) fn youtube_music_given(
         &mut self,
         named: YoutubeMusicField,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let given = self
-            .youtube_music_field(named)
+            .youtube_music_field(named, cx)
             .read(cx)
             .text()
             .trim()
             .to_owned();
-        self.youtube_music_field(named)
+        self.youtube_music_field(named, cx)
             .clone()
             .update(cx, |field, cx| field.hold(given.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {
@@ -228,7 +225,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> bool {
         for named in YoutubeMusicField::ALL {
-            let field = self.youtube_music_field(named).read(cx);
+            let field = self.youtube_music_field(named, cx).read(cx);
             let typed_apart = field.is_focused(window)
                 && field.text().trim() != named.held(&cx.global::<ResonateApp>().online);
             if typed_apart {
@@ -242,7 +239,7 @@ impl RootView {
     pub(super) fn put_back_youtube_music(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         for named in YoutubeMusicField::ALL {
             let stored = named.held(&cx.global::<ResonateApp>().online);
-            let field = self.youtube_music_field(named).clone();
+            let field = self.youtube_music_field(named, cx).clone();
             if field.read(cx).is_focused(window) {
                 field.update(cx, |field, cx| field.hold(stored, cx));
             }
@@ -251,7 +248,7 @@ impl RootView {
 
     pub(crate) fn forget_youtube_music(&mut self, cx: &mut Context<Self>) {
         for named in YoutubeMusicField::ALL {
-            self.youtube_music_field(named)
+            self.youtube_music_field(named, cx)
                 .clone()
                 .update(cx, |field, cx| field.hold(String::new(), cx));
             cx.update_global::<ResonateApp, _>(|global, _| {
@@ -308,7 +305,7 @@ impl RootView {
 
     fn hold_the_youtube_music_cookies(&mut self, cookies: String, cx: &mut Context<Self>) {
         let named = YoutubeMusicField::Cookies;
-        self.youtube_music_field(named)
+        self.youtube_music_field(named, cx)
             .clone()
             .update(cx, |field, cx| field.hold(cookies.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {
@@ -476,7 +473,7 @@ impl RootView {
                 named.label(),
                 self.text_field(
                     named.id(),
-                    self.youtube_music_field(named),
+                    &self.youtube_music_field(named, cx),
                     |this, window, cx| this.leave_the_account(window, cx),
                     cx,
                 ),

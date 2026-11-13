@@ -305,7 +305,7 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
    `Accounts::given` off the window's live `resonate_ui::Online` (`providers::sourced`, via
    `resonate_ui::Sourcing::register`); `registry` (after the inbox, `with_inbox`) and `in_place` each
    walk it, so a changed setting applies from the next poll. `Made` returns the same provider
-   (`Kept`) until its login changes. A provider with a setting of its own widens `Online`, `Typed`
+   (`Kept`) until its login changes. A provider with a setting of its own widens `Online`, `SettingsFields`
    and the plan together.
 4. `Error::Io` names the provider and a `ProviderOp`; an error the seam lacks a variant for is added
    to the seam with its op, never as prose.

@@ -1209,7 +1209,7 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   an `Unmeasured` that `is_stopped` is told *The measurement was stopped; nothing was kept*, not as
   a failure), *Choose a calibration…* with the file's name and *Remove* (`EqualiserModel::calibration`,
   read in the run as any measurement by `Store::response_in`; one that will not read is told and
-  nothing is played) and a *Keep as* field (`Typed::measured_as`, the profile's name through
+  nothing is played) and a *Keep as* field (`SettingsFields::measured_as`, the profile's name through
   `ProfileName::new`, `measured` where blank, a name refused told in a toast and nothing played).
   `EqualiserModel::measure_the_room(Sounding { rig, through, from, called })` runs the seam, the fit toward the *Fit toward* target and the
   keep as the profile named (`measured`) on the background executor (`_sounded`, apart from the other

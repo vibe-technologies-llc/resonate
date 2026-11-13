@@ -155,10 +155,12 @@ impl RootView {
 
     fn keep_the_jellyfin_session(&mut self, session: JellyfinSession, cx: &mut Context<Self>) {
         let name = session.name.clone();
-        self.typed.jellyfin[1]
+        self.settings_fields.read(cx).jellyfin[1]
+            .clone()
             .clone()
             .update(cx, |field, cx| field.hold(name.clone(), cx));
-        self.typed.jellyfin[2]
+        self.settings_fields.read(cx).jellyfin[2]
+            .clone()
             .clone()
             .update(cx, |field, cx| field.hold(String::new(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {

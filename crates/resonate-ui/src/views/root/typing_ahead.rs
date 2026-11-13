@@ -321,31 +321,9 @@ impl RootView {
             &self.typed.name,
             &self.typed.words,
             &self.typed.isrc,
-            &self.typed.contact,
-            &self.typed.acoustid,
-            &self.typed.replication,
-            &self.typed.audd,
-            &self.typed.listenbrainz,
-            &self.typed.discord_app,
-            &self.typed.discord_icon,
-            &self.typed.sync_server,
-            &self.typed.sync_device,
-            &self.typed.shared_name,
-            &self.typed.sync_code,
-            &self.typed.organising,
-            &self.typed.minimum_length,
-            &self.typed.root,
-            &self.typed.finding,
-            &self.typed.figure,
-            &self.typed.looking,
-            &self.typed.spotify_client,
         ]
         .into_iter()
-        .chain(&self.typed.subsonic)
-        .chain(&self.typed.jellyfin)
-        .chain(&self.typed.tidal)
-        .chain(&self.typed.lastfm)
-        .chain(&self.typed.youtube_music)
+        .chain(self.settings_fields.read(cx).each())
     }
 
     pub(super) fn editing(&self, window: &Window, cx: &App) -> bool {

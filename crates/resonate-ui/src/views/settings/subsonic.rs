@@ -6,10 +6,10 @@ use crate::{
     Notice, ResonateApp, Setting,
     settings::Online,
     views::{
-        field::{Field, Submitted},
+        field::Field,
         kit,
         root::RootView,
-        settings::Rows,
+        settings::{Entered, Rows, SettingsFields},
     },
     words,
 };
@@ -138,7 +138,7 @@ impl Account {
         service: Service,
         online: &Online,
         window: &mut Window,
-        cx: &mut Context<RootView>,
+        cx: &mut Context<SettingsFields>,
     ) -> [Entity<Field>; 3] {
         Self::ALL.map(|account| {
             let field = cx.new(|cx| {
@@ -150,24 +150,22 @@ impl Account {
                 field.hold(account.held(service, online), cx);
                 field
             });
-            cx.subscribe_in(&field, window, move |this, _, _: &Submitted, window, cx| {
-                this.account_given(service, account, window, cx);
-            })
-            .detach();
+            SettingsFields::says_when_entered(&field, Entered::Account(service, account), cx);
             field
         })
     }
 }
 
 impl RootView {
-    fn account_field(&self, service: Service, account: Account) -> &Entity<Field> {
+    fn account_field(&self, service: Service, account: Account, cx: &App) -> Entity<Field> {
+        let fields = self.settings_fields.read(cx);
         match service {
-            Service::Subsonic => &self.typed.subsonic[account.nth()],
-            Service::Jellyfin => &self.typed.jellyfin[account.nth()],
+            Service::Subsonic => fields.subsonic[account.nth()].clone(),
+            Service::Jellyfin => fields.jellyfin[account.nth()].clone(),
         }
     }
 
-    fn account_given(
+    pub(crate) fn account_given(
         &mut self,
         service: Service,
         account: Account,
@@ -175,7 +173,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let given = self
-            .account_field(service, account)
+            .account_field(service, account, cx)
             .read(cx)
             .text()
             .trim()
@@ -184,7 +182,7 @@ impl RootView {
             self.report(not_a_server(), cx);
             return;
         }
-        self.account_field(service, account)
+        self.account_field(service, account, cx)
             .clone()
             .update(cx, |field, cx| field.hold(given.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {
@@ -230,7 +228,7 @@ impl RootView {
     pub(crate) fn put_back_the_account(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         for (service, account) in Self::every_account() {
             let stored = account.held(service, &cx.global::<ResonateApp>().online);
-            let field = self.account_field(service, account).clone();
+            let field = self.account_field(service, account, cx).clone();
             if field.read(cx).is_focused(window) {
                 field.update(cx, |field, cx| field.hold(stored, cx));
             }
@@ -248,7 +246,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> bool {
         for (service, account) in Self::every_account() {
-            let field = self.account_field(service, account).read(cx);
+            let field = self.account_field(service, account, cx).read(cx);
             let typed_apart = field.is_focused(window)
                 && field.text().trim() != account.held(service, &cx.global::<ResonateApp>().online);
             if typed_apart {
@@ -263,14 +261,15 @@ impl RootView {
     }
 
     pub(crate) fn an_account_field_is_focused(&self, window: &Window, cx: &App) -> bool {
-        self.typed
+        let fields = self.settings_fields.read(cx);
+        fields
             .subsonic
             .iter()
-            .chain(&self.typed.jellyfin)
-            .chain(&self.typed.tidal)
-            .chain(&self.typed.lastfm)
-            .chain(&self.typed.youtube_music)
-            .chain(std::iter::once(&self.typed.spotify_client))
+            .chain(&fields.jellyfin)
+            .chain(&fields.tidal)
+            .chain(&fields.lastfm)
+            .chain(&fields.youtube_music)
+            .chain(std::iter::once(&fields.spotify_client))
             .any(|field| field.read(cx).is_focused(window))
     }
 
@@ -282,7 +281,7 @@ impl RootView {
 
     pub(crate) fn forget_the_account(&mut self, service: Service, cx: &mut Context<Self>) {
         for account in Account::ALL {
-            self.account_field(service, account)
+            self.account_field(service, account, cx)
                 .clone()
                 .update(cx, |field, cx| field.hold(String::new(), cx));
             cx.update_global::<ResonateApp, _>(|global, _| {
@@ -302,7 +301,7 @@ impl RootView {
                 account.label(),
                 self.text_field(
                     account.id(service),
-                    self.account_field(service, account),
+                    &self.account_field(service, account, cx),
                     |this, window, cx| this.leave_the_account(window, cx),
                     cx,
                 ),

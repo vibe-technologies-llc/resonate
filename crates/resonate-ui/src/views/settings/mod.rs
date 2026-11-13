@@ -5,6 +5,7 @@ pub(crate) mod curve;
 mod defaults;
 mod desktop;
 mod equaliser;
+pub(crate) mod fields;
 mod filters;
 mod find;
 mod identical;
@@ -38,6 +39,7 @@ pub(crate) use crate::views::{
     settings::{
         curve::{HeldBand, Plotted},
         equaliser::{Fitting, marked_at},
+        fields::{Entered, Left, SettingsFields},
         find::{Category, Group, Page},
         jellyfin::QuickConnecting,
         lastfm::{LastfmAccount, LastfmSigning},
@@ -114,7 +116,7 @@ impl RootView {
     }
 
     pub(crate) fn settings(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let narrowing = Narrowing::of(self.typed.finding.read(cx).text());
+        let narrowing = Narrowing::of(self.settings_fields.read(cx).finding.read(cx).text());
         let category = self.settings_shown.category;
         let page = self
             .settings_shown
@@ -217,7 +219,13 @@ impl RootView {
     }
 
     fn filter_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        let typed = !self.typed.finding.read(cx).text().is_empty();
+        let typed = !self
+            .settings_fields
+            .read(cx)
+            .finding
+            .read(cx)
+            .text()
+            .is_empty();
 
         kit::framed_field("find-a-setting", self.finding_holds_the_caret)
             .w(theme::width(theme::picker_width()))
@@ -227,7 +235,7 @@ impl RootView {
                 theme::search_icon(),
                 theme::faint(),
             ))
-            .child(self.typed.finding.clone())
+            .child(self.settings_fields.read(cx).finding.clone().clone())
             .when_else(
                 typed,
                 |field| field.child(self.clear_filter(cx)),
@@ -236,8 +244,10 @@ impl RootView {
                 },
             )
             .on_click(cx.listener(|this, _, window, cx| {
-                this.typed
+                this.settings_fields
+                    .read(cx)
                     .finding
+                    .clone()
                     .update(cx, |finding, cx| finding.take_focus(window, cx));
                 cx.notify();
             }))
@@ -265,11 +275,15 @@ impl RootView {
         self.in_the_pane_ring(
             clear,
             |this, window, cx| {
-                this.typed
+                this.settings_fields
+                    .read(cx)
                     .finding
+                    .clone()
                     .update(cx, |finding, cx| finding.clear(cx));
-                this.typed
+                this.settings_fields
+                    .read(cx)
                     .finding
+                    .clone()
                     .update(cx, |finding, cx| finding.take_focus(window, cx));
                 cx.notify();
             },
@@ -537,8 +551,10 @@ impl RootView {
     }
 
     fn open_the_place(&mut self, category: Category, page: Option<Page>, cx: &mut Context<Self>) {
-        self.typed
+        self.settings_fields
+            .read(cx)
             .finding
+            .clone()
             .update(cx, |finding, cx| finding.clear(cx));
         match page {
             Some(page) => self.open_the_settings_page(page, cx),
@@ -803,10 +819,38 @@ impl RootView {
         let presence = cx.global::<ResonateApp>().presence.clone();
         let synchronised = cx.global::<ResonateApp>().synchronised.clone();
         let measurer_given = !cx.global::<ResonateApp>().measurers.is_empty();
-        let contact_given = !self.typed.contact.read(cx).text().trim().is_empty();
-        let key_given = !self.typed.acoustid.read(cx).text().trim().is_empty();
-        let token_given = !self.typed.audd.read(cx).text().trim().is_empty();
-        let submitting_given = !self.typed.listenbrainz.read(cx).text().trim().is_empty();
+        let contact_given = !self
+            .settings_fields
+            .read(cx)
+            .contact
+            .read(cx)
+            .text()
+            .trim()
+            .is_empty();
+        let key_given = !self
+            .settings_fields
+            .read(cx)
+            .acoustid
+            .read(cx)
+            .text()
+            .trim()
+            .is_empty();
+        let token_given = !self
+            .settings_fields
+            .read(cx)
+            .audd
+            .read(cx)
+            .text()
+            .trim()
+            .is_empty();
+        let submitting_given = !self
+            .settings_fields
+            .read(cx)
+            .listenbrainz
+            .read(cx)
+            .text()
+            .trim()
+            .is_empty();
         let lastfm_given = {
             let online = &cx.global::<ResonateApp>().online;
             [
@@ -820,7 +864,14 @@ impl RootView {
         let listen = self.listen.read(cx);
         let listening_from = listen.from().clone();
         let listening_for = listen.length();
-        let template_given = self.typed.organising.read(cx).text().trim() != DEFAULT_LAYOUT;
+        let template_given = self
+            .settings_fields
+            .read(cx)
+            .organising
+            .read(cx)
+            .text()
+            .trim()
+            != DEFAULT_LAYOUT;
         let inbox_given = self.library.read(cx).inbox().is_some();
         let music_folder_given = cx.global::<ResonateApp>().music_folder.is_some();
         let convolving = cx.global::<ResonateApp>().convolution.is_some();
@@ -828,12 +879,14 @@ impl RootView {
             || cx.global::<ResonateApp>().speaker_elevation != SpeakerElevation::LEVEL
             || cx.global::<ResonateApp>().head_yaw != HeadYaw::AHEAD;
         let subsonic_given = self
-            .typed
+            .settings_fields
+            .read(cx)
             .subsonic
             .iter()
             .any(|field| !field.read(cx).text().trim().is_empty());
         let jellyfin_given = self
-            .typed
+            .settings_fields
+            .read(cx)
             .jellyfin
             .iter()
             .any(|field| !field.read(cx).text().trim().is_empty());
@@ -841,20 +894,28 @@ impl RootView {
             .into_iter()
             .filter(|account| account.is_tidals())
             .any(|account| {
-                !self.typed.tidal[account.nth()]
+                !self.settings_fields.read(cx).tidal[account.nth()]
                     .read(cx)
                     .text()
                     .trim()
                     .is_empty()
             })
             || cx.global::<ResonateApp>().online.hosted_services;
-        let resonate_key_given = !self.typed.tidal[TidalAccount::HifiSecret.nth()]
+        let resonate_key_given = !self.settings_fields.read(cx).tidal
+            [TidalAccount::HifiSecret.nth()]
+        .read(cx)
+        .text()
+        .trim()
+        .is_empty();
+
+        let spotify_given = !self
+            .settings_fields
+            .read(cx)
+            .spotify_client
             .read(cx)
             .text()
             .trim()
-            .is_empty();
-
-        let spotify_given = !self.typed.spotify_client.read(cx).text().trim().is_empty()
+            .is_empty()
             || !cx
                 .global::<ResonateApp>()
                 .online
@@ -866,7 +927,8 @@ impl RootView {
             online.youtube_music
                 || !online.youtube_music_keep_order
                 || self
-                    .typed
+                    .settings_fields
+                    .read(cx)
                     .youtube_music
                     .iter()
                     .any(|field| !field.read(cx).text().trim().is_empty())

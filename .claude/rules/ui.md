@@ -32,13 +32,14 @@ field joins the group its subject belongs to.
 alike: `Scrolls` (every scroll handle), `Rooms` (the widths and heights measured a frame behind),
 `Remotely` (another device's zones driven), `Accounts` (sign-ins), `Rails` (seek, volume and a held
 band), `Orders` (the row and query orders and the Sort pop-up), `Remembered`, `Dropped` (files
-dragged in), `Typed` (every `Field` the root holds), `SettingsShown` (the settings pane's own state),
+dragged in), `Typed` (the search, the zone and playlist names and the Match sheet's fields), `SettingsShown` (the settings pane's own state),
 `Social` (Wrapped, sharing and party offers), `Shows` (which tab or shape a pane is drawn in) and
 `TypedAhead`.
 
 **A pane with state of its own holds it in an entity of its own**, made in `RootView::new`, which
-observes it and redraws when it notifies, so a pane's fields and the subscriptions on them are found
-beside the pane and not in the root's list:
+observes it and redraws when it notifies (or, for one telling the root what was done, subscribes to
+what it says), so a pane's fields and the subscriptions on them are found beside the pane and not in
+the root's list:
 
 - `PartyPane` (`views/party.rs`): the chat field and the subscription its enter speaks through, the
   page's scroll, the hand-over armed by a first press, the timer redrawing the pane while it is shown.
@@ -48,8 +49,16 @@ beside the pane and not in the root's list:
   the service through (handing the caret back to the window's own focus, which it holds a clone of),
   and the rows' scroll, which `RootView::scroll_of` hands out for `Pane::Server`. `ServerModel`
   stays the root's, since the sidebar asks it whether the Services row stands.
+- `SettingsFields` (`views/settings/fields.rs`): every `Field` the settings pane holds (the online
+  keys and tokens, each service's account, Discord, sync, the layout and the music folder, the
+  minimum length, the settings filter, the equaliser's figure, AutoEq search and *Keep as*) and the
+  subscriptions on them, which tell the root what was done in a field as an `Entered` or a `Left`
+  naming it; the root holds one subscription to each and `RootView::entered` and `RootView::left`
+  answer through the handlers that store a setting (`contact_given`, `contact_left` and kin), since
+  writing the settings, the toasts and the window's focus are the root's.
 
-The root still draws them (`RootView::party_pane`, `RootView::inspector`, `RootView::server_pane`):
+The root still draws them (`RootView::party_pane`, `RootView::inspector`, `RootView::server_pane`,
+`RootView::settings`):
 every control of a pane goes into the root's focus ring (`Controls`, `in_the_pane_ring`) and a press
 may reach the root's navigation, so a press that changes only the pane's own state updates its entity
 (`this.party.update(…)`). A `Field` such an entity holds is still listed by `RootView::text_fields`,
@@ -398,7 +407,7 @@ so `editing` sees it.
   gesture on the scope (`LibraryModel::set_query` leaves `selection` alone); callers meaning the whole
   library (`revise_search`, `search_instead`) call `show_everything` first.
   - A focused field never reaches the match (`editing` returns first); `editing` asks
-    `RootView::text_fields`, the one list of every `Field` the root holds
+    `RootView::text_fields`, the one list of every `Field` the window holds, the panes' included
     (`what_is_typed_into_the_listenbrainz_token_stays_out_of_the_library_search`). Each field still
     needs its own `dismiss_search` arm (the AutoEq search's `leave_looking`;
     `escape_in_the_autoeq_search_clears_it_and_leaves_the_pane_where_it_was`).
@@ -2108,7 +2117,7 @@ while shown, reading in-memory state only; the sheet asks twice for what cannot 
   *tracks*, `New`/`Rename` under playlists) picks the heading drawing the row (one entity can't be in
   the frame twice). The row cap rides beside the name as segments and the order as a `kit::pick` opening the
   Sort dialogue on `Ordered::SavedSearch` (a saved query = search, order, row cap). *Edit search* = `RootView::revise_search`. The Online card's fields follow one pattern:
-  `Typed::contact` is filled by `Field::hold` (the saved contact is in the box when the window opens,
+  `SettingsFields::contact` is filled by `Field::hold` (the saved contact is in the box when the window opens,
   put back trimmed on enter); `contact_given` stores `Setting::Contact`, moves the global, reports it
   is sent from the next request (`online.md`); press outside = `leave_contact` (gives typed text if it
   differs), escape = `put_back_contact`. The field losing focus any other way (tab: `field::Blurred`)

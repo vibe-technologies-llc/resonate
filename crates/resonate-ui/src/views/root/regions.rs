@@ -273,7 +273,12 @@ impl RootView {
             Region::Sidebar => self.sidebar(window, cx).into_any_element(),
             Region::Pane => {
                 self.rooms.grid_width.seen_in(window.viewport_size().width);
-                self.finding_holds_the_caret = self.typed.finding.read(cx).is_focused(window);
+                self.finding_holds_the_caret = self
+                    .settings_fields
+                    .read(cx)
+                    .finding
+                    .read(cx)
+                    .is_focused(window);
                 let shown = self.pane_shown(cx);
                 let named = match self.search_in_front(cx) {
                     Some(_) => words::root::search_region(),

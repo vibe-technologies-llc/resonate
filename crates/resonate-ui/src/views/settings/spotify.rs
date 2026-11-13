@@ -15,10 +15,10 @@ use crate::{
     settings::{Online, SpotifySignIn},
     toast,
     views::{
-        field::{Field, Submitted},
+        field::Field,
         kit,
         root::RootView,
-        settings::{Rows, action},
+        settings::{Entered, Rows, SettingsFields, action},
     },
     words,
 };
@@ -65,7 +65,7 @@ fn turned_away(failure: SpotifySignInFailure) -> &'static str {
 pub(crate) fn field(
     online: &Online,
     window: &mut Window,
-    cx: &mut Context<RootView>,
+    cx: &mut Context<SettingsFields>,
 ) -> Entity<Field> {
     let field = cx.new(|cx| {
         let mut field = Field::new(
@@ -76,18 +76,24 @@ pub(crate) fn field(
         field.hold(online.spotify_client_id.clone(), cx);
         field
     });
-    cx.subscribe_in(&field, window, |this, _, _: &Submitted, window, cx| {
-        this.spotify_client_given(window, cx);
-    })
-    .detach();
+    SettingsFields::says_when_entered(&field, Entered::SpotifyClient, cx);
     field
 }
 
 impl RootView {
-    fn spotify_client_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let given = self.typed.spotify_client.read(cx).text().trim().to_owned();
-        self.typed
+    pub(crate) fn spotify_client_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let given = self
+            .settings_fields
+            .read(cx)
             .spotify_client
+            .read(cx)
+            .text()
+            .trim()
+            .to_owned();
+        self.settings_fields
+            .read(cx)
+            .spotify_client
+            .clone()
             .clone()
             .update(cx, |field, cx| field.hold(given.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {
@@ -109,7 +115,7 @@ impl RootView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let field = self.typed.spotify_client.read(cx);
+        let field = self.settings_fields.read(cx).spotify_client.read(cx);
         let typed_apart = field.is_focused(window)
             && field.text().trim() != cx.global::<ResonateApp>().online.spotify_client_id;
         if typed_apart {
@@ -124,7 +130,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let stored = cx.global::<ResonateApp>().online.spotify_client_id.clone();
-        let field = self.typed.spotify_client.clone();
+        let field = self.settings_fields.read(cx).spotify_client.clone().clone();
         if field.read(cx).is_focused(window) {
             field.update(cx, |field, cx| field.hold(stored, cx));
         }
@@ -139,8 +145,10 @@ impl RootView {
             client_id,
             refresh_token,
         } = signed_in;
-        self.typed
+        self.settings_fields
+            .read(cx)
             .spotify_client
+            .clone()
             .clone()
             .update(cx, |field, cx| field.hold(client_id.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {
@@ -152,8 +160,10 @@ impl RootView {
 
     pub(crate) fn forget_the_spotify_account(&mut self, cx: &mut Context<Self>) {
         self.sign_out_of_spotify(cx);
-        self.typed
+        self.settings_fields
+            .read(cx)
             .spotify_client
+            .clone()
             .clone()
             .update(cx, |field, cx| field.hold(String::new(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {
@@ -342,7 +352,7 @@ impl RootView {
             words::settings_spotify::client_id(),
             self.text_field(
                 "spotify-client-id",
-                &self.typed.spotify_client,
+                &self.settings_fields.read(cx).spotify_client.clone(),
                 |this, window, cx| this.leave_the_account(window, cx),
                 cx,
             ),

@@ -110,7 +110,7 @@ impl RootView {
                     .gap_2()
                     .child(div().flex_1().min_w(px(0.0)).child(self.text_field(
                         "typed-root",
-                        &self.typed.root,
+                        &self.settings_fields.read(cx).root.clone(),
                         |this, window, cx| this.leave_typed_root(window, cx),
                         cx,
                     )))
@@ -146,7 +146,14 @@ impl RootView {
     }
 
     pub(crate) fn root_typed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let typed = self.typed.root.read(cx).text().trim().to_owned();
+        let typed = self
+            .settings_fields
+            .read(cx)
+            .root
+            .read(cx)
+            .text()
+            .trim()
+            .to_owned();
         if typed.is_empty() {
             self.leave_typed_root(window, cx);
             return;
@@ -171,8 +178,10 @@ impl RootView {
                         );
                         return;
                     }
-                    this.typed
+                    this.settings_fields
+                        .read(cx)
                         .root
+                        .clone()
                         .update(cx, |typed, cx| typed.hold(String::new(), cx));
                     this.library
                         .update(cx, |library, cx| library.add_roots(vec![folder], cx));
@@ -941,11 +950,20 @@ impl RootView {
 
 impl RootView {
     pub(super) fn organising_group(&mut self, cx: &mut Context<Self>) -> Rows {
-        let typed = self.typed.organising.read(cx).text().trim().to_owned();
+        let typed = self
+            .settings_fields
+            .read(cx)
+            .organising
+            .read(cx)
+            .text()
+            .trim()
+            .to_owned();
         let refused = Layout::read(&typed).err().map(|error| error.to_string());
         let unreadable = refused.is_some();
-        self.typed
+        self.settings_fields
+            .read(cx)
             .organising
+            .clone()
             .update(cx, |organising, cx| organising.refusing(unreadable, cx));
         let library = self.library.read(cx);
         let busy = library.is_busy();
@@ -969,7 +987,7 @@ impl RootView {
                     words::settings_library::template_label(),
                     self.text_field(
                         "organise-as",
-                        &self.typed.organising,
+                        &self.settings_fields.read(cx).organising.clone(),
                         |this, window, cx| this.leave_organising(window, cx),
                         cx,
                     ),
@@ -1118,7 +1136,14 @@ impl RootView {
 
     fn file_them(&mut self, pass: Pass, cx: &mut Context<Self>) {
         self.lower(&Armed::MoveTheFiles);
-        let typed = self.typed.organising.read(cx).text().trim().to_owned();
+        let typed = self
+            .settings_fields
+            .read(cx)
+            .organising
+            .read(cx)
+            .text()
+            .trim()
+            .to_owned();
 
         match Layout::read(&typed) {
             Ok(layout) => self
@@ -1133,7 +1158,14 @@ impl RootView {
     }
 
     pub(crate) fn layout_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let given = self.typed.organising.read(cx).text().trim().to_owned();
+        let given = self
+            .settings_fields
+            .read(cx)
+            .organising
+            .read(cx)
+            .text()
+            .trim()
+            .to_owned();
 
         match Layout::read(&given) {
             Ok(_) => {
@@ -1149,7 +1181,14 @@ impl RootView {
     }
 
     pub(crate) fn layout_left(&mut self, cx: &mut Context<Self>) {
-        let given = self.typed.organising.read(cx).text().trim().to_owned();
+        let given = self
+            .settings_fields
+            .read(cx)
+            .organising
+            .read(cx)
+            .text()
+            .trim()
+            .to_owned();
         if given == cx.global::<ResonateApp>().organise_as {
             return;
         }
@@ -1165,8 +1204,10 @@ impl RootView {
     }
 
     pub(crate) fn set_organise_as(&mut self, template: String, cx: &mut Context<Self>) {
-        self.typed
+        self.settings_fields
+            .read(cx)
             .organising
+            .clone()
             .update(cx, |organising, cx| organising.hold(template.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| global.organise_as = template.clone());
         self.library

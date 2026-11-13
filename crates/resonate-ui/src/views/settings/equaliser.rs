@@ -489,7 +489,7 @@ impl RootView {
                     .on_mouse_down_out(cx.listener(|this, _, window, cx| {
                         this.leave_figure(window, cx);
                     }))
-                    .child(self.typed.figure.clone()),
+                    .child(self.settings_fields.read(cx).figure.clone().clone()),
             );
         }
 
@@ -617,7 +617,7 @@ impl RootView {
             .when(reachable, |body| {
                 body.child(self.text_field(
                     "look-for-a-device",
-                    &self.typed.looking,
+                    &self.settings_fields.read(cx).looking.clone(),
                     |this, window, cx| this.let_go_of_the_field(window, cx),
                     cx,
                 ))
@@ -768,7 +768,7 @@ impl RootView {
                 words::settings_equaliser::keep_as(),
                 self.text_field(
                     "measure-profile-name",
-                    &self.typed.measured_as,
+                    &self.settings_fields.read(cx).measured_as.clone(),
                     |this, window, cx| this.let_go_of_the_field(window, cx),
                     cx,
                 ),
@@ -841,7 +841,14 @@ impl RootView {
             .sink_in_use()
             .map(|sink| sink.name.clone());
         let from = self.listen.read(cx).from().clone();
-        let typed = self.typed.measured_as.read(cx).text().trim().to_owned();
+        let typed = self
+            .settings_fields
+            .read(cx)
+            .measured_as
+            .read(cx)
+            .text()
+            .trim()
+            .to_owned();
         let called = if typed.is_empty() {
             None
         } else {
@@ -1038,7 +1045,13 @@ impl RootView {
     pub(crate) fn wear_the_measurers(&mut self, measurers: Measurers, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.measurers = measurers.clone());
 
-        let typed = self.typed.looking.read(cx).text().to_owned();
+        let typed = self
+            .settings_fields
+            .read(cx)
+            .looking
+            .read(cx)
+            .text()
+            .to_owned();
         let sink = self.the_sink_in_use(cx);
         self.equaliser.update(cx, |model, cx| {
             model.prefer(measurers);
@@ -1754,10 +1767,14 @@ impl RootView {
             model.edit_cell(row, cell);
             model.written(Editing { row, cell })
         });
-        self.typed.figure.update(cx, |figure, cx| {
-            figure.open_with(written, cx);
-            figure.take_focus(window, cx);
-        });
+        self.settings_fields
+            .read(cx)
+            .figure
+            .clone()
+            .update(cx, |figure, cx| {
+                figure.open_with(written, cx);
+                figure.take_focus(window, cx);
+            });
         cx.notify();
     }
 
@@ -1765,14 +1782,22 @@ impl RootView {
         let Some(editing) = self.equaliser.read(cx).editing() else {
             return;
         };
-        let typed = self.typed.figure.read(cx).text().to_owned();
+        let typed = self
+            .settings_fields
+            .read(cx)
+            .figure
+            .read(cx)
+            .text()
+            .to_owned();
         let taken = self
             .equaliser
             .update(cx, |model, cx| model.take(editing, &typed, cx));
 
         if taken {
-            self.typed
+            self.settings_fields
+                .read(cx)
                 .figure
+                .clone()
                 .update(cx, |figure, cx| figure.open_with(String::new(), cx));
             self.controls.lets_go(window, cx);
             self.tell_the_engine(cx);
@@ -1781,12 +1806,20 @@ impl RootView {
     }
 
     pub(crate) fn leave_figure(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.typed.figure.read(cx).is_focused(window) {
+        if !self
+            .settings_fields
+            .read(cx)
+            .figure
+            .read(cx)
+            .is_focused(window)
+        {
             return;
         }
         self.equaliser.update(cx, |model, _| model.leave_cell());
-        self.typed
+        self.settings_fields
+            .read(cx)
             .figure
+            .clone()
             .update(cx, |figure, cx| figure.open_with(String::new(), cx));
         self.controls.lets_go(window, cx);
         cx.notify();
@@ -1796,7 +1829,13 @@ impl RootView {
         let Some(editing) = self.equaliser.read(cx).editing() else {
             return;
         };
-        let typed = self.typed.figure.read(cx).text().to_owned();
+        let typed = self
+            .settings_fields
+            .read(cx)
+            .figure
+            .read(cx)
+            .text()
+            .to_owned();
         let taken = self
             .equaliser
             .update(cx, |model, cx| model.take(editing, &typed, cx));
@@ -1806,8 +1845,10 @@ impl RootView {
         } else {
             self.equaliser.update(cx, |model, _| model.leave_cell());
         }
-        self.typed
+        self.settings_fields
+            .read(cx)
             .figure
+            .clone()
             .update(cx, |figure, cx| figure.open_with(String::new(), cx));
         cx.notify();
     }
@@ -1988,7 +2029,13 @@ impl RootView {
     }
 
     pub(crate) fn look_for_a_device(&mut self, cx: &mut Context<Self>) {
-        let typed = self.typed.looking.read(cx).text().to_owned();
+        let typed = self
+            .settings_fields
+            .read(cx)
+            .looking
+            .read(cx)
+            .text()
+            .to_owned();
         let sink = self.the_sink_in_use(cx);
         self.equaliser
             .update(cx, |model, cx| model.look(&typed, sink.as_ref(), cx));
@@ -1996,8 +2043,10 @@ impl RootView {
     }
 
     pub(crate) fn leave_looking(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.typed
+        self.settings_fields
+            .read(cx)
             .looking
+            .clone()
             .update(cx, |looking, cx| looking.clear(cx));
         self.look_for_a_device(cx);
         window.focus(&self.focus, cx);

@@ -25,14 +25,22 @@ impl RootView {
 
     pub(crate) fn focus_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.set_pane(Pane::Settings, cx);
-        self.typed
+        self.settings_fields
+            .read(cx)
             .finding
+            .clone()
             .update(cx, |finding, cx| finding.take_focus_and_select(window, cx));
         cx.notify();
     }
 
     pub(crate) fn leave_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.typed.finding.read(cx).is_focused(window) {
+        if !self
+            .settings_fields
+            .read(cx)
+            .finding
+            .read(cx)
+            .is_focused(window)
+        {
             return;
         }
         window.focus(&self.focus, cx);

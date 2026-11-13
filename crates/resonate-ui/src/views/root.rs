@@ -1,6 +1,7 @@
 mod acting;
 mod deletion;
 mod downloading;
+mod entered;
 mod heading;
 mod keys;
 mod landing;
@@ -92,7 +93,8 @@ use crate::{
         served::ServicesPane,
         settings::{
             Armed, Category, CheckingYoutubeMusic, Fitting, HeldBand, LastfmSigning, Page, Plotted,
-            QuickConnecting, SigningIn, SigningInToYoutubeMusic, SpotifyState, Tending,
+            QuickConnecting, SettingsFields, SigningIn, SigningInToYoutubeMusic, SpotifyState,
+            Tending,
         },
         sharing,
         sheets::{self},
@@ -626,30 +628,6 @@ pub(crate) struct Typed {
     pub(crate) words: Entity<Field>,
     pub(crate) isrc: Entity<Field>,
     pub(crate) name: Entity<Field>,
-    pub(crate) contact: Entity<Field>,
-    pub(crate) acoustid: Entity<Field>,
-    pub(crate) replication: Entity<Field>,
-    pub(crate) audd: Entity<Field>,
-    pub(crate) listenbrainz: Entity<Field>,
-    pub(crate) subsonic: [Entity<Field>; 3],
-    pub(crate) jellyfin: [Entity<Field>; 3],
-    pub(crate) tidal: [Entity<Field>; 6],
-    pub(crate) lastfm: [Entity<Field>; 2],
-    pub(crate) spotify_client: Entity<Field>,
-    pub(crate) youtube_music: [Entity<Field>; 2],
-    pub(crate) discord_app: Entity<Field>,
-    pub(crate) discord_icon: Entity<Field>,
-    pub(crate) sync_server: Entity<Field>,
-    pub(crate) sync_device: Entity<Field>,
-    pub(crate) shared_name: Entity<Field>,
-    pub(crate) sync_code: Entity<Field>,
-    pub(crate) organising: Entity<Field>,
-    pub(crate) minimum_length: Entity<Field>,
-    pub(crate) root: Entity<Field>,
-    pub(crate) finding: Entity<Field>,
-    pub(crate) figure: Entity<Field>,
-    pub(crate) looking: Entity<Field>,
-    pub(crate) measured_as: Entity<Field>,
     pub(crate) zone_name: Entity<Field>,
     pub(crate) search: Entity<Field>,
 }
@@ -721,6 +699,7 @@ pub struct RootView {
     pub(crate) party: Entity<PartyPane>,
     pub(crate) inspector: Entity<InspectorPane>,
     pub(crate) services: Entity<ServicesPane>,
+    pub(crate) settings_fields: Entity<SettingsFields>,
     pub(crate) listening_open: bool,
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,

@@ -300,7 +300,7 @@ mod tests {
         );
 
         driven.click("tab-settings");
-        driven.focus(|root| &root.typed.finding);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("updates");
         driven.settle();
         assert!(driven.cx.debug_bounds("open-the-release").is_some());

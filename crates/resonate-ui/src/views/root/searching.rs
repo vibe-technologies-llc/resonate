@@ -84,9 +84,17 @@ impl RootView {
             self.stop_naming_the_zone(window, cx);
             return;
         }
-        if self.typed.finding.read(cx).is_focused(window) {
-            self.typed
+        if self
+            .settings_fields
+            .read(cx)
+            .finding
+            .read(cx)
+            .is_focused(window)
+        {
+            self.settings_fields
+                .read(cx)
                 .finding
+                .clone()
                 .update(cx, |finding, cx| finding.clear(cx));
             self.leave_filter(window, cx);
             return;
@@ -97,23 +105,53 @@ impl RootView {
             cx.notify();
             return;
         }
-        if self.typed.contact.read(cx).is_focused(window) {
+        if self
+            .settings_fields
+            .read(cx)
+            .contact
+            .read(cx)
+            .is_focused(window)
+        {
             self.put_back_contact(window, cx);
             return;
         }
-        if self.typed.acoustid.read(cx).is_focused(window) {
+        if self
+            .settings_fields
+            .read(cx)
+            .acoustid
+            .read(cx)
+            .is_focused(window)
+        {
             self.put_back_acoustid(window, cx);
             return;
         }
-        if self.typed.replication.read(cx).is_focused(window) {
+        if self
+            .settings_fields
+            .read(cx)
+            .replication
+            .read(cx)
+            .is_focused(window)
+        {
             self.put_back_replication_token(window, cx);
             return;
         }
-        if self.typed.audd.read(cx).is_focused(window) {
+        if self
+            .settings_fields
+            .read(cx)
+            .audd
+            .read(cx)
+            .is_focused(window)
+        {
             self.put_back_audd(window, cx);
             return;
         }
-        if self.typed.listenbrainz.read(cx).is_focused(window) {
+        if self
+            .settings_fields
+            .read(cx)
+            .listenbrainz
+            .read(cx)
+            .is_focused(window)
+        {
             self.put_back_listenbrainz(window, cx);
             return;
         }
@@ -121,18 +159,30 @@ impl RootView {
             self.put_back_the_account(window, cx);
             return;
         }
-        if self.typed.discord_app.read(cx).is_focused(window) {
+        if self
+            .settings_fields
+            .read(cx)
+            .discord_app
+            .read(cx)
+            .is_focused(window)
+        {
             self.leave_discord_app(window, cx);
             return;
         }
-        if self.typed.discord_icon.read(cx).is_focused(window) {
+        if self
+            .settings_fields
+            .read(cx)
+            .discord_icon
+            .read(cx)
+            .is_focused(window)
+        {
             self.leave_discord_icon(window, cx);
             return;
         }
         if [
-            &self.typed.sync_server,
-            &self.typed.sync_device,
-            &self.typed.sync_code,
+            &self.settings_fields.read(cx).sync_server.clone(),
+            &self.settings_fields.read(cx).sync_device.clone(),
+            &self.settings_fields.read(cx).sync_code.clone(),
         ]
         .iter()
         .any(|field| field.read(cx).is_focused(window))
@@ -140,35 +190,69 @@ impl RootView {
             self.leave_sync_field(window, cx);
             return;
         }
-        if self.typed.minimum_length.read(cx).is_focused(window) {
+        if self
+            .settings_fields
+            .read(cx)
+            .minimum_length
+            .read(cx)
+            .is_focused(window)
+        {
             let length = cx
                 .global::<ResonateApp>()
                 .library
                 .music_filters()
                 .minimum_length;
-            self.typed
+            self.settings_fields
+                .read(cx)
                 .minimum_length
+                .clone()
                 .update(cx, |field, cx| field.hold(length.seconds().to_string(), cx));
             window.focus(&self.focus, cx);
             cx.notify();
             return;
         }
-        if self.typed.organising.read(cx).is_focused(window) {
+        if self
+            .settings_fields
+            .read(cx)
+            .organising
+            .read(cx)
+            .is_focused(window)
+        {
             self.put_back_organising(window, cx);
             return;
         }
-        if self.typed.root.read(cx).is_focused(window) {
-            self.typed
+        if self
+            .settings_fields
+            .read(cx)
+            .root
+            .read(cx)
+            .is_focused(window)
+        {
+            self.settings_fields
+                .read(cx)
                 .root
+                .clone()
                 .update(cx, |typed, cx| typed.hold(String::new(), cx));
             self.leave_typed_root(window, cx);
             return;
         }
-        if self.typed.figure.read(cx).is_focused(window) {
+        if self
+            .settings_fields
+            .read(cx)
+            .figure
+            .read(cx)
+            .is_focused(window)
+        {
             self.leave_figure(window, cx);
             return;
         }
-        if self.typed.looking.read(cx).is_focused(window) {
+        if self
+            .settings_fields
+            .read(cx)
+            .looking
+            .read(cx)
+            .is_focused(window)
+        {
             self.leave_looking(window, cx);
             return;
         }
@@ -185,7 +269,13 @@ impl RootView {
             return;
         }
         if self.pane == Pane::Settings
-            && self.typed.finding.read(cx).text().is_empty()
+            && self
+                .settings_fields
+                .read(cx)
+                .finding
+                .read(cx)
+                .text()
+                .is_empty()
             && self.leave_the_settings_page(cx)
         {
             window.focus(&self.focus, cx);

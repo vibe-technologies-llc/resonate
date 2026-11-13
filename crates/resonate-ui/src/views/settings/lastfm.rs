@@ -13,10 +13,10 @@ use crate::{
     icons::Icon,
     settings::Online,
     views::{
-        field::{Field, Submitted},
+        field::Field,
         kit,
         root::RootView,
-        settings::{Rows, action},
+        settings::{Entered, Rows, SettingsFields, action},
     },
     words,
 };
@@ -97,7 +97,7 @@ impl LastfmAccount {
     pub(crate) fn fields(
         online: &Online,
         window: &mut Window,
-        cx: &mut Context<RootView>,
+        cx: &mut Context<SettingsFields>,
     ) -> [Entity<Field>; 2] {
         Self::ALL.map(|account| {
             let field = cx.new(|cx| {
@@ -105,28 +105,31 @@ impl LastfmAccount {
                 field.hold(account.held(online), cx);
                 field
             });
-            cx.subscribe_in(&field, window, move |this, _, _: &Submitted, window, cx| {
-                this.lastfm_given(account, window, cx);
-            })
-            .detach();
+            SettingsFields::says_when_entered(&field, Entered::Lastfm(account), cx);
             field
         })
     }
 }
 
 impl RootView {
-    fn lastfm_field(&self, account: LastfmAccount) -> &Entity<Field> {
-        &self.typed.lastfm[account.nth()]
+    fn lastfm_field(&self, account: LastfmAccount, cx: &App) -> Entity<Field> {
+        self.settings_fields.read(cx).lastfm[account.nth()].clone()
     }
 
-    fn lastfm_given(
+    pub(crate) fn lastfm_given(
         &mut self,
         account: LastfmAccount,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.keep_the_typed_application(cx);
-        let said = if self.lastfm_field(account).read(cx).text().trim().is_empty() {
+        let said = if self
+            .lastfm_field(account, cx)
+            .read(cx)
+            .text()
+            .trim()
+            .is_empty()
+        {
             words::settings_lastfm::last_fm_is_not_scrobbled_to()
         } else {
             words::settings_lastfm::kept_for_signing_in_to_last()
@@ -138,11 +141,16 @@ impl RootView {
 
     fn keep_the_typed_application(&mut self, cx: &mut Context<Self>) {
         for account in LastfmAccount::ALL {
-            let given = self.lastfm_field(account).read(cx).text().trim().to_owned();
+            let given = self
+                .lastfm_field(account, cx)
+                .read(cx)
+                .text()
+                .trim()
+                .to_owned();
             if given == account.held(&cx.global::<ResonateApp>().online) {
                 continue;
             }
-            self.lastfm_field(account)
+            self.lastfm_field(account, cx)
                 .clone()
                 .update(cx, |field, cx| field.hold(given.clone(), cx));
             cx.update_global::<ResonateApp, _>(|global, _| {
@@ -158,7 +166,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> bool {
         for account in LastfmAccount::ALL {
-            let field = self.lastfm_field(account).read(cx);
+            let field = self.lastfm_field(account, cx).read(cx);
             let typed_apart = field.is_focused(window)
                 && field.text().trim() != account.held(&cx.global::<ResonateApp>().online);
             if typed_apart {
@@ -176,7 +184,7 @@ impl RootView {
     ) {
         for account in LastfmAccount::ALL {
             let stored = account.held(&cx.global::<ResonateApp>().online);
-            let field = self.lastfm_field(account).clone();
+            let field = self.lastfm_field(account, cx).clone();
             if field.read(cx).is_focused(window) {
                 field.update(cx, |field, cx| field.hold(stored, cx));
             }
@@ -185,7 +193,7 @@ impl RootView {
 
     pub(crate) fn forget_the_lastfm_account(&mut self, cx: &mut Context<Self>) {
         for account in LastfmAccount::ALL {
-            self.lastfm_field(account)
+            self.lastfm_field(account, cx)
                 .clone()
                 .update(cx, |field, cx| field.hold(String::new(), cx));
         }
@@ -201,7 +209,12 @@ impl RootView {
 
     fn lastfm_sign_in(&self, cx: &App) -> Option<LastfmSignIn> {
         let typed = |account| {
-            let typed = self.lastfm_field(account).read(cx).text().trim().to_owned();
+            let typed = self
+                .lastfm_field(account, cx)
+                .read(cx)
+                .text()
+                .trim()
+                .to_owned();
             (!typed.is_empty()).then_some(typed)
         };
         Some(LastfmSignIn {
@@ -330,7 +343,7 @@ impl RootView {
                 account.label(),
                 self.text_field(
                     account.id(),
-                    self.lastfm_field(account),
+                    &self.lastfm_field(account, cx),
                     |this, window, cx| this.leave_the_account(window, cx),
                     cx,
                 ),

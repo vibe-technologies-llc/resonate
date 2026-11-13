@@ -31,7 +31,7 @@ use crate::{
         announcing,
         browser::ArtistShows,
         dropping::FolderStanding,
-        field::{Blurred, Caught, Field, Submitted},
+        field::{Caught, Field, Submitted},
         focus::Controls,
         inspector::InspectorPane,
         listing::{self},
@@ -44,9 +44,8 @@ use crate::{
         search::SearchShows,
         served::ServicesPane,
         settings::{
-            Account, Category, CheckingYoutubeMusic, Fitting, LastfmAccount, LastfmSigning,
-            QuickConnecting, Service, SigningIn, SigningInToYoutubeMusic, SpotifyState, Tending,
-            TidalAccount, YoutubeMusicField, spotify,
+            Category, CheckingYoutubeMusic, Entered, Fitting, LastfmSigning, Left, QuickConnecting,
+            SettingsFields, SigningIn, SigningInToYoutubeMusic, SpotifyState, Tending,
         },
         sheets::{self},
         slider::Rail,
@@ -80,7 +79,6 @@ impl RootView {
         let lyricists = Arc::clone(&global.lyricists);
         let attention = global.attention.clone();
         let online = global.online.clone();
-        let presence = global.presence.clone();
         let reference = global.reference.clone();
         let for_the_pass = global.for_the_pass.clone();
         let corrections = Arc::clone(&global.corrections);
@@ -88,7 +86,6 @@ impl RootView {
         let measurers = global.measurers.clone();
         let places = global.places.clone();
         let resume = global.resume;
-        let organise_as = global.organise_as.clone();
         let sourcing = global.sourcing.clone();
         let engine = Arc::clone(&global.zones.first().player);
         let catalog = Arc::clone(&global.library);
@@ -224,241 +221,21 @@ impl RootView {
         })
         .detach();
 
-        let contact = cx.new(|cx| {
-            let mut field = Field::new(words::root::contact_placeholder, window, cx);
-            field.hold(online.contact.clone(), cx);
-            field
-        });
-        cx.subscribe_in(&contact, window, |this, _, _: &Submitted, window, cx| {
-            this.contact_given(window, cx);
-        })
-        .detach();
-        cx.subscribe(&contact, |this, _, _: &Blurred, cx| this.contact_left(cx))
-            .detach();
-
-        let acoustid = cx.new(|cx| {
-            let mut field = Field::new(words::root::acoustid_placeholder, window, cx).masked();
-            field.hold(online.acoustid_key.clone(), cx);
-            field
-        });
-        cx.subscribe_in(&acoustid, window, |this, _, _: &Submitted, window, cx| {
-            this.acoustid_key_given(window, cx);
-        })
-        .detach();
-        cx.subscribe(&acoustid, |this, _, _: &Blurred, cx| {
-            this.acoustid_key_left(cx)
-        })
-        .detach();
-
-        let replication = cx.new(|cx| {
-            let mut field =
-                Field::new(words::root::replication_token_placeholder, window, cx).masked();
-            field.hold(online.musicbrainz_replication_token.clone(), cx);
-            field
-        });
+        let settings_fields = cx.new(|cx| SettingsFields::new(window, cx));
         cx.subscribe_in(
-            &replication,
+            &settings_fields,
             window,
-            |this, _, _: &Submitted, window, cx| {
-                this.replication_token_given(window, cx);
-            },
+            |this, _, entered: &Entered, window, cx| this.entered(*entered, window, cx),
         )
         .detach();
-        cx.subscribe(&replication, |this, _, _: &Blurred, cx| {
-            this.replication_token_left(cx)
-        })
-        .detach();
-
-        let audd = cx.new(|cx| {
-            let mut field = Field::new(words::root::audd_placeholder, window, cx).masked();
-            field.hold(online.audd_token.clone(), cx);
-            field
-        });
-        cx.subscribe_in(&audd, window, |this, _, _: &Submitted, window, cx| {
-            this.audd_token_given(window, cx);
-        })
-        .detach();
-        cx.subscribe(&audd, |this, _, _: &Blurred, cx| this.audd_token_left(cx))
-            .detach();
-
-        let listenbrainz = cx.new(|cx| {
-            let mut field = Field::new(words::root::listenbrainz_placeholder, window, cx).masked();
-            field.hold(online.listenbrainz_token.clone(), cx);
-            field
-        });
         cx.subscribe_in(
-            &listenbrainz,
+            &settings_fields,
             window,
-            |this, _, _: &Submitted, window, cx| {
-                this.listenbrainz_token_given(window, cx);
-            },
+            |this, _, left: &Left, window, cx| this.left(*left, window, cx),
         )
         .detach();
-        cx.subscribe(&listenbrainz, |this, _, _: &Blurred, cx| {
-            this.listenbrainz_token_left(cx)
-        })
-        .detach();
-
-        let subsonic = Account::fields(Service::Subsonic, &online, window, cx);
-        let jellyfin = Account::fields(Service::Jellyfin, &online, window, cx);
-        let tidal = TidalAccount::fields(&online, window, cx);
-        let lastfm = LastfmAccount::fields(&online, window, cx);
-        let spotify_client = spotify::field(&online, window, cx);
-        let youtube_music = YoutubeMusicField::fields(&online, window, cx);
-
-        let discord_app = cx.new(|cx| {
-            let mut field = Field::new(words::root::discord_app_placeholder, window, cx);
-            field.hold(
-                presence.app.map(|app| app.to_string()).unwrap_or_default(),
-                cx,
-            );
-            field
-        });
-        cx.subscribe_in(
-            &discord_app,
-            window,
-            |this, _, _: &Submitted, window, cx| {
-                this.discord_app_given(window, cx);
-            },
-        )
-        .detach();
-
-        let discord_icon = cx.new(|cx| {
-            let mut field = Field::new(words::root::discord_icon_placeholder, window, cx);
-            field.hold(
-                presence
-                    .icon
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_default(),
-                cx,
-            );
-            field
-        });
-        cx.subscribe_in(
-            &discord_icon,
-            window,
-            |this, _, _: &Submitted, window, cx| {
-                this.discord_icon_given(window, cx);
-            },
-        )
-        .detach();
-
-        let synchronised = cx.global::<ResonateApp>().synchronised.clone();
-        let sync_server = cx.new(|cx| {
-            let mut field = Field::new(
-                crate::words::settings_sync::sync_server_placeholder,
-                window,
-                cx,
-            );
-            field.hold(synchronised.server.clone(), cx);
-            field
-        });
-        cx.subscribe_in(
-            &sync_server,
-            window,
-            |this, _, _: &Submitted, window, cx| {
-                this.sync_server_given(window, cx);
-            },
-        )
-        .detach();
-        let sync_device = cx.new(|cx| {
-            let mut field = Field::new(
-                crate::words::settings_sync::sync_device_placeholder,
-                window,
-                cx,
-            );
-            field.hold(synchronised.device.clone(), cx);
-            field
-        });
-        cx.subscribe_in(
-            &sync_device,
-            window,
-            |this, _, _: &Submitted, window, cx| {
-                this.sync_device_given(window, cx);
-            },
-        )
-        .detach();
-        let shared_name = cx.new(|cx| {
-            let mut field = Field::new(
-                crate::words::settings_sync::shared_name_placeholder,
-                window,
-                cx,
-            );
-            field.hold(synchronised.shared_name.clone(), cx);
-            field
-        });
-        cx.subscribe_in(
-            &shared_name,
-            window,
-            |this, _, _: &Submitted, window, cx| {
-                this.shared_name_given(window, cx);
-            },
-        )
-        .detach();
-        let sync_code = cx.new(|cx| {
-            Field::new(
-                crate::words::settings_sync::sync_code_placeholder,
-                window,
-                cx,
-            )
-        });
-        cx.subscribe_in(&sync_code, window, |this, _, _: &Submitted, window, cx| {
-            this.sync_code_given(window, cx);
-        })
-        .detach();
-
-        let minimum_length = cx.new(|cx| {
-            let mut field = Field::new(words::root::seconds_from_0_to_600, window, cx);
-            field.hold(
-                cx.global::<ResonateApp>()
-                    .library
-                    .music_filters()
-                    .minimum_length
-                    .seconds()
-                    .to_string(),
-                cx,
-            );
-            field
-        });
-        cx.subscribe_in(
-            &minimum_length,
-            window,
-            |this, _, _: &Submitted, window, cx| {
-                this.minimum_length_given(window, cx);
-            },
-        )
-        .detach();
-
-        let organising = cx.new(|cx| {
-            let mut field = Field::new(words::root::organising_placeholder, window, cx);
-            field.hold(organise_as, cx);
-            field
-        });
-        cx.subscribe_in(&organising, window, |this, _, _: &Submitted, window, cx| {
-            this.layout_given(window, cx);
-        })
-        .detach();
-        cx.subscribe(&organising, |this, _, _: &Blurred, cx| this.layout_left(cx))
-            .detach();
 
         let (typed_words, typed_isrc) = matching::matching_fields(window, cx);
-        let typed_root = cx.new(|cx| Field::new(words::root::typed_root_placeholder, window, cx));
-        cx.subscribe_in(&typed_root, window, |this, _, _: &Submitted, window, cx| {
-            this.root_typed(window, cx);
-        })
-        .detach();
-        cx.subscribe_in(&typed_root, window, |this, _, _: &Blurred, window, cx| {
-            this.root_typed(window, cx);
-        })
-        .detach();
-
-        let finding =
-            cx.new(|cx| Field::new(crate::words::settings_pane::filter_placeholder, window, cx));
-        cx.subscribe_in(&finding, window, |this, _, _: &Submitted, window, cx| {
-            this.leave_filter(window, cx);
-        })
-        .detach();
 
         let server = cx.new(ServerModel::new);
         cx.observe(&server, |_, _, cx| cx.notify()).detach();
@@ -472,22 +249,6 @@ impl RootView {
 
         let services = cx.new(|cx| ServicesPane::new(server.clone(), focus.clone(), window, cx));
         cx.observe(&services, |_, _, cx| cx.notify()).detach();
-
-        let figure = cx.new(|cx| Field::new(words::root::figure_placeholder, window, cx));
-        cx.subscribe_in(&figure, window, |this, _, _: &Submitted, window, cx| {
-            this.figure_given(window, cx);
-        })
-        .detach();
-        cx.subscribe(&figure, |this, _, _: &Blurred, cx| this.figure_left(cx))
-            .detach();
-
-        let looking = cx.new(|cx| Field::new(words::root::looking_placeholder, window, cx));
-        cx.subscribe_in(&looking, window, |this, _, _: &Submitted, _window, cx| {
-            this.look_for_a_device(cx);
-        })
-        .detach();
-
-        let measured_as = cx.new(|cx| Field::new(words::root::measured_as_placeholder, window, cx));
 
         let equaliser = cx.new(|cx| {
             let mut model = EqualiserModel::saved_on_leaving(
@@ -523,6 +284,7 @@ impl RootView {
             party,
             inspector,
             services,
+            settings_fields,
             listening_open: false,
             downloads_open: false,
             downloads_pressed_off: None,
@@ -682,30 +444,6 @@ impl RootView {
                 words: typed_words,
                 isrc: typed_isrc,
                 name,
-                contact,
-                acoustid,
-                replication,
-                audd,
-                listenbrainz,
-                subsonic,
-                jellyfin,
-                tidal,
-                lastfm,
-                spotify_client,
-                youtube_music,
-                discord_app,
-                discord_icon,
-                sync_server,
-                sync_device,
-                shared_name,
-                sync_code,
-                organising,
-                minimum_length,
-                root: typed_root,
-                finding,
-                figure,
-                looking,
-                measured_as,
                 zone_name,
                 search,
             },

@@ -1033,7 +1033,12 @@ mod tests {
                 cell: BandCell::Gain,
             };
             (
-                root.typed.figure.read(cx).text().to_owned(),
+                root.settings_fields
+                    .read(cx)
+                    .figure
+                    .read(cx)
+                    .text()
+                    .to_owned(),
                 root.equaliser.read(cx).written(editing),
             )
         });
@@ -3112,12 +3117,18 @@ mod tests {
         let typed = |driven: &mut Driven, text: &str| {
             let root = driven.root.clone();
             driven.cx.update(|_, cx| {
-                let field = root.read(cx).typed.contact.clone();
+                let field = root
+                    .read(cx)
+                    .settings_fields
+                    .read(cx)
+                    .contact
+                    .clone()
+                    .clone();
                 field.update(cx, |field, cx| field.hold(text.to_owned(), cx));
             });
         };
 
-        driven.focus(|root| &root.typed.contact);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).contact.clone());
         typed(&mut driven, "me@example.test");
         driven.cx.update(|window, cx| {
             let root = driven.root.clone();
@@ -3126,7 +3137,7 @@ mod tests {
         driven.settle();
         assert_eq!(contact(&mut driven), "me@example.test");
 
-        driven.focus(|root| &root.typed.contact);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).contact.clone());
         typed(&mut driven, "someone@else.test");
         driven.cx.update(|window, cx| {
             let root = driven.root.clone();
@@ -3135,7 +3146,13 @@ mod tests {
         driven.settle();
         assert_eq!(contact(&mut driven), "me@example.test");
         assert_eq!(
-            driven.read(|root, cx| root.typed.contact.read(cx).text().to_owned()),
+            driven.read(|root, cx| root
+                .settings_fields
+                .read(cx)
+                .contact
+                .read(cx)
+                .text()
+                .to_owned()),
             "me@example.test"
         );
     }
@@ -3230,7 +3247,7 @@ mod tests {
 
         let mut driven = Driven::open(cx, catalog());
         driven.click("tab-settings");
-        driven.focus(|root| &root.typed.finding);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("autoeq");
         driven.settle();
 
@@ -3240,7 +3257,12 @@ mod tests {
             driven.read(|root, cx| (
                 root.settings_shown.category,
                 root.settings_shown.page,
-                root.typed.finding.read(cx).text().to_owned()
+                root.settings_fields
+                    .read(cx)
+                    .finding
+                    .read(cx)
+                    .text()
+                    .to_owned()
             )),
             (
                 SettingsCategory::Equaliser,
@@ -3253,14 +3275,14 @@ mod tests {
 
     fn typed_into(
         driven: &mut Driven,
-        field: fn(&RootView) -> &Entity<crate::views::field::Field>,
+        field: fn(&RootView, &gpui::App) -> Entity<crate::views::field::Field>,
         text: &str,
     ) {
-        driven.focus(field);
+        driven.focus_on(field);
 
         let root = driven.root.clone();
         driven.cx.update(|_, cx| {
-            let field = field(root.read(cx)).clone();
+            let field = field(root.read(cx), cx);
             field.update(cx, |field, cx| field.hold(text.to_owned(), cx));
         });
     }
@@ -3272,7 +3294,11 @@ mod tests {
         let mut driven = Driven::open(cx, catalog());
         showing_settings(&mut driven, SettingsCategory::Online);
 
-        typed_into(&mut driven, |root| &root.typed.contact, "me@example.test");
+        typed_into(
+            &mut driven,
+            |root, cx| root.settings_fields.read(cx).contact.clone(),
+            "me@example.test",
+        );
         driven.cx.simulate_keystrokes("tab");
         driven.settle();
 
@@ -3283,7 +3309,11 @@ mod tests {
         assert!(
             !driven.cx.update(|window, cx| {
                 let root = driven.root.read(cx);
-                root.typed.contact.read(cx).is_focused(window)
+                root.settings_fields
+                    .read(cx)
+                    .contact
+                    .read(cx)
+                    .is_focused(window)
             }),
             "the contact kept the caret"
         );
@@ -3297,7 +3327,11 @@ mod tests {
 
         showing_settings(&mut driven, SettingsCategory::Recognition);
 
-        typed_into(&mut driven, |root| &root.typed.acoustid, "a-key");
+        typed_into(
+            &mut driven,
+            |root, cx| root.settings_fields.read(cx).acoustid.clone(),
+            "a-key",
+        );
         driven.cx.simulate_keystrokes("tab");
         driven.settle();
 
@@ -3306,7 +3340,11 @@ mod tests {
             "a-key"
         );
 
-        typed_into(&mut driven, |root| &root.typed.audd, "an-audd");
+        typed_into(
+            &mut driven,
+            |root, cx| root.settings_fields.read(cx).audd.clone(),
+            "an-audd",
+        );
         driven.cx.simulate_keystrokes("tab");
         driven.settle();
 
@@ -3317,7 +3355,11 @@ mod tests {
 
         showing_settings(&mut driven, SettingsCategory::Accounts);
 
-        typed_into(&mut driven, |root| &root.typed.listenbrainz, "a-token");
+        typed_into(
+            &mut driven,
+            |root, cx| root.settings_fields.read(cx).listenbrainz.clone(),
+            "a-token",
+        );
         driven.cx.simulate_keystrokes("tab");
         driven.settle();
 
@@ -3340,7 +3382,7 @@ mod tests {
 
         typed_into(
             &mut driven,
-            |root| &root.typed.organising,
+            |root, cx| root.settings_fields.read(cx).organising.clone(),
             "{artist}/{title}",
         );
         driven.cx.simulate_keystrokes("tab");
@@ -3350,7 +3392,7 @@ mod tests {
 
         typed_into(
             &mut driven,
-            |root| &root.typed.organising,
+            |root, cx| root.settings_fields.read(cx).organising.clone(),
             "{album}/{title}",
         );
         driven.cx.simulate_keystrokes("escape");
@@ -3370,20 +3412,26 @@ mod tests {
 
         typed_into(
             &mut driven,
-            |root| &root.typed.root,
+            |root, cx| root.settings_fields.read(cx).root.clone(),
             &dropped.path().display().to_string(),
         );
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
 
         assert_eq!(
-            driven.read(|root, cx| root.typed.root.read(cx).text().to_owned()),
+            driven.read(|root, cx| root
+                .settings_fields
+                .read(cx)
+                .root
+                .read(cx)
+                .text()
+                .to_owned()),
             ""
         );
 
         typed_into(
             &mut driven,
-            |root| &root.typed.root,
+            |root, cx| root.settings_fields.read(cx).root.clone(),
             &kept.path().display().to_string(),
         );
         driven.cx.simulate_keystrokes("tab");
@@ -5180,8 +5228,18 @@ mod tests {
         driven.read(|root, cx| {
             (
                 root.typed.search.read(cx).text().to_owned(),
-                root.typed.listenbrainz.read(cx).text().to_owned(),
-                root.typed.looking.read(cx).text().to_owned(),
+                root.settings_fields
+                    .read(cx)
+                    .listenbrainz
+                    .read(cx)
+                    .text()
+                    .to_owned(),
+                root.settings_fields
+                    .read(cx)
+                    .looking
+                    .read(cx)
+                    .text()
+                    .to_owned(),
             )
         })
     }
@@ -5193,7 +5251,7 @@ mod tests {
         let mut driven = Driven::open(cx, catalog());
         driven.click("tab-settings");
         driven.click("category-Accounts");
-        driven.focus(|root| &root.typed.listenbrainz);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).listenbrainz.clone());
 
         driven.cx.simulate_input("token");
         driven.settle();
@@ -5243,7 +5301,7 @@ mod tests {
     }
 
     fn type_into(driven: &mut Driven, nth: usize, typed: &str) {
-        driven.focus(move |root| &root.typed.lastfm[nth]);
+        driven.focus_on(move |root, cx| root.settings_fields.read(cx).lastfm[nth].clone());
         driven.cx.simulate_input(typed);
         driven.settle();
     }
@@ -5262,7 +5320,7 @@ mod tests {
         let session =
             |_: &RootView, cx: &gpui::App| cx.global::<ResonateApp>().online.lastfm_session.clone();
         driven.click("tab-settings");
-        driven.focus(|root| &root.typed.finding);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("last.fm");
         driven.settle();
 
@@ -5275,7 +5333,7 @@ mod tests {
 
         assert_eq!(driven.read(session), "");
 
-        driven.focus(|root| &root.typed.lastfm[1]);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).lastfm[1].clone());
         driven.cx.simulate_keystrokes("secondary-a backspace");
         type_into(&mut driven, 1, "a secret");
         driven.cx.simulate_keystrokes("enter");
@@ -5656,7 +5714,7 @@ mod tests {
             });
         });
         driven.click("tab-settings");
-        driven.focus(|root| &root.typed.finding);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("youtube music");
         driven.settle();
 
@@ -5666,7 +5724,7 @@ mod tests {
 
         driven.click("youtube-music-track");
         driven.settle();
-        driven.focus(|root| &root.typed.youtube_music[0]);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).youtube_music[0].clone());
         driven.cx.simulate_input("firefox");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -5731,11 +5789,11 @@ mod tests {
             });
         });
         driven.click("tab-settings");
-        driven.focus(|root| &root.typed.finding);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("jellyfin");
         driven.settle();
         for (nth, typed) in [(0, "http://music.local:8096"), (2, "sesame")] {
-            driven.focus(move |root| &root.typed.jellyfin[nth]);
+            driven.focus_on(move |root, cx| root.settings_fields.read(cx).jellyfin[nth].clone());
             driven.cx.simulate_input(typed);
             driven.cx.simulate_keystrokes("enter");
             driven.settle();
@@ -5766,11 +5824,17 @@ mod tests {
             assert!(online.jellyfin_password.is_empty());
         });
         assert_eq!(
-            driven.read(|root, cx| root.typed.jellyfin[2].read(cx).text().to_owned()),
+            driven.read(|root, cx| root.settings_fields.read(cx).jellyfin[2]
+                .read(cx)
+                .text()
+                .to_owned()),
             ""
         );
         assert_eq!(
-            driven.read(|root, cx| root.typed.jellyfin[1].read(cx).text().to_owned()),
+            driven.read(|root, cx| root.settings_fields.read(cx).jellyfin[1]
+                .read(cx)
+                .text()
+                .to_owned()),
             "listener"
         );
     }
@@ -5859,7 +5923,7 @@ mod tests {
         driven.click("jellyfin-quick-connect");
         driven.until(|_, cx| cx.global::<ResonateApp>().online.jellyfin_token == "token-1");
 
-        driven.focus(|root| &root.typed.jellyfin[2]);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).jellyfin[2].clone());
         driven.cx.simulate_input("another");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -5932,7 +5996,7 @@ mod tests {
             });
         });
         driven.click("tab-settings");
-        driven.focus(|root| &root.typed.finding);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("youtube music");
         driven.settle();
         driven.click("youtube-music-track");
@@ -5964,7 +6028,10 @@ mod tests {
             );
         });
         assert_eq!(
-            driven.read(|root, cx| root.typed.youtube_music[0].read(cx).text().to_owned()),
+            driven.read(|root, cx| root.settings_fields.read(cx).youtube_music[0]
+                .read(cx)
+                .text()
+                .to_owned()),
             "/data/resonate/youtube-music-cookies.txt"
         );
     }
@@ -5974,7 +6041,7 @@ mod tests {
         let signs_in = SignsInToYoutubeOnce::answering(crate::YoutubeMusicSignIn::Closed);
         let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
         let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
-        driven.focus(|root| &root.typed.youtube_music[0]);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).youtube_music[0].clone());
         driven.cx.simulate_input("firefox");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -6000,7 +6067,7 @@ mod tests {
         });
         let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
         let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
-        driven.focus(|root| &root.typed.youtube_music[0]);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).youtube_music[0].clone());
         driven.cx.simulate_input("firefox");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -6071,7 +6138,7 @@ mod tests {
             });
         });
         driven.click("tab-settings");
-        driven.focus(|root| &root.typed.finding);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("spotify client");
         driven.settle();
 
@@ -6084,7 +6151,7 @@ mod tests {
             "with no client ID nothing is asked"
         );
 
-        driven.focus(|root| &root.typed.spotify_client);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).spotify_client.clone());
         driven.cx.simulate_input("registered");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -6157,7 +6224,13 @@ mod tests {
         driven.settle();
 
         assert_eq!(
-            driven.read(|root, cx| root.typed.spotify_client.read(cx).text().to_owned()),
+            driven.read(|root, cx| root
+                .settings_fields
+                .read(cx)
+                .spotify_client
+                .read(cx)
+                .text()
+                .to_owned()),
             "registered"
         );
         assert_eq!(
@@ -6180,10 +6253,10 @@ mod tests {
         };
         let mut driven = Driven::open(cx, Arc::clone(&library));
         driven.click("tab-settings");
-        driven.focus(|root| &root.typed.finding);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("listenbrainz token");
         driven.settle();
-        driven.focus(|root| &root.typed.listenbrainz);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).listenbrainz.clone());
         driven.cx.simulate_input("token");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -6222,7 +6295,7 @@ mod tests {
         driven.click("category-Equaliser");
         driven.scroll("settings", 6000.0);
         driven.click("settings-page-headphone-correction");
-        driven.focus(|root| &root.typed.looking);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).looking.clone());
         driven.cx.simulate_input("hd 650");
         driven.settle();
         let before = texts(&mut driven);
@@ -6343,7 +6416,7 @@ mod tests {
         };
         let mut driven = Driven::open(cx, catalog());
         driven.click("tab-settings");
-        driven.focus(|root| &root.typed.finding);
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("listened");
         driven.settle();
 
@@ -6892,7 +6965,11 @@ mod tests {
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| root.calibrate_with(Some(chosen), cx));
         });
-        typed_into(&mut driven, |root| &root.typed.measured_as, "Bedroom");
+        typed_into(
+            &mut driven,
+            |root, cx| root.settings_fields.read(cx).measured_as.clone(),
+            "Bedroom",
+        );
         scrolled_to(&mut driven, "measure-the-room");
 
         driven.click("measure-the-room");

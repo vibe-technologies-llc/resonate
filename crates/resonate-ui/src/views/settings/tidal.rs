@@ -4,8 +4,8 @@ use std::sync::{
 };
 
 use gpui::{
-    AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _, SharedString,
-    Stateful, Styled as _, Task, Window, div,
+    App, AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _,
+    SharedString, Stateful, Styled as _, Task, Window, div,
 };
 use resonate_core::{RESONATE_HOST, Switch};
 use resonate_providers::{Authorizing, Client, Error, RefreshToken};
@@ -15,11 +15,11 @@ use crate::{
     icons::Icon,
     settings::Online,
     views::{
-        field::{Field, Submitted},
+        field::Field,
         kit,
         root::RootView,
         settings::{
-            Rows, action, note,
+            Entered, Rows, SettingsFields, action, note,
             subsonic::{not_a_server, reads_as_a_server},
             switch_row,
         },
@@ -184,7 +184,7 @@ impl TidalAccount {
     pub(crate) fn fields(
         online: &Online,
         window: &mut Window,
-        cx: &mut Context<RootView>,
+        cx: &mut Context<SettingsFields>,
     ) -> [Entity<Field>; 6] {
         Self::ALL.map(|account| {
             let field = cx.new(|cx| {
@@ -196,28 +196,35 @@ impl TidalAccount {
                 field.hold(account.held(online), cx);
                 field
             });
-            cx.subscribe_in(&field, window, move |this, _, _: &Submitted, window, cx| {
-                this.tidal_given(account, window, cx);
-            })
-            .detach();
+            SettingsFields::says_when_entered(&field, Entered::Tidal(account), cx);
             field
         })
     }
 }
 
 impl RootView {
-    fn tidal_field(&self, account: TidalAccount) -> &Entity<Field> {
-        &self.typed.tidal[account.nth()]
+    fn tidal_field(&self, account: TidalAccount, cx: &App) -> Entity<Field> {
+        self.settings_fields.read(cx).tidal[account.nth()].clone()
     }
 
-    fn tidal_given(&mut self, account: TidalAccount, window: &mut Window, cx: &mut Context<Self>) {
-        let given = self.tidal_field(account).read(cx).text().trim().to_owned();
+    pub(crate) fn tidal_given(
+        &mut self,
+        account: TidalAccount,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let given = self
+            .tidal_field(account, cx)
+            .read(cx)
+            .text()
+            .trim()
+            .to_owned();
         let names_a_server = matches!(account, TidalAccount::HifiApi | TidalAccount::Monochrome);
         if names_a_server && !given.is_empty() && !reads_as_a_server(&given) {
             self.report(not_a_server(), cx);
             return;
         }
-        self.tidal_field(account)
+        self.tidal_field(account, cx)
             .clone()
             .update(cx, |field, cx| field.hold(given.clone(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {
@@ -268,7 +275,7 @@ impl RootView {
             (TidalAccount::ClientSecret, client_secret),
             (TidalAccount::RefreshToken, refresh_token),
         ] {
-            self.tidal_field(account)
+            self.tidal_field(account, cx)
                 .clone()
                 .update(cx, |field, cx| field.hold(given.clone(), cx));
             cx.update_global::<ResonateApp, _>(|global, _| account.hold(&mut global.online, given));
@@ -283,7 +290,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> bool {
         for account in TidalAccount::ALL {
-            let field = self.tidal_field(account).read(cx);
+            let field = self.tidal_field(account, cx).read(cx);
             let typed_apart = field.is_focused(window)
                 && field.text().trim() != account.held(&cx.global::<ResonateApp>().online);
             if typed_apart {
@@ -301,7 +308,7 @@ impl RootView {
     ) {
         for account in TidalAccount::ALL {
             let stored = account.held(&cx.global::<ResonateApp>().online);
-            let field = self.tidal_field(account).clone();
+            let field = self.tidal_field(account, cx).clone();
             if field.read(cx).is_focused(window) {
                 field.update(cx, |field, cx| field.hold(stored, cx));
             }
@@ -310,7 +317,7 @@ impl RootView {
 
     pub(crate) fn forget_the_resonate_key(&mut self, cx: &mut Context<Self>) {
         let account = TidalAccount::HifiSecret;
-        self.tidal_field(account)
+        self.tidal_field(account, cx)
             .clone()
             .update(cx, |field, cx| field.hold(String::new(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {
@@ -325,7 +332,7 @@ impl RootView {
             .into_iter()
             .filter(|account| account.is_tidals())
         {
-            self.tidal_field(account)
+            self.tidal_field(account, cx)
                 .clone()
                 .update(cx, |field, cx| field.hold(String::new(), cx));
             cx.update_global::<ResonateApp, _>(|global, _| {
@@ -419,7 +426,7 @@ impl RootView {
             Ok(Some(token)) => {
                 let token = token.into_string();
                 let account = TidalAccount::RefreshToken;
-                self.tidal_field(account)
+                self.tidal_field(account, cx)
                     .clone()
                     .update(cx, |field, cx| field.hold(token.clone(), cx));
                 cx.update_global::<ResonateApp, _>(|global, _| {
@@ -547,7 +554,7 @@ impl RootView {
                 account.label(),
                 self.text_field(
                     account.id(),
-                    self.tidal_field(account),
+                    &self.tidal_field(account, cx),
                     |this, window, cx| this.leave_the_account(window, cx),
                     cx,
                 ),
@@ -576,7 +583,7 @@ impl RootView {
                 account.label(),
                 self.text_field(
                     account.id(),
-                    self.tidal_field(account),
+                    &self.tidal_field(account, cx),
                     |this, window, cx| this.leave_the_account(window, cx),
                     cx,
                 ),

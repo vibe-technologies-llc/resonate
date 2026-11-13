@@ -1076,7 +1076,8 @@ mod driven {
             driven
                 .root
                 .read(cx)
-                .typed
+                .settings_fields
+                .read(cx)
                 .finding
                 .read(cx)
                 .is_focused(window)

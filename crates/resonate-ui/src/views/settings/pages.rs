@@ -106,12 +106,15 @@ impl Pane {
 
     fn typing_into(
         &mut self,
-        field: impl FnOnce(&crate::views::root::RootView) -> &gpui::Entity<crate::views::field::Field>,
+        field: impl FnOnce(
+            &crate::views::root::RootView,
+            &gpui::App,
+        ) -> gpui::Entity<crate::views::field::Field>,
         text: &str,
         wanted: usize,
     ) -> Vec<SettingChange> {
         self.forgetting_what_was_written();
-        self.driven.focus(field);
+        self.driven.focus_on(field);
         self.driven.cx.simulate_input(text);
         self.driven.cx.simulate_keystrokes("enter");
         self.written_after(wanted)
@@ -395,11 +398,16 @@ fn the_accounts_page_writes_a_user_typed_and_refuses_a_server_that_is_not_one(
     let mut pane = Pane::open(cx);
     pane.category(Category::Accounts);
 
-    let written = pane.typing_into(|root| &root.typed.subsonic[1], "alice", 1);
+    let written = pane.typing_into(
+        |root, cx| root.settings_fields.read(cx).subsonic[1].clone(),
+        "alice",
+        1,
+    );
     assert_eq!(written, [stored(Setting::SubsonicUser("alice".to_owned()))]);
 
     pane.forgetting_what_was_written();
-    pane.driven.focus(|root| &root.typed.subsonic[0]);
+    pane.driven
+        .focus_on(|root, cx| root.settings_fields.read(cx).subsonic[0].clone());
     pane.driven.cx.simulate_input("nonsense");
     pane.driven.cx.simulate_keystrokes("enter");
     pane.driven.settle();

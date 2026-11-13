@@ -249,7 +249,7 @@ impl RootView {
                     "MetaBrainz",
                     self.text_field(
                         "musicbrainz-replication-token",
-                        &self.typed.replication,
+                        &self.settings_fields.read(cx).replication.clone(),
                         |this, window, cx| this.leave_replication_token(window, cx),
                         cx,
                     ),
@@ -419,7 +419,7 @@ impl RootView {
         kit::rows()
             .child(self.text_field(
                 "contact",
-                &self.typed.contact,
+                &self.settings_fields.read(cx).contact.clone(),
                 |this, window, cx| this.leave_contact(window, cx),
                 cx,
             ))
@@ -433,7 +433,7 @@ impl RootView {
                     "AcoustID",
                     self.text_field(
                         "acoustid-key",
-                        &self.typed.acoustid,
+                        &self.settings_fields.read(cx).acoustid.clone(),
                         |this, window, cx| this.leave_acoustid_key(window, cx),
                         cx,
                     ),
@@ -445,7 +445,7 @@ impl RootView {
                     "AudD",
                     self.text_field(
                         "audd-token",
-                        &self.typed.audd,
+                        &self.settings_fields.read(cx).audd.clone(),
                         |this, window, cx| this.leave_audd_token(window, cx),
                         cx,
                     ),
@@ -455,7 +455,14 @@ impl RootView {
     }
 
     pub(super) fn submitting_group(&mut self, cx: &mut Context<Self>) -> Rows {
-        let given = !self.typed.listenbrainz.read(cx).text().trim().is_empty();
+        let given = !self
+            .settings_fields
+            .read(cx)
+            .listenbrainz
+            .read(cx)
+            .text()
+            .trim()
+            .is_empty();
         let armed = self.is_armed(&Armed::TellTheEarlierPlays);
         let asked = self.earlier_plays_asked;
 
@@ -464,7 +471,7 @@ impl RootView {
                 words::settings_online::user_token(),
                 self.text_field(
                     "listenbrainz-token",
-                    &self.typed.listenbrainz,
+                    &self.settings_fields.read(cx).listenbrainz.clone(),
                     |this, window, cx| this.leave_listenbrainz_token(window, cx),
                     cx,
                 ),
