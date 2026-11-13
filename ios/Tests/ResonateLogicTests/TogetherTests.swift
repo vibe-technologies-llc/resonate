@@ -131,6 +131,7 @@ private func person(_ name: String, me: Bool = false, host: Bool = false) -> Tog
         #expect(PartyWords.connection(.connecting) == "Reaching the server…")
         #expect(PartyWords.connection(.reconnecting) == "Lost the server; trying again…")
         #expect(PartyWords.connection(.ended) == "The party is over")
+        #expect(PartyWords.connection(.handedOver) == "You handed the party over. It goes on without you")
         #expect(PartyWords.connection(.noSuchParty) == "That party has ended, or was never begun")
         #expect(PartyWords.connection(.turnedAway) == "The server turned that link away")
         #expect(PartyWords.connection(.serverTooOld) == "The server is too old to hold parties")
@@ -140,9 +141,14 @@ private func person(_ name: String, me: Bool = false, host: Bool = false) -> Tog
         for going in [PartyConnection.connecting, .here, .reconnecting] {
             #expect(!PartyWords.isOver(going))
         }
-        for over in [PartyConnection.ended, .noSuchParty, .turnedAway, .serverTooOld] {
+        for over in [PartyConnection.ended, .handedOver, .noSuchParty, .turnedAway, .serverTooOld] {
             #expect(PartyWords.isOver(over))
         }
+    }
+
+    @Test func aHandingSaysWhoTheHostIsHandingToAndWhoNeverTookIt() {
+        #expect(PartyWords.handing(.handing(name: "Ada")) == "Handing the party to Ada…")
+        #expect(PartyWords.handing(.notTaken(name: "")) == "Someone did not take the party over; their app may need an update")
     }
 
     @Test func theRoundTripIsSaidOnlyOnceMeasured() {

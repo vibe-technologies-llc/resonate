@@ -4,6 +4,7 @@ import org.resonate.android.nativecore.ListeningParty
 import org.resonate.android.nativecore.PartyConnection
 import org.resonate.android.nativecore.PartyChatLine
 import org.resonate.android.nativecore.PartyFollowing
+import org.resonate.android.nativecore.PartyHandingOver
 import org.resonate.android.nativecore.PartyReactionKind
 import org.resonate.android.nativecore.PartySaying
 import org.resonate.android.nativecore.SharedPlaylist
@@ -19,6 +20,7 @@ object TogetherWords {
             PartyConnection.CONNECTING -> words.string(R.string.together_reaching_the_server)
             PartyConnection.RECONNECTING -> words.string(R.string.together_party_reconnecting)
             PartyConnection.ENDED -> words.string(R.string.together_party_ended)
+            PartyConnection.HANDED_OVER -> words.string(R.string.together_party_handed_over)
             PartyConnection.NO_SUCH_PARTY -> words.string(R.string.together_party_no_such)
             PartyConnection.TURNED_AWAY -> words.string(R.string.together_party_turned_away)
             PartyConnection.SERVER_TOO_OLD -> words.string(R.string.together_party_server_too_old)
@@ -30,6 +32,7 @@ object TogetherWords {
             PartyConnection.HERE,
             PartyConnection.RECONNECTING -> false
             PartyConnection.ENDED,
+            PartyConnection.HANDED_OVER,
             PartyConnection.NO_SUCH_PARTY,
             PartyConnection.TURNED_AWAY,
             PartyConnection.SERVER_TOO_OLD -> true
@@ -97,6 +100,16 @@ object TogetherWords {
                     reactionNamed(words, saying.reaction),
                 )
         }
+
+    fun handing(words: Words, handing: PartyHandingOver): String {
+        fun named(name: String) = name.ifBlank { words.string(R.string.together_person_nameless) }
+        return when (handing) {
+            is PartyHandingOver.Handing ->
+                words.string(R.string.party_handing_to, named(handing.name))
+            is PartyHandingOver.NotTaken ->
+                words.string(R.string.party_not_taken, named(handing.name))
+        }
+    }
 
     fun person(words: Words, person: TogetherPerson): String =
         when {

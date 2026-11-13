@@ -759,6 +759,7 @@ impl RootView {
                 party_redraws: None,
                 party_offered: None,
                 list_offered: None,
+                handing_armed: None,
             },
             shows: Shows {
                 artist: ArtistShows::default(),

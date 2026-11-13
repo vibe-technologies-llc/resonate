@@ -58,6 +58,8 @@ pub const LINES_A_PERSON_SAYS_AT_MOST: usize = 8;
 
 pub const LINES_COUNTED_OVER: Duration = Duration::from_secs(10);
 
+pub const HANDED_OVER_WITHIN: Duration = Duration::from_secs(10);
+
 pub struct PartySettings {
     pub server: String,
     pub trusted: Option<std::path::PathBuf>,
@@ -74,6 +76,13 @@ pub enum PartyReach {
     NoSuchParty,
     TurnedAway,
     ServerTooOld,
+    HandedOver,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartyHanding {
+    To(DeviceId),
+    NotTaken(DeviceId),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -150,6 +159,7 @@ pub struct PartyShown {
     pub asked_for: Vec<PartyWantingASong>,
     pub round_trip: Option<Duration>,
     pub chat: Vec<PartyLine>,
+    pub handing: Option<PartyHanding>,
 }
 
 fn kept_line(shown: &mut PartyShown, line: PartyLine) -> bool {
@@ -241,6 +251,7 @@ enum Asked {
     TakeAsk(PartyWantingASong),
     Named(String),
     Chat(PartyChat),
+    HandOver(DeviceId),
     Leave,
 }
 
@@ -303,6 +314,7 @@ impl Party {
             asked_for: Vec::new(),
             round_trip: None,
             chat: Vec::new(),
+            handing: None,
         }));
         let clock = Arc::new(RwLock::new(ServerClock::default()));
         let (asked, hearing) = mpsc::unbounded_channel();
@@ -330,6 +342,7 @@ impl Party {
             lines_minted: u64::from_be_bytes(random_bytes()?),
             chat_told: ChatTold::default(),
             pacing: ChatPacing::default(),
+            handed: None,
         };
         let thread = thread::Builder::new()
             .name("resonate-party".to_owned())
@@ -401,6 +414,10 @@ impl Party {
         let _ = self.asked.send(Asked::Chat(chat));
     }
 
+    pub fn hand_over(&self, member: DeviceId) {
+        let _ = self.asked.send(Asked::HandOver(member));
+    }
+
     pub fn leave(&mut self) {
         let _ = self.asked.send(Asked::Leave);
         if let Some(thread) = self.thread.take() {
@@ -438,6 +455,7 @@ struct Running {
     lines_minted: u64,
     chat_told: ChatTold,
     pacing: ChatPacing,
+    handed: Option<(DeviceId, Instant)>,
 }
 
 #[derive(Default)]
@@ -470,6 +488,7 @@ enum Ended {
     Lost,
     Over(PartyReach),
     Left,
+    TakingOver,
 }
 
 impl Running {
@@ -484,6 +503,11 @@ impl Running {
                     self.shown.write().reach = reach;
                     self.wait_until_left(&mut hearing).await;
                     return;
+                }
+                Ok(Ended::TakingOver) => {
+                    self.shown.write().reach = PartyReach::Connecting;
+                    retry = FIRST_RETRY;
+                    continue;
                 }
                 Ok(Ended::Lost) => {}
                 Err(error) => tracing::debug!(%error, "a party lost its server"),
@@ -525,7 +549,7 @@ impl Running {
             Asked::TakeAsk(request) => self.take_ask(&request),
             Asked::Chat(chat) if self.host.is_some() => self.hosted_line(self.me, chat),
             Asked::Ask(_) | Asked::Kick(_) | Asked::Chat(_) => self.keep_for_the_welcome(asked),
-            Asked::Leave => {}
+            Asked::HandOver(_) | Asked::Leave => {}
         }
     }
 
@@ -770,6 +794,7 @@ impl Running {
                     if self.host.is_some() && self.tell_the_chat(&mut send).await.is_err() {
                         break Ended::Lost;
                     }
+                    self.give_up_on_a_handing_untaken();
                 }
                 frame = frames.recv() => {
                     let Some(frame) = frame else {
@@ -837,6 +862,17 @@ impl Running {
                     send.send(&ToServer::RoomKick { member }.encoded()).await?;
                 }
             }
+            Asked::HandOver(member) => {
+                if let Some(token) = self.host.clone()
+                    && member != self.me
+                    && self.members.contains(&member)
+                {
+                    self.say(send, Some(member), &PartySaid::HandOver(token))
+                        .await?;
+                    self.handed = Some((member, Instant::now()));
+                    self.shown.write().handing = Some(PartyHanding::To(member));
+                }
+            }
             Asked::Named(name) => {
                 self.name = name;
                 self.set_own_name();
@@ -887,8 +923,9 @@ impl Running {
             FromServer::RoomEnded => return Ok(Some(Ended::Over(PartyReach::Ended))),
             FromServer::RoomHeard { from, sealed } => {
                 let plain = opened(&self.keys.sealer, self.room(), &sealed, LARGEST_SAID_OPENED)?;
-                self.said_to_me(from, PartySaid::decoded(&plain)?, send)
-                    .await?;
+                return self
+                    .said_to_me(from, PartySaid::decoded(&plain)?, send)
+                    .await;
             }
             _ => {}
         }
@@ -896,16 +933,56 @@ impl Running {
         Ok(None)
     }
 
+    fn give_up_on_a_handing_untaken(&self) {
+        let Some((member, at)) = self.handed else {
+            return;
+        };
+        if at.elapsed() < HANDED_OVER_WITHIN {
+            return;
+        }
+
+        let mut shown = self.shown.write();
+        if shown.handing == Some(PartyHanding::To(member)) {
+            shown.handing = Some(PartyHanding::NotTaken(member));
+        }
+    }
+
+    fn take_over(&mut self, token: Token) -> Ended {
+        self.host = Some(token);
+        self.told = None;
+        self.waiting
+            .retain(|waiting| !matches!(waiting, Asked::Ask(_)));
+        self.chat_told = ChatTold::default();
+        self.pacing = ChatPacing::default();
+
+        let mut shown = self.shown.write();
+        shown.hosting = true;
+        shown.asked_for.clear();
+        shown.now = None;
+
+        Ended::TakingOver
+    }
+
     async fn said_to_me(
         &mut self,
         from: DeviceId,
         said: PartySaid,
         send: &mut Outgoing,
-    ) -> Result<()> {
-        let from_the_host = self.host_id == Some(from);
+    ) -> Result<Option<Ended>> {
         let hosting = self.host.is_some();
+        if !hosting && self.host_id != Some(from) {
+            self.host_id = Some(from);
+            self.publish_people();
+        }
+        let from_the_host = !hosting;
 
         match said {
+            PartySaid::People(_) | PartySaid::Now(_) | PartySaid::Chatted(_)
+                if hosting && self.handed.is_some() =>
+            {
+                return Ok(Some(Ended::Over(PartyReach::HandedOver)));
+            }
+            PartySaid::HandOver(token) if from_the_host => return Ok(Some(self.take_over(token))),
             PartySaid::Hello { name } if hosting => {
                 self.names.retain(|(member, _)| *member != from);
                 self.names.push((from, name));
@@ -940,7 +1017,7 @@ impl Running {
             _ => {}
         }
 
-        Ok(())
+        Ok(None)
     }
 }
 
@@ -1046,6 +1123,7 @@ mod tests {
             asked_for: Vec::new(),
             round_trip: None,
             chat: Vec::new(),
+            handing: None,
         };
 
         assert!(kept_line(&mut shown, a_line(1)));

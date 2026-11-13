@@ -13,7 +13,11 @@ use resonate_core::ZoneId;
 use resonate_core::{PlaylistId, Recording};
 use resonate_library::{Library, PlaylistName, SyncedPlaylist};
 #[cfg(feature = "ui")]
-use resonate_sync::party::{PartyChat, PartyReach, PartyReaction, SittingOut, Standing};
+use resonate_sync::DeviceId;
+#[cfg(feature = "ui")]
+use resonate_sync::party::{
+    PartyChat, PartyHanding, PartyReach, PartyReaction, SittingOut, Standing,
+};
 use resonate_sync::{
     HOSTED_SERVER, HeldShare, LocalPlaylistId, Refused,
     shared::{
@@ -352,7 +356,24 @@ impl resonate_ui::Together for Seen {
                 PartyReach::NoSuchParty => resonate_ui::PartyReached::NoSuchParty,
                 PartyReach::TurnedAway => resonate_ui::PartyReached::TurnedAway,
                 PartyReach::ServerTooOld => resonate_ui::PartyReached::ServerTooOld,
+                PartyReach::HandedOver => resonate_ui::PartyReached::HandedOver,
             },
+            handing: shown.handing.map(|handing| {
+                let name_of = |member: DeviceId| {
+                    shown
+                        .people
+                        .iter()
+                        .find(|person| person.member == member)
+                        .map(|person| person.name.clone())
+                        .unwrap_or_default()
+                };
+                match handing {
+                    PartyHanding::To(member) => resonate_ui::PartyHandingSeen::To(name_of(member)),
+                    PartyHanding::NotTaken(member) => {
+                        resonate_ui::PartyHandingSeen::NotTaken(name_of(member))
+                    }
+                }
+            }),
             people: shown
                 .people
                 .into_iter()
@@ -435,6 +456,10 @@ impl resonate_ui::Together for Seen {
 
     fn react_in_party(&self, reaction: resonate_ui::PartyReaction) {
         crate::party_room::say(PartyChat::Reaction(reaction_said(reaction)));
+    }
+
+    fn hand_over(&self, person: [u8; 16]) {
+        crate::party_room::hand_over(person);
     }
 }
 

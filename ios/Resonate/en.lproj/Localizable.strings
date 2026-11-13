@@ -754,6 +754,7 @@
 "party.chat.say-something" = "Say something to the party";
 "party.chat.send" = "Send";
 "party.connection.ended" = "The party is over";
+"party.connection.handed-over" = "You handed the party over. It goes on without you";
 "party.connection.no-such-party" = "That party has ended, or was never begun";
 "party.connection.reconnecting" = "Lost the server; trying again…";
 "party.connection.too-old" = "The server is too old to hold parties";
@@ -768,6 +769,10 @@
 "party.following.sat-out" = "Paused here; press play to rejoin";
 "party.following.waiting" = "Waiting for the host to play something";
 "party.guest-asks" = "Adding a song to the queue asks the host.";
+"party.hand-over" = "Make host";
+"party.hand-over.asked" = "Hand the party to %@? It goes on once you leave.";
+"party.handing.not-taken" = "%@ did not take the party over; their app may need an update";
+"party.handing.to" = "Handing the party to %@…";
 "party.leave" = "Leave";
 "party.link" = "People join by this link";
 "party.now" = "Now";

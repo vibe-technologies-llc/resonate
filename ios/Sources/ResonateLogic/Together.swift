@@ -113,6 +113,7 @@ public enum PartyWords {
         case .here: nil
         case .reconnecting: said("party.connection.reconnecting")
         case .ended: said("party.connection.ended")
+        case .handedOver: said("party.connection.handed-over")
         case .noSuchParty: said("party.connection.no-such-party")
         case .turnedAway: said("party.connection.turned-away")
         case .serverTooOld: said("party.connection.too-old")
@@ -122,8 +123,20 @@ public enum PartyWords {
     public static func isOver(_ connection: PartyConnection) -> Bool {
         switch connection {
         case .connecting, .here, .reconnecting: false
-        case .ended, .noSuchParty, .turnedAway, .serverTooOld: true
+        case .ended, .handedOver, .noSuchParty, .turnedAway, .serverTooOld: true
         }
+    }
+
+    public static func handing(_ handing: PartyHandingOver) -> String {
+        func named(_ name: String) -> String { name.isEmpty ? said("together.person.someone") : name }
+        switch handing {
+        case .handing(let name): return said("party.handing.to", named(name))
+        case .notTaken(let name): return said("party.handing.not-taken", named(name))
+        }
+    }
+
+    public static func handOverAsked(_ person: TogetherPerson) -> String {
+        said("party.hand-over.asked", person.name.isEmpty ? said("together.person.someone") : person.name)
     }
 
     public static let chatLinesShown = 40

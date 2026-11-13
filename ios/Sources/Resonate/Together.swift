@@ -229,6 +229,14 @@ final class TogetherState {
         }
     }
 
+    func handOver(to person: TogetherPerson) {
+        let id = person.id
+        Task {
+            guard let native = try? await library.player() else { return }
+            _ = try? await Work.aside { native.partyHandOver(person: id) }
+        }
+    }
+
     func turnOut(_ person: TogetherPerson) {
         let id = person.id
         Task {

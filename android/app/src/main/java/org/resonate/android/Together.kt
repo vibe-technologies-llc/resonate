@@ -149,6 +149,11 @@ class Together(
         mutableParty.value = withContext(Dispatchers.IO) { library.holding { it.partyShown() } }
     }
 
+    fun handOver(person: ByteArray) = work { native ->
+        native.partyHandOver(person)
+        mutableParty.value = native.partyShown()
+    }
+
     fun turnOut(person: ByteArray) = work { native ->
         native.partyTurnOut(person)
         mutableParty.value = native.partyShown()

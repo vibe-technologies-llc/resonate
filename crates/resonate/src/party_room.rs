@@ -241,6 +241,12 @@ pub(crate) fn say(chat: PartyChat) {
     }
 }
 
+pub(crate) fn hand_over(member: [u8; 16]) {
+    if let Some(room) = ROOM.lock().as_ref() {
+        room.going.party().hand_over(DeviceId(member));
+    }
+}
+
 pub(crate) fn turn_out(member: [u8; 16]) {
     if let Some(room) = ROOM.lock().as_ref() {
         room.going.party().turn_out(DeviceId(member));

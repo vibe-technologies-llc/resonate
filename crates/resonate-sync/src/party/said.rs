@@ -1,8 +1,9 @@
 use resonate_core::Recording;
 
 use crate::{
-    DeviceId, Result,
+    DeviceId, Result, Token,
     error::{Error, Malformed},
+    key::TOKEN_BYTES,
     wire::{LONGEST_TEXT, Reader, Writer},
 };
 
@@ -17,6 +18,8 @@ const SAID_ASK: u8 = 3;
 const SAID_CHAT: u8 = 4;
 
 const SAID_CHATTED: u8 = 5;
+
+const SAID_HAND_OVER: u8 = 6;
 
 const CHAT_WORDS: u8 = 0;
 
@@ -156,6 +159,7 @@ pub enum PartySaid {
     Ask(PartySong),
     Chat(PartyChat),
     Chatted(Vec<PartyLine>),
+    HandOver(Token),
 }
 
 fn written_chat(writer: &mut Writer, chat: &PartyChat) {
@@ -270,6 +274,10 @@ impl PartySaid {
                     written_chat(&mut writer, &line.chat);
                 }
             }
+            Self::HandOver(token) => {
+                writer.byte(SAID_HAND_OVER);
+                writer.fixed(&token.0);
+            }
         }
 
         writer.finish()
@@ -335,6 +343,7 @@ impl PartySaid {
                 }
                 Self::Chatted(lines)
             }
+            SAID_HAND_OVER => Self::HandOver(Token(reader.fixed::<TOKEN_BYTES>()?)),
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -382,6 +391,7 @@ mod tests {
             PartySaid::Ask(song(4)),
             PartySaid::Chat(PartyChat::Words("Lovely".to_owned())),
             PartySaid::Chat(PartyChat::Reaction(PartyReaction::Fire)),
+            PartySaid::HandOver(Token([9; TOKEN_BYTES])),
             PartySaid::Chatted(vec![
                 PartyLine {
                     id: u64::MAX,

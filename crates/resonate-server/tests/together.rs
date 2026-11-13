@@ -17,9 +17,9 @@ use resonate_server::{Limits, Server, Store};
 use resonate_sync::{
     DeviceId, Incoming, Outgoing, SpaceId, Token, connect,
     party::{
-        Going, LINES_A_PERSON_SAYS_AT_MOST, Mine, Party, PartyChat, PartyFinder, PartyNow,
-        PartyReach, PartyReaction, PartySeat, PartySettings, PartySong, PartyWantingASong,
-        SeatHeard, Standing,
+        Going, HANDED_OVER_WITHIN, LINES_A_PERSON_SAYS_AT_MOST, Mine, Party, PartyChat,
+        PartyFinder, PartyHanding, PartyNow, PartyReach, PartyReaction, PartySeat, PartySettings,
+        PartySong, PartyWantingASong, SeatHeard, Standing,
     },
     to_the_web, web_address,
     wire::{FromServer, PROTOCOL_VERSION, Refusal, SpaceAsked, ToServer},
@@ -1269,13 +1269,23 @@ impl PartySeat for FakeSeat {
 
     fn songs_up_next(&self) -> (Option<PartySong>, Vec<PartySong>) {
         if self.hosting {
-            (
+            return (
                 Some(a_song(1)),
                 self.next.lock().iter().copied().map(a_song).collect(),
-            )
-        } else {
-            (None, Vec::new())
+            );
         }
+
+        let ahead = self
+            .told
+            .kept_ahead
+            .lock()
+            .last()
+            .cloned()
+            .unwrap_or_default();
+        (
+            self.row.lock().map(a_song),
+            ahead.iter().map(|row| a_song(self.stamp_of(row))).collect(),
+        )
     }
 
     fn added_here(&self, _known: &[u64]) -> Vec<PartySong> {
@@ -1528,5 +1538,191 @@ async fn the_clock_of_two_seats_on_the_live_path_agrees_within_what_is_recorded(
     assert!(
         most_apart < 100_000_000,
         "two seats disagreed by {most_apart} ns"
+    );
+}
+
+fn hosted_on(
+    server: SocketAddr,
+    name: &str,
+    seat: impl FnOnce(Arc<dyn Fn() -> u64 + Send + Sync>) -> FakeSeat,
+) -> (Party, FakeSeat) {
+    let settings = party_settings(server, name);
+    let now = Arc::clone(&settings.now_nanos);
+
+    (Party::host(settings).expect("the host starts"), seat(now))
+}
+
+fn the_host_among(party: &Party) -> Option<String> {
+    party
+        .shown()
+        .people
+        .into_iter()
+        .find(|person| person.host)
+        .map(|person| person.name)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_host_hands_the_party_to_a_guest_who_hosts_it_on_for_everyone_once_the_first_has_gone()
+{
+    let server = hosted(Limits {
+        host_back_within: Duration::from_millis(300),
+        ..Limits::default()
+    })
+    .await;
+    let mut host = a_party_in_the_room(server).await;
+    let code = host.shown().code;
+    let ada = Party::join(party_settings(server, "Ada"), &code).expect("Ada joins");
+    let bo = Party::join(party_settings(server, "Bo"), &code).expect("Bo joins");
+    until("everyone to be named to the host", || {
+        let people = host.shown().people;
+        people.iter().any(|one| one.name == "Ada") && people.iter().any(|one| one.name == "Bo")
+    })
+    .await;
+    let ada_is = ada.shown().me;
+
+    host.hand_over(ada_is);
+    until("Ada to host", || {
+        let shown = ada.shown();
+        shown.hosting && shown.reach == PartyReach::Here
+    })
+    .await;
+    until("the first host to know it handed the party over", || {
+        host.shown().reach == PartyReach::HandedOver
+    })
+    .await;
+    until("Bo to follow Ada", || {
+        the_host_among(&bo).as_deref() == Some("Ada")
+    })
+    .await;
+    host.leave();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    ada.tell(PartyNow {
+        song: Some(a_song(4)),
+        next: Vec::new(),
+        playing: true,
+        position_nanos: 0,
+        anchor_nanos: 0,
+        coarse: false,
+    });
+    ada.say(PartyChat::Words("Mine now".to_owned()));
+
+    until("Bo to hear what Ada plays", || {
+        bo.shown().now.and_then(|now| now.song).map(|song| song.row) == Some(4)
+    })
+    .await;
+    until("Bo to hear what Ada says", || {
+        words_heard(&bo).contains(&("Ada".to_owned(), PartyChat::Words("Mine now".to_owned())))
+    })
+    .await;
+    assert_eq!(
+        bo.shown().reach,
+        PartyReach::Here,
+        "the room outlived its first host"
+    );
+    assert_eq!(ada.shown().handing, None);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_party_handed_to_someone_who_never_takes_it_stays_the_hosts() {
+    let server = hosted(Limits::default()).await;
+    let host = a_party_in_the_room(server).await;
+    let key =
+        resonate_sync::party::PartyKey::from_code(&host.shown().code).expect("the code reads");
+    let keys = key.keys().expect("the keys");
+    let mut deaf = Link::to(server).await;
+    deaf.say(ToServer::Room {
+        version: PROTOCOL_VERSION,
+        room: keys.room,
+        token: keys.token.clone(),
+        host: None,
+        member: device(9),
+        seat: Some(token(9)),
+    })
+    .await;
+    until("the deaf guest to arrive", || {
+        host.shown().people.len() == 2
+    })
+    .await;
+
+    host.hand_over(device(9));
+    until("the host to be handing over", || {
+        host.shown().handing == Some(PartyHanding::To(device(9)))
+    })
+    .await;
+    tokio::time::sleep(HANDED_OVER_WITHIN).await;
+
+    until("the host to give up on the handing", || {
+        host.shown().handing == Some(PartyHanding::NotTaken(device(9)))
+    })
+    .await;
+    assert!(host.shown().hosting);
+    assert_eq!(host.shown().reach, PartyReach::Here);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guest_taking_the_party_over_plays_on_under_the_rows_everyone_already_follows() {
+    let server = hosted(Limits {
+        host_back_within: Duration::from_millis(300),
+        ..Limits::default()
+    })
+    .await;
+    let (host, host_seat) = hosted_on(server, "Host", |now| FakeSeat {
+        began: now(),
+        now_nanos: now,
+        told: Told::default(),
+        hosting: true,
+        row: Arc::new(Mutex::new(Some(1))),
+        next: Arc::new(Mutex::new(vec![2, 3])),
+    });
+    let code = host.shown().code;
+    let mut hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(3))).expect("the host's seat");
+
+    let ada_settings = party_settings(server, "Ada");
+    let ada_now = Arc::clone(&ada_settings.now_nanos);
+    let told = Told::default();
+    let ada_seat = FakeSeat {
+        began: ada_now(),
+        now_nanos: ada_now,
+        told: told.clone(),
+        hosting: false,
+        row: Arc::new(Mutex::new(None)),
+        next: Arc::new(Mutex::new(Vec::new())),
+    };
+    let ada = Party::join(ada_settings, &code).expect("Ada joins");
+    let mut going = Going::begin(ada, ada_seat, Arc::new(HeldOnly(3))).expect("Ada's seat");
+    let bo = Party::join(party_settings(server, "Bo"), &code).expect("Bo joins");
+    until("Ada to stand in step", || {
+        going.followed().standing == Standing::InStep
+    })
+    .await;
+    until("Bo to arrive", || bo.shown().reach == PartyReach::Here).await;
+
+    hosted.party().hand_over(going.shown().me);
+    until("Ada to host", || going.shown().hosting).await;
+    until("the first host to know", || {
+        hosted.shown().reach == PartyReach::HandedOver
+    })
+    .await;
+    hosted.leave();
+    until("Bo to follow Ada", || {
+        the_host_among(&bo).as_deref() == Some("Ada")
+    })
+    .await;
+    until("Ada to have kept on what the host had next", || {
+        told.kept_ahead.lock().last() == Some(&vec![2, 3])
+    })
+    .await;
+
+    until("Ada to name the song by the row the party knows", || {
+        going.shown().now.is_some_and(|now| {
+            now.song.as_ref().map(|song| song.row) == Some(1)
+                && now.next.iter().map(|song| song.row).collect::<Vec<_>>() == [2, 3]
+        })
+    })
+    .await;
+    going.leave();
+    assert!(
+        !told.put_back.load(Ordering::Acquire),
+        "a host keeps the queue it plays"
     );
 }

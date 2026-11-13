@@ -17,7 +17,8 @@ pub use self::{
     said::{LONGEST_LINE, PartyChat, PartyLine, PartyNow, PartyReaction, PartySaid, PartySong},
     seat::{Going, PartyFinder, PartyFollowed, PartySeat, SeatHeard},
     service::{
-        CHAT_KEPT_AT_MOST, LINES_A_PERSON_SAYS_AT_MOST, Party, PartyPerson, PartyReach,
-        PartySettings, PartyShown, PartyWantingASong, RequestClaim, RequestId,
+        CHAT_KEPT_AT_MOST, HANDED_OVER_WITHIN, LINES_A_PERSON_SAYS_AT_MOST, Party, PartyHanding,
+        PartyPerson, PartyReach, PartySettings, PartyShown, PartyWantingASong, RequestClaim,
+        RequestId,
     },
 };

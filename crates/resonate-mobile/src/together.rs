@@ -7,8 +7,9 @@ use resonate_providers::{PlaysInPlace, found_exactly};
 use resonate_sync::{
     DeviceId, HOSTED_SERVER, LocalPlaylistId,
     party::{
-        Going, Mine, Party, PartyChat, PartyFinder, PartyReach, PartyReaction, PartySeat,
-        PartySettings, PartySong, PartyWantingASong, RequestId, SeatHeard, SittingOut, Standing,
+        Going, Mine, Party, PartyChat, PartyFinder, PartyHanding, PartyReach, PartyReaction,
+        PartySeat, PartySettings, PartySong, PartyWantingASong, RequestId, SeatHeard, SittingOut,
+        Standing,
     },
     shared::{Invited, MemberId, SharedShown, SharedStanding, invitation_in},
 };
@@ -67,6 +68,7 @@ pub enum PartyConnection {
     Here,
     Reconnecting,
     Ended,
+    HandedOver,
     NoSuchParty,
     TurnedAway,
     ServerTooOld,
@@ -138,6 +140,12 @@ pub struct PartyChatLine {
     pub saying: PartySaying,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum PartyHandingOver {
+    Handing { name: String },
+    NotTaken { name: String },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ListeningParty {
     pub hosting: bool,
@@ -149,6 +157,7 @@ pub struct ListeningParty {
     pub requests: Vec<PartyRequest>,
     pub round_trip_ms: Option<u64>,
     pub chat: Vec<PartyChatLine>,
+    pub handing: Option<PartyHandingOver>,
 }
 
 #[derive(Default)]
@@ -532,6 +541,24 @@ impl MobilePlayer {
         let shown = room.going.shown();
         let followed = room.going.followed();
         let me = shown.me;
+        let handing = shown.handing.map(|handing| {
+            let name_of = |member: DeviceId| {
+                shown
+                    .people
+                    .iter()
+                    .find(|person| person.member == member)
+                    .map(|person| person.name.clone())
+                    .unwrap_or_default()
+            };
+            match handing {
+                PartyHanding::To(member) => PartyHandingOver::Handing {
+                    name: name_of(member),
+                },
+                PartyHanding::NotTaken(member) => PartyHandingOver::NotTaken {
+                    name: name_of(member),
+                },
+            }
+        });
 
         Some(ListeningParty {
             hosting: shown.hosting,
@@ -541,6 +568,7 @@ impl MobilePlayer {
                 PartyReach::Here => PartyConnection::Here,
                 PartyReach::Reconnecting => PartyConnection::Reconnecting,
                 PartyReach::Ended => PartyConnection::Ended,
+                PartyReach::HandedOver => PartyConnection::HandedOver,
                 PartyReach::NoSuchParty => PartyConnection::NoSuchParty,
                 PartyReach::TurnedAway => PartyConnection::TurnedAway,
                 PartyReach::ServerTooOld => PartyConnection::ServerTooOld,
@@ -583,6 +611,7 @@ impl MobilePlayer {
             round_trip_ms: shown
                 .round_trip
                 .map(|trip| u64::try_from(trip.as_millis()).unwrap_or(u64::MAX)),
+            handing,
             chat: shown
                 .chat
                 .into_iter()
@@ -622,6 +651,15 @@ impl MobilePlayer {
         };
         if let Some(room) = self.together.party.lock().as_ref() {
             room.going.party().turn_out(DeviceId(member));
+        }
+    }
+
+    pub fn party_hand_over(&self, person: Vec<u8>) {
+        let Some(member) = member_from(&person) else {
+            return;
+        };
+        if let Some(room) = self.together.party.lock().as_ref() {
+            room.going.party().hand_over(DeviceId(member));
         }
     }
 

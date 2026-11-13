@@ -9,6 +9,7 @@ import org.resonate.android.nativecore.ListeningParty
 import org.resonate.android.nativecore.PartyConnection
 import org.resonate.android.nativecore.PartyChatLine
 import org.resonate.android.nativecore.PartyFollowing
+import org.resonate.android.nativecore.PartyHandingOver
 import org.resonate.android.nativecore.PartyReactionKind
 import org.resonate.android.nativecore.PartySaying
 import org.resonate.android.nativecore.SharedPlaylist
@@ -27,6 +28,7 @@ class TogetherWordsTest {
             requests = emptyList(),
             roundTripMs = null,
             chat = emptyList(),
+            handing = null,
         )
 
     private val list =
@@ -47,6 +49,10 @@ class TogetherWordsTest {
         assertEquals("Reaching the server…", TogetherWords.connection(English, PartyConnection.CONNECTING))
         assertEquals("Lost the server; trying again…", TogetherWords.connection(English, PartyConnection.RECONNECTING))
         assertEquals("The party is over", TogetherWords.connection(English, PartyConnection.ENDED))
+        assertEquals(
+            "You handed the party over. It goes on without you",
+            TogetherWords.connection(English, PartyConnection.HANDED_OVER),
+        )
         assertEquals(
             "That party has ended, or was never begun",
             TogetherWords.connection(English, PartyConnection.NO_SUCH_PARTY),
@@ -114,6 +120,19 @@ class TogetherWordsTest {
             PartyReactionKind.entries.map { TogetherWords.reactionDrawn(it) }.toSet().size,
         )
         PartyReactionKind.entries.forEach { assertTrue(TogetherWords.reactionNamed(English, it).isNotBlank()) }
+    }
+
+    @Test
+    fun aHandingSaysWhoTheHostIsHandingToAndWhoNeverTookIt() {
+        assertEquals(
+            "Handing the party to Ada…",
+            TogetherWords.handing(English, PartyHandingOver.Handing("Ada")),
+        )
+        assertEquals(
+            "Someone did not take the party over; their app may need an update",
+            TogetherWords.handing(English, PartyHandingOver.NotTaken("")),
+        )
+        assertTrue(TogetherWords.isOver(PartyConnection.HANDED_OVER))
     }
 
     @Test

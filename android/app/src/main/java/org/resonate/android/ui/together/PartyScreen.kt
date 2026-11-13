@@ -245,15 +245,30 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
                 trailing =
                     if (party.hosting && !person.isMe) {
                         {
-                            TextButton(
-                                onClick = { together.turnOut(person.id) },
-                                modifier = Modifier.testTag("party-remove"),
-                            ) {
-                                Text(stringResource(R.string.party_remove))
+                            val handing = "hand-over-" + person.id.joinToString("") { "%02x".format(it) }
+                            Row {
+                                TextButton(
+                                    onClick = { press.press(handing) { together.handOver(person.id) } },
+                                    modifier = Modifier.testTag("party-hand-over"),
+                                ) {
+                                    Text(press.label(handing, stringResource(R.string.party_make_host)))
+                                }
+                                TextButton(
+                                    onClick = { together.turnOut(person.id) },
+                                    modifier = Modifier.testTag("party-remove"),
+                                ) {
+                                    Text(stringResource(R.string.party_remove))
+                                }
                             }
                         }
                     } else null,
                 modifier = Modifier.testTag("party-person"),
+            )
+        }
+        party.handing?.let { handing ->
+            Note(
+                TogetherWords.handing(words, handing),
+                Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("party-handing"),
             )
         }
         if (party.hosting && party.requests.isNotEmpty()) {

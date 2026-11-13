@@ -9,8 +9,8 @@ use crate::{
     icons::{self, Icon},
     theme,
     together::{
-        PartyLineSeen, PartyReached, PartyReaction, PartySaying, PartySeen, PartyStanding,
-        SharedPerson,
+        PartyHandingSeen, PartyLineSeen, PartyReached, PartyReaction, PartySaying, PartySeen,
+        PartyStanding, SharedPerson,
     },
     views::{
         kit::{self, EndsInAnEllipsis as _, Tone},
@@ -132,6 +132,22 @@ fn reach_said(reach: PartyReached) -> Option<&'static str> {
         PartyReached::NoSuchParty => Some(words::party::no_such_party()),
         PartyReached::TurnedAway => Some(words::party::turned_away()),
         PartyReached::ServerTooOld => Some(words::party::server_too_old()),
+        PartyReached::HandedOver => Some(words::party::handed_over()),
+    }
+}
+
+fn handing_said(handing: &PartyHandingSeen) -> String {
+    let named = |name: &str| {
+        if name.is_empty() {
+            words::party::a_nameless_person().to_owned()
+        } else {
+            name.to_owned()
+        }
+    };
+
+    match handing {
+        PartyHandingSeen::To(name) => words::party::handing_to(named(name)),
+        PartyHandingSeen::NotTaken(name) => words::party::not_taken(named(name)),
     }
 }
 
@@ -195,7 +211,8 @@ const fn reach_is_the_end(reach: PartyReached) -> bool {
         PartyReached::Ended
         | PartyReached::NoSuchParty
         | PartyReached::TurnedAway
-        | PartyReached::ServerTooOld => true,
+        | PartyReached::ServerTooOld
+        | PartyReached::HandedOver => true,
     }
 }
 
@@ -681,7 +698,23 @@ impl RootView {
                             .child(name),
                     )
                     .when(seen.hosting && !person.me, |row| {
+                        let armed = self.social.handing_armed == Some(id);
                         row.child(self.in_the_pane_ring(
+                            kit::button(
+                                ("party-hand-over", at),
+                                None,
+                                if armed {
+                                    words::party::press_again_to_hand_over()
+                                } else {
+                                    words::party::make_host()
+                                },
+                                words::party::hand_over_hint(),
+                                Tone::Ghost,
+                            ),
+                            move |this, _, cx| this.hand_the_party_to(id, cx),
+                            cx,
+                        ))
+                        .child(self.in_the_pane_ring(
                             kit::icon_button(
                                 ("party-turn-out", at),
                                 Icon::Close,
@@ -694,7 +727,23 @@ impl RootView {
             );
         }
 
-        card(words::party::here()).child(people)
+        card(words::party::here()).child(people).when_some(
+            seen.handing.as_ref(),
+            |card, handing| {
+                let handing = handing_said(handing);
+                card.child(
+                    div()
+                        .id("party-handing")
+                        .read_plainly_as({
+                            let handing = handing.clone();
+                            move || SharedString::from(handing)
+                        })
+                        .px_4()
+                        .pb_4()
+                        .child(said(handing)),
+                )
+            },
+        )
     }
 
     fn party_chat(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
@@ -859,6 +908,20 @@ impl RootView {
 
         cx.background_spawn(async move { together.leave_party() })
             .detach();
+        cx.notify();
+    }
+
+    fn hand_the_party_to(&mut self, person: [u8; 16], cx: &mut Context<Self>) {
+        if self.social.handing_armed != Some(person) {
+            self.social.handing_armed = Some(person);
+            cx.notify();
+            return;
+        }
+
+        self.social.handing_armed = None;
+        if let Some(together) = cx.global::<ResonateApp>().together.clone() {
+            together.hand_over(person);
+        }
         cx.notify();
     }
 

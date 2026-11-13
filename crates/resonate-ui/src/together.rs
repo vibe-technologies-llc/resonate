@@ -47,6 +47,13 @@ pub enum PartyReached {
     NoSuchParty,
     TurnedAway,
     ServerTooOld,
+    HandedOver,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PartyHandingSeen {
+    To(String),
+    NotTaken(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,6 +114,7 @@ pub struct PartySeen {
     pub asked_for: Vec<(String, String)>,
     pub round_trip: Option<Duration>,
     pub chat: Vec<PartyLineSeen>,
+    pub handing: Option<PartyHandingSeen>,
 }
 
 pub trait Together: Send + Sync {
@@ -145,6 +153,8 @@ pub trait Together: Send + Sync {
     fn say_in_party(&self, words: &str);
 
     fn react_in_party(&self, reaction: PartyReaction);
+
+    fn hand_over(&self, person: [u8; 16]);
 }
 
 pub(crate) fn is_an_invitation(text: &str) -> bool {

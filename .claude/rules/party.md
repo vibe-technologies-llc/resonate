@@ -135,6 +135,34 @@ open under `LARGEST_SAID_OPENED`. `Now` (the song and next rows, playing, positi
 was true at) is told on any change, on a jump past `HOST_MOVED_PAST`, and every 2 s; a late guest is told
 it as it arrives. A reconnecting seat tries from 1 s to 15 s and the room waits 30 s for its host. **A request, a host's turn-out and a dismissal made while a seat reconnects are not lost**: a guest's `Ask` and a host's `Kick` wait in a queue of `SAID_WHILE_AWAY_AT_MOST` (16, the oldest dropped) and are sent right after the next `RoomWelcome` (also one whose send failed), and a dismissal is applied to the shown requests at once, naming the request (`PartyWantingASong`: its sender, row and song, as a `RequestId` of 32 bytes, which is what the phones' `PartyRequest.id` carries into `party_play_next` and `party_pass_over`), never an index, so a *Play next* whose search took seconds removes the request it found and no other; **a press claims its request first** (`Party::claim_a_request`, a `RequestClaim` held while the search runs, so a second press on the same request does nothing, answering as the first is, and a failed search frees it), and `take_a_request` removes it from the shown requests at once as well as through the service (`a_request_pressed_twice_while_its_search_runs_is_claimed_once_and_free_again_once_dropped`) (`a_guests_request_made_while_it_reconnects_reaches_the_host_once_it_is_back`, `a_request_dismissed_is_the_one_named_whatever_else_has_come_and_gone`). An old server answers the opening frame by closing, so **`ServerTooOld` is read only after `CLOSES_BEFORE_WELCOME_FOR_TOO_OLD` (3) clean closes in a row before any welcome**; one close, as a tunnel or a draining server may send, is a connection lost and tried again (`one_clean_close_before_the_welcome_is_a_connection_lost_and_not_a_server_too_old`, `a_server_that_closes_every_connection_before_the_welcome_reads_as_too_old`). The tests' `Doorman` reads the opening frame before it closes, as an old server does: on Windows a socket closed with bytes unread is reset, which throws away the close frame already sent.
 
+## Handing the party on
+
+**A host who must go hands the party to someone present, and the room outlives them**
+(`Party::hand_over`, no server change). The host sends that member alone `PartySaid::HandOver` (tag 6)
+carrying the host token; the member, hearing it from the host, keeps the token, turns `hosting` on and
+ends its session as `Ended::TakingOver`, which reconnects at once (`Connecting`, no wait) presenting the
+token, so the server makes it the room's host and the old host's session is a member's. Since a member
+hears only the host's frames (`server.md`), **a guest takes whoever it hears from as the host**
+(`said_to_me` moves `host_id` and tells `People` again), so every other guest follows the new host
+with nothing told; a guest reconnecting learns it from `RoomWelcome`. The old host shows
+`PartyShown.handing` as `PartyHanding::To` until it hears `People`, `Now` or `Chatted` from anyone,
+which only the new host sends: then its reach is `PartyReach::HandedOver`, terminal like `Ended`, and
+leaving no longer ends the room. A member that never takes it (a build without tag 6 drops the word)
+turns the handing to `PartyHanding::NotTaken` after `HANDED_OVER_WITHIN` (10 s), the party staying the
+host's. **The seat turns from following to hosting without moving the queue**: `guested` answers
+`Guested::TookOver` with the rows it followed (seat stamp to the old host's row), `hosted` names each
+song by the old host's row (`as_the_party_knows`), so no guest takes the song up again, and the songs
+the old host had next are found here and kept ahead (`inherit`, `hosted_after`) before the first `Now`;
+the new host's own queue is not put back. The new host keeps the chat; its own line ids carry on from
+its random start. The window asks twice (*Make host*, then *Press again to hand over*,
+`Social::handing_armed`), Android likewise (`rememberSecondPress`), iOS confirms in a dialog; each
+says the handing under who is here. An older guest build that is not the one handed to ignores the new
+host until it reconnects
+(`the_host_hands_the_party_to_a_guest_who_hosts_it_on_for_everyone_once_the_first_has_gone`,
+`a_party_handed_to_someone_who_never_takes_it_stays_the_hosts`,
+`a_guest_taking_the_party_over_plays_on_under_the_rows_everyone_already_follows`,
+`the_host_hands_the_party_to_someone_only_on_a_second_press`).
+
 ## Chat and reactions
 
 People at a party say a line or react to the song, and everyone hears it **through the host**, since the

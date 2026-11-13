@@ -695,6 +695,7 @@ pub(crate) struct Social {
     pub(crate) party_redraws: Option<Task<()>>,
     pub(crate) party_offered: Option<String>,
     pub(crate) list_offered: Option<ListOffered>,
+    pub(crate) handing_armed: Option<[u8; 16]>,
 }
 
 pub(crate) struct Shows {

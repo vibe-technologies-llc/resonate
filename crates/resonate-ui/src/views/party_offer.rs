@@ -157,6 +157,7 @@ pub(crate) mod joined {
         pub(crate) at: Mutex<Option<PartySeen>>,
         pub(crate) said: Mutex<Vec<String>>,
         pub(crate) reacted: Mutex<Vec<PartyReaction>>,
+        pub(crate) handed: Mutex<Vec<[u8; 16]>>,
     }
 
     impl Joining {
@@ -231,6 +232,10 @@ pub(crate) mod joined {
 
         fn react_in_party(&self, reaction: PartyReaction) {
             self.reacted.lock().push(reaction);
+        }
+
+        fn hand_over(&self, person: [u8; 16]) {
+            self.handed.lock().push(person);
         }
     }
 }

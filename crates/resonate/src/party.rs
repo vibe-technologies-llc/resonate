@@ -282,6 +282,7 @@ fn reach_said(reach: PartyReach) -> Option<&'static str> {
         PartyReach::Connecting => Some(words::party::connecting()),
         PartyReach::Reconnecting => Some(words::party::reconnecting()),
         PartyReach::Ended => Some(words::party::ended()),
+        PartyReach::HandedOver => Some(words::party::handed_over()),
         PartyReach::NoSuchParty => Some(words::party::no_such_party()),
         PartyReach::TurnedAway => Some(words::party::turned_away()),
         PartyReach::ServerTooOld => Some(words::party::server_too_old()),
@@ -429,6 +430,7 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
         if matches!(
             shown.reach,
             PartyReach::Ended
+                | PartyReach::HandedOver
                 | PartyReach::NoSuchParty
                 | PartyReach::TurnedAway
                 | PartyReach::ServerTooOld

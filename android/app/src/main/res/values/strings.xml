@@ -61,6 +61,7 @@
     <string name="together_reaching_the_server">Reaching the server…</string>
     <string name="together_party_reconnecting">Lost the server; trying again…</string>
     <string name="together_party_ended">The party is over</string>
+    <string name="together_party_handed_over">You handed the party over. It goes on without you</string>
     <string name="together_party_no_such">That party has ended, or was never begun</string>
     <string name="together_party_turned_away">The server turned that link away</string>
     <string name="together_party_server_too_old">The server is too old to hold parties</string>
@@ -122,6 +123,9 @@
     <string name="party_here">Here</string>
     <string name="party_host">Host</string>
     <string name="party_remove">Remove</string>
+    <string name="party_make_host">Make host</string>
+    <string name="party_handing_to">Handing the party to %1$s…</string>
+    <string name="party_not_taken">%1$s did not take the party over; their app may need an update</string>
     <string name="party_asked_for">Asked for</string>
     <string name="party_pass">Pass</string>
     <string name="party_play_next">Play next</string>

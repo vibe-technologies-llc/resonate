@@ -237,6 +237,7 @@ struct SharedPlaylistSheet: View {
 struct PartyView: View {
     @Environment(Library.self) private var library
     @Environment(\.scenePhase) private var phase
+    @State private var handingTo: TogetherPerson?
 
     var body: some View {
         let together = library.features.together
@@ -261,6 +262,16 @@ struct PartyView: View {
             }
         }
         .navigationTitle("party.title")
+        .confirmationDialog(
+            handingTo.map(PartyWords.handOverAsked) ?? "",
+            isPresented: Binding(get: { handingTo != nil }, set: { if !$0 { handingTo = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let person = handingTo {
+                Button("party.hand-over") { together.handOver(to: person) }
+            }
+            Button("common.cancel", role: .cancel) {}
+        }
         .task(id: phase == .active) {
             guard phase == .active else { return }
             await together.followParty()
@@ -338,10 +349,16 @@ struct PartyView: View {
                     Text(TogetherWords.person(person)).titleLines()
                     Spacer()
                     if party.hosting, !person.isMe {
+                        Button("party.hand-over") { handingTo = person }
+                            .buttonStyle(.bordered)
                         Button("common.remove", role: .destructive) { together.turnOut(person) }
                             .buttonStyle(.bordered)
                     }
                 }
+            }
+            if let handing = party.handing {
+                let words = PartyWords.handing(handing)
+                Text(words).foregroundStyle(.secondary).announced(words)
             }
         } header: {
             Text("together.people")

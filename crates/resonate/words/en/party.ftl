@@ -17,3 +17,4 @@ type-to-chat = Type a line and press enter to say it to everyone at the party
 you = You
 someone = Someone
 said-by = { $person }: { $words }
+handed-over = You handed the party over. It goes on without you

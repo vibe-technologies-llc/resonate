@@ -744,6 +744,7 @@ mod driven {
                 me: false,
                 saying: crate::together::PartySaying::Words("Lovely".to_owned()),
             }],
+            handing: None,
         });
         together_over(&mut driven, joining.clone());
 
@@ -764,6 +765,55 @@ mod driven {
             vec![crate::together::PartyReaction::Fire]
         );
         assert!(driven.read(|root, cx| root.typed.party_chat.read(cx).text().is_empty()));
+    }
+
+    #[gpui::test]
+    fn the_host_hands_the_party_to_someone_only_on_a_second_press(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let mut driven = queue_open(cx, &folder, &["one"]);
+        let joining = Arc::new(party_offer::joined::Joining::default());
+        let ada = [3; 16];
+        *joining.at.lock() = Some(crate::together::PartySeen {
+            zone: resonate_core::ZoneId::FIRST,
+            hosting: true,
+            link: "resonate://party/ABCDE".to_owned(),
+            reach: crate::together::PartyReached::Here,
+            people: vec![
+                crate::together::SharedPerson {
+                    id: [1; 16],
+                    name: "Host".to_owned(),
+                    me: true,
+                },
+                crate::together::SharedPerson {
+                    id: ada,
+                    name: "Ada".to_owned(),
+                    me: false,
+                },
+            ],
+            standing: crate::together::PartyStanding::InStep,
+            song: None,
+            asked_for: Vec::new(),
+            round_trip: None,
+            chat: Vec::new(),
+            handing: None,
+        });
+        together_over(&mut driven, joining.clone());
+
+        driven
+            .root
+            .update(&mut driven.cx, |root, cx| root.set_pane(Pane::Party, cx));
+        driven.settle();
+        driven.click("party-hand-over-1");
+        driven.settle();
+
+        assert!(joining.handed.lock().is_empty(), "one press only asks");
+        assert_eq!(driven.read(|root, _| root.social.handing_armed), Some(ada));
+
+        driven.click("party-hand-over-1");
+        driven.settle();
+
+        assert_eq!(*joining.handed.lock(), vec![ada]);
+        assert_eq!(driven.read(|root, _| root.social.handing_armed), None);
     }
 
     #[gpui::test]
