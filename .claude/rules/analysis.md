@@ -438,13 +438,26 @@ could change (stored studies and kept analyses are weighed against it).
   proportional, to within the 16-bit rounding, where a recording's channels are not, and off those
   frames the bands of neighbouring frames (each with its own ratio) blur together. `Coupling` is a
   grid like the others (pre-emphasis, the long 1 920-sample MDCT, 960 residues, 16 frames a search,
-  400 confirmed, control 540 off; 48 kHz, two channels, `Grid::PAIRED_ONLY`) whose observation is
-  a *cell*, one band of one frame from band 8 (1.6 kHz) up: it is counted where the rounding would
-  decorrelate the band by at most `COUPLED_ROUNDING_AT_MOST` (0.05; `ROUNDING_POWER` 1/12 a line,
-  shaped by the pre-emphasis, over each channel's power) and is *coupled* where `1 - ⟨L,R⟩² /
-  (‖L‖²‖R‖²)` is within `PROPORTIONAL_WITHIN_ROUNDINGS` (4) of that; a frame with a sample at full
-  scale counts nothing, since a clipped decode is no longer proportional (one loud master clipped
-  1.5% of its samples and its intensity bands read 0.005 apart instead of the rounding's 10^-6).
+  `COUPLED_FRAMES_CONFIRMED` (1 000) confirmed, control 540 off; 48 kHz, two channels,
+  `Grid::PAIRED_ONLY`) whose observation is a *cell*, one band of one frame from band 8 (1.6 kHz)
+  up: it is counted where the rounding would decorrelate the band by at most
+  `COUPLED_ROUNDING_AT_MOST` (0.05; `ROUNDING_POWER` 1/12 a line, shaped by the pre-emphasis, over
+  each channel's power) and is *coupled* where `1 - ⟨L,R⟩² / (‖L‖²‖R‖²)` is within
+  `1 + PROPORTIONAL_WITHIN_SPREADS·√(2/(d - 1))` (3 spreads) of that rounding, `d` the band's lines:
+  on CELT's frames the decorrelation is the rounding's alone, a chi-square of `d - 1` degrees whose
+  mean is that rounding (it read 0.99 to 1.04 of it at the median in bands 18 to 20 of a decode),
+  so a wide band is held close and a narrow one is given room. A flat 4 roundings let a source
+  whose ratios hold steady from frame to frame read nearly as coupled off the grid as on it.
+  **A clipped decode keeps its frames**: the samples at full scale inside the window
+  (`FULL_SCALE_FROM`) are unknown, but their error reaches each band only along the transform of
+  an impulse at each (pre-emphasised and windowed, a table built once, `impulses`), so each band of
+  both channels is taken out of the span of those impulses (a factor of their Gram matrix, columns
+  within `SPANNED_WITHIN` of the span skipped) and what is left is still proportional, the rounding
+  scaled to the lines left (`a_clipped_samples_lines_are_the_transform_of_its_impulse`,
+  `channels_coupled_on_each_frame_are_found_through_a_decode_that_clips`); a band with more such
+  samples than `CLIPPED_SHARE_OF_A_BAND_AT_MOST` (a half) of its lines is not counted. It costs
+  only where a sample clips: a 64 kbps decode with 6% of its samples at full scale took 9.0 s of a
+  pinned core to study where it took 4.3 s.
   `Steps::lattice` is the share coupled, `control` the share off the grid, `coefficients` the cells.
   A recording whose highs are near mono is coupled as much off the grid as on it, so the verdict
   takes the excess: `COUPLED_CELLS_AT_LEAST` (2 000), the share at least
@@ -453,18 +466,21 @@ could change (stored studies and kept analyses are weighed against it).
   independent shares (the two are read on the same frames, so the true spread is smaller)
   (`channels_proportional_band_by_band_on_each_frame_are_found_and_proportional_everywhere_are_not`,
   `channels_coupled_on_opus_frames_are_fake_only_well_over_their_control_and_counted`). The pitch
-  post-filter is not undone for it: the same comb runs on both channels, and the misses measured
-  were clipping, not the comb (a master encoded at complexity 4, with no pre-filter, read the
-  same). Measured on 464 library tracks (40 s from 0:40; 458 lossless, 6 that are Opus files in the
-  library), libopus at 64 kbps decoded to 16-bit FLAC: the band energies alone found 446, with the
-  coupling 460 (14 found by the coupling alone, the quiet masters the energies missed: 0.23 to 0.49
-  coupled against 0.002 to 0.22 off the grid); the 458 lossless sources read a coupling
-  significance of 1.5 at most (a share up to 0.34 on near-mono sources, as much off the grid) and
-  none was called on it; the 6 Opus files
-  were called by their energies, 4 of them by the coupling too (12.8 to 21.5). The 4 still missed
-  are two loud masters whose decode clips (2.0% and 2.7% of samples at full scale, too few
-  unclipped frames left to search), one quiet, sparse track with 78 cells over the rounding, and
-  one whose source is itself near mono above 2 kHz (0.42 against 0.33, a significance of 9.1). The
+  post-filter is not undone for it: the same comb runs on both channels, and a master encoded at
+  complexity 4, with no pre-filter, read the same. Measured on 523 library tracks (every one of
+  80 s or more; 40 s from 0:40; 516 lossless, 7 that are Opus files in the library), libopus at 64
+  kbps decoded to 16-bit FLAC, the band energies found 492. The coupling as it was (a frame with any
+  sample at full scale counted nothing, 4 roundings, 400 frames) found 443, 519 with the energies;
+  the 4 missed were two loud masters whose decode clips (6% and 1.5% of samples at full scale,
+  1 328 and 1 702 cells left once the clipped samples were taken out), one whose source is near
+  mono above 2 kHz (0.42 against 0.33, 9.1; it clips 0.1%, and taken out it read 16.5) and one whose
+  source holds its ratios steady in the top bands (0.26 against 0.18, 8.4). The clipped samples
+  taken out found 519 by the coupling alone (none lost); the spreads lifted the steady one to 11.8;
+  1 000 frames found all 523 by the coupling alone (with 4 roundings 523 too, the weakest at 15.2;
+  with the spreads the weakest at 21.3, the next 28.4). The 516 lossless sources, the same 40 s not
+  encoded, read a coupling significance of 1.81 at most (1.43 as it was) and none was called on it
+  or by the energies; the 7 Opus files read 25.9 to 48.0 where they carry intensity stereo (one
+  carries none and is called by its energies). The
   other figures looked at on the decode, on the way: a sine-window STFT of the same bands, with no
   grid, reads intensity bands 0.002 to 0.03 apart, under most recordings' 0.1 to 0.9 but over a
   near-mono source's 0.001, so without the grid's control it would call genuine near-mono masters;
@@ -498,8 +514,8 @@ could change (stored studies and kept analyses are weighed against it).
   and the kept analysis (`WRITTEN_AS` 7, each `Steps`' `Tell` named after its coding; 6: the peaks without what came together; 5: the peaks over moments after the print; 4: one moment; 3: a count, then coding name,
   rate, lattice, control and coefficients each, the last now the effective count); `track_studies`
   stores only the verdict (no basis column), so the change moved `JUDGED_UNDER` to 4 and every
-  study is weighed again; MP2, Opus and the low rates brought back moved it to 5, the post-filter undone and the band norms to 6, the intensity-stereo coupling to 7. Cost: about 3 s of one core a 44.1 kHz FLAC (a study less `band_figures`, pinned to one core), fixed
-  whatever its length, since every grid is done within its first 20 s (`coefficients_on_the_quantiser_steps_are_found_at_any_frame_offset_and_free_ones_are_not`,
+  study is weighed again; MP2, Opus and the low rates brought back moved it to 5, the post-filter undone and the band norms to 6, the intensity-stereo coupling to 7, and its clipped samples taken out, its spreads and its 1 000 frames to 8. Cost: about 3 s of one core a 44.1 kHz FLAC (a study less `band_figures`, pinned to one core), fixed
+  whatever its length, since every grid is done within its first 20 s and the coupling within its first 30 (`coefficients_on_the_quantiser_steps_are_found_at_any_frame_offset_and_free_ones_are_not`,
   `lines_on_the_quantiser_steps_are_found_through_the_hybrid_filterbank_at_any_offset`,
   `residues_on_vorbis_floor_are_found_on_any_short_block_grid_and_free_ones_are_not`, and in
   `tests/references.rs` the ffmpeg AAC, faac and fdkaac, dithered and hi-res, resampled AAC, LAME,
