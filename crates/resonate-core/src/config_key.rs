@@ -221,6 +221,7 @@ keys! {
     SharedName = "shared-name";
     SyncSongs = "sync-songs";
     SyncControl = "sync-control";
+    PartyTimeServer = "party-time-server";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -113,8 +113,15 @@ pub struct PartySeen {
     pub song: Option<(String, String)>,
     pub asked_for: Vec<(String, String)>,
     pub round_trip: Option<Duration>,
+    pub apart: Option<PartyApartSeen>,
     pub chat: Vec<PartyLineSeen>,
     pub handing: Option<PartyHandingSeen>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PartyApartSeen {
+    pub nanos: i64,
+    pub corrected: bool,
 }
 
 pub trait Together: Send + Sync {

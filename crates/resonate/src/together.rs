@@ -404,6 +404,10 @@ impl resonate_ui::Together for Seen {
                 .map(|asked| (asked.song.recording.title, asked.song.recording.artist))
                 .collect(),
             round_trip: shown.round_trip,
+            apart: shown.apart.map(|apart| resonate_ui::PartyApartSeen {
+                nanos: apart.nanos,
+                corrected: apart.corrected,
+            }),
             chat: shown
                 .chat
                 .into_iter()

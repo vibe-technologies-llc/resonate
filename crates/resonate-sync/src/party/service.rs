@@ -24,6 +24,7 @@ use crate::{
             LARGEST_SAID_OPENED, LINES_TOLD_AT_MOST, LONGEST_NAME, PartyChat, PartyLine, PartyNow,
             PartySaid, PartySong,
         },
+        time::{PartyApart, PartyTimed, UtcClock, keep_utc},
     },
     quic::{to_the_server, trusted_roots},
     seal::{opened, sealed},
@@ -60,11 +61,14 @@ pub const LINES_COUNTED_OVER: Duration = Duration::from_secs(10);
 
 pub const HANDED_OVER_WITHIN: Duration = Duration::from_secs(10);
 
+pub const TIME_TOLD_EVERY: Duration = Duration::from_secs(10);
+
 pub struct PartySettings {
     pub server: String,
     pub trusted: Option<std::path::PathBuf>,
     pub name: String,
     pub now_nanos: Arc<dyn Fn() -> u64 + Send + Sync>,
+    pub time_server: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,6 +164,7 @@ pub struct PartyShown {
     pub round_trip: Option<Duration>,
     pub chat: Vec<PartyLine>,
     pub handing: Option<PartyHanding>,
+    pub apart: Option<PartyApart>,
 }
 
 fn kept_line(shown: &mut PartyShown, line: PartyLine) -> bool {
@@ -315,6 +320,7 @@ impl Party {
             round_trip: None,
             chat: Vec::new(),
             handing: None,
+            apart: None,
         }));
         let clock = Arc::new(RwLock::new(ServerClock::default()));
         let (asked, hearing) = mpsc::unbounded_channel();
@@ -343,6 +349,10 @@ impl Party {
             chat_told: ChatTold::default(),
             pacing: ChatPacing::default(),
             handed: None,
+            time_server: settings.time_server,
+            utc: Arc::new(RwLock::new(UtcClock::default())),
+            hosts_time: None,
+            time_told: None,
         };
         let thread = thread::Builder::new()
             .name("resonate-party".to_owned())
@@ -456,6 +466,10 @@ struct Running {
     chat_told: ChatTold,
     pacing: ChatPacing,
     handed: Option<(DeviceId, Instant)>,
+    time_server: Option<String>,
+    utc: Arc<RwLock<UtcClock>>,
+    hosts_time: Option<PartyTimed>,
+    time_told: Option<Instant>,
 }
 
 #[derive(Default)]
@@ -494,6 +508,13 @@ enum Ended {
 impl Running {
     async fn run(mut self, mut hearing: mpsc::UnboundedReceiver<Asked>) {
         let mut retry = FIRST_RETRY;
+        if let Some(server) = self.time_server.clone() {
+            tokio::spawn(keep_utc(
+                server,
+                Arc::clone(&self.now_nanos),
+                Arc::clone(&self.utc),
+            ));
+        }
 
         loop {
             let began = Instant::now();
@@ -794,6 +815,10 @@ impl Running {
                     if self.host.is_some() && self.tell_the_chat(&mut send).await.is_err() {
                         break Ended::Lost;
                     }
+                    if self.host.is_some() && self.tell_the_time(&mut send, None).await.is_err() {
+                        break Ended::Lost;
+                    }
+                    self.weigh_the_time();
                     self.give_up_on_a_handing_untaken();
                 }
                 frame = frames.recv() => {
@@ -910,6 +935,7 @@ impl Running {
                         self.say(send, Some(member), &PartySaid::Now(told)).await?;
                     }
                     self.tell_the_chat_so_far(send, member).await?;
+                    self.tell_the_time(send, Some(member)).await?;
                 }
             }
             FromServer::RoomLeft { member } => {
@@ -947,7 +973,60 @@ impl Running {
         }
     }
 
+    fn timed_here(&self) -> Option<PartyTimed> {
+        let clock = self.clock.read();
+
+        PartyTimed::of(
+            clock.server_ahead_by()?,
+            clock.round_trip()?,
+            &self.utc.read(),
+        )
+    }
+
+    async fn tell_the_time(&mut self, send: &mut Outgoing, to: Option<DeviceId>) -> Result<()> {
+        if to.is_none()
+            && self
+                .time_told
+                .is_some_and(|told| told.elapsed() < TIME_TOLD_EVERY)
+        {
+            return Ok(());
+        }
+        let Some(timed) = self.timed_here() else {
+            return Ok(());
+        };
+
+        self.say(send, to, &PartySaid::Timed(timed)).await?;
+        if to.is_none() {
+            self.time_told = Some(Instant::now());
+        }
+
+        Ok(())
+    }
+
+    fn weigh_the_time(&self) {
+        if self.host.is_some() {
+            return;
+        }
+        let apart = self
+            .timed_here()
+            .zip(self.hosts_time)
+            .map(|(mine, hosts)| PartyApart::weighed(mine, hosts));
+
+        self.clock
+            .write()
+            .correct_by(apart.map_or(0, PartyApart::correction));
+        self.shown.write().apart = apart;
+    }
+
+    fn forget_the_hosts_time(&mut self) {
+        self.hosts_time = None;
+        self.clock.write().correct_by(0);
+        self.shown.write().apart = None;
+    }
+
     fn take_over(&mut self, token: Token) -> Ended {
+        self.forget_the_hosts_time();
+        self.time_told = None;
         self.host = Some(token);
         self.told = None;
         self.waiting
@@ -972,6 +1051,7 @@ impl Running {
         let hosting = self.host.is_some();
         if !hosting && self.host_id != Some(from) {
             self.host_id = Some(from);
+            self.forget_the_hosts_time();
             self.publish_people();
         }
         let from_the_host = !hosting;
@@ -1007,6 +1087,10 @@ impl Running {
                     self.hosted_line(from, chat);
                     self.tell_the_chat(send).await?;
                 }
+            }
+            PartySaid::Timed(timed) if from_the_host => {
+                self.hosts_time = Some(timed);
+                self.weigh_the_time();
             }
             PartySaid::Chatted(lines) if from_the_host => {
                 let mut shown = self.shown.write();
@@ -1124,6 +1208,7 @@ mod tests {
             round_trip: None,
             chat: Vec::new(),
             handing: None,
+            apart: None,
         };
 
         assert!(kept_line(&mut shown, a_line(1)));

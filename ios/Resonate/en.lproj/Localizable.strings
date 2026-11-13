@@ -748,6 +748,8 @@
 "output.stream.value" = "Stereo float · %lld Hz";
 "output.title" = "Audio output";
 "output.underruns" = "Underruns";
+"party.apart" = "Your clock is %@ ms off the host's";
+"party.apart.corrected" = "Your clock was %@ ms off the host's and is put right";
 "party.begin" = "Begin a party";
 "party.chat" = "Chat";
 "party.chat.nothing-yet" = "Nothing said yet. Say hello, or react to the song.";

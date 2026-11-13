@@ -74,6 +74,8 @@
     <string name="together_following_in_step">In step with the host</string>
     <string name="together_hosting">You are hosting</string>
     <string name="together_round_trip">The server answers in %1$d ms</string>
+    <string name="together_apart">Your clock is %1$s ms off the host\'s</string>
+    <string name="together_apart_corrected">Your clock was %1$s ms off the host\'s and is put right</string>
     <string name="together_person_you">You</string>
     <string name="together_person_nameless">Someone</string>
     <string name="together_reach_unreached">The server cannot be reached. Edits are kept and go when it can.</string>

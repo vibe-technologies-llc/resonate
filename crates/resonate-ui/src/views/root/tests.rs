@@ -738,6 +738,7 @@ mod driven {
             song: None,
             asked_for: Vec::new(),
             round_trip: None,
+            apart: None,
             chat: vec![crate::together::PartyLineSeen {
                 id: 7,
                 name: "Ada".to_owned(),
@@ -794,6 +795,7 @@ mod driven {
             song: None,
             asked_for: Vec::new(),
             round_trip: None,
+            apart: None,
             chat: Vec::new(),
             handing: None,
         });

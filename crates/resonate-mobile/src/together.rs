@@ -156,8 +156,15 @@ pub struct ListeningParty {
     pub song: Option<PartyRequest>,
     pub requests: Vec<PartyRequest>,
     pub round_trip_ms: Option<u64>,
+    pub apart: Option<PartyClockApart>,
     pub chat: Vec<PartyChatLine>,
     pub handing: Option<PartyHandingOver>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct PartyClockApart {
+    pub nanos: i64,
+    pub corrected: bool,
 }
 
 #[derive(Default)]
@@ -611,6 +618,10 @@ impl MobilePlayer {
             round_trip_ms: shown
                 .round_trip
                 .map(|trip| u64::try_from(trip.as_millis()).unwrap_or(u64::MAX)),
+            apart: shown.apart.map(|apart| PartyClockApart {
+                nanos: apart.nanos,
+                corrected: apart.corrected,
+            }),
             handing,
             chat: shown
                 .chat
@@ -754,6 +765,7 @@ impl MobilePlayer {
             trusted: self.syncing.reaching.lock().trusted.clone(),
             name: self.syncing.shared_name.lock().clone(),
             now_nanos: Arc::new(|| Moment::now().nanos()),
+            time_server: Some(resonate_core::PARTY_TIME_SERVER.to_owned()),
         })
     }
 

@@ -47,8 +47,52 @@ together the_clock_of_two_seats -- --nocapture`: from one machine through the Cl
 round trip and two clocks 0.13 ms apart on average, 0.5 ms at most, over 45 s. Two real players on one
 local PipeWire graph and a loopback server stood 0.02 ms apart, steady, for a whole song (`apart_ms` in
 `resonate_sync=trace`). People in different places differ by up to half their round trip, some tens of
-milliseconds, which has not been measured: the aim is friends in different places, not two speakers in
-one room. A song whose copies differ (another master, leading silence) lines up by time, not waveform.
+milliseconds, which the room's own clock cannot see; a time server measures it (below). The aim is
+friends in different places, not two speakers in one room. A song whose copies differ (another master,
+leading silence) lines up by time, not waveform.
+
+## Measuring the offset
+
+**Each seat asks a time server too, so two people's error is measured rather than bounded**
+(`party/time.rs`). The room's clock leaves each seat wrong by the asymmetry of its own path to the
+party's server, unknowable from that path; a nearby time server reached over a quick path is off by far
+less. So each seat runs `keep_utc` beside its session: SNTP over UDP to `party-time-server` (the
+binary's key, `PARTY_TIME_SERVER` in core, `time.cloudflare.com`, anycast so it is near everyone; blank
+asks none; the phones ask that one), four asks two seconds apart, then one every `TIME_ASKED_EVERY`
+(64 s), and keeps the quickest of the last eight answers (`UtcClock`). **A request names nothing**: a
+version 4 client packet, empty but for a random 8-byte transmit stamp, which the answer must echo in its
+origin field (mode 4, stratum 1 to 15, not unsynchronised), so a forged or stray answer is passed over.
+Each seat then knows `D`, how far its reading of the party's clock stands from UTC
+(`PartyTimed::of`: the raw `server_ahead_by` less what the time server says, with both round trips).
+
+- **The host tells its `D`** as `PartySaid::Timed` (wire tag 7: signed nanos, then the two round trips)
+  every `TIME_TOLD_EVERY` (10 s) on the ping tick and to each member as it arrives
+  (`tell_the_time`). A build without it refuses tag 7 as any unknown tag, so an older guest weighs
+  nothing and follows as before.
+- **A guest weighs its own `D` against the host's** on every ping and on every `Timed`
+  (`weigh_the_time`, `PartyApart::weighed`): the difference is how far its reading of the party's
+  clock stands from the host's, shown as `PartyShown.apart`. **It is put right only where the
+  measurement beats the bound**: both time servers answered within `TIGHT_ROUND_TRIP` (30 ms), the
+  time servers' half round trips together are less than the party server's, and the difference is
+  within what those two bounds together allow (a larger one means a time server is wrong, not the
+  path). Then `ServerClock::correct_by` moves both `to_server` and `from_server` by it; what the
+  pings measured (`server_ahead_by`) is never moved, so the next weighing starts from the raw
+  reading and cannot chase its own correction.
+- **The host is never corrected, and a new host forgets the old one's figure**: taking over, or a
+  guest hearing from a new host, clears the figure, the correction and `apart`
+  (`forget_the_hosts_time`). No time server (blank, or `online` off on the desktop, where
+  `Config::party_time_server` answers none) leaves `apart` empty and the party as it was.
+- `crates/resonate-server/tests/together.rs` serves SNTP on loopback: two seats asking one server
+  read apart by under 2 ms, a guest whose server runs 50 ms late is shown -50 ms and not moved, since
+  loopback's path leaves nothing to beat
+  (`two_seats_asking_one_time_server_are_shown_apart_by_nothing_worth_hearing`,
+  `a_guest_whose_time_server_runs_late_is_shown_the_gap_and_not_moved_past_what_its_path_allows`,
+  `a_party_with_no_time_server_weighs_nothing`). Not yet measured between two real places.
+
+The window says the gap beside the round trip on the party card, a tenth of a millisecond, signed,
+and whether it was put right (`apart_said`); `resonate party` says it when it moves 5 ms or its
+correction changes; the phones read `ListeningParty.apart` (`PartyClockApart`): Android's footnote
+under the round trip, iOS's `PartyRoundTrip` (kept apart from `party` as the round trip is).
 
 ## Following
 

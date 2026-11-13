@@ -18,3 +18,5 @@ you = You
 someone = Someone
 said-by = { $person }: { $words }
 handed-over = You handed the party over. It goes on without you
+apart = Your clock is { $millis } ms off the host's, by the time server
+apart-corrected = Your clock was { $millis } ms off the host's, by the time server, and is put right

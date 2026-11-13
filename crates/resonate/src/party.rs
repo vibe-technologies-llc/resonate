@@ -7,8 +7,8 @@ use resonate_library::Library;
 use resonate_providers::{PlaysInPlace, found_exactly};
 use resonate_sync::{
     party::{
-        Going, Mine, Party, PartyChat, PartyFinder, PartyLine, PartyReach, PartyReaction,
-        PartySeat, PartySettings, PartySong, SeatHeard, Standing,
+        Going, Mine, Party, PartyApart, PartyChat, PartyFinder, PartyLine, PartyReach,
+        PartyReaction, PartySeat, PartySettings, PartySong, SeatHeard, Standing,
     },
     shared::invitation_in,
 };
@@ -249,6 +249,7 @@ pub(crate) fn settings_for(
     server: Option<String>,
     trusted: Option<std::path::PathBuf>,
     name: String,
+    time_server: Option<String>,
 ) -> Result<PartySettings> {
     let server = server.ok_or(Error::PartyNeedsAServer)?;
 
@@ -257,6 +258,7 @@ pub(crate) fn settings_for(
         trusted,
         name,
         now_nanos: Arc::new(|| Moment::now().nanos()),
+        time_server,
     })
 }
 
@@ -273,6 +275,22 @@ fn said_of(standing: Standing) -> &'static str {
         Standing::SittingOut(SittingOut::AskedTo) => words::party::asked_to(),
         Standing::HostPaused => words::party::host_paused(),
         Standing::InStep => words::party::in_step(),
+    }
+}
+
+const APART_SAID_AGAIN_PAST_NANOS: u64 = 5_000_000;
+
+fn moved_enough_to_say(before: PartyApart, now: PartyApart) -> bool {
+    before.corrected != now.corrected
+        || before.nanos.abs_diff(now.nanos) >= APART_SAID_AGAIN_PAST_NANOS
+}
+
+fn apart_of(apart: PartyApart) -> String {
+    let millis = format!("{:+.1}", apart.nanos as f64 / 1_000_000.0);
+    if apart.corrected {
+        words::party::apart_corrected(millis)
+    } else {
+        words::party::apart(millis)
     }
 }
 
@@ -347,8 +365,13 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
                 autoplay: true,
             })?;
 
-            Party::host(settings_for(server_of(config).address(), trusted, name)?)
-                .map_err(Error::Party)?
+            Party::host(settings_for(
+                server_of(config).address(),
+                trusted,
+                name,
+                config.party_time_server(),
+            )?)
+            .map_err(Error::Party)?
         }
         PartyWanted::Join { link } => {
             let invitation = invitation_in(link);
@@ -360,7 +383,11 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
                 .and_then(|one| one.server.clone())
                 .or_else(|| server_of(config).address());
 
-            Party::join(settings_for(server, trusted, name)?, code).map_err(Error::Party)?
+            Party::join(
+                settings_for(server, trusted, name, config.party_time_server())?,
+                code,
+            )
+            .map_err(Error::Party)?
         }
     };
     let finder = Arc::new(Finder {
@@ -393,6 +420,7 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
     };
 
     let mut said = String::new();
+    let mut apart_said: Option<PartyApart> = None;
     let mut lines_heard = Vec::new();
     loop {
         if quitting.recv_timeout(LOOK_AT_THE_PARTY_EVERY).is_ok() {
@@ -426,6 +454,12 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
         if now != said {
             said!("{now}");
             said = now;
+        }
+        if let Some(apart) = shown.apart
+            && apart_said.is_none_or(|before| moved_enough_to_say(before, apart))
+        {
+            said!("{}", apart_of(apart));
+            apart_said = Some(apart);
         }
         if matches!(
             shown.reach,

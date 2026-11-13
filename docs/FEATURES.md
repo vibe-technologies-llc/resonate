@@ -153,10 +153,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] Right-to-left languages: Fluent's isolation marks are off, and the window's layout is never mirrored.
 - [M] The window speaking a newly chosen language at once, without a restart.
 
-## Later: Together
-
-- [S] Measuring a party's offset between two people in different places, past the bound half their round trip gives.
-
 ## Later: Sources and providers
 - [M · blocked: service] A Spotify playlist the account only follows is read off its public page,
   at most a hundred songs with no ISRC and nothing where it is private: Spotify's development mode

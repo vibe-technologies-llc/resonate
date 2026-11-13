@@ -5,6 +5,7 @@ mod key;
 mod said;
 mod seat;
 mod service;
+mod time;
 
 pub use self::{
     ahead::{Ahead, SONGS_FOUND_AHEAD, wanted_ahead},
@@ -19,6 +20,7 @@ pub use self::{
     service::{
         CHAT_KEPT_AT_MOST, HANDED_OVER_WITHIN, LINES_A_PERSON_SAYS_AT_MOST, Party, PartyHanding,
         PartyPerson, PartyReach, PartySettings, PartyShown, PartyWantingASong, RequestClaim,
-        RequestId,
+        RequestId, TIME_TOLD_EVERY,
     },
+    time::{PartyApart, PartyTimed, TIGHT_ROUND_TRIP, TIME_ASKED_EVERY, UtcClock},
 };

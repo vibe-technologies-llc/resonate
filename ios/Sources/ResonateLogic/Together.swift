@@ -189,6 +189,13 @@ public enum PartyWords {
     public static func roundTrip(_ milliseconds: UInt64?) -> String? {
         milliseconds.map { said("party.round-trip", Int($0)) }
     }
+
+    public static func apart(_ apart: PartyClockApart?) -> String? {
+        apart.map {
+            let millis = String(format: "%+.1f", locale: Locale(identifier: "en_US_POSIX"), Double($0.nanos) / 1_000_000)
+            return said($0.corrected ? "party.apart.corrected" : "party.apart", millis)
+        }
+    }
 }
 
 public enum SharedAct: Equatable, Sendable {

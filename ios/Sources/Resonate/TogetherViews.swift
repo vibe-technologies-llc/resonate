@@ -417,8 +417,13 @@ private struct PartyRoundTrip: View {
     let together: TogetherState
 
     var body: some View {
-        if let said = PartyWords.roundTrip(together.partyRoundTripMs) {
-            Text(said)
+        VStack(alignment: .leading, spacing: 2) {
+            if let said = PartyWords.roundTrip(together.partyRoundTripMs) {
+                Text(said)
+            }
+            if let said = PartyWords.apart(together.partyApart) {
+                Text(said)
+            }
         }
     }
 }

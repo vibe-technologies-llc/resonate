@@ -8,6 +8,7 @@ import org.junit.Test
 import org.resonate.android.nativecore.ListeningParty
 import org.resonate.android.nativecore.PartyConnection
 import org.resonate.android.nativecore.PartyChatLine
+import org.resonate.android.nativecore.PartyClockApart
 import org.resonate.android.nativecore.PartyFollowing
 import org.resonate.android.nativecore.PartyHandingOver
 import org.resonate.android.nativecore.PartyReactionKind
@@ -27,6 +28,7 @@ class TogetherWordsTest {
             song = null,
             requests = emptyList(),
             roundTripMs = null,
+            apart = null,
             chat = emptyList(),
             handing = null,
         )
@@ -102,6 +104,18 @@ class TogetherWordsTest {
         assertEquals(
             "Reaching the server…",
             TogetherWords.partyLine(English, party.copy(hosting = true, connection = PartyConnection.CONNECTING)),
+        )
+    }
+
+    @Test
+    fun theGapFromTheHostsClockIsSaidSignedToATenthAndWhetherItWasPutRight() {
+        assertEquals(
+            "Your clock was -30.0 ms off the host's and is put right",
+            TogetherWords.apart(English, PartyClockApart(-30_040_000L, true)),
+        )
+        assertEquals(
+            "Your clock is +1.3 ms off the host's",
+            TogetherWords.apart(English, PartyClockApart(1_260_000L, false)),
         )
     }
 

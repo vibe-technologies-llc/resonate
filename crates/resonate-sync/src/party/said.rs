@@ -4,6 +4,7 @@ use crate::{
     DeviceId, Result, Token,
     error::{Error, Malformed},
     key::TOKEN_BYTES,
+    party::time::PartyTimed,
     wire::{LONGEST_TEXT, Reader, Writer},
 };
 
@@ -20,6 +21,8 @@ const SAID_CHAT: u8 = 4;
 const SAID_CHATTED: u8 = 5;
 
 const SAID_HAND_OVER: u8 = 6;
+
+const SAID_TIMED: u8 = 7;
 
 const CHAT_WORDS: u8 = 0;
 
@@ -160,6 +163,7 @@ pub enum PartySaid {
     Chat(PartyChat),
     Chatted(Vec<PartyLine>),
     HandOver(Token),
+    Timed(PartyTimed),
 }
 
 fn written_chat(writer: &mut Writer, chat: &PartyChat) {
@@ -278,6 +282,12 @@ impl PartySaid {
                 writer.byte(SAID_HAND_OVER);
                 writer.fixed(&token.0);
             }
+            Self::Timed(timed) => {
+                writer.byte(SAID_TIMED);
+                writer.signed(timed.server_ahead_of_utc);
+                writer.number(timed.server_round_trip);
+                writer.number(timed.utc_round_trip);
+            }
         }
 
         writer.finish()
@@ -344,6 +354,11 @@ impl PartySaid {
                 Self::Chatted(lines)
             }
             SAID_HAND_OVER => Self::HandOver(Token(reader.fixed::<TOKEN_BYTES>()?)),
+            SAID_TIMED => Self::Timed(PartyTimed {
+                server_ahead_of_utc: reader.signed()?,
+                server_round_trip: reader.number()?,
+                utc_round_trip: reader.number()?,
+            }),
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -392,6 +407,11 @@ mod tests {
             PartySaid::Chat(PartyChat::Words("Lovely".to_owned())),
             PartySaid::Chat(PartyChat::Reaction(PartyReaction::Fire)),
             PartySaid::HandOver(Token([9; TOKEN_BYTES])),
+            PartySaid::Timed(PartyTimed {
+                server_ahead_of_utc: -1_700_000_000_000_000_000,
+                server_round_trip: 76_000_000,
+                utc_round_trip: 4_000_000,
+            }),
             PartySaid::Chatted(vec![
                 PartyLine {
                     id: u64::MAX,

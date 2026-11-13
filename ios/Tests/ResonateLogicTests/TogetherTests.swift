@@ -155,6 +155,12 @@ private func person(_ name: String, me: Bool = false, host: Bool = false) -> Tog
         #expect(PartyWords.roundTrip(nil) == nil)
         #expect(PartyWords.roundTrip(34) == "The server answers in 34 ms")
     }
+
+    @Test func theGapFromTheHostsClockIsSaidSignedToATenthAndWhetherItWasPutRight() {
+        #expect(PartyWords.apart(nil) == nil)
+        #expect(PartyWords.apart(PartyClockApart(nanos: -30_040_000, corrected: true)) == "Your clock was -30.0 ms off the host's and is put right")
+        #expect(PartyWords.apart(PartyClockApart(nanos: 1_260_000, corrected: false)) == "Your clock is +1.3 ms off the host's")
+    }
 }
 
 @Suite struct SecondPressTests {

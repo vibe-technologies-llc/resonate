@@ -38,6 +38,7 @@ pub(crate) struct Seats {
     pub(crate) server: Server,
     pub(crate) trusted: Option<std::path::PathBuf>,
     pub(crate) name: String,
+    pub(crate) time_server: Option<String>,
     pub(crate) told: Sender<Followed>,
 }
 
@@ -154,6 +155,7 @@ pub(crate) fn begin(zone: ZoneId) -> Result<()> {
         seats.server.clone().address(),
         seats.trusted.clone(),
         seats.name.clone(),
+        seats.time_server.clone(),
     )?;
     let party = Party::host(settings).map_err(Error::Party)?;
     leave();
@@ -175,6 +177,7 @@ pub(crate) fn join(code: &str, server: Option<String>, zone: ZoneId) -> Result<(
         server.or_else(|| seats.server.clone().address()),
         seats.trusted.clone(),
         seats.name.clone(),
+        seats.time_server.clone(),
     )?;
     let party = Party::join(settings, code).map_err(Error::Party)?;
     leave();

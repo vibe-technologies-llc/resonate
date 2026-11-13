@@ -350,6 +350,7 @@ pub struct Config {
     pub shared_name: Option<String>,
     pub sync_songs: Option<SyncedSongs>,
     pub sync_control: Option<RemoteTrust>,
+    pub party_time_server: Option<String>,
 }
 
 struct Withheld;
@@ -481,6 +482,7 @@ impl fmt::Debug for Config {
             shared_name,
             sync_songs,
             sync_control,
+            party_time_server,
         } = self;
 
         f.debug_struct("Config")
@@ -613,6 +615,7 @@ impl fmt::Debug for Config {
             .field("shared_name", shared_name)
             .field("sync_songs", sync_songs)
             .field("sync_control", sync_control)
+            .field("party_time_server", party_time_server)
             .finish()
     }
 }
@@ -686,6 +689,18 @@ impl Config {
                     .follow_desktop_text_size
                     .unwrap_or_else(|| self.text_size.is_none()),
             },
+        }
+    }
+
+    #[cfg(any(feature = "sync", test))]
+    pub fn party_time_server(&self) -> Option<String> {
+        if !self.is_on(Switch::Online) {
+            return None;
+        }
+        match self.party_time_server.as_deref() {
+            None => Some(resonate_core::PARTY_TIME_SERVER.to_owned()),
+            Some("") => None,
+            Some(server) => Some(server.to_owned()),
         }
     }
 
@@ -1328,6 +1343,9 @@ impl Config {
             }
             Valued::SyncControl => {
                 config.sync_control = Some(at.one_of(value, RemoteTrust::parse)?);
+            }
+            Valued::PartyTimeServer => {
+                config.party_time_server = Some(at.string(value)?.trim().to_owned());
             }
             Valued::BufferMs => {
                 let millis = u64::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
@@ -2374,6 +2392,26 @@ mod tests {
                 .syncs()
         );
         assert!(read("sync-songs = [\"all\"]\n").is_err());
+    }
+
+    #[test]
+    fn a_party_asks_the_time_of_the_server_named_none_when_blank_and_none_while_offline() {
+        let defaulted = read("").expect("read");
+        let named = read("party-time-server = \" time.example.org:123 \"\n").expect("read");
+        let blank = read("party-time-server = \"\"\n").expect("read");
+        let offline =
+            read("online = false\nparty-time-server = \"time.example.org\"\n").expect("read");
+
+        assert_eq!(
+            defaulted.party_time_server().as_deref(),
+            Some(resonate_core::PARTY_TIME_SERVER)
+        );
+        assert_eq!(
+            named.party_time_server().as_deref(),
+            Some("time.example.org:123")
+        );
+        assert_eq!(blank.party_time_server(), None);
+        assert_eq!(offline.party_time_server(), None);
     }
 
     #[test]

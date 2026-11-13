@@ -22,6 +22,7 @@ final class TogetherState {
     private(set) var lists: [UInt64: SharedPlaylist] = [:]
     private(set) var party: ListeningParty?
     private(set) var partyRoundTripMs: UInt64?
+    private(set) var partyApart: PartyClockApart?
     private(set) var joining = false
     private(set) var name: String
     var toShow: InvitationKind?
@@ -216,9 +217,12 @@ final class TogetherState {
     private func adoptParty(_ shown: ListeningParty?) {
         var still = shown
         still?.roundTripMs = nil
+        still?.apart = nil
         if party != still { party = still }
         let trip = shown?.roundTripMs
         if partyRoundTripMs != trip { partyRoundTripMs = trip }
+        let apart = shown?.apart
+        if partyApart != apart { partyApart = apart }
     }
 
     func leaveParty() {

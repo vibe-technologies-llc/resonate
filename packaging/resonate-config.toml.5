@@ -418,6 +418,13 @@ plays: everything (play, pause, skip, seek, set the volume, jump to, move and re
 transport (all of it but moving and removing rows) or nothing (not even see what plays).
 Default: everything.
 .TP
+.B party-time-server
+String. A time server (\fBhost\fR or \fBhost:port\fR, port 123 by default) a listening party asks
+the time of over SNTP, so each person's clock can be compared with the host's beyond what the round
+trip to the party's server bounds. A request carries nothing but the protocol's version and a random
+stamp. A guest is moved only when both people reach their time server quickly. Blank asks none.
+Default: time.cloudflare.com.
+.TP
 .B discord
 Boolean. Tell Discord what is playing. Default: false.
 .TP

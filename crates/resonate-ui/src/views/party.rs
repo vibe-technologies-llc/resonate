@@ -605,6 +605,12 @@ impl RootView {
                                     )))
                                     .text_color(rgb(theme::faint())),
                                 )
+                            })
+                            .when_some(seen.apart, |line, apart| {
+                                line.child(
+                                    kit::figure(SharedString::from(apart_said(apart)))
+                                        .text_color(rgb(theme::faint())),
+                                )
                             }),
                     )
                     .when(!seen.hosting, |column| {
@@ -962,6 +968,15 @@ impl RootView {
     }
 }
 
+fn apart_said(apart: crate::PartyApartSeen) -> String {
+    let millis = format!("{:+.1}", apart.nanos as f64 / 1_000_000.0);
+    if apart.corrected {
+        words::party::apart_corrected(millis)
+    } else {
+        words::party::apart(millis)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -987,5 +1002,23 @@ mod tests {
         assert!(!reach_is_the_end(PartyReached::Reconnecting));
         assert!(reach_is_the_end(PartyReached::Ended));
         assert!(reach_is_the_end(PartyReached::TurnedAway));
+    }
+
+    #[test]
+    fn the_gap_from_the_hosts_clock_is_said_signed_to_a_tenth_and_whether_it_was_put_right() {
+        assert_eq!(
+            apart_said(crate::PartyApartSeen {
+                nanos: -30_040_000,
+                corrected: true,
+            }),
+            words::party::apart_corrected("-30.0")
+        );
+        assert_eq!(
+            apart_said(crate::PartyApartSeen {
+                nanos: 1_260_000,
+                corrected: false,
+            }),
+            words::party::apart("+1.3")
+        );
     }
 }

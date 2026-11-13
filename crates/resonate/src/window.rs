@@ -160,6 +160,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
         server: sync::server_of(&config),
         trusted: config.sync_server_certificate.clone(),
         name: config.shared_name.clone().unwrap_or_default(),
+        time_server: config.party_time_server(),
         told: follow,
     });
     let syncing = sync::start(&config, Some(&places.config), &library);

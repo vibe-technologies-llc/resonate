@@ -75,3 +75,5 @@ hand-over-hint = Hand the party to this person, so it goes on once you leave
 handing-to = Handing the party to { $person }…
 not-taken = { $person } did not take the party over; their app may need an update.
 handed-over = You handed the party over. It goes on without you.
+apart = { $millis } ms off the host's clock
+apart-corrected = { $millis } ms off the host's clock, put right

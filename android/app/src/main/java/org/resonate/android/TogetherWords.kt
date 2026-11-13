@@ -3,6 +3,7 @@ package org.resonate.android
 import org.resonate.android.nativecore.ListeningParty
 import org.resonate.android.nativecore.PartyConnection
 import org.resonate.android.nativecore.PartyChatLine
+import org.resonate.android.nativecore.PartyClockApart
 import org.resonate.android.nativecore.PartyFollowing
 import org.resonate.android.nativecore.PartyHandingOver
 import org.resonate.android.nativecore.PartyReactionKind
@@ -58,6 +59,12 @@ object TogetherWords {
 
     fun roundTrip(words: Words, milliseconds: ULong): String =
         words.string(R.string.together_round_trip, milliseconds.toLong())
+
+    fun apart(words: Words, apart: PartyClockApart): String =
+        words.string(
+            if (apart.corrected) R.string.together_apart_corrected else R.string.together_apart,
+            String.format(java.util.Locale.ROOT, "%+.1f", apart.nanos / 1_000_000.0),
+        )
 
     fun reactionDrawn(reaction: PartyReactionKind): String =
         when (reaction) {

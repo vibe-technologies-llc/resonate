@@ -19,7 +19,7 @@ use resonate_sync::{
     party::{
         Going, HANDED_OVER_WITHIN, LINES_A_PERSON_SAYS_AT_MOST, Mine, Party, PartyChat,
         PartyFinder, PartyHanding, PartyNow, PartyReach, PartyReaction, PartySeat, PartySettings,
-        PartySong, PartyWantingASong, SeatHeard, Standing,
+        PartySong, PartyWantingASong, SeatHeard, Standing, TIME_TOLD_EVERY,
     },
     to_the_web, web_address,
     wire::{FromServer, PROTOCOL_VERSION, Refusal, SpaceAsked, ToServer},
@@ -27,7 +27,7 @@ use resonate_sync::{
 use rustls::RootCertStore;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpStream, UdpSocket},
     task::{JoinHandle, JoinSet},
     time::timeout,
 };
@@ -813,6 +813,7 @@ fn party_settings(server: SocketAddr, name: &str) -> PartySettings {
         now_nanos: std::sync::Arc::new(move || {
             u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX)
         }),
+        time_server: None,
     }
 }
 
@@ -1498,6 +1499,7 @@ async fn the_clock_of_two_seats_on_the_live_path_agrees_within_what_is_recorded(
         trusted: None,
         name: name.to_owned(),
         now_nanos: Arc::clone(&now),
+        time_server: None,
     };
     let host = Party::host(settings("Host")).expect("the host starts");
     let guest = Party::join(settings("Guest"), &host.shown().code).expect("the guest joins");
@@ -1725,4 +1727,116 @@ async fn a_guest_taking_the_party_over_plays_on_under_the_rows_everyone_already_
         !told.put_back.load(Ordering::Acquire),
         "a host keeps the queue it plays"
     );
+}
+
+const SECONDS_FROM_1900_TO_1970: u64 = 2_208_988_800;
+
+fn as_ntp(at: Duration) -> [u8; 8] {
+    let seconds = u32::try_from(at.as_secs() + SECONDS_FROM_1900_TO_1970).unwrap_or(u32::MAX);
+    let fraction =
+        u32::try_from((u64::from(at.subsec_nanos()) << 32) / 1_000_000_000).unwrap_or(u32::MAX);
+    let mut stamp = [0; 8];
+    stamp[..4].copy_from_slice(&seconds.to_be_bytes());
+    stamp[4..].copy_from_slice(&fraction.to_be_bytes());
+    stamp
+}
+
+async fn a_time_server_running_ahead_by(ahead: Duration) -> SocketAddr {
+    let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .await
+        .expect("a time server");
+    let address = socket.local_addr().expect("an address");
+    tokio::spawn(async move {
+        let mut asked = [0; 48];
+        while let Ok((read, from)) = socket.recv_from(&mut asked).await {
+            if read < 48 {
+                continue;
+            }
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                + ahead;
+            let mut answer = [0; 48];
+            answer[0] = 0b0010_0100;
+            answer[1] = 1;
+            answer[24..32].copy_from_slice(&asked[40..48]);
+            answer[32..40].copy_from_slice(&as_ntp(now));
+            answer[40..48].copy_from_slice(&as_ntp(now));
+            let _ = socket.send_to(&answer, from).await;
+        }
+    });
+
+    address
+}
+
+fn timed_by(server: SocketAddr, name: &str, time: SocketAddr) -> PartySettings {
+    PartySettings {
+        time_server: Some(time.to_string()),
+        ..party_settings(server, name)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn two_seats_asking_one_time_server_are_shown_apart_by_nothing_worth_hearing() {
+    let server = hosted(Limits::default()).await;
+    let time = a_time_server_running_ahead_by(Duration::ZERO).await;
+    let host = Party::host(timed_by(server, "Ada", time)).expect("hosted");
+    let guest = Party::join(timed_by(server, "Bo", time), &host.shown().code).expect("joined");
+
+    until("the guest weighing the host's time", || {
+        guest.shown().apart.is_some()
+    })
+    .await;
+    let apart = guest.shown().apart.expect("weighed");
+
+    assert!(
+        apart.nanos.unsigned_abs() < 2_000_000,
+        "apart by {} ns",
+        apart.nanos
+    );
+    assert_eq!(host.shown().apart, None, "a host is apart from nobody");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guest_whose_time_server_runs_late_is_shown_the_gap_and_not_moved_past_what_its_path_allows()
+ {
+    let server = hosted(Limits::default()).await;
+    let hosts_time = a_time_server_running_ahead_by(Duration::ZERO).await;
+    let guests_time = a_time_server_running_ahead_by(Duration::from_millis(50)).await;
+    let host = Party::host(timed_by(server, "Ada", hosts_time)).expect("hosted");
+    let guest =
+        Party::join(timed_by(server, "Bo", guests_time), &host.shown().code).expect("joined");
+
+    until("the guest weighing the host's time", || {
+        guest.shown().apart.is_some()
+    })
+    .await;
+    let apart = guest.shown().apart.expect("weighed");
+    let here = 1_000_000_000;
+
+    assert!(
+        (-52_000_000..=-48_000_000).contains(&apart.nanos),
+        "apart by {} ns",
+        apart.nanos
+    );
+    assert!(!apart.corrected);
+    assert_eq!(
+        guest.to_server(here).map(|there| guest.from_server(there)),
+        Some(Some(here))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_party_with_no_time_server_weighs_nothing() {
+    let server = hosted(Limits::default()).await;
+    let host = Party::host(party_settings(server, "Ada")).expect("hosted");
+    let guest = Party::join(party_settings(server, "Bo"), &host.shown().code).expect("joined");
+
+    until("the guest arriving", || {
+        guest.shown().reach == PartyReach::Here && guest.shown().round_trip.is_some()
+    })
+    .await;
+    tokio::time::sleep(TIME_TOLD_EVERY / 4).await;
+
+    assert_eq!(guest.shown().apart, None);
 }

@@ -14,6 +14,7 @@ struct Sample {
 #[derive(Clone, Debug, Default)]
 pub struct ServerClock {
     samples: VecDeque<Sample>,
+    corrected_by: i128,
 }
 
 impl ServerClock {
@@ -56,16 +57,24 @@ impl ServerClock {
             .map(|sample| Duration::from_nanos(sample.round_trip))
     }
 
-    pub fn to_server(&self, here: u64) -> Option<u64> {
-        let best = self.best()?;
+    pub fn server_ahead_by(&self) -> Option<i128> {
+        self.best().map(|sample| sample.server_ahead_by)
+    }
 
-        u64::try_from(i128::from(here) + best.server_ahead_by).ok()
+    pub fn correct_by(&mut self, nanos: i128) {
+        self.corrected_by = nanos;
+    }
+
+    fn ahead_as_corrected(&self) -> Option<i128> {
+        Some(self.server_ahead_by()? - self.corrected_by)
+    }
+
+    pub fn to_server(&self, here: u64) -> Option<u64> {
+        u64::try_from(i128::from(here) + self.ahead_as_corrected()?).ok()
     }
 
     pub fn from_server(&self, there: u64) -> Option<u64> {
-        let best = self.best()?;
-
-        u64::try_from(i128::from(there) - best.server_ahead_by).ok()
+        u64::try_from(i128::from(there) - self.ahead_as_corrected()?).ok()
     }
 }
 
@@ -120,6 +129,18 @@ mod tests {
         }
 
         assert_eq!(clock.round_trip(), Some(Duration::from_millis(100)));
+    }
+
+    #[test]
+    fn a_correction_moves_both_ways_of_reading_the_clock_and_never_what_was_measured() {
+        let mut clock = ServerClock::default();
+        clock.answered(0, 1_000 * MS + 5 * MS, 10 * MS);
+
+        clock.correct_by(i128::from(30 * MS));
+
+        assert_eq!(clock.to_server(5 * MS), Some(975 * MS));
+        assert_eq!(clock.from_server(975 * MS), Some(5 * MS));
+        assert_eq!(clock.server_ahead_by(), Some(i128::from(1_000 * MS)));
     }
 
     #[test]

@@ -133,6 +133,9 @@ paths:
 - **`party start FILES` and `party join LINK` run until interrupted or the room ends** (`party.rs`), printing
   the invitation and each change of standing, with no keys and no bus, since the host's queue is the
   point and a guest's transport belongs to the party. `online = false` makes them `Error::SyncOff`.
+  `party-time-server` (`time.cloudflare.com` unless set, blank none, none while `online` is off;
+  `Config::party_time_server`) is the time server each seat measures its clock against, for the
+  window's party too (`party.md`'s *Measuring the offset*); the pane has no row for it.
 
 - **A zone is addressed where a running player is.** `queue` and `sleep` take `--zone <N|NAME>`
   (conflicting with `--player`): a number is the zone's (1 the first), anything else the name the

@@ -1,6 +1,7 @@
 pub const RESONATE_HOST: &str = "resonate.tecnio.dev";
 pub const RESONATE_WEB_ADDRESS: &str = "https://resonate.tecnio.dev";
 pub const RESONATE_SOCKET_ADDRESS: &str = "wss://resonate.tecnio.dev/";
+pub const PARTY_TIME_SERVER: &str = "time.cloudflare.com";
 
 #[cfg(test)]
 mod tests {

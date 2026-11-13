@@ -313,5 +313,6 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
             }
         }
         party.roundTripMs?.let { Footnote(TogetherWords.roundTrip(words, it)) }
+        party.apart?.let { Footnote(TogetherWords.apart(words, it)) }
     }
 }
