@@ -55,9 +55,11 @@ there, and "simplifying" one away reintroduces the bug it was there for.
   search, review) may fan out; work changing the tree does not. Where several agents are used, each
   result is verified by running the project's checks, not by trusting its report, and its diff is
   read for hunks that trace back to nothing asked for.
-- **Commit messages**: one sentence-case imperative line saying what changed for the listener or the
-  code (*Keep the Discord session over a refused activity*), with a body where the why is not
-  obvious.
+- **Commit messages are Conventional Commits**: `type(scope): imperative line` in lower case, the
+  type one of `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, `chore` and
+  `revert`, the scope optional and naming the area (`fix(ios): keep the queue over a relaunch`,
+  `feat: hand a listening party to someone else`, `chore: release 0.10.0`), saying what changed
+  for the listener or the code, with a body where the why is not obvious.
 - **Playlists are finished.** Do not propose playlist work or reopen a playlist item; playlist code
   changes only because something else broke there.
 

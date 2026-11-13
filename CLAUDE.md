@@ -70,6 +70,14 @@ uncovers; what a landed item became goes into `.claude/rules/`.
 than restating the design, so it changes only, in the same commit, when a rules file or check is
 added or a standing rule of how work is done moves.
 
+## Commits
+
+- **Commit messages are Conventional Commits**: `type(scope): imperative line` in lower case, the
+  type one of `feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, `chore` and
+  `revert`, the scope optional and naming the area (`fix(ios): keep the queue over a relaunch`,
+  `feat: hand a listening party to someone else`, `chore: release 0.10.0`), saying what changed
+  for the listener or the code, with a body where the why is not obvious.
+
 ## Architecture
 
 Forty-two crates. `resonate-core` is the only universal dependency, beside `resonate-words`, the
