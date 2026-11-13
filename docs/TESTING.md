@@ -151,10 +151,14 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   and `basic-toml` (uniffi's askama)
 
 ## Later: Structure
-- [L] `LibraryModel` (48 fields) and `RootView` (73) now hold their state in groups by subject
-  (`ui.md`), but every pane's feature still passes through both, and `RootView::new` is some 750
-  lines making 40 subscriptions: panes as entities owning their fields and subscriptions, once the
-  `driven.rs` harness pins what they do
+- [L] The party, inspector and services panes and the settings pane's fields are entities owning
+  their state and subscriptions (`ui.md`), but `RootView` (77 fields, 133 more in its groups) still
+  carries the rest: the settings pane's own state (`SettingsShown`, `Accounts`, `Remotely`), the
+  browse panes' scrolls, orders and reach, and the queue, statistics, suggestions, missing, lyrics
+  and analysis panes, with `RootView::new` some 470 lines making 23 subscriptions; `LibraryModel`
+  (48) still holds each pane's catalog state (`Charts`, `Gaps`, `Shelf`, `Detail`, …). The missing,
+  suggestions and statistics panes want a driven test pinning them before they move, and a pane's
+  drawing stays on the root while its controls live in the root's focus ring
 - [M · blocked: jxl-oxide reading jxl-encoder's ANS-coded output] The vault builds two JPEG XL
   encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder` for a JPEG's transcode. Measured on
   600 to 1400 px covers, `jxl-encoder` 0.3.4's lossless effort 7 is about half zune's size (0.6 to
