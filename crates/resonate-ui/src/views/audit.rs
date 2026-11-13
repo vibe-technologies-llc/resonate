@@ -220,6 +220,7 @@ mod words {
         "Linux",
         "Lipshitz",
         "ListenBrainz",
+        "MetaBrainz",
         "PipeWire",
         "Resonate",
         "Shazam",

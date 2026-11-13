@@ -6,7 +6,7 @@ use resonate_library::{
     Release, ReleaseAsked, ReleaseMatch, SongsAsked, Wording,
 };
 
-use super::Mirror;
+use super::{At, Mirror};
 use crate::Result;
 
 pub const RECORDINGS_FOUND_AT_MOST: usize = 25;
@@ -350,7 +350,7 @@ impl Mirror {
 }
 
 impl Mirror {
-    fn matched_first(&self, table: &str, queries: &[String]) -> Result<Vec<i64>> {
+    fn matched_first(&self, table: &str, queries: &[String]) -> Result<Vec<At>> {
         for query in queries {
             let matched = self.matched(table, query, CANDIDATES_WEIGHED)?;
             if !matched.is_empty() {

@@ -725,6 +725,7 @@ impl RootView {
             Group::Lookups => {
                 self.set_online(defaults::ONLINE, cx);
                 self.set_musicbrainz_mirror(defaults::MUSICBRAINZ_MIRROR, cx);
+                self.clear_replication_token(cx);
             }
             Group::AfterScan => self.set_after_scan(defaults::ENRICH_AFTER_SCAN, cx),
             Group::Metered => {

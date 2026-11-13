@@ -1,6 +1,11 @@
+mod amended;
 mod copy;
+mod documents;
 mod import;
+mod looked_up;
+pub(crate) mod replicated;
 mod search;
+mod tables;
 
 use std::{
     collections::VecDeque,
@@ -17,7 +22,15 @@ use resonate_library::{
 };
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
-pub use self::import::{Archives, Building, Phase, built_from, held_for_building, settled};
+use self::amended::{Amended, Amendment};
+pub use self::{
+    amended::{AMENDED_FILE, AmendedTo},
+    import::{
+        Archives, Building, Built, Keeping, Phase, built_from, held_for_building,
+        removed_beside_the_mirror, settled,
+    },
+    tables::{KeptTables, TABLES_FILE},
+};
 use crate::{
     Answer, Asked, Entity, Error, PackOp, Result, Store, StoreOp,
     wire::{Reader, Writer, mbid_bytes},
@@ -121,6 +134,40 @@ impl ArtistDoc {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum At {
+    Built(i64),
+    Amended(i64),
+}
+
+pub(crate) trait Identified {
+    fn mbid(&self) -> &Mbid;
+}
+
+impl Identified for Recording {
+    fn mbid(&self) -> &Mbid {
+        &self.id
+    }
+}
+
+impl Identified for ReleaseDoc {
+    fn mbid(&self) -> &Mbid {
+        &self.release.id
+    }
+}
+
+impl Identified for GroupDoc {
+    fn mbid(&self) -> &Mbid {
+        &self.group.id
+    }
+}
+
+impl Identified for ArtistDoc {
+    fn mbid(&self) -> &Mbid {
+        &self.artist.mbid
+    }
+}
+
 struct Unpacked {
     kind: Entity,
     first: i64,
@@ -138,6 +185,8 @@ pub struct Mirror {
     dictionaries: Vec<(Entity, Vec<u8>)>,
     unpacked: Mutex<VecDeque<Unpacked>>,
     listed: Mutex<VecDeque<Listed>>,
+    amended: Option<Mutex<Amended>>,
+    amended_to: Option<AmendedTo>,
     made: Made,
 }
 
@@ -195,17 +244,38 @@ impl Mirror {
                 .filter_map(|(kind, bytes)| Entity::coded(kind).map(|kind| (kind, bytes)))
                 .collect()
         };
+        let amended = match path.parent() {
+            Some(folder) => Amended::open(&folder.join(AMENDED_FILE), &dump).unwrap_or_else(|error| {
+                tracing::warn!(%error, "the changes kept beside the copy of MusicBrainz could not be opened");
+                None
+            }),
+            None => None,
+        };
         Ok(Self {
             path: path.to_path_buf(),
             connection: Mutex::new(connection),
             dictionaries,
             unpacked: Mutex::new(VecDeque::new()),
             listed: Mutex::new(VecDeque::new()),
+            amended_to: amended.as_ref().map(|amended| amended.to.clone()),
+            amended: amended.map(Mutex::new),
             made: Made {
                 dump,
                 built: u64::try_from(built).unwrap_or(0),
             },
         })
+    }
+
+    pub fn amended_to(&self) -> Option<&AmendedTo> {
+        self.amended_to.as_ref()
+    }
+
+    pub(crate) fn dictionaries(&self) -> &[(Entity, Vec<u8>)] {
+        &self.dictionaries
+    }
+
+    pub(crate) fn holds_built(&self, id: &Mbid, kind: Entity) -> Result<bool> {
+        Ok(self.built_placed(id, kind)?.is_some())
     }
 
     pub fn path(&self) -> &Path {
@@ -260,7 +330,11 @@ impl Mirror {
     }
 
     pub fn recordings_of_isrc(&self, isrc: &Isrc) -> Result<Vec<Recording>> {
-        let ids = self.ids_where("SELECT id FROM isrcs WHERE isrc = ?1", isrc.as_str())?;
+        let ids = self.coded(
+            Entity::Recording,
+            "SELECT id FROM isrcs WHERE isrc = ?1",
+            isrc.as_str(),
+        )?;
         let mut recordings = Vec::with_capacity(ids.len());
         for id in ids {
             if let Some(recording) = self.recording_at(id)? {
@@ -274,7 +348,11 @@ impl Mirror {
         let mut found = Vec::new();
         let mut seen = Vec::new();
         for spelt in barcode.spellings() {
-            for id in self.ids_where("SELECT id FROM barcodes WHERE barcode = ?1", &spelt)? {
+            for id in self.coded(
+                Entity::Release,
+                "SELECT id FROM barcodes WHERE barcode = ?1",
+                &spelt,
+            )? {
                 if seen.contains(&id) {
                     continue;
                 }
@@ -405,23 +483,34 @@ impl Mirror {
         }
     }
 
-    pub(crate) fn recording_at(&self, at: i64) -> Result<Option<Recording>> {
+    pub(crate) fn recording_at(&self, at: At) -> Result<Option<Recording>> {
         self.document(Entity::Recording, at, |reader| reader.recording())
     }
 
-    pub(crate) fn release_at(&self, at: i64) -> Result<Option<ReleaseDoc>> {
+    pub(crate) fn release_at(&self, at: At) -> Result<Option<ReleaseDoc>> {
         self.document(Entity::Release, at, ReleaseDoc::read)
     }
 
-    pub(crate) fn group_at(&self, at: i64) -> Result<Option<GroupDoc>> {
+    pub(crate) fn group_at(&self, at: At) -> Result<Option<GroupDoc>> {
         self.document(Entity::Group, at, GroupDoc::read)
     }
 
-    pub(crate) fn artist_at(&self, at: i64) -> Result<Option<ArtistDoc>> {
+    pub(crate) fn artist_at(&self, at: At) -> Result<Option<ArtistDoc>> {
         self.document(Entity::Artist, at, ArtistDoc::read)
     }
 
-    fn placed(&self, id: &Mbid, kind: Entity) -> Result<Option<i64>> {
+    fn placed(&self, id: &Mbid, kind: Entity) -> Result<Option<At>> {
+        if let Some(amended) = &self.amended {
+            match amended.lock().placed(id, kind)? {
+                Some(Amendment::Rewritten(at)) => return Ok(Some(At::Amended(at))),
+                Some(Amendment::Gone) => return Ok(None),
+                None => {}
+            }
+        }
+        Ok(self.built_placed(id, kind)?.map(At::Built))
+    }
+
+    fn built_placed(&self, id: &Mbid, kind: Entity) -> Result<Option<i64>> {
         let connection = self.connection.lock();
         connection
             .prepare_cached("SELECT id FROM entities WHERE mbid = ?1 AND kind = ?2")
@@ -433,6 +522,24 @@ impl Mirror {
                     .optional()
             })
             .map_err(Error::store(Store::Mirror, StoreOp::Read))
+    }
+
+    fn coded(&self, kind: Entity, query: &str, value: &str) -> Result<Vec<At>> {
+        let mut found: Vec<At> = self
+            .ids_where(query, value)?
+            .into_iter()
+            .map(At::Built)
+            .collect();
+        if let Some(amended) = &self.amended {
+            found.extend(
+                amended
+                    .lock()
+                    .coded(kind, value)?
+                    .into_iter()
+                    .map(At::Amended),
+            );
+        }
+        Ok(found)
     }
 
     fn ids_where(&self, query: &str, value: &str) -> Result<Vec<i64>> {
@@ -447,7 +554,25 @@ impl Mirror {
             .map_err(Error::store(Store::Mirror, StoreOp::Read))
     }
 
-    pub(crate) fn matched(&self, table: &str, query: &str, most: usize) -> Result<Vec<i64>> {
+    pub(crate) fn matched(&self, table: &str, query: &str, most: usize) -> Result<Vec<At>> {
+        let mut found: Vec<At> = self
+            .built_matched(table, query, most)?
+            .into_iter()
+            .map(At::Built)
+            .collect();
+        if let Some(amended) = &self.amended {
+            found.extend(
+                amended
+                    .lock()
+                    .matched(table, query, most)?
+                    .into_iter()
+                    .map(At::Amended),
+            );
+        }
+        Ok(found)
+    }
+
+    fn built_matched(&self, table: &str, query: &str, most: usize) -> Result<Vec<i64>> {
         let connection = self.connection.lock();
         let sql =
             format!("SELECT rowid FROM {table} WHERE {table} MATCH ?1 ORDER BY rank LIMIT ?2");
@@ -464,7 +589,44 @@ impl Mirror {
             .map_err(Error::store(Store::Mirror, StoreOp::Search))
     }
 
-    fn document<T>(
+    fn document<T: Identified>(
+        &self,
+        kind: Entity,
+        at: At,
+        read: impl FnOnce(&mut Reader<'_>) -> Result<T>,
+    ) -> Result<Option<T>> {
+        match at {
+            At::Built(at) => {
+                let Some(found) = self.built_document(kind, at, read)? else {
+                    return Ok(None);
+                };
+                if let Some(amended) = &self.amended
+                    && amended.lock().supersedes(kind, found.mbid())?
+                {
+                    return Ok(None);
+                }
+                Ok(Some(found))
+            }
+            At::Amended(at) => {
+                let Some(amended) = &self.amended else {
+                    return Ok(None);
+                };
+                let Some((held, packed)) = amended.lock().packed(at)? else {
+                    return Ok(None);
+                };
+                if held != kind {
+                    return Ok(None);
+                }
+                let bytes = self.unpack(kind, &packed, MOST_UNPACKED_BLOCK)?;
+                let mut reader = Reader::new(&bytes);
+                let read = read(&mut reader)?;
+                reader.done()?;
+                Ok(Some(read))
+            }
+        }
+    }
+
+    fn built_document<T>(
         &self,
         kind: Entity,
         at: i64,

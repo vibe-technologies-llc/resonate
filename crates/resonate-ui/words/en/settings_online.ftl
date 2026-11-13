@@ -50,4 +50,6 @@ for = For
 mirror-building-so-far = Building: { $doing }, { $read } of { $of } GB.
 mirror-building = Building: { $doing }.
 mirror-held = The export of { $dump } is held, { $held } GB on disc.
+mirror-held-and-followed = The export of { $dump } is held, { $held } GB on disc, and MusicBrainz's changes were last followed { $ago }.
+replication-note = A MetaBrainz access token, free from metabrainz.org for use that is not commercial, lets the copy follow MusicBrainz's hourly changes, so it is never more than an hour behind. The next build keeps the export's tables beside the copy for it, some 30 GB more. Leave it empty to refresh the copy only from each new export.
 mirror-failed = The last build failed: { $why }.

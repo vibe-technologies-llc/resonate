@@ -521,8 +521,15 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   - bare, it prints what is held and how many answers are kept;
   - `--build [--from FOLDER]` builds in the foreground, a build in another process being
     `AlreadyBuilding`;
-  - `--remove` takes the copy and its downloads away;
+  - `--remove` takes the copy, its tables, its amendments and its downloads away;
+  - `--replicate` applies MusicBrainz's changes published since (`NoReplicationToken`,
+    `MalformedReplicationToken`, `NoMusicbrainzCopy` before anything is asked);
   - `--search WORDS` lists recordings by score.
+
+  `musicbrainz-replication-token` (empty unless set; `Config`'s `Debug` withholds it) is a
+  MetaBrainz access token: with it the next build keeps the export's tables and the window follows
+  the hourly changes (`musicbrainz.md`'s *Following the changes*). The settings pane's field sits
+  under the switch (`Setting::MusicbrainzReplicationToken`), and giving it starts the follow.
 
   A build without `online` is `NoMirror`.
 - **`check-for-updates` (on) asks whether a newer release is out, at most once a day**

@@ -268,6 +268,7 @@ pub struct Config {
     pub enrich_after_scan: Option<bool>,
     pub enrich_on_metered: Option<bool>,
     pub musicbrainz_mirror: Option<bool>,
+    pub musicbrainz_replication_token: Option<String>,
     pub stall_downloads_on_metered: Option<bool>,
     pub study: Option<bool>,
     pub fetch_lyrics: Option<bool>,
@@ -421,6 +422,7 @@ impl fmt::Debug for Config {
             enrich_after_scan,
             enrich_on_metered,
             musicbrainz_mirror,
+            musicbrainz_replication_token,
             stall_downloads_on_metered,
             study,
             fetch_lyrics,
@@ -560,6 +562,10 @@ impl fmt::Debug for Config {
             .field("enrich_after_scan", enrich_after_scan)
             .field("enrich_on_metered", enrich_on_metered)
             .field("musicbrainz_mirror", musicbrainz_mirror)
+            .field(
+                "musicbrainz_replication_token",
+                &withheld(musicbrainz_replication_token.as_ref()),
+            )
             .field("stall_downloads_on_metered", stall_downloads_on_metered)
             .field("study", study)
             .field("fetch_lyrics", fetch_lyrics)
@@ -809,6 +815,11 @@ impl Config {
     #[cfg(any(feature = "online", feature = "ui"))]
     pub fn mirrors_musicbrainz(&self) -> bool {
         ConfigKey::MusicbrainzMirror.switched(self.musicbrainz_mirror)
+    }
+
+    #[cfg(feature = "online")]
+    pub fn musicbrainz_replication_token(&self) -> Option<&str> {
+        self.musicbrainz_replication_token.as_deref()
     }
 
     pub fn stalls_downloads_on_metered(&self) -> bool {
@@ -1293,6 +1304,9 @@ impl Config {
             ConfigKey::EnrichAfterScan => config.enrich_after_scan = Some(at.boolean(value)?),
             ConfigKey::EnrichOnMetered => config.enrich_on_metered = Some(at.boolean(value)?),
             ConfigKey::MusicbrainzMirror => config.musicbrainz_mirror = Some(at.boolean(value)?),
+            ConfigKey::MusicbrainzReplicationToken => {
+                config.musicbrainz_replication_token = given(at.string(value)?);
+            }
             ConfigKey::StallDownloadsOnMetered => {
                 config.stall_downloads_on_metered = Some(at.boolean(value)?);
             }
@@ -2445,7 +2459,7 @@ mod tests {
              spotify-refresh-token = \"spotify-sesame\"\n\
              audd-token = \"audd-sesame\"\nlistenbrainz-token = \"listenbrainz-sesame\"\n\
              acoustid-key = \"acoustid-sesame\"\ncontact = \"someone at an address\"\n\
-             sync-key = \"sync-sesame\"\n",
+             sync-key = \"sync-sesame\"\nmusicbrainz-replication-token = \"metabrainz-sesame\"\n",
         )
         .expect("a well formed document");
 
@@ -2464,6 +2478,7 @@ mod tests {
             "audd-sesame",
             "listenbrainz-sesame",
             "acoustid-sesame",
+            "metabrainz-sesame",
             "someone at an address",
             "sync-sesame",
         ] {

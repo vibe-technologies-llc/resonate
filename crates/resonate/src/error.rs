@@ -353,6 +353,20 @@ pub enum Error {
     Musicbrainz(#[source] Box<resonate_musicbrainz::Error>),
 
     #[cfg(feature = "online")]
+    #[error(
+        "musicbrainz-replication-token is not set, so MusicBrainz's changes cannot be asked for"
+    )]
+    NoReplicationToken,
+
+    #[cfg(feature = "online")]
+    #[error("musicbrainz-replication-token is not 40 letters and digits")]
+    MalformedReplicationToken,
+
+    #[cfg(feature = "online")]
+    #[error("no copy of MusicBrainz is held to follow the changes of")]
+    NoMusicbrainzCopy,
+
+    #[cfg(feature = "online")]
     #[error("the copy of MusicBrainz at {path} could not be removed")]
     RemoveMirror {
         path: PathBuf,

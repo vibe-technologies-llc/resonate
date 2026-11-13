@@ -107,6 +107,10 @@ impl RootView {
             self.put_back_acoustid(window, cx);
             return;
         }
+        if self.typed.replication.read(cx).is_focused(window) {
+            self.put_back_replication_token(window, cx);
+            return;
+        }
         if self.typed.audd.read(cx).is_focused(window) {
             self.put_back_audd(window, cx);
             return;

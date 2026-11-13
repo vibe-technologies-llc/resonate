@@ -245,10 +245,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   and a third is folded onto the two
 
 ## Later: Identification
-- [M] The local copy of MusicBrainz is brought up to date only by a whole new export, at most once
-  a month: MusicBrainz's hourly replication packets (`replication-sequence`, the
-  `mbdump-*.tar.bz2` change files) could keep it within the hour, applied to the documents they
-  touch (`musicbrainz.md`)
 - [S] A phone cannot keep a copy of MusicBrainz of its own: the build wants some 50 GB of room, a
   gigabyte of memory and an hour; it asks a desktop holding one instead (`musicbrainz.md`)
 - [S] libopus at 64 kbps is still missed on 4 of 464 library tracks with the band

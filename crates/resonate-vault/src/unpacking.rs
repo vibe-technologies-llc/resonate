@@ -289,7 +289,7 @@ impl Seek for Unpacking {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, fs, process};
+    use std::{env, fs, io::Write, process};
 
     use super::*;
 
@@ -445,11 +445,10 @@ mod tests {
         let mut whole = RIFF.to_vec();
         whole.extend_from_slice(&(1_u32 << 16).to_le_bytes());
         whole.extend_from_slice(&[9_u8; 1 << 16]);
-        fs::write(
-            &path,
-            zstd::encode_all(whole.as_slice(), 3).expect("packed"),
-        )
-        .expect("written");
+        let mut packing = zstd::Encoder::new(Vec::new(), 3).expect("an encoder");
+        packing.include_contentsize(false).expect("no length named");
+        packing.write_all(&whole).expect("packed");
+        fs::write(&path, packing.finish().expect("a frame")).expect("written");
 
         let framed = frames_of(&path).expect("a walk");
         let _ = fs::remove_dir_all(&folder);

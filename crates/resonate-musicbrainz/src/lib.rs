@@ -16,8 +16,11 @@ pub use crate::{
     kept::{KEPT_ANSWERS_TOLD_AT_ONCE, KEPT_FRESH_FOR, Kept, KeptAnswer},
     layered::{Layer, Layered, MUSICBRAINZ, Mirrored, Peers},
     mirror::{
-        Archives, Building, FORMAT, MIRROR_FILE, Made, Mirror, Phase, built_from,
-        held_for_building, mirror_in, settled,
+        AMENDED_FILE, AmendedTo, Archives, Building, Built, FORMAT, Keeping, KeptTables,
+        MIRROR_FILE, Made, Mirror, Phase, TABLES_FILE, built_from, held_for_building, mirror_in,
+        removed_beside_the_mirror,
+        replicated::{PACKETS_A_BATCH, Packet, Replicated, packet_read, replicated},
+        settled,
     },
 };
 

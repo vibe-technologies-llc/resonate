@@ -232,6 +232,10 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
                 after_scan: config.enriches_after_scan(),
                 enrich_on_metered: config.enriches_on_metered(),
                 musicbrainz_mirror: config.mirrors_musicbrainz(),
+                musicbrainz_replication_token: config
+                    .musicbrainz_replication_token
+                    .clone()
+                    .unwrap_or_default(),
                 stall_downloads_on_metered: config.stalls_downloads_on_metered(),
                 studies: config.studies(),
                 lyrics: config.fetches_lyrics(),

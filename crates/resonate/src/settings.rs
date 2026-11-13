@@ -124,6 +124,12 @@ impl Settings for File {
                     );
                 }
                 #[cfg(feature = "online")]
+                SettingChange::Store(Setting::MusicbrainzReplicationToken(_)) => {
+                    crate::musicbrainz::follow_the_changes(
+                        &config::load(Some(&self.path)).unwrap_or_default(),
+                    );
+                }
+                #[cfg(feature = "online")]
                 SettingChange::Forget(ConfigKey::MusicbrainzMirror) => {
                     crate::musicbrainz::follow(
                         &config::load(Some(&self.path)).unwrap_or_default(),
@@ -217,6 +223,10 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::AcoustidKey(key) => {
             let key = key.trim();
             (!key.is_empty()).then(|| key.into())
+        }
+        Setting::MusicbrainzReplicationToken(token) => {
+            let token = token.trim();
+            (!token.is_empty()).then(|| token.into())
         }
         Setting::AuddToken(token) => {
             let token = token.trim();

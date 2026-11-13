@@ -1299,10 +1299,17 @@ pub enum Sub {
     Musicbrainz {
         #[arg(
             long,
-            conflicts_with_all = ["remove", "search"],
+            conflicts_with_all = ["remove", "search", "replicate"],
             help = words::grammar::sub_musicbrainz_build()
         )]
         build: bool,
+
+        #[arg(
+            long,
+            conflicts_with_all = ["remove", "search"],
+            help = words::grammar::sub_musicbrainz_replicate()
+        )]
+        replicate: bool,
 
         #[arg(
             long,

@@ -1,4 +1,7 @@
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{
+    sync::atomic::Ordering,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use gpui::{Context, SharedString, div, prelude::*};
 use resonate_listen::Listening;
@@ -32,9 +35,22 @@ fn mirror_said(told: &MirrorTold) -> String {
         MirrorTold::Building { doing, .. } => {
             words::settings_online::mirror_building(doing.to_string())
         }
-        MirrorTold::Held { dump, bytes } => words::settings_online::mirror_held(
+        MirrorTold::Held {
+            dump,
+            bytes,
+            amended_at: None,
+        } => words::settings_online::mirror_held(
             dump.to_string(),
             format!("{:.1}", *bytes as f64 / BYTES_IN_A_GIGABYTE),
+        ),
+        MirrorTold::Held {
+            dump,
+            bytes,
+            amended_at: Some(at),
+        } => words::settings_online::mirror_held_and_followed(
+            dump.to_string(),
+            format!("{:.1}", *bytes as f64 / BYTES_IN_A_GIGABYTE),
+            resonate_core::elapsed::since(UNIX_EPOCH + Duration::from_secs(*at), SystemTime::now()),
         ),
         MirrorTold::Failed(why) => words::settings_online::mirror_failed(why.to_string()),
     }
@@ -224,6 +240,20 @@ impl RootView {
                                 ))
                             }),
                     ),
+            )
+        })
+        .when(mirrors, |body| {
+            body.child(
+                kit::field(
+                    "MetaBrainz",
+                    self.text_field(
+                        "musicbrainz-replication-token",
+                        &self.typed.replication,
+                        |this, window, cx| this.leave_replication_token(window, cx),
+                        cx,
+                    ),
+                )
+                .child(note(words::settings_online::replication_note())),
             )
         })
         .note(words::settings_online::mirror_note())

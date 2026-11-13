@@ -201,6 +201,7 @@ pub enum Setting {
     EnrichAfterScan(bool),
     EnrichOnMetered(bool),
     MusicbrainzMirror(bool),
+    MusicbrainzReplicationToken(String),
     StallDownloadsOnMetered(bool),
     Study(bool),
     FetchLyrics(bool),
@@ -347,6 +348,7 @@ impl Setting {
             Self::EnrichAfterScan(_) => ConfigKey::EnrichAfterScan,
             Self::EnrichOnMetered(_) => ConfigKey::EnrichOnMetered,
             Self::MusicbrainzMirror(_) => ConfigKey::MusicbrainzMirror,
+            Self::MusicbrainzReplicationToken(_) => ConfigKey::MusicbrainzReplicationToken,
             Self::StallDownloadsOnMetered(_) => ConfigKey::StallDownloadsOnMetered,
             Self::Study(_) => ConfigKey::Study,
             Self::FetchLyrics(_) => ConfigKey::FetchLyrics,
@@ -457,6 +459,7 @@ pub struct Online {
     pub after_scan: bool,
     pub enrich_on_metered: bool,
     pub musicbrainz_mirror: bool,
+    pub musicbrainz_replication_token: String,
     pub stall_downloads_on_metered: bool,
     pub studies: bool,
     pub lyrics: bool,
@@ -557,6 +560,7 @@ impl fmt::Debug for Online {
             after_scan,
             enrich_on_metered,
             musicbrainz_mirror,
+            musicbrainz_replication_token,
             stall_downloads_on_metered,
             studies,
             lyrics,
@@ -596,6 +600,10 @@ impl fmt::Debug for Online {
             .field("after_scan", after_scan)
             .field("enrich_on_metered", enrich_on_metered)
             .field("musicbrainz_mirror", musicbrainz_mirror)
+            .field(
+                "musicbrainz_replication_token",
+                &withheld(musicbrainz_replication_token),
+            )
             .field("stall_downloads_on_metered", stall_downloads_on_metered)
             .field("studies", studies)
             .field("lyrics", lyrics)
@@ -1144,6 +1152,7 @@ pub enum MirrorTold {
     Held {
         dump: String,
         bytes: u64,
+        amended_at: Option<u64>,
     },
     Failed(String),
 }

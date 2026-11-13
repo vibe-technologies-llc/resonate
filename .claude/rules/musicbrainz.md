@@ -159,7 +159,8 @@ backslash escapes are read, octal and hex included (`\x` with no hex digit is an
   - The barcode and catalogue number given.
   - A group's year.
 
-**A build is held, staged and swapped, never edited in place.**
+**A build is held, staged and swapped, never edited in place** (replication too: *Following the
+changes*).
 
 - **The hold.** `held_for_building` holds `musicbrainz.building` (`writer::Held::taken_over`); a
   second build is `AlreadyBuilding`.
@@ -221,8 +222,74 @@ reports.
 
 - `--build [--from FOLDER]` builds in the foreground, logging the phase every few seconds; the
   first interrupt cancels it.
-- `--remove` removes the copy and its downloads.
+- `--remove` removes the copy, its tables, its amendments and its downloads
+  (`removed_beside_the_mirror`).
+- `--replicate` applies the packets published since (*Following the changes*).
 - `--search WORDS` lists recordings by score.
+
+## Following the changes
+
+**MusicBrainz publishes a replication packet every hour, and a copy built with its tables follows
+them** (`mirror/replicated.rs`, `tables.rs`, `amended.rs`). A packet is
+`replication-<N>-v2.tar.bz2` under `REPLICATION_SERVER`, asked with the listener's MetaBrainz
+token in the query string (`download::packet`; a 404 is a packet not yet published, 400, 401 or 403
+`TokenRefused`). Its `mbdump/pending_data` lines are dbmirror2's JSON, one change a line, read by a
+parser written here (no serde in this crate): `packet_read` keeps only the tables `copy::TABLES`
+projects, maps each row to the projected columns (`projected`: a column missing is `PacketColumn`,
+a boolean is PostgreSQL's `t` or `f`) and orders the changes by their transaction's last change,
+then their own. `REPLICATION_SEQUENCE` naming another number than the one asked is
+`PacketSequence`.
+
+- **The tables are the build's staging, kept.** Where `musicbrainz-replication-token` is set the
+  build runs as `Keeping::TheMirrorAndItsTables`: `kept_beside_the_build` adds the indexes a change
+  needs to find what it touches (a track by id and by medium, a credit's users, the country rows by
+  release, each url link by entity), turns `placed_tracks` into a view and writes the `kept` row
+  (`TABLES_FORMAT`, the dump, its `REPLICATION_SEQUENCE` and `SCHEMA_SEQUENCE`); `settled` renames
+  it to `TABLES_FILE`. The export's sequence is the last packet it holds, so the next asked is one
+  past it; an export naming none is `Unsequenced`. They cost some 30 GB beside the copy. Without the
+  token the staging goes as before and nothing can follow (`NoTables`).
+- **A change is applied to the tables by id, else by every value.** `applied` deletes the old row
+  and inserts the new, matching on `id` where the projection's first column is it (`identified`) and
+  on every projected column (`IS`, so nulls match) where not
+  (`a_row_with_an_id_is_inserted_updated_and_deleted_by_that_id`,
+  `a_row_with_no_id_is_found_by_every_value_it_held_nulls_included`).
+- **What a change touches is rewritten whole, from the tables.** `touched_by` names the documents a
+  change reaches, read before and after it lands: a recording or its ISRC the recording and the
+  releases holding it; a track its release and recording; a medium its release, the release's group
+  and the medium's recordings; a release or its country rows the release, its group and its
+  recordings; a label the releases carrying it; a group (its meta, its secondary types) the group,
+  its releases and their recordings and its credited artists; a credit name its artist and
+  everything credited to it; an alias, tag or url link its entity, a url every entity linking it.
+  Dimension tables (areas, types, links) touch nothing. `rewritten` builds each touched document
+  through the same `Builders` the build uses, over a `LookedUp::asking` that reads names and
+  credits per id instead of holding them, so a replicated document is shaped as a built one is.
+- **The copy is never edited; the amendments stand beside it.** `AMENDED_FILE` holds every
+  rewritten document (`Amending::rewritten`, packed at `AMENDED_PACKED_AT` with the copy's own
+  dictionaries) or the mark that it is gone (`Amending::gone`), with its own ISRC, barcode and word
+  tables, and `amended_from` (the dump, the last packet applied, when). `Mirror` opens it beside the
+  copy for the same dump alone (`Amended::open`): a lookup asks it first, and a base document it
+  `supersedes` is left out of codes, lists and searches, so an amended release is found by its new
+  title and no longer by its old one. A new build removes the amended file, so the copy keeps one
+  dump's worth of base.
+- **Packets are applied a batch at a time, in one transaction.** `replicated` takes the build hold,
+  asks packet after packet up to `PACKETS_A_BATCH` (24) inside `BEGIN IMMEDIATE`, each change applied
+  and its touches gathered, then rewrites every touched document once and commits the tables and
+  the amendments together (the amended file is attached), so a failure or a cancel loses the batch
+  and nothing is half applied. It stops at the first packet not yet published. Tables of another
+  dump than the copy are `TablesOfAnotherExport`; a packet of another `SCHEMA_SEQUENCE` is
+  `PacketSchema`, and the copy stays where it stood until the next export's build, which carries the
+  new schema
+  (`a_replication_packet_rewrites_the_documents_its_changes_touch_and_nothing_is_built_again`,
+  `a_packet_of_another_schema_stops_replication_where_it_stood_and_a_new_build_lets_the_changes_go`,
+  `a_mirror_built_without_its_tables_cannot_follow_the_changes`,
+  `a_packet_naming_another_number_than_the_one_asked_for_is_refused`).
+- **The binary follows hourly.** `musicbrainz::follow_the_changes` (started by `keep_fresh`, and by
+  the settings pane when the token is given) runs a `resonate-musicbrainz-follow` thread while the
+  mirror, Online and the token are on: every `FOLLOWED_EVERY` (an hour) it calls `replicate`, never
+  while a build runs, the lookup gate is shut or no tables are held, and `stop_building` cancels it.
+  A replication that moved the copy swaps the `Mirrored` held. `resonate musicbrainz --replicate`
+  applies what is published now, the first interrupt cancelling the batch; the bare command says
+  the packet the copy follows to and when it was applied, and so does the settings pane.
 
 ## Between devices
 

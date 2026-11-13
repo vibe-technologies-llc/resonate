@@ -35,6 +35,7 @@ pub enum ConfigKey {
     EnrichAfterScan,
     EnrichOnMetered,
     MusicbrainzMirror,
+    MusicbrainzReplicationToken,
     StallDownloadsOnMetered,
     Study,
     FetchLyrics,
@@ -141,7 +142,7 @@ pub enum ConfigKey {
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 136] = [
+    pub const ALL: [Self; 137] = [
         Self::Sink,
         Self::Library,
         Self::Vault,
@@ -175,6 +176,7 @@ impl ConfigKey {
         Self::EnrichAfterScan,
         Self::EnrichOnMetered,
         Self::MusicbrainzMirror,
+        Self::MusicbrainzReplicationToken,
         Self::StallDownloadsOnMetered,
         Self::Study,
         Self::FetchLyrics,
@@ -315,6 +317,7 @@ impl ConfigKey {
             Self::EnrichAfterScan => "enrich-after-scan",
             Self::EnrichOnMetered => "enrich-on-metered",
             Self::MusicbrainzMirror => "musicbrainz-mirror",
+            Self::MusicbrainzReplicationToken => "musicbrainz-replication-token",
             Self::StallDownloadsOnMetered => "stall-downloads-on-metered",
             Self::Study => "study",
             Self::FetchLyrics => "fetch-lyrics",

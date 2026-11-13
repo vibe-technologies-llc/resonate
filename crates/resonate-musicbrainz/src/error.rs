@@ -105,6 +105,63 @@ pub enum Error {
     #[error("another run is building the mirror")]
     AlreadyBuilding,
 
+    #[error("the dump names no replication sequence, so its tables cannot follow the changes")]
+    Unsequenced,
+
+    #[error("no tables were kept beside the mirror at {path}")]
+    NoTables { path: PathBuf },
+
+    #[error(
+        "the tables beside the mirror were laid out in format {found}, this build reads {reads}"
+    )]
+    TablesFormat { found: u32, reads: u32 },
+
+    #[error("the tables beside the mirror are of the export {tables}, the mirror of {mirror}")]
+    TablesOfAnotherExport { tables: String, mirror: String },
+
+    #[error("replication packet {asked} names itself {found}")]
+    PacketSequence { asked: u64, found: u64 },
+
+    #[error("replication packet {sequence} is of schema {found}, the tables of {reads}")]
+    PacketSchema {
+        sequence: u64,
+        found: u32,
+        reads: u32,
+    },
+
+    #[error("replication packet {sequence} is not in the dbmirror2 form")]
+    PacketForm { sequence: u64 },
+
+    #[error("replication packet {sequence} lacks its {part}")]
+    PacketPart { sequence: u64, part: &'static str },
+
+    #[error("a change to {table} in replication packet {sequence} is malformed at byte {at}")]
+    PacketChange {
+        sequence: u64,
+        table: &'static str,
+        at: usize,
+    },
+
+    #[error("a change to {table} in replication packet {sequence} lacks the column {column}")]
+    PacketColumn {
+        sequence: u64,
+        table: &'static str,
+        column: &'static str,
+    },
+
+    #[error(
+        "a line of replication packet {sequence} has {found} columns where {wanted} were expected"
+    )]
+    PacketColumns {
+        sequence: u64,
+        found: usize,
+        wanted: usize,
+    },
+
+    #[cfg(feature = "download")]
+    #[error("MetaBrainz refused the replication token with status {status}")]
+    TokenRefused { status: u16 },
+
     #[cfg(feature = "download")]
     #[error("the dump could not be fetched: {url}")]
     Fetch {
@@ -127,6 +184,8 @@ pub enum Store {
     Mirror,
     Kept,
     Staging,
+    Tables,
+    Amended,
 }
 
 impl std::fmt::Display for Store {
@@ -135,6 +194,8 @@ impl std::fmt::Display for Store {
             Self::Mirror => "mirror",
             Self::Kept => "kept answers",
             Self::Staging => "staging",
+            Self::Tables => "kept tables",
+            Self::Amended => "amended",
         })
     }
 }

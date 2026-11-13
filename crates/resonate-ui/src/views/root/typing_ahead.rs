@@ -318,6 +318,7 @@ impl RootView {
             &self.typed.isrc,
             &self.typed.contact,
             &self.typed.acoustid,
+            &self.typed.replication,
             &self.typed.audd,
             &self.typed.listenbrainz,
             &self.typed.discord_app,

@@ -808,7 +808,11 @@ impl Group {
                 hint: words::settings_find::online_hint(),
                 also_called:
                     words::settings_find::musicbrainz_network_internet_covers_lyrics_lrclib(),
-                keys: &[ConfigKey::Online, ConfigKey::MusicbrainzMirror],
+                keys: &[
+                    ConfigKey::Online,
+                    ConfigKey::MusicbrainzMirror,
+                    ConfigKey::MusicbrainzReplicationToken,
+                ],
             },
             Self::AfterScan => Described {
                 category: Category::Online,

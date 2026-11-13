@@ -10,9 +10,11 @@ use resonate_fetch::{Ranged, Trusted, Unfetched, configured, downloading_agent};
 use sha2::{Digest, Sha256};
 use ureq::Agent;
 
-use crate::{ArchiveOp, Archives, Building, Error, Phase, Result};
+use crate::{ArchiveOp, Archives, Building, Error, Packet, Phase, Result, packet_read};
 
 pub const DUMP_SERVER: &str = "https://data.metabrainz.org/pub/musicbrainz/data/fullexport";
+pub const REPLICATION_SERVER: &str = "https://metabrainz.org/api/musicbrainz";
+pub const LARGEST_PACKET: u64 = 1024 * 1024 * 1024;
 pub const CORE_ARCHIVE: &str = "mbdump.tar.bz2";
 pub const DERIVED_ARCHIVE: &str = "mbdump-derived.tar.bz2";
 const CHECKSUMS: &str = "SHA256SUMS";
@@ -27,6 +29,9 @@ const LONGEST_LISTING: u64 = 64 * 1024;
 const COPIED_AT_ONCE: usize = 1024 * 1024;
 const RANGE_PAST_THE_END: u16 = 416;
 const GATE_LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
+const NOT_YET_PUBLISHED: u16 = 404;
+const TOKEN_REFUSALS: [u16; 3] = [400, 401, 403];
+const TOKEN_LENGTH: usize = 40;
 
 pub fn agent() -> Agent {
     let config = configured(ANSWERED_WITHIN, Trusted::BuiltInRoots).build();
@@ -142,6 +147,50 @@ pub fn fetched(
         derived,
         dump: dump.to_owned(),
     })
+}
+
+pub fn is_a_replication_token(token: &str) -> bool {
+    token.len() == TOKEN_LENGTH && token.bytes().all(|byte| byte.is_ascii_alphanumeric())
+}
+
+fn packet_url(sequence: u64) -> String {
+    format!("{REPLICATION_SERVER}/replication-{sequence}-v2.tar.bz2")
+}
+
+pub fn packet(agent: &Agent, token: &str, sequence: u64) -> Result<Option<Packet>> {
+    let url = packet_url(sequence);
+    let response = agent
+        .get(&url)
+        .query("token", token)
+        .config()
+        .http_status_as_error(false)
+        .build()
+        .call()
+        .map_err(|error| Error::Fetch {
+            url: url.clone(),
+            source: resonate_fetch::as_io(error),
+        })?;
+    let status = response.status().as_u16();
+    if status == NOT_YET_PUBLISHED {
+        return Ok(None);
+    }
+    if TOKEN_REFUSALS.contains(&status) {
+        return Err(Error::TokenRefused { status });
+    }
+    if status != 200 {
+        return Err(Error::Refused { url, status });
+    }
+    let mut packed = Vec::new();
+    response
+        .into_body()
+        .into_reader()
+        .take(LARGEST_PACKET)
+        .read_to_end(&mut packed)
+        .map_err(|source| Error::Fetch {
+            url: url.clone(),
+            source,
+        })?;
+    packet_read(packed.as_slice(), sequence).map(Some)
 }
 
 pub fn forget_downloads(folder: &Path) {
@@ -314,6 +363,21 @@ mod tests {
             Some("aaa")
         );
         assert_eq!(checksum_listed(listing, "mbdump-edit.tar.bz2"), None);
+    }
+
+    #[test]
+    fn a_replication_token_is_forty_letters_and_digits() {
+        assert!(is_a_replication_token(&"a1".repeat(20)));
+        assert!(!is_a_replication_token(&"a1".repeat(19)));
+        assert!(!is_a_replication_token(&format!("{}&x", "a".repeat(38))));
+    }
+
+    #[test]
+    fn a_packet_is_asked_for_by_its_number_in_the_dbmirror2_form() {
+        assert_eq!(
+            packet_url(171_234),
+            "https://metabrainz.org/api/musicbrainz/replication-171234-v2.tar.bz2"
+        );
     }
 
     #[test]

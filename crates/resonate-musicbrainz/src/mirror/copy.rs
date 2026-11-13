@@ -8,18 +8,34 @@ pub struct Table {
     pub name: &'static str,
     pub from: Archive,
     pub columns: &'static [usize],
+    pub named: &'static [&'static str],
     pub laid: &'static str,
     pub indexed: &'static [&'static str],
 }
 
 pub const NULL: &[u8] = b"\\N";
 
+const IDENTIFIED_BY: &str = "id";
+
+impl Table {
+    pub fn laid_names(&self) -> impl Iterator<Item = &'static str> {
+        self.laid
+            .split(',')
+            .filter_map(|column| column.split_whitespace().next())
+    }
+
+    pub fn identified(&self) -> bool {
+        self.named.first() == Some(&IDENTIFIED_BY)
+    }
+}
+
 macro_rules! table {
-    ($name:literal, $from:ident, [$($column:literal),*], $laid:literal, [$($index:literal),*]) => {
+    ($name:literal, $from:ident, [$($column:literal),*], [$($named:literal),*], $laid:literal, [$($index:literal),*]) => {
         Table {
             name: $name,
             from: Archive::$from,
             columns: &[$($column),*],
+            named: &[$($named),*],
             laid: $laid,
             indexed: &[$($index),*],
         }
@@ -27,11 +43,36 @@ macro_rules! table {
 }
 
 pub const TABLES: &[Table] = &[
-    table!("area", Core, [0, 2], "id INTEGER, name TEXT", ["id, name"]),
+    table!(
+        "area",
+        Core,
+        [0, 2],
+        ["id", "name"],
+        "id INTEGER, name TEXT",
+        ["id, name"]
+    ),
     table!(
         "artist",
         Core,
         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 16, 17],
+        [
+            "id",
+            "gid",
+            "name",
+            "sort_name",
+            "begin_date_year",
+            "begin_date_month",
+            "begin_date_day",
+            "end_date_year",
+            "end_date_month",
+            "end_date_day",
+            "type",
+            "area",
+            "gender",
+            "comment",
+            "ended",
+            "begin_area"
+        ],
         "id INTEGER, gid TEXT, name TEXT, sort_name TEXT, by INTEGER, bm INTEGER, bd INTEGER, \
          ey INTEGER, em INTEGER, ed INTEGER, type INTEGER, area INTEGER, gender INTEGER, \
          comment TEXT, ended TEXT, begin_area INTEGER",
@@ -41,6 +82,7 @@ pub const TABLES: &[Table] = &[
         "artist_alias",
         Core,
         [1, 2],
+        ["artist", "name"],
         "artist INTEGER, name TEXT",
         ["artist, name"]
     ),
@@ -48,18 +90,34 @@ pub const TABLES: &[Table] = &[
         "artist_credit_name",
         Core,
         [0, 1, 2, 3, 4],
+        ["artist_credit", "position", "artist", "name", "join_phrase"],
         "artist_credit INTEGER, position INTEGER, artist INTEGER, name TEXT, join_phrase TEXT",
         [
             "artist_credit, position, artist, name, join_phrase",
             "artist, artist_credit"
         ]
     ),
-    table!("artist_type", Core, [0, 1], "id INTEGER, name TEXT", []),
-    table!("gender", Core, [0, 1], "id INTEGER, name TEXT", []),
+    table!(
+        "artist_type",
+        Core,
+        [0, 1],
+        ["id", "name"],
+        "id INTEGER, name TEXT",
+        []
+    ),
+    table!(
+        "gender",
+        Core,
+        [0, 1],
+        ["id", "name"],
+        "id INTEGER, name TEXT",
+        []
+    ),
     table!(
         "iso_3166_1",
         Core,
         [0, 1],
+        ["area", "code"],
         "area INTEGER, code TEXT",
         ["area, code"]
     ),
@@ -67,6 +125,7 @@ pub const TABLES: &[Table] = &[
         "isrc",
         Core,
         [1, 2],
+        ["recording", "isrc"],
         "recording INTEGER, isrc TEXT",
         ["recording, isrc"]
     ),
@@ -74,6 +133,7 @@ pub const TABLES: &[Table] = &[
         "l_artist_url",
         Core,
         [1, 2, 3],
+        ["link", "entity0", "entity1"],
         "link INTEGER, entity0 INTEGER, entity1 INTEGER",
         ["entity0, link, entity1"]
     ),
@@ -81,6 +141,7 @@ pub const TABLES: &[Table] = &[
         "l_recording_url",
         Core,
         [1, 2, 3],
+        ["link", "entity0", "entity1"],
         "link INTEGER, entity0 INTEGER, entity1 INTEGER",
         ["entity0, link, entity1"]
     ),
@@ -88,6 +149,7 @@ pub const TABLES: &[Table] = &[
         "l_release_group_url",
         Core,
         [1, 2, 3],
+        ["link", "entity0", "entity1"],
         "link INTEGER, entity0 INTEGER, entity1 INTEGER",
         ["entity0, link, entity1"]
     ),
@@ -95,33 +157,58 @@ pub const TABLES: &[Table] = &[
         "l_release_url",
         Core,
         [1, 2, 3],
+        ["link", "entity0", "entity1"],
         "link INTEGER, entity0 INTEGER, entity1 INTEGER",
         ["entity0, link, entity1"]
     ),
-    table!("label", Core, [0, 2], "id INTEGER, name TEXT", ["id, name"]),
+    table!(
+        "label",
+        Core,
+        [0, 2],
+        ["id", "name"],
+        "id INTEGER, name TEXT",
+        ["id, name"]
+    ),
     table!(
         "link",
         Core,
         [0, 1],
+        ["id", "link_type"],
         "id INTEGER, link_type INTEGER",
         ["id, link_type"]
     ),
-    table!("link_type", Core, [0, 6], "id INTEGER, name TEXT", []),
+    table!(
+        "link_type",
+        Core,
+        [0, 6],
+        ["id", "name"],
+        "id INTEGER, name TEXT",
+        []
+    ),
     table!(
         "medium",
         Core,
         [0, 1, 2, 3, 4, 7],
+        ["id", "release", "position", "format", "name", "track_count"],
         "id INTEGER, release INTEGER, position INTEGER, format INTEGER, name TEXT, track_count INTEGER",
         [
             "release, position, id, format, name, track_count",
             "id, release, position"
         ]
     ),
-    table!("medium_format", Core, [0, 1], "id INTEGER, name TEXT", []),
+    table!(
+        "medium_format",
+        Core,
+        [0, 1],
+        ["id", "name"],
+        "id INTEGER, name TEXT",
+        []
+    ),
     table!(
         "recording",
         Core,
         [0, 1, 2, 3, 4],
+        ["id", "gid", "name", "artist_credit", "length"],
         "id INTEGER, gid TEXT, name TEXT, artist_credit INTEGER, length INTEGER",
         ["id, gid, name, artist_credit, length"]
     ),
@@ -129,6 +216,16 @@ pub const TABLES: &[Table] = &[
         "release",
         Core,
         [0, 1, 2, 3, 4, 5, 9, 10],
+        [
+            "id",
+            "gid",
+            "name",
+            "artist_credit",
+            "release_group",
+            "status",
+            "barcode",
+            "comment"
+        ],
         "id INTEGER, gid TEXT, name TEXT, artist_credit INTEGER, release_group INTEGER, \
          status INTEGER, barcode TEXT, comment TEXT",
         ["release_group, id", "id, artist_credit, barcode, comment"]
@@ -137,6 +234,7 @@ pub const TABLES: &[Table] = &[
         "release_country",
         Core,
         [0, 1, 2, 3, 4],
+        ["release", "country", "date_year", "date_month", "date_day"],
         "release INTEGER, country INTEGER, y INTEGER, m INTEGER, d INTEGER",
         []
     ),
@@ -144,6 +242,7 @@ pub const TABLES: &[Table] = &[
         "release_group",
         Core,
         [0, 1, 2, 3, 4, 5],
+        ["id", "gid", "name", "artist_credit", "type", "comment"],
         "id INTEGER, gid TEXT, name TEXT, artist_credit INTEGER, type INTEGER, comment TEXT",
         ["artist_credit, id", "id, artist_credit, comment"]
     ),
@@ -151,6 +250,7 @@ pub const TABLES: &[Table] = &[
         "release_group_primary_type",
         Core,
         [0, 1],
+        ["id", "name"],
         "id INTEGER, name TEXT",
         []
     ),
@@ -158,6 +258,7 @@ pub const TABLES: &[Table] = &[
         "release_group_secondary_type",
         Core,
         [0, 1],
+        ["id", "name"],
         "id INTEGER, name TEXT",
         []
     ),
@@ -165,6 +266,7 @@ pub const TABLES: &[Table] = &[
         "release_group_secondary_type_join",
         Core,
         [0, 1],
+        ["release_group", "secondary_type"],
         "release_group INTEGER, secondary_type INTEGER",
         []
     ),
@@ -172,14 +274,23 @@ pub const TABLES: &[Table] = &[
         "release_label",
         Core,
         [1, 2, 3],
+        ["release", "label", "catalog_number"],
         "release INTEGER, label INTEGER, catalog_number TEXT",
         ["release, label, catalog_number"]
     ),
-    table!("release_status", Core, [0, 1], "id INTEGER, name TEXT", []),
+    table!(
+        "release_status",
+        Core,
+        [0, 1],
+        ["id", "name"],
+        "id INTEGER, name TEXT",
+        []
+    ),
     table!(
         "release_unknown_country",
         Core,
         [0, 1, 2, 3],
+        ["release", "date_year", "date_month", "date_day"],
         "release INTEGER, y INTEGER, m INTEGER, d INTEGER",
         []
     ),
@@ -187,15 +298,34 @@ pub const TABLES: &[Table] = &[
         "track",
         Core,
         [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        [
+            "id",
+            "gid",
+            "recording",
+            "medium",
+            "position",
+            "number",
+            "name",
+            "artist_credit",
+            "length"
+        ],
         "id INTEGER, gid TEXT, recording INTEGER, medium INTEGER, position INTEGER, number TEXT, \
          name TEXT, artist_credit INTEGER, length INTEGER",
         ["recording, medium, position, number, name, artist_credit, gid, length"]
     ),
-    table!("url", Core, [0, 2], "id INTEGER, url TEXT", ["id, url"]),
+    table!(
+        "url",
+        Core,
+        [0, 2],
+        ["id", "url"],
+        "id INTEGER, url TEXT",
+        ["id, url"]
+    ),
     table!(
         "artist_tag",
         Derived,
         [0, 1, 2],
+        ["artist", "tag", "count"],
         "artist INTEGER, tag INTEGER, count INTEGER",
         ["artist, tag, count"]
     ),
@@ -203,6 +333,12 @@ pub const TABLES: &[Table] = &[
         "release_group_meta",
         Derived,
         [0, 2, 3, 4],
+        [
+            "id",
+            "first_release_date_year",
+            "first_release_date_month",
+            "first_release_date_day"
+        ],
         "id INTEGER, y INTEGER, m INTEGER, d INTEGER",
         []
     ),
@@ -210,6 +346,7 @@ pub const TABLES: &[Table] = &[
         "release_meta",
         Derived,
         [0, 4],
+        ["id", "cover_art_presence"],
         "id INTEGER, cover_art_presence TEXT",
         ["id, cover_art_presence"]
     ),
@@ -217,6 +354,7 @@ pub const TABLES: &[Table] = &[
         "tag",
         Derived,
         [0, 1],
+        ["id", "name"],
         "id INTEGER, name TEXT",
         ["id, name"]
     ),
@@ -224,6 +362,10 @@ pub const TABLES: &[Table] = &[
 
 pub fn table_named(entry: &str) -> Option<&'static Table> {
     let name = entry.strip_prefix("mbdump/")?;
+    table_called(name)
+}
+
+pub fn table_called(name: &str) -> Option<&'static Table> {
     TABLES.iter().find(|table| table.name == name)
 }
 
@@ -339,14 +481,29 @@ mod tests {
     }
 
     #[test]
-    fn every_table_projects_a_column_for_each_it_lays_out() {
+    fn every_table_projects_a_column_for_each_it_lays_out_and_names_it() {
         for table in TABLES {
             assert_eq!(
                 table.columns.len(),
-                table.laid.split(',').count(),
+                table.laid_names().count(),
                 "{}",
                 table.name
             );
+            assert_eq!(table.columns.len(), table.named.len(), "{}", table.name);
         }
+    }
+
+    #[test]
+    fn a_table_whose_first_column_kept_is_its_id_is_identified_by_it() {
+        let identified: Vec<&str> = TABLES
+            .iter()
+            .filter(|table| table.identified())
+            .map(|table| table.name)
+            .collect();
+
+        assert!(identified.contains(&"release"));
+        assert!(identified.contains(&"track"));
+        assert!(!identified.contains(&"isrc"));
+        assert!(!identified.contains(&"artist_credit_name"));
     }
 }

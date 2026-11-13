@@ -13,3 +13,12 @@ answers-kept = { $answers ->
     [one] { $answers } lookup answer is kept to share with synced devices.
    *[other] { $answers } lookup answers are kept to share with synced devices.
 }
+replicated = The copy of MusicBrainz follows the changes up to packet { $to } ({ $changes ->
+    [one] { $changes } change
+   *[other] { $changes } changes
+}, { $documents ->
+    [one] { $documents } entry rewritten
+   *[other] { $documents } entries rewritten
+}).
+already-replicated = The copy of MusicBrainz already holds every change published, up to packet { $to }.
+amended = It follows MusicBrainz's changes up to packet { $sequence }, applied { $ago }.

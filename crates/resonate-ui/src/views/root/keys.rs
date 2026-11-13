@@ -86,6 +86,84 @@ impl RootView {
         self.leave_acoustid_key(window, cx);
     }
 
+    pub(super) fn replication_token_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.take_the_replication_token(cx);
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    pub(super) fn replication_token_left(&mut self, cx: &mut Context<Self>) {
+        if self.typed.replication.read(cx).text().trim()
+            != cx
+                .global::<ResonateApp>()
+                .online
+                .musicbrainz_replication_token
+        {
+            self.take_the_replication_token(cx);
+            cx.notify();
+        }
+    }
+
+    pub(super) fn take_the_replication_token(&mut self, cx: &mut Context<Self>) {
+        let given = self.typed.replication.read(cx).text().trim().to_owned();
+        self.typed
+            .replication
+            .update(cx, |token, cx| token.hold(given.clone(), cx));
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.online.musicbrainz_replication_token = given.clone();
+        });
+
+        let said = if given.is_empty() {
+            words::root::replication_token_cleared()
+        } else {
+            words::root::replication_token_taken()
+        };
+        self.store(&Setting::MusicbrainzReplicationToken(given), cx);
+        self.report(Notice::Done(said.to_owned()), cx);
+    }
+
+    pub(crate) fn leave_replication_token(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.typed.replication.read(cx).is_focused(window) {
+            return;
+        }
+        if self.typed.replication.read(cx).text().trim()
+            != cx
+                .global::<ResonateApp>()
+                .online
+                .musicbrainz_replication_token
+        {
+            self.replication_token_given(window, cx);
+            return;
+        }
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn put_back_replication_token(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let stored = cx
+            .global::<ResonateApp>()
+            .online
+            .musicbrainz_replication_token
+            .to_owned();
+        self.typed
+            .replication
+            .update(cx, |field, cx| field.hold(stored, cx));
+        self.leave_replication_token(window, cx);
+    }
+
+    pub(crate) fn clear_replication_token(&self, cx: &mut Context<Self>) {
+        self.typed
+            .replication
+            .update(cx, |token, cx| token.hold(String::new(), cx));
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.online.musicbrainz_replication_token = String::new();
+        });
+    }
+
     pub(super) fn audd_token_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.take_the_audd_token(cx);
         window.focus(&self.focus, cx);

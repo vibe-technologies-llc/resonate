@@ -255,7 +255,7 @@ dragged in), `Typed` (every `Field` the root holds), `SettingsShown` (the settin
   check the key and secret, anything else that Last.fm was not reached
   (`last_fm_is_signed_in_to_by_allowing_it_on_its_own_page_and_no_password_is_asked`).
 - **A secret is drawn as marks.** `Field::masked` (Subsonic and Jellyfin password, TIDAL secret and token,
-  AcoustID/AudD/ListenBrainz keys, Last.fm key and secret) shapes one `•` per letter; `Shown`
+  AcoustID/AudD/ListenBrainz keys, the MetaBrainz token, Last.fm key and secret) shapes one `•` per letter; `Shown`
   maps every offset both ways; copies and cuts nothing.
 - **The caret blinks as the desktop says.** `CaretBlink` on `Stored` and `ResonateApp` (`as_built`
   500 ms; `steady` holds it lit); every field's blink task rereads it each tick. The binary's

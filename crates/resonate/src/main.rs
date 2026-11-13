@@ -397,10 +397,20 @@ fn run() -> Result<()> {
         #[cfg(feature = "online")]
         Some(Sub::Musicbrainz {
             build,
+            replicate,
             from,
             remove,
             search,
-        }) => musicbrainz::run(&config, *build, from.as_deref(), *remove, search.as_deref()),
+        }) => musicbrainz::run(
+            &config,
+            musicbrainz::Asked {
+                build: *build,
+                replicate: *replicate,
+                from: from.as_deref(),
+                remove: *remove,
+                search: search.as_deref(),
+            },
+        ),
         #[cfg(not(feature = "online"))]
         Some(Sub::Musicbrainz { .. }) => Err(Error::NoMirror),
         Some(Sub::Lastfm { forget }) => {

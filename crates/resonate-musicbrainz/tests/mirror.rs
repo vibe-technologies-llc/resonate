@@ -12,8 +12,9 @@ use resonate_library::{
     Wording,
 };
 use resonate_musicbrainz::{
-    Answer, Archives, Asked, Building, Consultation, Kept, Layer, Layered, Mirror, Mirrored,
-    built_from, held_for_building, settled,
+    AMENDED_FILE, Answer, Archives, Asked, Building, Consultation, Error, Keeping, Kept, Layer,
+    Layered, Mirror, Mirrored, Packet, TABLES_FILE, built_from, held_for_building, packet_read,
+    replicated, settled,
 };
 
 const RADIOHEAD: &str = "a74b1b7f-71a5-4011-9441-d0b5e4122711";
@@ -103,22 +104,20 @@ fn line(width: usize, set: &[(usize, &str)]) -> String {
     fields.join("\t")
 }
 
-fn archive(path: &Path, tables: &[(&str, Vec<String>)]) {
-    let file = fs::File::create(path).expect("an archive file");
-    let packed = bzip2::write::BzEncoder::new(file, bzip2::Compression::fast());
+const DUMPED_AT_SEQUENCE: u64 = 100;
+const SCHEMA: u32 = 31;
+
+fn archived(into: impl Write, files: &[(String, String)]) {
+    let packed = bzip2::write::BzEncoder::new(into, bzip2::Compression::fast());
     let mut builder = tar::Builder::new(packed);
-    for (name, rows) in tables {
-        let mut body = rows.join("\n");
-        if !body.is_empty() {
-            body.push('\n');
-        }
+    for (name, body) in files {
         let mut header = tar::Header::new_gnu();
         header.set_size(body.len() as u64);
         header.set_mode(0o644);
         header.set_cksum();
         builder
-            .append_data(&mut header, format!("mbdump/{name}"), body.as_bytes())
-            .expect("a table in the archive");
+            .append_data(&mut header, name, body.as_bytes())
+            .expect("a file in the archive");
     }
     builder
         .into_inner()
@@ -127,6 +126,25 @@ fn archive(path: &Path, tables: &[(&str, Vec<String>)]) {
         .expect("a finished archive")
         .flush()
         .expect("a flushed archive");
+}
+
+fn archive(path: &Path, tables: &[(&str, Vec<String>)]) {
+    let file = fs::File::create(path).expect("an archive file");
+    let mut files = vec![
+        (
+            "REPLICATION_SEQUENCE".to_owned(),
+            format!("{DUMPED_AT_SEQUENCE}\n"),
+        ),
+        ("SCHEMA_SEQUENCE".to_owned(), format!("{SCHEMA}\n")),
+    ];
+    for (name, rows) in tables {
+        let mut body = rows.join("\n");
+        if !body.is_empty() {
+            body.push('\n');
+        }
+        files.push((format!("mbdump/{name}"), body));
+    }
+    archived(file, &files);
 }
 
 fn dump(into: &Path) -> Archives {
@@ -375,15 +393,19 @@ fn mbid(text: &str) -> Mbid {
     Mbid::new(text).expect("a well-formed mbid")
 }
 
-fn built(scratch: &Scratch) -> Mirror {
+fn built_keeping(scratch: &Scratch, keeping: Keeping) -> Mirror {
     let archives = dump(&scratch.0);
     let folder = scratch.0.join("musicbrainz");
     let held = held_for_building(&folder).expect("the building lock");
     let building = Building::default();
-    let built = built_from(&archives, &folder, &building, &held).expect("a built mirror");
+    let built = built_from(&archives, &folder, keeping, &building, &held).expect("a built mirror");
     drop(held);
     let settled = settled(&built, &folder).expect("the mirror settled");
     Mirror::open(&settled).expect("the mirror opens")
+}
+
+fn built(scratch: &Scratch) -> Mirror {
+    built_keeping(scratch, Keeping::TheMirror)
 }
 
 #[test]
@@ -676,4 +698,334 @@ fn a_device_holding_a_mirror_answers_what_another_asks_and_a_device_without_answ
     assert_eq!(before, None);
     assert_eq!(after, answered);
     assert_eq!(serving.consulted(b"\x01\xff"), None);
+}
+
+const REMASTERED: &str = "0a1ac1a2-6b8f-4e2a-9bc6-1f1c6f9d0004";
+const TRACK_THREE: &str = "1d1e1f10-0000-4000-8000-000000000003";
+const REMASTERED_CODE: &str = "GBAYE1500001";
+
+fn pending(seq: u64, table: &str, xid: u64, old: Option<&str>, new: Option<&str>) -> String {
+    let op = match (old, new) {
+        (None, Some(_)) => "i",
+        (Some(_), None) => "d",
+        _ => "u",
+    };
+    let copied = |json: Option<&str>| {
+        json.map_or_else(|| "\\N".to_owned(), |json| json.replace('\\', "\\\\"))
+    };
+    format!(
+        "{seq}\tmusicbrainz.{table}\t{op}\t{xid}\t{}\t{}\t\\N\t\\N",
+        copied(old),
+        copied(new)
+    )
+}
+
+fn packet(sequence: u64, schema: u32, changes: &[String]) -> Packet {
+    let mut body = changes.join("\n");
+    body.push('\n');
+    let mut packed = Vec::new();
+    archived(
+        &mut packed,
+        &[
+            ("REPLICATION_SEQUENCE".to_owned(), format!("{sequence}\n")),
+            ("SCHEMA_SEQUENCE".to_owned(), format!("{schema}\n")),
+            ("DBMIRROR_VERSION".to_owned(), "2\n".to_owned()),
+            (
+                "TIMESTAMP".to_owned(),
+                "2026-11-11 01:00:00+00\n".to_owned(),
+            ),
+            ("mbdump/pending_data".to_owned(), body),
+            ("mbdump/pending_keys".to_owned(), String::new()),
+        ],
+    );
+    packet_read(packed.as_slice(), sequence).expect("a packet read")
+}
+
+fn recording_json(id: u32, gid: &str, name: &str, length: u32) -> String {
+    format!(
+        r#"{{"id":{id},"gid":"{gid}","name":"{name}","artist_credit":1,"length":{length},"comment":"","edits_pending":0,"last_updated":"2026-11-11T00:00:00+00:00","video":false}}"#
+    )
+}
+
+fn first_packet() -> Packet {
+    packet(
+        DUMPED_AT_SEQUENCE + 1,
+        SCHEMA,
+        &[
+            pending(
+                1,
+                "recording",
+                7,
+                Some(&recording_json(1, CREEP, "Creep", 238_000)),
+                Some(&recording_json(
+                    1,
+                    CREEP,
+                    "Creep (Remastered 2009)",
+                    238_000,
+                )),
+            ),
+            pending(
+                2,
+                "recording",
+                8,
+                None,
+                Some(&recording_json(4, REMASTERED, "Stop Whispering", 326_000)),
+            ),
+            pending(
+                3,
+                "isrc",
+                8,
+                None,
+                Some(&format!(
+                    r#"{{"id":9,"recording":4,"isrc":"{REMASTERED_CODE}","source":null,"edits_pending":0,"created":null}}"#
+                )),
+            ),
+            pending(
+                4,
+                "track",
+                8,
+                None,
+                Some(&format!(
+                    r#"{{"id":3,"gid":"{TRACK_THREE}","recording":4,"medium":1,"position":3,"number":"3","name":"Stop Whispering","artist_credit":1,"length":326000,"edits_pending":0,"last_updated":null,"is_data_track":false}}"#
+                )),
+            ),
+            pending(
+                5,
+                "medium",
+                8,
+                Some(
+                    r#"{"id":1,"release":1,"position":1,"format":1,"name":"","edits_pending":0,"last_updated":null,"track_count":2,"gid":"9d9d9d9d-0000-4000-8000-000000000001"}"#,
+                ),
+                Some(
+                    r#"{"id":1,"release":1,"position":1,"format":1,"name":"","edits_pending":0,"last_updated":null,"track_count":3,"gid":"9d9d9d9d-0000-4000-8000-000000000001"}"#,
+                ),
+            ),
+            pending(
+                6,
+                "recording",
+                9,
+                Some(&recording_json(3, HEARING, "Hearing Damage", 300_000)),
+                None,
+            ),
+            pending(
+                7,
+                "release_country",
+                10,
+                Some(r#"{"release":1,"country":10,"date_year":1993,"date_month":2,"date_day":22}"#),
+                Some(r#"{"release":1,"country":10,"date_year":1993,"date_month":4,"date_day":20}"#),
+            ),
+            pending(
+                8,
+                "url",
+                11,
+                Some(
+                    r#"{"id":1,"gid":"5e5e5e5e-0000-4000-8000-000000000001","url":"https://www.wikidata.org/wiki/Q44190","edits_pending":0,"last_updated":null}"#,
+                ),
+                Some(
+                    r#"{"id":1,"gid":"5e5e5e5e-0000-4000-8000-000000000001","url":"https://www.wikidata.org/wiki/Q44191","edits_pending":0,"last_updated":null}"#,
+                ),
+            ),
+        ],
+    )
+}
+
+fn replicated_through(
+    mirror: &Mirror,
+    folder: &Path,
+    packets: Vec<Packet>,
+) -> resonate_musicbrainz::Result<resonate_musicbrainz::Replicated> {
+    let held = held_for_building(folder).expect("the building lock");
+    let mut packets = packets.into_iter();
+    replicated(
+        folder,
+        mirror,
+        |asked| {
+            Ok(packets
+                .next()
+                .inspect(|packet| assert_eq!(packet.sequence, asked)))
+        },
+        &Building::default(),
+        &held,
+    )
+}
+
+#[test]
+fn a_replication_packet_rewrites_the_documents_its_changes_touch_and_nothing_is_built_again() {
+    let scratch = Scratch::new("replicated");
+    let folder = scratch.0.join("musicbrainz");
+    let mirror = built_keeping(&scratch, Keeping::TheMirrorAndItsTables);
+
+    let done = replicated_through(&mirror, &folder, vec![first_packet()]).expect("replicated");
+    let amended = Mirror::open(mirror.path()).expect("the mirror opens again");
+
+    let renamed = amended
+        .recording(&mbid(CREEP))
+        .expect("a read")
+        .expect("the recording");
+    let added = amended
+        .recording(&mbid(REMASTERED))
+        .expect("a read")
+        .expect("the new recording");
+    let gone = amended.recording(&mbid(HEARING)).expect("a read");
+    let release = amended
+        .release(&mbid(PABLO))
+        .expect("a read")
+        .expect("the release");
+    let group = amended
+        .release_group(&mbid(PABLO_GROUP))
+        .expect("a read")
+        .expect("the group");
+    let artist = amended
+        .artist(&mbid(RADIOHEAD))
+        .expect("a read")
+        .expect("the artist");
+    let coded = amended
+        .recordings_of_isrc(&Isrc::new(REMASTERED_CODE).expect("a code"))
+        .expect("a read");
+    let barcoded = amended
+        .releases_by_barcode(&Barcode::new(PABLO_BARCODE).expect("a barcode"))
+        .expect("a read");
+    let found = amended
+        .find_recording(&RecordingAsked {
+            title: "Creep (Remastered 2009)".to_owned(),
+            artist: Some("Radiohead".to_owned()),
+            artist_mbid: None,
+            release: None,
+            length: None,
+            wording: Wording::Phrase,
+        })
+        .expect("a search");
+    let old_title = amended
+        .find_recording(&RecordingAsked {
+            title: "Creep".to_owned(),
+            artist: Some("Radiohead".to_owned()),
+            artist_mbid: None,
+            release: None,
+            length: None,
+            wording: Wording::Words,
+        })
+        .expect("a search");
+    let untouched = amended
+        .recording(&mbid(ACOUSTIC))
+        .expect("a read")
+        .expect("an untouched recording");
+
+    assert_eq!(done.from, DUMPED_AT_SEQUENCE);
+    assert_eq!(done.to, DUMPED_AT_SEQUENCE + 1);
+    assert_eq!(done.changes, 8);
+    assert_eq!(
+        amended.amended_to().map(|to| to.sequence),
+        Some(DUMPED_AT_SEQUENCE + 1)
+    );
+    assert_eq!(renamed.title, "Creep (Remastered 2009)");
+    assert_eq!(renamed.releases[0].date.as_deref(), Some("1993-04-20"));
+    assert_eq!(added.title, "Stop Whispering");
+    assert_eq!(added.releases[0].id, mbid(PABLO));
+    assert_eq!(added.releases[0].position, Some(3));
+    assert_eq!(gone, None);
+    assert_eq!(release.track_count(), 3);
+    assert_eq!(release.date.as_deref(), Some("1993-04-20"));
+    assert_eq!(release.media[0].tracks[2].recording, Some(mbid(REMASTERED)));
+    assert_eq!(group.releases[0].discs, vec![3]);
+    assert_eq!(group.releases[0].date.as_deref(), Some("1993-04-20"));
+    assert_eq!(artist.links[0].url, "https://www.wikidata.org/wiki/Q44191");
+    assert_eq!(coded.len(), 1);
+    assert_eq!(coded[0].id, mbid(REMASTERED));
+    assert_eq!(barcoded.len(), 1);
+    assert_eq!(found[0].recording, mbid(CREEP));
+    assert_eq!(found[0].score, 100);
+    assert_eq!(
+        old_title
+            .iter()
+            .filter(|found| found.recording == mbid(CREEP))
+            .count(),
+        1
+    );
+    assert_eq!(untouched.title, "Creep (Acoustic)");
+}
+
+#[test]
+fn a_packet_of_another_schema_stops_replication_where_it_stood_and_a_new_build_lets_the_changes_go()
+{
+    let scratch = Scratch::new("schema");
+    let folder = scratch.0.join("musicbrainz");
+    let mirror = built_keeping(&scratch, Keeping::TheMirrorAndItsTables);
+
+    let refused = replicated_through(
+        &mirror,
+        &folder,
+        vec![packet(DUMPED_AT_SEQUENCE + 1, SCHEMA + 1, &[])],
+    );
+    let nothing_new = replicated_through(&mirror, &folder, Vec::new()).expect("nothing to do");
+    let first = replicated_through(&mirror, &folder, vec![first_packet()]).expect("replicated");
+    let amended_before = folder.join(AMENDED_FILE).is_file();
+    let rebuilt = built_keeping(&scratch, Keeping::TheMirror);
+
+    assert!(matches!(
+        refused,
+        Err(Error::PacketSchema {
+            sequence: 101,
+            found: 32,
+            reads: 31
+        })
+    ));
+    assert_eq!(nothing_new.to, DUMPED_AT_SEQUENCE);
+    assert_eq!(first.to, DUMPED_AT_SEQUENCE + 1);
+    assert!(amended_before);
+    assert!(!folder.join(AMENDED_FILE).is_file());
+    assert!(!folder.join(TABLES_FILE).is_file());
+    assert_eq!(rebuilt.amended_to(), None);
+    assert_eq!(
+        rebuilt
+            .recording(&mbid(CREEP))
+            .expect("a read")
+            .map(|recording| recording.title),
+        Some("Creep".to_owned())
+    );
+}
+
+#[test]
+fn a_mirror_built_without_its_tables_cannot_follow_the_changes() {
+    let scratch = Scratch::new("untabled");
+    let folder = scratch.0.join("musicbrainz");
+    let mirror = built(&scratch);
+
+    let refused = replicated_through(&mirror, &folder, vec![first_packet()]);
+
+    assert!(matches!(refused, Err(Error::NoTables { .. })));
+}
+
+#[test]
+fn a_packet_naming_another_number_than_the_one_asked_for_is_refused() {
+    let mut packed = Vec::new();
+    archived(
+        &mut packed,
+        &[
+            ("REPLICATION_SEQUENCE".to_owned(), "7\n".to_owned()),
+            ("SCHEMA_SEQUENCE".to_owned(), "31\n".to_owned()),
+            ("DBMIRROR_VERSION".to_owned(), "2\n".to_owned()),
+            ("mbdump/pending_data".to_owned(), String::new()),
+        ],
+    );
+    let mut old_form = Vec::new();
+    archived(
+        &mut old_form,
+        &[
+            ("REPLICATION_SEQUENCE".to_owned(), "8\n".to_owned()),
+            ("SCHEMA_SEQUENCE".to_owned(), "31\n".to_owned()),
+            ("mbdump/pending_data".to_owned(), String::new()),
+        ],
+    );
+
+    let other = packet_read(packed.as_slice(), 8).err();
+    let first_form = packet_read(old_form.as_slice(), 8).err();
+
+    assert!(matches!(
+        other,
+        Some(Error::PacketSequence { asked: 8, found: 7 })
+    ));
+    assert!(matches!(
+        first_form,
+        Some(Error::PacketForm { sequence: 8 })
+    ));
 }

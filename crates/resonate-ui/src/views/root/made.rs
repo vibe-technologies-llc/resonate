@@ -243,6 +243,25 @@ impl RootView {
         })
         .detach();
 
+        let replication = cx.new(|cx| {
+            let mut field =
+                Field::new(words::root::replication_token_placeholder(), window, cx).masked();
+            field.hold(online.musicbrainz_replication_token.clone(), cx);
+            field
+        });
+        cx.subscribe_in(
+            &replication,
+            window,
+            |this, _, _: &Submitted, window, cx| {
+                this.replication_token_given(window, cx);
+            },
+        )
+        .detach();
+        cx.subscribe(&replication, |this, _, _: &Blurred, cx| {
+            this.replication_token_left(cx)
+        })
+        .detach();
+
         let audd = cx.new(|cx| {
             let mut field = Field::new(words::root::audd_placeholder(), window, cx).masked();
             field.hold(online.audd_token.clone(), cx);
@@ -674,6 +693,7 @@ impl RootView {
                 name,
                 contact,
                 acoustid,
+                replication,
                 audd,
                 listenbrainz,
                 subsonic,

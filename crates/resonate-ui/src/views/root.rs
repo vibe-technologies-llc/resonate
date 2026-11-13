@@ -629,6 +629,7 @@ pub(crate) struct Typed {
     pub(crate) name: Entity<Field>,
     pub(crate) contact: Entity<Field>,
     pub(crate) acoustid: Entity<Field>,
+    pub(crate) replication: Entity<Field>,
     pub(crate) audd: Entity<Field>,
     pub(crate) listenbrainz: Entity<Field>,
     pub(crate) subsonic: [Entity<Field>; 3],
