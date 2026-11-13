@@ -199,7 +199,7 @@ song by the old host's row (`as_the_party_knows`), so no guest takes the song up
 the old host had next are found here and kept ahead (`inherit`, `hosted_after`) before the first `Now`;
 the new host's own queue is not put back. The new host keeps the chat; its own line ids carry on from
 its random start. The window asks twice (*Make host*, then *Press again to hand over*,
-`Social::handing_armed`), Android likewise (`rememberSecondPress`), iOS confirms in a dialog; each
+`PartyPane::handing_armed`), Android likewise (`rememberSecondPress`), iOS confirms in a dialog; each
 says the handing under who is here. An older guest build that is not the one handed to ignores the new
 host until it reconnects
 (`the_host_hands_the_party_to_a_guest_who_hosts_it_on_for_everyone_once_the_first_has_gone`,

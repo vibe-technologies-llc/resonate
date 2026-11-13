@@ -37,6 +37,7 @@ use crate::{
         matching::{self},
         missing::MissingShows,
         part::Parts,
+        party::PartyPane,
         playlists::PlaylistsDrawn,
         queue::{QueueMeasure, QueueNames, TakenBack},
         search::SearchShows,
@@ -136,6 +137,8 @@ impl RootView {
         let listens = cx.global::<ResonateApp>().listens.clone();
         let listen = cx.new(|_| ListenModel::new(listens));
         cx.observe(&listen, |_, _, cx| cx.notify()).detach();
+        let party = cx.new(|cx| PartyPane::new(window, cx));
+        cx.observe(&party, |_, _, cx| cx.notify()).detach();
         cx.observe_global::<Toaster>(|_, cx| cx.notify()).detach();
         player.read(cx).listen_in(true);
         cx.observe_in(&library, window, |this, library, window, cx| {
@@ -389,11 +392,6 @@ impl RootView {
             },
         )
         .detach();
-        let party_chat = cx.new(|cx| Field::new(crate::words::party::say_something, window, cx));
-        cx.subscribe_in(&party_chat, window, |this, _, _: &Submitted, window, cx| {
-            this.say_in_the_party(window, cx);
-        })
-        .detach();
         let sync_code = cx.new(|cx| {
             Field::new(
                 crate::words::settings_sync::sync_code_placeholder,
@@ -525,6 +523,7 @@ impl RootView {
             visualiser,
             analysis,
             listen,
+            party,
             listening_open: false,
             downloads_open: false,
             downloads_pressed_off: None,
@@ -585,7 +584,6 @@ impl RootView {
                 sidebar: ScrollHandle::new(),
                 inspector: ScrollHandle::new(),
                 statistics: ScrollHandle::new(),
-                party: ScrollHandle::new(),
                 analysis: ScrollHandle::new(),
                 suggestions: ScrollHandle::new(),
                 artist_records: ScrollHandle::new(),
@@ -704,7 +702,6 @@ impl RootView {
                 sync_server,
                 sync_device,
                 shared_name,
-                party_chat,
                 sync_code,
                 organising,
                 minimum_length,
@@ -748,10 +745,8 @@ impl RootView {
                 sharing: None,
                 shared_lists: Vec::new(),
                 sharing_redraws: None,
-                party_redraws: None,
                 party_offered: None,
                 list_offered: None,
-                handing_armed: None,
             },
             shows: Shows {
                 artist: ArtistShows::default(),

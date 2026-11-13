@@ -713,6 +713,19 @@ impl Driven {
         });
         self.settle();
     }
+
+    pub(crate) fn focus_on(
+        &mut self,
+        field: impl FnOnce(&RootView, &gpui::App) -> Entity<crate::views::field::Field>,
+    ) {
+        let root = self.root.clone();
+        self.cx.update(|window, cx| {
+            let field = field(root.read(cx), cx);
+            let focus = gpui::Focusable::focus_handle(field.read(cx), cx);
+            focus.focus(window, cx);
+        });
+        self.settle();
+    }
 }
 
 #[cfg(test)]

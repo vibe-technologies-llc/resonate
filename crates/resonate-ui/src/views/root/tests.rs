@@ -753,7 +753,7 @@ mod driven {
             .root
             .update(&mut driven.cx, |root, cx| root.set_pane(Pane::Party, cx));
         driven.settle();
-        driven.focus(|root| &root.typed.party_chat);
+        driven.focus_on(|root, cx| root.party.read(cx).chat.clone());
         driven.cx.simulate_input("hello there");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
@@ -765,7 +765,7 @@ mod driven {
             *joining.reacted.lock(),
             vec![crate::together::PartyReaction::Fire]
         );
-        assert!(driven.read(|root, cx| root.typed.party_chat.read(cx).text().is_empty()));
+        assert!(driven.read(|root, cx| root.party.read(cx).chat.read(cx).text().is_empty()));
     }
 
     #[gpui::test]
@@ -809,13 +809,19 @@ mod driven {
         driven.settle();
 
         assert!(joining.handed.lock().is_empty(), "one press only asks");
-        assert_eq!(driven.read(|root, _| root.social.handing_armed), Some(ada));
+        assert_eq!(
+            driven.read(|root, cx| root.party.read(cx).handing_armed),
+            Some(ada)
+        );
 
         driven.click("party-hand-over-1");
         driven.settle();
 
         assert_eq!(*joining.handed.lock(), vec![ada]);
-        assert_eq!(driven.read(|root, _| root.social.handing_armed), None);
+        assert_eq!(
+            driven.read(|root, cx| root.party.read(cx).handing_armed),
+            None
+        );
     }
 
     #[gpui::test]

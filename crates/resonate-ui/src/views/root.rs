@@ -83,6 +83,7 @@ use crate::{
         menu::{self, Menu},
         missing::MissingShows,
         part::Parts,
+        party::PartyPane,
         playlists::{Held, Naming, PlaylistsDrawn},
         queue::{QueueMeasure, QueueNames, TakenBack},
         reorder::{Creeping, Reach, Step},
@@ -516,7 +517,6 @@ pub(crate) struct Scrolls {
     pub(crate) sidebar: ScrollHandle,
     pub(crate) inspector: ScrollHandle,
     pub(crate) statistics: ScrollHandle,
-    pub(crate) party: ScrollHandle,
     pub(crate) analysis: ScrollHandle,
     pub(crate) suggestions: ScrollHandle,
     pub(crate) artist_records: ScrollHandle,
@@ -643,7 +643,6 @@ pub(crate) struct Typed {
     pub(crate) sync_server: Entity<Field>,
     pub(crate) sync_device: Entity<Field>,
     pub(crate) shared_name: Entity<Field>,
-    pub(crate) party_chat: Entity<Field>,
     pub(crate) sync_code: Entity<Field>,
     pub(crate) organising: Entity<Field>,
     pub(crate) minimum_length: Entity<Field>,
@@ -692,10 +691,8 @@ pub(crate) struct Social {
     pub(crate) sharing: Option<sharing::Sharing>,
     pub(crate) shared_lists: Vec<(PlaylistId, bool)>,
     pub(crate) sharing_redraws: Option<Task<()>>,
-    pub(crate) party_redraws: Option<Task<()>>,
     pub(crate) party_offered: Option<String>,
     pub(crate) list_offered: Option<ListOffered>,
-    pub(crate) handing_armed: Option<[u8; 16]>,
 }
 
 pub(crate) struct Shows {
@@ -724,6 +721,7 @@ pub struct RootView {
     pub(crate) visualiser: Entity<Visualiser>,
     pub(crate) analysis: Entity<AnalysisModel>,
     pub(crate) listen: Entity<ListenModel>,
+    pub(crate) party: Entity<PartyPane>,
     pub(crate) listening_open: bool,
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,

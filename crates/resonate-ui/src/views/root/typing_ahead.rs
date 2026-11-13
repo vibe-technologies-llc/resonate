@@ -309,8 +309,12 @@ impl RootView {
         )
     }
 
-    pub(super) fn text_fields(&self) -> impl Iterator<Item = &Entity<Field>> {
+    pub(super) fn text_fields<'a>(
+        &'a self,
+        cx: &'a App,
+    ) -> impl Iterator<Item = &'a Entity<Field>> {
         [
+            &self.party.read(cx).chat,
             &self.typed.search,
             &self.typed.zone_name,
             &self.typed.name,
@@ -326,7 +330,6 @@ impl RootView {
             &self.typed.sync_server,
             &self.typed.sync_device,
             &self.typed.shared_name,
-            &self.typed.party_chat,
             &self.typed.sync_code,
             &self.typed.organising,
             &self.typed.minimum_length,
@@ -346,7 +349,7 @@ impl RootView {
     }
 
     pub(super) fn editing(&self, window: &Window, cx: &App) -> bool {
-        self.text_fields()
+        self.text_fields(cx)
             .any(|field| field.read(cx).is_focused(window))
     }
 }

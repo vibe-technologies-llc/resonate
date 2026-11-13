@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use gpui::{
-    AnyElement, Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px, rgb,
+    AnyElement, Context, Div, Entity, FontWeight, ScrollHandle, SharedString, Stateful, Task,
+    Window, div, prelude::*, px, rgb,
 };
 
 use crate::{
@@ -13,6 +14,7 @@ use crate::{
         PartyStanding, SharedPerson,
     },
     views::{
+        field::{Field, Submitted},
         kit::{self, EndsInAnEllipsis as _, Tone},
         root::RootView,
         scrollbar::Scrollbars,
@@ -298,9 +300,34 @@ fn step_card((icon, name, what): (Icon, &'static str, &'static str)) -> Div {
         )
 }
 
-impl RootView {
-    pub(crate) fn watch_the_party(&mut self, cx: &mut Context<Self>) {
-        self.social.party_redraws = Some(cx.spawn(async move |this, cx| {
+pub(crate) struct PartyPane {
+    pub(crate) chat: Entity<Field>,
+    scroll: ScrollHandle,
+    pub(crate) handing_armed: Option<[u8; 16]>,
+    redraws: Option<Task<()>>,
+}
+
+impl PartyPane {
+    pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let chat = cx.new(|cx| Field::new(words::party::say_something, window, cx));
+        cx.subscribe_in(&chat, window, |this, _, _: &Submitted, window, cx| {
+            this.say_in_the_party(window, cx);
+        })
+        .detach();
+
+        Self {
+            chat,
+            scroll: ScrollHandle::new(),
+            handing_armed: None,
+            redraws: None,
+        }
+    }
+
+    fn keep_redrawing(&mut self, cx: &mut Context<Self>) {
+        if self.redraws.is_some() {
+            return;
+        }
+        self.redraws = Some(cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(PANE_REDRAWN_EVERY).await;
                 if this.update(cx, |_, cx| cx.notify()).is_err() {
@@ -310,10 +337,49 @@ impl RootView {
         }));
     }
 
-    pub(crate) fn party_pane(&mut self, cx: &mut Context<Self>) -> Div {
-        if self.social.party_redraws.is_none() {
-            self.watch_the_party(cx);
+    fn say_in_the_party(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.say_what_was_typed(cx);
+        self.chat
+            .update(cx, |field, cx| field.take_focus(window, cx));
+    }
+
+    fn say_what_was_typed(&mut self, cx: &mut Context<Self>) {
+        let typed = self.chat.read(cx).text().trim().to_owned();
+        if typed.is_empty() {
+            return;
         }
+        if let Some(together) = cx.global::<ResonateApp>().together.clone() {
+            together.say_in_party(&typed);
+        }
+        self.chat.update(cx, |field, cx| field.clear(cx));
+        cx.notify();
+    }
+
+    fn react(&mut self, reaction: PartyReaction, cx: &mut Context<Self>) {
+        if let Some(together) = cx.global::<ResonateApp>().together.clone() {
+            together.react_in_party(reaction);
+        }
+        cx.notify();
+    }
+
+    fn hand_to(&mut self, person: [u8; 16], cx: &mut Context<Self>) {
+        if self.handing_armed != Some(person) {
+            self.handing_armed = Some(person);
+            cx.notify();
+            return;
+        }
+
+        self.handing_armed = None;
+        if let Some(together) = cx.global::<ResonateApp>().together.clone() {
+            together.hand_over(person);
+        }
+        cx.notify();
+    }
+}
+
+impl RootView {
+    pub(crate) fn party_pane(&mut self, cx: &mut Context<Self>) -> Div {
+        self.party.update(cx, |party, cx| party.keep_redrawing(cx));
         let together = cx.global::<ResonateApp>().together.clone();
         let seen = together.as_ref().and_then(|together| together.party());
         let heading = self.party_heading(seen.as_ref(), cx);
@@ -332,6 +398,8 @@ impl RootView {
     }
 
     fn party_page(&self, page: Stateful<Div>, cx: &mut Context<Self>) -> AnyElement {
+        let scroll = self.party.read(cx).scroll.clone();
+
         div()
             .flex()
             .flex_col()
@@ -340,8 +408,8 @@ impl RootView {
             .min_h(px(0.0))
             .child(Scrollbars::of(cx).around(
                 "party-scrollbar",
-                self.scrolls.party.clone(),
-                page.overflow_y_scroll().track_scroll(&self.scrolls.party),
+                scroll.clone(),
+                page.overflow_y_scroll().track_scroll(&scroll),
             ))
             .into_any_element()
     }
@@ -680,6 +748,7 @@ impl RootView {
     }
 
     fn party_people(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
+        let handing_armed = self.party.read(cx).handing_armed;
         let mut people = div().flex().flex_col().gap_1().p_2();
         for (at, person) in seen.people.iter().enumerate() {
             let id = person.id;
@@ -704,7 +773,7 @@ impl RootView {
                             .child(name),
                     )
                     .when(seen.hosting && !person.me, |row| {
-                        let armed = self.social.handing_armed == Some(id);
+                        let armed = handing_armed == Some(id);
                         row.child(self.in_the_pane_ring(
                             kit::button(
                                 ("party-hand-over", at),
@@ -717,7 +786,9 @@ impl RootView {
                                 words::party::hand_over_hint(),
                                 Tone::Ghost,
                             ),
-                            move |this, _, cx| this.hand_the_party_to(id, cx),
+                            move |this, _, cx| {
+                                this.party.update(cx, |party, cx| party.hand_to(id, cx));
+                            },
                             cx,
                         ))
                         .child(self.in_the_pane_ring(
@@ -753,6 +824,7 @@ impl RootView {
     }
 
     fn party_chat(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
+        let chat = self.party.read(cx).chat.clone();
         let shown_from = seen.chat.len().saturating_sub(CHAT_LINES_SHOWN);
         let lines = div()
             .flex()
@@ -773,7 +845,9 @@ impl RootView {
                     words::party::react_hint(reaction_named(reaction)),
                     Tone::Ghost,
                 ),
-                move |this, _, cx| this.react_in_the_party(reaction, cx),
+                move |this, _, cx| {
+                    this.party.update(cx, |party, cx| party.react(reaction, cx));
+                },
                 cx,
             ));
         }
@@ -783,7 +857,7 @@ impl RootView {
             .gap_2()
             .child(div().flex_1().min_w(px(0.0)).child(self.text_field(
                 "party-chat-field",
-                &self.typed.party_chat,
+                &chat,
                 |this, window, cx| this.let_go_of_the_field(window, cx),
                 cx,
             )))
@@ -795,7 +869,10 @@ impl RootView {
                     words::party::send_hint(),
                     Tone::Outlined,
                 ),
-                |this, _, cx| this.say_what_was_typed(cx),
+                |this, _, cx| {
+                    this.party
+                        .update(cx, |party, cx| party.say_what_was_typed(cx));
+                },
                 cx,
             ));
 
@@ -809,34 +886,6 @@ impl RootView {
                 .child(reactions)
                 .child(typing),
         )
-    }
-
-    pub(crate) fn say_in_the_party(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.say_what_was_typed(cx);
-        self.typed
-            .party_chat
-            .update(cx, |field, cx| field.take_focus(window, cx));
-    }
-
-    fn say_what_was_typed(&mut self, cx: &mut Context<Self>) {
-        let typed = self.typed.party_chat.read(cx).text().trim().to_owned();
-        if typed.is_empty() {
-            return;
-        }
-        if let Some(together) = cx.global::<ResonateApp>().together.clone() {
-            together.say_in_party(&typed);
-        }
-        self.typed
-            .party_chat
-            .update(cx, |field, cx| field.clear(cx));
-        cx.notify();
-    }
-
-    fn react_in_the_party(&mut self, reaction: PartyReaction, cx: &mut Context<Self>) {
-        if let Some(together) = cx.global::<ResonateApp>().together.clone() {
-            together.react_in_party(reaction);
-        }
-        cx.notify();
     }
 
     fn party_requests(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
@@ -914,20 +963,6 @@ impl RootView {
 
         cx.background_spawn(async move { together.leave_party() })
             .detach();
-        cx.notify();
-    }
-
-    fn hand_the_party_to(&mut self, person: [u8; 16], cx: &mut Context<Self>) {
-        if self.social.handing_armed != Some(person) {
-            self.social.handing_armed = Some(person);
-            cx.notify();
-            return;
-        }
-
-        self.social.handing_armed = None;
-        if let Some(together) = cx.global::<ResonateApp>().together.clone() {
-            together.hand_over(person);
-        }
         cx.notify();
     }
 

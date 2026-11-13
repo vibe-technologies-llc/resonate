@@ -36,6 +36,16 @@ dragged in), `Typed` (every `Field` the root holds), `SettingsShown` (the settin
 `Social` (Wrapped, sharing and party offers), `Shows` (which tab or shape a pane is drawn in) and
 `TypedAhead`.
 
+**A pane with state of its own holds it in an entity of its own.** `PartyPane` (`views/party.rs`:
+the chat field and the subscription its enter speaks through, the page's scroll, the hand-over
+armed by a first press, the timer redrawing the pane while it is shown) is made in
+`RootView::new`, which observes it and redraws when it notifies, so a pane's
+fields and subscriptions are found beside the pane and not in the root's list. The root still draws
+it (`RootView::party_pane`): every control of a pane goes into the root's
+focus ring (`Controls`, `in_the_pane_ring`) and a press may reach the root's navigation, so a press
+that changes only the pane's own state updates its entity (`this.party.update(…)`). A `Field` such an
+entity holds is still listed by `RootView::text_fields`, so `editing` sees it.
+
 ## Chrome and input
 
 - **Title names what plays.** `RootView::name_the_window` sets *Echoes — Pink Floyd · Resonate*
