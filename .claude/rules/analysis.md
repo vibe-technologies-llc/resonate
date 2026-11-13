@@ -212,6 +212,22 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   (`the_peak_of_the_tiles_is_the_one_a_true_peak_meter_reads_over_the_whole_song`); `LoudnessMeter`,
   the audition's, has no tiles and runs a meter of its own. Dropping the second meter took about
   0.1 s of one core from 46 to 60 s of stereo at 44.1 kHz (84 to 123 ms, the meter alone on two songs).
+  **A read is skipped by a bound as well as by the running maximum**: where a sample above the
+  maximum over the gain (`quiet_below`) has armed the window, a channel is read only when
+  `Oversampler::bound_of_a_read` (the window's magnitudes weighed by each tap's largest weight over
+  the phases, in f32, with `BOUND_MARGIN` of room) reaches the maximum; a channel under it cannot
+  hold a read above the maximum, so the maximum is the one every read would give
+  (`a_tile_taken_alone_peaks_where_reading_every_sample_of_it_does`). Two channels that both need
+  reading are read as a pair, a bound that is not finite reads everything as before, and only the
+  four- and eight-fold readers bound (`BOUNDED_FROM_PHASES`). `TruePeakMeter::take` also starts a
+  tile's maximum at the loudest sample a read of it is centred on (a phase-0 read is the sample
+  itself), so a restart no longer begins from nothing. Per-tile peaks stay exact, so a tile reads
+  more than one maximum over the song does (the song-wide maximum skips what a tile's cannot): 60 s
+  of stereo at 44.1 kHz, cycles of the meter taken a tile at a time, best of 12 on a loaded
+  machine: six real songs 1 053, 1 107, 1 094, 1 067, 1 107 and 1 073 M before and 1 046, 902, 883,
+  927, 897 and 978 M after (a loud master gains a little, a quiet one a fifth), a synthetic heavy-tailed
+  quiet master 1 275 to 750 M net of its generation; a whole-song read of the same songs 8 to 20%
+  faster. The answers are the same bit for bit on all of them.
 - **Print = Chromaprint, first `PRINTED_FOR` only**: `rusty-chromaprint`
   `Configuration::preset_test2` (the AcoustID default), URL-safe base64, unpadded.
   `resonate_core::Chromaprint` carries it with whole-track length; lookups ask with the track's

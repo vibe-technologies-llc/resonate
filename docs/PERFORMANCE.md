@@ -27,12 +27,25 @@ are in [ROADMAP.md](ROADMAP.md).
   release baseline is x86-64-v3, four lanes), and a mono or odd channel has nothing to pack with
 - [M] `workers_for` stayed at half the cores though each study now spreads over the crew: four
   workers keep the same throughput as eight at three quarters of the memory (442 MB against 582 MB
-  on sixteen songs), but a worker also waits on recognition, which was not measured
-- [M] `Bank`'s rows are read one chunk at a time on its own stage, and its forward pass cannot be parted, so it and
-  `Metered`, 1 to 1.5 s each over 5 minutes at 44.1 kHz, are what a pass's wall time now waits for,
-  96 kHz most of all (4.5 s for 5 minutes); `Metered`'s meter, which restarts its running maximum every tile,
-  reads twice what one over the whole song does on a quiet master (158 to 200 ms against 74 to 96 ms for 60 s of
-  stereo at 44.1 kHz) and a tenth more on a loud one (122 against 107 ms for 46 s)
+  on sixteen songs), but a worker also waits on recognition, which was not measured (retried on a machine
+  at a load of 35, where a throughput comparison between four and eight workers means nothing)
+- [M] `Bank`'s rows are read one chunk at a time on its own stage, and its forward pass cannot be parted in
+  time, so it and `Metered`, 1 to 1.5 s each over 5 minutes at 44.1 kHz, are what a pass's wall time now
+  waits for, 96 kHz most of all (4.5 s for 5 minutes). The overlap of reading with the forward pass is already
+  there (`together`: the next slab's forward pass beside the last chunks' settling and reading), and the two
+  sides are near even, the settling and reading the longer: a bank's share of 60 s of stereo at 44.1 kHz was
+  forward 143 ms, settling 148 ms and reading 143 ms on the one-thread crew, and 221 ms against 280 ms
+  (settling and reading, settling across the crew) on the wide one. So the stage runs at the reading side's
+  pace, and what is left is to part either side without moving a bit: the reading across tile-aligned ranges
+  (a `Reading` of its own per range, primed by the three frames before it, the tiles merged by `max`) and the
+  forward pass across edge groups (the 28 edges are independent lanes, each a task of a group's own buffer
+  gathered into the planes). Neither was built: the machine these were timed on ran at a load of 35, which
+  hides wall time, and both gain only on a crew with idle cores (`analyse`, a lone foreground study), not on a
+  library pass whose workers already fill the machine. `Metered`'s tile-at-a-time meter reads more than one
+  over the whole song does because a tile's exact maximum is lower than the song's, so what the song's
+  skips a tile's must read (a bound of every window by its largest taps cut it by a fifth on a quiet master
+  and left a loud one as it was: `analysis.md`, *Loudness*); a read that costs less per window, not a
+  better skip, is what is left of it
 - [M] `peak_through`, `print` and `excerpt` walk on one thread and the crew does not take them: it fans one
   decode out to independent stages, and each of these has one stateful consumer in series (decode, the room's
   convolver, the equaliser, the meter; decode, Chromaprint; decode, a mono mix), so a crew could only overlap

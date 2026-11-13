@@ -1,6 +1,7 @@
 use std::{collections::VecDeque, num::NonZeroUsize};
 
 use resonate_core::{SampleRate, StreamSpec};
+use wide::f32x8;
 
 use crate::{
     ProcessCount, Processor, Result,
@@ -25,6 +26,11 @@ const INTERPOLATOR: SincParams = SincParams {
 const REACH: usize = INTERPOLATOR.half_taps as usize;
 const TAPS: usize = 2 * REACH;
 const HELD_TWICE: usize = 2 * TAPS;
+const BOUNDED_FROM_PHASES: usize = 4;
+const BOUND_LANES: usize = 8;
+const BOUND_BLOCK: usize = 4 * BOUND_LANES;
+const BOUND_MARGIN: f64 = 1.0 - 1e-4;
+const BOUNDED_FROM_PEAK: f64 = 1e-20;
 const LOOKAHEAD_SECONDS: f64 = 0.0015;
 const RELEASE_SECONDS: f64 = 0.08;
 const CEILING_DECIBELS: f64 = -0.1;
@@ -35,6 +41,8 @@ const ROUNDING_MARGIN: f64 = 1.0 - 1e-9;
 struct Oversampler<const PHASES: usize> {
     weights: [[f64; PHASES]; TAPS],
     gain_at_most: f64,
+    reach_at_most: [f32; TAPS],
+    magnitudes: Vec<f32>,
     held: Vec<f64>,
     newest: usize,
     loud_for: usize,
@@ -73,10 +81,17 @@ impl<const PHASES: usize> Oversampler<PHASES> {
                     .sum::<f64>()
             })
             .fold(0.0, f64::max);
+        let reach_at_most = std::array::from_fn(|tap| {
+            weights.get(tap).map_or(0.0, |lanes| {
+                lanes.iter().map(|weight| weight.abs()).fold(0.0, f64::max) as f32
+            })
+        });
         Self {
             weights,
             gain_at_most,
+            reach_at_most,
             held: vec![0.0; channels * HELD_TWICE],
+            magnitudes: vec![0.0; channels * HELD_TWICE],
             newest: 0,
             loud_for: 0,
             channels,
@@ -89,6 +104,7 @@ impl<const PHASES: usize> Oversampler<PHASES> {
 
     fn clear(&mut self) {
         self.held.fill(0.0);
+        self.magnitudes.fill(0.0);
         self.newest = 0;
         self.loud_for = 0;
     }
@@ -114,6 +130,81 @@ impl<const PHASES: usize> Oversampler<PHASES> {
         loudest
     }
 
+    fn loudest_that_could_beat(&mut self, frame: &[f64], beaten: f64) -> f64 {
+        let quiet_below = self.quiet_below(beaten);
+        if self.hold(frame) > quiet_below {
+            self.loud_for = TAPS;
+        }
+        let loudest = if self.loud_for == 0 {
+            0.0
+        } else {
+            self.loud_for -= 1;
+            self.read_what_could_beat(beaten)
+        };
+        self.advance();
+        loudest
+    }
+
+    fn read_what_could_beat(&self, beaten: f64) -> f64 {
+        if PHASES < BOUNDED_FROM_PHASES || beaten < BOUNDED_FROM_PEAK {
+            return self.read();
+        }
+        let bounded_below = beaten * BOUND_MARGIN;
+        let mut loudest = 0.0;
+        let mut channel = 0;
+        while channel < self.channels {
+            let first = self.bound_of_a_read(channel);
+            let second = if channel + 1 < self.channels {
+                Some(self.bound_of_a_read(channel + 1))
+            } else {
+                None
+            };
+            if !first.is_finite() || second.is_some_and(|bound| !bound.is_finite()) {
+                return self.read();
+            }
+            let first_could = first >= bounded_below;
+            match second {
+                Some(second) if first_could && second >= bounded_below => {
+                    let (left, right) = self.phases_of_a_pair(channel);
+                    for (left, right) in left.into_iter().zip(right) {
+                        loudest = larger(loudest, larger(left.abs(), right.abs()));
+                    }
+                }
+                _ => {
+                    if first_could {
+                        for phase in self.phases_of(channel) {
+                            loudest = larger(loudest, phase.abs());
+                        }
+                    }
+                    if second.is_some_and(|bound| bound >= bounded_below) {
+                        for phase in self.phases_of(channel + 1) {
+                            loudest = larger(loudest, phase.abs());
+                        }
+                    }
+                }
+            }
+            channel += 2;
+        }
+        loudest
+    }
+
+    fn bound_of_a_read(&self, channel: usize) -> f64 {
+        let from = channel * HELD_TWICE + self.newest + 1;
+        let window = self.magnitudes.get(from..from + TAPS).unwrap_or_default();
+        let mut sums = [f32x8::ZERO; 4];
+        let (blocks, _) = window.as_chunks::<BOUND_BLOCK>();
+        let (reaches, _) = self.reach_at_most.as_chunks::<BOUND_BLOCK>();
+        for (block, reach) in blocks.iter().zip(reaches) {
+            let (block, _) = block.as_chunks::<BOUND_LANES>();
+            let (reach, _) = reach.as_chunks::<BOUND_LANES>();
+            for ((sum, block), reach) in sums.iter_mut().zip(block).zip(reach) {
+                *sum = f32x8::new(*reach).mul_add(f32x8::new(*block), *sum);
+            }
+        }
+        let [first, second, third, fourth] = sums;
+        f64::from(((first + second) + (third + fourth)).reduce_add())
+    }
+
     fn hold(&mut self, frame: &[f64]) -> f64 {
         let slot = self.newest;
         let mut loudest: f64 = 0.0;
@@ -122,6 +213,9 @@ impl<const PHASES: usize> Oversampler<PHASES> {
             for copy in [slot, slot + TAPS] {
                 if let Some(held) = self.held.get_mut(plane + copy) {
                     *held = *sample;
+                }
+                if let Some(held) = self.magnitudes.get_mut(plane + copy) {
+                    *held = sample.abs() as f32;
                 }
             }
             loudest = loudest.max(sample.abs());
@@ -243,6 +337,15 @@ impl Sampling {
         }
     }
 
+    fn loudest_that_could_beat(&mut self, frame: &[f64], beaten: f64) -> f64 {
+        match self {
+            Self::Octuple(sampler) => sampler.loudest_that_could_beat(frame, beaten),
+            Self::Quadruple(sampler) => sampler.loudest_that_could_beat(frame, beaten),
+            Self::Double(sampler) => sampler.loudest_that_could_beat(frame, beaten),
+            Self::Single(sampler) => sampler.loudest_that_could_beat(frame, beaten),
+        }
+    }
+
     fn loudest_that_could_pass(&mut self, frame: &[f64], quiet_below: f64) -> f64 {
         match self {
             Self::Octuple(sampler) => sampler.loudest_that_could_pass(frame, quiet_below),
@@ -282,18 +385,36 @@ impl TruePeakMeter {
             for (slot, sample) in self.frame.iter_mut().zip(frame) {
                 *slot = f64::from(*sample);
             }
-            let quiet_below = self.oversampler.quiet_below(self.loudest);
             let loudest = self
                 .oversampler
-                .loudest_that_could_pass(&self.frame, quiet_below);
+                .loudest_that_could_beat(&self.frame, self.loudest);
             self.loudest = self.loudest.max(loudest);
         }
     }
 
     pub fn take(&mut self, interleaved: &[f32]) -> f64 {
-        self.loudest = 0.0;
+        self.loudest = self.loudest_sample_a_read_is_centred_on(interleaved);
         self.note(interleaved);
         self.loudest
+    }
+
+    fn loudest_sample_a_read_is_centred_on(&self, interleaved: &[f32]) -> f64 {
+        let channels = self.frame.len();
+        let frames = interleaved.len() / channels;
+        if frames < 2 * REACH {
+            return 0.0;
+        }
+        let whole = &interleaved[..frames * channels];
+        let centred = &whole[(REACH - 1) * channels..(frames - REACH) * channels];
+        let mut loudest = 0.0_f32;
+        for sample in centred {
+            loudest = loudest.max(sample.abs());
+        }
+        let mut finite = true;
+        for sample in whole {
+            finite &= sample.is_finite();
+        }
+        if finite { f64::from(loudest) } else { 0.0 }
     }
 
     pub fn finish(mut self) -> f64 {
@@ -654,6 +775,82 @@ mod tests {
         }
 
         assert_eq!(metered(&music), every_read);
+    }
+
+    fn heavy_tailed(frames: usize, channels: usize) -> Vec<f32> {
+        let mut state = 0x2545_f491_u32;
+        let mut draw = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            f64::from(state) / f64::from(u32::MAX)
+        };
+        let mut samples = Vec::with_capacity(frames * channels);
+        for frame in 0..frames {
+            let swell = 0.02 + 0.2 * (1.0 + (frame as f64 / 3_000.0).sin());
+            for _ in 0..channels {
+                let sign = if draw() < 0.5 { -1.0 } else { 1.0 };
+                let magnitude = -draw().max(1e-9).ln() * swell;
+                samples.push((sign * magnitude).clamp(-1.0, 1.0) as f32);
+            }
+        }
+        samples
+    }
+
+    fn peaks_by_reading_every_sample(
+        sampling: Sampling,
+        channels: usize,
+        samples: &[f32],
+        chunk_frames: usize,
+    ) -> Vec<f64> {
+        let mut sampling = sampling;
+        samples
+            .chunks(chunk_frames * channels)
+            .map(|chunk| {
+                chunk
+                    .chunks_exact(channels)
+                    .map(|frame| {
+                        let widened: Vec<f64> = frame.iter().map(|s| f64::from(*s)).collect();
+                        sampling.loudest_after(&widened)
+                    })
+                    .fold(0.0, f64::max)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_tile_taken_alone_peaks_where_reading_every_sample_of_it_does() {
+        for (channels, rate) in [
+            (1, Some(SampleRate::HZ_44100)),
+            (2, Some(SampleRate::HZ_44100)),
+            (2, Some(SampleRate::HZ_48000)),
+            (3, Some(SampleRate::HZ_44100)),
+            (2, Some(SampleRate::HZ_96000)),
+            (2, None),
+        ] {
+            let samples = heavy_tailed(40_000, channels);
+            let width = NonZeroUsize::new(channels).expect("a channel");
+            for chunk_frames in [2_205, 1_000, 97, 50] {
+                let mut meter = match rate {
+                    Some(rate) => TruePeakMeter::at(rate, width),
+                    None => TruePeakMeter::new(width),
+                };
+                let taken: Vec<f64> = samples
+                    .chunks(chunk_frames * channels)
+                    .map(|chunk| meter.take(chunk))
+                    .collect();
+                let sampling = match rate {
+                    Some(rate) => Sampling::at(rate, channels),
+                    None => Sampling::finest(channels),
+                };
+
+                assert_eq!(
+                    taken,
+                    peaks_by_reading_every_sample(sampling, channels, &samples, chunk_frames),
+                    "{channels} channels at {rate:?} in chunks of {chunk_frames}"
+                );
+            }
+        }
     }
 
     #[test]
