@@ -149,6 +149,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Later: Language
 
 - [L] The first language beside English: a `Language` variant, every crate's `words/<tag>/`, Android's `values-<tag>/` and iOS's `<tag>.lproj` (`language.md`).
+- [S] Some figures still ignore the region: counts the window draws with `to_string` (a badge, a count beside a name) are not grouped, the terminal's, analysis pane's and equaliser's dB and kHz readouts keep `.`, and no setting overrides the region the system names.
 - [M] Right-to-left languages: Fluent's isolation marks are off, and the window's layout is never mirrored.
 
 ## Later: Sources and providers
