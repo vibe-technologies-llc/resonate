@@ -7,6 +7,7 @@ mod flac;
 #[cfg(fuzzing)]
 mod fuzzing;
 mod http;
+mod learning;
 mod located;
 mod network;
 mod renderer;
@@ -32,6 +33,10 @@ pub use crate::{
     carriage::{Carriage, Wrapping},
     error::{Action, Asked, Error, FlacOp, Result, SearchOp, ServeOp},
     feed::Feed,
+    learning::{
+        CLOCK_MOVED_AT_LEAST, PULLED_AT_LEAST, SETTLED_BETWEEN_TRIALS, Signals, Silence,
+        TRIAL_ASKED_EVERY, TRIAL_LASTS_AT_MOST,
+    },
     located::Located,
     network::{FirstSearch, Network, Searching},
     renderer::{Renderer, Udn, Vouched},

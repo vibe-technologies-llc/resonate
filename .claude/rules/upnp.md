@@ -100,12 +100,13 @@ dev-dependency, for the end-to-end test.
   survey afresh, so a switch applies at once; a stream already open keeps the formats it opened with
   and a new one takes the new
   (`vouching_for_a_renderer_already_found_offers_it_high_rate_flac_at_once_and_vouching_it_away_takes_it_back`).
-  **Why a listener's word and not an attempt:** a
+  **Why a listener's word and not an attempt during playback:** a
   renderer that cannot decode a rate usually accepts `SetAVTransportURI` and `Play` and then
   stops, errors or sits silent, with nothing a protocol answer distinguishes from a pause, and the
   sink's formats are fixed when it is listed, before any stream; a try-and-fall-back would put
   silence in front of the listener at the first 192 kHz song of every session and need the engine
-  to reopen on another format. The setting is the listener stating what the protocol info does not
+  to reopen on another format. The test the listener asks for (*A renderer tried*) is the attempt
+  made once, on silence, away from playback. The setting is the listener stating what the protocol info does not
   (the same word `rate=` is), visible in the file, and removing the name restores the limit; the
   settings pane's *High-rate FLAC to renderers* group writes it, a switch per renderer, applied at
   once through `resonate-ui`'s `Renderers::vouch` (`RENDERER_NODES` and
@@ -113,6 +114,29 @@ dev-dependency, for the end-to-end test.
   without reaching this crate). No
   hardware has confirmed which renderers decode the rate: the proof is a fake renderer's, not a
   streamer's.
+- **A renderer tried is offered what it played.** `Network::learn(sink)` (the binary's
+  `sinks --learn SINK`, the settings pane's *Learn what it plays*) tries each `Trial` in turn:
+  `FlacAt192kHz` and `FlacAt176kHz` (stereo, in the first FLAC carriage the renderer takes; none,
+  and the rate is `Untried`), `SixChannels` and `EightChannels` (48 kHz, in the first carriage
+  carrying 48 kHz stereo, S24 where it takes S24; eight only once six played), each `tried_in` a
+  carriage of that one format. A trial is `Silence` through a `Feed` of its own: `SetAVTransportURI`
+  under the title `a_format_tried` and `Play` (a SOAP fault on either is `Unplayed::Refused`), then
+  `GetPositionInfo` and `GetTransportInfo` every `TRIAL_ASKED_EVERY` (250 ms) for at most
+  `TRIAL_LASTS_AT_MOST` (10 s). It played (`Signals::played`) once the feed was fetched and pulled
+  `PULLED_AT_LEAST` (2 s of frames), the transport is not known to have stopped (`PLAYING`, or
+  never said), and `RelTime` moved `CLOCK_MOVED_AT_LEAST` (1 s) where the renderer reports it at all;
+  `ERROR_OCCURRED` is `Unplayed::Errored` at once, and running out names what was missing
+  (`NeverFetched`, `StoppedFetching`, `NotPlaying`, `ClockStill`). Each trial ends with the token
+  withdrawn, a `Stop` and `SETTLED_BETWEEN_TRIALS` (500 ms). The trials run under the renderer's lane
+  (`Holders::idle`): a renderer a stream holds is `Error::InUse` and is not tried, and a stream
+  opened meanwhile takes the lane, ending the learning the same way. What played (`Learning::plays`,
+  a `Plays`) is kept under the renderer's node name in the network's `Learnt` and joins the stated
+  carriages (`carriage::taught`): the rates the first FLAC carriage, the layouts (`layouts_of`) the
+  carriage the surround trial was sent in, nothing else, so a stated or vouched fact is never taken
+  away. `Network::teach(Learnt)` hands the crate what the `formats-learnt-for` setting holds
+  (`binary.md`); the binary calls it before `look`, and called later it describes again each
+  renderer whose learnt formats moved and announces `SinkChange::Reformatted`, as `vouch` does
+  (`taught_again`). Learning applies at once the same way.
 - **Channels are offered where the protocol info states them, never guessed.** A `channels=N`
   parameter on any entry of a wrapping (1 to 8) adds that count's layouts (`layouts_of`: the named
   layout and, where the count has a different unnamed one, `Discrete(n)`); a wrapping naming none
@@ -415,7 +439,15 @@ a short last block of 100 frames and one of 16-bit size included
 `Network::vouch` is sent 192 kHz FLAC that returns bit for bit, a vouch for another UDN changes
 nothing, and a vouched renderer taking FLAC and WAVE is sent FLAC where it would be sent WAVE
 (`a_renderer_taking_flac_alone_is_offered_it_above_ninety_six_kilohertz_only_when_the_listener_vouches`,
-`a_vouched_renderer_taking_flac_and_wave_is_sent_flac_at_a_rate_it_would_otherwise_be_sent_as_wave`); an OpenHome renderer reads
+`a_vouched_renderer_taking_flac_and_wave_is_sent_flac_at_a_rate_it_would_otherwise_be_sent_as_wave`); a renderer that plays everything is
+learnt to play all four trials, told `Reformatted`, then offered and sent 192 kHz FLAC and six
+channels that come back bit for bit
+(`learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent_high_rate_flac_and_six_channels_bit_for_bit`),
+one that stops with `ERROR_OCCURRED` on what it cannot decode is learnt to play none of it and is
+offered nothing more (`a_renderer_that_stops_on_what_it_cannot_decode_is_learnt_to_play_none_of_it`),
+and one a stream holds is not tried while teaching a learnt map offers it at once and teaching it
+away takes it back (`a_renderer_a_stream_holds_is_not_tried_and_teaching_what_was_learnt_offers_it_at_once`);
+an OpenHome renderer reads
 its volume in steps of `VolumeMax` and is turned and muted through `Volume` alone, with no
 RenderingControl call and no `Playlist` call
 (`a_renderer_offering_openhome_volume_is_turned_through_it_and_its_playlist_is_left_alone`).

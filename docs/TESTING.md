@@ -30,6 +30,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   gap of the RemoteIO reopen it causes has been heard
 
 
+- [S · blocked: hardware] Learning what a device plays is proved against loopback fakes alone
+  (`resonate-upnp/tests/renderer.rs`, `resonate-cast/tests/receiver.rs`): no streamer or receiver
+  has been tried, so whether a real one that cannot decode a rate says `ERROR_OCCURRED` or
+  `IDLE`/`ERROR`, stops fetching or lets its clock stand within the 10 s a trial lasts is unheard
 - [S · blocked: hardware] No Google Cast receiver has been played to: the Cast stream is proved
   against a loopback fake alone (`resonate-cast/tests/receiver.rs`), and no Chromecast, Nest
   speaker or speaker group is on the network here, so whether the Default Media Receiver takes an

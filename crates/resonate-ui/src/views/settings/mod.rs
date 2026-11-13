@@ -551,6 +551,7 @@ impl RootView {
         let body = match group {
             Group::Device => self.device_group(cx),
             Group::FlacRenderers => self.flac_renderers_group(cx),
+            Group::LearntFormats => self.learnt_formats_group(cx),
             Group::DeviceVolume => self.device_volume_group(cx),
             Group::SampleRate => self.sample_rate_group(cx),
             Group::GraphRate => self.graph_rate_group(cx),
@@ -733,6 +734,7 @@ impl RootView {
                 self.set_stall_downloads_on_metered(defaults::STALL_DOWNLOADS_ON_METERED, cx);
             }
             Group::FlacRenderers => self.vouch_for_none(cx),
+            Group::LearntFormats => self.forget_everything_learnt(cx),
             Group::Studies => {
                 self.set_studies(defaults::STUDY, cx);
                 self.set_by_sound(defaults::BY_SOUND, cx);
@@ -833,6 +835,7 @@ impl RootView {
         let stall_downloads_on_metered =
             cx.global::<ResonateApp>().online.stall_downloads_on_metered;
         let flac_renderers_named = !cx.global::<ResonateApp>().flac_above_96k_for.is_empty();
+        let formats_learnt = !cx.global::<ResonateApp>().formats_learnt_for.is_empty();
         let by_sound = cx.global::<ResonateApp>().by_sound.load(Ordering::Acquire);
         let lyrics_by_the_locale = cx
             .global::<ResonateApp>()
@@ -931,6 +934,7 @@ impl RootView {
             enrich_on_metered,
             stall_downloads_on_metered,
             flac_renderers_named,
+            formats_learnt,
             studies,
             by_sound,
             lyrics,

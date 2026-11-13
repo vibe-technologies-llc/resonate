@@ -292,6 +292,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
             by_sound,
             lyrics_by_the_locale,
             flac_above_96k_for: config.flac_above_96k_for.clone(),
+            formats_learnt_for: config.formats_learnt_for().clone(),
             convolution: config.convolution.clone(),
             speaker_angle: config.speaker_angle(),
             speaker_elevation: config.speaker_elevation(),

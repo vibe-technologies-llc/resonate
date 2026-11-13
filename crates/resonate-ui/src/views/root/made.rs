@@ -741,6 +741,8 @@ impl RootView {
                 vault_named: None,
                 newer: None,
                 looking_for_updates: Task::ready(()),
+                trying: None,
+                heard: None,
             },
             social: Social {
                 wrapped: None,

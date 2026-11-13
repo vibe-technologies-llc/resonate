@@ -54,20 +54,33 @@ impl Holders {
     fn mint(&self) -> u64 {
         self.minted.fetch_add(1, Ordering::Relaxed)
     }
+
+    pub(crate) fn idle(&self, udn: &Udn) -> Option<Hold> {
+        let lane = self.lane(udn);
+        let mine = self.mint();
+        {
+            let mut held = lane.lock();
+            if held.is_some() {
+                return None;
+            }
+            *held = Some(mine);
+        }
+        Some(Hold { lane, mine })
+    }
 }
 
-struct Hold {
+pub(crate) struct Hold {
     lane: Lane,
     mine: u64,
 }
 
 impl Hold {
-    fn steer<T>(&self, call: impl FnOnce() -> T) -> Option<T> {
+    pub(crate) fn steer<T>(&self, call: impl FnOnce() -> T) -> Option<T> {
         let held = self.lane.lock();
         (*held == Some(self.mine)).then(call)
     }
 
-    fn let_go<T>(&self, call: impl FnOnce() -> T) -> Option<T> {
+    pub(crate) fn let_go<T>(&self, call: impl FnOnce() -> T) -> Option<T> {
         let mut held = self.lane.lock();
         if *held != Some(self.mine) {
             return None;

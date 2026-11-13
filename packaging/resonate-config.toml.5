@@ -234,6 +234,9 @@ if it had stated them, so it is sent 176.4 and 192 kHz material as it is. Name a
 once it is known to decode the rate: one that cannot play the stream stays silent, and removing
 the name restores the 96 kHz limit. A renderer that states its rates, or takes WAVE and no FLAC,
 is not affected. Default: empty.
+.TP
+.B formats-learnt-for
+Table. Maps a UPnP renderer's or a Google Cast receiver's name (\fBupnp:\fR and the UDN, \fBcast:\fR and its id) to the formats it was heard to play when it was tried with \fBresonate sinks \-\-learn\fR or the settings pane's \fILearn what it plays\fR, an array of \fBflac-192000\fR, \fBflac-176400\fR (stereo FLAC at that rate), \fBchannels-6\fR and \fBchannels-8\fR (5.1 and 7.1 at 48 kHz). Each is then offered beside what the device states: the rates in its FLAC, the channels in the way it takes 48 kHz stereo. An empty array is a device tried that played none of them. A spelling this build does not know is ignored. Removing an entry forgets what was learnt. Default: empty.
 .SH ONLINE
 .TP
 .B online

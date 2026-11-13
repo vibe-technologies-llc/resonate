@@ -323,6 +323,23 @@ pub enum Error {
     #[error("no sink named {0} is present in the graph")]
     SinkNotFound(NodeName),
 
+    #[error("no UPnP renderer or Google Cast receiver named {0} answered on the network")]
+    NotANetworkDevice(NodeName),
+
+    #[error("what the renderer {sink} plays could not be learnt")]
+    RendererUnlearnt {
+        sink: NodeName,
+        #[source]
+        source: Box<resonate_upnp::Error>,
+    },
+
+    #[error("what the Cast receiver {sink} plays could not be learnt")]
+    ReceiverUnlearnt {
+        sink: NodeName,
+        #[source]
+        source: Box<resonate_cast::Error>,
+    },
+
     #[error("--bit-perfect and --no-bit-perfect ask for opposite things; name one")]
     BitPerfectBothWays,
 

@@ -2,10 +2,18 @@ use std::{sync::Arc, thread};
 
 use resonate_cast::{CAST_NODES, Casting, Searching as CastSearching};
 use resonate_codec::Sources;
-use resonate_engine::{EngineConfig, NodeName, Player, SinkInfo, desktop_backend};
+use resonate_engine::{EngineConfig, Learning, NodeName, Player, SinkInfo, desktop_backend};
 use resonate_upnp::{Beside, FirstSearch, Network, RENDERER_NODES, Searching};
 
-use crate::config::Config;
+use crate::{
+    config::Config,
+    error::{Error, Result},
+};
+
+pub(crate) struct Heard {
+    pub sink: SinkInfo,
+    pub learning: Learning,
+}
 
 #[derive(Clone, Default)]
 pub(crate) struct Rendering(Option<Kinds>);
@@ -24,6 +32,7 @@ impl Kinds {
             })
             .ok()?;
         upnp.vouch(config.renderers_vouched_for());
+        upnp.teach(config.formats_learnt_for().clone());
         for address in config.renderers_at() {
             if let Err(error) = upnp.locate(address.clone()) {
                 tracing::warn!(%error, %address, "a renderer given by address could not be held");
@@ -34,6 +43,7 @@ impl Kinds {
                 tracing::warn!(%error, "Cast receivers on the network cannot be played to");
             })
             .ok()?;
+        cast.teach(config.formats_learnt_for().clone());
         for address in config.cast_at() {
             if let Err(error) = cast.locate(address.clone()) {
                 tracing::warn!(%error, %address, "a Cast receiver given by address could not be held");
@@ -77,6 +87,40 @@ impl Kinds {
             }
             Err(_) => tracing::warn!("reaching Cast receivers by address panicked"),
         }
+    }
+
+    fn learn(&self, wanted: &NodeName) -> Result<Heard> {
+        if let Some(sink) = self
+            .upnp
+            .sinks()
+            .into_iter()
+            .find(|sink| sink.is_named(wanted))
+        {
+            let learning = self
+                .upnp
+                .learn(sink.id)
+                .map_err(|source| Error::RendererUnlearnt {
+                    sink: sink.name.clone(),
+                    source: Box::new(source),
+                })?;
+            return Ok(Heard { sink, learning });
+        }
+        if let Some(sink) = self
+            .cast
+            .sinks()
+            .into_iter()
+            .find(|sink| sink.is_named(wanted))
+        {
+            let learning = self
+                .cast
+                .learn(sink.id)
+                .map_err(|source| Error::ReceiverUnlearnt {
+                    sink: sink.name.clone(),
+                    source: Box::new(source),
+                })?;
+            return Ok(Heard { sink, learning });
+        }
+        Err(Error::NotANetworkDevice(wanted.clone()))
     }
 
     #[cfg(feature = "ui")]
@@ -143,6 +187,13 @@ impl Rendering {
             .map(|kinds| Arc::new(Switch(kinds.clone())) as Arc<dyn resonate_ui::Renderers>)
     }
 
+    pub(crate) fn learn(&self, wanted: &NodeName) -> Result<Heard> {
+        self.0
+            .as_ref()
+            .ok_or_else(|| Error::NotANetworkDevice(wanted.clone()))?
+            .learn(wanted)
+    }
+
     pub(crate) fn sinks(&self) -> Vec<SinkInfo> {
         self.0.as_ref().map_or_else(Vec::new, |kinds| {
             let mut sinks = kinds.upnp.sinks();
@@ -175,6 +226,8 @@ pub(crate) fn names_a_renderer(sink: &NodeName) -> bool {
 use std::collections::BTreeSet;
 
 #[cfg(feature = "ui")]
+use resonate_engine::{Learnt, Unlearnt};
+#[cfg(feature = "ui")]
 use resonate_upnp::{Udn, Vouched};
 
 #[cfg(feature = "ui")]
@@ -198,5 +251,43 @@ impl resonate_ui::Renderers for Switch {
         let vouched = Vouched::flac_at_any_rate(renderers.iter().filter_map(Udn::from_node));
         let upnp = Arc::clone(&self.0.upnp);
         thread::spawn(move || upnp.vouch(vouched));
+    }
+
+    fn learn(&self, sink: &NodeName) -> std::result::Result<Learning, Unlearnt> {
+        self.0
+            .learn(sink)
+            .map(|heard| heard.learning)
+            .map_err(|error| {
+                tracing::warn!(%error, %sink, "what a device plays was not learnt");
+                unlearnt(&error)
+            })
+    }
+
+    fn teach(&self, learnt: &Learnt) {
+        let upnp = Arc::clone(&self.0.upnp);
+        let cast = Arc::clone(&self.0.cast);
+        let learnt = learnt.clone();
+        thread::spawn(move || {
+            upnp.teach(learnt.clone());
+            cast.teach(learnt);
+        });
+    }
+}
+
+#[cfg(feature = "ui")]
+fn unlearnt(error: &Error) -> Unlearnt {
+    match error {
+        Error::NotANetworkDevice(_) => Unlearnt::NotListed,
+        Error::RendererUnlearnt { source, .. }
+            if matches!(**source, resonate_upnp::Error::InUse(_)) =>
+        {
+            Unlearnt::InUse
+        }
+        Error::ReceiverUnlearnt { source, .. }
+            if matches!(**source, resonate_cast::Error::InUse(_)) =>
+        {
+            Unlearnt::InUse
+        }
+        _ => Unlearnt::Unreached,
     }
 }

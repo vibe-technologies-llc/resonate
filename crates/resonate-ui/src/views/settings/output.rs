@@ -3,11 +3,13 @@ use std::{collections::BTreeSet, time::Duration};
 use gpui::{ClickEvent, Context, Div, SharedString, Stateful, div, prelude::*, px};
 use resonate_core::{SampleFormat, SampleRate, StreamSpec};
 use resonate_engine::{
-    BluetoothWake, Command, HardwareVolume, NodeName, Plugged, SinkId, SinkInfo,
+    BluetoothWake, Command, HardwareVolume, Learning, Learnt, NodeName, Plays, Plugged, SinkId,
+    SinkInfo, Trial, TrialVerdict, Unlearnt, Unplayed,
 };
 
 use crate::{
     ResonateApp, Setting, format,
+    icons::Icon,
     system::sound_system,
     theme,
     views::{
@@ -797,6 +799,252 @@ fn described(name: impl IntoElement) -> Div {
         .min_w(px(0.0))
         .gap_1()
         .child(name)
+}
+
+impl RootView {
+    pub(super) fn learnt_formats_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        let learnt = cx.global::<ResonateApp>().formats_learnt_for.clone();
+        let listed: Vec<(NodeName, String)> = self
+            .player
+            .read(cx)
+            .sinks()
+            .iter()
+            .filter(|sink| sink.name.names_a_network_device())
+            .map(|sink| (sink.name.clone(), sink.description.clone()))
+            .collect();
+        let away: Vec<NodeName> = learnt
+            .iter()
+            .map(|(name, _)| name)
+            .filter(|name| listed.iter().all(|(listed, _)| listed != *name))
+            .cloned()
+            .collect();
+        let none_listed = listed.is_empty();
+
+        let mut body = kit::rows();
+        for (name, description) in listed {
+            body = body.child(self.learning_row(name, description, true, cx));
+        }
+        for name in away {
+            body = body.child(self.learning_row(name.clone(), name.as_str().to_owned(), false, cx));
+        }
+        body.when(none_listed && learnt.is_empty(), |body| {
+            body.child(note(words::settings_output::no_devices_to_learn()))
+        })
+        .note(words::settings_output::learnt_formats_note())
+    }
+
+    fn learning_row(
+        &self,
+        name: NodeName,
+        description: String,
+        listed: bool,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let plays = cx
+            .global::<ResonateApp>()
+            .formats_learnt_for
+            .of([&name])
+            .cloned();
+        let trying = self.settings_shown.trying.as_ref().map(|(name, _)| name);
+        let this_tried = trying == Some(&name);
+        let heard = self
+            .settings_shown
+            .heard
+            .as_ref()
+            .filter(|(heard, _)| *heard == name)
+            .map(|(_, heard)| heard.clone());
+        let under = if listed {
+            name.as_str().to_owned()
+        } else {
+            words::settings_output::not_on_the_network().to_owned()
+        };
+        let learn_id = format!("learn-what-it-plays-{}", name.as_str());
+        let forget_id = format!("forget-what-was-learnt-{}", name.as_str());
+
+        let learn = if trying.is_some() || !listed {
+            kit::button_when(
+                kit::Press::Greyed,
+                learn_id,
+                Some(Icon::Analysis),
+                if this_tried {
+                    words::settings_output::trying_it()
+                } else {
+                    words::settings_output::learn_what_it_plays()
+                },
+                words::settings_output::learn_what_it_plays(),
+                kit::Tone::Outlined,
+            )
+        } else {
+            let asked = name.clone();
+            self.in_the_ring_at(
+                learn_id.clone(),
+                kit::button(
+                    learn_id,
+                    Some(Icon::Analysis),
+                    words::settings_output::learn_what_it_plays(),
+                    words::settings_output::learn_what_it_plays(),
+                    kit::Tone::Outlined,
+                ),
+                move |this, _, cx| this.learn_what_it_plays(asked.clone(), cx),
+                cx,
+            )
+        };
+        let forget = plays.is_some().then(|| {
+            let forgotten = name.clone();
+            self.in_the_ring_at(
+                forget_id.clone(),
+                kit::button(
+                    forget_id,
+                    Some(Icon::Discard),
+                    words::settings_output::forget_what_was_learnt(),
+                    words::settings_output::forget_what_was_learnt(),
+                    kit::Tone::Outlined,
+                ),
+                move |this, _, cx| this.forget_what_was_learnt(forgotten.clone(), cx),
+                cx,
+            )
+        });
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                described(kit::choice_name(description, true)).child(kit::details([
+                    kit::detail(under),
+                    kit::detail(plays_said(plays.as_ref())),
+                ])),
+            )
+            .child(kit::action_row().child(learn).children(forget))
+            .when_some(heard, |row, heard| row.child(note(heard_said(&heard))))
+    }
+
+    pub(crate) fn learn_what_it_plays(&mut self, device: NodeName, cx: &mut Context<Self>) {
+        let Some(renderers) = cx.global::<ResonateApp>().renderers.clone() else {
+            return;
+        };
+        let asked = device.clone();
+        let tried = cx.spawn(async move |this, cx| {
+            let heard = cx
+                .background_executor()
+                .spawn({
+                    let asked = asked.clone();
+                    async move { renderers.learn(&asked) }
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| this.heard_what_it_plays(asked, heard, cx));
+        });
+        self.settings_shown.heard = None;
+        self.settings_shown.trying = Some((device, tried));
+        cx.notify();
+    }
+
+    fn heard_what_it_plays(
+        &mut self,
+        device: NodeName,
+        heard: Result<Learning, Unlearnt>,
+        cx: &mut Context<Self>,
+    ) {
+        self.settings_shown.trying = None;
+        if let Ok(learning) = &heard {
+            let plays = learning.plays();
+            cx.update_global::<ResonateApp, _>(|global, _| {
+                global
+                    .formats_learnt_for
+                    .insert(device.clone(), plays.clone());
+            });
+            self.store(
+                &Setting::FormatsLearntFor {
+                    sink: device.clone(),
+                    plays: Some(plays),
+                },
+                cx,
+            );
+        }
+        self.settings_shown.heard = Some((device, heard));
+        cx.notify();
+    }
+
+    pub(crate) fn forget_what_was_learnt(&mut self, device: NodeName, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.formats_learnt_for.remove(&device);
+        });
+        self.teach_now(cx);
+        self.store(
+            &Setting::FormatsLearntFor {
+                sink: device,
+                plays: None,
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    pub(crate) fn forget_everything_learnt(&mut self, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.formats_learnt_for = Learnt::default();
+        });
+        self.settings_shown.heard = None;
+        self.teach_now(cx);
+        cx.notify();
+    }
+
+    fn teach_now(&self, cx: &Context<Self>) {
+        let app = cx.global::<ResonateApp>();
+        if let Some(renderers) = app.renderers.clone() {
+            renderers.teach(&app.formats_learnt_for);
+        }
+    }
+}
+
+fn plays_said(plays: Option<&Plays>) -> String {
+    let Some(plays) = plays else {
+        return words::settings_output::not_tried_yet().to_owned();
+    };
+    if plays.is_empty() {
+        return words::settings_output::played_none_of_them().to_owned();
+    }
+    words::settings_output::plays(plays.trials().map(trial_named).collect::<Vec<_>>().join(OR))
+}
+
+fn heard_said(heard: &Result<Learning, Unlearnt>) -> String {
+    match heard {
+        Ok(learning) => learning
+            .verdicts()
+            .iter()
+            .map(|(trial, verdict)| {
+                words::settings_output::heard(trial_named(*trial), verdict_named(*verdict))
+            })
+            .collect::<Vec<_>>()
+            .join(OR),
+        Err(Unlearnt::NotListed) => words::settings_output::unlearnt_not_listed().to_owned(),
+        Err(Unlearnt::InUse) => words::settings_output::unlearnt_in_use().to_owned(),
+        Err(Unlearnt::Unreached) => words::settings_output::unlearnt_unreached().to_owned(),
+    }
+}
+
+fn trial_named(trial: Trial) -> &'static str {
+    match trial {
+        Trial::FlacAt192kHz => words::settings_output::flac_at_192(),
+        Trial::FlacAt176kHz => words::settings_output::flac_at_176(),
+        Trial::SixChannels => words::settings_output::six_channels(),
+        Trial::EightChannels => words::settings_output::eight_channels(),
+    }
+}
+
+fn verdict_named(verdict: TrialVerdict) -> &'static str {
+    match verdict {
+        TrialVerdict::Played => words::settings_output::played(),
+        TrialVerdict::Untried => words::settings_output::untried(),
+        TrialVerdict::Unplayed(Unplayed::Refused) => words::settings_output::refused(),
+        TrialVerdict::Unplayed(Unplayed::NeverFetched) => words::settings_output::never_fetched(),
+        TrialVerdict::Unplayed(Unplayed::StoppedFetching) => {
+            words::settings_output::stopped_fetching()
+        }
+        TrialVerdict::Unplayed(Unplayed::Errored) => words::settings_output::errored(),
+        TrialVerdict::Unplayed(Unplayed::NotPlaying) => words::settings_output::not_playing(),
+        TrialVerdict::Unplayed(Unplayed::ClockStill) => words::settings_output::clock_still(),
+    }
 }
 
 #[cfg(test)]

@@ -74,9 +74,22 @@ impl Lanes {
         lane.store(mine, Ordering::Release);
         Hold { lane, mine }
     }
+
+    pub(crate) fn idle(&self, at: SocketAddr) -> Option<Hold> {
+        let lane = Arc::clone(
+            self.lanes
+                .lock()
+                .entry(at)
+                .or_insert_with(|| Arc::new(AtomicU64::new(NOBODY))),
+        );
+        let mine = self.minted.fetch_add(1, Ordering::Relaxed);
+        lane.compare_exchange(NOBODY, mine, Ordering::AcqRel, Ordering::Acquire)
+            .ok()?;
+        Some(Hold { lane, mine })
+    }
 }
 
-struct Hold {
+pub(crate) struct Hold {
     lane: Lane,
     mine: u64,
 }
@@ -86,11 +99,11 @@ impl Hold {
         self.lane.load(Ordering::Acquire) == self.mine
     }
 
-    fn steer<T>(&self, call: impl FnOnce() -> T) -> Option<T> {
+    pub(crate) fn steer<T>(&self, call: impl FnOnce() -> T) -> Option<T> {
         self.is_mine().then(call)
     }
 
-    fn let_go<T>(&self, call: impl FnOnce() -> T) -> Option<T> {
+    pub(crate) fn let_go<T>(&self, call: impl FnOnce() -> T) -> Option<T> {
         self.lane
             .compare_exchange(self.mine, NOBODY, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
@@ -106,7 +119,7 @@ pub(crate) fn open(
     source: Box<dyn AudioSource>,
 ) -> SinkResult<SinkStream> {
     let spec = request.spec;
-    let carriage = Device::carriage();
+    let carriage = device.carriage();
     if !carriage.carries(spec) {
         return Err(Error::FormatRefused(spec).into());
     }
@@ -175,29 +188,31 @@ pub(crate) fn open(
     .holding(Downstream::Seconds))
 }
 
-struct Offered {
-    address: String,
-    kind: String,
-    title: String,
+pub(crate) struct Offered {
+    pub(crate) address: String,
+    pub(crate) kind: String,
+    pub(crate) title: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Played {
-    transport: String,
-    session: u64,
+pub(crate) struct Played {
+    pub(crate) transport: String,
+    pub(crate) session: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Idle {
+pub(crate) enum Idle {
     Finished,
+    Errored,
     Ended,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Entry {
-    session: u64,
-    idle: Option<Idle>,
-    heard: Option<Duration>,
+pub(crate) struct Entry {
+    pub(crate) session: u64,
+    pub(crate) playing: bool,
+    pub(crate) idle: Option<Idle>,
+    pub(crate) heard: Option<Duration>,
 }
 
 enum Reading {
@@ -356,41 +371,7 @@ impl Watch {
         if !self.hold.is_mine() {
             return Ok(false);
         }
-        self.link.tell(
-            Namespace::Connection,
-            &session.transport,
-            Json::object([
-                ("type", Json::text("CONNECT")),
-                ("origin", Json::Object(Vec::new())),
-            ]),
-        );
-        let loaded = self.link.ask(
-            Namespace::Media,
-            &session.transport,
-            Asked::Load,
-            Json::object([
-                (
-                    "media",
-                    Json::object([
-                        ("contentId", Json::text(self.offered.address.as_str())),
-                        ("contentType", Json::text(self.offered.kind.as_str())),
-                        ("streamType", Json::text("LIVE")),
-                        (
-                            "metadata",
-                            Json::object([
-                                ("metadataType", MUSIC_TRACK.into()),
-                                ("title", Json::text(self.offered.title.as_str())),
-                            ]),
-                        ),
-                    ]),
-                ),
-                ("autoplay", true.into()),
-            ]),
-            LOADED_WITHIN,
-        )?;
-        let entry = entries_in(&loaded)
-            .and_then(|entries| entries.first().copied())
-            .ok_or(Error::Unreadable { asked: Asked::Load })?;
+        let entry = loaded(&self.link, &session.transport, &self.offered)?;
         *played = Some(Played {
             transport: session.transport,
             session: entry.session,
@@ -399,13 +380,7 @@ impl Watch {
     }
 
     fn media(&self, played: &Played, asked: Asked) -> Result<Json> {
-        self.link.ask(
-            Namespace::Media,
-            &played.transport,
-            asked,
-            Json::object([("mediaSessionId", Json::Number(played.session as f64))]),
-            ANSWERED_WITHIN,
-        )
+        media(&self.link, played, asked)
     }
 
     fn read_told(&self, told: &Told, played: &Played, drain_asked: bool) -> Option<Reading> {
@@ -441,7 +416,7 @@ impl Watch {
         }
         match entry.idle {
             Some(Idle::Finished) if drain_asked => Some(Reading::Drained),
-            Some(Idle::Finished | Idle::Ended) => Some(Reading::Gone),
+            Some(Idle::Finished | Idle::Errored | Idle::Ended) => Some(Reading::Gone),
             None => {
                 let drained = drain_asked
                     && entry
@@ -492,7 +467,55 @@ impl Watch {
     }
 }
 
-fn entries_in(said: &Json) -> Option<Vec<Entry>> {
+pub(crate) fn loaded(link: &Link, transport: &str, offered: &Offered) -> Result<Entry> {
+    link.tell(
+        Namespace::Connection,
+        transport,
+        Json::object([
+            ("type", Json::text("CONNECT")),
+            ("origin", Json::Object(Vec::new())),
+        ]),
+    );
+    let loaded = link.ask(
+        Namespace::Media,
+        transport,
+        Asked::Load,
+        Json::object([
+            (
+                "media",
+                Json::object([
+                    ("contentId", Json::text(offered.address.as_str())),
+                    ("contentType", Json::text(offered.kind.as_str())),
+                    ("streamType", Json::text("LIVE")),
+                    (
+                        "metadata",
+                        Json::object([
+                            ("metadataType", MUSIC_TRACK.into()),
+                            ("title", Json::text(offered.title.as_str())),
+                        ]),
+                    ),
+                ]),
+            ),
+            ("autoplay", true.into()),
+        ]),
+        LOADED_WITHIN,
+    )?;
+    entries_in(&loaded)
+        .and_then(|entries| entries.first().copied())
+        .ok_or(Error::Unreadable { asked: Asked::Load })
+}
+
+pub(crate) fn media(link: &Link, played: &Played, asked: Asked) -> Result<Json> {
+    link.ask(
+        Namespace::Media,
+        &played.transport,
+        asked,
+        Json::object([("mediaSessionId", Json::Number(played.session as f64))]),
+        ANSWERED_WITHIN,
+    )
+}
+
+pub(crate) fn entries_in(said: &Json) -> Option<Vec<Entry>> {
     if said.kind() != Some("MEDIA_STATUS") {
         return None;
     }
@@ -505,19 +528,21 @@ fn entries_in(said: &Json) -> Option<Vec<Entry>> {
                 .get("mediaSessionId")
                 .and_then(Json::as_number)
                 .filter(|session| *session >= 0.0)? as u64;
-            let idle =
-                (entry.get("playerState").and_then(Json::as_str) == Some("IDLE")).then(|| {
-                    match entry.get("idleReason").and_then(Json::as_str) {
-                        Some("FINISHED") => Idle::Finished,
-                        _ => Idle::Ended,
-                    }
-                });
+            let state = entry.get("playerState").and_then(Json::as_str);
+            let idle = (state == Some("IDLE")).then(|| {
+                match entry.get("idleReason").and_then(Json::as_str) {
+                    Some("FINISHED") => Idle::Finished,
+                    Some("ERROR") => Idle::Errored,
+                    _ => Idle::Ended,
+                }
+            });
             let heard = entry
                 .get("currentTime")
                 .and_then(Json::as_number)
                 .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok());
             Some(Entry {
                 session,
+                playing: state == Some("PLAYING"),
                 idle,
                 heard,
             })
@@ -585,6 +610,7 @@ mod tests {
                 {"mediaSessionId":2,"playerState":"PLAYING","currentTime":12.5},
                 {"mediaSessionId":3,"playerState":"IDLE","idleReason":"FINISHED"},
                 {"mediaSessionId":4,"playerState":"IDLE","idleReason":"ERROR"},
+                {"mediaSessionId":5,"playerState":"IDLE","idleReason":"CANCELLED"},
                 {"playerState":"PLAYING"}]}"#,
         )
         .expect("JSON");
@@ -594,16 +620,25 @@ mod tests {
             [
                 Entry {
                     session: 2,
+                    playing: true,
                     idle: None,
                     heard: Some(Duration::from_millis(12_500))
                 },
                 Entry {
                     session: 3,
+                    playing: false,
                     idle: Some(Idle::Finished),
                     heard: None
                 },
                 Entry {
                     session: 4,
+                    playing: false,
+                    idle: Some(Idle::Errored),
+                    heard: None
+                },
+                Entry {
+                    session: 5,
+                    playing: false,
                     idle: Some(Idle::Ended),
                     heard: None
                 },
@@ -627,6 +662,7 @@ mod tests {
             entries_in(&said).expect("a media status"),
             [Entry {
                 session: 2,
+                playing: true,
                 idle: None,
                 heard: None
             }]

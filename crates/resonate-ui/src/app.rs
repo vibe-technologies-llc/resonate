@@ -20,9 +20,9 @@ use resonate_core::{
     ScrollbarMode, SpeakerAngle, SpeakerElevation, Spectral, TrackId,
 };
 use resonate_engine::{
-    ArtRead, BitRate, Command, CommandKind, Event, MediaInfo, NodeName, Outcome, OutputSettings,
-    PlaybackState, Player, PlayerState, QueueRows, Queued, SinkId, SinkInfo, StreamDigest, Tapped,
-    TrackState, Zones,
+    ArtRead, BitRate, Command, CommandKind, Event, Learnt, MediaInfo, NodeName, Outcome,
+    OutputSettings, PlaybackState, Player, PlayerState, QueueRows, Queued, SinkId, SinkInfo,
+    StreamDigest, Tapped, TrackState, Zones,
 };
 use resonate_eq::Corrected;
 use resonate_library::{
@@ -222,6 +222,7 @@ pub struct ResonateApp {
     pub by_sound: Arc<AtomicBool>,
     pub lyrics_by_the_locale: Arc<AtomicBool>,
     pub flac_above_96k_for: BTreeSet<NodeName>,
+    pub formats_learnt_for: Learnt,
     pub convolution: Option<PathBuf>,
     pub speaker_angle: SpeakerAngle,
     pub speaker_elevation: SpeakerElevation,
@@ -1247,6 +1248,7 @@ pub fn run(
             by_sound: Arc::clone(&stored.by_sound),
             lyrics_by_the_locale: Arc::clone(&stored.lyrics_by_the_locale),
             flac_above_96k_for: stored.flac_above_96k_for.clone(),
+            formats_learnt_for: stored.formats_learnt_for.clone(),
             convolution: stored.convolution.clone(),
             speaker_angle: stored.speaker_angle,
             speaker_elevation: stored.speaker_elevation,

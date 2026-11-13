@@ -221,15 +221,15 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [S] Nothing learns which renderers decode 176.4 and 192 kHz FLAC, since the protocol info does not say
-  and a renderer that cannot play a stream gives no answer a try could read, so the default stays 96 kHz
-  (the fake renderer's tests are all the proof the vouched rates have, no streamer having confirmed any);
-  one taking WAVE is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz. Channels beyond stereo are
-  offered only where the protocol info states `channels=N` (a renderer saying nothing is folded down),
+- [S] The phones cannot learn what a renderer or receiver plays: `sinks --learn` and the window's
+  *Learn what it plays* are the desktop's, and a phone offers a UPnP renderer what its protocol info
+  states (FLAC to 96 kHz where it states no rate) and a Cast receiver stereo FLAC to 96 kHz (`upnp.md`,
+  `cast.md`)
+- [S] Learning tries 176.4 and 192 kHz stereo and 5.1 and 7.1 at 48 kHz alone: 352.8 kHz and
+  surround above 48 kHz are offered only where the protocol info states them, and a window already
+  running hears what `sinks --learn` wrote only from its next start (`binary.md`)
+- [S] A renderer taking WAVE and not FLAC is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz,
   and handing the untouched file over does not fit the sink seam (`upnp.md`)
-- [S] A Google Cast receiver is offered stereo FLAC up to 96 kHz alone, the Default Media Receiver's
-  published support: Cast asks no device what it decodes, so a TV or soundbar with Cast built in
-  has surround folded down to stereo and anything above 96 kHz resampled (`cast.md`)
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio
   are Apple's own, with no published specification to build against
 

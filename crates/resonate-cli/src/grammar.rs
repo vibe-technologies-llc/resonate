@@ -1200,6 +1200,13 @@ pub enum Sub {
             help = words::grammar::sub_sinks_cast_at()
         )]
         cast_at: Vec<String>,
+
+        #[arg(
+            long,
+            value_name = "SINK",
+            help = words::grammar::sub_sinks_learn()
+        )]
+        learn: Option<String>,
     },
 
     #[command(about = words::grammar::sub_scan())]

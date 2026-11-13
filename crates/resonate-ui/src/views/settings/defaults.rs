@@ -61,6 +61,7 @@ pub(crate) struct Standing {
     pub(crate) enrich_on_metered: bool,
     pub(crate) stall_downloads_on_metered: bool,
     pub(crate) flac_renderers_named: bool,
+    pub(crate) formats_learnt: bool,
     pub(crate) studies: bool,
     pub(crate) by_sound: bool,
     pub(crate) lyrics: bool,
@@ -119,6 +120,7 @@ impl Standing {
             enrich_on_metered: ENRICH_ON_METERED,
             stall_downloads_on_metered: STALL_DOWNLOADS_ON_METERED,
             flac_renderers_named: false,
+            formats_learnt: false,
             studies: STUDY,
             by_sound: BY_SOUND,
             lyrics: FETCH_LYRICS,
@@ -204,6 +206,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
                 || standing.stall_downloads_on_metered != STALL_DOWNLOADS_ON_METERED
         }
         Group::FlacRenderers => standing.flac_renderers_named,
+        Group::LearntFormats => standing.formats_learnt,
         Group::Studies => standing.studies != STUDY || standing.by_sound != BY_SOUND,
         Group::Lyrics => {
             standing.lyrics != FETCH_LYRICS || standing.lyrics_by_the_locale != LYRICS_BY_THE_LOCALE
@@ -533,6 +536,13 @@ mod tests {
             Group::FlacRenderers,
             &Standing {
                 flac_renderers_named: true,
+                ..built.clone()
+            }
+        ));
+        assert!(differs(
+            Group::LearntFormats,
+            &Standing {
+                formats_learnt: true,
                 ..built.clone()
             }
         ));

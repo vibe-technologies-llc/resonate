@@ -241,6 +241,7 @@ pub(crate) enum Group {
     Dop,
     Bluetooth,
     FlacRenderers,
+    LearntFormats,
     Resampler,
     Dither,
     NoiseShaping,
@@ -317,7 +318,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 81] = [
+    pub(crate) const ALL: [Self; 82] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -326,6 +327,7 @@ impl Group {
         Self::Dop,
         Self::Bluetooth,
         Self::FlacRenderers,
+        Self::LearntFormats,
         Self::Resampler,
         Self::Dither,
         Self::NoiseShaping,
@@ -515,6 +517,14 @@ impl Group {
                 hint: words::settings_find::flac_renderers_hint(),
                 also_called: words::settings_find::upnp_dlna_renderer_streamer_network_flac(),
                 keys: &[ConfigKey::FlacAbove96kFor],
+            },
+            Self::LearntFormats => Described {
+                category: Category::Output,
+                page: None,
+                title: words::settings_find::what_renderers_play(),
+                hint: words::settings_find::learnt_formats_hint(),
+                also_called: words::settings_find::upnp_cast_chromecast_learn_try_probe(),
+                keys: &[ConfigKey::FormatsLearntFor],
             },
             Self::Resampler => Described {
                 category: Category::Processing,
@@ -1374,6 +1384,8 @@ mod tests {
             ]
         );
         assert_eq!(Group::FlacRenderers.keys(), &[ConfigKey::FlacAbove96kFor]);
+        assert_eq!(Group::LearntFormats.category(), Category::Output);
+        assert_eq!(Group::LearntFormats.keys(), &[ConfigKey::FormatsLearntFor]);
     }
 
     #[test]

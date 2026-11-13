@@ -37,6 +37,7 @@ pub struct Feed {
     draining: AtomicBool,
     closed: AtomicBool,
     connections: AtomicU64,
+    pouring: AtomicU64,
     served: AtomicU64,
     ended_at: AtomicU64,
 }
@@ -57,6 +58,7 @@ impl Feed {
             draining: AtomicBool::new(false),
             closed: AtomicBool::new(false),
             connections: AtomicU64::new(0),
+            pouring: AtomicU64::new(0),
             served: AtomicU64::new(0),
             ended_at: AtomicU64::new(NOT_ENDED),
         }
@@ -81,6 +83,18 @@ impl Feed {
     pub fn frames_of(&self, heard: Duration) -> u64 {
         let frames = heard.as_nanos() * u128::from(self.spec.rate.hz()) / NANOS_A_SECOND;
         u64::try_from(frames).unwrap_or(u64::MAX)
+    }
+
+    pub fn fetches(&self) -> u64 {
+        self.connections.load(Ordering::Acquire)
+    }
+
+    pub fn is_fetched(&self) -> bool {
+        self.pouring.load(Ordering::Acquire) > 0
+    }
+
+    pub fn served(&self) -> u64 {
+        self.served.load(Ordering::Acquire)
     }
 
     pub fn heard_through(&self, heard: Duration) {
@@ -119,7 +133,9 @@ impl Feed {
         };
         self.served.store(0, Ordering::Release);
         self.ended_at.store(NOT_ENDED, Ordering::Release);
+        self.pouring.fetch_add(1, Ordering::AcqRel);
         let poured = self.pour(stream, source.as_mut(), &mut wire, mine);
+        self.pouring.fetch_sub(1, Ordering::AcqRel);
         *self.source.lock() = Some(source);
         poured
     }
