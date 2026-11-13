@@ -34,6 +34,32 @@ public func fetchingHeading(downloading: UInt32, waiting: UInt32) -> String {
     return ([said("sync.fetching")] + counts).joined(separator: " · ")
 }
 
+public func gigabytes(_ bytes: UInt64) -> String {
+    String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), Double(bytes) / 1_000_000_000)
+}
+
+public func musicbrainzCopyLine(_ copy: MusicbrainzCopy?, keeping: Bool) -> String {
+    let dump = copy?.dump
+    if !keeping && dump == nil { return said("sync.musicbrainz.off") }
+    func held(_ dump: String) -> String {
+        let size = gigabytes(copy?.bytes ?? 0)
+        guard let packet = copy?.amendedTo else { return said("sync.musicbrainz.held", dump, size) }
+        return said("sync.musicbrainz.followed", dump, size, String(packet))
+    }
+    switch copy?.standing {
+    case .receiving?:
+        return said("sync.musicbrainz.receiving", gigabytes(copy?.received ?? 0), gigabytes(copy?.of ?? 0))
+    case .noRoom?:
+        return said("sync.musicbrainz.no-room")
+    case .waitingForTransfers?:
+        return dump.map(held) ?? said("sync.musicbrainz.waiting")
+    case .noDeviceHoldsOne?:
+        return said("sync.musicbrainz.none-held")
+    case .looking?, .off?, .held?, nil:
+        return dump.map(held) ?? said("sync.musicbrainz.looking")
+    }
+}
+
 public struct ContinuedProgress: Equatable {
     public var done: Int64 = 0
     public var total: Int64 = 0

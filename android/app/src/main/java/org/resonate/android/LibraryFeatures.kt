@@ -62,6 +62,7 @@ import org.resonate.android.nativecore.MissingSongs
 import org.resonate.android.nativecore.IdenticalSongs
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.MusicPlaylist
+import org.resonate.android.nativecore.MusicbrainzCopy
 import org.resonate.android.nativecore.ReceivedSong
 import org.resonate.android.nativecore.ScrobbleAccount
 import org.resonate.android.nativecore.ScrobbleService
@@ -284,6 +285,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private var visualization: Job? = null
     val syncConfig = MutableStateFlow<SyncConfig?>(null)
     val syncStatus = MutableStateFlow<SyncStatus?>(null)
+    val musicbrainzCopy = MutableStateFlow<MusicbrainzCopy?>(null)
     val syncHandoffs = MutableStateFlow<List<HandedOff>>(emptyList())
     val syncFolder = MutableStateFlow(settings.getString("sync-folder", null))
     val syncNotice = MutableStateFlow<String?>(null)
@@ -456,6 +458,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     control = SyncControls.of(null),
                     stun = "",
                     certificate = "",
+                    musicbrainzCopy = false,
                 )
             }
         together.begin(native)
@@ -701,6 +704,14 @@ class LibraryFeatures(private val context: Context, private val library: Library
             native.syncKeepCertificate(read.bytes)
             val config = syncConfig.value ?: return@work
             saveSync(config.copy(certificate = read.name))
+        }
+    }
+
+    fun removeMusicbrainzCopy() {
+        work { native ->
+            withContext(Dispatchers.IO) { native.removeMusicbrainzCopy() }
+            musicbrainzCopy.value = native.musicbrainzCopy()
+            library.notice(R.string.sync_musicbrainz_copy_removed)
         }
     }
 
@@ -1014,6 +1025,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     val polledAt = SystemClock.elapsedRealtime()
                     val status = native.syncStatus()
                     syncStatus.value = status
+                    musicbrainzCopy.value = native.musicbrainzCopy()
                     val waiting = native.syncReceived()
                     transferring.value = status.moving > 0u || waiting.isNotEmpty()
                     if (transferring.value) holdTransfers()

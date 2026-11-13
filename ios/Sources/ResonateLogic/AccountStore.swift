@@ -184,7 +184,8 @@ public struct AccountStore: Sendable {
             meteredAllowed: flag("sync-metered-allowed", false),
             control: SyncControls.of(plain.string(forKey: "sync-control")),
             stun: plain.string(forKey: "sync-stun") ?? "",
-            certificate: plain.string(forKey: "sync-certificate") ?? ""
+            certificate: plain.string(forKey: "sync-certificate") ?? "",
+            musicbrainzCopy: flag("sync-musicbrainz-copy", false)
         )
     }
 
@@ -203,5 +204,6 @@ public struct AccountStore: Sendable {
         plain.set(SyncControls.spelt(config.control), forKey: "sync-control")
         plain.set(config.stun, forKey: "sync-stun")
         plain.set(config.certificate, forKey: "sync-certificate")
+        plain.set(config.musicbrainzCopy, forKey: "sync-musicbrainz-copy")
     }
 }

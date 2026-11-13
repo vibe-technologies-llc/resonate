@@ -18,7 +18,7 @@ use crate::{
         PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody, QueryFolded, QueryNote,
         ShareNote, Stamp,
     },
-    consulted::KeptAnswer,
+    consulted::{ExportPart, KeptAnswer},
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
     remote::{Controlling, RemoteCommand, RemoteZone, Revisions, read_zones, write_zones},
     seal::SEALED_AT_LEAST,
@@ -286,6 +286,10 @@ pub enum ToPeer {
         after: u64,
         most: u32,
     },
+    Export {
+        part: ExportPart,
+        offset: u64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -333,6 +337,11 @@ pub enum FromPeer {
     KeptAnswer(KeptAnswer),
     KeptEnd {
         mark: u64,
+    },
+    Exporting {
+        dump: String,
+        sequence: u64,
+        size: u64,
     },
 }
 
@@ -1659,6 +1668,11 @@ impl ToPeer {
                 writer.number(*after);
                 writer.number(u64::from(*most));
             }
+            Self::Export { part, offset } => {
+                writer.byte(14);
+                writer.byte(part.coded());
+                writer.number(*offset);
+            }
         }
         writer.finish()
     }
@@ -1745,6 +1759,11 @@ impl ToPeer {
                 command: RemoteCommand::read(&mut reader)?,
                 queue_seen: Some(reader.number()?),
             },
+            14 => Self::Export {
+                part: ExportPart::of_code(reader.byte()?)
+                    .ok_or(Error::Malformed(Malformed::Number))?,
+                offset: reader.number()?,
+            },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -1829,6 +1848,16 @@ impl FromPeer {
                 writer.byte(18);
                 writer.number(*mark);
             }
+            Self::Exporting {
+                dump,
+                sequence,
+                size,
+            } => {
+                writer.byte(20);
+                writer.text(dump);
+                writer.number(*sequence);
+                writer.number(*size);
+            }
         }
         writer.finish()
     }
@@ -1897,6 +1926,11 @@ impl FromPeer {
             19 => Self::Zones {
                 zones: read_zones(&mut reader, Revisions::Carried)?,
                 revisions: Revisions::Carried,
+            },
+            20 => Self::Exporting {
+                dump: reader.text()?,
+                sequence: reader.number()?,
+                size: reader.number()?,
             },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
@@ -2739,6 +2773,45 @@ mod tests {
                 answer
             );
         }
+    }
+
+    #[test]
+    fn a_copy_of_musicbrainz_asked_and_offered_reads_back_and_an_unknown_part_is_refused() {
+        let asked = [
+            ToPeer::Export {
+                part: ExportPart::Copy,
+                offset: 0,
+            },
+            ToPeer::Export {
+                part: ExportPart::Amendments,
+                offset: 1 << 33,
+            },
+        ];
+        let offered = FromPeer::Exporting {
+            dump: "20261111-002335".into(),
+            sequence: 196_412,
+            size: 11_000_000_000,
+        };
+        let mut unknown = asked[0].encoded();
+        unknown[1] = 2;
+        let seeded = include_bytes!("../../../fuzz/seeds/sync/export");
+        let seeded_offer = include_bytes!("../../../fuzz/seeds/sync/exporting");
+
+        for ask in &asked {
+            assert_eq!(&ToPeer::decoded(&ask.encoded()).expect("decoded"), ask);
+        }
+        assert_eq!(
+            FromPeer::decoded(&offered.encoded()).expect("decoded"),
+            offered
+        );
+        assert_eq!(asked[0].encoded()[0], 14);
+        assert_eq!(offered.encoded()[0], 20);
+        assert!(ToPeer::decoded(&unknown).is_err());
+        assert_eq!(ToPeer::decoded(seeded).expect("the seed decodes"), asked[1]);
+        assert_eq!(
+            FromPeer::decoded(seeded_offer).expect("the seed decodes"),
+            offered
+        );
     }
 
     #[test]

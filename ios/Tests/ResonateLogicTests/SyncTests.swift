@@ -69,6 +69,42 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
     )
 }
 
+@Suite struct MusicbrainzCopyLineTests {
+    func copy(
+        _ standing: MusicbrainzCopyStanding,
+        dump: String? = nil,
+        amendedTo: UInt64? = nil,
+        received: UInt64 = 0,
+        of: UInt64 = 0
+    ) -> MusicbrainzCopy {
+        MusicbrainzCopy(
+            standing: standing,
+            dump: dump,
+            bytes: 10_300_000_000,
+            amendedTo: amendedTo,
+            amendedAt: nil,
+            received: received,
+            of: of
+        )
+    }
+
+    @Test func theCopySaysWhereItStandsAndWhatItHolds() {
+        #expect(musicbrainzCopyLine(copy(.off), keeping: false) == "Lookups ask a device that holds one")
+        #expect(
+            musicbrainzCopyLine(copy(.receiving, received: 2_500_000_000, of: 10_300_000_000), keeping: true)
+                == "Receiving 2.5 of 10.3 GB"
+        )
+        #expect(musicbrainzCopyLine(copy(.held, dump: "20261111-002335"), keeping: true) == "Export of 20261111-002335 · 10.3 GB")
+        #expect(
+            musicbrainzCopyLine(copy(.held, dump: "20261111-002335", amendedTo: 196_412), keeping: false)
+                == "Export of 20261111-002335 · 10.3 GB · changes to packet 196412"
+        )
+        #expect(musicbrainzCopyLine(copy(.noDeviceHoldsOne), keeping: true) == "None of your devices online holds a copy")
+        #expect(musicbrainzCopyLine(copy(.noRoom), keeping: true) == "Not enough room here: a copy takes about 12 GB")
+        #expect(musicbrainzCopyLine(copy(.waitingForTransfers), keeping: true) == "Waiting for Wi-Fi, or for mobile data to be allowed")
+    }
+}
+
 @Suite struct FetchingHeadingTests {
     @Test func theHeadingSaysHowManyAreDownloadingAndHowManyWait() {
         #expect(fetchingHeading(downloading: 0, waiting: 0) == "Fetching")

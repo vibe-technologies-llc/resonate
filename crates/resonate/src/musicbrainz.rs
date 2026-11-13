@@ -499,11 +499,14 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
         let built = thread::scope(|scope| {
             let telling = scope.spawn(|| {
                 let mut last = Phase::Waiting;
+                let mut written = 0;
                 while watched.phase() != Phase::Done && !watched.is_cancelled() {
                     thread::sleep(TOLD_EVERY);
                     let phase = watched.phase();
                     let (read, of) = watched.bytes();
-                    if phase != last || of > 0 {
+                    let documents = watched.documents();
+                    if phase != last || of > 0 || documents != written {
+                        written = documents;
                         tracing::info!(
                             doing = phase.label(),
                             read = gigabytes(read),
@@ -707,6 +710,20 @@ impl resonate_sync::Consultable for ConsultedHere {
         if taken > 0 {
             tracing::debug!(taken, "lookup answers another device kept were taken");
         }
+    }
+
+    fn export(&self, part: resonate_sync::ExportPart) -> Option<resonate_sync::OfferedExport> {
+        let part = match part {
+            resonate_sync::ExportPart::Copy => resonate_musicbrainz::CopyPart::TheCopy,
+            resonate_sync::ExportPart::Amendments => resonate_musicbrainz::CopyPart::ItsAmendments,
+        };
+        let offered = self.0.offered(part)?;
+        Some(resonate_sync::OfferedExport {
+            dump: offered.dump,
+            sequence: offered.sequence,
+            size: offered.size,
+            reader: Box::new(offered.file),
+        })
     }
 }
 

@@ -116,6 +116,7 @@ impl Asking {
     pub(crate) fn layered_by(self, layers: crate::sync::Layers) -> Self {
         let layered = resonate_musicbrainz::Layered::new()
             .keeping(layers.kept)
+            .mirrored(Some(layers.mirrored))
             .consulting(Some(layers.peers))
             .falling_back_on(Some(self.reference));
         Self {

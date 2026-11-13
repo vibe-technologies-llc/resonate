@@ -36,7 +36,11 @@ pub use crate::{
         Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody, QueryFolded,
         QueryNote, ShareNote, Stamp,
     },
-    consulted::{AskedToConsult, CONSULT_ANSWERED_WITHIN, Consultable, Consulting, KeptAnswer},
+    consulted::{
+        AskedForExport, AskedToConsult, CONSULT_ANSWERED_WITHIN, Consultable, Consulting,
+        ExportFetched, ExportHeld, ExportPart, ExportReceiving, KeptAnswer, OfferedExport,
+        ReadsExport,
+    },
     error::{CodeRefused, DeflateOp, Error, FileOp, Malformed, Result, StoreOp, StreamOp, TlsOp},
     key::{DEVICE_BYTES, Derived, DeviceId, PAIRING_LINK, SpaceId, SyncKey, Token},
     ledger::{Applied, Follow, Ledger, Looked, Me},
@@ -50,8 +54,8 @@ pub use crate::{
     },
     seal::{opened, sealed},
     service::{
-        AskedToControl, HOSTED_SERVER, SERVER_PORT, Server, Settings, Shown, Standing, Sync,
-        SyncDevice, Transfer, TransferState,
+        AskedToControl, ExportWanted, HOSTED_SERVER, SERVER_PORT, Server, Settings, Shown,
+        Standing, Sync, SyncDevice, Transfer, TransferState,
     },
     stun::{Reflector, STUN_PORT},
     web::{

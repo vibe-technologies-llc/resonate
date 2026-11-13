@@ -394,6 +394,7 @@ let interactionNotAllowed: Int32 = -25308
         #expect(read.server == "")
         #expect(read.stun == "" && read.certificate == "")
         #expect(!read.favourites && !read.playlists && !read.everything && !read.meteredAllowed)
+        #expect(!read.musicbrainzCopy)
     }
 
     @Test func syncWrittenIsReadBackWithItsKeyInTheKeychainAndTheRestInTheDefaults() throws {
@@ -409,7 +410,8 @@ let interactionNotAllowed: Int32 = -25308
             meteredAllowed: true,
             control: .transport,
             stun: "stun.example.org:3479",
-            certificate: "private-ca.pem"
+            certificate: "private-ca.pem",
+            musicbrainzCopy: true
         )
 
         try store.writeSync(config)

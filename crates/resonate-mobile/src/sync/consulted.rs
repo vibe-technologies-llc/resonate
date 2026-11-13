@@ -1,16 +1,19 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use parking_lot::Mutex;
-use resonate_musicbrainz::{Ask, Asking, Consultation, KEPT_FILE, Kept, KeptAnswer, Peers};
+use resonate_musicbrainz::{
+    Ask, Asking, Consultation, KEPT_FILE, Kept, KeptAnswer, Mirrored, Peers,
+};
 use resonate_sync::{Consultable, Consulting, DEVICE_BYTES, DeviceId};
 
 use super::Running;
 
-const FOLDER: &str = "musicbrainz";
+pub(super) const FOLDER: &str = "musicbrainz";
 const ASKED_OF_A_DEVICE_WITHIN: Duration = Duration::from_secs(15);
 
 pub(crate) struct Layers {
     pub(crate) kept: Option<Arc<Kept>>,
+    pub(crate) mirrored: Arc<Mirrored>,
     pub(crate) peers: Arc<dyn Peers>,
 }
 
@@ -27,8 +30,8 @@ pub(super) fn kept_under(folder: &Path) -> Option<Arc<Kept>> {
 pub(super) struct ConsultedHere(Consultation);
 
 impl ConsultedHere {
-    pub(super) fn of(kept: Option<Arc<Kept>>) -> Arc<dyn Consultable> {
-        Arc::new(Self(Consultation::new(None, kept)))
+    pub(super) fn of(mirrored: Arc<Mirrored>, kept: Option<Arc<Kept>>) -> Arc<dyn Consultable> {
+        Arc::new(Self(Consultation::new(Some(mirrored), kept)))
     }
 }
 
@@ -70,6 +73,20 @@ impl Consultable for ConsultedHere {
             })
             .collect();
         self.0.take_kept(&device.to_string(), &answers, mark);
+    }
+
+    fn export(&self, part: resonate_sync::ExportPart) -> Option<resonate_sync::OfferedExport> {
+        let part = match part {
+            resonate_sync::ExportPart::Copy => resonate_musicbrainz::CopyPart::TheCopy,
+            resonate_sync::ExportPart::Amendments => resonate_musicbrainz::CopyPart::ItsAmendments,
+        };
+        let offered = self.0.offered(part)?;
+        Some(resonate_sync::OfferedExport {
+            dump: offered.dump,
+            sequence: offered.sequence,
+            size: offered.size,
+            reader: Box::new(offered.file),
+        })
     }
 }
 

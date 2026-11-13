@@ -12,9 +12,9 @@ use resonate_library::{
     Wording,
 };
 use resonate_musicbrainz::{
-    AMENDED_FILE, Answer, Archives, Asked, Building, Consultation, Error, Keeping, Kept, Layer,
-    Layered, Mirror, Mirrored, Packet, TABLES_FILE, built_from, held_for_building, packet_read,
-    replicated, settled,
+    AMENDED_FILE, Answer, Archives, Asked, Building, Consultation, CopyPart, Error, Keeping, Kept,
+    Layer, Layered, Mirror, Mirrored, Offered, Packet, TABLES_FILE, built_from, held_for_building,
+    mirror_in, packet_read, received_amendments, received_copy, removed_copy, replicated, settled,
 };
 
 const RADIOHEAD: &str = "a74b1b7f-71a5-4011-9441-d0b5e4122711";
@@ -1028,4 +1028,85 @@ fn a_packet_naming_another_number_than_the_one_asked_for_is_refused() {
         first_form,
         Some(Error::PacketForm { sequence: 8 })
     ));
+}
+
+fn received(offered: Offered, staged: &Path) {
+    let mut file = offered.file;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut file, &mut bytes).expect("the offer reads");
+    assert_eq!(bytes.len() as u64, offered.size);
+    fs::write(staged, bytes).expect("the offer received");
+}
+
+#[test]
+fn a_copy_and_its_amendments_offered_by_one_device_land_whole_on_another() {
+    let scratch = Scratch::new("offered");
+    let folder = scratch.0.join("musicbrainz");
+    let mirror = built_keeping(&scratch, Keeping::TheMirrorAndItsTables);
+    replicated_through(&mirror, &folder, vec![first_packet()]).expect("replicated");
+    let followed = Mirror::open(mirror.path()).expect("the mirror opens again");
+    let phone = scratch.0.join("phone");
+    fs::create_dir_all(&phone).expect("the phone's folder");
+
+    let copy = followed
+        .offered(CopyPart::TheCopy)
+        .expect("an offer")
+        .expect("the copy");
+    let amendments = followed
+        .offered(CopyPart::ItsAmendments)
+        .expect("an offer")
+        .expect("the amendments");
+    let dump = copy.dump.clone();
+    let sequence = amendments.sequence;
+    received(copy, &phone.join("copy.received"));
+    received(amendments, &phone.join("amendments.received"));
+    received_copy(&phone, &phone.join("copy.received")).expect("the copy kept");
+    received_amendments(&phone, &phone.join("amendments.received")).expect("the amendments kept");
+    let landed = Mirror::open(&mirror_in(&phone)).expect("the copy opens on the phone");
+    let renamed = landed
+        .recording(&mbid(CREEP))
+        .expect("a read")
+        .expect("the recording");
+    let snapshots = fs::read_dir(&folder)
+        .expect("the desk's folder")
+        .flatten()
+        .filter(|entry| entry.file_name().to_string_lossy().contains("offered"))
+        .count();
+
+    assert_eq!(landed.made().dump, dump);
+    assert_eq!(sequence, DUMPED_AT_SEQUENCE + 1);
+    assert_eq!(landed.amended_to().map(|to| to.sequence), Some(sequence));
+    assert_eq!(renamed.title, "Creep (Remastered 2009)");
+    assert_eq!(snapshots, 0);
+}
+
+#[test]
+fn a_received_file_that_is_no_copy_is_refused_and_the_copy_held_stays() {
+    let scratch = Scratch::new("refused-offer");
+    let mirror = built(&scratch);
+    let phone = scratch.0.join("phone");
+    fs::create_dir_all(&phone).expect("the phone's folder");
+    received(
+        mirror
+            .offered(CopyPart::TheCopy)
+            .expect("an offer")
+            .expect("the copy"),
+        &phone.join("copy.received"),
+    );
+    received_copy(&phone, &phone.join("copy.received")).expect("the copy kept");
+    fs::write(phone.join("broken.received"), b"no database").expect("a broken file");
+    let unamended = mirror.offered(CopyPart::ItsAmendments).expect("an offer");
+
+    let refused = received_copy(&phone, &phone.join("broken.received"));
+    let held = Mirror::open(&mirror_in(&phone)).expect("the copy held still opens");
+    let amendments_refused = received_amendments(&phone, &phone.join("broken.received"));
+
+    assert!(refused.is_err());
+    assert!(amendments_refused.is_err());
+    assert!(unamended.is_none());
+    assert_eq!(held.made().dump, mirror.made().dump);
+
+    removed_copy(&phone).expect("the copy removed");
+
+    assert!(!mirror_in(&phone).exists());
 }

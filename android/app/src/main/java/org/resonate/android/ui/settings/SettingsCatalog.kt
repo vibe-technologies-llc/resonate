@@ -244,6 +244,7 @@ enum class Setting(
             R.string.settings_inner_only_this_network,
             R.string.settings_inner_mobile_data,
             R.string.settings_inner_sync_now,
+            R.string.sync_musicbrainz_copy,
         ),
     ),
     APPEARANCE(

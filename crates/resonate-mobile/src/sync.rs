@@ -44,6 +44,7 @@ use crate::{
 mod answers;
 mod certificate;
 mod consulted;
+mod copied;
 
 pub(crate) use self::consulted::Layers;
 mod driving;
@@ -87,8 +88,9 @@ pub(crate) struct Syncing {
     resolving: Mutex<Option<Arc<DocumentCatalog>>>,
     running: Arc<Mutex<Option<Running>>>,
     kept: std::sync::OnceLock<Option<Arc<resonate_musicbrainz::Kept>>>,
-    unmetered: AtomicBool,
+    unmetered: Arc<AtomicBool>,
     arrivals: Arc<AtomicU64>,
+    copied: Arc<copied::Copied>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -123,6 +125,7 @@ impl Syncing {
     pub(crate) fn layered_lookups(&self) -> consulted::Layers {
         consulted::Layers {
             kept: self.kept(),
+            mirrored: Arc::clone(&self.copied.mirrored),
             peers: consulted::peers_through(Arc::clone(&self.running)),
         }
     }
@@ -155,7 +158,6 @@ impl Syncing {
 
     pub(crate) fn under(folder: PathBuf) -> Self {
         Self {
-            folder,
             reaching: Mutex::new(Reaching::default()),
             shared_name: Mutex::new(String::new()),
             shared: Arc::new(Mutex::new(None)),
@@ -164,8 +166,10 @@ impl Syncing {
             resolving: Mutex::new(None),
             running: Arc::new(Mutex::new(None)),
             kept: std::sync::OnceLock::new(),
-            unmetered: AtomicBool::new(false),
+            unmetered: Arc::new(AtomicBool::new(false)),
             arrivals: Arc::new(AtomicU64::new(0)),
+            copied: Arc::new(copied::Copied::under(folder.join(consulted::FOLDER))),
+            folder,
         }
     }
 }
@@ -196,6 +200,8 @@ pub struct SyncConfig {
     pub control: driving::SyncControl,
     pub stun: String,
     pub certificate: String,
+    #[uniffi(default = false)]
+    pub musicbrainz_copy: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -337,6 +343,7 @@ impl MobilePlayer {
             }
             previous.sync.leave();
         }
+        let keeps_a_copy = config.enabled && config.musicbrainz_copy;
         if config.enabled {
             if !config.nearby_only {
                 self.require_online()?;
@@ -344,6 +351,7 @@ impl MobilePlayer {
             *running = Some(self.started(config)?);
         }
         drop(running);
+        self.syncing.copied.keep(keeps_a_copy, self.copy_reaching());
         Ok(self.sync_status())
     }
 
@@ -355,7 +363,16 @@ impl MobilePlayer {
         certificate::forget(&self.syncing.folder)
     }
 
+    pub fn musicbrainz_copy(&self) -> copied::MusicbrainzCopy {
+        self.syncing.copied.told()
+    }
+
+    pub fn remove_musicbrainz_copy(&self) -> Result<()> {
+        self.syncing.copied.remove()
+    }
+
     pub fn sync_stop(&self) {
+        self.syncing.copied.keep(false, self.copy_reaching());
         let previous = self.syncing.running.lock().take();
         if let Some(previous) = previous {
             previous.sync.leave();
@@ -461,6 +478,7 @@ impl MobilePlayer {
 
     pub fn sync_network(&self, unmetered: bool) {
         self.syncing.unmetered.store(unmetered, Ordering::Release);
+        self.syncing.copied.wake();
         if let Some(running) = self.syncing.running.lock().as_ref() {
             running
                 .sync
@@ -730,11 +748,21 @@ impl MobilePlayer {
         if let Some(driven) = self.driven() {
             sync.control_with(Arc::new(driven), config.control.into());
         }
-        sync.consult_with(consulted::ConsultedHere::of(self.syncing.kept()));
+        sync.consult_with(consulted::ConsultedHere::of(
+            Arc::clone(&self.syncing.copied.mirrored),
+            self.syncing.kept(),
+        ));
         Ok(Running {
             sync,
             metered_allowed: config.metered_allowed,
         })
+    }
+
+    fn copy_reaching(&self) -> copied::Reaching {
+        copied::Reaching {
+            running: Arc::downgrade(&self.syncing.running),
+            unmetered: Arc::clone(&self.syncing.unmetered),
+        }
     }
 
     pub(crate) fn synced_playlist(&self, id: u64) -> Result<LocalPlaylistId> {

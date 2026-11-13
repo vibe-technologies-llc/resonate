@@ -950,6 +950,23 @@ through the relay as QUIC), so the server never carries a command or a mirror an
     (`a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach_another`,
     `a_lookup_and_the_answers_a_device_kept_read_back_and_too_many_asked_are_refused`).
 
+- **A copy of MusicBrainz between devices** (`musicbrainz.md`'s *A copy handed to another
+  device*): `ToPeer::Export` (tag 14: an `ExportPart` byte, `Copy` 0 or `Amendments` 1, a byte a
+  later build adds refused, then the offset held) is answered `FromPeer::Exporting` (tag 20: the
+  dump, the packet the part follows to, its whole size) and the bytes from the offset, streamed as a
+  song is, or `Missing` where the `Consultable` offers none (`Consultable::export`, default none).
+  `Sync::ask_for_export(device, ExportWanted, ExportReceiving)` goes through `Work::Export` and
+  `want()`, as a fetch does, and answers an `AskedForExport` whose `answer` or `answer_within` is
+  `ExportFetched::{Whole, AlreadyHeld, NotHeld, Failed}`. `ExportWanted::held` names the dump and
+  sequence the asker holds: an offer of exactly that is `AlreadyHeld`, the stream stopped before a
+  byte moves. A part is staged where the asker says and resumed from a note beside it (`device size
+  sequence dump`, `export_note`), a note naming another device, size or export starting it over;
+  `ExportReceiving::so_far` is the bytes received and of how many. A transfer stops at its next chunk
+  once transfers are not allowed, the part kept. A build without the request drops the stream, read
+  as `NotHeld`
+  (`a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_at_all`,
+  `a_copy_of_musicbrainz_asked_and_offered_reads_back_and_an_unknown_part_is_refused`).
+
 - **Android and iOS send and fetch songs only on an unmetered network** unless mobile data is allowed
   (`allow_transfers`); incoming peers are refused meanwhile, a run under way stops before its next
   song as a cut-short run does, and a `Fetch` asked meanwhile is answered `Missing`

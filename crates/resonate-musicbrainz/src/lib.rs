@@ -12,13 +12,14 @@ pub mod wire;
 pub use crate::{
     asked::{Answer, Asked, Entity},
     consulted::{Ask, Asking, CONSULTED_AGAIN_AFTER, Consultation, Consulting},
-    error::{ArchiveOp, Error, Malformed, PackOp, Result, Store, StoreOp},
+    error::{ArchiveOp, CopyOp, Error, Malformed, PackOp, Result, Store, StoreOp},
     kept::{KEPT_ANSWERS_TOLD_AT_ONCE, KEPT_FRESH_FOR, Kept, KeptAnswer},
     layered::{Layer, Layered, MUSICBRAINZ, Mirrored, Peers},
     mirror::{
-        AMENDED_FILE, AmendedTo, Archives, Building, Built, FORMAT, Keeping, KeptTables,
-        MIRROR_FILE, Made, Mirror, Phase, TABLES_FILE, built_from, held_for_building, mirror_in,
-        removed_beside_the_mirror,
+        AMENDED_FILE, AmendedTo, Archives, Building, Built, CopyPart, FORMAT, Keeping, KeptTables,
+        MIRROR_FILE, Made, Mirror, Offered, OfferedFile, Phase, TABLES_FILE, built_from,
+        held_for_building, mirror_in, received_amendments, received_copy,
+        removed_beside_the_mirror, removed_copy,
         replicated::{PACKETS_A_BATCH, Packet, Replicated, packet_read, replicated},
         settled,
     },

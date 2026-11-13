@@ -409,7 +409,7 @@ impl MobilePlayer {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use std::{
         env, fs,
         net::{Ipv4Addr, SocketAddr},
@@ -435,7 +435,7 @@ mod tests {
     const SETTLES_WITHIN: Duration = Duration::from_secs(40);
     const LOOKED_AGAIN_AFTER: Duration = Duration::from_millis(50);
 
-    fn eventually(what: &str, done: impl Fn() -> bool) {
+    pub(in crate::sync) fn eventually(what: &str, done: impl Fn() -> bool) {
         let deadline = Instant::now() + SETTLES_WITHIN;
         while !done() {
             assert!(Instant::now() < deadline, "{what} never happened");
@@ -565,7 +565,7 @@ mod tests {
         );
     }
 
-    struct NothingHeld;
+    pub(in crate::sync) struct NothingHeld;
 
     impl SyncCatalog for NothingHeld {
         fn playlists(&self) -> Answer<Vec<LocalPlaylist>> {
@@ -651,6 +651,7 @@ mod tests {
                 control: SyncControl::Transport,
                 stun: String::new(),
                 certificate: String::new(),
+                musicbrainz_copy: false,
             })
             .expect("sync started");
         let told = player

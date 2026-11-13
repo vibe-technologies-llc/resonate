@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.SignalCellularAlt
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Download
@@ -104,6 +105,7 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
 
     val config = features.syncConfig
     val status = features.syncStatus
+    val musicbrainzCopy = features.musicbrainzCopy
     val folder = features.syncFolder
     val folders = features.folders
     val notice = features.syncNotice
@@ -126,6 +128,8 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
         change { it.copy(device = device.trim(), server = server.trim(), stun = stun.trim()) }
         if (forOthers.trim() != nameForOthers.value) features.together.nameForOthers(forOthers)
     }
+
+    fun removeMusicbrainzCopy() = features.removeMusicbrainzCopy()
 
     fun keepCertificate(uri: Uri) = features.keepSyncCertificate(uri)
 
@@ -206,6 +210,8 @@ fun SyncScreen() {
     val askedAt by model.askedAt.collectAsStateWithLifecycle()
     val inBackground by model.inBackground.collectAsStateWithLifecycle()
     val keptNameForOthers by model.nameForOthers.collectAsStateWithLifecycle()
+    val musicbrainzCopy by model.musicbrainzCopy.collectAsStateWithLifecycle()
+    var removingCopy by rememberSaveable { mutableStateOf(false) }
     val offered = remember { syncControlOffered() }
     var showCode by remember { mutableStateOf(false) }
     var asking by rememberSaveable { mutableStateOf<Asking?>(null) }
@@ -439,6 +445,29 @@ fun SyncScreen() {
                     onCheckedChange = model::syncInBackground,
                 )
             }
+            item(key = "musicbrainz-header") {
+                SectionHeader(stringResource(R.string.sync_musicbrainz_header))
+            }
+            item(key = "musicbrainz-copy") {
+                SwitchRow(
+                    title = stringResource(R.string.sync_musicbrainz_copy),
+                    icon = Icons.Rounded.Storage,
+                    supporting = musicbrainzCopyLine(words, musicbrainzCopy, config.musicbrainzCopy),
+                    checked = config.musicbrainzCopy,
+                    onCheckedChange = { value -> model.change { it.copy(musicbrainzCopy = value) } },
+                )
+                if (musicbrainzCopy?.dump != null) {
+                    ButtonRow {
+                        TextButton(
+                            onClick = { removingCopy = true },
+                            modifier = Modifier.testTag("remove-musicbrainz-copy"),
+                        ) {
+                            Text(stringResource(R.string.sync_musicbrainz_copy_remove))
+                        }
+                    }
+                }
+                Footnote(stringResource(R.string.sync_musicbrainz_copy_note))
+            }
             item(key = "destination-header") {
                 SectionHeader(stringResource(R.string.sync_destination_header))
             }
@@ -607,6 +636,17 @@ fun SyncScreen() {
                 onDismiss = { asking = null },
             )
         null -> Unit
+    }
+    if (removingCopy) {
+        ConfirmDialog(
+            title = stringResource(R.string.sync_musicbrainz_copy_remove_asked),
+            text = stringResource(R.string.sync_musicbrainz_copy_remove_told),
+            confirm = stringResource(R.string.sync_musicbrainz_copy_remove),
+            icon = Icons.Rounded.DeleteOutline,
+            destructive = true,
+            onConfirm = model::removeMusicbrainzCopy,
+            onDismiss = { removingCopy = false },
+        )
     }
     val leaving = status?.devices?.firstOrNull { it.id == forgetting }
     if (leaving != null) {

@@ -478,6 +478,7 @@ struct SyncSwitch: View {
 
 struct SyncSongsPage: View {
     @Environment(Library.self) private var library
+    @State private var removingCopy = false
 
     var body: some View {
         let features = library.features
@@ -494,6 +495,20 @@ struct SyncSongsPage: View {
             }
             Section {
                 SyncSwitch(title: said("sync.songs.mobile-data"), detail: said("sync.songs.mobile-data.detail"), choice: \.meteredAllowed)
+            }
+            Section {
+                SyncSwitch(
+                    title: said("sync.musicbrainz.keep"),
+                    detail: musicbrainzCopyLine(features.musicbrainzCopy, keeping: features.syncConfig?.musicbrainzCopy ?? false),
+                    choice: \.musicbrainzCopy
+                )
+                if features.musicbrainzCopy?.dump != nil {
+                    Button("sync.musicbrainz.remove", role: .destructive) { removingCopy = true }
+                }
+            } header: {
+                Text("sync.musicbrainz.header")
+            } footer: {
+                Text("sync.musicbrainz.footer")
             }
             Section {
                 if let first = destinations.first {
@@ -526,6 +541,11 @@ struct SyncSongsPage: View {
             }
         }
         .navigationTitle("sync.options.songs")
+        .confirmationDialog("sync.musicbrainz.remove.confirm", isPresented: $removingCopy, titleVisibility: .visible) {
+            Button("sync.musicbrainz.remove", role: .destructive) { features.removeMusicbrainzCopy() }
+        } message: {
+            Text("sync.musicbrainz.remove.confirm.message")
+        }
         .task { library.folderList = await library.folders.refreshed() }
     }
 }

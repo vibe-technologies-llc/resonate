@@ -32,7 +32,10 @@ use tokio::{
 
 use crate::{
     Catalog, Change, DeviceId, Error, Handoff, Ledger, LocalPlaylistId, Platform, Result, SyncKey,
-    consulted::{AskedToConsult, Consultable, Consulting},
+    consulted::{
+        AskedForExport, AskedToConsult, Consultable, Consulting, ExportFetched, ExportHeld,
+        ExportPart, ExportReceiving,
+    },
     key::{Derived, PAIRING_LINK, hex, random_bytes},
     ledger::{Follow, Me, lacked},
     merge::one_recording_a_song,
@@ -42,9 +45,9 @@ use crate::{
         global_addresses_here, record_of, told_over_ipv6,
     },
     peer::{
-        Answering, DIAL_WITHIN, Heard, blocking, consult, control, covers_from, dialled,
-        dialled_within, fetch, holdings_of, kept_from, lyricsfiles_from, meet, prints_from, serve,
-        tell, watch,
+        Answering, DIAL_WITHIN, ExportStaged, Heard, blocking, consult, control, covers_from,
+        dialled, dialled_within, export_from, fetch, holdings_of, kept_from, lyricsfiles_from,
+        meet, prints_from, serve, tell, watch,
     },
     quic::{KEEP_THE_SERVER_EVERY, PeerIdentity, to_the_server, trusted_roots},
     remote::{CONTROL_ANSWERED_WITHIN, Controlled, Controlling, RemoteCommand, Watched},
@@ -280,8 +283,28 @@ enum Command {
         asked: Vec<u8>,
         answer: std_mpsc::Sender<Consulting>,
     },
+    Export {
+        device: DeviceId,
+        asked: ExportAsked,
+    },
     KeptOwed,
     Stop,
+}
+
+struct ExportAsked {
+    part: ExportPart,
+    held: Option<ExportHeld>,
+    staged: PathBuf,
+    noted: PathBuf,
+    receiving: Arc<ExportReceiving>,
+    answer: std_mpsc::Sender<ExportFetched>,
+}
+
+pub struct ExportWanted {
+    pub part: ExportPart,
+    pub held: Option<ExportHeld>,
+    pub staged: PathBuf,
+    pub noted: PathBuf,
 }
 
 pub struct Sync {
@@ -357,6 +380,7 @@ enum Work {
         asked: Vec<u8>,
         answer: std_mpsc::Sender<Consulting>,
     },
+    Export(ExportAsked),
 }
 
 #[derive(Default)]
@@ -798,6 +822,27 @@ impl Sync {
         let _ = self.commands.send(Command::KeptOwed);
     }
 
+    pub fn ask_for_export(
+        &self,
+        device: DeviceId,
+        wanted: ExportWanted,
+        receiving: Arc<ExportReceiving>,
+    ) -> AskedForExport {
+        let (answer, answered) = std_mpsc::channel();
+        let _ = self.commands.send(Command::Export {
+            device,
+            asked: ExportAsked {
+                part: wanted.part,
+                held: wanted.held,
+                staged: wanted.staged,
+                noted: wanted.noted,
+                receiving,
+                answer,
+            },
+        });
+        AskedForExport(answered)
+    }
+
     pub fn ask_to_consult(&self, device: DeviceId, asked: Vec<u8>) -> AskedToConsult {
         let (answer, answered) = std_mpsc::channel();
         let _ = self.commands.send(Command::Consult {
@@ -1090,6 +1135,7 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
                 Some(Command::Fetch { recordings, from }) => syncing.want(from, Work::Fetch { recordings, asked: true }).await,
                 Some(Command::Control { device, zone, command, queue_seen, answer }) => syncing.want(device, Work::Control { zone, command, queue_seen, answer }).await,
                 Some(Command::Consult { device, asked, answer }) => syncing.want(device, Work::Consult { asked, answer }).await,
+                Some(Command::Export { device, asked }) => syncing.want(device, Work::Export(asked)).await,
                 Some(Command::KeptOwed) => {
                     syncing.ask_every_peer_for_kept();
                     Ok(())
@@ -2314,7 +2360,11 @@ impl Syncing {
                 self.follow_owed.insert(device);
                 return Ok(());
             }
-            Work::Follow | Work::Control { .. } | Work::Watch | Work::Consult { .. } => {}
+            Work::Follow
+            | Work::Control { .. }
+            | Work::Watch
+            | Work::Consult { .. }
+            | Work::Export(_) => {}
         }
         if let Some(connection) = self
             .peers
@@ -2418,7 +2468,7 @@ impl Syncing {
                 Work::Watch => {
                     self.running.watching.lock().remove(&device);
                 }
-                Work::Follow | Work::Control { .. } | Work::Consult { .. } => {}
+                Work::Follow | Work::Control { .. } | Work::Consult { .. } | Work::Export(_) => {}
             }
         }
     }
@@ -2944,6 +2994,23 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
         }
         Work::Consult { asked, answer } => {
             let _ = answer.send(consult(connection, asked).await);
+            return;
+        }
+        Work::Export(asked) => {
+            let staged = ExportStaged {
+                part: asked.part,
+                held: asked.held.as_ref(),
+                staged: &asked.staged,
+                noted: &asked.noted,
+            };
+            let allowed = || running.transfers_allowed();
+            let fetched = export_from(connection, device, &staged, &asked.receiving, &allowed)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::debug!(%error, "MusicBrainz's copy could not be fetched from a device");
+                    ExportFetched::Failed
+                });
+            let _ = asked.answer.send(fetched);
             return;
         }
         Work::Watch => {

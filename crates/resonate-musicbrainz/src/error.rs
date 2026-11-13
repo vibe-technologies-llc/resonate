@@ -36,6 +36,14 @@ pub enum ArchiveOp {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CopyOp {
+    Hold,
+    Open,
+    Measure,
+    Land,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PackOp {
     Pack,
     Unpack,
@@ -62,6 +70,17 @@ pub enum Error {
 
     #[error("no mirror has been built at {path}")]
     NoMirror { path: PathBuf },
+
+    #[error("the copy of MusicBrainz at {path} could not {op:?}")]
+    CopyFile {
+        path: PathBuf,
+        op: CopyOp,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("the amendments received at {path} are not of the export {copy} the copy holds")]
+    AmendmentsOfAnotherExport { path: PathBuf, copy: String },
 
     #[error("the dump archive {path} could not {op:?}")]
     Archive {

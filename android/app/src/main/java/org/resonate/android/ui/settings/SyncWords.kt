@@ -3,6 +3,8 @@ package org.resonate.android.ui.settings
 import java.util.Locale
 import org.resonate.android.R
 import org.resonate.android.Words
+import org.resonate.android.nativecore.MusicbrainzCopy
+import org.resonate.android.nativecore.MusicbrainzCopyStanding
 import org.resonate.android.nativecore.SyncConfig
 import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
@@ -132,3 +134,35 @@ fun namesUnsaved(stored: SyncConfig, device: String, server: String, stun: Strin
 
 fun codeLines(code: String, groupsPerLine: Int = 3): String =
     code.split('-').chunked(groupsPerLine).joinToString("-\n") { it.joinToString("-") }
+
+private const val BYTES_A_GIGABYTE = 1_000_000_000.0
+
+fun gigabytes(bytes: ULong): String = String.format(Locale.ROOT, "%.1f", bytes.toDouble() / BYTES_A_GIGABYTE)
+
+fun musicbrainzCopyLine(words: Words, copy: MusicbrainzCopy?, keeping: Boolean): String {
+    val dump = copy?.dump
+    if (!keeping && dump == null) return words.string(R.string.sync_musicbrainz_copy_off)
+    return when (copy?.standing) {
+        MusicbrainzCopyStanding.RECEIVING ->
+            words.string(R.string.sync_musicbrainz_copy_receiving, gigabytes(copy.received), gigabytes(copy.of))
+        MusicbrainzCopyStanding.NO_ROOM -> words.string(R.string.sync_musicbrainz_copy_no_room)
+        MusicbrainzCopyStanding.WAITING_FOR_TRANSFERS ->
+            if (dump == null) words.string(R.string.sync_musicbrainz_copy_waiting)
+            else heldLine(words, copy, dump)
+        MusicbrainzCopyStanding.NO_DEVICE_HOLDS_ONE ->
+            words.string(R.string.sync_musicbrainz_copy_none_held)
+        MusicbrainzCopyStanding.LOOKING,
+        MusicbrainzCopyStanding.OFF,
+        MusicbrainzCopyStanding.HELD,
+        null ->
+            if (dump != null) heldLine(words, copy, dump)
+            else words.string(R.string.sync_musicbrainz_copy_looking)
+    }
+}
+
+private fun heldLine(words: Words, copy: MusicbrainzCopy?, dump: String): String {
+    val size = gigabytes(copy?.bytes ?: 0uL)
+    val packet = copy?.amendedTo
+    return if (packet == null) words.string(R.string.sync_musicbrainz_copy_held, dump, size)
+    else words.string(R.string.sync_musicbrainz_copy_followed, dump, size, packet.toString())
+}

@@ -7241,6 +7241,7 @@ version = "0.9.0"
 dependencies = [
  "crc32fast",
  "crossbeam-channel",
+ "fs4",
  "hdf5-writer",
  "oboe",
  "parking_lot 0.13.0",

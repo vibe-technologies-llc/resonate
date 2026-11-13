@@ -158,6 +158,7 @@ final class Features {
     var syncStatus: SyncStatus? {
         didSet { syncStatusMoved() }
     }
+    var musicbrainzCopy: MusicbrainzCopy?
     private(set) var syncSummary: SyncSummary?
     private(set) var syncTransfers: SyncTransfersShown?
     private(set) var syncActivity: SyncActivity?
@@ -538,6 +539,17 @@ final class Features {
         }
     }
 
+    func removeMusicbrainzCopy() {
+        work { [weak self] native in
+            let copy = try await Work.aside {
+                try native.removeMusicbrainzCopy()
+                return native.musicbrainzCopy()
+            }
+            self?.musicbrainzCopy = copy
+            self?.library.notice(said("sync.musicbrainz.removed"))
+        }
+    }
+
     func forgetSyncCertificate() {
         work { [weak self] native in
             try await Work.inSync { try native.syncForgetCertificate() }
@@ -883,12 +895,13 @@ final class Features {
             await withTaskCancellationHandler { await nap.value } onCancel: { nap.cancel() }
             guard !Task.isCancelled else { return }
             do {
-                let (status, waiting, handoffs, record, shared) = try await Work.aside {
+                let (status, waiting, handoffs, record, shared, copy) = try await Work.aside {
                     let status = native.syncStatus()
                     let waiting = try native.syncReceived()
                     let handoffs = status.standing == .off ? [] : try native.syncHandoffs()
-                    return (status, waiting, handoffs, native.syncNearbyRecord(), native.sharedPlaylists())
+                    return (status, waiting, handoffs, native.syncNearbyRecord(), native.sharedPlaylists(), native.musicbrainzCopy())
                 }
+                if musicbrainzCopy != copy { musicbrainzCopy = copy }
                 together.adopt(shared)
                 nearbyDevices(native).follow(record: record)
                 if syncStatus != status { syncStatus = status }

@@ -95,6 +95,7 @@ unknown-sync-device = no device in sync is called that
 nothing-handed-off = that device is playing nothing held here
 unknown-received-song = that song from another device is no longer waiting
 received = The song from another device could not be { $op }
+musicbrainz-copy-not-removed = The copy of MusicBrainz could not be removed: { $source }
 sync-certificate = That file is not a certificate this device can trust: { $source }
 sync-certificate-file = The server's certificate could not be { $op }
 layout-unreadable = The layout cannot be read: { $source }

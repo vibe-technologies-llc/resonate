@@ -420,14 +420,40 @@ fails is not kept: the frame is unlit for that call and the next frame asks agai
 
 ## MusicBrainz asked of another device
 
-**The phones hold no copy of MusicBrainz; they ask a device that does, and keep what they learn**
-(`musicbrainz.md`). The boundary is unchanged:
+**A phone asks a device holding MusicBrainz, keeps what it learns, and may keep a copy fetched from
+one** (`musicbrainz.md`):
 
 - `Asking::layered_by` wraps the enrichment pass's `Online` in a `resonate_musicbrainz::Layered` with
-  the kept answers (`kept.sqlite` under the sync folder's `musicbrainz/`, opened on first use) and
-  the online devices (`sync/consulted.rs`, `Consulting` over the running `Sync`).
-- Every `start` hands the `Sync` a `Consultable` over the kept answers alone, so a phone answers
-  another device from what it kept, and the answers both kept travel when they meet.
+  the kept answers (`kept.sqlite` under the sync folder's `musicbrainz/`, opened on first use), the
+  copy held (`Layers::mirrored`, the `Mirrored` of `sync/copied.rs`, empty without one) and the
+  online devices (`sync/consulted.rs`, `Consulting` over the running `Sync`).
+- Every `start` hands the `Sync` a `Consultable` over the copy and the kept answers
+  (`ConsultedHere::of`), so a phone answers another device from what it holds, offers its copy
+  onward as a desktop does, and the answers both kept travel when they meet.
+
+## A copy of MusicBrainz fetched from a desktop
+
+**A phone never builds the copy (some 50 GB of room, a gigabyte of memory and an hour); it fetches
+the one a device built** (`sync/copied.rs`, over `sync.md`'s *A copy of MusicBrainz between
+devices*). `SyncConfig.musicbrainz_copy` (default off) starts `Copied::keep`, a
+`resonate-musicbrainz-copy` thread while sync runs: whenever transfers are allowed (unmetered, or
+mobile data allowed) it asks the online devices, nearby first, for `ExportPart::Copy` stating the
+export it holds, so a device holding the same dump answers `AlreadyHeld` and sends nothing. A copy
+received whole into `musicbrainz.sqlite.received` (resumed from a `.received-from` note across
+calls and restarts) is opened as a `Mirror` before `received_copy` renames it over `MIRROR_FILE`,
+removing the amendments of the dump before; then `ExportPart::Amendments` is asked (at once, and
+every `AMENDMENTS_ASKED_EVERY`, an hour), landing through `received_amendments`, which refuses a
+file not of the copy's dump (`AmendmentsOfAnotherExport`). The `Mirrored` is swapped as each lands,
+so lookups answer from it at once. Before a copy is fetched `room_in` (`fs4::available_space`) must
+leave `ROOM_LEFT_AT_LEAST` (2 GB) past `ROOM_A_COPY_TAKES` (12 GB) less what is already received,
+else `MusicbrainzCopyStanding::NoRoom`. Nothing is asked again for `LOOKED_AT_AGAIN_AFTER` (5
+minutes) after a miss; `sync_network` wakes it, `sync_stop` and turning the switch off end it
+(a transfer under way stops at its next chunk, the part kept for the next ask).
+`musicbrainz_copy()` answers a `MusicbrainzCopy` (the standing, the dump, its bytes, the packet its
+amendments follow to and when, and while receiving the bytes so far and of how many);
+`remove_musicbrainz_copy()` lets the `Mirrored` go and removes the copy, its amendments and any
+part received (`removed_copy`, `MusicbrainzCopyNotRemoved`)
+(`a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it`).
 
 ## Answers from other devices
 

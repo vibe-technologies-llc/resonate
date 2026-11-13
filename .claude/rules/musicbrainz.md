@@ -40,7 +40,8 @@ only while `online` is on) with the kept answers, the mirror and the `Registered
 sync start fills. With `online` off the reference is the layers alone, and only where a mirror is
 held. Otherwise it is `None`, as before, so `online = false` still sends nothing to the internet
 and `enrich` still says `OnlineOff`. The phones wrap their `Online` the same way
-(`Asking::layered_by`), with kept answers and peers and no mirror.
+(`Asking::layered_by`), with kept answers, peers and the copy a desktop gave them where they keep one
+(*A copy handed to another device*).
 
 ## The vocabulary on the wire
 
@@ -290,6 +291,25 @@ then their own. `REPLICATION_SEQUENCE` naming another number than the one asked 
   A replication that moved the copy swaps the `Mirrored` held. `resonate musicbrainz --replicate`
   applies what is published now, the first interrupt cancelling the batch; the bare command says
   the packet the copy follows to and when it was applied, and so does the settings pane.
+
+## A copy handed to another device
+
+**A device holding a copy offers it whole, and its amendments as a snapshot** (`mirror/offered.rs`).
+`Mirror::offered` answers an `Offered` (the dump, the packet followed to, the size and an
+`OfferedFile` reading it): `CopyPart::TheCopy` is the copy's own file, immutable for its dump, read
+as it stands; `CopyPart::ItsAmendments` is a `VACUUM INTO` snapshot of the amended file beside it,
+named `musicbrainz.amended.offered-<pid>-<n>.sqlite`, held under `writer::Held` while read and
+removed when the `OfferedFile` drops, a snapshot whose writer is gone swept by the next offer
+(`writer_of`); a copy following no changes offers no amendments. `Consultation::offered` serves it
+to sync's `Consultable::export`. The receiver lands them with `received_copy` (opened as a `Mirror`
+first, then the amendments of the dump before removed and the file renamed over `MIRROR_FILE`) and
+`received_amendments` (opened as amendments of the copy's dump, else
+`AmendmentsOfAnotherExport`, then renamed over `AMENDED_FILE`); `removed_copy` takes the copy and
+everything beside it away
+(`a_copy_and_its_amendments_offered_by_one_device_land_whole_on_another`,
+`a_received_file_that_is_no_copy_is_refused_and_the_copy_held_stays`). A phone is the receiver
+(`mobile.md`'s *A copy of MusicBrainz fetched from a desktop*); the desktop builds its own and only
+offers.
 
 ## Between devices
 

@@ -25,7 +25,10 @@ use tokio::{
 
 use crate::{
     Catalog, Change, DeviceId, Error, FileOp, Held, Ledger, Result, SongTags, StreamOp,
-    consulted::{CONSULT_ANSWERED_WITHIN, Consultable, Consulting, KEPT_PAGES_A_MEETING},
+    consulted::{
+        CONSULT_ANSWERED_WITHIN, Consultable, Consulting, ExportFetched, ExportHeld, ExportPart,
+        ExportReceiving, KEPT_PAGES_A_MEETING,
+    },
     quic::{PEER_NAME, read_frame, send_frame},
     remote::{
         CONTROL_ANSWERED_WITHIN, Controlled, Controlling, MIRROR_GOES_STALE_AFTER,
@@ -224,6 +227,9 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
         }
         ToPeer::Kept { asker, after, most } => {
             send_kept(&mut send, &asked.answering, asker, after, most).await?
+        }
+        ToPeer::Export { part, offset } => {
+            send_export(&mut send, &asked.answering, part, offset).await?;
         }
         ToPeer::Fetch { recording, offset } => {
             if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
@@ -661,7 +667,8 @@ pub async fn lyricsfiles_from(
             | FromPeer::Consulted { .. }
             | FromPeer::Unconsulted
             | FromPeer::KeptAnswer(_)
-            | FromPeer::KeptEnd { .. } => {}
+            | FromPeer::KeptEnd { .. }
+            | FromPeer::Exporting { .. } => {}
         }
     }
     Ok(landed)
@@ -736,7 +743,8 @@ pub async fn prints_from(
             | FromPeer::Consulted { .. }
             | FromPeer::Unconsulted
             | FromPeer::KeptAnswer(_)
-            | FromPeer::KeptEnd { .. } => {}
+            | FromPeer::KeptEnd { .. }
+            | FromPeer::Exporting { .. } => {}
         }
     }
     Ok(landed)
@@ -797,7 +805,8 @@ pub async fn covers_from(
             | FromPeer::Consulted { .. }
             | FromPeer::Unconsulted
             | FromPeer::KeptAnswer(_)
-            | FromPeer::KeptEnd { .. } => {}
+            | FromPeer::KeptEnd { .. }
+            | FromPeer::Exporting { .. } => {}
         }
     }
     Ok(landed)
@@ -810,7 +819,7 @@ async fn send_song(
     offset: u64,
 ) -> Result<()> {
     let opened = blocking(move || catalog.open(&recording).map_err(Error::Catalog)).await?;
-    let Some(mut opened) = opened else {
+    let Some(opened) = opened else {
         return send_frame(send, &FromPeer::Missing.encoded()).await;
     };
     let header = FromPeer::Sending {
@@ -818,16 +827,50 @@ async fn send_song(
         extension: opened.extension.clone(),
     };
     send_frame(send, &header.encoded()).await?;
+    streamed_from(send, opened.reader, offset).await
+}
 
+async fn send_export(
+    send: &mut SendStream,
+    answering: &Answering,
+    part: ExportPart,
+    offset: u64,
+) -> Result<()> {
+    let offered = match answering.consultable() {
+        Some(consulted) => blocking(move || Ok(consulted.export(part)))
+            .await
+            .unwrap_or_default(),
+        None => None,
+    };
+    let Some(offered) = offered else {
+        return send_frame(send, &FromPeer::Missing.encoded()).await;
+    };
+    let header = FromPeer::Exporting {
+        dump: offered.dump,
+        sequence: offered.sequence,
+        size: offered.size,
+    };
+    send_frame(send, &header.encoded()).await?;
+    if offset >= offered.size {
+        return Ok(());
+    }
+    streamed_from(send, offered.reader, offset).await
+}
+
+async fn streamed_from<R: Read + Seek + Send + 'static>(
+    send: &mut SendStream,
+    mut reader: R,
+    offset: u64,
+) -> Result<()> {
     let (chunks, mut arriving) = mpsc::channel::<std::io::Result<Vec<u8>>>(CHUNKS_IN_FLIGHT);
     let reading = tokio::task::spawn_blocking(move || {
-        if let Err(error) = opened.reader.seek(SeekFrom::Start(offset)) {
+        if let Err(error) = reader.seek(SeekFrom::Start(offset)) {
             let _ = chunks.blocking_send(Err(error));
             return;
         }
         loop {
             let mut chunk = vec![0; CHUNK_BYTES];
-            match opened.reader.read(&mut chunk) {
+            match reader.read(&mut chunk) {
                 Ok(0) => return,
                 Ok(read) => {
                     chunk.truncate(read);
@@ -881,7 +924,8 @@ pub async fn holdings_of(connection: &Connection) -> Result<Vec<Held>> {
             | FromPeer::Consulted { .. }
             | FromPeer::Unconsulted
             | FromPeer::KeptAnswer(_)
-            | FromPeer::KeptEnd { .. } => {}
+            | FromPeer::KeptEnd { .. }
+            | FromPeer::Exporting { .. } => {}
         }
     }
     Ok(holdings)
@@ -916,7 +960,8 @@ pub async fn meet(connection: &Connection, device: DeviceId, records: bool) -> R
         | FromPeer::Consulted { .. }
         | FromPeer::Unconsulted
         | FromPeer::KeptAnswer(_)
-        | FromPeer::KeptEnd { .. } => Err(Error::Unmet),
+        | FromPeer::KeptEnd { .. }
+        | FromPeer::Exporting { .. } => Err(Error::Unmet),
     }
 }
 
@@ -1077,7 +1122,8 @@ async fn fetched_from(
         | FromPeer::Consulted { .. }
         | FromPeer::Unconsulted
         | FromPeer::KeptAnswer(_)
-        | FromPeer::KeptEnd { .. } => {
+        | FromPeer::KeptEnd { .. }
+        | FromPeer::Exporting { .. } => {
             return Err(Error::Missing(device));
         }
     };
@@ -1134,6 +1180,130 @@ async fn fetched_from(
         extension,
         tags: SongTags::default(),
     }))
+}
+
+pub struct ExportStaged<'a> {
+    pub part: ExportPart,
+    pub held: Option<&'a ExportHeld>,
+    pub staged: &'a Path,
+    pub noted: &'a Path,
+}
+
+const EXPORT_TRIES: usize = 2;
+
+pub async fn export_from(
+    connection: &Connection,
+    device: DeviceId,
+    asked: &ExportStaged<'_>,
+    receiving: &ExportReceiving,
+    allowed: &(impl Fn() -> bool + Sync),
+) -> Result<ExportFetched> {
+    for _ in 0..EXPORT_TRIES {
+        if let Some(fetched) = export_once(connection, device, asked, receiving, allowed).await? {
+            return Ok(fetched);
+        }
+    }
+    Ok(ExportFetched::Failed)
+}
+
+fn export_note(device: DeviceId, size: u64, offered: &ExportHeld) -> String {
+    format!("{device} {size} {} {}", offered.sequence, offered.dump)
+}
+
+async fn export_once(
+    connection: &Connection,
+    device: DeviceId,
+    asked: &ExportStaged<'_>,
+    receiving: &ExportReceiving,
+    allowed: &(impl Fn() -> bool + Sync),
+) -> Result<Option<ExportFetched>> {
+    let offset = resumable(asked.staged, asked.noted, device).await;
+    let (mut send, mut recv) = quietly_short(async {
+        connection
+            .open_bi()
+            .await
+            .map_err(|source| Error::Connection(Box::new(source)))
+    })
+    .await?;
+    let request = ToPeer::Export {
+        part: asked.part,
+        offset,
+    };
+    send_frame(&mut send, &request.encoded()).await?;
+    send.finish().map_err(|_| Error::StreamClosed)?;
+
+    let Some(header) = quietly_short(read_frame(&mut recv)).await? else {
+        return Ok(Some(ExportFetched::NotHeld));
+    };
+    let FromPeer::Exporting {
+        dump,
+        sequence,
+        size,
+    } = FromPeer::decoded(&header)?
+    else {
+        return Ok(Some(ExportFetched::NotHeld));
+    };
+    let offered = ExportHeld { dump, sequence };
+    if asked.held == Some(&offered) {
+        let _ = recv.stop(0_u32.into());
+        return Ok(Some(ExportFetched::AlreadyHeld));
+    }
+    let note = export_note(device, size, &offered);
+    if offset > 0 && fs::read_to_string(asked.noted).await.ok().as_deref() != Some(note.as_str()) {
+        let _ = recv.stop(0_u32.into());
+        let _ = fs::remove_file(asked.staged).await;
+        let _ = fs::remove_file(asked.noted).await;
+        return Ok(None);
+    }
+    fs::write(asked.noted, &note)
+        .await
+        .map_err(|source| file_failed(FileOp::Stage, asked.noted, source))?;
+
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(asked.staged)
+        .await
+        .map_err(|source| file_failed(FileOp::Stage, asked.staged, source))?;
+    let mut have = offset;
+    receiving.heard(have, size);
+    let mut chunk = vec![0; CHUNK_BYTES];
+    while have < size {
+        if !allowed() {
+            let _ = recv.stop(0_u32.into());
+            file.sync_all()
+                .await
+                .map_err(|source| file_failed(FileOp::Write, asked.staged, source))?;
+            return Ok(Some(ExportFetched::Failed));
+        }
+        let read = quietly_short(async {
+            recv.read(&mut chunk)
+                .await
+                .map_err(|source| Error::stream(StreamOp::Read, source))
+        })
+        .await?;
+        let Some(read) = read else {
+            break;
+        };
+        file.write_all(&chunk[..read])
+            .await
+            .map_err(|source| file_failed(FileOp::Write, asked.staged, source))?;
+        have += u64::try_from(read).unwrap_or(u64::MAX);
+        receiving.heard(have, size);
+    }
+    file.sync_all()
+        .await
+        .map_err(|source| file_failed(FileOp::Write, asked.staged, source))?;
+    if have != size {
+        let _ = fs::remove_file(asked.staged).await;
+        let _ = fs::remove_file(asked.noted).await;
+        return Err(Error::stream(
+            StreamOp::Read,
+            std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
+        ));
+    }
+    let _ = fs::remove_file(asked.noted).await;
+    Ok(Some(ExportFetched::Whole(offered)))
 }
 
 fn file_failed(op: FileOp, path: &Path, source: std::io::Error) -> Error {

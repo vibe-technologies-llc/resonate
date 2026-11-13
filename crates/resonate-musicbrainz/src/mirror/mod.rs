@@ -3,6 +3,7 @@ mod copy;
 mod documents;
 mod import;
 mod looked_up;
+mod offered;
 pub(crate) mod replicated;
 mod search;
 mod tables;
@@ -29,6 +30,7 @@ pub use self::{
         Archives, Building, Built, Keeping, Phase, built_from, held_for_building,
         removed_beside_the_mirror, settled,
     },
+    offered::{CopyPart, Offered, OfferedFile, received_amendments, received_copy, removed_copy},
     tables::{KeptTables, TABLES_FILE},
 };
 use crate::{

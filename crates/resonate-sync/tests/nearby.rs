@@ -2,6 +2,7 @@ mod shelf;
 
 use std::{
     env, fs,
+    io::Cursor,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
     path::{Path, PathBuf},
     sync::Arc,
@@ -15,9 +16,10 @@ use resonate_core::{
     WholeFile, ZoneId,
 };
 use resonate_sync::{
-    Broadcast, Consultable, Consulting, Controlled, Controlling, DeviceId, Follow, KeptAnswer, Me,
-    Nearby, Permille, Platform, RemoteCommand, RemotePlayback, RemoteRow, RemoteZone, Server,
-    Settings, Standing, Sync, SyncKey, TransferState, Uncontrolled, Watched,
+    Broadcast, Consultable, Consulting, Controlled, Controlling, DeviceId, ExportFetched,
+    ExportHeld, ExportPart, ExportReceiving, ExportWanted, Follow, KeptAnswer, Me, Nearby,
+    OfferedExport, Permille, Platform, RemoteCommand, RemotePlayback, RemoteRow, RemoteZone,
+    Server, Settings, Standing, Sync, SyncKey, TransferState, Uncontrolled, Watched,
 };
 
 use crate::shelf::{Shelf, song};
@@ -356,6 +358,7 @@ struct Consulted {
     answers: Mutex<Vec<(Vec<u8>, Vec<u8>)>>,
     kept: Mutex<Vec<KeptAnswer>>,
     marks: Mutex<Vec<(DeviceId, u64)>>,
+    copy: Mutex<Option<(String, Vec<u8>)>>,
 }
 
 impl Consultable for Consulted {
@@ -397,6 +400,121 @@ impl Consultable for Consulted {
         marks.retain(|(held, _)| *held != device);
         marks.push((device, mark));
     }
+
+    fn export(&self, part: ExportPart) -> Option<OfferedExport> {
+        let (dump, bytes) = self.copy.lock().clone()?;
+        (part == ExportPart::Copy).then(|| OfferedExport {
+            dump,
+            sequence: 0,
+            size: bytes.len() as u64,
+            reader: Box::new(Cursor::new(bytes)),
+        })
+    }
+}
+
+fn copy_of_the_export(length: usize) -> Vec<u8> {
+    (0..length)
+        .map(|at| u8::try_from((at * 31 + at / 7) % 251).unwrap_or(0))
+        .collect()
+}
+
+#[test]
+fn a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_at_all() {
+    let folder = scratch("exported");
+    let key = SyncKey::minted().expect("a key");
+    let bytes = copy_of_the_export(300 * 1024);
+    let dump = "20261111-002335".to_owned();
+    let desk_answers = Arc::new(Consulted::default());
+    *desk_answers.copy.lock() = Some((dump.clone(), bytes.clone()));
+    let desk = device(
+        &folder,
+        &key,
+        "Desk",
+        Arc::new(Shelf::holding(&["A"])),
+        None,
+    );
+    desk.consult_with(Arc::clone(&desk_answers) as Arc<dyn Consultable>);
+    let phone = device(
+        &folder,
+        &key,
+        "Phone",
+        Arc::new(Shelf::holding(&["A"])),
+        Some(&desk),
+    );
+    phone.consult_with(Arc::new(Consulted::default()) as Arc<dyn Consultable>);
+    let staged = folder.join("phone-musicbrainz.sqlite.part");
+    let noted = folder.join("phone-musicbrainz.sqlite.from");
+    let wanted = |held: Option<ExportHeld>| ExportWanted {
+        part: ExportPart::Copy,
+        held,
+        staged: staged.clone(),
+        noted: noted.clone(),
+    };
+    let receiving = Arc::new(ExportReceiving::default());
+    let held = ExportHeld {
+        dump: dump.clone(),
+        sequence: 0,
+    };
+
+    eventually("the phone meeting the desk", || {
+        phone
+            .shown()
+            .devices
+            .iter()
+            .any(|device| device.online && !device.this)
+    });
+    let whole = phone
+        .ask_for_export(desk.device(), wanted(None), Arc::clone(&receiving))
+        .answer();
+    let fetched = fs::read(&staged).expect("the copy received");
+    let so_far = receiving.so_far();
+
+    assert_eq!(whole, ExportFetched::Whole(held.clone()));
+    assert_eq!(fetched, bytes);
+    assert_eq!(so_far, (bytes.len() as u64, bytes.len() as u64));
+    assert!(!noted.exists());
+
+    fs::write(&staged, &bytes[..100 * 1024]).expect("a partial");
+    fs::write(
+        &noted,
+        format!("{} {} 0 {dump}", desk.device(), bytes.len()),
+    )
+    .expect("its note");
+    let resumed = phone
+        .ask_for_export(desk.device(), wanted(None), Arc::clone(&receiving))
+        .answer();
+    let after_resuming = fs::read(&staged).expect("the copy resumed");
+
+    assert_eq!(resumed, ExportFetched::Whole(held.clone()));
+    assert_eq!(after_resuming, bytes);
+
+    fs::write(&staged, b"of another export").expect("a stale partial");
+    fs::write(
+        &noted,
+        format!("{} {} 0 20260901-000000", desk.device(), bytes.len()),
+    )
+    .expect("its note");
+    let started_over = phone
+        .ask_for_export(desk.device(), wanted(None), Arc::clone(&receiving))
+        .answer();
+    let after_starting_over = fs::read(&staged).expect("the copy fetched again");
+
+    assert_eq!(started_over, ExportFetched::Whole(held.clone()));
+    assert_eq!(after_starting_over, bytes);
+
+    let already = phone
+        .ask_for_export(desk.device(), wanted(Some(held)), Arc::clone(&receiving))
+        .answer();
+    let unheld = desk
+        .ask_for_export(phone.device(), wanted(None), receiving)
+        .answer();
+
+    assert_eq!(already, ExportFetched::AlreadyHeld);
+    assert_eq!(unheld, ExportFetched::NotHeld);
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
 }
 
 #[test]

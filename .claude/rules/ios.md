@@ -362,8 +362,10 @@ sync seals its records and talks QUIC (TLS) of its own.
   *Devices* (this iPhone first, then the others online first, each with its platform and *On this
   network*, *Online* or *Away*; *Add a device…* opens `PairingSheet`), *Continue listening*
   (`HandoffRows`, keyed and asked by `HandedOff.id`), the active then ten latest finished
-  transfers, and *Options*, each a `Destination`: *Songs* (`SyncSongsPage`: the three follow switches, mobile data, the
-  folder picker and the landing notice) and *Connection* (`SyncConnectionPage`: *Sync through*
+  transfers, and *Options*, each a `Destination`: *Songs* (`SyncSongsPage`: the three follow switches, mobile data, *Keep a copy of MusicBrainz*
+  (`SyncConfig.musicbrainz_copy`, `sync-musicbrainz-copy`, its line `musicbrainzCopyLine` over the
+  `musicbrainz_copy()` the sync poll reads, and *Remove the copy*, confirmed; `mobile.md`'s *A copy of
+  MusicBrainz fetched from a desktop*), the folder picker and the landing notice) and *Connection* (`SyncConnectionPage`: *Sync through*
   Resonate's server, your own server with its address, or *This network only*, which is
   `SyncConfig.nearby_only` and defaults off (`sync-nearby-only`); *Public address*, a STUN server as `SyncConfig.stun` (`sync-stun`) on the hosted and own routes; on the own route *Server certificate*, a PEM chosen with `fileImporter` and read to at most `certificateBytesAtMost` through `Features.keepSyncCertificate` into `sync_keep_certificate`, its file name kept as `SyncConfig.certificate` (`sync-certificate`), with *Forget the certificate*; and the device name). `PairingSheet` shows the code with Copy (on the pasteboard `localOnly` and expiring after two minutes, so Universal Clipboard never hands it on) and Share,
   joins another device's code (confirmed where a code is held), and *Make a new code…* (confirmed)

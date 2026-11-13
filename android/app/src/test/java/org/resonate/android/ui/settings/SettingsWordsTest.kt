@@ -11,6 +11,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.resonate.android.AudioOutput
 import org.resonate.android.English
+import org.resonate.android.nativecore.MusicbrainzCopy
+import org.resonate.android.nativecore.MusicbrainzCopyStanding
 import org.resonate.android.nativecore.DevicePlatform
 import org.resonate.android.nativecore.DownloadAccount
 import org.resonate.android.nativecore.EnrichmentStatus
@@ -261,7 +263,7 @@ class SettingsWordsTest {
         assertFalse(canSignInToLastFm(ScrobbleDraft(account.copy(lastfmSecret = ""))))
     }
 
-    private val config = SyncConfig(true, false, "", "", "", false, false, false, false, SyncControl.EVERYTHING, "", "")
+    private val config = SyncConfig(true, false, "", "", "", false, false, false, false, SyncControl.EVERYTHING, "", "", false)
 
     private fun device(
         name: String,
@@ -272,6 +274,54 @@ class SettingsWordsTest {
 
     private fun status(standing: SyncStanding, vararg devices: SyncedDevice, owed: UInt = 0u) =
         SyncStatus(standing, "code", devices.toList(), 0u, 0u, 0u, owed, 0uL, true, emptyList())
+
+    private fun copy(
+        standing: MusicbrainzCopyStanding,
+        dump: String? = null,
+        amendedTo: ULong? = null,
+        received: ULong = 0uL,
+        of: ULong = 0uL,
+    ) = MusicbrainzCopy(standing, dump, 10_300_000_000uL, amendedTo, null, received, of)
+
+    @Test
+    fun theCopyOfMusicBrainzSaysWhereItStandsAndWhatItHolds() {
+        assertEquals(
+            "Lookups ask a device that holds one",
+            musicbrainzCopyLine(English, copy(MusicbrainzCopyStanding.OFF), false),
+        )
+        assertEquals(
+            "Receiving 2.5 of 10.3 GB",
+            musicbrainzCopyLine(
+                English,
+                copy(MusicbrainzCopyStanding.RECEIVING, received = 2_500_000_000uL, of = 10_300_000_000uL),
+                true,
+            ),
+        )
+        assertEquals(
+            "Export of 20261111-002335 · 10.3 GB",
+            musicbrainzCopyLine(English, copy(MusicbrainzCopyStanding.HELD, "20261111-002335"), true),
+        )
+        assertEquals(
+            "Export of 20261111-002335 · 10.3 GB · changes to packet 196412",
+            musicbrainzCopyLine(
+                English,
+                copy(MusicbrainzCopyStanding.HELD, "20261111-002335", amendedTo = 196_412uL),
+                false,
+            ),
+        )
+        assertEquals(
+            "None of your devices online holds a copy",
+            musicbrainzCopyLine(English, copy(MusicbrainzCopyStanding.NO_DEVICE_HOLDS_ONE), true),
+        )
+        assertEquals(
+            "Not enough room here: a copy takes about 12 GB",
+            musicbrainzCopyLine(English, copy(MusicbrainzCopyStanding.NO_ROOM), true),
+        )
+        assertEquals(
+            "Waiting for Wi-Fi, or for mobile data to be allowed",
+            musicbrainzCopyLine(English, copy(MusicbrainzCopyStanding.WAITING_FOR_TRANSFERS), true),
+        )
+    }
 
     @Test
     fun theTransfersHeaderSaysHowManyAreDownloadingAndHowManyWait() {

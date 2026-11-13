@@ -1,4 +1,11 @@
-use std::{sync::mpsc as std_mpsc, time::Duration};
+use std::{
+    io::{Read, Seek},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc as std_mpsc,
+    },
+    time::Duration,
+};
 
 use crate::DeviceId;
 
@@ -21,6 +28,94 @@ pub trait Consultable: Send + Sync + 'static {
     fn kept_mark(&self, device: DeviceId) -> u64;
 
     fn take_kept(&self, device: DeviceId, answers: Vec<KeptAnswer>, mark: u64);
+
+    fn export(&self, _part: ExportPart) -> Option<OfferedExport> {
+        None
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExportPart {
+    Copy,
+    Amendments,
+}
+
+impl ExportPart {
+    pub(crate) const fn coded(self) -> u8 {
+        match self {
+            Self::Copy => 0,
+            Self::Amendments => 1,
+        }
+    }
+
+    pub(crate) const fn of_code(code: u8) -> Option<Self> {
+        match code {
+            0 => Some(Self::Copy),
+            1 => Some(Self::Amendments),
+            _ => None,
+        }
+    }
+}
+
+pub trait ReadsExport: Read + Seek + Send {}
+
+impl<T: Read + Seek + Send> ReadsExport for T {}
+
+pub struct OfferedExport {
+    pub dump: String,
+    pub sequence: u64,
+    pub size: u64,
+    pub reader: Box<dyn ReadsExport>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExportHeld {
+    pub dump: String,
+    pub sequence: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExportFetched {
+    Whole(ExportHeld),
+    AlreadyHeld,
+    NotHeld,
+    Failed,
+}
+
+#[derive(Debug, Default)]
+pub struct ExportReceiving {
+    received: AtomicU64,
+    of: AtomicU64,
+}
+
+impl ExportReceiving {
+    pub fn so_far(&self) -> (u64, u64) {
+        (
+            self.received.load(Ordering::Relaxed),
+            self.of.load(Ordering::Relaxed),
+        )
+    }
+
+    pub(crate) fn heard(&self, received: u64, of: u64) {
+        self.received.store(received, Ordering::Relaxed);
+        self.of.store(of, Ordering::Relaxed);
+    }
+}
+
+pub struct AskedForExport(pub(crate) std_mpsc::Receiver<ExportFetched>);
+
+impl AskedForExport {
+    pub fn answer(&self) -> ExportFetched {
+        self.0.recv().unwrap_or(ExportFetched::Failed)
+    }
+
+    pub fn answer_within(&self, within: Duration) -> Option<ExportFetched> {
+        match self.0.recv_timeout(within) {
+            Ok(fetched) => Some(fetched),
+            Err(std_mpsc::RecvTimeoutError::Timeout) => None,
+            Err(std_mpsc::RecvTimeoutError::Disconnected) => Some(ExportFetched::Failed),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

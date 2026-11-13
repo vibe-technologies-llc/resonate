@@ -6,7 +6,7 @@ use std::{
 
 use parking_lot::Mutex;
 
-use crate::{Answer, Asked, Kept, KeptAnswer, Mirrored, Peers};
+use crate::{Answer, Asked, CopyPart, Kept, KeptAnswer, Mirrored, Offered, Peers};
 
 pub const CONSULTED_AGAIN_AFTER: Duration = Duration::from_secs(10 * 60);
 
@@ -45,6 +45,14 @@ impl Consultation {
                 None
             }
         }
+    }
+
+    pub fn offered(&self, part: CopyPart) -> Option<Offered> {
+        let mirror = self.mirror.as_ref()?.held()?;
+        mirror.offered(part).unwrap_or_else(|error| {
+            tracing::warn!(%error, "the copy of MusicBrainz could not be offered to another device");
+            None
+        })
     }
 
     pub fn kept_after(&self, after: u64, most: usize, asker: &str) -> Vec<KeptAnswer> {
