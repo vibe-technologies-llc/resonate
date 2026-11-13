@@ -1,6 +1,7 @@
 use std::{
     cell::{Cell, RefCell},
     cmp::Reverse,
+    convert::Infallible,
     num::NonZeroUsize,
     sync::{
         Arc,
@@ -11,8 +12,6 @@ use std::{
 };
 
 use ahash::AHashSet;
-use crossbeam_channel::{SendError, Sender, bounded};
-use parking_lot::Mutex;
 use resonate_analysis::Verdict;
 use resonate_core::{AlbumId, ArtistId, Chromaprint, TrackId, titles::dequalified};
 
@@ -29,6 +28,7 @@ use crate::{
     reference::credited_as,
     studies::{self, Agreement, Claims, HEARD_AT_LEAST, HeardAs, Studies, ToStudy},
     sung,
+    walk::{Queue, Readers, Reads, Seeks, Step, Walker, walk},
 };
 
 pub const RETRY_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
@@ -123,30 +123,20 @@ enum Seek {
 
 #[derive(Debug, Default)]
 pub struct Sought {
-    asked: Mutex<Vec<Seek>>,
+    asked: Seeks<Seek>,
 }
 
 impl Sought {
     pub fn album(&self, id: AlbumId) {
-        self.seek(Seek::Album(id));
+        self.asked.seek(Seek::Album(id));
     }
 
     pub fn artist(&self, id: ArtistId) {
-        self.seek(Seek::Artist(id));
+        self.asked.seek(Seek::Artist(id));
     }
 
     pub fn track(&self, id: TrackId) {
-        self.seek(Seek::Track(id));
-    }
-
-    fn seek(&self, seek: Seek) {
-        let mut asked = self.asked.lock();
-        asked.retain(|held| *held != seek);
-        asked.push(seek);
-    }
-
-    fn taken(&self) -> Vec<Seek> {
-        std::mem::take(&mut *self.asked.lock())
+        self.asked.seek(Seek::Track(id));
     }
 }
 
@@ -157,25 +147,13 @@ enum Ask {
 }
 
 impl Ask {
-    fn is(&self, seek: Seek) -> bool {
-        match (self, seek) {
-            (Self::Album(album), Seek::Album(id)) => album.id == id,
-            (Self::Artist(artist), Seek::Artist(id)) => *artist == id,
-            (Self::Track(track), Seek::Track(id)) => *track == id,
-            (Self::Album(_), Seek::Artist(_) | Seek::Track(_))
-            | (Self::Artist(_), Seek::Album(_) | Seek::Track(_))
-            | (Self::Track(_), Seek::Album(_) | Seek::Artist(_)) => false,
-        }
-    }
-}
-
-fn rotated(queue: &mut [Ask], seek: Seek) -> bool {
-    match queue.iter().position(|ask| ask.is(seek)) {
-        Some(at) => {
-            queue[..=at].rotate_right(1);
-            true
-        }
-        None => false,
+    fn keyed(self) -> (Seek, Self) {
+        let seek = match &self {
+            Self::Album(album) => Seek::Album(album.id),
+            Self::Track(track) => Seek::Track(*track),
+            Self::Artist(artist) => Seek::Artist(*artist),
+        };
+        (seek, self)
     }
 }
 
@@ -380,7 +358,7 @@ fn run(
     if options.pace == Pace::Hurried {
         progress.hurry();
     }
-    let pictures = Pictures::start(library, reference, progress);
+    let pictures = read_pictures(library, reference, progress);
     let claims = Arc::new(Claims::default());
     let studies = Studies::start(
         library,
@@ -506,16 +484,13 @@ impl Verses {
         let reader = thread::Builder::new()
             .name("resonate-lyrics".to_owned())
             .spawn(move || {
-                for track in asked {
-                    resonate_core::gaming::wait(&|| progress.is_cancelled());
-                    if progress.is_cancelled() {
-                        return;
-                    }
-                    if let Sang::Unreachable = sing(&library, reference.as_ref(), &progress, track)
-                    {
-                        return;
-                    }
-                }
+                let singing = Singing {
+                    library: &library,
+                    reference: reference.as_ref(),
+                    progress: &progress,
+                };
+                let mut queue = Queue::of(asked.into_iter().map(|track| (track, ())));
+                let Ok(_) = walk(&singing, &mut queue, &Seeks::default());
             })
             .map_err(|error| {
                 tracing::warn!(%error, "the lyric reader did not start");
@@ -535,6 +510,45 @@ impl Verses {
 enum Sang {
     Asked,
     Unreachable,
+}
+
+struct Singing<'l> {
+    library: &'l Library,
+    reference: &'l dyn Reference,
+    progress: &'l EnrichProgress,
+}
+
+impl Walker for Singing<'_> {
+    type Key = TrackId;
+    type Ask = ();
+    type Seek = TrackId;
+    type Error = Infallible;
+
+    fn goes_on(&self) -> std::result::Result<Step, Infallible> {
+        resonate_core::gaming::wait(&|| self.progress.is_cancelled());
+        Ok(if self.progress.is_cancelled() {
+            Step::Stop
+        } else {
+            Step::On
+        })
+    }
+
+    fn named_by(&self, track: TrackId) -> std::result::Result<Vec<TrackId>, Infallible> {
+        Ok(vec![track])
+    }
+
+    fn still_due(&self, _: &TrackId) -> std::result::Result<Option<()>, Infallible> {
+        Ok(None)
+    }
+
+    fn ask(&self, track: TrackId, (): ()) -> std::result::Result<Step, Infallible> {
+        Ok(
+            match sing(self.library, self.reference, self.progress, track) {
+                Sang::Asked => Step::On,
+                Sang::Unreachable => Step::Stop,
+            },
+        )
+    }
 }
 
 fn sing(
@@ -595,8 +609,6 @@ fn refused(library: &Library, progress: &EnrichProgress, asking: &sung::Asking, 
     }
 }
 
-const PICTURES_ASKED: usize = 64;
-
 const PICTURE_READERS: usize = 4;
 
 enum Picture {
@@ -619,57 +631,37 @@ enum Picture {
     },
 }
 
-struct Pictures {
-    wanted: Option<Sender<Picture>>,
-    readers: Vec<JoinHandle<()>>,
+struct Fetching {
+    library: Library,
+    reference: Arc<dyn Reference>,
+    progress: Arc<EnrichProgress>,
 }
 
-impl Pictures {
-    fn start(
-        library: &Library,
-        reference: &Arc<dyn Reference>,
-        progress: &Arc<EnrichProgress>,
-    ) -> Self {
-        let (wanted, asked) = bounded(PICTURES_ASKED);
-        let readers: Vec<JoinHandle<()>> = (0..PICTURE_READERS)
-            .filter_map(|nth| {
-                let library = library.shared();
-                let reference = Arc::clone(reference);
-                let progress = Arc::clone(progress);
-                let asked = asked.clone();
-                thread::Builder::new()
-                    .name(format!("resonate-pictures-{nth}"))
-                    .spawn(move || {
-                        for picture in asked {
-                            fetch(&library, reference.as_ref(), &progress, picture);
-                        }
-                    })
-                    .map_err(|error| {
-                        tracing::warn!(%error, "a picture reader did not start");
-                    })
-                    .ok()
-            })
-            .collect();
-
-        Self {
-            wanted: (!readers.is_empty()).then_some(wanted),
-            readers,
-        }
+impl Reads<Picture> for Fetching {
+    fn read(&self, picture: Picture) {
+        fetch(
+            &self.library,
+            self.reference.as_ref(),
+            &self.progress,
+            picture,
+        );
     }
+}
 
-    fn hand(&self, picture: Picture) -> std::result::Result<(), SendError<Picture>> {
-        match self.wanted.as_ref() {
-            Some(wanted) => wanted.send(picture),
-            None => Err(SendError(picture)),
-        }
-    }
-
-    fn rest(mut self) {
-        drop(self.wanted.take());
-        for reader in self.readers.drain(..) {
-            let _ = reader.join();
-        }
-    }
+fn read_pictures(
+    library: &Library,
+    reference: &Arc<dyn Reference>,
+    progress: &Arc<EnrichProgress>,
+) -> Readers<Picture> {
+    Readers::start(
+        "resonate-pictures",
+        PICTURE_READERS,
+        Arc::new(Fetching {
+            library: library.shared(),
+            reference: Arc::clone(reference),
+            progress: Arc::clone(progress),
+        }),
+    )
 }
 
 fn fetch(
@@ -1659,12 +1651,52 @@ pub(crate) fn top_artist(found: Vec<ArtistMatch>, name: &str) -> Option<Mbid> {
 
 const ALBUMS_REMATCHED_PER_TRANSACTION: usize = 64;
 
+struct Walking<'p, 'a> {
+    pass: &'p Pass<'a>,
+    refresh: bool,
+}
+
+impl Walker for Walking<'_, '_> {
+    type Key = Seek;
+    type Ask = Ask;
+    type Seek = Seek;
+    type Error = Error;
+
+    fn goes_on(&self) -> Result<Step> {
+        let progress = self.pass.progress;
+        resonate_core::gaming::wait(&|| progress.is_cancelled());
+        Ok(if progress.is_cancelled() {
+            Step::Stop
+        } else {
+            Step::On
+        })
+    }
+
+    fn named_by(&self, seek: Seek) -> Result<Vec<Seek>> {
+        Ok(vec![seek])
+    }
+
+    fn still_due(&self, seek: &Seek) -> Result<Option<Ask>> {
+        self.pass.still_due(*seek, self.refresh)
+    }
+
+    fn ask(&self, _: Seek, ask: Ask) -> Result<Step> {
+        let answered = match &ask {
+            Ask::Album(album) => self.pass.album(album),
+            Ask::Track(track) => self.pass.track(*track),
+            Ask::Artist(artist) => self.pass.artist(*artist),
+        };
+        passed_over_if_gone(answered)?;
+        Ok(Step::On)
+    }
+}
+
 struct Pass<'a> {
     library: &'a Library,
     reference: &'a dyn Reference,
     fingerprinters: &'a Fingerprinters,
     progress: &'a EnrichProgress,
-    pictures: &'a Pictures,
+    pictures: &'a Readers<Picture>,
     claims: &'a Claims,
     refusing: Refusing,
     pictured: RefCell<AHashSet<ArtistId>>,
@@ -1735,44 +1767,27 @@ impl Pass<'_> {
             artists.truncate(at_most.get());
         }
 
-        let mut queue: Vec<Ask> = due
-            .into_iter()
-            .map(Ask::Album)
-            .chain(tracks.into_iter().map(Ask::Track))
-            .chain(artists.into_iter().map(Ask::Artist))
-            .collect();
+        let mut queue = Queue::of(
+            due.into_iter()
+                .map(Ask::Album)
+                .chain(tracks.into_iter().map(Ask::Track))
+                .chain(artists.into_iter().map(Ask::Artist))
+                .map(Ask::keyed),
+        );
 
-        let mut asked = 0;
-        let mut spent = AHashSet::new();
+        let walking = Walking {
+            pass: self,
+            refresh: options.refresh,
+        };
         loop {
-            while asked < queue.len() {
-                resonate_core::gaming::wait(&|| self.progress.is_cancelled());
-                if self.progress.is_cancelled() {
-                    return Ok(());
-                }
-                self.lift(options, &spent, &mut queue, asked)?;
-                let answered = match &queue[asked] {
-                    Ask::Album(album) => {
-                        spent.insert(Seek::Album(album.id));
-                        self.album(album)
-                    }
-                    Ask::Track(track) => {
-                        spent.insert(Seek::Track(*track));
-                        self.track(*track)
-                    }
-                    Ask::Artist(artist) => {
-                        spent.insert(Seek::Artist(*artist));
-                        self.artist(*artist)
-                    }
-                };
-                passed_over_if_gone(answered)?;
-                asked += 1;
+            if walk(&walking, &mut queue, &options.sought.asked)? == Step::Stop {
+                return Ok(());
             }
-            let born = self.artists_born_in_the_pass(options, &spent)?;
+            let born = self.artists_born_in_the_pass(options, &queue)?;
             if born.is_empty() {
                 break;
             }
-            queue.extend(born.into_iter().map(Ask::Artist));
+            queue.extend(born.into_iter().map(Ask::Artist).map(Ask::keyed));
         }
 
         self.library.settle_the_credits()?;
@@ -1838,7 +1853,7 @@ impl Pass<'_> {
     fn artists_born_in_the_pass(
         &self,
         options: &EnrichOptions,
-        spent: &AHashSet<Seek>,
+        queue: &Queue<Seek, Ask>,
     ) -> Result<Vec<ArtistId>> {
         if options.at_most.is_some() {
             return Ok(Vec::new());
@@ -1847,26 +1862,8 @@ impl Pass<'_> {
             .library
             .artists_to_ask(WAITS, options.refresh)?
             .into_iter()
-            .filter(|artist| !spent.contains(&Seek::Artist(*artist)))
+            .filter(|artist| !queue.is_spent(&Seek::Artist(*artist)))
             .collect())
-    }
-
-    fn lift(
-        &self,
-        options: &EnrichOptions,
-        spent: &AHashSet<Seek>,
-        queue: &mut Vec<Ask>,
-        from: usize,
-    ) -> Result<()> {
-        for seek in options.sought.taken() {
-            if spent.contains(&seek) || rotated(&mut queue[from..], seek) {
-                continue;
-            }
-            if let Some(ask) = self.still_due(seek, options.refresh)? {
-                queue.insert(from, ask);
-            }
-        }
-        Ok(())
     }
 
     fn still_due(&self, seek: Seek, refresh: bool) -> Result<Option<Ask>> {
@@ -2107,7 +2104,7 @@ impl Pass<'_> {
     }
 
     fn want(&self, picture: Picture) {
-        if let Err(SendError(picture)) = self.pictures.hand(picture) {
+        if let Some(picture) = self.pictures.hand(picture) {
             fetch(self.library, self.reference, self.progress, picture);
         }
     }
@@ -2879,94 +2876,6 @@ mod tests {
         let top = top_of(found, |found| found.score).expect("a match was listed");
         assert_eq!(top.name, "second");
         assert!(top_of(Vec::<ArtistMatch>::new(), |found| found.score).is_none());
-    }
-
-    fn numbered_artist(id: u64) -> ArtistId {
-        ArtistId::new(id).expect("a non-zero id")
-    }
-
-    fn named(queue: &[Ask]) -> Vec<(char, u64)> {
-        queue
-            .iter()
-            .map(|ask| match ask {
-                Ask::Album(album) => ('a', album.id.get()),
-                Ask::Track(track) => ('t', track.get()),
-                Ask::Artist(artist) => ('r', artist.get()),
-            })
-            .collect()
-    }
-
-    fn lift(sought: &Sought, queue: &mut [Ask]) {
-        for seek in sought.taken() {
-            rotated(queue, seek);
-        }
-    }
-
-    fn queued() -> Vec<Ask> {
-        vec![
-            Ask::Album(numbered_album(1, None)),
-            Ask::Album(numbered_album(2, None)),
-            Ask::Album(numbered_album(3, None)),
-            Ask::Artist(numbered_artist(7)),
-            Ask::Artist(numbered_artist(8)),
-        ]
-    }
-
-    #[test]
-    fn what_was_sought_is_lifted_to_the_front_and_the_newest_leads() {
-        let sought = Sought::default();
-        sought.album(AlbumId::new(3).expect("a non-zero id"));
-        sought.artist(ArtistId::new(8).expect("a non-zero id"));
-
-        let mut queue = queued();
-        lift(&sought, &mut queue);
-
-        assert_eq!(
-            named(&queue),
-            vec![('r', 8), ('a', 3), ('a', 1), ('a', 2), ('r', 7)]
-        );
-    }
-
-    #[test]
-    fn a_seek_is_spent_once_and_names_nothing_the_queue_still_holds() {
-        let sought = Sought::default();
-        sought.album(AlbumId::new(2).expect("a non-zero id"));
-        sought.album(AlbumId::new(99).expect("a non-zero id"));
-
-        let mut queue = queued();
-        lift(&sought, &mut queue);
-        assert_eq!(named(&queue).first().copied(), Some(('a', 2)));
-
-        let mut again = queued();
-        lift(&sought, &mut again);
-        assert_eq!(named(&again), named(&queued()));
-    }
-
-    #[test]
-    fn a_seek_asked_for_twice_is_held_once() {
-        let sought = Sought::default();
-        sought.album(AlbumId::new(3).expect("a non-zero id"));
-        sought.album(AlbumId::new(2).expect("a non-zero id"));
-        sought.album(AlbumId::new(3).expect("a non-zero id"));
-
-        let mut queue = queued();
-        lift(&sought, &mut queue);
-
-        assert_eq!(
-            named(&queue),
-            vec![('a', 3), ('a', 2), ('a', 1), ('r', 7), ('r', 8)]
-        );
-    }
-
-    #[test]
-    fn what_has_been_asked_already_is_left_where_it_is() {
-        let sought = Sought::default();
-        sought.album(AlbumId::new(1).expect("a non-zero id"));
-
-        let mut queue = queued();
-        lift(&sought, &mut queue[2..]);
-
-        assert_eq!(named(&queue), named(&queued()));
     }
 
     #[test]

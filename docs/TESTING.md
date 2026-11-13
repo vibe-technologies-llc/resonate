@@ -162,12 +162,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   (`ui.md`), but every pane's feature still passes through both, and `RootView::new` is some 750
   lines making 40 subscriptions: panes as entities owning their fields and subscriptions, once the
   `driven.rs` harness pins what they do
-- [L] The phones' enrichment pass still copies the desktop's queueing: `resonate-mobile`'s
-  `enrichment.rs` (`Sought`, `Pictures`, `Pass::walk` and `lift`, the lyric reader, and constants such
-  as `PICTURES_WAITING_AT_MOST` and `PERFORMERS_WEIGHED_AT_MOST`) beside `resonate-library`'s
-  `enrich.rs`. The strict rules and how an answer is heard (`hearing.rs`: refusals, the run that ends
-  a pass, phrase then words) are shared; the queue, the seeks and the picture and lyric workers are
-  not, so a fix to one is made twice. One pass over a small catalog trait both catalogs fill
 - [M · blocked: jxl-oxide reading jxl-encoder's ANS-coded output] The vault builds two JPEG XL
   encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder` for a JPEG's transcode. Measured on
   600 to 1400 px covers, `jxl-encoder` 0.3.4's lossless effort 7 is about half zune's size (0.6 to

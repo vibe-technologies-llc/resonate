@@ -1,6 +1,7 @@
 use std::{
     cell::{Cell, RefCell},
     collections::{BTreeSet, VecDeque},
+    convert::Infallible,
     path::Path,
     sync::{
         Arc,
@@ -10,19 +11,19 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crossbeam_channel::{Sender, bounded};
 use parking_lot::{Condvar, Mutex};
 use resonate_analysis::{Watching, band_figures};
 use resonate_codec::{CoverArt, ImageFormat, Sources, probe_scanned};
 use resonate_core::{AlbumId, Chromaprint, Isrc, Link, Mbid, SourceId, TrackId};
 use resonate_library::{
     A_THUMBNAIL_BELOW, Agreement, AlbumToAsk, BETTERED_AFTER, COVERS_ASKED_AGAIN_AFTER, Certainty,
-    Fingerprints, Fruitless, Identified, KeptLyrics, LookupOp, LyricText, LyricsAsked,
-    MISSED_AGAIN_AFTER, PORTRAITS_ASKED_AGAIN_AFTER, RECOGNITIONS_REFUSED_BEFORE_GIVING_UP,
-    REFUSALS_THAT_END_A_PASS, Recording, Reference, RefusedBefore, Refusing, Release, ReleaseGroup,
-    Reply, TrackToAsk, WAITS, Wording, best_recording, best_release, betters, closest_release,
-    due_again, due_parameters, either_way, group_asked, needs_its_releases_told, recording_asked,
-    release_asked, the_strict_recording, top_group, top_release,
+    Fingerprints, Fruitless, Identified, KeptLyrics, Lifted, LookupOp, LyricText, LyricsAsked,
+    MISSED_AGAIN_AFTER, PERFORMERS_WEIGHED_AT_MOST, PORTRAITS_ASKED_AGAIN_AFTER, Queue,
+    RECOGNITIONS_REFUSED_BEFORE_GIVING_UP, REFUSALS_THAT_END_A_PASS, Readers, Reads, Recording,
+    Reference, RefusedBefore, Refusing, Release, ReleaseGroup, Reply, Seeks, Step, TrackToAsk,
+    WAITS, Walker, Wording, best_recording, best_release, betters, closest_release, due_again,
+    due_parameters, either_way, group_asked, needs_its_releases_told, recording_asked,
+    release_asked, the_strict_recording, top_group, top_release, walk,
 };
 use resonate_online::{AcoustId, Client, Online};
 use rusqlite::{OptionalExtension, params, params_from_iter, types::Value};
@@ -35,10 +36,6 @@ use crate::{
     documents::location,
     features::{ArtistInformation, recognised_through},
 };
-
-const PICTURES_WAITING_AT_MOST: usize = 64;
-
-const PERFORMERS_WEIGHED_AT_MOST: usize = 32;
 
 const LISTED_APART: char = '\n';
 
@@ -144,29 +141,14 @@ enum Leaving {
 }
 
 #[derive(Default)]
-struct Sought(Mutex<Vec<u64>>);
-
-impl Sought {
-    fn seek(&self, track: u64) {
-        let mut sought = self.0.lock();
-        sought.retain(|held| *held != track);
-        sought.push(track);
-    }
-
-    fn taken(&self) -> Vec<u64> {
-        std::mem::take(&mut *self.0.lock())
-    }
-}
-
-#[derive(Default)]
 struct Told {
     cancelled: Arc<AtomicBool>,
     finished_workers: AtomicU32,
     waking: Mutex<u64>,
     woken: Condvar,
     for_now: AtomicBool,
-    asked_first: Sought,
-    sung_first: Sought,
+    asked_first: Seeks<u64>,
+    sung_first: Seeks<u64>,
 }
 
 impl Told {
@@ -211,18 +193,6 @@ impl Drop for WakeWhenDone<'_> {
     fn drop(&mut self) {
         self.0.finished_workers.fetch_add(1, Ordering::Release);
         self.0.wake();
-    }
-}
-
-struct PictureWorkerFinished<'a> {
-    told: &'a Told,
-    pending: &'a AtomicU32,
-}
-
-impl Drop for PictureWorkerFinished<'_> {
-    fn drop(&mut self) {
-        self.pending.store(0, Ordering::Release);
-        self.told.wake();
     }
 }
 
@@ -401,7 +371,7 @@ impl MobilePlayer {
     pub(crate) fn enrich_one(&self, asking: &Asking, id: u64) -> Result<()> {
         let told = Told::default();
         let tally = Tally::default();
-        let pictures = Pictures::inline();
+        let pictures = Readers::none();
         let pass = Pass::new(&self.catalog, asking, &told, &tally, &pictures);
 
         let asked = pass.one(id);
@@ -438,7 +408,7 @@ impl From<Error> for Ended {
 
 type Asked<T> = std::result::Result<T, Ended>;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Ask {
     Album(String),
     Track(u64),
@@ -487,19 +457,27 @@ fn run(
             hear_the_due(&catalog, &sources, &asking, &told, &tally, due, at_most);
         }
     });
-    let pictures = Pictures::start(catalog, asking, told, tally);
+    let pictures = Readers::start(
+        "resonate-enrich-pictures",
+        1,
+        Arc::new(Fetching {
+            catalog: Arc::clone(catalog),
+            asking: asking.clone(),
+            told: Arc::clone(told),
+            tally: Arc::clone(tally),
+        }),
+    );
 
     let pass = Pass::new(catalog, asking, told, tally, &pictures);
     let ended = pass.run(due, at_most).and_then(|()| {
-        let mut queue = VecDeque::new();
-        let mut spent = BTreeSet::new();
+        let mut queue = Queue::default();
         loop {
             let observed = *told.waking.lock();
-            pass.walk(&mut queue, &mut spent, due)?;
+            pass.walk(&mut queue, due)?;
             let workers = u32::from(hearing.is_ok()) + u32::from(lyrics.is_ok());
             let workers_done =
                 told.finished_workers.load(Ordering::Acquire) >= workers_before + workers;
-            if workers_done && pictures.pending.load(Ordering::Acquire) == 0 {
+            if workers_done && pictures.waiting() == 0 {
                 return Ok(());
             }
             told.wait_after(observed);
@@ -594,85 +572,22 @@ enum Picture {
     },
 }
 
-struct Pictures {
-    pending: Arc<AtomicU32>,
-    wanted: Option<Sender<Picture>>,
-    reader: Option<JoinHandle<()>>,
+struct Fetching {
+    catalog: Arc<Catalog>,
+    asking: Asking,
+    told: Arc<Told>,
+    tally: Arc<Tally>,
 }
 
-impl Pictures {
-    fn inline() -> Self {
-        Self {
-            pending: Arc::default(),
-            wanted: None,
-            reader: None,
+impl Reads<Picture> for Fetching {
+    fn read(&self, picture: Picture) {
+        if !self.told.is_cancelled() && self.asking.is_reaching() {
+            fetch(&self.catalog, &self.asking, &self.tally, picture);
         }
     }
 
-    fn start(
-        catalog: &Arc<Catalog>,
-        asking: &Asking,
-        told: &Arc<Told>,
-        tally: &Arc<Tally>,
-    ) -> Self {
-        let (wanted, asked) = bounded::<Picture>(PICTURES_WAITING_AT_MOST);
-        let pending = Arc::new(AtomicU32::new(0));
-        let pending_by_reader = Arc::clone(&pending);
-        let catalog = Arc::clone(catalog);
-        let asking = asking.clone();
-        let told = Arc::clone(told);
-        let tally = Arc::clone(tally);
-        let reader = thread::Builder::new()
-            .name("resonate-enrich-pictures".into())
-            .spawn(move || {
-                let _finished = PictureWorkerFinished {
-                    told: &told,
-                    pending: &pending_by_reader,
-                };
-                for picture in asked {
-                    if !told.is_cancelled() && asking.is_reaching() {
-                        fetch(&catalog, &asking, &tally, picture);
-                    }
-                    pending_by_reader.fetch_sub(1, Ordering::AcqRel);
-                    told.wake();
-                }
-            });
-        match reader {
-            Ok(reader) => Self {
-                pending,
-                wanted: Some(wanted),
-                reader: Some(reader),
-            },
-            Err(error) => {
-                tracing::warn!(%error, "the picture reader could not start, so pictures are fetched in the pass");
-                Self::inline()
-            }
-        }
-    }
-
-    fn want(&self, catalog: &Catalog, asking: &Asking, tally: &Tally, picture: Picture) {
-        let unsent = match &self.wanted {
-            Some(wanted) => {
-                self.pending.fetch_add(1, Ordering::AcqRel);
-                wanted.send(picture).err().map(|unsent| {
-                    self.pending.fetch_sub(1, Ordering::AcqRel);
-                    unsent.0
-                })
-            }
-            None => Some(picture),
-        };
-        if let Some(picture) = unsent {
-            fetch(catalog, asking, tally, picture);
-        }
-    }
-
-    fn rest(mut self) {
-        drop(self.wanted.take());
-        if let Some(reader) = self.reader.take()
-            && reader.join().is_err()
-        {
-            tracing::warn!("the picture reader ended in a panic");
-        }
+    fn after(&self) {
+        self.told.wake();
     }
 }
 
@@ -722,12 +637,56 @@ struct TrackHeld {
     album: Option<String>,
 }
 
+struct Walking<'p, 'a> {
+    pass: &'p Pass<'a>,
+    due: Due,
+}
+
+impl Walker for Walking<'_, '_> {
+    type Key = Ask;
+    type Ask = ();
+    type Seek = u64;
+    type Error = Ended;
+
+    fn goes_on(&self) -> Asked<Step> {
+        self.pass.go_on().map(|()| Step::On)
+    }
+
+    fn named_by(&self, sought: u64) -> Asked<Vec<Ask>> {
+        self.pass.named_by(sought)
+    }
+
+    fn still_due(&self, ask: &Ask) -> Asked<Option<()>> {
+        Ok(self.pass.is_due(ask, self.due)?.then_some(()))
+    }
+
+    fn lifted(&self, ask: &Ask, lifted: Lifted) {
+        if lifted == Lifted::Due {
+            Tally::count(&self.pass.tally.due, 1);
+        }
+        self.pass.first.borrow_mut().insert(ask.clone());
+    }
+
+    fn ask(&self, ask: Ask, (): ()) -> Asked<Step> {
+        let pass = self.pass;
+        pass.pictured_at_once
+            .set(pass.first.borrow_mut().remove(&ask));
+        Tally::count(&pass.tally.asked, 1);
+        match &ask {
+            Ask::Album(key) => pass.album(key)?,
+            Ask::Track(id) => pass.track(*id)?,
+            Ask::Artist(mbid) => pass.artist(mbid)?,
+        }
+        Ok(Step::On)
+    }
+}
+
 struct Pass<'a> {
     catalog: &'a Catalog,
     asking: &'a Asking,
     told: &'a Told,
     tally: &'a Tally,
-    pictures: &'a Pictures,
+    pictures: &'a Readers<Picture>,
     refusing: Refusing,
     covered: RefCell<BTreeSet<String>>,
     pictured: RefCell<BTreeSet<String>>,
@@ -741,7 +700,7 @@ impl<'a> Pass<'a> {
         asking: &'a Asking,
         told: &'a Told,
         tally: &'a Tally,
-        pictures: &'a Pictures,
+        pictures: &'a Readers<Picture>,
     ) -> Self {
         Self {
             catalog,
@@ -779,11 +738,14 @@ impl<'a> Pass<'a> {
                 .collect(),
         );
         let queue: VecDeque<Ask> = albums.into_iter().chain(tracks).collect();
-        let mut queue = self.downloads_first(queue)?;
-        let mut spent = BTreeSet::new();
+        let mut queue = Queue::of(
+            self.downloads_first(queue)?
+                .into_iter()
+                .map(|ask| (ask, ())),
+        );
         Tally::count(&self.tally.due, queue.len());
 
-        self.walk(&mut queue, &mut spent, due)?;
+        self.walk(&mut queue, due)?;
         self.look_again_for_covers(due.now)?;
         loop {
             self.catalog.take_in_artists()?;
@@ -792,15 +754,15 @@ impl<'a> Pass<'a> {
                     .artists_due(due, Value::Null)?
                     .into_iter()
                     .map(Ask::Artist)
-                    .filter(|artist| !spent.contains(artist))
+                    .filter(|artist| !queue.is_spent(artist))
                     .collect(),
             );
             if artists.is_empty() {
                 return Ok(());
             }
             Tally::count(&self.tally.due, artists.len());
-            queue.extend(artists);
-            self.walk(&mut queue, &mut spent, due)?;
+            queue.extend(artists.into_iter().map(|ask| (ask, ())));
+            self.walk(&mut queue, due)?;
             if at_most.is_some() {
                 return Ok(());
             }
@@ -830,56 +792,25 @@ impl<'a> Pass<'a> {
             .collect())
     }
 
-    fn walk(&self, queue: &mut VecDeque<Ask>, spent: &mut BTreeSet<Ask>, due: Due) -> Asked<()> {
-        loop {
-            self.go_on()?;
-            self.lift(queue, spent, due)?;
-            let Some(ask) = queue.pop_front() else {
-                return Ok(());
-            };
-            if !spent.insert(ask.clone()) {
-                continue;
-            }
-            self.pictured_at_once
-                .set(self.first.borrow_mut().remove(&ask));
-            Tally::count(&self.tally.asked, 1);
-            match &ask {
-                Ask::Album(key) => self.album(key)?,
-                Ask::Track(id) => self.track(*id)?,
-                Ask::Artist(mbid) => self.artist(mbid)?,
-            }
-        }
+    fn walk(&self, queue: &mut Queue<Ask, ()>, due: Due) -> Asked<()> {
+        walk(&Walking { pass: self, due }, queue, &self.told.asked_first).map(|_| ())
     }
 
-    fn lift(&self, queue: &mut VecDeque<Ask>, spent: &BTreeSet<Ask>, due: Due) -> Asked<()> {
-        for sought in self.told.asked_first.taken() {
-            let track = match self.catalog.track(sought) {
-                Ok(track) => track,
-                Err(Error::UnknownTrack) => continue,
-                Err(error) => return Err(error.into()),
-            };
-            let album = self.catalog.album_key_of(sought)?;
-            let asks = [
-                track.artist_mbid.map(Ask::Artist),
-                Some(Ask::Track(sought)),
-                album.map(Ask::Album),
-            ];
-            for ask in asks.into_iter().flatten() {
-                if spent.contains(&ask) {
-                    continue;
-                }
-                if let Some(at) = queue.iter().position(|queued| *queued == ask) {
-                    queue.remove(at);
-                } else if self.is_due(&ask, due)? {
-                    Tally::count(&self.tally.due, 1);
-                } else {
-                    continue;
-                }
-                self.first.borrow_mut().insert(ask.clone());
-                queue.push_front(ask);
-            }
-        }
-        Ok(())
+    fn named_by(&self, sought: u64) -> Asked<Vec<Ask>> {
+        let track = match self.catalog.track(sought) {
+            Ok(track) => track,
+            Err(Error::UnknownTrack) => return Ok(Vec::new()),
+            Err(error) => return Err(error.into()),
+        };
+        let album = self.catalog.album_key_of(sought)?;
+        Ok([
+            track.artist_mbid.map(Ask::Artist),
+            Some(Ask::Track(sought)),
+            album.map(Ask::Album),
+        ]
+        .into_iter()
+        .flatten()
+        .collect())
     }
 
     fn is_due(&self, ask: &Ask, due: Due) -> Asked<bool> {
@@ -1102,9 +1033,8 @@ impl<'a> Pass<'a> {
         }
         if self.pictured_at_once.get() {
             fetch(self.catalog, self.asking, self.tally, picture);
-        } else {
-            self.pictures
-                .want(self.catalog, self.asking, self.tally, picture);
+        } else if let Some(picture) = self.pictures.hand(picture) {
+            fetch(self.catalog, self.asking, self.tally, picture);
         }
     }
 
@@ -1522,52 +1452,81 @@ fn sing_the_due(
     }
     Tally::count(&tally.due, tracks.len());
 
-    let refused_in_a_row = Cell::new(0);
-    let mut sung = BTreeSet::new();
-    loop {
-        if let Err(error) = sing_the_sought_first(catalog, told, tally, due, &mut tracks, &sung) {
-            tracing::warn!(%error, "the lyrics of a song sought could not be read");
-        }
-        let Some(track) = tracks.pop_front() else {
-            return;
-        };
-        if !sung.insert(track) {
-            continue;
-        }
-        match sing(catalog, asking, told, tally, track, &refused_in_a_row) {
-            Ok(()) => Tally::count(&tally.asked, 1),
-            Err(Ended::Failed(error)) => {
-                tracing::warn!(%error, track, "a track's lyrics were not kept");
-            }
-            Err(Ended::Cancelled | Ended::Offline | Ended::Refused | Ended::Unreachable(_)) => {
-                return;
-            }
-        }
-    }
+    let singing = Singing {
+        catalog,
+        asking,
+        told,
+        tally,
+        due,
+        refused_in_a_row: Cell::new(0),
+    };
+    let mut queue = Queue::of(tracks.into_iter().map(|track| (track, ())));
+    let Ok(_) = walk(&singing, &mut queue, &told.sung_first);
 }
 
-fn sing_the_sought_first(
-    catalog: &Catalog,
-    told: &Told,
-    tally: &Tally,
+struct Singing<'a> {
+    catalog: &'a Catalog,
+    asking: &'a Asking,
+    told: &'a Told,
+    tally: &'a Tally,
     due: Due,
-    tracks: &mut VecDeque<u64>,
-    sung: &BTreeSet<u64>,
-) -> Result<()> {
-    for sought in told.sung_first.taken() {
-        if sung.contains(&sought) {
-            continue;
-        }
-        if let Some(at) = tracks.iter().position(|queued| *queued == sought) {
-            tracks.remove(at);
-        } else if catalog.lyrics_due(due, Some(sought))?.is_empty() {
-            continue;
-        } else {
-            Tally::count(&tally.due, 1);
-        }
-        tracks.push_front(sought);
+    refused_in_a_row: Cell<u32>,
+}
+
+impl Walker for Singing<'_> {
+    type Key = u64;
+    type Ask = ();
+    type Seek = u64;
+    type Error = Infallible;
+
+    fn goes_on(&self) -> std::result::Result<Step, Infallible> {
+        Ok(Step::On)
     }
-    Ok(())
+
+    fn named_by(&self, track: u64) -> std::result::Result<Vec<u64>, Infallible> {
+        Ok(vec![track])
+    }
+
+    fn still_due(&self, track: &u64) -> std::result::Result<Option<()>, Infallible> {
+        Ok(match self.catalog.lyrics_due(self.due, Some(*track)) {
+            Ok(due) => (!due.is_empty()).then_some(()),
+            Err(error) => {
+                tracing::warn!(%error, "the lyrics of a song sought could not be read");
+                None
+            }
+        })
+    }
+
+    fn lifted(&self, _: &u64, lifted: Lifted) {
+        if lifted == Lifted::Due {
+            Tally::count(&self.tally.due, 1);
+        }
+    }
+
+    fn ask(&self, track: u64, (): ()) -> std::result::Result<Step, Infallible> {
+        Ok(
+            match sing(
+                self.catalog,
+                self.asking,
+                self.told,
+                self.tally,
+                track,
+                &self.refused_in_a_row,
+            ) {
+                Ok(()) => {
+                    Tally::count(&self.tally.asked, 1);
+                    Step::On
+                }
+                Err(Ended::Failed(error)) => {
+                    tracing::warn!(%error, track, "a track's lyrics were not kept");
+                    Step::On
+                }
+                Err(Ended::Cancelled | Ended::Offline | Ended::Refused | Ended::Unreachable(_)) => {
+                    Step::Stop
+                }
+            },
+        )
+    }
 }
 
 fn sing(
@@ -2006,7 +1965,7 @@ impl Catalog {
         let owner = unblank(&first.album_artist).or_else(|| unblank(&first.artist));
         let mut performers: Vec<String> = Vec::new();
         for row in &rows {
-            if performers.len() < PERFORMERS_WEIGHED_AT_MOST
+            if performers.len() < usize::from(PERFORMERS_WEIGHED_AT_MOST)
                 && !row.artist.trim().is_empty()
                 && !performers.contains(&row.artist)
             {
@@ -2549,6 +2508,7 @@ fn album_betters_own(own: Vec<u8>, album: Vec<u8>) -> bool {
 mod tests {
     use std::{env, sync::atomic::AtomicUsize, time::Instant};
 
+    use crossbeam_channel::{Sender, bounded};
     use resonate_codec::Sources;
     use resonate_library::{
         AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings, ArtistProfile,

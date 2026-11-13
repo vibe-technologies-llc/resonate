@@ -779,19 +779,29 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   because a landing album retires every track under it. `tests/library.rs` drives it via a `Fake`
   that can fault on a chosen call; the online crate proves its mapping over captured fixtures,
   reaching services only under `RESONATE_ONLINE_TESTS`.
-- **A picture is fetched beside the pass, never in it.** `Pictures`: `PICTURE_READERS` (4) threads
-  reading a bounded channel (`PICTURES_ASKED`, 64) of `Picture`s (cover, release group's cover,
-  unheld release's cover, portrait); `Pass::want` is the whole of asking; `Pictures::rest` joins
-  readers before the summary. The archive and Wikimedia Commons are not MusicBrainz and
+- **Both catalogs' passes walk through `walk.rs`, so the queue, the seeks and the picture readers
+  are written once.** The desktop's `Pass` and the phones' (`resonate-mobile`'s `enrichment.rs`) each
+  fill a small `Walker` (`goes_on`, `named_by` for what a seek names, `still_due`, `lifted`, `ask`)
+  over their own catalog and run the one `walk` over a `Queue` (asks keyed, each key asked once a
+  run: `Queue::is_spent`) and a `Seeks`; the lyric readers walk the same way. `Readers` is the pool
+  of picture threads behind a bounded channel (`PICTURES_WAITING_AT_MOST`, 64), `Reads` what each
+  thread does with a picture and after it; `Readers::hand` gives a picture back where no reader
+  runs, so it is fetched on the spot, and `Readers::waiting` counts what is still in hand (the
+  phones' tail waits on it). `PERFORMERS_WEIGHED_AT_MOST` is the one cap on an album's performers.
+  Held by `walk.rs`'s tests (`what_was_sought_is_lifted_to_the_front_and_the_newest_leads`,
+  `what_has_been_asked_already_is_left_where_it_is_and_never_asked_twice`,
+  `every_picture_handed_over_is_read_once_and_none_waits_once_the_readers_rest`).
+- **A picture is fetched beside the pass, never in it.** The desktop runs `PICTURE_READERS` (4)
+  `Readers` of `Picture`s (cover, release group's cover, unheld release's cover, portrait), the phones
+  one; `Pass::want` is the whole of asking; `Readers::rest` joins readers before the summary. The archive and Wikimedia Commons are not MusicBrainz and
   `Client::pace` keeps a slot per host, so a picture costs the pass only the handover. An
-  unfetchable picture is a warning plus a `refused` count; with no reader thread, `want` fetches on
-  the spot.
-- **What a listener just reached for is asked next; a seek is spent once.** `Sought` is a
-  `Mutex<Vec<Seek>>` shared with whoever started the pass (`Sought::album`, `Sought::artist`);
-  `Sought::taken` drains it at the top of every queue turn and `Pass::lift` rotates the named `Ask`
-  to the front of what is *left*. A seek naming nothing the queue holds is *read back*
-  (`Library::album_if_due`, `artist_is_due`) and inserted at the front where still due. What the
-  pass asked *this run* is refused by the `spent` set. `LibraryModel` holds one `Sought` for the
+  unfetchable picture is a warning plus a `refused` count.
+- **What a listener just reached for is asked next; a seek is spent once.** `Sought` holds a
+  `Seeks` shared with whoever started the pass (`Sought::album`, `Sought::artist`); `walk` drains it
+  at the top of every queue turn and lifts the named ask to the front of what is *left*, the newest
+  seek first. A seek naming nothing the queue holds is *read back* (`Library::album_if_due`,
+  `artist_is_due`) and put at the front where still due. What the pass asked *this run* is never
+  asked again (`Queue::is_spent`). `LibraryModel` holds one `Sought` for the
   window's run. `LibraryModel::select` seeks the album and its owner; `ask_about_what_is_drawn`
   seeks every album the drawn tracks belong to, then the artist (last pushed is first asked).
 - **An artist's row is read when asked, not when the queue was built.** `Ask::Artist` carries an id,
@@ -1158,7 +1168,7 @@ group landing and `forget_the_match` clear it), writes each row's `release_track
 - **The lookup asks for every track's words beside the pass.** `Reference::lyrics` takes
   `LyricsAsked` (read off the row when asked) and answers `Option<LyricText>`.
   `Library::lyrics_to_ask`: every row with no kept row or a due one (all under `refresh`), cut to
-  `at_most`; `EnrichOptions::lyrics` (`fetch-lyrics`) turns it off. `Verses` is one thread (the lyric
+  `at_most`; `EnrichOptions::lyrics` (`fetch-lyrics`) turns it off. `Verses` is one thread walking its tracks through `walk` (the lyric
   services are paced apart from MusicBrainz). A refusal is counted and the row left unkept, not asked on the
   next pass: `lyrics_refused` holds last-refused time and count (`sung::note_refused`, removed by
   `sung::keep`); `lyrics_to_ask` skips a row refused within `REFUSED_AGAIN_AFTER` doubled per

@@ -74,6 +74,7 @@ mod unreplacing;
 mod vaulted;
 mod versions;
 mod volumes;
+mod walk;
 mod watch;
 mod weighing;
 mod wrapped;
@@ -230,6 +231,10 @@ pub use crate::{
     },
     undo::{Edit, Maker, Undoable},
     versions::{Quality, SongHeard, TheSong, VersionSought, better_held, rated_held, rating_of},
+    walk::{
+        Lifted, PERFORMERS_WEIGHED_AT_MOST, PICTURES_WAITING_AT_MOST, Queue, Readers, Reads, Seeks,
+        Step, Walker, walk,
+    },
     watch::RootsWatch,
     weighing::{
         VaultMended, VaultReframed, VaultUnreached, VaultWeighing, VaultWeighingProgress,

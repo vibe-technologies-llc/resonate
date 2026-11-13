@@ -7,9 +7,9 @@ use rusqlite::{
 
 use crate::{
     Agreement, AlbumToAsk, ArtistProfile, ArtistRelease, ArtistToAsk, Certainty, CoverArt,
-    CoverSource, Credit, Error, Fruitless, HeardAs, Isrc, Link, Mbid, Medium, Recording,
-    RecordingRelease, Release, ReleaseGroup, ReleaseTrack, Result, StoreOp, TrackToAsk, Unfinished,
-    VaultKey, Waits,
+    CoverSource, Credit, Error, Fruitless, HeardAs, Isrc, Link, Mbid, Medium,
+    PERFORMERS_WEIGHED_AT_MOST, Recording, RecordingRelease, Release, ReleaseGroup, ReleaseTrack,
+    Result, StoreOp, TrackToAsk, Unfinished, VaultKey, Waits,
     enrich::Pressing,
     model::{CoverFrom, CoverWanted},
     store,
@@ -1688,8 +1688,6 @@ fn whole_count_of(discs: &[DeclaredDisc]) -> Option<u32> {
         Some(discs.iter().map(|disc| disc.total).sum())
     }
 }
-
-const PERFORMERS_WEIGHED_AT_MOST: i64 = 32;
 
 fn performers_of(connection: &Connection, album: i64) -> Result<Vec<String>> {
     connection
