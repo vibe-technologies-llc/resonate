@@ -620,6 +620,9 @@ impl Running {
             }
             let device = self.lists[at].device;
             let me = self.lists[at].me.clone();
+            if self.lists[at].list.is_named(me.member, &self.name) {
+                continue;
+            }
             let op = self.who_i_am_on(device, &me);
             let kept = &mut self.lists[at];
             kept.list.apply(&op);

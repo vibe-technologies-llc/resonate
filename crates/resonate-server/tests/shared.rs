@@ -498,6 +498,46 @@ fn someone_given_the_edit_link_holds_the_list_and_both_are_named_on_it() {
 }
 
 #[test]
+fn a_person_renamed_after_joining_is_renamed_on_the_list_they_joined() {
+    let hosted = hosted("named-after-joining");
+    let (ada, _list, ben, _theirs) = two_sharing(&hosted, &["One"]);
+    eventually("Ada seeing Ben", &ada, || {
+        shown_on(&ada)[0]
+            .people
+            .iter()
+            .any(|person| person.name == "Ben" && !person.me)
+    });
+
+    ben.shared.named("Benedict".to_owned());
+
+    eventually("Ada seeing Benedict", &ada, || {
+        let people = shown_on(&ada)[0].people.clone();
+        people
+            .iter()
+            .any(|person| person.name == "Benedict" && !person.me)
+            && !people.iter().any(|person| person.name == "Ben")
+    });
+}
+
+#[test]
+fn a_name_told_again_is_not_written_again_to_a_list_that_already_carries_it() {
+    let hosted = hosted("named-twice");
+    let (ada, _list, ben, _theirs) = two_sharing(&hosted, &["One"]);
+    eventually("Ada seeing Ben", &ada, || {
+        shown_on(&ada)[0]
+            .people
+            .iter()
+            .any(|person| person.name == "Ben" && !person.me)
+    });
+    eventually("Ben's list settling", &ben, || shown_on(&ben)[0].owed == 0);
+
+    ben.shared.named("Ben".to_owned());
+    thread::sleep(Duration::from_millis(500));
+
+    assert_eq!(shown_on(&ben)[0].owed, 0);
+}
+
+#[test]
 fn two_people_editing_at_once_keep_both_edits() {
     let hosted = hosted("merged");
     let (ada, list, ben, theirs) = two_sharing(&hosted, &["One", "Two"]);

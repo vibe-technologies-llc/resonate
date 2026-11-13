@@ -416,6 +416,11 @@ impl SharedList {
         rows
     }
 
+    pub fn is_named(&self, member: MemberId, name: &str) -> bool {
+        self.people()
+            .any(|(here, person)| here == member && person.name == name)
+    }
+
     pub fn people(&self) -> impl Iterator<Item = (MemberId, &Person)> {
         self.people
             .iter()

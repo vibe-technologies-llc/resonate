@@ -622,6 +622,15 @@ fn told_invites(list: &SharedShown) {
     );
 }
 
+fn named_for_the_run(config: &Config, name: Option<&str>) -> Config {
+    Config {
+        shared_name: name
+            .map(str::to_owned)
+            .or_else(|| config.shared_name.clone()),
+        ..config.clone()
+    }
+}
+
 pub(crate) fn run(
     config: &Config,
     settings: &std::path::Path,
@@ -633,7 +642,8 @@ pub(crate) fn run(
         said!("{}", words::together::seen_as(name));
     }
 
-    let Some(together) = start(config, &library)? else {
+    let named_here = named_for_the_run(config, args.name.as_deref());
+    let Some(together) = start(&named_here, &library)? else {
         return Err(if config.syncs() {
             Error::SharedBusy
         } else {
@@ -641,6 +651,10 @@ pub(crate) fn run(
         });
     };
     let shared = &together.shared;
+
+    if let Some(name) = &args.name {
+        shared.named(name.clone());
+    }
 
     if let Some(name) = &args.share {
         let playlist = library
@@ -766,6 +780,22 @@ mod tests {
         let kept = invitations_taken_out(&arguments);
 
         assert_eq!(kept.len(), 2, "a party's link is no song either");
+    }
+
+    #[test]
+    fn the_name_typed_for_a_run_is_the_one_it_starts_with_and_none_typed_keeps_the_settings() {
+        let settings = Config {
+            shared_name: Some("Old".to_owned()),
+            ..Config::default()
+        };
+
+        let typed = named_for_the_run(&settings, Some("New"));
+        let untyped = named_for_the_run(&settings, None);
+        let unset = named_for_the_run(&Config::default(), None);
+
+        assert_eq!(typed.shared_name.as_deref(), Some("New"));
+        assert_eq!(untyped.shared_name.as_deref(), Some("Old"));
+        assert_eq!(unset.shared_name, None);
     }
 
     fn naming(server: Option<&str>) -> Invitation {
