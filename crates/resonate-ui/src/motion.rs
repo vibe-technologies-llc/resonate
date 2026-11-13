@@ -241,14 +241,6 @@ impl<E, T> Flip<E, T> {
     }
 }
 
-impl<E: IntoElement + 'static, T: Copy + PartialEq + 'static> IntoElement for Flip<E, T> {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
-    }
-}
-
 impl<E: IntoElement + 'static, T: Copy + PartialEq + 'static> Element for Flip<E, T> {
     type RequestLayoutState = AnyElement;
     type PrepaintState = ();

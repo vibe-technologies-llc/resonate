@@ -871,14 +871,6 @@ struct Drawing {
     scrolled_by: Pixels,
 }
 
-impl IntoElement for Line {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
-    }
-}
-
 impl Element for Line {
     type RequestLayoutState = ();
     type PrepaintState = Option<Drawing>;

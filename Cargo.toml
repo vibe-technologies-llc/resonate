@@ -218,8 +218,8 @@ rcgen = { version = "0.14.10", default-features = false, features = ["ring"] }
 ring = { version = "0.17.14", default-features = false }
 rustls-pki-types = { version = "1.16.0", default-features = false }
 flate2 = { version = "1.1.11", default-features = false, features = ["rust_backend"] }
-hdf5-reader = { version = "0.12.1", default-features = false }
-hdf5-writer = "0.12.1"
+hdf5-reader = { version = "0.13.0", default-features = false }
+hdf5-writer = "0.13.0"
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 serde-saphyr = { version = "2.1.1", default-features = false, features = ["deserialize"] }
@@ -232,12 +232,12 @@ zbus = {
 
 gpui = {
     git = "https://github.com/zed-industries/zed",
-    rev = "654efae441bc8eb117d0042bb28cd7cf3570bdc9",
+    rev = "83df5df635ed97ca6425d16659ad0307865ed93b",
     default-features = false
 }
 gpui_platform = {
     git = "https://github.com/zed-industries/zed",
-    rev = "654efae441bc8eb117d0042bb28cd7cf3570bdc9",
+    rev = "83df5df635ed97ca6425d16659ad0307865ed93b",
     default-features = false,
     features = ["wayland"]
 }

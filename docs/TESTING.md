@@ -143,9 +143,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Dependencies
-- [S · blocked: hdf5-reader] `cargo audit` calls `lru` 0.16.4 unsound (RUSTSEC-2026-0253, fixed from
-  0.18.2), reached through `hdf5-reader` 0.12.1, the latest, under `resonate-codec`'s SOFA reader;
-  `hdf5-reader` never calls the `LruCache::pop` the advisory names
 - [S · blocked: gpui] `cargo audit`'s other warnings are other crates' trees: `glib` 0.18.5 unsound
   (RUSTSEC-2024-0429) under `tao`, `webkit2gtk` and wry, for `resonate-signin`'s window alone; zbus
   5 under gpui's accesskit and ashpd, beside `resonate-mpris`'s zbus 6 (two built), with
