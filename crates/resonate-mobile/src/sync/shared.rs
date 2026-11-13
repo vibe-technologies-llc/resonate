@@ -233,6 +233,44 @@ mod tests {
     }
 
     #[test]
+    fn a_shared_list_is_listed_as_shared_whether_or_not_the_service_runs_and_a_personal_one_is_not()
+    {
+        let there = folder("shared-listed");
+        let phone = player(&there);
+        let song = song(&phone, "content://test/three.flac", "Three", None);
+        let shared = phone.create_playlist("Shared".to_owned()).expect("a list");
+        let followed = phone
+            .create_playlist("Followed".to_owned())
+            .expect("a list");
+        let personal = phone
+            .create_playlist("Personal".to_owned())
+            .expect("a list");
+        for id in [shared, followed, personal] {
+            phone.add_to_playlist(id, vec![song.id]).expect("a song");
+        }
+        let documents = documents_of(&phone, &there);
+
+        documents
+            .shared_flag(phone.synced_playlist(shared).expect("identity"), true)
+            .expect("flagged");
+        documents
+            .shared_flag(phone.synced_playlist(followed).expect("identity"), false)
+            .expect("flagged");
+        let listed = phone.playlists().expect("listed");
+        let flags = |id| {
+            listed
+                .iter()
+                .find(|playlist| playlist.id == id)
+                .map(|playlist| (playlist.shared, playlist.followed))
+        };
+
+        assert!(phone.shared_playlists().is_empty());
+        assert_eq!(flags(shared), Some((true, false)));
+        assert_eq!(flags(followed), Some((true, true)));
+        assert_eq!(flags(personal), Some((false, false)));
+    }
+
+    #[test]
     fn a_followed_list_refuses_every_edit_and_an_edited_one_takes_them() {
         let there = folder("shared-follow");
         let phone = player(&there);

@@ -55,7 +55,7 @@ private const val LEAVE_KEY = "leave"
 private fun TogetherPerson.key(): String = id.joinToString("")
 
 @Composable
-fun SharingSheet(id: ULong, name: String, onDismiss: () -> Unit) {
+fun SharingSheet(id: ULong, name: String, sharedHere: Boolean, onDismiss: () -> Unit) {
     val resonate = LocalResonate.current
     val together = resonate.features.together
     val lists by together.lists.collectAsStateWithLifecycle()
@@ -89,7 +89,8 @@ fun SharingSheet(id: ULong, name: String, onDismiss: () -> Unit) {
             if (list == null) {
                 val block =
                     config?.let { TogetherWords.sharingBlock(it.enabled, it.nearbyOnly, online) }
-                NotShared(block, onDismiss) { together.share(id) }
+                if (sharedHere) SharedWhileStopped(block, onDismiss)
+                else NotShared(block, onDismiss) { together.share(id) }
             } else {
                 Shared(id, list, onDismiss)
             }
@@ -98,25 +99,35 @@ fun SharingSheet(id: ULong, name: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun NotShared(block: SharingBlock?, onDismiss: () -> Unit, onShare: () -> Unit) {
+private fun SharingBlockNote(block: SharingBlock, onDismiss: () -> Unit) {
     val navigator = LocalNavigator.current
-    if (block != null) {
-        val destination =
-            if (block == SharingBlock.ONLINE_OFF) Screen.Settings else Screen.Sync
-        val button =
-            if (block == SharingBlock.ONLINE_OFF) R.string.sharing_open_settings
-            else R.string.sharing_open_devices
-        Note(TogetherWords.sharingNeeds(words(), block), Modifier.testTag("sharing-needs-sync"))
-        ButtonRow {
-            FilledTonalButton(
-                onClick = {
-                    onDismiss()
-                    navigator.open(destination)
-                }
-            ) {
-                Text(stringResource(button))
+    val destination = if (block == SharingBlock.ONLINE_OFF) Screen.Settings else Screen.Sync
+    val button =
+        if (block == SharingBlock.ONLINE_OFF) R.string.sharing_open_settings
+        else R.string.sharing_open_devices
+    Note(TogetherWords.sharingNeeds(words(), block), Modifier.testTag("sharing-needs-sync"))
+    ButtonRow {
+        FilledTonalButton(
+            onClick = {
+                onDismiss()
+                navigator.open(destination)
             }
+        ) {
+            Text(stringResource(button))
         }
+    }
+}
+
+@Composable
+private fun SharedWhileStopped(block: SharingBlock?, onDismiss: () -> Unit) {
+    Note(stringResource(R.string.sharing_shared_while_stopped), Modifier.testTag("sharing-shared-stopped"))
+    if (block != null) SharingBlockNote(block, onDismiss)
+}
+
+@Composable
+private fun NotShared(block: SharingBlock?, onDismiss: () -> Unit, onShare: () -> Unit) {
+    if (block != null) {
+        SharingBlockNote(block, onDismiss)
         return
     }
     Note(stringResource(R.string.sharing_not_shared_yet))

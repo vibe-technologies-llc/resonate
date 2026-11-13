@@ -37,6 +37,8 @@ pub struct MusicPlaylist {
     pub link: Option<PlaylistLinkInfo>,
     #[uniffi(default = false)]
     pub followed: bool,
+    #[uniffi(default = false)]
+    pub shared: bool,
 }
 
 #[derive(Clone)]
@@ -79,6 +81,7 @@ impl MobilePlayer {
                         search: None,
                         link: None,
                         followed: false,
+                        shared: false,
                     })
                 })
                 .map_err(read_error)?
@@ -89,6 +92,7 @@ impl MobilePlayer {
                     let query = saved_query(&connection, playlist.id)?;
                     playlist.link = info_of(&connection, playlist.id);
                     playlist.followed = is_followed(&connection, playlist.id)?;
+                    playlist.shared = is_shared(&connection, playlist.id)?;
                     Ok((playlist, query))
                 })
                 .collect::<Result<Vec<_>>>()?
@@ -367,6 +371,16 @@ fn is_followed(connection: &Connection, id: u64) -> Result<bool> {
     connection
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM playlist_shares WHERE playlist = ?1 AND editable = 0)",
+            [id as i64],
+            |row| row.get(0),
+        )
+        .map_err(read_error)
+}
+
+fn is_shared(connection: &Connection, id: u64) -> Result<bool> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlist_shares WHERE playlist = ?1)",
             [id as i64],
             |row| row.get(0),
         )

@@ -202,6 +202,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                             when {
                                 search != null -> stringResource(R.string.library_saved_search)
                                 shared == null && followed -> stringResource(R.string.library_overline_followed)
+                                shared == null && playlist?.shared == true -> stringResource(R.string.library_overline_shared)
                                 shared == null -> stringResource(R.string.library_overline_playlist)
                                 mayEdit -> stringResource(R.string.library_overline_shared)
                                 else -> stringResource(R.string.library_overline_followed)
@@ -298,7 +299,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
             }
         }
     }
-    if (sharing) SharingSheet(screen.id, name) { sharing = false }
+    if (sharing) SharingSheet(screen.id, name, sharedHere = playlist?.shared == true) { sharing = false }
     if (adding) {
         AddSongsSheet(
             catalog = model.catalog,

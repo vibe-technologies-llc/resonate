@@ -1646,7 +1646,7 @@ it, since a guest would otherwise go on playing unseen. `resonate://shared`, `re
 for `https://resonate.tecnio.dev/s/` and `/p/` all reach `accept_invitation`; the links verify against
 `[web] android_certificates` on the server, which names the release key, so a debug build shows them
 unverified. The QR is `com.google.zxing:core` (pure Java), since pairing draws none. The typed name is
-`shared-name`. **What stops a list being shared is a `SharingBlock`** (`TogetherWords.sharingBlock`: sync off, this network only, online off), and the sheet's button goes where its sentence points: *Open Devices* for the first two, *Open Settings* for online off, whose switch is on Settings' root (`TogetherWordsTest`). The card is drawn through a graphics layer to a PNG for the system's sheet
+`shared-name`. **What stops a list being shared is a `SharingBlock`** (`TogetherWords.sharingBlock`: sync off, this network only, online off), and the sheet's button goes where its sentence points: *Open Devices* for the first two, *Open Settings* for online off, whose switch is on Settings' root (`TogetherWordsTest`). **The sheet knows a list is shared from the catalog, not the service**: with sync stopped `shared_playlists()` is empty, so `SharingSheet` takes `MusicPlaylist.shared` (`sharedHere`) and reads *This playlist is shared* beside the same block and button rather than offering to share it anew, and the playlist's overline says *Shared*. The card is drawn through a graphics layer to a PNG for the system's sheet
 (`shared-playlists.md`, `party.md`).
 
 ## Accessibility

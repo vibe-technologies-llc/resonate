@@ -149,6 +149,7 @@
     <string name="sharing_open_devices">Open Devices</string>
     <string name="sharing_open_settings">Open Settings</string>
     <string name="sharing_not_shared_yet">Anyone with a link can follow it or edit it with you, with no account. The server keeps it sealed and cannot read it. Everyone plays their own copy of each song.</string>
+    <string name="sharing_shared_while_stopped">This playlist is shared. Its links and people show again once sharing can reach the server.</string>
     <string name="sharing_share_this_playlist">Share this playlist</string>
     <string name="sharing_following">You follow this playlist. Whoever shared it decides what is on it.</string>
     <string name="sharing_edit_link_says">Anyone with this link can edit</string>
