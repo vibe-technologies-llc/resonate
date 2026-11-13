@@ -258,6 +258,8 @@ Invariants the layering protects (the rules files have the rest):
   fold (`RESONATE_BENCH_BOUNDS=<file>` keeps the bounds to compare bit for bit;
   `RESONATE_BENCH_SONGS=<folder>` weighs the bound over each song's decode instead, `eq.md`).
   `cargo bench -p resonate-analysis --bench study` times a whole pass (`analysis.md`).
+  `cargo bench -p resonate-analysis --bench through` times `peak_through`, `print`, `excerpt` and
+  `loudest_through` over `RESONATE_BENCH_SONGS=<folder>`, each the best of fifteen (`analysis.md`).
   `cargo build --profile profiling`: release with symbols.
 - Tests needing the outside world skip without it: `resonate-pipewire` (`stream`, `reconnect`,
   `formats`), `resonate-listen` (`capture`, `reconnect`, `microphone`), `resonate-coreaudio --test stream` (macOS, an output device; `RESONATE_COREAUDIO_TESTS=required` makes a skip a failure), the reconnect, `formats` and

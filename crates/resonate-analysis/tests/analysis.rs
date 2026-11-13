@@ -1,5 +1,6 @@
 use std::{
     env, fs,
+    num::NonZeroUsize,
     path::PathBuf,
     process,
     sync::{
@@ -16,10 +17,10 @@ use resonate_analysis::{
 };
 use resonate_codec::Sources;
 use resonate_core::{
-    FrameSpan, Frames, MediaLocation, SampleRate,
+    ChannelLayout, FrameSpan, Frames, MediaLocation, SampleFormat, SampleRate, StreamSpec,
     eq::{Band, BandGain, BandKind, Frequency, Preamp, Profile, Q},
 };
-use resonate_dsp::Impulse;
+use resonate_dsp::{Convolver, Equaliser, Impulse, Processor, TruePeakMeter};
 use rustfft::{FftPlanner, num_complex::Complex};
 
 const RATE: u32 = 44_100;
@@ -471,6 +472,100 @@ fn music_peaking_at_full_scale_on_the_boost_is_fitted_as_the_curve_alone_is() {
         (measured - modelled).abs() < WITHIN_DB,
         "{measured} against {modelled}"
     );
+}
+
+const FRAMES_AT_A_TIME: usize = 4_096;
+
+fn peak_through_the_chain_on_one_thread(
+    samples: &[i32],
+    profile: &Arc<Profile>,
+    correction: Option<Arc<Impulse>>,
+) -> f64 {
+    let rate = SampleRate::HZ_44100;
+    let spec = StreamSpec::new(rate, ChannelLayout::Stereo, SampleFormat::F32);
+    let mut stage = Equaliser::new(profile.at_rate(rate), rate);
+    stage
+        .prepare(spec, FRAMES_AT_A_TIME)
+        .expect("a prepared stage");
+    let mut convolver = correction.map(|impulse| {
+        let mut convolver = Convolver::new(impulse);
+        convolver
+            .prepare(spec, FRAMES_AT_A_TIME)
+            .expect("a prepared convolver");
+        convolver
+    });
+    let mut meter = TruePeakMeter::at(rate, NonZeroUsize::new(2).expect("two channels"));
+
+    let mut equalise = |input: &[f64], meter: &mut TruePeakMeter| {
+        let mut shaped = vec![0.0; input.len()];
+        stage.process(input, &mut shaped);
+        let narrowed: Vec<f32> = shaped.iter().map(|sample| *sample as f32).collect();
+        meter.note(&narrowed);
+    };
+    for piece in samples.chunks(FRAMES_AT_A_TIME * 2) {
+        let widened: Vec<f64> = piece
+            .iter()
+            .map(|sample| f64::from(*sample as f32 / 32_768.0))
+            .collect();
+        match convolver.as_mut() {
+            Some(convolver) => {
+                let mut corrected = vec![0.0; widened.len()];
+                convolver.process(&widened, &mut corrected);
+                equalise(&corrected, &mut meter);
+            }
+            None => equalise(&widened, &mut meter),
+        }
+    }
+    if let Some(convolver) = convolver.as_mut() {
+        loop {
+            let mut corrected = vec![0.0; FRAMES_AT_A_TIME * 2];
+            let flushed = convolver.flush(&mut corrected);
+            if flushed == 0 {
+                break;
+            }
+            corrected.truncate(flushed * 2);
+            equalise(&corrected, &mut meter);
+        }
+    }
+    meter.finish()
+}
+
+#[test]
+fn a_peak_read_in_stages_on_threads_is_the_peak_read_through_the_chain_on_one() {
+    let tree = Tree::new();
+    let samples = kick_hat_bass_and_pads();
+    let location = tree.wave("staged.wav", RATE, 16, &samples);
+    let profile = boosting_the_bass();
+
+    let bare = peak_through(
+        &Sources::local(),
+        &location,
+        None,
+        &Applied::from(Arc::clone(&profile)),
+        &Watch::default(),
+    )
+    .expect("a peak");
+    assert_eq!(
+        bare.to_bits(),
+        peak_through_the_chain_on_one_thread(&samples, &profile, None).to_bits()
+    );
+
+    for (correction, impulse) in corrections() {
+        let applied = Applied::from(Arc::clone(&profile)).corrected_by(Some(impulse.clone()));
+        let staged = peak_through(
+            &Sources::local(),
+            &location,
+            None,
+            &applied,
+            &Watch::default(),
+        )
+        .expect("a peak");
+        assert_eq!(
+            staged.to_bits(),
+            peak_through_the_chain_on_one_thread(&samples, &profile, Some(impulse)).to_bits(),
+            "{correction}"
+        );
+    }
 }
 
 #[test]

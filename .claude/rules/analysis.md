@@ -81,7 +81,23 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   a vertical `max`, and a `max` of no NaN does not care for order; `Tiles` are per stage and merged,
   a tile's place depending only on its frame and the final width. A chunk's backward pass starts
   from silence, so chunks settle apart, the margin read before any chunk is written
-  (`settle_chunks`) and alongside the next forward pass (`together`). `Mp2::a_step_holds` weighs
+  (`settle_chunks`) and alongside the next forward pass (`together`). **On a crew of more than one
+  thread the reading of what was settled is parted as well** (`read_settled_across`,
+  `read_in_ranges`): ranges of `TILES_A_READING_RANGE` (4) tiles (`reading_ranges`, tile-aligned
+  where it can be, the first at least `HISTORY` frames), the first read as before and each of the
+  rest by a `Reading` primed from the three settled frames before it (`Reading::primed`) into a
+  `Ranged` of its own, merged into the stage's `Tiles` by `max` by absolute frame, so a tile that
+  has doubled meanwhile still takes the tiles of the old width whole; the stage's `Reading` is then
+  primed from the last three frames for the next call. A range's reads depend on the three frames
+  before it and nothing else, and a `max` of no NaN does not care for order, so the answers are
+  the single thread's (`a_reading_parted_across_ranges_is_the_reading_made_whole`,
+  `tiles_that_doubled_while_a_reading_was_parted_are_the_tiles_that_doubled_whole`,
+  `a_stream_noted_on_a_wide_pool_has_the_peaks_it_has_noted_alone`). It moves a bank's stage, which
+  was the longest of a `band_figures` pass, from about 330 ms to 220 ms of 60 s of stereo at
+  44.1 kHz (the lane of each bank, `Crew::fanned`'s busy time; `band_figures` 0.31 to 0.24 s, best of
+  12 on a machine at a load of 20, CPU 1.6 to 1.7 s). A bank's forward pass and `Metered` stay
+  serial, and a study of a lossless file waits for its grids, so only a pass whose stages are
+  mostly the bank and the meter (`band_figures`, a lossy file) is shorter. `Mp2::a_step_holds` weighs
   the peak first, which every step must hold anyway, and `round_ties_even` for the distance to a
   step, which only a tie could tell from `round` and a tie is too far to pass. `Hearing` adds its
   table by column (`loudest_sum`), where `f32::max` frame by frame was most of its cost.
@@ -109,7 +125,25 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   (`Walking`, `follow_format_changes`) but runs the room correction's `Convolver` (where one is applied, its tail flushed through the
   stage once the song ends) and the equaliser stage, then a true-peak meter, instead of the
   builders, stores nothing and is asked on a press for the songs no study has measured
-  (`eq.md`, *Fit the preamp to the music*).
+  (`eq.md`, *Fit the preamp to the music*). **It is a pipeline of three threads, and the answer is
+  the one thread's**: the caller decodes, a thread of the scope widens, convolves, equalises and
+  narrows, a third meters, each handing the next slabs of about 64 Ki samples that keep their
+  pieces (`relay`, four in flight, buffers sent back for reuse), so every stateful stage hears the
+  samples in order and in the pieces the decode made
+  (`a_peak_read_in_stages_on_threads_is_the_peak_read_through_the_chain_on_one`, a convolver of each
+  kind among them). The tail is flushed only when the walk reached its end, so a stop does not
+  wait for it. The threads are the pass's own, not the crew's, since the crew's tasks are slabs of
+  a fan and these are three long-running stages; `loudest_through` runs half the cores' worth of
+  cuts, so its threads at most fill the cores and a stage that waits holds none. 60 s of
+  stereo FLAC 16/44.1 `peak_through` 116 to 153 ms went to 50 to 75 ms (the decode alone is about
+  60 ms), 96 kHz 24-bit 303 to 141 ms, and `loudest_through` over sixteen cuts 479 to 305 ms, best
+  of 15 on a machine at a load of 20, six peaks and every print the same to the bit
+  (`RESONATE_BENCH_SONGS=<folder> cargo bench -p resonate-analysis --bench through`,
+  `RESONATE_BENCH_KEPT=<file>` keeps the answers to compare). **`print` takes Chromaprint to a
+  thread of its own the same way** (the printer is not `Send`, so it is made there and the walk
+  waits for how many frames it wants): 69 to 52 ms, 96 kHz 142 to 120 ms, the print as it was.
+  `excerpt` stays on one thread: its decode is the 14 to 20 ms of it and the mono mix is two
+  multiply-adds a frame, so a hand-off could hide only that mix.
 - **A study keeps where the music sounds, per band.** `BandLevels::of(&spectrum)` sums the study's
   per-bin mean power into 29 third-octave bands (`BANDS`; edges at 25 Hz times `2^(n/3)`, band 0
   taking everything under 31.5 Hz and the last everything above its edge, a bin read at its own

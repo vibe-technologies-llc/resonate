@@ -169,7 +169,9 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   the output's true peak (`TruePeakMeter::at`, the guard's own interpolator); the convolver's tail is
   flushed through the stage once the song ends, so a response that holds the music back past its end
   is measured too
-  (`a_response_holding_the_music_back_past_its_end_is_measured_in_the_tail_it_flushes`). The preamp is a
+  (`a_response_holding_the_music_back_past_its_end_is_measured_in_the_tail_it_flushes`); the decode,
+  the chain and the meter run on three threads that hand slabs on in order, the answer the one
+  thread's (`analysis.md`). The preamp is a
   scalar before the correction and the bands, so one decode answers: `Preamp::holding_under_full_scale` of that peak.
   A correction that boosts where the music sits fits deeper than the profile alone and one that cuts
   there fits shallower

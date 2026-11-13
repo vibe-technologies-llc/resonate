@@ -39,8 +39,8 @@ impl Printing {
         }
     }
 
-    pub(crate) const fn is_full(&self) -> bool {
-        self.left == 0 || self.printer.is_none()
+    pub(crate) const fn frames_wanted(&self) -> u64 {
+        if self.printer.is_none() { 0 } else { self.left }
     }
 
     pub(crate) fn note(&mut self, interleaved: &[f32]) {

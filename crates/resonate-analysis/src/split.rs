@@ -1,10 +1,13 @@
 use std::{
     f64::consts::{PI, TAU},
     num::NonZeroUsize,
+    ops::Range,
 };
 
 use rayon::{
-    iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator},
+    iter::{
+        IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+    },
     slice::ParallelSliceMut,
 };
 use resonate_core::{
@@ -47,6 +50,8 @@ const LAST_MIDPOINT_FRAMES: usize = 2;
 const HISTORY: usize = 3;
 
 const FRAMES_READ_AT_ONCE: usize = 64;
+
+const TILES_A_READING_RANGE: usize = 4;
 
 const READ_LANES: usize = 8;
 
@@ -147,6 +152,12 @@ impl Cascades {
     }
 }
 
+trait Holding {
+    fn holding(&mut self, frame: usize) -> &mut [f64; NODES];
+
+    fn frames_left_of_the_tile_holding(&mut self, frame: usize) -> usize;
+}
+
 struct Tiles<const WIDTH: usize> {
     frames: usize,
     loudest: Vec<[f64; WIDTH]>,
@@ -176,6 +187,56 @@ impl<const WIDTH: usize> Tiles<WIDTH> {
                 self.frames *= 2;
                 tile = frame / self.frames;
             }
+        }
+        &mut self.loudest[tile]
+    }
+
+    fn frames_left_of_the_tile_holding(&mut self, frame: usize) -> usize {
+        self.holding(frame);
+        self.frames - frame % self.frames
+    }
+}
+
+impl Holding for Tiles<NODES> {
+    fn holding(&mut self, frame: usize) -> &mut [f64; NODES] {
+        Self::holding(self, frame)
+    }
+
+    fn frames_left_of_the_tile_holding(&mut self, frame: usize) -> usize {
+        Self::frames_left_of_the_tile_holding(self, frame)
+    }
+}
+
+struct Ranged {
+    frames: usize,
+    first: usize,
+    loudest: Vec<[f64; NODES]>,
+}
+
+impl Ranged {
+    const fn from_frame(frames: usize, frame: usize) -> Self {
+        Self {
+            frames,
+            first: frame / frames,
+            loudest: Vec::new(),
+        }
+    }
+
+    fn merge_into(self, tiles: &mut Tiles<NODES>) {
+        for (nth, more) in self.loudest.iter().enumerate() {
+            let held = tiles.holding((self.first + nth) * self.frames);
+            for (held, more) in held.iter_mut().zip(more) {
+                *held = held.max(*more);
+            }
+        }
+    }
+}
+
+impl Holding for Ranged {
+    fn holding(&mut self, frame: usize) -> &mut [f64; NODES] {
+        let tile = frame / self.frames - self.first;
+        if tile >= self.loudest.len() {
+            self.loudest.resize(tile + 1, [0.0; NODES]);
         }
         &mut self.loudest[tile]
     }
@@ -232,6 +293,22 @@ impl Reading {
             levels: Box::new([[0.0; HISTORY + FRAMES_READ_AT_ONCE]; LEVELS]),
             midway: Box::new([[0.0; FRAMES_READ_AT_ONCE]; LEVELS]),
         }
+    }
+
+    fn primed(settled: &[Plane], heard: &[f64], at: usize) -> Self {
+        let mut reading = Self::silent();
+        reading.remember(settled, heard, at);
+        reading
+    }
+
+    fn remember(&mut self, settled: &[Plane], heard: &[f64], at: usize) {
+        let before = at - HISTORY..at;
+        for (back, plane) in settled[before.clone()].iter().enumerate() {
+            for (column, lane) in self.levels[1..BANDS].iter_mut().zip(plane) {
+                column[back] = *lane;
+            }
+        }
+        self.levels[BANDS][..HISTORY].copy_from_slice(&heard[before]);
     }
 
     fn take_in(&mut self, passed: &[Plane], heard: &[f64]) {
@@ -387,7 +464,7 @@ impl Bank {
             || {
                 settle_chunks(coefficients, settling, chunks, *chunk, *margin);
                 let frames = chunks * *chunk;
-                read_settled(reading, tiles, &settling[..frames], &heard[..frames], *base);
+                read_settled_across(reading, tiles, &settling[..frames], &heard[..frames], *base);
             },
         );
 
@@ -493,9 +570,79 @@ fn settle_chunks(
     }
 }
 
-fn read_settled(
+fn reading_ranges(tile_frames: usize, base: usize, frames: usize) -> Vec<Range<usize>> {
+    let each = TILES_A_READING_RANGE * tile_frames;
+    let mut ranges = Vec::new();
+    let mut at = 0;
+    while at < frames {
+        let boundary = ((base + at) / each + 1) * each - base;
+        let end = boundary.max(at + HISTORY).min(frames);
+        ranges.push(at..end);
+        at = end;
+    }
+    ranges
+}
+
+fn read_settled_across(
     reading: &mut Reading,
     tiles: &mut Tiles<NODES>,
+    settled: &[Plane],
+    heard: &[f64],
+    base: usize,
+) {
+    if !on_the_crew() || rayon::current_num_threads() < 2 || settled.len() < HISTORY {
+        return read_settled(reading, tiles, settled, heard, base);
+    }
+    read_in_ranges(reading, tiles, settled, heard, base);
+}
+
+fn read_in_ranges(
+    reading: &mut Reading,
+    tiles: &mut Tiles<NODES>,
+    settled: &[Plane],
+    heard: &[f64],
+    base: usize,
+) {
+    let ranges = reading_ranges(tiles.frames, base, settled.len());
+    let Some((first, rest)) = ranges.split_first() else {
+        return;
+    };
+    let frames_a_tile = tiles.frames;
+    let (_, apart) = rayon::join(
+        || {
+            read_settled(
+                reading,
+                tiles,
+                &settled[first.clone()],
+                &heard[first.clone()],
+                base,
+            );
+        },
+        || {
+            rest.par_iter()
+                .map(|range| {
+                    let mut tiles = Ranged::from_frame(frames_a_tile, base + range.start);
+                    read_settled(
+                        &mut Reading::primed(settled, heard, range.start),
+                        &mut tiles,
+                        &settled[range.clone()],
+                        &heard[range.clone()],
+                        base + range.start,
+                    );
+                    tiles
+                })
+                .collect::<Vec<_>>()
+        },
+    );
+    for ranged in apart {
+        ranged.merge_into(tiles);
+    }
+    reading.remember(settled, heard, settled.len());
+}
+
+fn read_settled(
+    reading: &mut Reading,
+    tiles: &mut impl Holding,
     settled: &[Plane],
     heard: &[f64],
     base: usize,
@@ -760,6 +907,106 @@ mod tests {
             .moments()
             .map(|heights| heights[WHOLE])
             .fold(0.0, f64::max)
+    }
+
+    fn noisy_planes(frames: usize) -> (Vec<Plane>, Vec<f64>) {
+        let mut state = 0x9e37_79b9_u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            f64::from(state) / f64::from(u32::MAX) * 2.0 - 1.0
+        };
+        let planes = (0..frames)
+            .map(|frame| {
+                let swell = (frame as f64 / 3_000.0).sin().abs();
+                std::array::from_fn(|_| next() * swell)
+            })
+            .collect();
+        let heard = (0..frames).map(|_| next()).collect();
+        (planes, heard)
+    }
+
+    fn pool_of(threads: usize) -> rayon::ThreadPool {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .expect("a pool")
+    }
+
+    fn bits_of(tiles: &Tiles<NODES>) -> Vec<Vec<u64>> {
+        tiles
+            .loudest
+            .iter()
+            .map(|heights| heights.iter().map(|height| height.to_bits()).collect())
+            .collect()
+    }
+
+    fn history_of(reading: &Reading) -> Vec<Vec<u64>> {
+        reading
+            .levels
+            .iter()
+            .map(|column| column[..HISTORY].iter().map(|at| at.to_bits()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn a_reading_parted_across_ranges_is_the_reading_made_whole() {
+        let (planes, heard) = noisy_planes(40_000);
+        let pool = pool_of(4);
+
+        for tile_frames in [1, 97, 2_205] {
+            let mut whole_reading = Reading::silent();
+            let mut whole = Tiles::each(tile_frames);
+            let mut parted_reading = Reading::silent();
+            let mut parted = Tiles::each(tile_frames);
+
+            for (from, to) in [(0, 17_001), (17_001, 17_003), (17_003, 40_000)] {
+                let (planes, heard) = (&planes[from..to], &heard[from..to]);
+                read_settled(&mut whole_reading, &mut whole, planes, heard, from);
+                pool.install(|| {
+                    read_settled_across(&mut parted_reading, &mut parted, planes, heard, from);
+                });
+            }
+
+            assert_eq!(whole.frames, parted.frames, "{tile_frames}");
+            assert_eq!(bits_of(&whole), bits_of(&parted), "{tile_frames}");
+            assert_eq!(
+                history_of(&whole_reading),
+                history_of(&parted_reading),
+                "{tile_frames}"
+            );
+        }
+    }
+
+    #[test]
+    fn tiles_that_doubled_while_a_reading_was_parted_are_the_tiles_that_doubled_whole() {
+        let (planes, heard) = noisy_planes(TILES_AT_MOST + 5_000);
+        let mut whole = Tiles::each(1);
+        let mut parted = Tiles::each(1);
+
+        read_settled(&mut Reading::silent(), &mut whole, &planes, &heard, 0);
+        pool_of(4).install(|| {
+            read_settled_across(&mut Reading::silent(), &mut parted, &planes, &heard, 0);
+        });
+
+        assert!(whole.frames > 1);
+        assert_eq!(whole.frames, parted.frames);
+        assert_eq!(bits_of(&whole), bits_of(&parted));
+    }
+
+    #[test]
+    fn a_stream_noted_on_a_wide_pool_has_the_peaks_it_has_noted_alone() {
+        for channels in [1, 2] {
+            let signal = loud_and_bright(channels);
+
+            let alone = peaks_of(&signal, channels, 4_096);
+            let wide = pool_of(6).install(|| peaks_of(&signal, channels, 4_096));
+            let wide_in_odd_pieces = pool_of(3).install(|| peaks_of(&signal, channels, 7_919));
+
+            assert_eq!(alone, wide, "{channels} channels");
+            assert_eq!(alone, wide_in_odd_pieces, "{channels} channels");
+        }
     }
 
     #[test]

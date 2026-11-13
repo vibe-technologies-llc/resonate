@@ -2,7 +2,7 @@ use std::{
     num::NonZeroUsize,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
 };
@@ -18,6 +18,7 @@ use crate::{
     Applied, BandGains, BandPeaks, Error, Result, Watching,
     analysis::{native_format, opened},
     conform::Walking,
+    relay::{joined, relay},
 };
 
 pub const CUTS_AT_MOST: usize = 32;
@@ -100,13 +101,13 @@ impl Shaping {
         })
     }
 
-    fn shape(&mut self, heard: &[f32], meter: &mut TruePeakMeter) {
+    fn shape(&mut self, heard: &[f32], onward: &mut impl FnMut(&[f32])) {
         self.widened.clear();
         self.widened
             .extend(heard.iter().map(|sample| f64::from(*sample)));
         let Some(convolver) = self.convolver.as_mut() else {
             let widened = std::mem::take(&mut self.widened);
-            self.equalise(&widened, meter);
+            self.equalise(&widened, onward);
             self.widened = widened;
             return;
         };
@@ -114,11 +115,11 @@ impl Shaping {
         self.corrected.resize(self.widened.len(), 0.0);
         convolver.process(&self.widened, &mut self.corrected);
         let corrected = std::mem::take(&mut self.corrected);
-        self.equalise(&corrected, meter);
+        self.equalise(&corrected, onward);
         self.corrected = corrected;
     }
 
-    fn drain(&mut self, channels: usize, meter: &mut TruePeakMeter) {
+    fn drain(&mut self, channels: usize, onward: &mut impl FnMut(&[f32])) {
         loop {
             let Some(convolver) = self.convolver.as_mut() else {
                 return;
@@ -131,12 +132,12 @@ impl Shaping {
             }
             self.corrected.truncate(flushed * channels);
             let corrected = std::mem::take(&mut self.corrected);
-            self.equalise(&corrected, meter);
+            self.equalise(&corrected, onward);
             self.corrected = corrected;
         }
     }
 
-    fn equalise(&mut self, input: &[f64], meter: &mut TruePeakMeter) {
+    fn equalise(&mut self, input: &[f64], onward: &mut impl FnMut(&[f32])) {
         self.shaped.clear();
         self.shaped.resize(input.len(), 0.0);
         self.stage.process(input, &mut self.shaped);
@@ -144,7 +145,7 @@ impl Shaping {
         self.narrowed.clear();
         self.narrowed
             .extend(self.shaped.iter().map(|sample| *sample as f32));
-        meter.note(&self.narrowed);
+        onward(&self.narrowed);
     }
 }
 
@@ -165,25 +166,48 @@ pub fn peak_through(
     let layout = info.spec.channels;
     let channels = usize::from(layout.count().get());
 
-    let mut shaping = Shaping::prepared(applied, StreamSpec::new(rate, layout, SampleFormat::F32))?;
-    let mut meter = TruePeakMeter::at(
+    let shaping = Shaping::prepared(applied, StreamSpec::new(rate, layout, SampleFormat::F32))?;
+    let meter = TruePeakMeter::at(
         rate,
         NonZeroUsize::new(channels).unwrap_or(NonZeroUsize::MIN),
     );
-
     let mut walking = Walking::new(StreamSpec::new(rate, layout, format));
-    loop {
-        if watch.stopped() {
-            return Err(Error::Stopped);
-        }
-        let Some(heard) = walking.step(&mut decoder)? else {
-            break;
-        };
-        shaping.shape(heard.samples, &mut meter);
-    }
-    shaping.drain(channels, &mut meter);
 
-    Ok(meter.finish())
+    let walked_to_the_end = AtomicBool::new(false);
+    thread::scope(|scope| {
+        let (mut to_chain, from_decode) = relay();
+        let (mut to_meter, from_chain) = relay();
+        let mut shaping = shaping;
+        let mut meter = meter;
+        let at_the_end = &walked_to_the_end;
+        let chain = scope.spawn(move || {
+            from_decode.each(|piece| shaping.shape(piece, &mut |shaped| to_meter.feed(shaped)));
+            if at_the_end.load(Ordering::Acquire) {
+                shaping.drain(channels, &mut |shaped| to_meter.feed(shaped));
+            }
+        });
+        let metering = scope.spawn(move || {
+            from_chain.each(|piece| meter.note(piece));
+            meter.finish()
+        });
+
+        let walked = loop {
+            if watch.stopped() {
+                break Err(Error::Stopped);
+            }
+            match walking.step(&mut decoder) {
+                Ok(Some(heard)) => to_chain.feed(heard.samples),
+                Ok(None) => break Ok(()),
+                Err(error) => break Err(error),
+            }
+        };
+        walked_to_the_end.store(walked.is_ok(), Ordering::Release);
+        drop(to_chain);
+
+        joined(chain);
+        let peak = joined(metering);
+        walked.map(|()| peak)
+    })
 }
 
 pub fn loudest_through(

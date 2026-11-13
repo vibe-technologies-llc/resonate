@@ -37,3 +37,7 @@ harness = false
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "through"
+harness = false

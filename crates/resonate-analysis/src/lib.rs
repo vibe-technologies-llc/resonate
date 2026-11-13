@@ -16,6 +16,7 @@ mod peaks;
 mod pitch;
 mod print;
 mod reduce;
+mod relay;
 mod signature;
 mod spectrogram;
 mod spectrum;

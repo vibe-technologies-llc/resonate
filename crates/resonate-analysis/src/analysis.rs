@@ -1,4 +1,11 @@
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
+    thread,
+    time::Duration,
+};
 
 use resonate_codec::{Codec, Decoder, MediaInfo, Sources};
 use resonate_core::{
@@ -14,6 +21,7 @@ use crate::{
     levels::Leveling,
     loudness::Metering,
     print::Printing,
+    relay::{joined, relay},
     spectrogram::Spectrographing,
     spectrum::{Transforming, heard_channels},
     split::Splitting,
@@ -119,25 +127,47 @@ pub fn print(
 
     let rate = info.spec.rate;
     let channels = usize::from(info.spec.channels.count().get());
-    let mut printing = Printing::new(rate.hz(), channels);
     let mut walking = Walking::new(StreamSpec::new(rate, info.spec.channels, format));
-    let mut frames = 0_u64;
-    let length_is_declared = info.duration.is_some();
-    while !(printing.is_full() && length_is_declared) {
-        if watch.stopped() {
-            return Err(Error::Stopped);
-        }
-        let Some(heard) = walking.step(&mut decoder)? else {
-            break;
-        };
-        if !printing.is_full() {
-            printing.note(heard.samples);
-        }
-        frames += (heard.samples.len() / channels) as u64;
-    }
+    let declared = info.duration;
+    let frames_walked = AtomicU64::new(0);
+    let walked_frames = &frames_walked;
 
-    let length = info.duration.unwrap_or(Frames(frames)).to_duration(rate);
-    Ok(printing.finished(length))
+    thread::scope(|scope| {
+        let (mut to_printing, from_decode) = relay();
+        let (wanting, wanted) = mpsc::channel();
+        let printed = scope.spawn(move || {
+            let mut printing = Printing::new(rate.hz(), channels);
+            let _ = wanting.send(printing.frames_wanted());
+            from_decode.each(|piece| printing.note(piece));
+            let frames = Frames(walked_frames.load(Ordering::Acquire));
+            printing.finished(declared.unwrap_or(frames).to_duration(rate))
+        });
+        let frames_wanted = wanted.recv().unwrap_or(0);
+
+        let mut frames = 0_u64;
+        let walked = loop {
+            if frames >= frames_wanted && declared.is_some() {
+                break Ok(());
+            }
+            if watch.stopped() {
+                break Err(Error::Stopped);
+            }
+            match walking.step(&mut decoder) {
+                Ok(Some(heard)) => {
+                    if frames < frames_wanted {
+                        to_printing.feed(heard.samples);
+                    }
+                    frames += (heard.samples.len() / channels) as u64;
+                }
+                Ok(None) => break Ok(()),
+                Err(error) => break Err(error),
+            }
+        };
+        walked_frames.store(frames, Ordering::Release);
+        drop(to_printing);
+        let printed = joined(printed);
+        walked.map(|()| printed)
+    })
 }
 
 #[derive(Clone, Debug, PartialEq)]
