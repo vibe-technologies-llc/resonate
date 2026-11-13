@@ -33,6 +33,7 @@ use crate::{
         dropping::FolderStanding,
         field::{Blurred, Caught, Field, Submitted},
         focus::Controls,
+        inspector::InspectorPane,
         listing::{self},
         matching::{self},
         missing::MissingShows,
@@ -139,6 +140,8 @@ impl RootView {
         cx.observe(&listen, |_, _, cx| cx.notify()).detach();
         let party = cx.new(|cx| PartyPane::new(window, cx));
         cx.observe(&party, |_, _, cx| cx.notify()).detach();
+        let inspector = cx.new(|_| InspectorPane::default());
+        cx.observe(&inspector, |_, _, cx| cx.notify()).detach();
         cx.observe_global::<Toaster>(|_, cx| cx.notify()).detach();
         player.read(cx).listen_in(true);
         cx.observe_in(&library, window, |this, library, window, cx| {
@@ -524,6 +527,7 @@ impl RootView {
             analysis,
             listen,
             party,
+            inspector,
             listening_open: false,
             downloads_open: false,
             downloads_pressed_off: None,
@@ -582,7 +586,6 @@ impl RootView {
                 settings: ScrollHandle::new(),
                 settings_rail: ScrollHandle::new(),
                 sidebar: ScrollHandle::new(),
-                inspector: ScrollHandle::new(),
                 statistics: ScrollHandle::new(),
                 analysis: ScrollHandle::new(),
                 suggestions: ScrollHandle::new(),
@@ -613,7 +616,6 @@ impl RootView {
                 hero_height: Rc::new(Cell::new(px(0.0))),
                 playing: Rc::new(Cell::new(px(0.0))),
                 status: Rc::new(Cell::new(px(0.0))),
-                inspected: Rc::new(Cell::new(px(0.0))),
                 heading: Rc::new(Cell::new(px(0.0))),
                 columns_fit: listing::Fitting::default(),
                 queue_height: Rc::default(),
@@ -754,7 +756,6 @@ impl RootView {
                 artists: cx.global::<ResonateApp>().artists_drawn,
                 missing: MissingShows::default(),
                 playlists: PlaylistsDrawn::default(),
-                bitrate_graph: false,
                 time_left: false,
             },
             typing: TypedAhead {

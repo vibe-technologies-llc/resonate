@@ -1,8 +1,8 @@
-use std::{borrow::Cow, time::SystemTime};
+use std::{borrow::Cow, cell::Cell, rc::Rc, time::SystemTime};
 
 use gpui::{
-    AnyElement, Bounds, Canvas, Context, Div, FontWeight, Pixels, Point, SharedString, canvas, div,
-    linear_color_stop, linear_gradient, point, prelude::*, px, rgb,
+    AnyElement, Bounds, Canvas, Context, Div, FontWeight, Pixels, Point, ScrollHandle,
+    SharedString, canvas, div, linear_color_stop, linear_gradient, point, prelude::*, px, rgb,
 };
 use resonate_core::{AppliedGain, Decibels, Frames, SampleRate};
 use resonate_engine::{
@@ -50,9 +50,24 @@ fn codes() -> [&'static str; 9] {
     ]
 }
 
+#[derive(Default)]
+pub(crate) struct InspectorPane {
+    scroll: ScrollHandle,
+    room: Rc<Cell<Pixels>>,
+    graphing: bool,
+}
+
+impl InspectorPane {
+    fn toggle_the_graph(&mut self, cx: &mut Context<Self>) {
+        self.graphing = !self.graphing;
+        cx.notify();
+    }
+}
+
 impl RootView {
     fn inspected(&self, state: &PlayerState, digest: &StreamDigest, cx: &mut Context<Self>) -> Div {
         let playing = self.playing(state, Some(digest), cx);
+        let room = self.inspector.read(cx).room.clone();
 
         let named = div()
             .flex()
@@ -61,13 +76,13 @@ impl RootView {
             .flex_1()
             .min_w(px(theme::heading_name()))
             .gap_1()
-            .child(kit::measures_its_width(self.rooms.inspected.clone()))
+            .child(kit::measures_its_width(room.clone()))
             .child(kit::linked_title(copied_on_a_right_click(
                 self.opens(
                     "inspected-title",
                     kit::cut_to_fit(
                         playing.title.clone(),
-                        self.rooms.inspected.get(),
+                        room.get(),
                         theme::ui(FontWeight::SEMIBOLD),
                         px(theme::text_xl()),
                         cx,
@@ -82,7 +97,7 @@ impl RootView {
                 "inspected-artist",
                 "inspected-album",
                 &playing,
-                self.rooms.inspected.get(),
+                room.get(),
                 cx,
             ));
 
@@ -102,7 +117,8 @@ impl RootView {
         let sink = output
             .and_then(|output| model.sinks().iter().find(|sink| sink.id == output.sink))
             .map(|sink| sink.description.clone());
-        let graphing = self.shows.bitrate_graph;
+        let graphing = self.inspector.read(cx).graphing;
+        let scroll = self.inspector.read(cx).scroll.clone();
         let state = model.state().clone();
         let heard = self.playing(&state, Some(&digest), cx).heard;
         let heading = self.inspected(&state, &digest, cx);
@@ -145,16 +161,12 @@ impl RootView {
             .min_w(px(0.0))
             .p_6()
             .overflow_y_scroll()
-            .track_scroll(&self.scrolls.inspector)
+            .track_scroll(&scroll)
             .child(column.child(tags(&digest.info.tags, carried)));
 
         kit::pane()
             .child(heading)
-            .child(Scrollbars::of(cx).around(
-                "inspector-scrollbar",
-                self.scrolls.inspector.clone(),
-                pane,
-            ))
+            .child(Scrollbars::of(cx).around("inspector-scrollbar", scroll, pane))
             .into_any_element()
     }
 }
@@ -481,7 +493,10 @@ fn bitrate(
             },
             Tone::Outlined,
         ),
-        |this, _, cx| this.toggle_bitrate_graph(cx),
+        |this, _, cx| {
+            this.inspector
+                .update(cx, |inspector, cx| inspector.toggle_the_graph(cx));
+        },
         cx,
     )))
     .into_any_element()
@@ -909,4 +924,51 @@ fn yes_no(value: bool) -> String {
 
 fn unknown() -> String {
     words::inspector::unknown().to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use gpui::TestAppContext;
+    use resonate_library::Library;
+
+    use crate::{
+        Pane,
+        driven::{Driven, Folder},
+    };
+
+    #[gpui::test]
+    fn the_inspector_measures_its_heading_and_keeps_the_graph_chosen_while_the_window_is_elsewhere(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let song = folder.tone("one.wav", 5);
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        Driven::scanned(&library, &folder);
+        let mut driven = Driven::open(cx, library);
+
+        driven.play(&[song]);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(Pane::Inspector, cx);
+        });
+        driven.until(|root, cx| root.player.read(cx).digest().is_some());
+        let measured = driven.read(|root, cx| root.inspector.read(cx).room.get());
+        let closed_at_first = driven.read(|root, cx| !root.inspector.read(cx).graphing);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.inspector
+                .update(cx, |inspector, cx| inspector.toggle_the_graph(cx));
+            root.set_pane(Pane::Tracks, cx);
+        });
+        driven.settle();
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(Pane::Inspector, cx);
+        });
+        driven.settle();
+        let still_open = driven.read(|root, cx| root.inspector.read(cx).graphing);
+
+        assert!(measured > gpui::px(0.0));
+        assert!(closed_at_first);
+        assert!(still_open);
+    }
 }

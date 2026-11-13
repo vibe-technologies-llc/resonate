@@ -38,10 +38,11 @@ dragged in), `Typed` (every `Field` the root holds), `SettingsShown` (the settin
 
 **A pane with state of its own holds it in an entity of its own.** `PartyPane` (`views/party.rs`:
 the chat field and the subscription its enter speaks through, the page's scroll, the hand-over
-armed by a first press, the timer redrawing the pane while it is shown) is made in
-`RootView::new`, which observes it and redraws when it notifies, so a pane's
+armed by a first press, the timer redrawing the pane while it is shown) and `InspectorPane`
+(`views/inspector.rs`: the scroll, the room the heading measures, whether the bitrate graph is
+open) are made in `RootView::new`, which observes each and redraws when one notifies, so a pane's
 fields and subscriptions are found beside the pane and not in the root's list. The root still draws
-it (`RootView::party_pane`): every control of a pane goes into the root's
+them (`RootView::party_pane`, `RootView::inspector`): every control of a pane goes into the root's
 focus ring (`Controls`, `in_the_pane_ring`) and a press may reach the root's navigation, so a press
 that changes only the pane's own state updates its entity (`this.party.update(…)`). A `Field` such an
 entity holds is still listed by `RootView::text_fields`, so `editing` sees it.
@@ -667,7 +668,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
     no width). Such a link is cut before drawing at the room its parent measures:
     `RootView::playing_heading` (lyrics, visualiser, analysis headings) measures into
     `Rooms::heading` a frame behind and cuts with `kit::cut_to_fit`; the inspector cuts at
-    `Rooms::inspected`; `by_line` cuts the artist at its room, the album taking the rest. The artist
+    the room `InspectorPane` measures; `by_line` cuts the artist at its room, the album taking the rest. The artist
     under a title is `kit::linked_subtitle` (`kit::subtitle` over an `opens` stretched the link across
     the column).
 - **A track row is the same eight cells wherever drawn.** `listing::columns` = the header the tracks
@@ -1278,7 +1279,8 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
     album go through
     `kit::cut_to_fit`: title at `Rooms::playing` (a frame behind) less the star; album at the
     room `by_line` is handed less artist and separator (`kit::width_of` sums font advances; a glyphless
-    character counts one em); no room left = artist alone. The inspector uses `Rooms::inspected`.
+    character counts one em); no room left = artist alone. The inspector uses the room `InspectorPane`
+    measures.
   - **Every bar control names itself via `views/hint.rs`**: a step names its key, a toggle its state
     and what the key does next. A rail is filled in `TEXT`, accent under the pointer or held. The
     volume reading is always drawn, `theme::volume_reading()` wide (`opacity(0)` left a hole);

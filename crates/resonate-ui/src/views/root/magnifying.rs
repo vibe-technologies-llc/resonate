@@ -69,9 +69,4 @@ impl RootView {
             })
             .on_click(cx.listener(|this, _, _, cx| this.shrink_cover(cx)))
     }
-
-    pub(crate) fn toggle_bitrate_graph(&mut self, cx: &mut Context<Self>) {
-        self.shows.bitrate_graph = !self.shows.bitrate_graph;
-        cx.notify();
-    }
 }
