@@ -29,11 +29,11 @@ paths:
 - **A `release/MAJOR.MINOR` branch is cut from `master` for each minor or major line**, when its
   first candidate is tagged. A fix to a released line lands on `master` and is cherry-picked to
   that branch; a patch release is tagged on it.
-- **`master` names the oncoming release and is not bumped by releasing it.** A `master` at
-  `0.9.0` is released as `0.9.0`: the release commit changes no version, and nothing raises
-  `master` past it as part of that release. When `master` moves to a later version is the
-  maintainer's call, never a step of a release; the release branch keeps its own line's version
-  and raises only its patch.
+- **`master` names the oncoming release, and the release commit changes no version.** A `master`
+  at `0.10.0` is released as `0.10.0`. Once that release's tag is pushed and its `release/`
+  branch cut, `master` is raised to the next minor (`0.11.0`) in a commit of its own, so it again
+  names the release it builds towards; the release branch keeps its own line's version and raises
+  only its patch.
 - **Every release is a tag `vMAJOR.MINOR.PATCH[-rcN]` and a GitHub release.** Pushing the tag runs
   `release.yml` (`build.md`), which checks the tag against the manifest's version and attaches the
   assets. The roadmap's targets (`docs/ROADMAP.md`) name what each release is meant to hold.

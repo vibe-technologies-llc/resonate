@@ -360,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-core"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "bytemuck",
  "chardetng",
@@ -376,7 +376,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-dsp"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "parking_lot",
  "realfft",
@@ -398,7 +398,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-words"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "fluent-bundle",
  "sys-locale",
@@ -408,7 +408,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-words-build"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "fluent-syntax",
  "thiserror",
