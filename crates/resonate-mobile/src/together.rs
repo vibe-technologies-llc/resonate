@@ -7,8 +7,8 @@ use resonate_providers::{PlaysInPlace, found_exactly};
 use resonate_sync::{
     DeviceId, HOSTED_SERVER, LocalPlaylistId,
     party::{
-        Going, Mine, Party, PartyFinder, PartyReach, PartySeat, PartySettings, PartySong,
-        PartyWantingASong, RequestId, SeatHeard, SittingOut, Standing,
+        Going, Mine, Party, PartyChat, PartyFinder, PartyReach, PartyReaction, PartySeat,
+        PartySettings, PartySong, PartyWantingASong, RequestId, SeatHeard, SittingOut, Standing,
     },
     shared::{Invited, MemberId, SharedShown, SharedStanding, invitation_in},
 };
@@ -90,6 +90,54 @@ pub struct PartyRequest {
     pub artist: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum PartyReactionKind {
+    Love,
+    Fire,
+    Laugh,
+    Clap,
+    Dance,
+    Wow,
+}
+
+impl PartyReactionKind {
+    const fn said(self) -> PartyReaction {
+        match self {
+            Self::Love => PartyReaction::Love,
+            Self::Fire => PartyReaction::Fire,
+            Self::Laugh => PartyReaction::Laugh,
+            Self::Clap => PartyReaction::Clap,
+            Self::Dance => PartyReaction::Dance,
+            Self::Wow => PartyReaction::Wow,
+        }
+    }
+
+    const fn heard(reaction: PartyReaction) -> Self {
+        match reaction {
+            PartyReaction::Love => Self::Love,
+            PartyReaction::Fire => Self::Fire,
+            PartyReaction::Laugh => Self::Laugh,
+            PartyReaction::Clap => Self::Clap,
+            PartyReaction::Dance => Self::Dance,
+            PartyReaction::Wow => Self::Wow,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum PartySaying {
+    Words { text: String },
+    Reaction { reaction: PartyReactionKind },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct PartyChatLine {
+    pub id: u64,
+    pub name: String,
+    pub is_me: bool,
+    pub saying: PartySaying,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ListeningParty {
     pub hosting: bool,
@@ -100,6 +148,7 @@ pub struct ListeningParty {
     pub song: Option<PartyRequest>,
     pub requests: Vec<PartyRequest>,
     pub round_trip_ms: Option<u64>,
+    pub chat: Vec<PartyChatLine>,
 }
 
 #[derive(Default)]
@@ -482,6 +531,7 @@ impl MobilePlayer {
         let room = guard.as_ref()?;
         let shown = room.going.shown();
         let followed = room.going.followed();
+        let me = shown.me;
 
         Some(ListeningParty {
             hosting: shown.hosting,
@@ -533,7 +583,37 @@ impl MobilePlayer {
             round_trip_ms: shown
                 .round_trip
                 .map(|trip| u64::try_from(trip.as_millis()).unwrap_or(u64::MAX)),
+            chat: shown
+                .chat
+                .into_iter()
+                .map(|line| PartyChatLine {
+                    id: line.id,
+                    name: line.name,
+                    is_me: line.from == me,
+                    saying: match line.chat {
+                        PartyChat::Words(text) => PartySaying::Words { text },
+                        PartyChat::Reaction(reaction) => PartySaying::Reaction {
+                            reaction: PartyReactionKind::heard(reaction),
+                        },
+                    },
+                })
+                .collect(),
         })
+    }
+
+    pub fn party_say(&self, words: String) {
+        let Some(chat) = PartyChat::words(&words) else {
+            return;
+        };
+        if let Some(room) = self.together.party.lock().as_ref() {
+            room.going.party().say(chat);
+        }
+    }
+
+    pub fn party_react(&self, reaction: PartyReactionKind) {
+        if let Some(room) = self.together.party.lock().as_ref() {
+            room.going.party().say(PartyChat::Reaction(reaction.said()));
+        }
     }
 
     pub fn party_turn_out(&self, person: Vec<u8>) {

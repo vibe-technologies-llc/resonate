@@ -8,6 +8,22 @@ private func person(_ name: String, me: Bool = false, host: Bool = false) -> Tog
     TogetherPerson(id: Data(repeating: 1, count: 16), name: name, isMe: me, isHost: host)
 }
 
+@Suite struct PartyChatTests {
+    @Test func aLineIsHeardAsWhoSaidWhatAndEveryReactionIsDrawnAndNamedApart() {
+        let line = PartyChatLine(id: 1, name: "Ada", isMe: false, saying: .words(text: "Turn it up"))
+        var mine = line
+        mine.isMe = true
+        let reacted = PartyChatLine(id: 2, name: "", isMe: false, saying: .reaction(reaction: .fire))
+
+        #expect(PartyWords.heard(line) == "Ada: Turn it up")
+        #expect(PartyWords.heard(mine) == "You: Turn it up")
+        #expect(PartyWords.heard(reacted) == "Someone reacted with fire")
+        #expect(PartyWords.shown(reacted) == PartyWords.reactionDrawn(.fire))
+        #expect(Set(PartyWords.reactions.map(PartyWords.reactionDrawn)).count == PartyWords.reactions.count)
+        #expect(Set(PartyWords.reactions.map(PartyWords.reactionNamed)).count == PartyWords.reactions.count)
+    }
+}
+
 @Suite struct OpenedLinkTests {
     private func opened(_ text: String) throws -> OpenedLink {
         try OpenedLink.of(#require(URL(string: text)))

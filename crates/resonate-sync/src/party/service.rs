@@ -20,7 +20,10 @@ use crate::{
     party::{
         clock::ServerClock,
         key::{PartyKey, PartyKeys},
-        said::{LARGEST_SAID_OPENED, PartyNow, PartySaid, PartySong},
+        said::{
+            LARGEST_SAID_OPENED, LINES_TOLD_AT_MOST, LONGEST_NAME, PartyChat, PartyLine, PartyNow,
+            PartySaid, PartySong,
+        },
     },
     quic::{to_the_server, trusted_roots},
     seal::{opened, sealed},
@@ -44,6 +47,16 @@ const SAID_WHILE_AWAY_AT_MOST: usize = 16;
 const PEOPLE_TOLD_AT_MOST_EVERY: Duration = Duration::from_secs(3);
 
 const CLOSES_BEFORE_WELCOME_FOR_TOO_OLD: u32 = 3;
+
+pub const CHAT_KEPT_AT_MOST: usize = 200;
+
+const CHAT_OWED_AT_MOST: usize = 256;
+
+pub const CHAT_TOLD_AT_MOST_EVERY: Duration = Duration::from_secs(1);
+
+pub const LINES_A_PERSON_SAYS_AT_MOST: usize = 8;
+
+pub const LINES_COUNTED_OVER: Duration = Duration::from_secs(10);
 
 pub struct PartySettings {
     pub server: String,
@@ -136,6 +149,88 @@ pub struct PartyShown {
     pub now: Option<PartyNow>,
     pub asked_for: Vec<PartyWantingASong>,
     pub round_trip: Option<Duration>,
+    pub chat: Vec<PartyLine>,
+}
+
+fn kept_line(shown: &mut PartyShown, line: PartyLine) -> bool {
+    if shown.chat.iter().any(|kept| kept.id == line.id) {
+        return false;
+    }
+    if shown.chat.len() == CHAT_KEPT_AT_MOST {
+        shown.chat.remove(0);
+    }
+    shown.chat.push(line);
+
+    true
+}
+
+#[derive(Default)]
+struct ChatPacing {
+    said: Vec<(DeviceId, VecDeque<Instant>)>,
+}
+
+impl ChatPacing {
+    fn may_say(&mut self, member: DeviceId, now: Instant) -> bool {
+        self.said.retain(|(_, times)| {
+            times
+                .back()
+                .is_some_and(|last| now.saturating_duration_since(*last) < LINES_COUNTED_OVER)
+        });
+        let at = match self.said.iter().position(|(said, _)| *said == member) {
+            Some(at) => at,
+            None => {
+                self.said.push((member, VecDeque::new()));
+                self.said.len() - 1
+            }
+        };
+        let times = &mut self.said[at].1;
+        while times
+            .front()
+            .is_some_and(|first| now.saturating_duration_since(*first) >= LINES_COUNTED_OVER)
+        {
+            times.pop_front();
+        }
+        if times.len() >= LINES_A_PERSON_SAYS_AT_MOST {
+            return false;
+        }
+        times.push_back(now);
+
+        true
+    }
+}
+
+#[derive(Default)]
+struct ChatTold {
+    owed: VecDeque<PartyLine>,
+    last: Option<Instant>,
+}
+
+impl ChatTold {
+    fn owe(&mut self, line: PartyLine) {
+        if self.owed.len() == CHAT_OWED_AT_MOST {
+            self.owed.pop_front();
+        }
+        self.owed.push_back(line);
+    }
+
+    fn due(&self, now: Instant) -> Option<Vec<PartyLine>> {
+        if self.owed.is_empty() {
+            return None;
+        }
+        if self
+            .last
+            .is_some_and(|last| now.saturating_duration_since(last) < CHAT_TOLD_AT_MOST_EVERY)
+        {
+            return None;
+        }
+
+        Some(self.owed.iter().take(LINES_TOLD_AT_MOST).cloned().collect())
+    }
+
+    fn told(&mut self, count: usize, now: Instant) {
+        self.owed.drain(..count.min(self.owed.len()));
+        self.last = Some(now);
+    }
 }
 
 #[derive(Clone)]
@@ -145,6 +240,7 @@ enum Asked {
     Kick(DeviceId),
     TakeAsk(PartyWantingASong),
     Named(String),
+    Chat(PartyChat),
     Leave,
 }
 
@@ -206,6 +302,7 @@ impl Party {
             now: None,
             asked_for: Vec::new(),
             round_trip: None,
+            chat: Vec::new(),
         }));
         let clock = Arc::new(RwLock::new(ServerClock::default()));
         let (asked, hearing) = mpsc::unbounded_channel();
@@ -230,6 +327,9 @@ impl Party {
             waiting: VecDeque::new(),
             closes_before_welcome: 0,
             people_told: PeopleTold::default(),
+            lines_minted: u64::from_be_bytes(random_bytes()?),
+            chat_told: ChatTold::default(),
+            pacing: ChatPacing::default(),
         };
         let thread = thread::Builder::new()
             .name("resonate-party".to_owned())
@@ -297,6 +397,10 @@ impl Party {
         let _ = self.asked.send(Asked::Named(name));
     }
 
+    pub fn say(&self, chat: PartyChat) {
+        let _ = self.asked.send(Asked::Chat(chat));
+    }
+
     pub fn leave(&mut self) {
         let _ = self.asked.send(Asked::Leave);
         if let Some(thread) = self.thread.take() {
@@ -331,6 +435,9 @@ struct Running {
     waiting: VecDeque<Asked>,
     closes_before_welcome: u32,
     people_told: PeopleTold,
+    lines_minted: u64,
+    chat_told: ChatTold,
+    pacing: ChatPacing,
 }
 
 #[derive(Default)]
@@ -416,9 +523,58 @@ impl Running {
             Asked::Now(now) => self.told = Some(now),
             Asked::Named(name) => self.name = name,
             Asked::TakeAsk(request) => self.take_ask(&request),
-            Asked::Ask(_) | Asked::Kick(_) => self.keep_for_the_welcome(asked),
+            Asked::Chat(chat) if self.host.is_some() => self.hosted_line(self.me, chat),
+            Asked::Ask(_) | Asked::Kick(_) | Asked::Chat(_) => self.keep_for_the_welcome(asked),
             Asked::Leave => {}
         }
+    }
+
+    fn hosted_line(&mut self, from: DeviceId, chat: PartyChat) {
+        self.lines_minted = self.lines_minted.wrapping_add(1);
+        let named = if from == self.me {
+            self.name.as_str()
+        } else {
+            self.names
+                .iter()
+                .find(|(named, _)| *named == from)
+                .map_or(HOST_NAME_FOR_NO_NAME, |(_, name)| name.as_str())
+        };
+        let line = PartyLine {
+            id: self.lines_minted,
+            from,
+            name: named[..named.floor_char_boundary(LONGEST_NAME)].to_owned(),
+            chat,
+        };
+
+        kept_line(&mut self.shown.write(), line.clone());
+        self.chat_told.owe(line);
+    }
+
+    async fn tell_the_chat(&mut self, send: &mut Outgoing) -> Result<()> {
+        let now = Instant::now();
+        let Some(lines) = self.chat_told.due(now) else {
+            return Ok(());
+        };
+
+        self.say(send, None, &PartySaid::Chatted(lines.clone()))
+            .await?;
+        self.chat_told.told(lines.len(), now);
+
+        Ok(())
+    }
+
+    async fn tell_the_chat_so_far(&self, send: &mut Outgoing, member: DeviceId) -> Result<()> {
+        let lines: Vec<PartyLine> = {
+            let shown = self.shown.read();
+            let from = shown.chat.len().saturating_sub(LINES_TOLD_AT_MOST);
+            shown.chat[from..].to_vec()
+        };
+        if lines.is_empty() {
+            return Ok(());
+        }
+
+        self.say(send, Some(member), &PartySaid::Chatted(lines))
+            .await
     }
 
     fn keep_for_the_welcome(&mut self, asked: Asked) {
@@ -611,6 +767,9 @@ impl Running {
                     {
                         break Ended::Lost;
                     }
+                    if self.host.is_some() && self.tell_the_chat(&mut send).await.is_err() {
+                        break Ended::Lost;
+                    }
                 }
                 frame = frames.recv() => {
                     let Some(frame) = frame else {
@@ -628,7 +787,8 @@ impl Running {
                     let Some(asked) = asked else {
                         break Ended::Left;
                     };
-                    let again = matches!(asked, Asked::Ask(_) | Asked::Kick(_)).then(|| asked.clone());
+                    let again = matches!(asked, Asked::Ask(_) | Asked::Kick(_) | Asked::Chat(_))
+                        .then(|| asked.clone());
                     match self.asked(asked, &mut send).await {
                         Ok(None) => {}
                         Ok(Some(ended)) => break ended,
@@ -664,6 +824,14 @@ impl Running {
                 }
             }
             Asked::TakeAsk(request) => self.take_ask(&request),
+            Asked::Chat(chat) => {
+                if self.host.is_some() {
+                    self.hosted_line(self.me, chat);
+                    self.tell_the_chat(send).await?;
+                } else if let Some(host) = self.host_id {
+                    self.say(send, Some(host), &PartySaid::Chat(chat)).await?;
+                }
+            }
             Asked::Kick(member) => {
                 if self.host.is_some() {
                     send.send(&ToServer::RoomKick { member }.encoded()).await?;
@@ -705,6 +873,7 @@ impl Running {
                     if let Some(told) = self.told.clone() {
                         self.say(send, Some(member), &PartySaid::Now(told)).await?;
                     }
+                    self.tell_the_chat_so_far(send, member).await?;
                 }
             }
             FromServer::RoomLeft { member } => {
@@ -756,6 +925,18 @@ impl Running {
                     shown.asked_for.push(PartyWantingASong { from, song });
                 }
             }
+            PartySaid::Chat(chat) if hosting => {
+                if self.pacing.may_say(from, Instant::now()) {
+                    self.hosted_line(from, chat);
+                    self.tell_the_chat(send).await?;
+                }
+            }
+            PartySaid::Chatted(lines) if from_the_host => {
+                let mut shown = self.shown.write();
+                for line in lines {
+                    kept_line(&mut shown, line);
+                }
+            }
             _ => {}
         }
 
@@ -804,6 +985,77 @@ mod tests {
             Some(first.id())
         );
         assert_eq!(RequestId::from_bytes(&[0; 31]), None);
+    }
+
+    fn a_line(id: u64) -> PartyLine {
+        PartyLine {
+            id,
+            from: DeviceId([1; 16]),
+            name: "Ada".to_owned(),
+            chat: PartyChat::Words("hi".to_owned()),
+        }
+    }
+
+    #[test]
+    fn a_person_says_only_so_many_lines_in_a_while_and_others_are_counted_apart() {
+        let start = Instant::now();
+        let ada = DeviceId([1; 16]);
+        let bo = DeviceId([2; 16]);
+        let mut pacing = ChatPacing::default();
+
+        for _ in 0..LINES_A_PERSON_SAYS_AT_MOST {
+            assert!(pacing.may_say(ada, start));
+        }
+
+        assert!(!pacing.may_say(ada, start + Duration::from_secs(1)));
+        assert!(pacing.may_say(bo, start + Duration::from_secs(1)));
+        assert!(pacing.may_say(ada, start + LINES_COUNTED_OVER));
+    }
+
+    #[test]
+    fn lines_owed_go_at_most_once_a_second_and_stay_owed_until_told() {
+        let start = Instant::now();
+        let mut told = ChatTold::default();
+
+        assert_eq!(told.due(start), None);
+
+        told.owe(a_line(1));
+        assert_eq!(told.due(start), Some(vec![a_line(1)]));
+        assert_eq!(told.due(start), Some(vec![a_line(1)]));
+
+        told.told(1, start);
+        told.owe(a_line(2));
+        assert_eq!(told.due(start + Duration::from_millis(500)), None);
+        assert_eq!(
+            told.due(start + CHAT_TOLD_AT_MOST_EVERY),
+            Some(vec![a_line(2)])
+        );
+    }
+
+    #[test]
+    fn a_line_heard_twice_is_kept_once_and_only_the_latest_are_kept() {
+        let mut shown = PartyShown {
+            hosting: false,
+            code: String::new(),
+            link: String::new(),
+            page: None,
+            me: DeviceId([0; 16]),
+            reach: PartyReach::Here,
+            people: Vec::new(),
+            now: None,
+            asked_for: Vec::new(),
+            round_trip: None,
+            chat: Vec::new(),
+        };
+
+        assert!(kept_line(&mut shown, a_line(1)));
+        assert!(!kept_line(&mut shown, a_line(1)));
+        for id in 2..=u64::try_from(CHAT_KEPT_AT_MOST).unwrap() + 1 {
+            kept_line(&mut shown, a_line(id));
+        }
+
+        assert_eq!(shown.chat.len(), CHAT_KEPT_AT_MOST);
+        assert_eq!(shown.chat[0].id, 2);
     }
 
     #[test]

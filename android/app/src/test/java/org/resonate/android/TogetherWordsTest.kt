@@ -7,7 +7,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.resonate.android.nativecore.ListeningParty
 import org.resonate.android.nativecore.PartyConnection
+import org.resonate.android.nativecore.PartyChatLine
 import org.resonate.android.nativecore.PartyFollowing
+import org.resonate.android.nativecore.PartyReactionKind
+import org.resonate.android.nativecore.PartySaying
 import org.resonate.android.nativecore.SharedPlaylist
 import org.resonate.android.nativecore.SharedPlaylistReach
 import org.resonate.android.nativecore.TogetherPerson
@@ -23,6 +26,7 @@ class TogetherWordsTest {
             song = null,
             requests = emptyList(),
             roundTripMs = null,
+            chat = emptyList(),
         )
 
     private val list =
@@ -93,6 +97,23 @@ class TogetherWordsTest {
             "Reaching the server…",
             TogetherWords.partyLine(English, party.copy(hosting = true, connection = PartyConnection.CONNECTING)),
         )
+    }
+
+    @Test
+    fun aLineInTheChatIsHeardAsWhoSaidWhatAndEveryReactionIsDrawnAndNamed() {
+        val line = PartyChatLine(1uL, "Ada", isMe = false, saying = PartySaying.Words("Turn it up"))
+
+        assertEquals("Ada: Turn it up", TogetherWords.lineHeard(English, line))
+        assertEquals("You: Turn it up", TogetherWords.lineHeard(English, line.copy(isMe = true)))
+        assertEquals(
+            "Someone reacted with fire",
+            TogetherWords.lineHeard(English, line.copy(name = "", saying = PartySaying.Reaction(PartyReactionKind.FIRE))),
+        )
+        assertEquals(
+            PartyReactionKind.entries.size,
+            PartyReactionKind.entries.map { TogetherWords.reactionDrawn(it) }.toSet().size,
+        )
+        PartyReactionKind.entries.forEach { assertTrue(TogetherWords.reactionNamed(English, it).isNotBlank()) }
     }
 
     @Test

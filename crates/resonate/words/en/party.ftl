@@ -13,3 +13,7 @@ turned-away = The server turned that link away
 server-too-old = The server is too old to hold parties
 invite = Invite people with { $link }
 here = { $people } here
+type-to-chat = Type a line and press enter to say it to everyone at the party
+you = You
+someone = Someone
+said-by = { $person }: { $words }

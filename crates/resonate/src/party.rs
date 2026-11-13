@@ -7,8 +7,8 @@ use resonate_library::Library;
 use resonate_providers::{PlaysInPlace, found_exactly};
 use resonate_sync::{
     party::{
-        Going, Mine, Party, PartyFinder, PartyReach, PartySeat, PartySettings, PartySong,
-        SeatHeard, Standing,
+        Going, Mine, Party, PartyChat, PartyFinder, PartyLine, PartyReach, PartyReaction,
+        PartySeat, PartySettings, PartySong, SeatHeard, Standing,
     },
     shared::invitation_in,
 };
@@ -288,6 +288,32 @@ fn reach_said(reach: PartyReach) -> Option<&'static str> {
     }
 }
 
+const fn reaction_drawn(reaction: PartyReaction) -> &'static str {
+    match reaction {
+        PartyReaction::Love => "\u{2764}\u{fe0f}",
+        PartyReaction::Fire => "\u{1f525}",
+        PartyReaction::Laugh => "\u{1f602}",
+        PartyReaction::Clap => "\u{1f44f}",
+        PartyReaction::Dance => "\u{1f483}",
+        PartyReaction::Wow => "\u{1f62e}",
+    }
+}
+
+fn line_said(line: &PartyLine, mine: bool) -> String {
+    let person = if mine {
+        words::party::you().to_owned()
+    } else if line.name.is_empty() {
+        words::party::someone().to_owned()
+    } else {
+        line.name.clone()
+    };
+
+    match &line.chat {
+        PartyChat::Words(words) => words::party::said_by(person, words.clone()),
+        PartyChat::Reaction(reaction) => words::party::said_by(person, reaction_drawn(*reaction)),
+    }
+}
+
 pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) -> Result<()> {
     if !config.syncs() {
         return Err(Error::SyncOff);
@@ -358,13 +384,34 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
         said!("{}", words::party::invite(shown.page.unwrap_or(shown.link)));
     }
 
+    let typed = if crate::input::played_in_the_background() {
+        None
+    } else {
+        said!("{}", words::party::type_to_chat());
+        Some(crate::input::typed_lines())
+    };
+
     let mut said = String::new();
+    let mut lines_heard = Vec::new();
     loop {
         if quitting.recv_timeout(LOOK_AT_THE_PARTY_EVERY).is_ok() {
             break;
         }
+        if let Some(typed) = &typed {
+            for line in typed.try_iter() {
+                if let Some(chat) = PartyChat::words(&line) {
+                    going.party().say(chat);
+                }
+            }
+        }
 
         let shown = going.shown();
+        for line in &shown.chat {
+            if !lines_heard.contains(&line.id) {
+                said!("{}", line_said(line, line.from == shown.me));
+                lines_heard.push(line.id);
+            }
+        }
         let now = reach_said(shown.reach).map_or_else(
             || {
                 if shown.hosting {

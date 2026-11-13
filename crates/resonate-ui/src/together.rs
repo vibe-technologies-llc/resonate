@@ -60,6 +60,41 @@ pub enum PartyStanding {
     InStep,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PartyReaction {
+    Love,
+    Fire,
+    Laugh,
+    Clap,
+    Dance,
+    Wow,
+}
+
+impl PartyReaction {
+    pub const ALL: [Self; 6] = [
+        Self::Love,
+        Self::Fire,
+        Self::Laugh,
+        Self::Clap,
+        Self::Dance,
+        Self::Wow,
+    ];
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PartySaying {
+    Words(String),
+    Reaction(PartyReaction),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PartyLineSeen {
+    pub id: u64,
+    pub name: String,
+    pub me: bool,
+    pub saying: PartySaying,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PartySeen {
     pub zone: ZoneId,
@@ -71,6 +106,7 @@ pub struct PartySeen {
     pub song: Option<(String, String)>,
     pub asked_for: Vec<(String, String)>,
     pub round_trip: Option<Duration>,
+    pub chat: Vec<PartyLineSeen>,
 }
 
 pub trait Together: Send + Sync {
@@ -105,6 +141,10 @@ pub trait Together: Send + Sync {
     fn dismiss_request(&self, at: usize);
 
     fn following(&self, zone: ZoneId) -> bool;
+
+    fn say_in_party(&self, words: &str);
+
+    fn react_in_party(&self, reaction: PartyReaction);
 }
 
 pub(crate) fn is_an_invitation(text: &str) -> bool {

@@ -17,8 +17,9 @@ use resonate_server::{Limits, Server, Store};
 use resonate_sync::{
     DeviceId, Incoming, Outgoing, SpaceId, Token, connect,
     party::{
-        Going, Mine, Party, PartyFinder, PartyNow, PartyReach, PartySeat, PartySettings, PartySong,
-        PartyWantingASong, SeatHeard, Standing,
+        Going, LINES_A_PERSON_SAYS_AT_MOST, Mine, Party, PartyChat, PartyFinder, PartyNow,
+        PartyReach, PartyReaction, PartySeat, PartySettings, PartySong, PartyWantingASong,
+        SeatHeard, Standing,
     },
     to_the_web, web_address,
     wire::{FromServer, PROTOCOL_VERSION, Refusal, SpaceAsked, ToServer},
@@ -892,6 +893,87 @@ async fn a_party_tells_its_guests_the_song_and_their_names_and_ends_with_its_hos
     host.turn_out(member);
     until("the guest to be told the party is over", || {
         guest.shown().reach == PartyReach::Ended
+    })
+    .await;
+}
+
+fn words_heard(party: &Party) -> Vec<(String, PartyChat)> {
+    party
+        .shown()
+        .chat
+        .into_iter()
+        .map(|line| (line.name, line.chat))
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn what_anyone_says_reaches_everyone_through_the_host_and_a_late_guest_hears_what_came_before()
+ {
+    let server = hosted(Limits::default()).await;
+    let host = a_party_in_the_room(server).await;
+    let code = host.shown().code;
+    let ada = Party::join(party_settings(server, "Ada"), &code).expect("Ada joins");
+    let bo = Party::join(party_settings(server, "Bo"), &code).expect("Bo joins");
+    until("everyone to be named to the host", || {
+        let people = host.shown().people;
+        people.iter().any(|one| one.name == "Ada") && people.iter().any(|one| one.name == "Bo")
+    })
+    .await;
+
+    ada.say(PartyChat::Words("Turn it up".to_owned()));
+    until("the host to hear Ada", || host.shown().chat.len() == 1).await;
+    host.say(PartyChat::Reaction(PartyReaction::Fire));
+
+    let heard = vec![
+        ("Ada".to_owned(), PartyChat::Words("Turn it up".to_owned())),
+        ("Host".to_owned(), PartyChat::Reaction(PartyReaction::Fire)),
+    ];
+    for (who, party) in [("the host", &host), ("Ada", &ada), ("Bo", &bo)] {
+        until(&format!("{who} to hear both lines"), || {
+            words_heard(party) == heard
+        })
+        .await;
+    }
+
+    let late = Party::join(party_settings(server, "Cy"), &code).expect("Cy joins");
+    until("the late guest to hear what came before", || {
+        words_heard(&late) == heard
+    })
+    .await;
+    let ids: Vec<u64> = host.shown().chat.iter().map(|line| line.id).collect();
+    assert_eq!(
+        late.shown()
+            .chat
+            .iter()
+            .map(|line| line.id)
+            .collect::<Vec<_>>(),
+        ids
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guest_saying_more_than_its_share_is_heard_only_as_far_as_its_share() {
+    let server = hosted(Limits::default()).await;
+    let host = a_party_in_the_room(server).await;
+    let guest =
+        Party::join(party_settings(server, "Guest"), &host.shown().code).expect("the guest joins");
+    until("the guest to arrive", || {
+        guest.shown().reach == PartyReach::Here && host.shown().people.len() == 2
+    })
+    .await;
+
+    for said in 0..LINES_A_PERSON_SAYS_AT_MOST + 5 {
+        guest.say(PartyChat::Words(said.to_string()));
+    }
+    until("the guest's share to reach the host", || {
+        host.shown().chat.len() == LINES_A_PERSON_SAYS_AT_MOST
+    })
+    .await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    assert_eq!(host.shown().chat.len(), LINES_A_PERSON_SAYS_AT_MOST);
+    until("the guest to hear its share back", || {
+        guest.shown().chat.len() == LINES_A_PERSON_SAYS_AT_MOST
     })
     .await;
 }

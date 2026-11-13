@@ -246,6 +246,20 @@ final class TogetherState {
         }
     }
 
+    func say(_ words: String) {
+        Task {
+            guard let native = try? await library.player() else { return }
+            _ = try? await Work.aside { native.partySay(words: words) }
+        }
+    }
+
+    func react(_ reaction: PartyReactionKind) {
+        Task {
+            guard let native = try? await library.player() else { return }
+            _ = try? await Work.aside { native.partyReact(reaction: reaction) }
+        }
+    }
+
     func passOver(_ request: PartyRequest) {
         let id = request.id
         Task {

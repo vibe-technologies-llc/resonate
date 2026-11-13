@@ -2,12 +2,20 @@ package org.resonate.android.ui.together
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.automirrored.rounded.Send
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.MusicNote
@@ -16,20 +24,27 @@ import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -42,6 +57,8 @@ import kotlinx.coroutines.isActive
 import org.resonate.android.R
 import org.resonate.android.TogetherWords
 import org.resonate.android.nativecore.ListeningParty
+import org.resonate.android.nativecore.PartyReactionKind
+import org.resonate.android.nativecore.PartySaying
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.Page
@@ -56,6 +73,7 @@ import org.resonate.android.ui.settings.SettingsList
 import org.resonate.android.words
 
 const val PARTY_READ_EVERY_MS = 500L
+const val CHAT_LINES_SHOWN = 40
 private const val END_KEY = "end"
 
 class PartyViewModel(private val resonate: Resonate) : ViewModel() {
@@ -112,6 +130,63 @@ private fun NoParty(model: PartyViewModel) {
             }
         },
     )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Chat(party: ListeningParty, model: PartyViewModel) {
+    val together = model.together
+    val words = words()
+    var typed by rememberSaveable { mutableStateOf("") }
+    val send = {
+        if (typed.isNotBlank()) {
+            together.say(typed)
+            typed = ""
+        }
+    }
+    SectionHeader(stringResource(R.string.party_chat))
+    if (party.chat.isEmpty()) Note(stringResource(R.string.party_nothing_said_yet))
+    party.chat.takeLast(CHAT_LINES_SHOWN).forEach { line ->
+        val heard = TogetherWords.lineHeard(words, line)
+        SettingRow(
+            title = TogetherWords.saidBy(words, line),
+            icon = Icons.Rounded.ChatBubbleOutline,
+            supporting =
+                when (val saying = line.saying) {
+                    is PartySaying.Words -> saying.text
+                    is PartySaying.Reaction -> TogetherWords.reactionDrawn(saying.reaction)
+                },
+            modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = heard }.testTag("party-line"),
+        )
+    }
+    FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        PartyReactionKind.entries.forEach { reaction ->
+            val named = stringResource(R.string.party_react_with, TogetherWords.reactionNamed(words, reaction))
+            TextButton(
+                onClick = { together.react(reaction) },
+                modifier = Modifier.semantics { contentDescription = named }.testTag("party-react"),
+            ) {
+                Text(TogetherWords.reactionDrawn(reaction), style = MaterialTheme.typography.titleLarge)
+            }
+        }
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OutlinedTextField(
+            value = typed,
+            onValueChange = { typed = it },
+            placeholder = { Text(stringResource(R.string.party_say_something)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { send() }),
+            modifier = Modifier.weight(1f).testTag("party-chat-field"),
+        )
+        IconButton(onClick = send, enabled = typed.isNotBlank(), modifier = Modifier.testTag("party-chat-send")) {
+            Icon(Icons.AutoMirrored.Rounded.Send, stringResource(R.string.party_send))
+        }
+    }
 }
 
 @Composable
@@ -200,6 +275,7 @@ private fun AtTheParty(party: ListeningParty, model: PartyViewModel) {
                 }
             }
         }
+        Chat(party, model)
         if (!party.hosting) Note(stringResource(R.string.party_asks_the_host))
         ButtonRow {
             OutlinedButton(

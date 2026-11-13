@@ -1,14 +1,17 @@
 use std::time::Duration;
 
 use gpui::{
-    AnyElement, Context, Div, FontWeight, SharedString, Stateful, div, prelude::*, px, rgb,
+    AnyElement, Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px, rgb,
 };
 
 use crate::{
     Notice, ResonateApp, clipboard,
     icons::{self, Icon},
     theme,
-    together::{PartyReached, PartySeen, PartyStanding, SharedPerson},
+    together::{
+        PartyLineSeen, PartyReached, PartyReaction, PartySaying, PartySeen, PartyStanding,
+        SharedPerson,
+    },
     views::{
         kit::{self, EndsInAnEllipsis as _, Tone},
         root::RootView,
@@ -32,6 +35,93 @@ const WELCOME_WIDTH: f32 = 680.0;
 const STEP_AT_LEAST: f32 = 170.0;
 
 const COLUMN_AT_LEAST: f32 = 320.0;
+
+const CHAT_LINES_SHOWN: usize = 40;
+
+const fn reaction_drawn(reaction: PartyReaction) -> &'static str {
+    match reaction {
+        PartyReaction::Love => "\u{2764}\u{fe0f}",
+        PartyReaction::Fire => "\u{1f525}",
+        PartyReaction::Laugh => "\u{1f602}",
+        PartyReaction::Clap => "\u{1f44f}",
+        PartyReaction::Dance => "\u{1f483}",
+        PartyReaction::Wow => "\u{1f62e}",
+    }
+}
+
+fn reaction_named(reaction: PartyReaction) -> &'static str {
+    match reaction {
+        PartyReaction::Love => words::party::love(),
+        PartyReaction::Fire => words::party::fire(),
+        PartyReaction::Laugh => words::party::laugh(),
+        PartyReaction::Clap => words::party::clap(),
+        PartyReaction::Dance => words::party::dance(),
+        PartyReaction::Wow => words::party::wow(),
+    }
+}
+
+fn line_said_by(line: &PartyLineSeen) -> SharedString {
+    if line.me {
+        return SharedString::new_static(words::party::you());
+    }
+    if line.name.is_empty() {
+        return SharedString::new_static(words::party::a_nameless_person());
+    }
+
+    SharedString::from(line.name.clone())
+}
+
+fn line_heard(line: &PartyLineSeen) -> SharedString {
+    let by = line_said_by(line);
+
+    SharedString::from(match &line.saying {
+        PartySaying::Words(words) => words::party::said_by(by.to_string(), words.clone()),
+        PartySaying::Reaction(reaction) => {
+            words::party::reacted_with(by.to_string(), reaction_named(*reaction))
+        }
+    })
+}
+
+fn chat_line(line: &PartyLineSeen) -> Stateful<Div> {
+    let by = line_said_by(line);
+    let saying = match &line.saying {
+        PartySaying::Words(words) => div()
+            .text_size(px(theme::text_sm()))
+            .text_color(rgb(theme::text()))
+            .child(SharedString::from(words.clone())),
+        PartySaying::Reaction(reaction) => div()
+            .text_size(px(theme::text_lg()))
+            .child(reaction_drawn(*reaction)),
+    };
+    let heard = line_heard(line);
+
+    div()
+        .id(("party-line", line.id))
+        .read_plainly_as(move || heard)
+        .flex()
+        .items_start()
+        .gap_2p5()
+        .px_2()
+        .py_1()
+        .child(kit::avatar(&by, line.me))
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .min_w(px(0.0))
+                .child(
+                    div()
+                        .text_size(px(theme::text_xs()))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(rgb(theme::muted()))
+                        .truncate()
+                        .ends_in_an_ellipsis()
+                        .child(by),
+                )
+                .child(saying),
+        )
+}
 
 fn reach_said(reach: PartyReached) -> Option<&'static str> {
     match reach {
@@ -384,6 +474,7 @@ impl RootView {
                 column.child(self.party_invitation(&seen.link, cx))
             })
             .child(self.party_people(seen, cx));
+        let main = main.child(self.party_chat(seen, cx));
 
         div()
             .id("party-page")
@@ -604,6 +695,93 @@ impl RootView {
         }
 
         card(words::party::here()).child(people)
+    }
+
+    fn party_chat(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
+        let shown_from = seen.chat.len().saturating_sub(CHAT_LINES_SHOWN);
+        let lines = div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .p_2()
+            .when(seen.chat.is_empty(), |lines| {
+                lines.child(said(words::party::nothing_said_yet()).px_2().py_1())
+            })
+            .children(seen.chat[shown_from..].iter().map(chat_line));
+        let mut reactions = div().flex().flex_wrap().gap_1p5();
+        for (at, reaction) in PartyReaction::ALL.into_iter().enumerate() {
+            reactions = reactions.child(self.in_the_pane_ring(
+                kit::button(
+                    ("party-react", at),
+                    None,
+                    reaction_drawn(reaction),
+                    words::party::react_hint(reaction_named(reaction)),
+                    Tone::Ghost,
+                ),
+                move |this, _, cx| this.react_in_the_party(reaction, cx),
+                cx,
+            ));
+        }
+        let typing = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(div().flex_1().min_w(px(0.0)).child(self.text_field(
+                "party-chat-field",
+                &self.typed.party_chat,
+                |this, window, cx| this.let_go_of_the_field(window, cx),
+                cx,
+            )))
+            .child(self.in_the_pane_ring(
+                kit::button(
+                    "party-chat-send",
+                    None,
+                    words::party::send(),
+                    words::party::send_hint(),
+                    Tone::Outlined,
+                ),
+                |this, _, cx| this.say_what_was_typed(cx),
+                cx,
+            ));
+
+        card(words::party::chat()).child(lines).child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .px_4()
+                .pb_4()
+                .child(reactions)
+                .child(typing),
+        )
+    }
+
+    pub(crate) fn say_in_the_party(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.say_what_was_typed(cx);
+        self.typed
+            .party_chat
+            .update(cx, |field, cx| field.take_focus(window, cx));
+    }
+
+    fn say_what_was_typed(&mut self, cx: &mut Context<Self>) {
+        let typed = self.typed.party_chat.read(cx).text().trim().to_owned();
+        if typed.is_empty() {
+            return;
+        }
+        if let Some(together) = cx.global::<ResonateApp>().together.clone() {
+            together.say_in_party(&typed);
+        }
+        self.typed
+            .party_chat
+            .update(cx, |field, cx| field.clear(cx));
+        cx.notify();
+    }
+
+    fn react_in_the_party(&mut self, reaction: PartyReaction, cx: &mut Context<Self>) {
+        if let Some(together) = cx.global::<ResonateApp>().together.clone() {
+            together.react_in_party(reaction);
+        }
+        cx.notify();
     }
 
     fn party_requests(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {

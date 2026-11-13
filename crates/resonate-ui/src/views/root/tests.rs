@@ -722,6 +722,51 @@ mod driven {
     }
 
     #[gpui::test]
+    fn what_is_typed_into_the_party_chat_is_said_and_a_reaction_pressed_is_sent(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = queue_open(cx, &folder, &["one"]);
+        let joining = Arc::new(party_offer::joined::Joining::default());
+        *joining.at.lock() = Some(crate::together::PartySeen {
+            zone: resonate_core::ZoneId::FIRST,
+            hosting: false,
+            link: "resonate://party/ABCDE".to_owned(),
+            reach: crate::together::PartyReached::Here,
+            people: Vec::new(),
+            standing: crate::together::PartyStanding::InStep,
+            song: None,
+            asked_for: Vec::new(),
+            round_trip: None,
+            chat: vec![crate::together::PartyLineSeen {
+                id: 7,
+                name: "Ada".to_owned(),
+                me: false,
+                saying: crate::together::PartySaying::Words("Lovely".to_owned()),
+            }],
+        });
+        together_over(&mut driven, joining.clone());
+
+        driven
+            .root
+            .update(&mut driven.cx, |root, cx| root.set_pane(Pane::Party, cx));
+        driven.settle();
+        driven.focus(|root| &root.typed.party_chat);
+        driven.cx.simulate_input("hello there");
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+        driven.click("party-react-1");
+        driven.settle();
+
+        assert_eq!(*joining.said.lock(), vec!["hello there".to_owned()]);
+        assert_eq!(
+            *joining.reacted.lock(),
+            vec![crate::together::PartyReaction::Fire]
+        );
+        assert!(driven.read(|root, cx| root.typed.party_chat.read(cx).text().is_empty()));
+    }
+
+    #[gpui::test]
     fn a_party_link_from_outside_asks_first_and_focus_lands_on_the_control_that_declines(
         cx: &mut TestAppContext,
     ) {

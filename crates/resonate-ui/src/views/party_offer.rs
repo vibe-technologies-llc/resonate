@@ -147,13 +147,16 @@ pub(crate) mod joined {
     use parking_lot::Mutex;
     use resonate_core::{PlaylistId, ZoneId};
 
-    use crate::together::{PartySeen, SharedSeen, Together};
+    use crate::together::{PartyReaction, PartySeen, SharedSeen, Together};
 
     #[derive(Default)]
     pub(crate) struct Joining {
         pub(crate) joined: Mutex<Vec<(String, ZoneId)>>,
         pub(crate) accepted: Mutex<Vec<String>>,
         pub(crate) refuses: bool,
+        pub(crate) at: Mutex<Option<PartySeen>>,
+        pub(crate) said: Mutex<Vec<String>>,
+        pub(crate) reacted: Mutex<Vec<PartyReaction>>,
     }
 
     impl Joining {
@@ -201,7 +204,7 @@ pub(crate) mod joined {
         fn named(&self, _: &str) {}
 
         fn party(&self) -> Option<PartySeen> {
-            None
+            self.at.lock().clone()
         }
 
         fn begin_party(&self, _: ZoneId) -> bool {
@@ -220,6 +223,14 @@ pub(crate) mod joined {
 
         fn following(&self, _: ZoneId) -> bool {
             false
+        }
+
+        fn say_in_party(&self, words: &str) {
+            self.said.lock().push(words.to_owned());
+        }
+
+        fn react_in_party(&self, reaction: PartyReaction) {
+            self.reacted.lock().push(reaction);
         }
     }
 }

@@ -155,7 +155,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Later: Together
 
-- [M] Chat and reactions in a listening party.
 - [M] Handing the host's role to someone else in a party, when the host must go.
 - [M] A browser view of a shared playlist's contents; today the page only hands its link to the app.
 - [S] Measuring a party's offset between two people in different places, past the bound half their round trip gives.

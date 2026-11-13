@@ -13,7 +13,7 @@ use resonate_core::ZoneId;
 use resonate_core::{PlaylistId, Recording};
 use resonate_library::{Library, PlaylistName, SyncedPlaylist};
 #[cfg(feature = "ui")]
-use resonate_sync::party::{PartyReach, SittingOut, Standing};
+use resonate_sync::party::{PartyChat, PartyReach, PartyReaction, SittingOut, Standing};
 use resonate_sync::{
     HOSTED_SERVER, HeldShare, LocalPlaylistId, Refused,
     shared::{
@@ -383,6 +383,21 @@ impl resonate_ui::Together for Seen {
                 .map(|asked| (asked.song.recording.title, asked.song.recording.artist))
                 .collect(),
             round_trip: shown.round_trip,
+            chat: shown
+                .chat
+                .into_iter()
+                .map(|line| resonate_ui::PartyLineSeen {
+                    id: line.id,
+                    name: line.name,
+                    me: line.from == shown.me,
+                    saying: match line.chat {
+                        PartyChat::Words(words) => resonate_ui::PartySaying::Words(words),
+                        PartyChat::Reaction(reaction) => {
+                            resonate_ui::PartySaying::Reaction(reaction_seen(reaction))
+                        }
+                    },
+                })
+                .collect(),
         })
     }
 
@@ -410,6 +425,40 @@ impl resonate_ui::Together for Seen {
 
     fn following(&self, zone: ZoneId) -> bool {
         crate::party_room::following(zone)
+    }
+
+    fn say_in_party(&self, words: &str) {
+        if let Some(chat) = PartyChat::words(words) {
+            crate::party_room::say(chat);
+        }
+    }
+
+    fn react_in_party(&self, reaction: resonate_ui::PartyReaction) {
+        crate::party_room::say(PartyChat::Reaction(reaction_said(reaction)));
+    }
+}
+
+#[cfg(feature = "ui")]
+const fn reaction_seen(reaction: PartyReaction) -> resonate_ui::PartyReaction {
+    match reaction {
+        PartyReaction::Love => resonate_ui::PartyReaction::Love,
+        PartyReaction::Fire => resonate_ui::PartyReaction::Fire,
+        PartyReaction::Laugh => resonate_ui::PartyReaction::Laugh,
+        PartyReaction::Clap => resonate_ui::PartyReaction::Clap,
+        PartyReaction::Dance => resonate_ui::PartyReaction::Dance,
+        PartyReaction::Wow => resonate_ui::PartyReaction::Wow,
+    }
+}
+
+#[cfg(feature = "ui")]
+const fn reaction_said(reaction: resonate_ui::PartyReaction) -> PartyReaction {
+    match reaction {
+        resonate_ui::PartyReaction::Love => PartyReaction::Love,
+        resonate_ui::PartyReaction::Fire => PartyReaction::Fire,
+        resonate_ui::PartyReaction::Laugh => PartyReaction::Laugh,
+        resonate_ui::PartyReaction::Clap => PartyReaction::Clap,
+        resonate_ui::PartyReaction::Dance => PartyReaction::Dance,
+        resonate_ui::PartyReaction::Wow => PartyReaction::Wow,
     }
 }
 

@@ -135,6 +135,41 @@ open under `LARGEST_SAID_OPENED`. `Now` (the song and next rows, playing, positi
 was true at) is told on any change, on a jump past `HOST_MOVED_PAST`, and every 2 s; a late guest is told
 it as it arrives. A reconnecting seat tries from 1 s to 15 s and the room waits 30 s for its host. **A request, a host's turn-out and a dismissal made while a seat reconnects are not lost**: a guest's `Ask` and a host's `Kick` wait in a queue of `SAID_WHILE_AWAY_AT_MOST` (16, the oldest dropped) and are sent right after the next `RoomWelcome` (also one whose send failed), and a dismissal is applied to the shown requests at once, naming the request (`PartyWantingASong`: its sender, row and song, as a `RequestId` of 32 bytes, which is what the phones' `PartyRequest.id` carries into `party_play_next` and `party_pass_over`), never an index, so a *Play next* whose search took seconds removes the request it found and no other; **a press claims its request first** (`Party::claim_a_request`, a `RequestClaim` held while the search runs, so a second press on the same request does nothing, answering as the first is, and a failed search frees it), and `take_a_request` removes it from the shown requests at once as well as through the service (`a_request_pressed_twice_while_its_search_runs_is_claimed_once_and_free_again_once_dropped`) (`a_guests_request_made_while_it_reconnects_reaches_the_host_once_it_is_back`, `a_request_dismissed_is_the_one_named_whatever_else_has_come_and_gone`). An old server answers the opening frame by closing, so **`ServerTooOld` is read only after `CLOSES_BEFORE_WELCOME_FOR_TOO_OLD` (3) clean closes in a row before any welcome**; one close, as a tunnel or a draining server may send, is a connection lost and tried again (`one_clean_close_before_the_welcome_is_a_connection_lost_and_not_a_server_too_old`, `a_server_that_closes_every_connection_before_the_welcome_reads_as_too_old`). The tests' `Doorman` reads the opening frame before it closes, as an old server does: on Windows a socket closed with bytes unread is reset, which throws away the close frame already sent.
 
+## Chat and reactions
+
+People at a party say a line or react to the song, and everyone hears it **through the host**, since the
+room is a star (`server.md`): a guest's `PartySaid::Chat` (wire tag 4: a kind byte, `CHAT_WORDS` with a
+line or `CHAT_REACTION` with a `PartyReaction` code: love, fire, laughter, applause, dancing, surprise)
+reaches the host alone, who mints the line (`PartyLine`: an id, the sender's `DeviceId`, the name the host
+holds for it, the chat) and tells it to everyone in `PartySaid::Chatted` (tag 5, at most
+`LINES_TOLD_AT_MOST`, 64, lines). Nothing is kept on the server, and the words are sealed under the
+party's key as every other word is.
+
+- **The host tells lines at most every `CHAT_TOLD_AT_MOST_EVERY` (1 s)**, as a batch (`ChatTold`,
+  flushed on the next ping), so chat cannot crowd the host's `Now` frames out of the server's 240 frames a
+  minute; a line owed stays owed until told, at most `CHAT_OWED_AT_MOST` of them.
+- **A person says at most `LINES_A_PERSON_SAYS_AT_MOST` (8) lines in `LINES_COUNTED_OVER` (10 s)**
+  (`ChatPacing`, per member, the host's own lines uncounted): the rest are dropped by the host, never told.
+- **A line is cut where it is read and where it is written**: words to `LONGEST_LINE` (280 bytes) on a
+  letter, control characters read as spaces (`cut_to_a_line`), a name to `LONGEST_NAME`; blank words are
+  not said (`PartyChat::words`).
+- **A line's id is the host's counter, seeded at random**, so lines stay apart across hosts, and a seat
+  keeps a line once by id (`kept_line`) and the last `CHAT_KEPT_AT_MOST` (200) of them in `PartyShown::chat`.
+  A guest arriving is told the last 64 lines (`tell_the_chat_so_far`), so a late guest reads what came
+  before.
+- **A reaction a later build adds** is refused alone (`Malformed::Reaction`, the frame passed over) and
+  passed over among lines (`a_reaction_of_a_later_build_is_refused_alone_and_passed_over_among_lines`).
+  A build without chat refuses tags 4 and 5 as any unknown tag, so an older guest misses the chat and
+  nothing else.
+
+The window draws a *Chat* card under who is here (`views/party.rs`: the last `CHAT_LINES_SHOWN`, 40, lines
+with each sender's avatar, a row of reactions and a `party_chat` field whose enter says it), `resonate
+party` prints each line heard and says each line typed on stdin (not in the background), and the phones
+read `ListeningParty.chat` (`PartyChatLine`, `PartySaying`) and say through `party_say` and `party_react`
+(Android's `Chat` on the party screen, iOS's `PartyChatSection`)
+(`what_anyone_says_reaches_everyone_through_the_host_and_a_late_guest_hears_what_came_before`,
+`a_guest_saying_more_than_its_share_is_heard_only_as_far_as_its_share`).
+
 ## The lock
 
 **The room's lock is never held across a search, a thread join or a command**: a front end reads the
@@ -145,7 +180,7 @@ old seat puts its queue back before the new one remembers it.
 
 ## Surfaces
 
-The window's **Listening Party** pane (`views/party.rs`; it says that in the sidebar with `Icon::Party`, headphones, though `party` stays its tab name in `last-tab`, so a kept tab still reads): with no party a welcome, what happens in three steps and *Start a listening party*; at one, a card of the song, with the cover where the zone shown is hearing it, the standing and the round trip, the host's invitation (the QR code, the link and *Copy link*), who is here and what is asked for, in two columns where the pane has room, and *End the party* or *Leave* in the heading. And `resonate party
+The window's **Listening Party** pane (`views/party.rs`; it says that in the sidebar with `Icon::Party`, headphones, though `party` stays its tab name in `last-tab`, so a kept tab still reads): with no party a welcome, what happens in three steps and *Start a listening party*; at one, a card of the song, with the cover where the zone shown is hearing it, the standing and the round trip, the host's invitation (the QR code, the link and *Copy link*), who is here, the chat and what is asked for, in two columns where the pane has room, and *End the party* or *Leave* in the heading. And `resonate party
 start FILES` and `resonate party join LINK`, which run until interrupted or the room ends. Pasting a link
 into the search field joins at once, being asked for; a `resonate://party/` argument or `OpenUri` asks first (below, `binary.md`). The phones read
 one `ListeningParty` through `party_shown`, polled while shown. **A party link that arrives from outside the

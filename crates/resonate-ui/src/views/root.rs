@@ -643,6 +643,7 @@ pub(crate) struct Typed {
     pub(crate) sync_server: Entity<Field>,
     pub(crate) sync_device: Entity<Field>,
     pub(crate) shared_name: Entity<Field>,
+    pub(crate) party_chat: Entity<Field>,
     pub(crate) sync_code: Entity<Field>,
     pub(crate) organising: Entity<Field>,
     pub(crate) minimum_length: Entity<Field>,

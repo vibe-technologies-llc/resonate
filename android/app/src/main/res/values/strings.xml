@@ -125,6 +125,19 @@
     <string name="party_asked_for">Asked for</string>
     <string name="party_pass">Pass</string>
     <string name="party_play_next">Play next</string>
+    <string name="party_chat">Chat</string>
+    <string name="party_nothing_said_yet">Nothing said yet. Say hello, or react to the song.</string>
+    <string name="party_say_something">Say something to the party</string>
+    <string name="party_send">Send</string>
+    <string name="party_react_with">React with %1$s</string>
+    <string name="party_said_by">%1$s: %2$s</string>
+    <string name="party_reacted_with">%1$s reacted with %2$s</string>
+    <string name="party_reaction_love">love</string>
+    <string name="party_reaction_fire">fire</string>
+    <string name="party_reaction_laugh">laughter</string>
+    <string name="party_reaction_clap">applause</string>
+    <string name="party_reaction_dance">dancing</string>
+    <string name="party_reaction_wow">surprise</string>
     <string name="party_asks_the_host">Adding a song to your queue asks the host to play it.</string>
 
     <string name="sharing_open_devices">Open Devices</string>

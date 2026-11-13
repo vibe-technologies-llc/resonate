@@ -60,6 +60,7 @@ pub enum Malformed {
     NotAnMbid,
     NotAPrint,
     NotAPlace,
+    Reaction { code: u8 },
 }
 
 #[derive(Debug, Error)]

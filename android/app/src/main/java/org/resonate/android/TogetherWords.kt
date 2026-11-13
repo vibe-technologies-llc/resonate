@@ -2,7 +2,10 @@ package org.resonate.android
 
 import org.resonate.android.nativecore.ListeningParty
 import org.resonate.android.nativecore.PartyConnection
+import org.resonate.android.nativecore.PartyChatLine
 import org.resonate.android.nativecore.PartyFollowing
+import org.resonate.android.nativecore.PartyReactionKind
+import org.resonate.android.nativecore.PartySaying
 import org.resonate.android.nativecore.SharedPlaylist
 import org.resonate.android.nativecore.SharedPlaylistReach
 import org.resonate.android.nativecore.TogetherPerson
@@ -52,6 +55,48 @@ object TogetherWords {
 
     fun roundTrip(words: Words, milliseconds: ULong): String =
         words.string(R.string.together_round_trip, milliseconds.toLong())
+
+    fun reactionDrawn(reaction: PartyReactionKind): String =
+        when (reaction) {
+            PartyReactionKind.LOVE -> drawn(0x2764, 0xFE0F)
+            PartyReactionKind.FIRE -> drawn(0x1F525)
+            PartyReactionKind.LAUGH -> drawn(0x1F602)
+            PartyReactionKind.CLAP -> drawn(0x1F44F)
+            PartyReactionKind.DANCE -> drawn(0x1F483)
+            PartyReactionKind.WOW -> drawn(0x1F62E)
+        }
+
+    private fun drawn(vararg codePoints: Int): String = String(codePoints, 0, codePoints.size)
+
+    fun reactionNamed(words: Words, reaction: PartyReactionKind): String =
+        words.string(
+            when (reaction) {
+                PartyReactionKind.LOVE -> R.string.party_reaction_love
+                PartyReactionKind.FIRE -> R.string.party_reaction_fire
+                PartyReactionKind.LAUGH -> R.string.party_reaction_laugh
+                PartyReactionKind.CLAP -> R.string.party_reaction_clap
+                PartyReactionKind.DANCE -> R.string.party_reaction_dance
+                PartyReactionKind.WOW -> R.string.party_reaction_wow
+            }
+        )
+
+    fun saidBy(words: Words, line: PartyChatLine): String =
+        when {
+            line.isMe -> words.string(R.string.together_person_you)
+            line.name.isBlank() -> words.string(R.string.together_person_nameless)
+            else -> line.name
+        }
+
+    fun lineHeard(words: Words, line: PartyChatLine): String =
+        when (val saying = line.saying) {
+            is PartySaying.Words -> words.string(R.string.party_said_by, saidBy(words, line), saying.text)
+            is PartySaying.Reaction ->
+                words.string(
+                    R.string.party_reacted_with,
+                    saidBy(words, line),
+                    reactionNamed(words, saying.reaction),
+                )
+        }
 
     fun person(words: Words, person: TogetherPerson): String =
         when {

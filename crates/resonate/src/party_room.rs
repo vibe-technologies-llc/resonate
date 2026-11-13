@@ -11,7 +11,7 @@ use resonate_engine::{Command, Placement, Player, QueueItem, Seat, ZoneId, Zones
 use resonate_library::Library;
 use resonate_sync::{
     DeviceId, Server,
-    party::{Going, Party, PartyFinder as _, PartyFollowed, PartyShown},
+    party::{Going, Party, PartyChat, PartyFinder as _, PartyFollowed, PartyShown},
     shared::{Invitation, Invited, invitation_in},
 };
 use resonate_ui::{Followed, ListOffered};
@@ -233,6 +233,12 @@ pub(crate) fn leave() {
     let left = ROOM.lock().take();
 
     drop(left);
+}
+
+pub(crate) fn say(chat: PartyChat) {
+    if let Some(room) = ROOM.lock().as_ref() {
+        room.going.party().say(chat);
+    }
 }
 
 pub(crate) fn turn_out(member: [u8; 16]) {

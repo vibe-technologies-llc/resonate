@@ -293,6 +293,7 @@ struct PartyView: View {
     private func hostSections(_ party: ListeningParty, _ together: TogetherState) -> some View {
         InvitationLinkSection(title: said("party.link"), link: party.link)
         peopleSection(party, together)
+        PartyChatSection(party: party, together: together)
         if !party.requests.isEmpty {
             Section("party.requests") {
                 ForEach(party.requests, id: \.id) { request in
@@ -322,6 +323,7 @@ struct PartyView: View {
             Text(following).announced(following)
         }
         peopleSection(party, together)
+        PartyChatSection(party: party, together: together)
         Section {
             Button("party.leave", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) { together.leaveParty() }
         } footer: {
@@ -346,6 +348,51 @@ struct PartyView: View {
         } footer: {
             PartyRoundTrip(together: together)
         }
+    }
+}
+
+private struct PartyChatSection: View {
+    let party: ListeningParty
+    let together: TogetherState
+    @State private var typed = ""
+
+    var body: some View {
+        Section("party.chat") {
+            if party.chat.isEmpty {
+                Text("party.chat.nothing-yet").foregroundStyle(.secondary)
+            }
+            ForEach(party.chat.suffix(PartyWords.chatLinesShown), id: \.id) { line in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(PartyWords.saidBy(line)).font(.caption.weight(.medium)).foregroundStyle(.secondary).titleLines()
+                    Text(PartyWords.shown(line))
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(PartyWords.heard(line))
+            }
+            HStack(spacing: 4) {
+                ForEach(PartyWords.reactions, id: \.self) { reaction in
+                    Button(PartyWords.reactionDrawn(reaction)) { together.react(reaction) }
+                        .buttonStyle(.borderless)
+                        .font(.title3)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel(PartyWords.reactWith(reaction))
+                }
+            }
+            HStack {
+                TextField("party.chat.say-something", text: $typed)
+                    .submitLabel(.send)
+                    .onSubmit(send)
+                Button("party.chat.send", systemImage: "paperplane.fill", action: send)
+                    .labelStyle(.iconOnly)
+                    .disabled(typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+    }
+
+    private func send() {
+        guard !typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        together.say(typed)
+        typed = ""
     }
 }
 

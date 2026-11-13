@@ -326,6 +326,7 @@ impl RootView {
             &self.typed.sync_server,
             &self.typed.sync_device,
             &self.typed.shared_name,
+            &self.typed.party_chat,
             &self.typed.sync_code,
             &self.typed.organising,
             &self.typed.minimum_length,

@@ -390,6 +390,11 @@ impl RootView {
             },
         )
         .detach();
+        let party_chat = cx.new(|cx| Field::new(crate::words::party::say_something(), window, cx));
+        cx.subscribe_in(&party_chat, window, |this, _, _: &Submitted, window, cx| {
+            this.say_in_the_party(window, cx);
+        })
+        .detach();
         let sync_code = cx.new(|cx| {
             Field::new(
                 crate::words::settings_sync::sync_code_placeholder(),
@@ -707,6 +712,7 @@ impl RootView {
                 sync_server,
                 sync_device,
                 shared_name,
+                party_chat,
                 sync_code,
                 organising,
                 minimum_length,

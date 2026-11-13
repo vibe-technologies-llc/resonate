@@ -105,8 +105,9 @@ pub use crate::{
     rewriting::DocumentRewriting,
     saved_searches::{KeptSearch, SavedSearch, SearchOrder, search_order_reads_descending},
     together::{
-        InvitationKind, ListeningParty, PartyConnection, PartyFollowing, PartyRequest,
-        SharedPlaylist, SharedPlaylistReach, TogetherPerson, invitation_kind,
+        InvitationKind, ListeningParty, PartyChatLine, PartyConnection, PartyFollowing,
+        PartyReactionKind, PartyRequest, PartySaying, SharedPlaylist, SharedPlaylistReach,
+        TogetherPerson, invitation_kind,
     },
     versions::{FoundVersion, FoundVersions, SongVersion, VersionSearch, VersionSearchOffered},
     watching::PlayerWatch,

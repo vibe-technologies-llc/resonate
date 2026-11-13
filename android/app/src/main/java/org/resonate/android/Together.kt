@@ -18,6 +18,7 @@ import org.resonate.android.nativecore.Exception as NativeFailure
 import org.resonate.android.nativecore.InvitationKind
 import org.resonate.android.nativecore.ListeningParty
 import org.resonate.android.nativecore.MobilePlayer
+import org.resonate.android.nativecore.PartyReactionKind
 import org.resonate.android.nativecore.SharedPlaylist
 import org.resonate.android.nativecore.SyncConfig
 import org.resonate.android.nativecore.invitationKind
@@ -156,6 +157,16 @@ class Together(
     fun playNext(request: ByteArray) = work { native ->
         if (!native.partyPlayNext(request))
             library.notice(R.string.together_not_found_to_play_next)
+        mutableParty.value = native.partyShown()
+    }
+
+    fun say(words: String) = work { native ->
+        native.partySay(words)
+        mutableParty.value = native.partyShown()
+    }
+
+    fun react(reaction: PartyReactionKind) = work { native ->
+        native.partyReact(reaction)
         mutableParty.value = native.partyShown()
     }
 

@@ -268,6 +268,18 @@ pub fn lines() -> Receiver<Pressed> {
     })
 }
 
+#[cfg(feature = "sync")]
+pub fn typed_lines() -> Receiver<String> {
+    listening(|send| {
+        for line in io::stdin().lock().lines() {
+            let Ok(line) = line else { break };
+            if send.send(line).is_err() {
+                break;
+            }
+        }
+    })
+}
+
 pub fn keys() -> Receiver<Pressed> {
     listening(|send| {
         let mut keyed = Keyed::default();

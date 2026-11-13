@@ -126,6 +126,53 @@ public enum PartyWords {
         }
     }
 
+    public static let chatLinesShown = 40
+    public static let reactions: [PartyReactionKind] = [.love, .fire, .laugh, .clap, .dance, .wow]
+
+    public static func reactionDrawn(_ reaction: PartyReactionKind) -> String {
+        switch reaction {
+        case .love: "\u{2764}\u{FE0F}"
+        case .fire: "\u{1F525}"
+        case .laugh: "\u{1F602}"
+        case .clap: "\u{1F44F}"
+        case .dance: "\u{1F483}"
+        case .wow: "\u{1F62E}"
+        }
+    }
+
+    public static func reactionNamed(_ reaction: PartyReactionKind) -> String {
+        switch reaction {
+        case .love: said("party.reaction.love")
+        case .fire: said("party.reaction.fire")
+        case .laugh: said("party.reaction.laugh")
+        case .clap: said("party.reaction.clap")
+        case .dance: said("party.reaction.dance")
+        case .wow: said("party.reaction.wow")
+        }
+    }
+
+    public static func reactWith(_ reaction: PartyReactionKind) -> String {
+        said("party.react-with", reactionNamed(reaction))
+    }
+
+    public static func saidBy(_ line: PartyChatLine) -> String {
+        line.isMe ? said("together.person.you") : line.name.isEmpty ? said("together.person.someone") : line.name
+    }
+
+    public static func shown(_ line: PartyChatLine) -> String {
+        switch line.saying {
+        case let .words(text): text
+        case let .reaction(reaction): reactionDrawn(reaction)
+        }
+    }
+
+    public static func heard(_ line: PartyChatLine) -> String {
+        switch line.saying {
+        case let .words(text): said("party.said-by", saidBy(line), text)
+        case let .reaction(reaction): said("party.reacted-with", saidBy(line), reactionNamed(reaction))
+        }
+    }
+
     public static func roundTrip(_ milliseconds: UInt64?) -> String? {
         milliseconds.map { said("party.round-trip", Int($0)) }
     }
