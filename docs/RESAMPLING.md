@@ -376,6 +376,33 @@ L1 set took all sixteen streams; radix 8 was 1.1 to 1.5 times, for want of regis
 by forward and inverse at integer ratios, unsorted so nothing is reordered, gained about 15 % on a transform
 and less on a block. Neither pays for a dependency and a transform to maintain.
 
+A halving stage was built and measured too, and dropped. At 4:1 and beyond a half-band FIR took the input
+down an octave before the block (192 to 96 kHz, then 96 to 48 kHz in the transform), so the forward transform
+ran at half its length; going up, a doubling after it would mirror it. Its band is the conversion's (passing
+to 24 kHz and stopping from 72 kHz at 192 kHz), its rejection 60 dB under the level's stopband (278 dB at
+Very high, what keeps the worst landing under 20 kHz at −266.6 dB), a Kaiser-windowed half-band of 20 tap
+pairs at Very high, 17 at High and 14 at Balanced, summed in `f64x8` over a stereo pair with every add and
+multiply shared by a tap's two mirrored inputs. Once it handed the block the lead and tail of its own
+response (the half-band's output before the first input frame and after the last, which a stage primed with
+silence drops, a hundredth off at the edges), it agreed with the direct route to 5e-11. It cost more than it
+saved:
+
+| Second of stereo noise, best of 60, in one process | Without | With | With every load aligned |
+|---|---:|---:|---:|
+| Very high, 192 to 48 kHz (µs) | 501 | 620 | 556 |
+| High, 192 to 48 kHz (µs) | 594 | 665 | 597 |
+| Balanced, 192 to 48 kHz (µs) | 592 | 616 | 562 |
+
+The two routes ran in turn in one process, on a machine other builds were loading, so the columns compare and
+the levels do not. Very high at 96 to 48 kHz, the transform the halving leaves, took 264 µs: the longer forward
+transform absorbs a doubled input rate for about 240 µs a second, some 6 cycles a stereo input frame, where 20
+tap pairs over 96 000 frames a second cost about 350 µs, two unaligned loads a tap against one add and one
+multiply. Laying every load on a cache line (output thrown away, an upper bound on keeping four shifted copies
+of the history) still left Very high 11 % behind and High level; only Balanced, whose short steep hop makes its
+transform dear for its kernel, gained 5 to 9 %. Upsampling is the same sum in the other order: 48 to 192 kHz
+at Very high took 515 µs against 258 µs at 48 to 96 kHz, less than a doubling of 20 pairs would cost. And a
+half-band cannot reach 2:1 at all, where its transition closes to nothing, which is where VHQ is level.
+
 ### Minimum and intermediate phase share the level's window
 
 A level is one magnitude response whatever its phase: `phase.rs` folds the same windowed kernel, so
@@ -391,7 +418,9 @@ to 1.9e-8 dB with their rejection unchanged.
 - **Latency is what Very high still pays**: 103.33 ms at 44.1 to 48 kHz and 299.99 ms at 2:1 or steeper. A
   shorter hop gives it back for CPU (76.67 ms for 0.044 %), which is the listener's choice of level.
 - **VHQ is level at 96 to 48 and 48 to 96 kHz**, not beaten (`docs/PERFORMANCE.md`): a kernel as narrow as
-  Very high's cannot be shorter, and the transform did not find another few percent.
+  Very high's cannot be shorter, and the transform did not find another few percent. A halving stage cannot
+  reach 2:1, and at 4:1 it costs more than the shorter transform saves (*The block is chosen by what a
+  transform costs*).
 - **VHQ's and the 32-bit recipe's linear filters ring for less than Very high**, the one thing about a
   filter the frequency domain cannot change: their transitions are four times as wide. High rings for less
   than either; each 0.5 dB of High's pre-echo under its present −45.6 dB costs about 10 dB of rejection, so
