@@ -1,2 +1,2 @@
 kilohertz = { $kilohertz } kHz
-decade = { $decade }s
+decade = { NUMBER($decade, useGrouping: "false") }s

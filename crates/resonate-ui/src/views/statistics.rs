@@ -12,6 +12,7 @@ use resonate_core::{
     wrapped::{DAYS_IN_A_WEEK, FormatShares, Ranked, Rhythm},
 };
 use resonate_library::{Day, Habits, Listened, MostListened, Statistics, Window};
+use resonate_words::{Brevity, weekday_name};
 
 use crate::{
     Selection, format,
@@ -35,16 +36,6 @@ use crate::{
 const HOURS_ON_THE_AXIS: [&str; 5] = ["00:00", "06:00", "12:00", "18:00", "24:00"];
 
 type Said = fn() -> &'static str;
-
-const WEEKDAYS: [(Said, Said); DAYS_IN_A_WEEK] = [
-    (words::statistics::mon, words::statistics::monday),
-    (words::statistics::tue, words::statistics::tuesday),
-    (words::statistics::wed, words::statistics::wednesday),
-    (words::statistics::thu, words::statistics::thursday),
-    (words::statistics::fri, words::statistics::friday),
-    (words::statistics::sat, words::statistics::saturday),
-    (words::statistics::sun, words::statistics::sunday),
-];
 
 const WHOLE_SHARE: f32 = 1_000.0;
 
@@ -244,8 +235,8 @@ fn said(bar: Bar) -> String {
 
 fn dated(date: CivilDate, this_year: i64) -> String {
     match date.year == this_year {
-        true => words::statistics::date_this_year(date.day, date.month_named()),
-        false => words::statistics::date(date.day, date.month_named(), date.year),
+        true => date.day_and_month(Brevity::Brief),
+        false => date.day_month_and_year(),
     }
 }
 
@@ -935,14 +926,11 @@ fn moments(wide: bool, rhythm: &Rhythm, this_year: i64) -> Option<Div> {
             words::statistics::the_hour_heard_most().to_owned(),
         ));
     }
-    if let Some((_, named)) = rhythm
-        .busiest_weekday()
-        .and_then(|day| WEEKDAYS.get(day).copied())
-    {
+    if let Some(day) = rhythm.busiest_weekday() {
         drawn.push(moment(
             "most-often-on",
             words::statistics::most_often_on(),
-            named().to_owned(),
+            weekday_name(Brevity::Full, day),
             words::statistics::the_day_heard_most().to_owned(),
         ));
     }
@@ -1201,17 +1189,17 @@ fn hours_heard(rhythm: &Rhythm) -> Div {
 
 fn weekdays_heard(rhythm: &Rhythm) -> Div {
     let columns = columns_of(&rhythm.weekdays, |at, listened| {
-        weekday_said(WEEKDAYS.get(at).map_or("", |(_, named)| named()), listened)
+        weekday_said(&weekday_name(Brevity::Full, at), listened)
     });
     let axis = div()
         .flex()
         .gap(px(theme::CHART_BAR_GAP))
-        .children(WEEKDAYS.map(|(short, _)| {
+        .children((0..DAYS_IN_A_WEEK).map(|day| {
             div()
                 .flex()
                 .flex_1()
                 .justify_center()
-                .child(kit::figure(short()))
+                .child(kit::figure(weekday_name(Brevity::Brief, day)))
         }));
 
     kit::section()
@@ -1694,8 +1682,8 @@ mod tests {
             day: 3,
         };
 
-        assert_eq!(dated(date, 2024), "3 Nov");
-        assert_eq!(dated(date, 2025), "3 Nov 2024");
+        assert_eq!(dated(date, 2024), "Nov 3");
+        assert_eq!(dated(date, 2025), "Nov 3, 2024");
     }
 
     #[test]

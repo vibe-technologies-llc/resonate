@@ -34,8 +34,17 @@ the code that says the words.
   variables than English's. A tag no `Language` carries fails to compile (`Language::by_tag` is a
   `const fn`). **An unused message is `dead_code`**, so clippy's `-D warnings` refuses dead words.
 - **A count is a Fluent selector, never `if count == 1`**: `{ $count -> [one] … *[other] … }`,
-  English's plural rules from the bundle's locale. A figure whose precision matters (dB, kHz) is
-  passed formatted (`format!("{:+.2}")`); numbers are not grouped by locale.
+  English's plural rules from the bundle's locale. **A number a catalog says is grouped and
+  separated as the listener's region writes it** (*The region*, below): every bundle's formatter is
+  `figures::fluent`, so a `{ $count }` of 12345 reads *12,345*, *12.345* or *1,23,45* and a count
+  never needs formatting where it is passed. A number that is not a quantity (a year, a decade, an
+  error code) asks not to be grouped in the catalog, `{ NUMBER($year, useGrouping: "false") }`
+  (`a_count_is_grouped_beside_a_year_that_asks_not_to_be`), and an id, a port or a version is passed
+  as text. A figure whose precision matters (dB, kHz) is still passed formatted
+  (`format!("{:+.2}")`) and keeps its `.`: a measurement is read as measured, and
+  `SampleRate::kilohertz` is also what `Display` writes into logs. A size or any figure with a
+  decimal a listener reads as a quantity goes through `resonate_words::decimal`
+  (`format::bytes`, `bytes_text`).
 - **One area per subject, kept beside the code that says it**: `crates/resonate-ui/words/en/format.ftl`
   is `format.rs`'s. A literal that is a proper name (a theme's, a service's, a font family) or
   markup is not a word.
@@ -44,6 +53,59 @@ the code that says the words.
   refused, and the prefix keeps the pane's areas apart from the window's own (`equaliser.ftl` beside
   `settings_equaliser.ftl`). A message naming the sound system takes it as `$system`
   (`sound_system!()`), and a sentence naming a speaker selects on `$speaker` (`left`, `right`).
+
+## The region: numbers and dates
+
+The language says the words and the *region* says the figures and the dates, so a German reader
+of English reads *12.345 songs* and *13 Nov 2026*. `resonate-words` holds both:
+
+- **`Conventions` is the region a listener reads in**: the locale numbers follow (`numbers`, kept
+  whole, language included, since a digit grouping has no language to mix with) and the region
+  dates follow (`dates_region`, a date being worded in the language *spoken* with this region's
+  order). `Conventions::from_environment` reads `LC_ALL`, then `LC_NUMERIC`, then `LANG` for
+  numbers and `LC_ALL`, `LC_TIME`, `LANG` for dates on Unix (a `C`/`POSIX` locale, an empty or an
+  unset variable is passed over, as `languages_the_listener_reads` passes it), and `sys-locale`'s
+  first locale for both on Windows and macOS, where a Mac's *English, Germany* is `en-DE`
+  (`numbers_and_dates_each_read_their_own_variable_before_lang`,
+  `lc_all_outranks_every_other_variable_and_an_empty_one_is_passed_over`,
+  `the_plain_locale_or_none_leaves_the_american_conventions`). `Conventions::from_tags` is the
+  phones': the first tag of `speak_languages` (`mobile.md`), which is the platform's own first
+  choice, region included (`a_phone_names_its_conventions_by_the_first_tag_it_passes`).
+- **`settle` makes one the process's, as `speak` does the language**; the binary settles
+  `from_environment` in `run` after `speak`, and the default before anything is settled is en-US
+  (`no_tag_leaves_the_american_conventions`), so a test reads the same wherever it runs. Digits
+  stay Latin and the calendar Gregorian whatever the region keeps (`-u-nu-latn`, `-u-ca-gregory`,
+  `digits_stay_latin_whatever_the_region_writes_its_own_in`,
+  `the_calendar_stays_gregorian_in_a_region_that_keeps_another`), since every other digit on the
+  screen is Latin and `CivilDate` is Gregorian. The formatters are built per thread from the
+  settled value (`ICU4X`'s are not `Sync`), so a changed region is read by each thread's next call.
+- **ICU4X, compiled data, only `icu_decimal` and `icu_datetime`** (with `icu_calendar` and
+  `icu_locale_core` for the input), pure Rust, `default-features = false`. Measured in a scratch
+  crate (release, `opt-level = "s"`, fat LTO, stripped) against the installed binary's 78.6 MB: the
+  decimal formatter adds about 54 KB and the datetime formatter about 1.05 MB with every locale's
+  data, under one and a half per cent of the binary; grouping by hand from CLDR's few conventions would
+  save that and bring a table to keep (lakh grouping, minimum grouping digits, Swiss and French
+  separators, each by region) that CLDR already is, so the data is taken whole. The phones' library
+  carries the same, once.
+- **Figures**: `grouped(count)` and `decimal(value, fraction_digits)` for a figure not said by a
+  catalog, `figures::fluent` for every catalog's numbers (the bundle's `set_formatter`, honouring
+  `useGrouping`, `minimumFractionDigits` and `maximumFractionDigits` of `NUMBER()`, which every
+  bundle has)
+  (`a_count_is_grouped_the_way_each_region_writes_it`,
+  `a_count_under_four_digits_carries_no_mark_and_some_regions_wait_for_five`,
+  `a_number_a_catalog_says_is_grouped_unless_it_asks_not_to_be`). Plural selection reads the number,
+  never its string.
+- **Dates**: `month_name`, `weekday_name`, `day_and_month` and `day_month_and_year`, each with a
+  `Brevity`, are the only words for a month or a weekday; no catalog holds one. The names come
+  from the language spoken, the order from the region
+  (`a_date_is_ordered_the_way_the_region_writes_it_in_the_language_spoken`,
+  `month_and_weekday_names_come_from_the_language_whatever_the_region`), so a second language
+  brings its months with it. `CivilDate::month_named`, `month_in_full`, `day_and_month` and
+  `day_month_and_year` are the core's, used by the Statistics axis, a busiest day and Wrapped's slides.
+  A date no calendar holds is written by its figures (`a_date_no_calendar_holds_is_written_by_its_figures`).
+- **Display only.** Nothing stored, synced, sent to a service, written to a playlist sheet or the
+  settings file, nor MCP's text, takes a region: the stored forms keep their own digits and ISO
+  dates.
 
 ## What is not translated
 

@@ -115,7 +115,7 @@ pub fn bytes(count: u64) -> String {
     }
 
     match chosen {
-        Some(unit) => unit(format!("{scaled:.1}")),
+        Some(unit) => unit(resonate_words::decimal(scaled, 1)),
         None => words::format::bytes(count),
     }
 }

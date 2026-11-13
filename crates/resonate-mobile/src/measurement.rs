@@ -575,7 +575,7 @@ mod tests {
         );
         assert_eq!(
             told(vec![0.0; 1_000], 48_000),
-            "The recording held 1000 frames and the sweep alone was 384000, so it was cut short"
+            "The recording held 1,000 frames and the sweep alone was 384,000, so it was cut short"
         );
         assert!(told(vec![0.0; 480_000], 32_000).starts_with(
             "A sweep up to 20 kHz needs a rate above 40 kHz and this one runs at 32 kHz"

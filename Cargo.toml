@@ -111,6 +111,10 @@ fluent-bundle = { version = "0.16.0", default-features = false }
 fluent-syntax = { version = "0.12.0", default-features = false }
 unic-langid = { version = "0.9.6", default-features = false }
 sys-locale = { version = "0.3.2", default-features = false }
+icu_decimal = { version = "2.4.0", default-features = false, features = ["compiled_data"] }
+icu_datetime = { version = "2.4.0", default-features = false, features = ["compiled_data"] }
+icu_calendar = { version = "2.4.0", default-features = false }
+icu_locale_core = { version = "2.4.0", default-features = false }
 jiff = {
     version = "0.2.43",
     default-features = false,

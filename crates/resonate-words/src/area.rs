@@ -110,6 +110,10 @@ impl Area {
 
         let mut bundle = FluentBundle::new_concurrent(vec![identified]);
         bundle.set_use_isolating(false);
+        bundle.set_formatter(Some(crate::figures::fluent));
+        if let Err(errors) = bundle.add_builtins() {
+            tracing::warn!(%language, ?errors, "builtin functions that were not all taken");
+        }
         if let Err(errors) = bundle.add_resource(resource) {
             tracing::warn!(%language, ?errors, "words that were not all taken");
         }
@@ -156,10 +160,10 @@ mod tests {
     use super::*;
 
     static QUEUE: Area = Area::new(
-        &["just-now", "took-out", "from", "unwritten"],
+        &["just-now", "took-out", "from", "unwritten", "in-year"],
         &[(
             Language::English,
-            "just-now = just now\ntook-out = { $count ->\n    [one] Took one track out\n   *[other] Took { $count } tracks out\n}\nfrom = { $name } from { $place }\n",
+            "just-now = just now\ntook-out = { $count ->\n    [one] Took one track out\n   *[other] Took { $count } tracks out\n}\nfrom = { $name } from { $place }\nin-year = In { NUMBER($year, useGrouping: \"false\") }\n",
         )],
     );
 
@@ -186,6 +190,19 @@ mod tests {
             QUEUE.formatted(1, [("count", Arg::from(0))]),
             "Took 0 tracks out"
         );
+    }
+
+    #[test]
+    fn a_count_is_grouped_beside_a_year_that_asks_not_to_be() {
+        assert_eq!(
+            QUEUE.formatted(1, [("count", Arg::from(12_345))]),
+            "Took 12,345 tracks out"
+        );
+        assert_eq!(
+            QUEUE.formatted(1, [("count", Arg::from(1))]),
+            "Took one track out"
+        );
+        assert_eq!(QUEUE.formatted(4, [("year", Arg::from(2026))]), "In 2026");
     }
 
     #[test]

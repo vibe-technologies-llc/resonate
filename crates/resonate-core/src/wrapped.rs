@@ -3,7 +3,9 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use crate::{Calendar, CivilDate, date::MONTHS_BRIEFLY, folded_letters, words};
+use resonate_words::Brevity;
+
+use crate::{Calendar, CivilDate, folded_letters, words};
 
 mod frozen;
 
@@ -518,9 +520,9 @@ impl YearReview {
             Slide::saying(
                 SlideKind::Months,
                 words::wrapped::your_year(),
-                words::wrapped::biggest_month(MONTHS_NAMED[month]()),
+                words::wrapped::biggest_month(month_in_full(month)),
             )
-            .charted(&self.rhythm.months, |at| MONTHS_BRIEFLY[at]().to_owned()),
+            .charted(&self.rhythm.months, month_briefly),
         )
     }
 
@@ -635,20 +637,17 @@ fn named_with_its_artist(ranked: &Ranked) -> String {
     }
 }
 
-const MONTHS_NAMED: [fn() -> &'static str; MONTHS_IN_A_YEAR] = [
-    words::wrapped::january,
-    words::wrapped::february,
-    words::wrapped::march,
-    words::wrapped::april,
-    words::wrapped::may,
-    words::wrapped::june,
-    words::wrapped::july,
-    words::wrapped::august,
-    words::wrapped::september,
-    words::wrapped::october,
-    words::wrapped::november,
-    words::wrapped::december,
-];
+fn month_in_full(index: usize) -> String {
+    resonate_words::month_name(Brevity::Full, month_of(index))
+}
+
+fn month_briefly(index: usize) -> String {
+    resonate_words::month_name(Brevity::Brief, month_of(index))
+}
+
+fn month_of(index: usize) -> i64 {
+    i64::try_from(index).map_or(0, |index| index + 1)
+}
 
 fn time_of_day(hour: usize) -> &'static str {
     match hour {
@@ -675,12 +674,7 @@ pub fn spelled_share(permille: u16) -> String {
 }
 
 fn spelled_date(date: CivilDate) -> String {
-    let month = usize::try_from(date.month - 1)
-        .ok()
-        .and_then(|month| MONTHS_NAMED.get(month))
-        .map_or("", |named| named());
-
-    words::wrapped::day_and_month(date.day, month)
+    date.day_and_month(Brevity::Full)
 }
 
 impl Calendar {

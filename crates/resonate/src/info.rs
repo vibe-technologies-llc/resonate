@@ -409,7 +409,7 @@ pub fn bytes_text(bytes: u64) -> String {
     }
     match unit {
         0 => words::info::bytes(bytes),
-        _ => UNITS[unit - 1](format!("{value:.1}")),
+        _ => UNITS[unit - 1](resonate_words::decimal(value, 1)),
     }
 }
 

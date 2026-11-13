@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::words;
+use resonate_words::{Brevity, day_and_month, day_month_and_year, month_name};
 
 pub const SECONDS_PER_DAY: i64 = 86_400;
 const DAYS_FROM_0000_03_01_TO_THE_EPOCH: i64 = 719_468;
@@ -13,21 +13,6 @@ const DAYS_PER_CENTURY: i64 = 36_524;
 const DAYS_PER_FIVE_MONTHS: i64 = 153;
 const MARCH: i64 = 3;
 const MONTHS_PER_YEAR: i64 = 12;
-
-pub(crate) const MONTHS_BRIEFLY: [fn() -> &'static str; 12] = [
-    words::date::jan,
-    words::date::feb,
-    words::date::mar,
-    words::date::apr,
-    words::date::may,
-    words::date::jun,
-    words::date::jul,
-    words::date::aug,
-    words::date::sep,
-    words::date::oct,
-    words::date::nov,
-    words::date::dec,
-];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct CivilDate {
@@ -76,13 +61,20 @@ impl CivilDate {
         Self::of_day(seconds_since_the_epoch(moment).div_euclid(SECONDS_PER_DAY))
     }
 
-    pub fn month_named(self) -> &'static str {
-        let named = usize::try_from(self.month - 1)
-            .ok()
-            .and_then(|month| MONTHS_BRIEFLY.get(month))
-            .unwrap_or(&MONTHS_BRIEFLY[MONTHS_BRIEFLY.len() - 1]);
+    pub fn month_named(self) -> String {
+        month_name(Brevity::Brief, self.month)
+    }
 
-        named()
+    pub fn month_in_full(self) -> String {
+        month_name(Brevity::Full, self.month)
+    }
+
+    pub fn day_and_month(self, brevity: Brevity) -> String {
+        day_and_month(brevity, self.month, self.day)
+    }
+
+    pub fn day_month_and_year(self) -> String {
+        day_month_and_year(self.year, self.month, self.day)
     }
 }
 
@@ -139,6 +131,15 @@ mod tests {
             }
         );
         assert_eq!(CivilDate::of_day(19_782).month_named(), "Feb");
+        assert_eq!(CivilDate::of_day(19_782).month_in_full(), "February");
+        assert_eq!(
+            CivilDate::of_day(19_782).day_month_and_year(),
+            "Feb 29, 2024"
+        );
+        assert_eq!(
+            CivilDate::of_day(19_782).day_and_month(Brevity::Brief),
+            "Feb 29"
+        );
     }
 
     #[test]

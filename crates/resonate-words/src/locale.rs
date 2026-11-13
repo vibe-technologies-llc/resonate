@@ -46,7 +46,7 @@ fn read_from(listed: Option<&str>, locale: Option<&str>) -> Vec<String> {
     languages
 }
 
-fn tagged(locale: &str) -> Option<String> {
+pub(crate) fn tagged(locale: &str) -> Option<String> {
     let tag = locale.split(['.', '@']).next()?.trim().replace('_', "-");
     let primary = tag.split('-').next()?.to_ascii_lowercase();
 

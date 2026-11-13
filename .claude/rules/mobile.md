@@ -65,7 +65,7 @@ slide, a built-in target's label, a service's title) are that crate's own.
 **The sentence is said in the phone's language** (`language.md`): `speak_languages(tags)`
 (`language.rs`) takes the platform's preferred languages, settles on the first spoken here
 (`resonate_words::negotiated`, English otherwise), makes it the process's and answers its tag, so
-every sentence the boundary words afterwards (an error, a failure, a preset's name) is in it. It is
+every sentence the boundary words afterwards (an error, a failure, a preset's name) is in it, and settles the region (`language.md`'s *The region*) from the first tag, so the counts and dates the boundary words (Wrapped, an error's figures) are grouped and ordered as the phone's own first choice reads them. It is
 a free function, called before the player opens and whenever the phone's languages move.
 
 **A measurement that will not fit says which file** (`measurement.rs`): `Error::Measurement { file,

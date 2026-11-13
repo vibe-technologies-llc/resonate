@@ -518,7 +518,7 @@ mod tests {
         );
         assert_eq!(
             apart(1250),
-            "The curve cannot be level-matched to its bypass, 1250 thousandths of a decibel apart, so it is not tested"
+            "The curve cannot be level-matched to its bypass, 1,250 thousandths of a decibel apart, so it is not tested"
         );
         assert_eq!(
             apart(1),

@@ -7,7 +7,7 @@ the-decade = { $decade ->
     [1970] the seventies
     [1980] the eighties
     [1990] the nineties
-   *[other] the { $decade }s
+   *[other] the { NUMBER($decade, useGrouping: "false") }s
 }
 decade-named = { $decade ->
     [1920] The twenties
@@ -18,7 +18,7 @@ decade-named = { $decade ->
     [1970] The seventies
     [1980] The eighties
     [1990] The nineties
-   *[other] The { $decade }s
+   *[other] The { NUMBER($decade, useGrouping: "false") }s
 }
 genre-of-a-decade = { $genre } of { $decade }
 more-like = More like { $seed }

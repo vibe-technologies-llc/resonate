@@ -2,6 +2,7 @@
 pub fn speak_languages(tags: Vec<String>) -> String {
     let language = resonate_words::negotiated(&tags);
     resonate_words::speak(language);
+    resonate_words::settle(&resonate_words::Conventions::from_tags(&tags));
 
     language.tag().to_owned()
 }
@@ -75,9 +76,21 @@ mod tests {
     }
 
     #[test]
-    fn the_phone_is_answered_in_the_first_language_it_lists_that_is_spoken_here() {
-        assert_eq!(speak_languages(vec!["de-AT".into(), "en-GB".into()]), "en");
+    fn the_phone_is_answered_in_the_first_language_it_lists_and_settles_the_region_of_its_first_tag()
+     {
+        assert_eq!(speak_languages(vec!["ja-JP".into(), "en-GB".into()]), "en");
         assert_eq!(speak_languages(Vec::new()), "en");
         assert_eq!(resonate_words::spoken(), resonate_words::Language::English);
+
+        speak_languages(vec!["en-GB".into(), "en-US".into()]);
+
+        let settled = resonate_words::settled_conventions();
+        assert_eq!(
+            settled.dates_region().map(|region| region.to_string()),
+            Some("GB".to_owned())
+        );
+        assert_eq!(settled.numbers().id.to_string(), "en-GB");
+
+        speak_languages(Vec::new());
     }
 }

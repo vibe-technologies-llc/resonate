@@ -1,11 +1,11 @@
 what-the-rankings-count = Rankings count the songs still in your library.
-nothing-played = Nothing was played in { $year }
+nothing-played = Nothing was played in { NUMBER($year, useGrouping: "false") }
 play-something = Play something and this fills itself in.
 song-of-the-year = Your song of the year
 artist-of-the-year = Your artist of the year
 album-of-the-year = Your album of the year
 genre-of-the-year = Your genre of the year
-my-year = My { $year } on Resonate
+my-year = My { NUMBER($year, useGrouping: "false") } on Resonate
 of-music = { $listened } of music
 top-song = Top song: { $song }
 top-artist = Top artist: { $artist }
@@ -35,9 +35,8 @@ above-cd-quality = { $share } above CD quality. Counted over the songs in your l
 where-it-began = Where it began
 by-on = { $by }, on { $on }
 only-on = On { $on }
-that-was-your-year = That was your { $year }
+that-was-your-year = That was your { NUMBER($year, useGrouping: "false") }
 named-by = { $name } by { $by }
-day-and-month = { $day } { $month }
 songs = { $count ->
     [one] { $count } song
    *[other] { $count } songs
@@ -62,18 +61,6 @@ hours = { $count ->
     [one] { $count } hour
    *[other] { $count } hours
 }
-january = January
-february = February
-march = March
-april = April
-may = May
-june = June
-july = July
-august = August
-september = September
-october = October
-november = November
-december = December
 small-hours = The small hours are yours.
 start-the-day = You start the day with music.
 mornings = Your mornings have a soundtrack.
