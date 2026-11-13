@@ -7,7 +7,7 @@ use gpui::{
     AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _, SharedString,
     Stateful, Styled as _, Task, Window, div,
 };
-use resonate_core::RESONATE_HOST;
+use resonate_core::{RESONATE_HOST, Switch};
 use resonate_providers::{Authorizing, Client, Error, RefreshToken};
 
 use crate::{
@@ -334,7 +334,7 @@ impl RootView {
             self.store(&account.setting(String::new()), cx);
         }
         cx.update_global::<ResonateApp, _>(|global, _| global.online.hosted_services = false);
-        self.store(&Setting::HostedServices(false), cx);
+        self.store(&Setting::Switched(Switch::HostedServices, false), cx);
     }
 
     fn client_for_tidal(&self, cx: &Context<Self>) -> Option<Client> {
@@ -586,9 +586,9 @@ impl RootView {
             ))
     }
 
-    fn set_hosted_services(&mut self, allowed: bool, cx: &mut Context<Self>) {
+    pub(super) fn set_hosted_services(&mut self, allowed: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.hosted_services = allowed);
-        self.store(&Setting::HostedServices(allowed), cx);
+        self.store(&Setting::Switched(Switch::HostedServices, allowed), cx);
         self.the_sources_moved(cx);
         cx.notify();
     }

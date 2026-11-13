@@ -16,12 +16,13 @@ mod output;
 mod processing;
 pub(crate) mod spotify;
 mod subsonic;
+mod switched;
 pub(crate) mod sync;
 mod tending;
 mod tidal;
 mod youtube_music;
 
-use std::{cell::Cell, path::PathBuf, rc::Rc, sync::atomic::Ordering};
+use std::{cell::Cell, path::PathBuf, rc::Rc};
 
 pub(crate) use abx::{ListeningTest, Setup};
 use gpui::{
@@ -48,7 +49,7 @@ pub(crate) use crate::views::{
     },
 };
 use crate::{
-    AppIcon, Followed, Measurers, ResonateApp, Setting, Synchronised,
+    AppIcon, Followed, Measurers, ResonateApp, Setting,
     app::CONTROL_CONTEXT,
     icons::{self, Icon},
     motion, theme,
@@ -696,6 +697,9 @@ impl RootView {
         for command in puts_back(group) {
             self.send(command, cx);
         }
+        for switch in group.switches() {
+            self.put_the_switch_back(switch, cx);
+        }
 
         match group {
             Group::Colour => self.dress(
@@ -721,37 +725,15 @@ impl RootView {
                 },
                 cx,
             ),
-            Group::Equalising => self.switch_the_equaliser(false, cx),
             Group::BoundTo => self.unbind_every_device(cx),
-            Group::Lookups => {
-                self.set_online(defaults::ONLINE, cx);
-                self.set_musicbrainz_mirror(defaults::MUSICBRAINZ_MIRROR, cx);
-                self.clear_replication_token(cx);
-            }
-            Group::AfterScan => self.set_after_scan(defaults::ENRICH_AFTER_SCAN, cx),
-            Group::Metered => {
-                self.set_enrich_on_metered(defaults::ENRICH_ON_METERED, cx);
-                self.set_stall_downloads_on_metered(defaults::STALL_DOWNLOADS_ON_METERED, cx);
-            }
+            Group::Lookups => self.clear_replication_token(cx),
             Group::FlacRenderers => self.vouch_for_none(cx),
             Group::LearntFormats => self.forget_everything_learnt(cx),
-            Group::Studies => {
-                self.set_studies(defaults::STUDY, cx);
-                self.set_by_sound(defaults::BY_SOUND, cx);
-            }
-            Group::Lyrics => {
-                self.set_lyrics(defaults::FETCH_LYRICS, cx);
-                self.set_lyrics_by_the_locale(defaults::LYRICS_BY_THE_LOCALE, cx);
-            }
-            Group::Resuming => self.set_resume(defaults::RESUME, cx),
             Group::History => self.keep_the_history(defaults::HISTORY_KEPT, cx),
             Group::MusicExtensions => self.set_music_extensions(Default::default(), cx),
             Group::MinimumLength => self.set_minimum_length(Default::default(), cx),
-            Group::Device => self.look_for_renderers(false, cx),
-            Group::Notifications => self.set_notify(defaults::NOTIFY, cx),
             Group::Updates => self.put_the_updates_back(cx),
             Group::Discord => self.put_discord_back(cx),
-            Group::Syncing => self.set_sync(Synchronised::default().enabled, cx),
             Group::SyncConnection => self.put_the_connection_back(cx),
             Group::SyncedSongs => self.follow_songs(resonate_core::SyncedSongs::default(), cx),
             Group::SyncControl => {
@@ -775,10 +757,7 @@ impl RootView {
             Group::Inbox => self
                 .library
                 .update(cx, |library, cx| library.set_inbox(None, cx)),
-            Group::Folders => {
-                self.clear_the_music_folder(cx);
-                self.file_what_is_dropped(defaults::FILE_DROPPED, cx);
-            }
+            Group::Folders => self.clear_the_music_folder(cx),
             Group::Subsonic => self.forget_the_account(Service::Subsonic, cx),
             Group::Jellyfin => self.forget_the_account(Service::Jellyfin, cx),
             Group::ResonateKey => self.forget_the_resonate_key(cx),
@@ -793,16 +772,11 @@ impl RootView {
             }
             Group::Organising => self.set_organise_as(DEFAULT_LAYOUT.to_owned(), cx),
             Group::WindowButtons => self.show_window_buttons(defaults::WINDOW_BUTTONS, cx),
-            Group::VolumeWheel => self.wheel_the_volume(defaults::SCROLL_VOLUME, cx),
-            Group::MouseNavigation => {
-                self.navigate_with_mouse_buttons(defaults::MOUSE_NAVIGATION, cx);
-            }
             Group::Motion => self.reduce_motion(defaults::REDUCED_MOTION, cx),
             Group::Scrollbars => self.draw_scrollbars(defaults::SCROLLBARS, cx),
             Group::Language => self.speak(defaults::LANGUAGE, cx),
             Group::LiveSpectrum => self.read_the_spectrum(defaults::SPECTRAL, cx),
             Group::Tabs => self.show_tabs(defaults::TABS, cx),
-            Group::WindowState => self.put_window_state_back(cx),
             _ => {}
         }
 
@@ -813,45 +787,18 @@ impl RootView {
     }
 
     fn standing(&self, cx: &mut Context<Self>) -> Standing {
-        let library = self.library.read(cx);
-        let online = library.is_online();
-        let after_scan = library.enriches_after_scan();
-        let studies = library.studies();
-        let lyrics = library.fetches_lyrics();
-        let resume = library.resumes();
         let history_kept = cx.global::<ResonateApp>().history_kept;
         let skip_under_repeat = self.player.read(cx).state().skip_under_repeat;
         let previous_restarts = self.player.read(cx).state().previous_restarts;
         let smart_shuffle = self.player.read(cx).state().smart_shuffle;
-        let notify = cx.global::<ResonateApp>().notify.load(Ordering::Acquire);
-        let check_for_updates = cx.global::<ResonateApp>().check_for_updates;
-        let renderers = cx
-            .global::<ResonateApp>()
-            .renderers
-            .as_ref()
-            .is_some_and(|renderers| renderers.looking());
-        let enrich_on_metered = cx.global::<ResonateApp>().online.enrich_on_metered;
-        let musicbrainz_mirror = cx.global::<ResonateApp>().online.musicbrainz_mirror;
-        let stall_downloads_on_metered =
-            cx.global::<ResonateApp>().online.stall_downloads_on_metered;
         let flac_renderers_named = !cx.global::<ResonateApp>().flac_above_96k_for.is_empty();
         let formats_learnt = !cx.global::<ResonateApp>().formats_learnt_for.is_empty();
-        let by_sound = cx.global::<ResonateApp>().by_sound.load(Ordering::Acquire);
-        let lyrics_by_the_locale = cx
-            .global::<ResonateApp>()
-            .lyrics_by_the_locale
-            .load(Ordering::Acquire);
         let window_buttons = cx.global::<ResonateApp>().window_buttons;
-        let scroll_volume = cx.global::<ResonateApp>().scroll_volume;
-        let mouse_navigation = cx.global::<ResonateApp>().mouse_navigation;
         let reduced_motion = cx.global::<ResonateApp>().reduced_motion;
         let scrollbars = cx.global::<ResonateApp>().scrollbars;
         let language = cx.global::<ResonateApp>().language;
         let spectral = cx.global::<ResonateApp>().spectral;
         let tabs = cx.global::<ResonateApp>().tabs;
-        let remember_tab = cx.global::<ResonateApp>().remember_tab;
-        let remember_window_size = cx.global::<ResonateApp>().remember_window_size;
-        let remember_settings_category = cx.global::<ResonateApp>().remember_settings_category;
         let presence = cx.global::<ResonateApp>().presence.clone();
         let synchronised = cx.global::<ResonateApp>().synchronised.clone();
         let measurer_given = !cx.global::<ResonateApp>().measurers.is_empty();
@@ -875,7 +822,6 @@ impl RootView {
         let template_given = self.typed.organising.read(cx).text().trim() != DEFAULT_LAYOUT;
         let inbox_given = self.library.read(cx).inbox().is_some();
         let music_folder_given = cx.global::<ResonateApp>().music_folder.is_some();
-        let file_dropped = cx.global::<ResonateApp>().file_dropped;
         let convolving = cx.global::<ResonateApp>().convolution.is_some();
         let speakers_moved = cx.global::<ResonateApp>().speaker_angle != SpeakerAngle::STANDARD
             || cx.global::<ResonateApp>().speaker_elevation != SpeakerElevation::LEVEL
@@ -928,17 +874,9 @@ impl RootView {
         Standing {
             output: self.player.read(cx).output_settings().clone(),
             appearance: theme::chosen(),
-            online,
-            musicbrainz_mirror,
-            after_scan,
-            enrich_on_metered,
-            stall_downloads_on_metered,
+            switches: self.switches_worn(cx),
             flac_renderers_named,
             formats_learnt,
-            studies,
-            by_sound,
-            lyrics,
-            lyrics_by_the_locale,
             contact_given,
             measurer_given,
             key_given,
@@ -947,32 +885,22 @@ impl RootView {
             lastfm_given,
             listening_from,
             listening_for,
-            resume,
             history_kept,
             music_filters: cx.global::<ResonateApp>().library.music_filters(),
             skip_under_repeat,
             previous_restarts,
             smart_shuffle,
-            notify,
-            check_for_updates,
-            renderers,
             window_buttons,
-            scroll_volume,
-            mouse_navigation,
             reduced_motion,
             scrollbars,
             language,
             spectral,
             tabs,
-            remember_tab,
-            remember_window_size,
-            remember_settings_category,
             presence,
             synchronised,
             template_given,
             inbox_given,
             music_folder_given,
-            file_dropped,
             subsonic_given,
             jellyfin_given,
             tidal_given,

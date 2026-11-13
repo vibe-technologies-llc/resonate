@@ -6,6 +6,7 @@ use std::{
     },
 };
 
+use resonate_core::Switch;
 use resonate_jellyfin::{QuickConnect, SignedIn};
 
 use crate::{
@@ -27,7 +28,7 @@ pub fn sign_in(config: &Config, settings: &Path, forgetting: bool) -> Result<()>
         said!("{}", words::jellyfin::forgotten());
         return Ok(());
     }
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
     let server = config
@@ -83,6 +84,7 @@ pub fn forget(settings: &Path) -> Result<()> {
 mod tests {
     use std::{env, fs, path::PathBuf, process};
 
+    use resonate_core::{Switch, Switches};
     use resonate_jellyfin::KeptSession;
 
     use super::*;
@@ -148,7 +150,7 @@ mod tests {
     fn a_jellyfin_sign_in_with_online_off_or_no_server_is_refused_before_anything_is_asked() {
         let settings = a_settings_file("refused", "");
         let offline = Config {
-            online: Some(false),
+            switches: Switches::UNSAID.with(Switch::Online, false),
             jellyfin: Some("http://127.0.0.1:9".to_owned()),
             ..Config::default()
         };

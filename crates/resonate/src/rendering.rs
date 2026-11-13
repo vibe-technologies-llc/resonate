@@ -2,6 +2,7 @@ use std::{sync::Arc, thread};
 
 use resonate_cast::{CAST_NODES, Casting, Searching as CastSearching};
 use resonate_codec::Sources;
+use resonate_core::Switch;
 use resonate_engine::{EngineConfig, Learning, NodeName, Player, SinkInfo, desktop_backend};
 use resonate_upnp::{Beside, FirstSearch, Network, RENDERER_NODES, Searching};
 
@@ -140,7 +141,7 @@ pub(crate) enum Asked {
 impl Rendering {
     pub(crate) fn of(config: &Config, wanted: Option<&NodeName>, asked: Asked) -> Self {
         let names_one = wanted.is_some_and(names_a_renderer);
-        let searches = asked == Asked::Network || names_one || config.looks_for_renderers();
+        let searches = asked == Asked::Network || names_one || config.is_on(Switch::Renderers);
         let reaches = asked == Asked::Addresses || config.holds_receiver_addresses();
         if !(searches || reaches) {
             return Self(None);
@@ -171,7 +172,7 @@ impl Rendering {
             } else {
                 FirstSearch::Behind
             };
-            if names_one || config.looks_for_renderers() {
+            if names_one || config.is_on(Switch::Renderers) {
                 kinds.look(first);
             } else if config.holds_receiver_addresses() {
                 kinds.reach_addresses(first);
@@ -184,7 +185,7 @@ impl Rendering {
     pub(crate) fn switch(&self) -> Option<Arc<dyn resonate_ui::Renderers>> {
         self.0
             .as_ref()
-            .map(|kinds| Arc::new(Switch(kinds.clone())) as Arc<dyn resonate_ui::Renderers>)
+            .map(|kinds| Arc::new(Switched(kinds.clone())) as Arc<dyn resonate_ui::Renderers>)
     }
 
     pub(crate) fn learn(&self, wanted: &NodeName) -> Result<Heard> {
@@ -231,10 +232,10 @@ use resonate_engine::{Learnt, Unlearnt};
 use resonate_upnp::{Udn, Vouched};
 
 #[cfg(feature = "ui")]
-struct Switch(Kinds);
+struct Switched(Kinds);
 
 #[cfg(feature = "ui")]
-impl resonate_ui::Renderers for Switch {
+impl resonate_ui::Renderers for Switched {
     fn looking(&self) -> bool {
         self.0.upnp.is_looking() || self.0.cast.is_looking()
     }

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::ValueEnum;
-use resonate_core::Trim;
+use resonate_core::{Switch, Trim};
 use resonate_engine::{
     DitherKind, FilterPhase, NodeName, NoiseShaping, Plays, PreviousRestarts, Quality,
     ReplayGainMode, SkipUnderRepeat,
@@ -121,9 +121,9 @@ impl Settings for File {
                     online::introduce(Some(contact.trim()).filter(|contact| !contact.is_empty()));
                 }
                 SettingChange::Forget(ConfigKey::Contact) => online::introduce(None),
-                SettingChange::Store(Setting::Online(on)) => online::reach(*on),
+                SettingChange::Store(Setting::Switched(Switch::Online, on)) => online::reach(*on),
                 #[cfg(feature = "online")]
-                SettingChange::Store(Setting::EnrichOnMetered(allowed)) => {
+                SettingChange::Store(Setting::Switched(Switch::EnrichOnMetered, allowed)) => {
                     metered::allow_lookups(*allowed);
                 }
                 #[cfg(feature = "online")]
@@ -131,7 +131,7 @@ impl Settings for File {
                     metered::allow_lookups(ConfigKey::EnrichOnMetered.switched(None));
                 }
                 #[cfg(feature = "online")]
-                SettingChange::Store(Setting::MusicbrainzMirror(mirrors)) => {
+                SettingChange::Store(Setting::Switched(Switch::MusicbrainzMirror, mirrors)) => {
                     crate::musicbrainz::follow(
                         &config::load(Some(&self.path)).unwrap_or_default(),
                         *mirrors,
@@ -150,7 +150,10 @@ impl Settings for File {
                         ConfigKey::MusicbrainzMirror.switched(None),
                     );
                 }
-                SettingChange::Store(Setting::StallDownloadsOnMetered(stalls)) => {
+                SettingChange::Store(Setting::Switched(
+                    Switch::StallDownloadsOnMetered,
+                    stalls,
+                )) => {
                     metered::stall_downloads(*stalls);
                 }
                 SettingChange::Forget(ConfigKey::StallDownloadsOnMetered) => {
@@ -209,6 +212,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
                 .map_err(|_| resonate_ui::Error::SettingNotStored { key: setting.key() })?;
             Some(millis.into())
         }
+        Setting::Switched(_, on) => Some((*on).into()),
         Setting::Volume(volume) => Some(as_typed(volume.get()).into()),
         Setting::Theme(theme) => Some(theme.as_str().into()),
         Setting::Accent(accent) => accent.map(|accent| accent.as_str().into()),
@@ -216,15 +220,6 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::Language(chosen) => Some(chosen.as_str().into()),
         Setting::FollowDesktopScheme(follows) => Some((*follows).into()),
         Setting::FollowDesktopTextSize(follows) => Some((*follows).into()),
-        Setting::Online(enabled) => Some((*enabled).into()),
-        Setting::EnrichAfterScan(after_scan) => Some((*after_scan).into()),
-        Setting::EnrichOnMetered(allowed) => Some((*allowed).into()),
-        Setting::MusicbrainzMirror(mirrors) => Some((*mirrors).into()),
-        Setting::StallDownloadsOnMetered(stalls) => Some((*stalls).into()),
-        Setting::Study(studies) => Some((*studies).into()),
-        Setting::FetchLyrics(fetches) => Some((*fetches).into()),
-        Setting::LyricsByTheLocale(chooses) => Some((*chooses).into()),
-        Setting::IdentifyBySound(hears) => Some((*hears).into()),
         Setting::SkipUnderRepeat(skip) => Some((*skip == SkipUnderRepeat::RepeatsTheQueue).into()),
         Setting::PreviousRestarts(previous) => {
             Some((*previous == PreviousRestarts::RestartsTheTrack).into())
@@ -260,8 +255,6 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::ListenFor(length) => {
             Some(i64::try_from(length.as_secs()).unwrap_or(i64::MAX).into())
         }
-        Setting::Equaliser(on) => Some((*on).into()),
-        Setting::Renderers(on) => Some((*on).into()),
         Setting::FlacAbove96kFor(renderers) => (!renderers.is_empty()).then(|| {
             Value::Array(
                 renderers
@@ -270,13 +263,10 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
                     .collect::<Array>(),
             )
         }),
-        Setting::Resume(keeps) => Some((*keeps).into()),
         Setting::HistoryKept(kept) => Some(match kept {
             HistoryKept::Forever => kept.to_string().into(),
             HistoryKept::Days(days) => i64::from(days.get()).into(),
         }),
-        Setting::Notify(tells) => Some((*tells).into()),
-        Setting::CheckForUpdates(checks) => Some((*checks).into()),
         Setting::UpdateDismissed(version) => given_or_cleared(version),
         Setting::Discord(on) => Some((*on).into()),
         Setting::DiscordApp(app) => app.map(|app| app.to_string().into()),
@@ -285,8 +275,6 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::DiscordIcon(icon) => icon.as_ref().map(|icon| icon.as_str().into()),
         Setting::DiscordProgress(shown) => Some((*shown).into()),
         Setting::DiscordPaused(stays) => Some((*stays).into()),
-        Setting::Sync(on) => Some((*on).into()),
-        Setting::SyncNearbyOnly(on) => Some((*on).into()),
         Setting::SyncServer(given) => given_or_cleared(given),
         Setting::SyncKey(given) => given_or_cleared(given),
         Setting::SyncDevice(given) => given_or_cleared(given),
@@ -297,10 +285,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::SyncControl(trust) => Some(trust.as_str().into()),
         Setting::MinimiseButton(shown) => Some((*shown).into()),
         Setting::MaximiseButton(shown) => Some((*shown).into()),
-        Setting::ScrollVolume(scrolls) => Some((*scrolls).into()),
-        Setting::MouseNavigation(enabled) => Some((*enabled).into()),
         Setting::ReducedMotion(reduced) => Some((*reduced).into()),
-        Setting::FileDropped(files) => Some((*files).into()),
         Setting::Scrollbars(mode) => Some(mode.as_str().into()),
         Setting::SpectrumTilt(tilt) => Some(tilt.as_str().into()),
         Setting::SpectrumFloor(floor) => Some(floor.as_str().into()),
@@ -309,12 +294,9 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::SuggestionsTab(shown) => Some((*shown).into()),
         Setting::MissingTab(shown) => Some((*shown).into()),
         Setting::TabCounts(shown) => Some((*shown).into()),
-        Setting::RememberTab(remember) => Some((*remember).into()),
         Setting::LastTab(tab) => Some(tab.as_str().into()),
         Setting::ArtistsDrawn(drawn) => Some(drawn.as_str().into()),
-        Setting::RememberWindowSize(remember) => Some((*remember).into()),
         Setting::WindowSize(size) => Some(format!("{}x{}", size.width(), size.height()).into()),
-        Setting::RememberSettingsCategory(remember) => Some((*remember).into()),
         Setting::LastSettingsCategory(category) => Some(category.as_str().into()),
         Setting::OrganiseAs(template) => Some(template.as_str().into()),
         Setting::Inbox(folder) => {
@@ -372,11 +354,8 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::HifiApi(given) => given_or_cleared(given),
         Setting::HifiSecret(given) => given_or_cleared(given),
         Setting::Monochrome(given) => given_or_cleared(given),
-        Setting::HostedServices(allowed) => Some((*allowed).into()),
-        Setting::YoutubeMusic(on) => Some((*on).into()),
         Setting::YoutubeMusicCookies(given) => given_or_cleared(given),
         Setting::YtDlp(given) => given_or_cleared(given),
-        Setting::YoutubeMusicKeepOrder(on) => Some((*on).into()),
     };
 
     written(editing, key, value);
@@ -461,7 +440,7 @@ mod tests {
 
     use resonate_core::{
         Accent, AppId, HeadYaw, Pictured, Presence, RemoteTrust, Shown, SpeakerAngle,
-        SpeakerElevation, TextSize, Theme, os_bytes,
+        SpeakerElevation, Switch, TextSize, Theme, os_bytes,
     };
     use resonate_engine::Trial;
 
@@ -540,10 +519,10 @@ mod tests {
         let file = File::at(path.clone());
 
         file.apply(&[
-            SettingChange::Store(Setting::YoutubeMusic(true)),
+            SettingChange::Store(Setting::Switched(Switch::YoutubeMusic, true)),
             SettingChange::Store(Setting::YoutubeMusicCookies("firefox".to_owned())),
             SettingChange::Store(Setting::YtDlp("/opt/yt-dlp".to_owned())),
-            SettingChange::Store(Setting::YoutubeMusicKeepOrder(false)),
+            SettingChange::Store(Setting::Switched(Switch::YoutubeMusicKeepOrder, false)),
         ])
         .expect("a writable temporary directory");
         let written = config::load(Some(&path)).expect("the file reads back");
@@ -555,10 +534,13 @@ mod tests {
         let cleared = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
-        assert_eq!(written.youtube_music, Some(true));
+        assert_eq!(written.switches.said(Switch::YoutubeMusic), Some(true));
         assert_eq!(written.youtube_music_cookies.as_deref(), Some("firefox"));
         assert_eq!(written.yt_dlp.as_deref(), Some("/opt/yt-dlp"));
-        assert_eq!(written.youtube_music_keep_order, Some(false));
+        assert_eq!(
+            written.switches.said(Switch::YoutubeMusicKeepOrder),
+            Some(false)
+        );
         assert_eq!(cleared.youtube_music_cookies, None);
         assert_eq!(cleared.yt_dlp, None);
     }
@@ -828,8 +810,8 @@ mod tests {
         let file = File::at(path.clone());
 
         file.apply(&[
-            SettingChange::Store(Setting::EnrichOnMetered(true)),
-            SettingChange::Store(Setting::StallDownloadsOnMetered(true)),
+            SettingChange::Store(Setting::Switched(Switch::EnrichOnMetered, true)),
+            SettingChange::Store(Setting::Switched(Switch::StallDownloadsOnMetered, true)),
         ])
         .expect("a writable temporary directory");
         let allowed = config::load(Some(&path)).expect("the file reads back");
@@ -841,12 +823,15 @@ mod tests {
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
-        assert!(allowed.enriches_on_metered());
-        assert!(allowed.stalls_downloads_on_metered());
-        assert_eq!(forgotten.enrich_on_metered, None);
-        assert_eq!(forgotten.stall_downloads_on_metered, None);
-        assert!(!forgotten.enriches_on_metered());
-        assert!(!forgotten.stalls_downloads_on_metered());
+        assert!(allowed.is_on(Switch::EnrichOnMetered));
+        assert!(allowed.is_on(Switch::StallDownloadsOnMetered));
+        assert_eq!(forgotten.switches.said(Switch::EnrichOnMetered), None);
+        assert_eq!(
+            forgotten.switches.said(Switch::StallDownloadsOnMetered),
+            None
+        );
+        assert!(!forgotten.is_on(Switch::EnrichOnMetered));
+        assert!(!forgotten.is_on(Switch::StallDownloadsOnMetered));
     }
 
     #[test]
@@ -928,8 +913,8 @@ mod tests {
         let refused = file.apply(&[
             SettingChange::Store(Setting::Inbox(PathBuf::from("/music/inbox"))),
             SettingChange::Store(Setting::Inbox(unwritable)),
-            SettingChange::Store(Setting::Resume(false)),
-            SettingChange::Store(Setting::Notify(false)),
+            SettingChange::Store(Setting::Switched(Switch::Resume, false)),
+            SettingChange::Store(Setting::Switched(Switch::Notify, false)),
             SettingChange::Forget(ConfigKey::Notify),
         ]);
         let read = config::load(Some(&path)).expect("the file reads back");
@@ -947,9 +932,10 @@ mod tests {
             })
         ));
         assert_eq!(read.inbox, Some(PathBuf::from("/music/inbox")));
-        assert_eq!(read.resume, Some(false));
+        assert_eq!(read.switches.said(Switch::Resume), Some(false));
         assert_eq!(
-            read.notify, None,
+            read.switches.said(Switch::Notify),
+            None,
             "a setting forgotten after it was stored stood"
         );
         assert_eq!(staged, 0, "a write left something beside the file");

@@ -5,6 +5,8 @@ use std::{
 };
 
 #[cfg(feature = "mcp")]
+use resonate_core::Switch;
+#[cfg(feature = "mcp")]
 use resonate_mcp::{Lookups, OnTheBus, Server, stoppable};
 #[cfg(feature = "mcp")]
 use resonate_mpris::PlayerName;
@@ -33,9 +35,9 @@ pub fn serve(cli: &Cli, config: &Config, player: Option<&str>) -> Result<()> {
                 config,
                 crate::settings_path(cli).ok(),
             )),
-            studies: config.studies(),
-            lyrics: config.fetches_lyrics(),
-            after_a_scan: config.enriches_after_scan(),
+            studies: config.is_on(Switch::Study),
+            lyrics: config.is_on(Switch::FetchLyrics),
+            after_a_scan: config.is_on(Switch::EnrichAfterScan),
         });
     tracing::debug!("serving the Model Context Protocol on stdin and stdout");
 

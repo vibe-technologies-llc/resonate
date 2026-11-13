@@ -5,7 +5,9 @@ use gpui::{
     SharedString, Stateful, Window, canvas, div, fill, point, prelude::*, px, relative, rgb, size,
 };
 use qrcode::{Color, EcLevel, QrCode};
-use resonate_core::{RemoteTrust, SyncedSongs, elapsed, remote_trust_asked, remote_trust_told};
+use resonate_core::{
+    RemoteTrust, Switch, SyncedSongs, elapsed, remote_trust_asked, remote_trust_told,
+};
 
 use crate::{
     Notice, RemoteKey, RemoteRowShown, RemoteShown, RemoteZoneShown, ResonateApp, Setting,
@@ -1358,7 +1360,7 @@ impl RootView {
     pub(crate) fn set_sync(&mut self, on: bool, cx: &mut Context<Self>) {
         self.synchronise(
             |synchronised| synchronised.enabled = on,
-            &Setting::Sync(on),
+            &Setting::Switched(Switch::Sync, on),
             cx,
         );
     }
@@ -1366,7 +1368,7 @@ impl RootView {
     pub(crate) fn set_sync_nearby_only(&mut self, nearby_only: bool, cx: &mut Context<Self>) {
         self.synchronise(
             |synchronised| synchronised.nearby_only = nearby_only,
-            &Setting::SyncNearbyOnly(nearby_only),
+            &Setting::Switched(Switch::SyncNearbyOnly, nearby_only),
             cx,
         );
         let said = if nearby_only {
@@ -1503,7 +1505,10 @@ impl RootView {
         self.typed
             .sync_device
             .update(cx, |field, cx| field.hold(String::new(), cx));
-        self.store(&Setting::SyncNearbyOnly(built.nearby_only), cx);
+        self.store(
+            &Setting::Switched(Switch::SyncNearbyOnly, built.nearby_only),
+            cx,
+        );
         self.synchronise(
             |synchronised| {
                 synchronised.nearby_only = built.nearby_only;

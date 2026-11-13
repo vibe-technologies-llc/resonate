@@ -6,7 +6,7 @@ use std::{
 };
 
 use crossbeam_channel::bounded;
-use resonate_core::{MediaLocation, Resumption};
+use resonate_core::{MediaLocation, Resumption, Switch};
 use resonate_engine::{Command, Opens, Placement, Player, Zones};
 use resonate_library::Library;
 use resonate_mpris::{Queueing, Running};
@@ -93,7 +93,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
     let (attending, attention) = crossbeam_channel::unbounded();
     let (asked_to_raise, raising) = bounded(1);
     let (follow, followed) = crossbeam_channel::unbounded();
-    let notify = Arc::new(AtomicBool::new(config.notifies()));
+    let notify = Arc::new(AtomicBool::new(config.is_on(Switch::Notify)));
     let by_sound = online::by_sound(&config);
     let lyrics_by_the_locale = online::lyrics_by_the_locale(&config);
     let opener = crate::zoning::Opener::new(
@@ -228,17 +228,17 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
             measurers: equaliser::measured_by(&config),
             measures: Some(Arc::new(measuring::Sweeping)),
             online: resonate_ui::Online {
-                enabled: config.online_enabled(),
-                after_scan: config.enriches_after_scan(),
-                enrich_on_metered: config.enriches_on_metered(),
-                musicbrainz_mirror: config.mirrors_musicbrainz(),
+                enabled: config.is_on(Switch::Online),
+                after_scan: config.is_on(Switch::EnrichAfterScan),
+                enrich_on_metered: config.is_on(Switch::EnrichOnMetered),
+                musicbrainz_mirror: config.is_on(Switch::MusicbrainzMirror),
                 musicbrainz_replication_token: config
                     .musicbrainz_replication_token
                     .clone()
                     .unwrap_or_default(),
-                stall_downloads_on_metered: config.stalls_downloads_on_metered(),
-                studies: config.studies(),
-                lyrics: config.fetches_lyrics(),
+                stall_downloads_on_metered: config.is_on(Switch::StallDownloadsOnMetered),
+                studies: config.is_on(Switch::Study),
+                lyrics: config.is_on(Switch::FetchLyrics),
                 contact: config.contact.clone().unwrap_or_default(),
                 acoustid_key: config.acoustid_key.clone().unwrap_or_default(),
                 audd_token: config.audd_token.clone().unwrap_or_default(),
@@ -263,11 +263,11 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
                 hifi_api: config.hifi_api.clone().unwrap_or_default(),
                 hifi_secret: config.hifi_secret.clone().unwrap_or_default(),
                 monochrome: config.monochrome.clone().unwrap_or_default(),
-                hosted_services: config.hosted_services_allowed(),
-                youtube_music: config.turns_youtube_music_on(),
+                hosted_services: config.is_on(Switch::HostedServices),
+                youtube_music: config.is_on(Switch::YoutubeMusic),
                 youtube_music_cookies: config.youtube_music_cookies.clone().unwrap_or_default(),
                 yt_dlp: config.yt_dlp.clone().unwrap_or_default(),
-                youtube_music_keep_order: config.keeps_youtubes_order(),
+                youtube_music_keep_order: config.is_on(Switch::YoutubeMusicKeepOrder),
             },
             serving: served.serving(),
             sourcing: {
@@ -298,28 +298,28 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
             speaker_elevation: config.speaker_elevation(),
             head_yaw: config.head_yaw(),
             music_folder: config.music_folder.clone(),
-            file_dropped: config.files_what_is_dropped(),
+            file_dropped: config.is_on(Switch::FileDropped),
             window_buttons: config.window_buttons(),
-            scroll_volume: config.scrolls_the_volume(),
-            mouse_navigation: config.navigates_with_mouse_buttons(),
+            scroll_volume: config.is_on(Switch::ScrollVolume),
+            mouse_navigation: config.is_on(Switch::MouseNavigation),
             reduced_motion: config.reduces_motion_where_the_desktop_asks(desktop.reduces_motion),
             scrollbars: config.scrollbars(),
             language: config.language(),
             spectral: config.spectral(),
             tabs: config.tabs(),
-            remember_tab: config.remembers_tab(),
+            remember_tab: config.is_on(Switch::RememberTab),
             last_tab: config.remembered_tab(),
             artists_drawn: config.artists_drawn(),
-            remember_window_size: config.remembers_window_size(),
+            remember_window_size: config.is_on(Switch::RememberWindowSize),
             window_size: config.window_size(),
-            remember_settings_category: config.remembers_settings_category(),
+            remember_settings_category: config.is_on(Switch::RememberSettingsCategory),
             last_settings_category: config.remembered_settings_category(),
             presence: config.presence(),
             present,
             renderers,
             synchronised: resonate_ui::Synchronised {
-                enabled: config.sync.unwrap_or(true),
-                nearby_only: config.syncs_nearby_only(),
+                enabled: config.is_on(Switch::Sync),
+                nearby_only: config.is_on(Switch::SyncNearbyOnly),
                 server: config.sync_server.clone().unwrap_or_default(),
                 device: config.sync_device.clone().unwrap_or_default(),
                 shared_name: config.shared_name.clone().unwrap_or_default(),
@@ -331,7 +331,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
             reads_as_a_code: sync::code_reader(),
             launcher: Arc::new(crate::launcher::Icons::start()),
             updates: updates_checked(&config),
-            check_for_updates: config.checks_for_updates(),
+            check_for_updates: config.is_on(Switch::CheckForUpdates),
             update_dismissed: config.update_dismissed.clone(),
         },
         config.appearance_where_the_desktop_asks(desktop.more_contrast),

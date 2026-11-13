@@ -1,7 +1,7 @@
 use gpui::{Context, Div, FontWeight, SharedString, Stateful, Window, div, prelude::*, px, rgb};
 use resonate_core::{
     Accent, Appearance, Following, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls,
-    SpectrumFloor, SpectrumTilt, TextSize, Theme,
+    SpectrumFloor, SpectrumTilt, Switch, TextSize, Theme,
 };
 use resonate_words::LanguageChoice;
 
@@ -454,7 +454,7 @@ impl RootView {
             ),
             move |this, _, cx| {
                 this.wheel_the_volume(!wheeled, cx);
-                this.store(&Setting::ScrollVolume(!wheeled), cx);
+                this.store(&Setting::Switched(Switch::ScrollVolume, !wheeled), cx);
             },
             cx,
         ))
@@ -504,7 +504,7 @@ impl RootView {
             ),
             move |this, _, cx| {
                 this.navigate_with_mouse_buttons(!enabled, cx);
-                this.store(&Setting::MouseNavigation(!enabled), cx);
+                this.store(&Setting::Switched(Switch::MouseNavigation, !enabled), cx);
             },
             cx,
         ))
@@ -707,7 +707,7 @@ impl RootView {
     ) {
         self.remembered.tab = remember;
         cx.update_global::<ResonateApp, _>(|global, _| global.remember_tab = remember);
-        self.store(&Setting::RememberTab(remember), cx);
+        self.store(&Setting::Switched(Switch::RememberTab, remember), cx);
 
         if remember {
             self.remember_current_tab(cx);
@@ -727,7 +727,7 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.remember_window_size = remember;
         });
-        self.store(&Setting::RememberWindowSize(remember), cx);
+        self.store(&Setting::Switched(Switch::RememberWindowSize, remember), cx);
 
         if remember {
             self.remember_current_window_size(window, cx);
@@ -743,7 +743,10 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.remember_settings_category = remember;
         });
-        self.store(&Setting::RememberSettingsCategory(remember), cx);
+        self.store(
+            &Setting::Switched(Switch::RememberSettingsCategory, remember),
+            cx,
+        );
 
         if remember {
             self.remember_current_settings_category(cx);
@@ -753,17 +756,6 @@ impl RootView {
                 global.last_settings_category = Category::default();
             });
         }
-    }
-
-    pub(crate) fn put_window_state_back(&mut self, cx: &mut Context<Self>) {
-        self.remembered.tab = true;
-        self.remembered.window_size = true;
-        self.remembered.settings_category = true;
-        cx.update_global::<ResonateApp, _>(|global, _| {
-            global.remember_tab = true;
-            global.remember_window_size = true;
-            global.remember_settings_category = true;
-        });
     }
 
     pub(crate) fn remember_current_tab(&mut self, cx: &mut Context<Self>) {

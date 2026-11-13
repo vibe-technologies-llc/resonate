@@ -324,10 +324,21 @@ help names no folder, since `build.rs` writes one man page for every system;
 CLI flag > file > `EngineConfig` defaults; an unknown key warns via `tracing`. Every key is a
 `ConfigKey` variant (`ConfigKey::ALL`, in `resonate-core` so the window's `Setting::key` names the
 same key the file is written under, with no table between them): a bad value names its key without
-prose in an error. **A switch's default is said once**: `ConfigKey::on_unless_said` answers it
-for every on/off key, `ConfigKey::switched` reads a stored value over it, and both `Config`'s
-readers and the window's `defaults.rs` constants are written through it; `settings::stored` writes
-under `Setting::key`, so no setting's key is named twice. Keys
+prose in an error. **Every key is one line of the `keys!` table** (`config_key.rs` in core): its
+variant, its spelling and, for an on/off key, `on` or `off`, the default unless said. The table
+writes `ConfigKey` (`ALL`, `as_str`), the `Switch` enum of the on/off keys (`Switch::ALL`,
+`Switch::on_unless_said`) and the `Valued` enum of the rest, and `ConfigKey::sorted` tells one from
+the other. **A new switch is that one line and what it does**: `Config` keeps every switch in one
+`Switches` (`Config::is_on`, no field or reader of its own; `Config::take` says it before matching
+`Valued` keys, so a valued key with no arm fails to compile); the window writes it as
+`Setting::Switched(switch, on)`, which `settings::as_typed` and `Setting::key` take whole; the
+settings pane reads it and puts it back through `views/settings/switched.rs` (`wears`,
+`put_the_switch_back`, an arm a switch naming where it lives and how it is applied live), and a
+group differs from as built where any switch among its keys does (`Group::switches`,
+`switched_from_as_built`), held by `every_switch_is_put_back_and_weighed_by_the_one_group_holding_it`.
+The man page's entry is held to the table's default by
+`the_man_page_gives_every_switch_the_default_the_table_does`. `settings::stored` writes under
+`Setting::key`, so no setting's key is named twice. Keys
 with a flag: the `global` ones plus `volume`; the rest only pane and file. Defaults and meanings:
 `config.rs` and `views/settings/`; below are the decisions.
 
@@ -390,7 +401,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   zones and `play` (`upnp.md`, `cast.md`). Off, nothing is multicast; a `sink` or `--sink` naming
   a renderer (`upnp:` and its UDN) or a receiver (`cast:` and its id) searches anyway, waiting
   for the first answer so the engine's first survey holds it, and so does `sinks --renderers`.
-  The settings pane's device list switches it in the running window (`Setting::Renderers`,
+  The settings pane's device list switches it in the running window (`Setting::Switched(Switch::Renderers, _)`,
   `Rendering::switch`), the window holding a resting network from the start.
 - `renderers-at` (empty unless set): array of `http://` addresses of UPnP renderers' descriptions
   (`http://192.168.1.20:49152/description.xml`) the search cannot hear, a network that drops
@@ -520,7 +531,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `Gate`s on it (`for_lookups` is shut while metered unless `enrich-on-metered`, handed to the one
   `online::client`; `for_downloads` is shut while metered when `stall-downloads-on-metered`, handed
   to every `open_library_with`). The settings pane's *Metered connections* group (Online) has a
-  switch for each, written as `Setting::EnrichOnMetered` and `Setting::StallDownloadsOnMetered`
+  switch for each, written as `Setting::Switched` of `Switch::EnrichOnMetered` and `Switch::StallDownloadsOnMetered`
   and applied live: `settings::File::apply` calls `metered::allow_lookups` and
   `metered::stall_downloads` (a forgotten key is the default again) on the same gates, which
   wake what waits on them. The group says while `PollProgress::is_waiting_on_the_meter` holds that
@@ -529,7 +540,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 - **`musicbrainz-mirror` (off) keeps a copy of MusicBrainz on this device** (`musicbrainz.rs`,
   `musicbrainz.md`). On, the window opens the copy held and builds or refreshes it in the
   background (`keep_fresh`: none held, or one over 30 days old whose export `LATEST` no longer
-  names). The Online category's *Reference lookups* group has the switch (`Setting::MusicbrainzMirror`,
+  names). The Online category's *Reference lookups* group has the switch (`Setting::Switched(Switch::MusicbrainzMirror, _)`,
   applied live through `musicbrainz::follow`), and under it what is held, the build's phase and
   bytes (read through the `resonate_ui::Mirroring` seam, redrawn every second while building),
   *Build it now* and *Remove the copy*. `resonate musicbrainz` is the terminal's way in:

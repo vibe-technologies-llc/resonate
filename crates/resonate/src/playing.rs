@@ -6,7 +6,7 @@ use std::{
 };
 
 use crossbeam_channel::{bounded, never, select, tick};
-use resonate_core::{FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, Volume};
+use resonate_core::{FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, Switch, Volume};
 use resonate_engine::{
     Command, Counting, Event, Keeping, Listening, Placement, Player, QueueItem, RepeatMode, Until,
     stamp_of,
@@ -287,7 +287,7 @@ fn play_queue_here(
             settings_path(cli).ok(),
             Some(asked_to_quit),
             None,
-            &Arc::new(AtomicBool::new(config.notifies())),
+            &Arc::new(AtomicBool::new(config.is_on(Switch::Notify))),
         )
         .heard_on_the_main_loop(),
         &player,

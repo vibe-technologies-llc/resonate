@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use gpui::{Context, Task, prelude::*};
+use resonate_core::Switch;
 
 use crate::{
     Newer, ResonateApp, Setting, fonts,
@@ -102,7 +103,7 @@ impl RootView {
 
     pub(crate) fn check_for_updates(&mut self, checks: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.check_for_updates = checks);
-        self.store(&Setting::CheckForUpdates(checks), cx);
+        self.store(&Setting::Switched(Switch::CheckForUpdates, checks), cx);
         if checks {
             self.look_for_a_newer_release(cx);
         } else {
@@ -112,9 +113,8 @@ impl RootView {
         cx.notify();
     }
 
-    pub(super) fn put_the_updates_back(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn put_the_updates_back(&self, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.update_dismissed = None);
-        self.check_for_updates(super::defaults::CHECK_FOR_UPDATES, cx);
     }
 
     fn dismiss_the_release(&mut self, version: &str, cx: &mut Context<Self>) {

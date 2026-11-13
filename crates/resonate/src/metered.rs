@@ -1,6 +1,6 @@
 use std::sync::{LazyLock, Once};
 
-use resonate_core::{Gate, Metering};
+use resonate_core::{Gate, Metering, Switch};
 
 use crate::config::Config;
 
@@ -27,7 +27,7 @@ fn shut_while_metered(gate: &Gate, shut: bool) {
 
 #[cfg(feature = "online")]
 pub fn for_lookups(config: &Config) -> Gate {
-    shut_while_metered(&LOOKUPS, !config.enriches_on_metered());
+    shut_while_metered(&LOOKUPS, !config.is_on(Switch::EnrichOnMetered));
     LOOKUPS.clone()
 }
 
@@ -42,13 +42,13 @@ pub fn stall_downloads(stalls: bool) {
 }
 
 pub fn for_downloads(config: &Config) -> Gate {
-    shut_while_metered(&DOWNLOADS, config.stalls_downloads_on_metered());
+    shut_while_metered(&DOWNLOADS, config.is_on(Switch::StallDownloadsOnMetered));
     DOWNLOADS.clone()
 }
 
 #[cfg(test)]
 mod tests {
-    use resonate_core::Meter;
+    use resonate_core::{Meter, Switch, Switches};
 
     use super::*;
 
@@ -56,8 +56,11 @@ mod tests {
     fn a_build_with_no_settings_stops_lookups_on_a_metered_connection_and_holds_no_download() {
         let config = Config::default();
         let metering = Metering::new();
-        let lookups = Gate::new(metering.clone(), !config.enriches_on_metered());
-        let downloads = Gate::new(metering.clone(), config.stalls_downloads_on_metered());
+        let lookups = Gate::new(metering.clone(), !config.is_on(Switch::EnrichOnMetered));
+        let downloads = Gate::new(
+            metering.clone(),
+            config.is_on(Switch::StallDownloadsOnMetered),
+        );
 
         metering.report(Meter::Metered);
 
@@ -68,13 +71,17 @@ mod tests {
     #[test]
     fn the_settings_open_and_shut_the_gates_both_ways() {
         let config = Config {
-            enrich_on_metered: Some(true),
-            stall_downloads_on_metered: Some(true),
+            switches: Switches::UNSAID
+                .with(Switch::EnrichOnMetered, true)
+                .with(Switch::StallDownloadsOnMetered, true),
             ..Config::default()
         };
         let metering = Metering::new();
-        let lookups = Gate::new(metering.clone(), !config.enriches_on_metered());
-        let downloads = Gate::new(metering.clone(), config.stalls_downloads_on_metered());
+        let lookups = Gate::new(metering.clone(), !config.is_on(Switch::EnrichOnMetered));
+        let downloads = Gate::new(
+            metering.clone(),
+            config.is_on(Switch::StallDownloadsOnMetered),
+        );
 
         metering.report(Meter::Metered);
 

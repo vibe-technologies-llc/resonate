@@ -12,6 +12,7 @@ use std::{
 use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 #[cfg(feature = "sync")]
 use parking_lot::Mutex;
+use resonate_core::Switch;
 #[cfg(feature = "sync")]
 use resonate_core::{
     Answer, Frames, Mbid, PlaylistId, Recording, RemoteTrust, SampleRate, SharedLyricsfile,
@@ -367,7 +368,7 @@ pub(crate) fn start(
     _settings: Option<&std::path::Path>,
     _library: &Arc<Library>,
 ) -> Syncing {
-    if config.sync == Some(true) || config.sync_key.is_some() {
+    if config.switches.said(Switch::Sync) == Some(true) || config.sync_key.is_some() {
         tracing::warn!("this build carries no device sync, so nothing is synchronised");
     }
     Syncing {}
@@ -440,7 +441,7 @@ fn started(
 
 #[cfg(feature = "sync")]
 pub(crate) fn server_of(config: &Config) -> Server {
-    if config.syncs_nearby_only() {
+    if config.is_on(Switch::SyncNearbyOnly) {
         return Server::Nowhere;
     }
     config
@@ -1724,6 +1725,8 @@ fn host_name() -> String {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use resonate_core::{Switch, Switches};
+
     use super::*;
 
     #[test]
@@ -1795,9 +1798,11 @@ mod tests {
             Arrangement::of(&config) != Arrangement::of(&base)
         };
 
-        assert!(moved(|config| config.sync_nearby_only = Some(true)));
+        assert!(moved(|config| config
+            .switches
+            .say(Switch::SyncNearbyOnly, true)));
         assert!(moved(|config| {
-            config.sync_nearby_only = Some(false);
+            config.switches.say(Switch::SyncNearbyOnly, false);
             config.sync_server = Some("example.org".to_owned());
         }));
         assert!(moved(|config| config.sync_device = Some("Study".to_owned())));
@@ -1813,14 +1818,14 @@ mod tests {
                 ..SyncedSongs::default()
             });
         }));
-        assert!(moved(|config| config.sync = Some(false)));
+        assert!(moved(|config| config.switches.say(Switch::Sync, false)));
         assert!(moved(|config| config.sync_key = None));
     }
 
     #[test]
     fn a_device_not_syncing_holds_one_arrangement_whatever_else_is_set() {
         let off = Config {
-            sync: Some(false),
+            switches: Switches::UNSAID.with(Switch::Sync, false),
             sync_device: Some("Study".to_owned()),
             sync_key: Some(key().code()),
             ..Config::default()
@@ -1829,7 +1834,7 @@ mod tests {
         assert!(
             Arrangement::of(&off)
                 == Arrangement::of(&Config {
-                    sync: Some(false),
+                    switches: Switches::UNSAID.with(Switch::Sync, false),
                     ..Config::default()
                 })
         );

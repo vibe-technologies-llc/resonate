@@ -7,6 +7,7 @@ use gpui::{
     ClickEvent, Context, Div, ElementId, PathPromptOptions, SharedString, Stateful, Window, div,
     prelude::*, px, rgb,
 };
+use resonate_core::Switch;
 use resonate_engine::{Command, PreviousRestarts, ShuffleStyle, SkipUnderRepeat, SmartShuffle};
 use resonate_library::{
     EnrichStats, EnrichSummary, Failure, Failures, HistoryKept, ImportStats, ImportSummary, Layout,
@@ -134,7 +135,7 @@ impl RootView {
                 ),
                 move |this, _, cx| {
                     this.file_what_is_dropped(!filed, cx);
-                    this.store(&Setting::FileDropped(!filed), cx);
+                    this.store(&Setting::Switched(Switch::FileDropped, !filed), cx);
                 },
                 cx,
             ))
@@ -934,7 +935,7 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| global.resume = resume);
         self.library
             .update(cx, |library, cx| library.set_resume(resume, cx));
-        self.store(&Setting::Resume(resume), cx);
+        self.store(&Setting::Switched(Switch::Resume, resume), cx);
     }
 }
 

@@ -4,8 +4,8 @@ use std::{
 };
 
 use resonate_core::{
-    Appearance, ConfigKey, Presence, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls,
-    SpectrumFloor, SpectrumTilt,
+    Appearance, Presence, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls, SpectrumFloor,
+    SpectrumTilt, Switches,
 };
 use resonate_engine::{
     Command, EngineConfig, OutputSettings, PreviousRestarts, SkipUnderRepeat, SmartShuffle,
@@ -16,26 +16,10 @@ use resonate_words::LanguageChoice;
 
 use crate::{Synchronised, Tabs, WindowButtons, views::settings::find::Group};
 
-pub(crate) const ONLINE: bool = ConfigKey::Online.switched(None);
-pub(crate) const ENRICH_AFTER_SCAN: bool = ConfigKey::EnrichAfterScan.switched(None);
-pub(crate) const ENRICH_ON_METERED: bool = ConfigKey::EnrichOnMetered.switched(None);
-pub(crate) const MUSICBRAINZ_MIRROR: bool = ConfigKey::MusicbrainzMirror.switched(None);
-pub(crate) const STALL_DOWNLOADS_ON_METERED: bool =
-    ConfigKey::StallDownloadsOnMetered.switched(None);
-pub(crate) const STUDY: bool = ConfigKey::Study.switched(None);
-pub(crate) const BY_SOUND: bool = ConfigKey::IdentifyBySound.switched(None);
-pub(crate) const FETCH_LYRICS: bool = ConfigKey::FetchLyrics.switched(None);
-pub(crate) const LYRICS_BY_THE_LOCALE: bool = ConfigKey::LyricsLanguageFromLocale.switched(None);
-pub(crate) const RESUME: bool = ConfigKey::Resume.switched(None);
 pub(crate) const HISTORY_KEPT: HistoryKept = HistoryKept::Forever;
-pub(crate) const NOTIFY: bool = ConfigKey::Notify.switched(None);
-pub(crate) const CHECK_FOR_UPDATES: bool = ConfigKey::CheckForUpdates.switched(None);
 pub(crate) const WINDOW_BUTTONS: WindowButtons = WindowButtons::SHOWN;
-pub(crate) const SCROLL_VOLUME: bool = ConfigKey::ScrollVolume.switched(None);
-pub(crate) const MOUSE_NAVIGATION: bool = ConfigKey::MouseNavigation.switched(None);
 pub(crate) const REDUCED_MOTION: bool = false;
 
-pub(crate) const FILE_DROPPED: bool = ConfigKey::FileDropped.switched(None);
 pub(crate) const SCROLLBARS: ScrollbarMode = ScrollbarMode::AutoHidden;
 pub(crate) const LANGUAGE: LanguageChoice = LanguageChoice::System;
 pub(crate) const SPECTRAL: Spectral = Spectral {
@@ -45,27 +29,14 @@ pub(crate) const SPECTRAL: Spectral = Spectral {
     falls: SpectrumFalls::Middling,
 };
 pub(crate) const TABS: Tabs = Tabs::AS_BUILT;
-pub(crate) const REMEMBER_TAB: bool = ConfigKey::RememberTab.switched(None);
-pub(crate) const REMEMBER_WINDOW_SIZE: bool = ConfigKey::RememberWindowSize.switched(None);
-pub(crate) const REMEMBER_SETTINGS_CATEGORY: bool =
-    ConfigKey::RememberSettingsCategory.switched(None);
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Standing {
     pub(crate) output: OutputSettings,
-    pub(crate) renderers: bool,
     pub(crate) appearance: Appearance,
-    pub(crate) online: bool,
-    pub(crate) musicbrainz_mirror: bool,
-    pub(crate) after_scan: bool,
-    pub(crate) enrich_on_metered: bool,
-    pub(crate) stall_downloads_on_metered: bool,
+    pub(crate) switches: Switches,
     pub(crate) flac_renderers_named: bool,
     pub(crate) formats_learnt: bool,
-    pub(crate) studies: bool,
-    pub(crate) by_sound: bool,
-    pub(crate) lyrics: bool,
-    pub(crate) lyrics_by_the_locale: bool,
     pub(crate) contact_given: bool,
     pub(crate) measurer_given: bool,
     pub(crate) key_given: bool,
@@ -74,31 +45,22 @@ pub(crate) struct Standing {
     pub(crate) lastfm_given: bool,
     pub(crate) listening_from: Listening,
     pub(crate) listening_for: Duration,
-    pub(crate) resume: bool,
     pub(crate) history_kept: HistoryKept,
     pub(crate) music_filters: MusicFilters,
     pub(crate) skip_under_repeat: SkipUnderRepeat,
     pub(crate) previous_restarts: PreviousRestarts,
     pub(crate) smart_shuffle: SmartShuffle,
-    pub(crate) notify: bool,
-    pub(crate) check_for_updates: bool,
     pub(crate) window_buttons: WindowButtons,
-    pub(crate) scroll_volume: bool,
-    pub(crate) mouse_navigation: bool,
     pub(crate) reduced_motion: bool,
     pub(crate) scrollbars: ScrollbarMode,
     pub(crate) language: LanguageChoice,
     pub(crate) spectral: Spectral,
     pub(crate) tabs: Tabs,
-    pub(crate) remember_tab: bool,
-    pub(crate) remember_window_size: bool,
-    pub(crate) remember_settings_category: bool,
     pub(crate) presence: Presence,
     pub(crate) synchronised: Synchronised,
     pub(crate) template_given: bool,
     pub(crate) inbox_given: bool,
     pub(crate) music_folder_given: bool,
-    pub(crate) file_dropped: bool,
     pub(crate) subsonic_given: bool,
     pub(crate) jellyfin_given: bool,
     pub(crate) tidal_given: bool,
@@ -114,17 +76,9 @@ impl Standing {
         Self {
             output: OutputSettings::of(&EngineConfig::default()),
             appearance: Appearance::DEFAULT,
-            online: ONLINE,
-            musicbrainz_mirror: MUSICBRAINZ_MIRROR,
-            after_scan: ENRICH_AFTER_SCAN,
-            enrich_on_metered: ENRICH_ON_METERED,
-            stall_downloads_on_metered: STALL_DOWNLOADS_ON_METERED,
+            switches: Switches::UNSAID,
             flac_renderers_named: false,
             formats_learnt: false,
-            studies: STUDY,
-            by_sound: BY_SOUND,
-            lyrics: FETCH_LYRICS,
-            lyrics_by_the_locale: LYRICS_BY_THE_LOCALE,
             contact_given: false,
             measurer_given: false,
             key_given: false,
@@ -133,32 +87,22 @@ impl Standing {
             lastfm_given: false,
             listening_from: Listening::default(),
             listening_for: CLIP_BY_DEFAULT,
-            resume: RESUME,
             history_kept: HISTORY_KEPT,
             music_filters: MusicFilters::default(),
             skip_under_repeat: SkipUnderRepeat::default(),
             previous_restarts: PreviousRestarts::default(),
             smart_shuffle: SmartShuffle::default(),
-            notify: NOTIFY,
-            check_for_updates: CHECK_FOR_UPDATES,
-            renderers: false,
             window_buttons: WINDOW_BUTTONS,
-            scroll_volume: SCROLL_VOLUME,
-            mouse_navigation: MOUSE_NAVIGATION,
             reduced_motion: REDUCED_MOTION,
             scrollbars: SCROLLBARS,
             language: LANGUAGE,
             spectral: SPECTRAL,
             tabs: TABS,
-            remember_tab: REMEMBER_TAB,
-            remember_window_size: REMEMBER_WINDOW_SIZE,
-            remember_settings_category: REMEMBER_SETTINGS_CATEGORY,
             presence: Presence::OFF,
             synchronised: Synchronised::default(),
             template_given: false,
             inbox_given: false,
             music_folder_given: false,
-            file_dropped: FILE_DROPPED,
             subsonic_given: false,
             jellyfin_given: false,
             tidal_given: false,
@@ -174,10 +118,21 @@ impl Standing {
 static AS_BUILT: LazyLock<Standing> = LazyLock::new(Standing::as_built);
 
 pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
+    switched_from_as_built(group, &standing.switches)
+        || differs_but_for_its_switches(group, standing)
+}
+
+pub(crate) fn switched_from_as_built(group: Group, worn: &Switches) -> bool {
+    group
+        .switches()
+        .any(|switch| worn.is_on(switch) != switch.on_unless_said())
+}
+
+fn differs_but_for_its_switches(group: Group, standing: &Standing) -> bool {
     let (worn, built) = (&standing.output, &AS_BUILT.output);
 
     match group {
-        Group::Device => worn.sink != built.sink || standing.renderers,
+        Group::Device => worn.sink != built.sink,
         Group::DeviceVolume => worn.device_volume != built.device_volume,
         Group::SampleRate => worn.prefer_bit_perfect != built.prefer_bit_perfect,
         Group::GraphRate => worn.force_graph_rate != built.force_graph_rate,
@@ -195,31 +150,15 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         }
         Group::TruePeak => worn.true_peak != built.true_peak,
         Group::LossySources => worn.restoration != built.restoration,
-        Group::Equalising => worn.equaliser.enabled != built.equaliser.enabled,
         Group::BoundTo => worn.equaliser.binds_anything(),
-        Group::Lookups => {
-            standing.online != ONLINE || standing.musicbrainz_mirror != MUSICBRAINZ_MIRROR
-        }
-        Group::AfterScan => standing.after_scan != ENRICH_AFTER_SCAN,
-        Group::Metered => {
-            standing.enrich_on_metered != ENRICH_ON_METERED
-                || standing.stall_downloads_on_metered != STALL_DOWNLOADS_ON_METERED
-        }
         Group::FlacRenderers => standing.flac_renderers_named,
         Group::LearntFormats => standing.formats_learnt,
-        Group::Studies => standing.studies != STUDY || standing.by_sound != BY_SOUND,
-        Group::Lyrics => {
-            standing.lyrics != FETCH_LYRICS || standing.lyrics_by_the_locale != LYRICS_BY_THE_LOCALE
-        }
-        Group::Resuming => standing.resume != RESUME,
         Group::History => standing.history_kept != HISTORY_KEPT,
         Group::MusicExtensions => standing.music_filters.extensions != MusicExtensions::default(),
         Group::MinimumLength => standing.music_filters.minimum_length != MinimumLength::default(),
         Group::Repeating => standing.skip_under_repeat != SkipUnderRepeat::default(),
         Group::PreviousButton => standing.previous_restarts != PreviousRestarts::default(),
         Group::Shuffling => standing.smart_shuffle != SmartShuffle::default(),
-        Group::Notifications => standing.notify != NOTIFY,
-        Group::Updates => standing.check_for_updates != CHECK_FOR_UPDATES,
         Group::Discord => {
             let (worn, off) = (&standing.presence, &Presence::OFF);
             worn.enabled != off.enabled || worn.app != off.app
@@ -232,7 +171,6 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
                 || worn.progress != off.progress
                 || worn.while_paused != off.while_paused
         }
-        Group::Syncing => standing.synchronised.enabled != AS_BUILT.synchronised.enabled,
         Group::SyncConnection => {
             let (worn, built) = (&standing.synchronised, &AS_BUILT.synchronised);
             worn.nearby_only != built.nearby_only
@@ -252,7 +190,7 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
         }
         Group::Organising => standing.template_given,
         Group::Inbox => standing.inbox_given,
-        Group::Folders => standing.music_folder_given || standing.file_dropped != FILE_DROPPED,
+        Group::Folders => standing.music_folder_given,
         Group::ResonateKey => standing.resonate_key_given,
         Group::RoomCorrection => standing.convolving,
         Group::Speakers => standing.speakers_moved,
@@ -271,19 +209,25 @@ pub(crate) fn differs(group: Group, standing: &Standing) -> bool {
                 || standing.appearance.follows.text != Appearance::DEFAULT.follows.text
         }
         Group::WindowButtons => standing.window_buttons != WINDOW_BUTTONS,
-        Group::VolumeWheel => standing.scroll_volume != SCROLL_VOLUME,
-        Group::MouseNavigation => standing.mouse_navigation != MOUSE_NAVIGATION,
         Group::Motion => standing.reduced_motion != REDUCED_MOTION,
         Group::Scrollbars => standing.scrollbars != SCROLLBARS,
         Group::Language => standing.language != LANGUAGE,
         Group::LiveSpectrum => standing.spectral != SPECTRAL,
         Group::Tabs => standing.tabs != TABS,
-        Group::WindowState => {
-            standing.remember_tab != REMEMBER_TAB
-                || standing.remember_window_size != REMEMBER_WINDOW_SIZE
-                || standing.remember_settings_category != REMEMBER_SETTINGS_CATEGORY
-        }
-        Group::Bands
+        Group::Equalising
+        | Group::Syncing
+        | Group::Lookups
+        | Group::AfterScan
+        | Group::Metered
+        | Group::Studies
+        | Group::Lyrics
+        | Group::Resuming
+        | Group::Notifications
+        | Group::Updates
+        | Group::VolumeWheel
+        | Group::MouseNavigation
+        | Group::WindowState
+        | Group::Bands
         | Group::AutoEq
         | Group::OwnMeasurement
         | Group::RoomMeasurement
@@ -362,6 +306,27 @@ mod tests {
                 "{} says it differs from the default it is the default of",
                 group.title()
             );
+        }
+    }
+
+    #[test]
+    fn every_switch_is_put_back_and_weighed_by_the_one_group_holding_it() {
+        for switch in resonate_core::Switch::ALL {
+            let holding: Vec<_> = Group::ALL
+                .into_iter()
+                .filter(|group| group.switches().any(|held| held == switch))
+                .collect();
+
+            assert_eq!(
+                holding.len(),
+                1,
+                "{switch} is held by {} groups",
+                holding.len()
+            );
+
+            let turned = Switches::UNSAID.with(switch, !switch.on_unless_said());
+
+            assert!(switched_from_as_built(holding[0], &turned));
         }
     }
 
@@ -498,41 +463,6 @@ mod tests {
             }
         ));
         assert!(differs(
-            Group::Lookups,
-            &Standing {
-                online: false,
-                ..built.clone()
-            }
-        ));
-        assert!(differs(
-            Group::Lookups,
-            &Standing {
-                musicbrainz_mirror: true,
-                ..built.clone()
-            }
-        ));
-        assert!(differs(
-            Group::AfterScan,
-            &Standing {
-                after_scan: false,
-                ..built.clone()
-            }
-        ));
-        assert!(differs(
-            Group::Metered,
-            &Standing {
-                enrich_on_metered: true,
-                ..built.clone()
-            }
-        ));
-        assert!(differs(
-            Group::Metered,
-            &Standing {
-                stall_downloads_on_metered: true,
-                ..built.clone()
-            }
-        ));
-        assert!(differs(
             Group::FlacRenderers,
             &Standing {
                 flac_renderers_named: true,
@@ -543,34 +473,6 @@ mod tests {
             Group::LearntFormats,
             &Standing {
                 formats_learnt: true,
-                ..built.clone()
-            }
-        ));
-        assert!(differs(
-            Group::Studies,
-            &Standing {
-                studies: false,
-                ..built.clone()
-            }
-        ));
-        assert!(differs(
-            Group::Studies,
-            &Standing {
-                by_sound: true,
-                ..built.clone()
-            }
-        ));
-        assert!(differs(
-            Group::Lyrics,
-            &Standing {
-                lyrics: false,
-                ..built.clone()
-            }
-        ));
-        assert!(differs(
-            Group::Lyrics,
-            &Standing {
-                lyrics_by_the_locale: true,
                 ..built.clone()
             }
         ));

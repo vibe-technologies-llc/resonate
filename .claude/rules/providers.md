@@ -815,7 +815,7 @@ manifest URL must be HTTPS on `manifest.tidal.com` or a subdomain.
 `monochrome` setting names, else `tracks.monochrome.st` only where `hosted-services` is on (the default). The
 binary's `Hosting` (`Hosted`/`Custom`) builds both overridable services; `hosting` answers `None`
 for neither a name nor the opt-in. The settings pane's TIDAL group carries the switch *Ask the
-hosted services* (`Online::hosted_services`, `Setting::HostedServices`); *Forget* in that group
+hosted services* (`Online::hosted_services`, `Setting::Switched(Switch::HostedServices, _)`); *Forget* in that group
 turns it off. Two routes:
 `/search/tracks?q=<words>&limit=` answers `tracks` listings (`trackId`, `isrc`, `playable`, `title`,
 `artistNames`, `duration` in milliseconds), `/track/<trackId>` the whole FLAC.

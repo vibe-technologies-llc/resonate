@@ -5,6 +5,8 @@ use std::{
     sync::Arc,
 };
 
+#[cfg(feature = "online")]
+use resonate_core::Switch;
 use resonate_inbox::Inbox;
 #[cfg(feature = "online")]
 use resonate_jellyfin::Jellyfin;
@@ -392,7 +394,7 @@ fn text(value: &Option<String>) -> &str {
 #[cfg(feature = "online")]
 impl Accounts {
     fn of(config: &Config) -> Self {
-        if !config.online_enabled() {
+        if !config.is_on(Switch::Online) {
             return Self::default();
         }
         Typed {
@@ -417,9 +419,9 @@ impl Accounts {
             hifi_api: [text(&config.hifi_api), text(&config.hifi_secret)],
             monochrome: text(&config.monochrome),
             youtube_music: config
-                .turns_youtube_music_on()
+                .is_on(Switch::YoutubeMusic)
                 .then(|| [text(&config.youtube_music_cookies), text(&config.yt_dlp)]),
-            hosted_services: config.hosted_services_allowed(),
+            hosted_services: config.is_on(Switch::HostedServices),
         }
         .accounts()
     }
@@ -705,7 +707,7 @@ pub fn sign_in_to_tidal(config: &Config, settings: &Path) -> Result<()> {
 
     use resonate_providers::{Client, SignsIn as _};
 
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
     let kept = |held: &Option<String>| {
@@ -765,6 +767,7 @@ mod tests {
 
     #[cfg(feature = "online")]
     use resonate_core::SourceId;
+    use resonate_core::{Switch, Switches};
 
     use super::*;
 
@@ -782,7 +785,7 @@ mod tests {
         let nowhere = PathBuf::from("/nowhere/resonate/config.toml");
 
         let offline = Config {
-            online: Some(false),
+            switches: Switches::UNSAID.with(Switch::Online, false),
             tidal_client_id: Some("client".to_owned()),
             ..Config::default()
         };
@@ -806,7 +809,7 @@ mod tests {
     #[test]
     fn an_inbox_is_registered_even_when_online_services_are_off() {
         let offline = Config {
-            online: Some(false),
+            switches: Switches::UNSAID.with(Switch::Online, false),
             ..Config::default()
         };
         assert!(!registered(&offline, None).has_a_source());
@@ -843,7 +846,7 @@ mod tests {
         assert!(named(&whole).contains(&"subsonic".to_owned()));
 
         let offline = Config {
-            online: Some(false),
+            switches: whole.switches.with(Switch::Online, false),
             ..whole
         };
         assert!(!named(&offline).contains(&"subsonic".to_owned()));
@@ -874,7 +877,7 @@ mod tests {
         assert!(!named(&whole).contains(&"jellyfin".to_owned()));
 
         let offline = Config {
-            online: Some(false),
+            switches: whole.switches.with(Switch::Online, false),
             ..whole
         };
         assert!(!schemes(&offline).contains(&"jellyfin".to_owned()));
@@ -930,7 +933,7 @@ mod tests {
         assert!(named(&whole).contains(&"tidal".to_owned()));
 
         let offline = Config {
-            online: Some(false),
+            switches: whole.switches.with(Switch::Online, false),
             ..whole
         };
         assert!(!named(&offline).contains(&"tidal".to_owned()));
@@ -942,7 +945,7 @@ mod tests {
         let keyed = |server: Option<&str>, hosted: bool| Config {
             hifi_api: server.map(str::to_owned),
             hifi_secret: Some(" key ".to_owned()),
-            hosted_services: Some(hosted),
+            switches: Switches::UNSAID.with(Switch::HostedServices, hosted),
             ..Config::default()
         };
 
@@ -970,7 +973,7 @@ mod tests {
         assert!(
             Accounts::of(&Config {
                 hifi_secret: Some("  ".to_owned()),
-                hosted_services: Some(false),
+                switches: Switches::UNSAID.with(Switch::HostedServices, false),
                 ..Config::default()
             })
             .0
@@ -983,7 +986,7 @@ mod tests {
     fn a_key_is_registered_and_never_prints_its_secret() {
         let config = Config {
             hifi_secret: Some("hush-secret".to_owned()),
-            hosted_services: Some(false),
+            switches: Switches::UNSAID.with(Switch::HostedServices, false),
             ..Config::default()
         };
 
@@ -995,13 +998,13 @@ mod tests {
     #[test]
     fn the_hosted_hifi_api_is_registered_only_when_the_listener_allowed_hosted_services() {
         let unasked = Config {
-            hosted_services: Some(false),
+            switches: Switches::UNSAID.with(Switch::HostedServices, false),
             ..Config::default()
         };
         assert!(!named(&unasked).contains(&"hifi-api".to_owned()));
 
         let allowed = Config {
-            hosted_services: Some(true),
+            switches: Switches::UNSAID.with(Switch::HostedServices, true),
             ..Config::default()
         };
         assert!(named(&allowed).contains(&"hifi-api".to_owned()));
@@ -1016,7 +1019,7 @@ mod tests {
         );
 
         let offline = Config {
-            online: Some(false),
+            switches: allowed.switches.with(Switch::Online, false),
             ..allowed
         };
         assert!(!named(&offline).contains(&"hifi-api".to_owned()));
@@ -1039,7 +1042,7 @@ mod tests {
         );
 
         let offline = Config {
-            online: Some(false),
+            switches: whole.switches.with(Switch::Online, false),
             ..whole
         };
         assert!(!named(&offline).contains(&"hifi-api".to_owned()));
@@ -1057,14 +1060,14 @@ mod tests {
     #[test]
     fn the_hosted_monochrome_is_registered_after_hifi_api_only_when_hosted_services_are_allowed() {
         let unasked = Config {
-            hosted_services: Some(false),
+            switches: Switches::UNSAID.with(Switch::HostedServices, false),
             ..Config::default()
         };
         assert!(!named(&unasked).contains(&"monochrome".to_owned()));
         assert!(!monochrome_of(&unasked));
 
         let allowed = Config {
-            hosted_services: Some(true),
+            switches: Switches::UNSAID.with(Switch::HostedServices, true),
             ..Config::default()
         };
         let hosted = named(&allowed);
@@ -1096,7 +1099,7 @@ mod tests {
         );
 
         let offline = Config {
-            online: Some(false),
+            switches: whole.switches.with(Switch::Online, false),
             ..whole
         };
         assert!(!named(&offline).contains(&"monochrome".to_owned()));
@@ -1110,20 +1113,20 @@ mod tests {
         assert_eq!(Accounts::of(&unasked).youtube_music(), None);
 
         let turned_off = Config {
-            youtube_music: Some(false),
+            switches: Switches::UNSAID.with(Switch::YoutubeMusic, false),
             youtube_music_cookies: Some("firefox".to_owned()),
             ..Config::default()
         };
         assert!(!named(&turned_off).contains(&"ytmusic".to_owned()));
 
         let turned_on = Config {
-            youtube_music: Some(true),
+            switches: Switches::UNSAID.with(Switch::YoutubeMusic, true),
             ..Config::default()
         };
         assert!(named(&turned_on).contains(&"ytmusic".to_owned()));
 
         let offline = Config {
-            online: Some(false),
+            switches: turned_on.switches.with(Switch::Online, false),
             ..turned_on
         };
         assert!(!named(&offline).contains(&"ytmusic".to_owned()));
@@ -1133,11 +1136,12 @@ mod tests {
     #[test]
     fn youtube_music_is_registered_last() {
         let config = Config {
-            youtube_music: Some(true),
+            switches: Switches::UNSAID
+                .with(Switch::YoutubeMusic, true)
+                .with(Switch::HostedServices, true),
             subsonic: Some("http://music.local:4533".to_owned()),
             subsonic_user: Some("listener".to_owned()),
             subsonic_password: Some("sesame".to_owned()),
-            hosted_services: Some(true),
             ..Config::default()
         };
 
@@ -1159,11 +1163,11 @@ mod tests {
                 .collect()
         };
         let off = Config {
-            hosted_services: Some(true),
+            switches: Switches::UNSAID.with(Switch::HostedServices, true),
             ..Config::default()
         };
         let on = Config {
-            youtube_music: Some(true),
+            switches: off.switches.with(Switch::YoutubeMusic, true),
             ..off.clone()
         };
 
@@ -1184,7 +1188,7 @@ mod tests {
     #[test]
     fn a_youtube_music_account_is_named_by_its_cookies_and_program_and_prints_neither_cookie() {
         let config = Config {
-            youtube_music: Some(true),
+            switches: Switches::UNSAID.with(Switch::YoutubeMusic, true),
             youtube_music_cookies: Some(" firefox:/home/a/zen ".to_owned()),
             yt_dlp: Some(" /opt/yt-dlp ".to_owned()),
             ..Config::default()
@@ -1207,7 +1211,7 @@ mod tests {
     #[test]
     fn a_youtube_music_account_with_nothing_given_asks_the_path_and_no_cookies() {
         let accounts = Accounts::of(&Config {
-            youtube_music: Some(true),
+            switches: Switches::UNSAID.with(Switch::YoutubeMusic, true),
             youtube_music_cookies: Some("  ".to_owned()),
             yt_dlp: Some("  ".to_owned()),
             ..Config::default()

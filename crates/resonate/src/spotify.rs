@@ -34,6 +34,9 @@ mod tests {
     #[cfg(feature = "online")]
     use std::path::PathBuf;
 
+    #[cfg(feature = "online")]
+    use resonate_core::{Switch, Switches};
+
     use super::*;
 
     #[cfg(feature = "online")]
@@ -41,7 +44,7 @@ mod tests {
     fn a_sign_in_with_online_off_or_no_client_is_refused_before_anything_is_asked() {
         let nowhere = PathBuf::from("/nowhere/resonate/config.toml");
         let offline = Config {
-            online: Some(false),
+            switches: Switches::UNSAID.with(Switch::Online, false),
             spotify_client_id: Some("registered".to_owned()),
             ..Config::default()
         };

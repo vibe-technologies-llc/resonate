@@ -16,8 +16,9 @@ use clap::ValueEnum as _;
 use resonate_cast::Given;
 use resonate_core::{
     Accent, AppId, ArtistsDrawn, HeadYaw, Icon, Pictured, Presence, RemoteTrust, ScrollbarMode,
-    Shown, SpeakerAngle, SpeakerElevation, Speakers, SpectrumBands, SpectrumFalls, SpectrumFloor,
-    SpectrumTilt, SyncedSongs, TextSize, Theme, Trim, Volume, file_facts,
+    Shown, Sorted, SpeakerAngle, SpeakerElevation, Speakers, SpectrumBands, SpectrumFalls,
+    SpectrumFloor, SpectrumTilt, Switch, Switches, SyncedSongs, TextSize, Theme, Trim, Valued,
+    Volume, file_facts,
 };
 #[cfg(any(feature = "ui", test))]
 use resonate_core::{Appearance, Following};
@@ -264,16 +265,8 @@ pub struct Config {
     pub language: Option<LanguageChoice>,
     pub follow_desktop_scheme: Option<bool>,
     pub follow_desktop_text_size: Option<bool>,
-    pub online: Option<bool>,
-    pub enrich_after_scan: Option<bool>,
-    pub enrich_on_metered: Option<bool>,
-    pub musicbrainz_mirror: Option<bool>,
+    pub switches: Switches,
     pub musicbrainz_replication_token: Option<String>,
-    pub stall_downloads_on_metered: Option<bool>,
-    pub study: Option<bool>,
-    pub fetch_lyrics: Option<bool>,
-    pub lyrics_language_from_locale: Option<bool>,
-    pub identify_by_sound: Option<bool>,
     pub skip_repeats_queue: Option<bool>,
     pub previous_restarts: Option<bool>,
     pub shuffle_style: Option<ShuffleStyle>,
@@ -290,25 +283,18 @@ pub struct Config {
     pub lastfm_session: Option<String>,
     pub listen_from: Option<Listening>,
     pub listen_for: Option<Duration>,
-    pub equaliser: Option<bool>,
     pub equaliser_for: Option<Bindings>,
     pub equaliser_measurer: Option<String>,
     pub equaliser_measurer_for: BTreeMap<NodeName, String>,
-    pub resume: Option<bool>,
-    pub renderers: Option<bool>,
     pub flac_above_96k_for: BTreeSet<NodeName>,
     pub formats_learnt_for: Learnt,
     pub renderers_at: BTreeSet<Located>,
     pub cast_at: BTreeSet<Given>,
     pub history_kept: Option<HistoryKept>,
     pub organise_as: Option<Layout>,
-    pub notify: Option<bool>,
-    pub check_for_updates: Option<bool>,
     pub update_dismissed: Option<String>,
     pub minimise_button: Option<bool>,
     pub maximise_button: Option<bool>,
-    pub scroll_volume: Option<bool>,
-    pub mouse_navigation: Option<bool>,
     pub reduced_motion: Option<bool>,
     pub scrollbars: Option<ScrollbarMode>,
     pub spectrum_tilt: Option<SpectrumTilt>,
@@ -318,18 +304,14 @@ pub struct Config {
     pub suggestions_tab: Option<bool>,
     pub missing_tab: Option<bool>,
     pub tab_counts: Option<bool>,
-    pub remember_tab: Option<bool>,
     pub last_tab: Option<String>,
     pub artists_drawn: Option<ArtistsDrawn>,
-    pub remember_window_size: Option<bool>,
     pub window_size: Option<(u32, u32)>,
-    pub remember_settings_category: Option<bool>,
     pub last_settings_category: Option<String>,
     pub inbox: Option<PathBuf>,
     pub music_folder: Option<PathBuf>,
     pub music_extensions: Option<MusicExtensions>,
     pub minimum_length: Option<MinimumLength>,
-    pub file_dropped: Option<bool>,
     pub convolution: Option<PathBuf>,
     pub speaker_angle: Option<SpeakerAngle>,
     pub speaker_elevation: Option<SpeakerElevation>,
@@ -351,11 +333,8 @@ pub struct Config {
     pub hifi_api: Option<String>,
     pub hifi_secret: Option<String>,
     pub monochrome: Option<String>,
-    pub hosted_services: Option<bool>,
-    pub youtube_music: Option<bool>,
     pub youtube_music_cookies: Option<String>,
     pub yt_dlp: Option<String>,
-    pub youtube_music_keep_order: Option<bool>,
     pub discord: Option<bool>,
     pub discord_app: Option<AppId>,
     pub discord_shows: Option<Shown>,
@@ -363,8 +342,6 @@ pub struct Config {
     pub discord_icon: Option<Icon>,
     pub discord_progress: Option<bool>,
     pub discord_paused: Option<bool>,
-    pub sync: Option<bool>,
-    pub sync_nearby_only: Option<bool>,
     pub sync_server: Option<String>,
     pub sync_server_certificate: Option<PathBuf>,
     pub sync_stun: Option<String>,
@@ -419,16 +396,8 @@ impl fmt::Debug for Config {
             language,
             follow_desktop_scheme,
             follow_desktop_text_size,
-            online,
-            enrich_after_scan,
-            enrich_on_metered,
-            musicbrainz_mirror,
+            switches,
             musicbrainz_replication_token,
-            stall_downloads_on_metered,
-            study,
-            fetch_lyrics,
-            lyrics_language_from_locale,
-            identify_by_sound,
             skip_repeats_queue,
             previous_restarts,
             shuffle_style,
@@ -445,25 +414,18 @@ impl fmt::Debug for Config {
             lastfm_session,
             listen_from,
             listen_for,
-            equaliser,
             equaliser_for,
             equaliser_measurer,
             equaliser_measurer_for,
-            resume,
-            renderers,
             flac_above_96k_for,
             formats_learnt_for,
             renderers_at,
             cast_at,
             history_kept,
             organise_as,
-            notify,
-            check_for_updates,
             update_dismissed,
             minimise_button,
             maximise_button,
-            scroll_volume,
-            mouse_navigation,
             reduced_motion,
             scrollbars,
             spectrum_tilt,
@@ -473,18 +435,14 @@ impl fmt::Debug for Config {
             suggestions_tab,
             missing_tab,
             tab_counts,
-            remember_tab,
             last_tab,
             artists_drawn,
-            remember_window_size,
             window_size,
-            remember_settings_category,
             last_settings_category,
             inbox,
             music_folder,
             music_extensions,
             minimum_length,
-            file_dropped,
             convolution,
             speaker_angle,
             speaker_elevation,
@@ -506,11 +464,8 @@ impl fmt::Debug for Config {
             hifi_api,
             hifi_secret,
             monochrome,
-            hosted_services,
-            youtube_music,
             youtube_music_cookies,
             yt_dlp,
-            youtube_music_keep_order,
             discord,
             discord_app,
             discord_shows,
@@ -518,8 +473,6 @@ impl fmt::Debug for Config {
             discord_icon,
             discord_progress,
             discord_paused,
-            sync,
-            sync_nearby_only,
             sync_server,
             sync_server_certificate,
             sync_stun,
@@ -560,19 +513,11 @@ impl fmt::Debug for Config {
             .field("language", language)
             .field("follow_desktop_scheme", follow_desktop_scheme)
             .field("follow_desktop_text_size", follow_desktop_text_size)
-            .field("online", online)
-            .field("enrich_after_scan", enrich_after_scan)
-            .field("enrich_on_metered", enrich_on_metered)
-            .field("musicbrainz_mirror", musicbrainz_mirror)
+            .field("switches", switches)
             .field(
                 "musicbrainz_replication_token",
                 &withheld(musicbrainz_replication_token.as_ref()),
             )
-            .field("stall_downloads_on_metered", stall_downloads_on_metered)
-            .field("study", study)
-            .field("fetch_lyrics", fetch_lyrics)
-            .field("lyrics_language_from_locale", lyrics_language_from_locale)
-            .field("identify_by_sound", identify_by_sound)
             .field("skip_repeats_queue", skip_repeats_queue)
             .field("previous_restarts", previous_restarts)
             .field("shuffle_style", shuffle_style)
@@ -589,25 +534,18 @@ impl fmt::Debug for Config {
             .field("lastfm_session", &withheld(lastfm_session.as_ref()))
             .field("listen_from", listen_from)
             .field("listen_for", listen_for)
-            .field("equaliser", equaliser)
             .field("equaliser_for", equaliser_for)
             .field("equaliser_measurer", equaliser_measurer)
             .field("equaliser_measurer_for", equaliser_measurer_for)
-            .field("resume", resume)
-            .field("renderers", renderers)
             .field("flac_above_96k_for", flac_above_96k_for)
             .field("formats_learnt_for", formats_learnt_for)
             .field("renderers_at", renderers_at)
             .field("cast_at", cast_at)
             .field("history_kept", history_kept)
             .field("organise_as", organise_as)
-            .field("notify", notify)
-            .field("check_for_updates", check_for_updates)
             .field("update_dismissed", update_dismissed)
             .field("minimise_button", minimise_button)
             .field("maximise_button", maximise_button)
-            .field("scroll_volume", scroll_volume)
-            .field("mouse_navigation", mouse_navigation)
             .field("reduced_motion", reduced_motion)
             .field("scrollbars", scrollbars)
             .field("spectrum_tilt", spectrum_tilt)
@@ -617,18 +555,14 @@ impl fmt::Debug for Config {
             .field("suggestions_tab", suggestions_tab)
             .field("missing_tab", missing_tab)
             .field("tab_counts", tab_counts)
-            .field("remember_tab", remember_tab)
             .field("last_tab", last_tab)
             .field("artists_drawn", artists_drawn)
-            .field("remember_window_size", remember_window_size)
             .field("window_size", window_size)
-            .field("remember_settings_category", remember_settings_category)
             .field("last_settings_category", last_settings_category)
             .field("inbox", inbox)
             .field("music_folder", music_folder)
             .field("music_extensions", music_extensions)
             .field("minimum_length", minimum_length)
-            .field("file_dropped", file_dropped)
             .field("convolution", convolution)
             .field("speaker_angle", speaker_angle)
             .field("speaker_elevation", speaker_elevation)
@@ -659,14 +593,11 @@ impl fmt::Debug for Config {
             .field("hifi_api", hifi_api)
             .field("hifi_secret", &withheld(hifi_secret.as_ref()))
             .field("monochrome", monochrome)
-            .field("hosted_services", hosted_services)
-            .field("youtube_music", youtube_music)
             .field(
                 "youtube_music_cookies",
                 &withheld(youtube_music_cookies.as_ref()),
             )
             .field("yt_dlp", yt_dlp)
-            .field("youtube_music_keep_order", youtube_music_keep_order)
             .field("discord", discord)
             .field("discord_app", discord_app)
             .field("discord_shows", discord_shows)
@@ -674,8 +605,6 @@ impl fmt::Debug for Config {
             .field("discord_icon", discord_icon)
             .field("discord_progress", discord_progress)
             .field("discord_paused", discord_paused)
-            .field("sync", sync)
-            .field("sync_nearby_only", sync_nearby_only)
             .field("sync_server", sync_server)
             .field("sync_server_certificate", sync_server_certificate)
             .field("sync_stun", sync_stun)
@@ -760,40 +689,15 @@ impl Config {
         }
     }
 
-    #[cfg(any(feature = "online", feature = "ui", test))]
-    pub fn online_enabled(&self) -> bool {
-        ConfigKey::Online.switched(self.online)
-    }
-
-    #[cfg(any(feature = "online", feature = "ui"))]
-    pub fn hosted_services_allowed(&self) -> bool {
-        ConfigKey::HostedServices.switched(self.hosted_services)
-    }
-
-    #[cfg(any(feature = "online", feature = "ui", test))]
-    pub fn turns_youtube_music_on(&self) -> bool {
-        ConfigKey::YoutubeMusic.switched(self.youtube_music)
-    }
-
-    #[cfg(any(feature = "online", feature = "ui", test))]
-    pub fn keeps_youtubes_order(&self) -> bool {
-        ConfigKey::YoutubeMusicKeepOrder.switched(self.youtube_music_keep_order)
-    }
-
     #[cfg(any(feature = "sync", test))]
     pub fn syncs(&self) -> bool {
-        ConfigKey::Sync.switched(self.sync)
-            && (ConfigKey::Online.switched(self.online) || self.syncs_nearby_only())
-    }
-
-    #[cfg(any(feature = "sync", feature = "ui", test))]
-    pub fn syncs_nearby_only(&self) -> bool {
-        ConfigKey::SyncNearbyOnly.switched(self.sync_nearby_only)
+        self.is_on(Switch::Sync)
+            && (self.is_on(Switch::Online) || self.is_on(Switch::SyncNearbyOnly))
     }
 
     #[cfg(feature = "online")]
     pub fn submits_to(&self) -> Accounts {
-        if !self.online_enabled() {
+        if !self.is_on(Switch::Online) {
             return Accounts::default();
         }
         Accounts {
@@ -806,44 +710,9 @@ impl Config {
         }
     }
 
-    pub fn enriches_after_scan(&self) -> bool {
-        ConfigKey::EnrichAfterScan.switched(self.enrich_after_scan)
-    }
-
-    #[cfg(any(feature = "online", feature = "ui", test))]
-    pub fn enriches_on_metered(&self) -> bool {
-        ConfigKey::EnrichOnMetered.switched(self.enrich_on_metered)
-    }
-
-    #[cfg(any(feature = "online", feature = "ui"))]
-    pub fn mirrors_musicbrainz(&self) -> bool {
-        ConfigKey::MusicbrainzMirror.switched(self.musicbrainz_mirror)
-    }
-
     #[cfg(feature = "online")]
     pub fn musicbrainz_replication_token(&self) -> Option<&str> {
         self.musicbrainz_replication_token.as_deref()
-    }
-
-    pub fn stalls_downloads_on_metered(&self) -> bool {
-        ConfigKey::StallDownloadsOnMetered.switched(self.stall_downloads_on_metered)
-    }
-
-    pub fn studies(&self) -> bool {
-        ConfigKey::Study.switched(self.study)
-    }
-
-    pub fn fetches_lyrics(&self) -> bool {
-        ConfigKey::FetchLyrics.switched(self.fetch_lyrics)
-    }
-
-    #[cfg(feature = "ui")]
-    pub fn chooses_lyrics_by_the_locale(&self) -> bool {
-        ConfigKey::LyricsLanguageFromLocale.switched(self.lyrics_language_from_locale)
-    }
-
-    pub fn identifies_by_sound(&self) -> bool {
-        ConfigKey::IdentifyBySound.switched(self.identify_by_sound)
     }
 
     pub fn skip_under_repeat(&self) -> SkipUnderRepeat {
@@ -884,18 +753,6 @@ impl Config {
             .or_else(|| self.equaliser_measurer())
     }
 
-    pub fn equaliser_on(&self) -> bool {
-        ConfigKey::Equaliser.switched(self.equaliser)
-    }
-
-    pub fn resumes(&self) -> bool {
-        ConfigKey::Resume.switched(self.resume)
-    }
-
-    pub fn looks_for_renderers(&self) -> bool {
-        ConfigKey::Renderers.switched(self.renderers)
-    }
-
     pub fn renderers_vouched_for(&self) -> Vouched {
         Vouched::flac_at_any_rate(self.flac_above_96k_for.iter().filter_map(Udn::from_node))
     }
@@ -920,15 +777,6 @@ impl Config {
         self.history_kept.unwrap_or_default()
     }
 
-    pub fn notifies(&self) -> bool {
-        ConfigKey::Notify.switched(self.notify)
-    }
-
-    #[cfg(feature = "ui")]
-    pub fn checks_for_updates(&self) -> bool {
-        ConfigKey::CheckForUpdates.switched(self.check_for_updates)
-    }
-
     #[cfg(feature = "ui")]
     pub fn window_buttons(&self) -> resonate_ui::WindowButtons {
         let shown = resonate_ui::WindowButtons::SHOWN;
@@ -937,16 +785,6 @@ impl Config {
             minimise: self.minimise_button.unwrap_or(shown.minimise),
             maximise: self.maximise_button.unwrap_or(shown.maximise),
         }
-    }
-
-    #[cfg(feature = "ui")]
-    pub fn scrolls_the_volume(&self) -> bool {
-        ConfigKey::ScrollVolume.switched(self.scroll_volume)
-    }
-
-    #[cfg(feature = "ui")]
-    pub fn navigates_with_mouse_buttons(&self) -> bool {
-        ConfigKey::MouseNavigation.switched(self.mouse_navigation)
     }
 
     #[cfg(any(feature = "ui", test))]
@@ -972,11 +810,6 @@ impl Config {
             elevation: self.speaker_elevation(),
             yaw: self.head_yaw(),
         }
-    }
-
-    #[cfg(feature = "ui")]
-    pub fn files_what_is_dropped(&self) -> bool {
-        ConfigKey::FileDropped.switched(self.file_dropped)
     }
 
     #[cfg(feature = "ui")]
@@ -1016,24 +849,9 @@ impl Config {
     }
 
     #[cfg(feature = "ui")]
-    pub fn remembers_tab(&self) -> bool {
-        ConfigKey::RememberTab.switched(self.remember_tab)
-    }
-
-    #[cfg(feature = "ui")]
-    pub fn remembers_window_size(&self) -> bool {
-        ConfigKey::RememberWindowSize.switched(self.remember_window_size)
-    }
-
-    #[cfg(feature = "ui")]
     pub fn window_size(&self) -> Option<resonate_ui::WindowSize> {
         let (width, height) = self.window_size?;
         resonate_ui::WindowSize::new(width, height)
-    }
-
-    #[cfg(feature = "ui")]
-    pub fn remembers_settings_category(&self) -> bool {
-        ConfigKey::RememberSettingsCategory.switched(self.remember_settings_category)
     }
 
     #[cfg(feature = "ui")]
@@ -1243,6 +1061,10 @@ fn parse(path: &Path, text: &str, mut refused: impl FnMut(Error)) -> Result<Conf
 }
 
 impl Config {
+    pub const fn is_on(&self, switch: Switch) -> bool {
+        self.switches.is_on(switch)
+    }
+
     pub fn music_filters(&self) -> MusicFilters {
         MusicFilters {
             extensions: self.music_extensions.unwrap_or_default(),
@@ -1252,112 +1074,106 @@ impl Config {
 
     fn take(&mut self, at: At<'_>, value: &Item) -> Result<()> {
         let config = self;
-        match at.key {
-            ConfigKey::Sink => config.sink = Some(NodeName::new(at.string(value)?)),
-            ConfigKey::Library => config.library = a_path(at.string(value)?),
-            ConfigKey::Vault => config.vault = a_path(at.string(value)?),
-            ConfigKey::Quality => config.quality = Some(at.one_of(value, quality)?),
-            ConfigKey::FilterPhase => {
+        let key = match at.key.sorted() {
+            Sorted::Switch(switch) => {
+                config.switches.say(switch, at.boolean(value)?);
+                return Ok(());
+            }
+            Sorted::Valued(key) => key,
+        };
+        match key {
+            Valued::Sink => config.sink = Some(NodeName::new(at.string(value)?)),
+            Valued::Library => config.library = a_path(at.string(value)?),
+            Valued::Vault => config.vault = a_path(at.string(value)?),
+            Valued::Quality => config.quality = Some(at.one_of(value, quality)?),
+            Valued::FilterPhase => {
                 config.filter_phase = Some(at.one_of(value, filter_phase)?);
             }
-            ConfigKey::Dither => config.dither = Some(at.one_of(value, dither)?),
-            ConfigKey::NoiseShaping => {
+            Valued::Dither => config.dither = Some(at.one_of(value, dither)?),
+            Valued::NoiseShaping => {
                 config.noise_shaping = Some(at.one_of(value, noise_shaping)?);
             }
-            ConfigKey::ReplayGain => config.replay_gain = Some(at.one_of(value, replay_gain)?),
-            ConfigKey::ReplayGainPreAmp => config.pre_amp = Some(at.trim(value)?),
-            ConfigKey::ReplayGainUntagged => config.untagged = Some(at.trim(value)?),
-            ConfigKey::BitPerfect => config.bit_perfect = Some(at.boolean(value)?),
-            ConfigKey::Dop => config.dop = Some(at.boolean(value)?),
-            ConfigKey::DsdLikePcm => config.dsd_like_pcm = Some(at.boolean(value)?),
-            ConfigKey::DeviceVolume => config.device_volume = Some(at.boolean(value)?),
-            ConfigKey::TruePeak => config.true_peak = Some(at.boolean(value)?),
-            ConfigKey::RestoreLossy => {
+            Valued::ReplayGain => config.replay_gain = Some(at.one_of(value, replay_gain)?),
+            Valued::ReplayGainPreAmp => config.pre_amp = Some(at.trim(value)?),
+            Valued::ReplayGainUntagged => config.untagged = Some(at.trim(value)?),
+            Valued::BitPerfect => config.bit_perfect = Some(at.boolean(value)?),
+            Valued::Dop => config.dop = Some(at.boolean(value)?),
+            Valued::DsdLikePcm => config.dsd_like_pcm = Some(at.boolean(value)?),
+            Valued::DeviceVolume => config.device_volume = Some(at.boolean(value)?),
+            Valued::TruePeak => config.true_peak = Some(at.boolean(value)?),
+            Valued::RestoreLossy => {
                 config.restoration = Some(at.one_of(value, Restoration::named)?);
             }
-            ConfigKey::Crossfeed => {
+            Valued::Crossfeed => {
                 config.crossfeed = Some(at.one_of(value, Crossfeed::named)?);
             }
-            ConfigKey::ForceGraphRate => config.force_graph_rate = Some(at.boolean(value)?),
-            ConfigKey::BluetoothWake => config.bluetooth_wake = Some(at.boolean(value)?),
-            ConfigKey::BluetoothLeadMs => {
+            Valued::ForceGraphRate => config.force_graph_rate = Some(at.boolean(value)?),
+            Valued::BluetoothWake => config.bluetooth_wake = Some(at.boolean(value)?),
+            Valued::BluetoothLeadMs => {
                 let millis = at.within(value, &BLUETOOTH_LEAD_MS)?;
                 config.bluetooth_lead = Some(Duration::from_millis(millis));
             }
-            ConfigKey::BluetoothAwakeS => {
+            Valued::BluetoothAwakeS => {
                 let seconds = at.within(value, &BLUETOOTH_AWAKE_S)?;
                 config.bluetooth_awake = Some(Duration::from_secs(seconds));
             }
-            ConfigKey::Volume => {
+            Valued::Volume => {
                 let position = at.float(value)?;
                 let volume = Volume::new(position as f32).map_err(|_| at.rejected())?;
                 config.volume = Some(volume);
             }
-            ConfigKey::Theme => config.theme = Some(at.one_of(value, Theme::parse)?),
-            ConfigKey::Accent => config.accent = Some(at.one_of(value, Accent::parse)?),
-            ConfigKey::TextSize => {
+            Valued::Theme => config.theme = Some(at.one_of(value, Theme::parse)?),
+            Valued::Accent => config.accent = Some(at.one_of(value, Accent::parse)?),
+            Valued::TextSize => {
                 config.text_size = Some(at.one_of(value, TextSize::parse)?);
             }
-            ConfigKey::Language => {
+            Valued::Language => {
                 config.language = Some(at.one_of(value, LanguageChoice::parse)?);
             }
-            ConfigKey::FollowDesktopScheme => {
+            Valued::FollowDesktopScheme => {
                 config.follow_desktop_scheme = Some(at.boolean(value)?);
             }
-            ConfigKey::FollowDesktopTextSize => {
+            Valued::FollowDesktopTextSize => {
                 config.follow_desktop_text_size = Some(at.boolean(value)?);
             }
-            ConfigKey::Online => config.online = Some(at.boolean(value)?),
-            ConfigKey::EnrichAfterScan => config.enrich_after_scan = Some(at.boolean(value)?),
-            ConfigKey::EnrichOnMetered => config.enrich_on_metered = Some(at.boolean(value)?),
-            ConfigKey::MusicbrainzMirror => config.musicbrainz_mirror = Some(at.boolean(value)?),
-            ConfigKey::MusicbrainzReplicationToken => {
+            Valued::MusicbrainzReplicationToken => {
                 config.musicbrainz_replication_token = given(at.string(value)?);
             }
-            ConfigKey::StallDownloadsOnMetered => {
-                config.stall_downloads_on_metered = Some(at.boolean(value)?);
-            }
-            ConfigKey::Study => config.study = Some(at.boolean(value)?),
-            ConfigKey::FetchLyrics => config.fetch_lyrics = Some(at.boolean(value)?),
-            ConfigKey::LyricsLanguageFromLocale => {
-                config.lyrics_language_from_locale = Some(at.boolean(value)?);
-            }
-            ConfigKey::IdentifyBySound => config.identify_by_sound = Some(at.boolean(value)?),
-            ConfigKey::SkipRepeatsQueue => {
+            Valued::SkipRepeatsQueue => {
                 config.skip_repeats_queue = Some(at.boolean(value)?);
             }
-            ConfigKey::ShuffleStyle => {
+            Valued::ShuffleStyle => {
                 config.shuffle_style = Some(at.one_of(value, ShuffleStyle::parse)?);
             }
-            ConfigKey::ShuffleSpreadsArtists => {
+            Valued::ShuffleSpreadsArtists => {
                 config.shuffle_spreads_artists = Some(at.boolean(value)?);
             }
-            ConfigKey::ShuffleSpreadsAlbums => {
+            Valued::ShuffleSpreadsAlbums => {
                 config.shuffle_spreads_albums = Some(at.boolean(value)?);
             }
-            ConfigKey::ShuffleFreshFirst => {
+            Valued::ShuffleFreshFirst => {
                 config.shuffle_fresh_first = Some(at.boolean(value)?);
             }
-            ConfigKey::PreviousRestarts => {
+            Valued::PreviousRestarts => {
                 config.previous_restarts = Some(at.boolean(value)?);
             }
-            ConfigKey::Contact => config.contact = given(at.string(value)?),
-            ConfigKey::AcoustidKey => config.acoustid_key = given(at.string(value)?),
-            ConfigKey::AuddToken => config.audd_token = given(at.string(value)?),
-            ConfigKey::ListenbrainzToken => config.listenbrainz_token = given(at.string(value)?),
-            ConfigKey::LastfmKey => config.lastfm_key = given(at.string(value)?),
-            ConfigKey::LastfmSecret => config.lastfm_secret = given(at.string(value)?),
-            ConfigKey::LastfmSession => config.lastfm_session = given(at.string(value)?),
-            ConfigKey::ListenFrom => {
+            Valued::Contact => config.contact = given(at.string(value)?),
+            Valued::AcoustidKey => config.acoustid_key = given(at.string(value)?),
+            Valued::AuddToken => config.audd_token = given(at.string(value)?),
+            Valued::ListenbrainzToken => config.listenbrainz_token = given(at.string(value)?),
+            Valued::LastfmKey => config.lastfm_key = given(at.string(value)?),
+            Valued::LastfmSecret => config.lastfm_secret = given(at.string(value)?),
+            Valued::LastfmSession => config.lastfm_session = given(at.string(value)?),
+            Valued::ListenFrom => {
                 config.listen_from = Some(Listening::named(at.string(value)?));
             }
-            ConfigKey::ListenFor => {
+            Valued::ListenFor => {
                 let seconds = at.within(value, &LISTENS_FOR_SECONDS)?;
                 config.listen_for = Some(Duration::from_secs(seconds));
             }
-            ConfigKey::Inbox => config.inbox = a_path(at.string(value)?),
-            ConfigKey::MusicFolder => config.music_folder = a_path(at.string(value)?),
-            ConfigKey::MusicExtensions => {
+            Valued::Inbox => config.inbox = a_path(at.string(value)?),
+            Valued::MusicFolder => config.music_folder = a_path(at.string(value)?),
+            Valued::MusicExtensions => {
                 let array = value
                     .as_array()
                     .ok_or_else(|| at.mistyped(ValueKind::Array))?;
@@ -1372,159 +1188,135 @@ impl Config {
                 config.music_extensions =
                     Some(MusicExtensions::parse(&extensions).ok_or_else(|| at.rejected())?);
             }
-            ConfigKey::MinimumLength => {
+            Valued::MinimumLength => {
                 let seconds = at.within(value, &(0..=u64::from(MinimumLength::MAX_SECONDS)))?;
                 config.minimum_length = Some(
                     MinimumLength::new(u16::try_from(seconds).map_err(|_| at.rejected())?)
                         .ok_or_else(|| at.rejected())?,
                 );
             }
-            ConfigKey::FileDropped => config.file_dropped = Some(at.boolean(value)?),
-            ConfigKey::Convolution => config.convolution = a_path(at.string(value)?),
-            ConfigKey::SpeakerAngle => {
+            Valued::Convolution => config.convolution = a_path(at.string(value)?),
+            Valued::SpeakerAngle => {
                 let degrees = at.within(value, &SPEAKER_ANGLE_DEGREES)?;
                 let degrees = u8::try_from(degrees).map_err(|_| at.rejected())?;
                 config.speaker_angle =
                     Some(SpeakerAngle::from_degrees(degrees).map_err(|_| at.rejected())?);
             }
-            ConfigKey::SpeakerElevation => {
+            Valued::SpeakerElevation => {
                 let degrees = i16::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
                 config.speaker_elevation =
                     Some(SpeakerElevation::from_degrees(degrees).map_err(|_| at.rejected())?);
             }
-            ConfigKey::HeadYaw => {
+            Valued::HeadYaw => {
                 let degrees = i16::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
                 config.head_yaw = Some(HeadYaw::from_degrees(degrees).map_err(|_| at.rejected())?);
             }
-            ConfigKey::Subsonic => config.subsonic = given(at.string(value)?),
-            ConfigKey::SubsonicUser => config.subsonic_user = given(at.string(value)?),
-            ConfigKey::SubsonicPassword => {
+            Valued::Subsonic => config.subsonic = given(at.string(value)?),
+            Valued::SubsonicUser => config.subsonic_user = given(at.string(value)?),
+            Valued::SubsonicPassword => {
                 config.subsonic_password = given(at.string(value)?);
             }
-            ConfigKey::Jellyfin => config.jellyfin = given(at.string(value)?),
-            ConfigKey::JellyfinUser => config.jellyfin_user = given(at.string(value)?),
-            ConfigKey::JellyfinPassword => {
+            Valued::Jellyfin => config.jellyfin = given(at.string(value)?),
+            Valued::JellyfinUser => config.jellyfin_user = given(at.string(value)?),
+            Valued::JellyfinPassword => {
                 config.jellyfin_password = given(at.string(value)?);
             }
-            ConfigKey::JellyfinToken => config.jellyfin_token = given(at.string(value)?),
-            ConfigKey::JellyfinUserId => config.jellyfin_user_id = given(at.string(value)?),
-            ConfigKey::JellyfinDevice => config.jellyfin_device = given(at.string(value)?),
-            ConfigKey::TidalClientId => config.tidal_client_id = given(at.string(value)?),
-            ConfigKey::TidalClientSecret => {
+            Valued::JellyfinToken => config.jellyfin_token = given(at.string(value)?),
+            Valued::JellyfinUserId => config.jellyfin_user_id = given(at.string(value)?),
+            Valued::JellyfinDevice => config.jellyfin_device = given(at.string(value)?),
+            Valued::TidalClientId => config.tidal_client_id = given(at.string(value)?),
+            Valued::TidalClientSecret => {
                 config.tidal_client_secret = given(at.string(value)?);
             }
-            ConfigKey::TidalRefreshToken => {
+            Valued::TidalRefreshToken => {
                 config.tidal_refresh_token = given(at.string(value)?);
             }
-            ConfigKey::SpotifyClientId => config.spotify_client_id = given(at.string(value)?),
-            ConfigKey::SpotifyRefreshToken => {
+            Valued::SpotifyClientId => config.spotify_client_id = given(at.string(value)?),
+            Valued::SpotifyRefreshToken => {
                 config.spotify_refresh_token = given(at.string(value)?);
             }
-            ConfigKey::HifiApi => config.hifi_api = given(at.string(value)?),
-            ConfigKey::HifiSecret => config.hifi_secret = given(at.string(value)?),
-            ConfigKey::Monochrome => config.monochrome = given(at.string(value)?),
-            ConfigKey::HostedServices => config.hosted_services = Some(at.boolean(value)?),
-            ConfigKey::YoutubeMusic => config.youtube_music = Some(at.boolean(value)?),
-            ConfigKey::YoutubeMusicCookies => {
+            Valued::HifiApi => config.hifi_api = given(at.string(value)?),
+            Valued::HifiSecret => config.hifi_secret = given(at.string(value)?),
+            Valued::Monochrome => config.monochrome = given(at.string(value)?),
+            Valued::YoutubeMusicCookies => {
                 config.youtube_music_cookies = given(at.string(value)?);
             }
-            ConfigKey::YtDlp => config.yt_dlp = given(at.string(value)?),
-            ConfigKey::YoutubeMusicKeepOrder => {
-                config.youtube_music_keep_order = Some(at.boolean(value)?);
-            }
-            ConfigKey::Equaliser => config.equaliser = Some(at.boolean(value)?),
-            ConfigKey::Resume => config.resume = Some(at.boolean(value)?),
-            ConfigKey::Renderers => config.renderers = Some(at.boolean(value)?),
-            ConfigKey::FlacAbove96kFor => config.flac_above_96k_for = node_names(at, value)?,
-            ConfigKey::FormatsLearntFor => config.formats_learnt_for = learnt(at, value)?,
-            ConfigKey::RenderersAt => config.renderers_at = renderer_addresses(at, value)?,
-            ConfigKey::CastAt => config.cast_at = cast_addresses(at, value)?,
-            ConfigKey::HistoryKept => {
+            Valued::YtDlp => config.yt_dlp = given(at.string(value)?),
+            Valued::FlacAbove96kFor => config.flac_above_96k_for = node_names(at, value)?,
+            Valued::FormatsLearntFor => config.formats_learnt_for = learnt(at, value)?,
+            Valued::RenderersAt => config.renderers_at = renderer_addresses(at, value)?,
+            Valued::CastAt => config.cast_at = cast_addresses(at, value)?,
+            Valued::HistoryKept => {
                 config.history_kept = Some(match value.as_integer() {
                     Some(days) => HistoryKept::for_days(days).ok_or_else(|| at.rejected())?,
                     None => at.one_of(value, HistoryKept::parse)?,
                 });
             }
-            ConfigKey::Notify => config.notify = Some(at.boolean(value)?),
-            ConfigKey::CheckForUpdates => config.check_for_updates = Some(at.boolean(value)?),
-            ConfigKey::UpdateDismissed => config.update_dismissed = given(at.string(value)?),
-            ConfigKey::MinimiseButton => config.minimise_button = Some(at.boolean(value)?),
-            ConfigKey::MaximiseButton => config.maximise_button = Some(at.boolean(value)?),
-            ConfigKey::ScrollVolume => config.scroll_volume = Some(at.boolean(value)?),
-            ConfigKey::MouseNavigation => {
-                config.mouse_navigation = Some(at.boolean(value)?);
-            }
-            ConfigKey::ReducedMotion => config.reduced_motion = Some(at.boolean(value)?),
-            ConfigKey::SpectrumTilt => {
+            Valued::UpdateDismissed => config.update_dismissed = given(at.string(value)?),
+            Valued::MinimiseButton => config.minimise_button = Some(at.boolean(value)?),
+            Valued::MaximiseButton => config.maximise_button = Some(at.boolean(value)?),
+            Valued::ReducedMotion => config.reduced_motion = Some(at.boolean(value)?),
+            Valued::SpectrumTilt => {
                 config.spectrum_tilt = Some(at.one_of(value, SpectrumTilt::parse)?);
             }
-            ConfigKey::SpectrumFloor => {
+            Valued::SpectrumFloor => {
                 config.spectrum_floor = Some(at.one_of(value, SpectrumFloor::parse)?);
             }
-            ConfigKey::SpectrumBands => {
+            Valued::SpectrumBands => {
                 config.spectrum_bands = Some(at.one_of(value, SpectrumBands::parse)?);
             }
-            ConfigKey::SpectrumFalls => {
+            Valued::SpectrumFalls => {
                 config.spectrum_falls = Some(at.one_of(value, SpectrumFalls::parse)?);
             }
-            ConfigKey::Scrollbars => {
+            Valued::Scrollbars => {
                 config.scrollbars = Some(match value.as_bool() {
                     Some(drawn) => ScrollbarMode::of_a_switch(drawn),
                     None => at.one_of(value, ScrollbarMode::parse)?,
                 });
             }
-            ConfigKey::SuggestionsTab => config.suggestions_tab = Some(at.boolean(value)?),
-            ConfigKey::MissingTab => config.missing_tab = Some(at.boolean(value)?),
-            ConfigKey::TabCounts => config.tab_counts = Some(at.boolean(value)?),
-            ConfigKey::RememberTab => config.remember_tab = Some(at.boolean(value)?),
-            ConfigKey::LastTab => config.last_tab = Some(at.one_of(value, tab)?.to_owned()),
-            ConfigKey::ArtistsDrawn => {
+            Valued::SuggestionsTab => config.suggestions_tab = Some(at.boolean(value)?),
+            Valued::MissingTab => config.missing_tab = Some(at.boolean(value)?),
+            Valued::TabCounts => config.tab_counts = Some(at.boolean(value)?),
+            Valued::LastTab => config.last_tab = Some(at.one_of(value, tab)?.to_owned()),
+            Valued::ArtistsDrawn => {
                 config.artists_drawn = Some(at.one_of(value, ArtistsDrawn::parse)?);
             }
-            ConfigKey::RememberWindowSize => {
-                config.remember_window_size = Some(at.boolean(value)?);
-            }
-            ConfigKey::WindowSize => config.window_size = Some(at.one_of(value, window_size)?),
-            ConfigKey::RememberSettingsCategory => {
-                config.remember_settings_category = Some(at.boolean(value)?);
-            }
-            ConfigKey::LastSettingsCategory => {
+            Valued::WindowSize => config.window_size = Some(at.one_of(value, window_size)?),
+            Valued::LastSettingsCategory => {
                 config.last_settings_category =
                     Some(at.one_of(value, settings_category)?.to_owned());
             }
-            ConfigKey::OrganiseAs => config.organise_as = Some(at.one_of(value, layout)?),
-            ConfigKey::EqualiserFor => {
+            Valued::OrganiseAs => config.organise_as = Some(at.one_of(value, layout)?),
+            Valued::EqualiserFor => {
                 config.equaliser_for.get_or_insert_default().by_sink = bindings(at, value)?;
             }
-            ConfigKey::EqualiserMeasurer => {
+            Valued::EqualiserMeasurer => {
                 config.equaliser_measurer = given(at.string(value)?);
             }
-            ConfigKey::EqualiserMeasurerFor => {
+            Valued::EqualiserMeasurerFor => {
                 config.equaliser_measurer_for = measurers(at, value)?;
             }
-            ConfigKey::EqualiserProfile => {
+            Valued::EqualiserProfile => {
                 config.equaliser_for.get_or_insert_default().fallback = at.binding(value)?;
             }
-            ConfigKey::Discord => config.discord = Some(at.boolean(value)?),
-            ConfigKey::DiscordApp => config.discord_app = at.unless_blank(value, AppId::parse)?,
-            ConfigKey::DiscordShows => {
+            Valued::Discord => config.discord = Some(at.boolean(value)?),
+            Valued::DiscordApp => config.discord_app = at.unless_blank(value, AppId::parse)?,
+            Valued::DiscordShows => {
                 config.discord_shows = Some(at.one_of(value, Shown::parse)?);
             }
-            ConfigKey::DiscordArt => config.discord_art = Some(at.one_of(value, Pictured::parse)?),
-            ConfigKey::DiscordIcon => config.discord_icon = at.unless_blank(value, Icon::parse)?,
-            ConfigKey::DiscordProgress => config.discord_progress = Some(at.boolean(value)?),
-            ConfigKey::DiscordPaused => config.discord_paused = Some(at.boolean(value)?),
-            ConfigKey::Sync => config.sync = Some(at.boolean(value)?),
-            ConfigKey::SyncNearbyOnly => config.sync_nearby_only = Some(at.boolean(value)?),
-            ConfigKey::SyncServer => config.sync_server = given(at.string(value)?),
-            ConfigKey::SyncServerCertificate => {
+            Valued::DiscordArt => config.discord_art = Some(at.one_of(value, Pictured::parse)?),
+            Valued::DiscordIcon => config.discord_icon = at.unless_blank(value, Icon::parse)?,
+            Valued::DiscordProgress => config.discord_progress = Some(at.boolean(value)?),
+            Valued::DiscordPaused => config.discord_paused = Some(at.boolean(value)?),
+            Valued::SyncServer => config.sync_server = given(at.string(value)?),
+            Valued::SyncServerCertificate => {
                 config.sync_server_certificate = a_path(at.string(value)?);
             }
-            ConfigKey::SyncStun => config.sync_stun = given(at.string(value)?),
-            ConfigKey::SyncKey => config.sync_key = given(at.string(value)?),
-            ConfigKey::SyncDevice => config.sync_device = given(at.string(value)?),
-            ConfigKey::SharedName => config.shared_name = given(at.string(value)?),
-            ConfigKey::SyncSongs => {
+            Valued::SyncStun => config.sync_stun = given(at.string(value)?),
+            Valued::SyncKey => config.sync_key = given(at.string(value)?),
+            Valued::SyncDevice => config.sync_device = given(at.string(value)?),
+            Valued::SharedName => config.shared_name = given(at.string(value)?),
+            Valued::SyncSongs => {
                 let array = value
                     .as_array()
                     .ok_or_else(|| at.mistyped(ValueKind::Array))?;
@@ -1534,10 +1326,10 @@ impl Config {
                     .collect::<Result<Vec<_>>>()?;
                 config.sync_songs = Some(SyncedSongs::parse(&named).ok_or_else(|| at.rejected())?);
             }
-            ConfigKey::SyncControl => {
+            Valued::SyncControl => {
                 config.sync_control = Some(at.one_of(value, RemoteTrust::parse)?);
             }
-            ConfigKey::BufferMs => {
+            Valued::BufferMs => {
                 let millis = u64::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
                 config.buffer = Some(Duration::from_millis(millis));
             }
@@ -2271,6 +2063,17 @@ mod tests {
     }
 
     #[test]
+    fn the_man_page_gives_every_switch_the_default_the_table_does() {
+        for switch in Switch::ALL {
+            let entry = entry_of(switch.as_str());
+            let default = format!("Default: {}.", switch.on_unless_said());
+
+            assert!(entry.starts_with("Boolean."), "{switch}: {entry}");
+            assert!(entry.contains(&default), "{switch} reads {entry}");
+        }
+    }
+
+    #[test]
     fn the_man_page_gives_every_spelling_a_setting_takes() {
         let spelled: [(ConfigKey, Vec<String>); 19] = [
             (ConfigKey::Quality, spelled_by::<QualityArg>()),
@@ -2479,18 +2282,21 @@ mod tests {
 
         assert!(text.contains("youtube-music = true"), "{text}");
         assert!(text.contains("youtube-music-keep-order = false"), "{text}");
-        assert_eq!(config.youtube_music, Some(true));
+        assert_eq!(config.switches.said(Switch::YoutubeMusic), Some(true));
         assert_eq!(config.youtube_music_cookies.as_deref(), Some("firefox"));
         assert_eq!(config.yt_dlp.as_deref(), Some("/opt/yt-dlp"));
-        assert_eq!(config.youtube_music_keep_order, Some(false));
+        assert_eq!(
+            config.switches.said(Switch::YoutubeMusicKeepOrder),
+            Some(false)
+        );
     }
 
     #[test]
     fn youtube_music_is_off_and_keeps_youtubes_order_unless_the_file_says_otherwise() {
         let config = Config::default();
 
-        assert!(!config.turns_youtube_music_on());
-        assert!(config.keeps_youtubes_order());
+        assert!(!config.is_on(Switch::YoutubeMusic));
+        assert!(config.is_on(Switch::YoutubeMusicKeepOrder));
     }
 
     #[test]
@@ -2555,13 +2361,13 @@ mod tests {
                 .syncs()
         );
         assert!(!read("sync = false\n").expect("read").syncs());
-        assert!(!config.syncs_nearby_only());
+        assert!(!config.is_on(Switch::SyncNearbyOnly));
         let hosted = read("online = false\nsync-nearby-only = false\n").expect("read");
-        assert!(!hosted.syncs() && !hosted.syncs_nearby_only());
+        assert!(!hosted.syncs() && !hosted.is_on(Switch::SyncNearbyOnly));
         let defaulted = read("online = false\n").expect("read");
-        assert!(!defaulted.syncs() && !defaulted.syncs_nearby_only());
+        assert!(!defaulted.syncs() && !defaulted.is_on(Switch::SyncNearbyOnly));
         let nearby = read("online = false\nsync-nearby-only = true\n").expect("read");
-        assert!(nearby.syncs() && nearby.syncs_nearby_only());
+        assert!(nearby.syncs() && nearby.is_on(Switch::SyncNearbyOnly));
         assert!(
             !read("sync = false\nsync-nearby-only = true\n")
                 .expect("read")
@@ -2586,7 +2392,7 @@ mod tests {
         assert_eq!(config.last_tab, None);
         assert_eq!(config.window_size, None);
         assert_eq!(config.quality, Some(Quality::LowLatency));
-        assert_eq!(config.online, Some(false));
+        assert_eq!(config.switches.said(Switch::Online), Some(false));
     }
 
     struct Scratch {
@@ -2813,8 +2619,8 @@ mod tests {
     fn what_is_dropped_is_filed_unless_the_file_says_not() {
         let kept = read("file-dropped = false").expect("a well formed document");
 
-        assert!(Config::default().files_what_is_dropped());
-        assert!(!kept.files_what_is_dropped());
+        assert!(Config::default().is_on(Switch::FileDropped));
+        assert!(!kept.is_on(Switch::FileDropped));
         assert!(read("file-dropped = \"no\"").is_err());
     }
 
@@ -3182,26 +2988,26 @@ mod tests {
         assert!(
             !read("")
                 .expect("empty is valid")
-                .chooses_lyrics_by_the_locale()
+                .is_on(Switch::LyricsLanguageFromLocale)
         );
         assert!(
             read("lyrics-language-from-locale = true")
                 .expect("a well formed document")
-                .chooses_lyrics_by_the_locale()
+                .is_on(Switch::LyricsLanguageFromLocale)
         );
     }
 
     #[test]
     fn studies_lyrics_and_a_skip_under_repeat_default_on_and_are_turned_off_by_their_keys() {
         let config = read("").expect("empty is valid");
-        assert!(config.studies());
-        assert!(config.fetches_lyrics());
+        assert!(config.is_on(Switch::Study));
+        assert!(config.is_on(Switch::FetchLyrics));
         assert_eq!(config.skip_under_repeat(), SkipUnderRepeat::RepeatsTheQueue);
 
         let config = read("study = false\nskip-repeats-queue = false\nfetch-lyrics = false")
             .expect("a well formed document");
-        assert!(!config.studies());
-        assert!(!config.fetches_lyrics());
+        assert!(!config.is_on(Switch::Study));
+        assert!(!config.is_on(Switch::FetchLyrics));
         assert_eq!(
             config.skip_under_repeat(),
             SkipUnderRepeat::KeepsRepeatingTheTrack
@@ -3301,31 +3107,31 @@ mod tests {
     fn online_and_contact_are_read_and_an_empty_contact_is_none() {
         let config = read("online = false\ncontact = \"a contact the user typed\"")
             .expect("a well formed document");
-        assert_eq!(config.online, Some(false));
-        assert!(!config.online_enabled());
+        assert_eq!(config.switches.said(Switch::Online), Some(false));
+        assert!(!config.is_on(Switch::Online));
         assert_eq!(config.contact.as_deref(), Some("a contact the user typed"));
 
         let config = read("online = true\ncontact = \"  \"").expect("a well formed document");
-        assert_eq!(config.online, Some(true));
-        assert!(config.online_enabled());
+        assert_eq!(config.switches.said(Switch::Online), Some(true));
+        assert!(config.is_on(Switch::Online));
         assert_eq!(config.contact, None);
 
         let config = read("").expect("empty is valid");
-        assert!(config.online_enabled());
-        assert!(config.enriches_after_scan());
+        assert!(config.is_on(Switch::Online));
+        assert!(config.is_on(Switch::EnrichAfterScan));
         assert_eq!(config.contact, None);
 
         let config = read("enrich-after-scan = false").expect("a well formed document");
-        assert_eq!(config.enrich_after_scan, Some(false));
-        assert!(!config.enriches_after_scan());
+        assert_eq!(config.switches.said(Switch::EnrichAfterScan), Some(false));
+        assert!(!config.is_on(Switch::EnrichAfterScan));
 
-        assert!(!config.enriches_on_metered());
-        assert!(!config.stalls_downloads_on_metered());
+        assert!(!config.is_on(Switch::EnrichOnMetered));
+        assert!(!config.is_on(Switch::StallDownloadsOnMetered));
 
         let config = read("enrich-on-metered = true\nstall-downloads-on-metered = true")
             .expect("a well formed document");
-        assert!(config.enriches_on_metered());
-        assert!(config.stalls_downloads_on_metered());
+        assert!(config.is_on(Switch::EnrichOnMetered));
+        assert!(config.is_on(Switch::StallDownloadsOnMetered));
 
         let error = read("online = \"yes\"").expect_err("a string is not a boolean");
         assert!(
@@ -3373,11 +3179,15 @@ mod tests {
     #[cfg(feature = "ui")]
     #[test]
     fn the_volume_turns_with_the_wheel_until_the_file_says_it_does_not() {
-        assert!(read("").expect("empty is valid").scrolls_the_volume());
+        assert!(
+            read("")
+                .expect("empty is valid")
+                .is_on(Switch::ScrollVolume)
+        );
         assert!(
             !read("scroll-volume = false")
                 .expect("a boolean is valid")
-                .scrolls_the_volume()
+                .is_on(Switch::ScrollVolume)
         );
     }
 
@@ -4035,8 +3845,8 @@ mod tests {
         )
         .expect("a well formed document");
 
-        assert_eq!(config.equaliser, Some(true));
-        assert!(config.equaliser_on());
+        assert_eq!(config.switches.said(Switch::Equaliser), Some(true));
+        assert!(config.is_on(Switch::Equaliser));
 
         let bindings = config.equaliser_for.expect("a table");
         assert_eq!(bindings.fallback(), Some(&kept("Harman over-ear")));
@@ -4113,8 +3923,8 @@ mod tests {
     fn a_build_that_says_nothing_about_the_equaliser_leaves_it_off_and_unbound() {
         let config = read("").expect("empty is valid");
 
-        assert_eq!(config.equaliser, None);
-        assert!(!config.equaliser_on());
+        assert_eq!(config.switches.said(Switch::Equaliser), None);
+        assert!(!config.is_on(Switch::Equaliser));
         assert_eq!(config.equaliser_for, None);
     }
 

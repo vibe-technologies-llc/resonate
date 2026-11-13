@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, time::Duration};
 
 use gpui::{ClickEvent, Context, Div, SharedString, Stateful, div, prelude::*, px};
-use resonate_core::{SampleFormat, SampleRate, StreamSpec};
+use resonate_core::{SampleFormat, SampleRate, StreamSpec, Switch};
 use resonate_engine::{
     BluetoothWake, Command, HardwareVolume, Learning, Learnt, NodeName, Plays, Plugged, SinkId,
     SinkInfo, Trial, TrialVerdict, Unlearnt, Unplayed,
@@ -535,7 +535,7 @@ impl RootView {
         if let Some(renderers) = cx.global::<ResonateApp>().renderers.clone() {
             renderers.look(on);
         }
-        self.store(&Setting::Renderers(on), cx);
+        self.store(&Setting::Switched(Switch::Renderers, on), cx);
         cx.notify();
     }
 

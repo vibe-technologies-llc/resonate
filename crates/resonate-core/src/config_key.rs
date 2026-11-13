@@ -1,460 +1,239 @@
 use std::fmt;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ConfigKey {
-    Sink,
-    Library,
-    Vault,
-    Quality,
-    FilterPhase,
-    TruePeak,
-    RestoreLossy,
-    Crossfeed,
-    Dither,
-    NoiseShaping,
-    ReplayGain,
-    ReplayGainPreAmp,
-    ReplayGainUntagged,
-    BitPerfect,
-    Dop,
-    DsdLikePcm,
-    DeviceVolume,
-    ForceGraphRate,
-    BluetoothWake,
-    BluetoothLeadMs,
-    BluetoothAwakeS,
-    Volume,
-    BufferMs,
-    Theme,
-    Accent,
-    TextSize,
-    Language,
-    FollowDesktopScheme,
-    FollowDesktopTextSize,
-    Online,
-    EnrichAfterScan,
-    EnrichOnMetered,
-    MusicbrainzMirror,
-    MusicbrainzReplicationToken,
-    StallDownloadsOnMetered,
-    Study,
-    FetchLyrics,
-    LyricsLanguageFromLocale,
-    IdentifyBySound,
-    Contact,
-    Equaliser,
-    EqualiserFor,
-    EqualiserMeasurer,
-    EqualiserMeasurerFor,
-    EqualiserProfile,
-    Convolution,
-    SpeakerAngle,
-    SpeakerElevation,
-    HeadYaw,
-    Resume,
-    Renderers,
-    FlacAbove96kFor,
-    FormatsLearntFor,
-    RenderersAt,
-    CastAt,
-    HistoryKept,
-    SkipRepeatsQueue,
-    PreviousRestarts,
-    ShuffleStyle,
-    ShuffleSpreadsArtists,
-    ShuffleSpreadsAlbums,
-    ShuffleFreshFirst,
-    OrganiseAs,
-    Notify,
-    CheckForUpdates,
-    UpdateDismissed,
-    MinimiseButton,
-    MaximiseButton,
-    ScrollVolume,
-    MouseNavigation,
-    ReducedMotion,
-    Scrollbars,
-    SpectrumTilt,
-    SpectrumFloor,
-    SpectrumBands,
-    SpectrumFalls,
-    SuggestionsTab,
-    MissingTab,
-    TabCounts,
-    RememberTab,
-    LastTab,
-    ArtistsDrawn,
-    RememberWindowSize,
-    WindowSize,
-    RememberSettingsCategory,
-    LastSettingsCategory,
-    Inbox,
-    MusicFolder,
-    MusicExtensions,
-    MinimumLength,
-    FileDropped,
-    Subsonic,
-    SubsonicUser,
-    SubsonicPassword,
-    Jellyfin,
-    JellyfinUser,
-    JellyfinPassword,
-    JellyfinToken,
-    JellyfinUserId,
-    JellyfinDevice,
-    TidalClientId,
-    TidalClientSecret,
-    TidalRefreshToken,
-    SpotifyClientId,
-    SpotifyRefreshToken,
-    HifiApi,
-    HifiSecret,
-    Monochrome,
-    HostedServices,
-    YoutubeMusic,
-    YoutubeMusicCookies,
-    YtDlp,
-    YoutubeMusicKeepOrder,
-    AcoustidKey,
-    AuddToken,
-    ListenbrainzToken,
-    LastfmKey,
-    LastfmSecret,
-    LastfmSession,
-    ListenFrom,
-    ListenFor,
-    Discord,
-    DiscordApp,
-    DiscordShows,
-    DiscordArt,
-    DiscordIcon,
-    DiscordProgress,
-    DiscordPaused,
-    Sync,
-    SyncNearbyOnly,
-    SyncServer,
-    SyncServerCertificate,
-    SyncStun,
-    SyncKey,
-    SyncDevice,
-    SharedName,
-    SyncSongs,
-    SyncControl,
+macro_rules! keys {
+    ($($key:ident = $spelt:literal $(, $default:ident)?;)*) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub enum ConfigKey {
+            $($key,)*
+        }
+
+        impl ConfigKey {
+            pub const ALL: [Self; 0 $(+ keys!(@one $key))*] = [$(Self::$key,)*];
+
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$key => $spelt,)*
+                }
+            }
+
+            pub const fn switch(self) -> Option<Switch> {
+                match self {
+                    $(Self::$key => keys!(@switch $key $($default)?),)*
+                }
+            }
+        }
+
+        keys!(@sorted [] [] $($key $($default)?;)*);
+    };
+    (@one $key:ident) => { 1 };
+    (@switch $key:ident) => { None };
+    (@switch $key:ident $default:ident) => { Some(Switch::$key) };
+    (@on on) => { true };
+    (@on off) => { false };
+    (@sorted [$($switch:ident $default:ident,)*] [$($valued:ident,)*]) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub enum Switch {
+            $($switch,)*
+        }
+
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub enum Valued {
+            $($valued,)*
+        }
+
+        impl Switch {
+            pub const ALL: [Self; 0 $(+ keys!(@one $switch))*] = [$(Self::$switch,)*];
+
+            pub const fn key(self) -> ConfigKey {
+                match self {
+                    $(Self::$switch => ConfigKey::$switch,)*
+                }
+            }
+
+            pub const fn on_unless_said(self) -> bool {
+                match self {
+                    $(Self::$switch => keys!(@on $default),)*
+                }
+            }
+        }
+
+        impl Valued {
+            pub const fn key(self) -> ConfigKey {
+                match self {
+                    $(Self::$valued => ConfigKey::$valued,)*
+                }
+            }
+        }
+
+        impl ConfigKey {
+            pub const fn sorted(self) -> Sorted {
+                match self {
+                    $(Self::$switch => Sorted::Switch(Switch::$switch),)*
+                    $(Self::$valued => Sorted::Valued(Valued::$valued),)*
+                }
+            }
+        }
+    };
+    (@sorted [$($switches:tt)*] [$($valued:tt)*] $key:ident; $($rest:tt)*) => {
+        keys!(@sorted [$($switches)*] [$($valued)* $key,] $($rest)*);
+    };
+    (@sorted [$($switches:tt)*] [$($valued:tt)*] $key:ident $default:ident; $($rest:tt)*) => {
+        keys!(@sorted [$($switches)* $key $default,] [$($valued)*] $($rest)*);
+    };
+}
+
+keys! {
+    Sink = "sink";
+    Library = "library";
+    Vault = "vault";
+    Quality = "quality";
+    FilterPhase = "filter-phase";
+    TruePeak = "true-peak";
+    RestoreLossy = "restore-lossy";
+    Crossfeed = "crossfeed";
+    Dither = "dither";
+    NoiseShaping = "noise-shaping";
+    ReplayGain = "replay-gain";
+    ReplayGainPreAmp = "replay-gain-pre-amp";
+    ReplayGainUntagged = "replay-gain-untagged";
+    BitPerfect = "bit-perfect";
+    Dop = "dop";
+    DsdLikePcm = "dsd-like-pcm";
+    DeviceVolume = "device-volume";
+    ForceGraphRate = "force-graph-rate";
+    BluetoothWake = "bluetooth-wake";
+    BluetoothLeadMs = "bluetooth-lead-ms";
+    BluetoothAwakeS = "bluetooth-awake-s";
+    Volume = "volume";
+    BufferMs = "buffer-ms";
+    Theme = "theme";
+    Accent = "accent";
+    TextSize = "text-size";
+    Language = "language";
+    FollowDesktopScheme = "follow-desktop-scheme";
+    FollowDesktopTextSize = "follow-desktop-text-size";
+    Online = "online", on;
+    EnrichAfterScan = "enrich-after-scan", on;
+    EnrichOnMetered = "enrich-on-metered", off;
+    MusicbrainzMirror = "musicbrainz-mirror", off;
+    MusicbrainzReplicationToken = "musicbrainz-replication-token";
+    StallDownloadsOnMetered = "stall-downloads-on-metered", off;
+    Study = "study", on;
+    FetchLyrics = "fetch-lyrics", on;
+    LyricsLanguageFromLocale = "lyrics-language-from-locale", off;
+    IdentifyBySound = "identify-by-sound", off;
+    Contact = "contact";
+    Equaliser = "equaliser", off;
+    EqualiserFor = "equaliser-for";
+    EqualiserMeasurer = "equaliser-measurer";
+    EqualiserMeasurerFor = "equaliser-measurer-for";
+    EqualiserProfile = "equaliser-profile";
+    Convolution = "convolution";
+    SpeakerAngle = "speaker-angle";
+    SpeakerElevation = "speaker-elevation";
+    HeadYaw = "head-yaw";
+    Resume = "resume", on;
+    Renderers = "renderers", off;
+    FlacAbove96kFor = "flac-above-96k-for";
+    FormatsLearntFor = "formats-learnt-for";
+    RenderersAt = "renderers-at";
+    CastAt = "cast-at";
+    HistoryKept = "history-kept";
+    SkipRepeatsQueue = "skip-repeats-queue";
+    PreviousRestarts = "previous-restarts";
+    ShuffleStyle = "shuffle-style";
+    ShuffleSpreadsArtists = "shuffle-spreads-artists";
+    ShuffleSpreadsAlbums = "shuffle-spreads-albums";
+    ShuffleFreshFirst = "shuffle-fresh-first";
+    OrganiseAs = "organise-as";
+    Notify = "notify", on;
+    CheckForUpdates = "check-for-updates", on;
+    UpdateDismissed = "update-dismissed";
+    MinimiseButton = "minimise-button";
+    MaximiseButton = "maximise-button";
+    ScrollVolume = "scroll-volume", on;
+    MouseNavigation = "mouse-navigation", on;
+    ReducedMotion = "reduced-motion";
+    Scrollbars = "scrollbars";
+    SpectrumTilt = "spectrum-tilt";
+    SpectrumFloor = "spectrum-floor";
+    SpectrumBands = "spectrum-bands";
+    SpectrumFalls = "spectrum-falls";
+    SuggestionsTab = "suggestions-tab";
+    MissingTab = "missing-tab";
+    TabCounts = "tab-counts";
+    RememberTab = "remember-tab", on;
+    LastTab = "last-tab";
+    ArtistsDrawn = "artists-drawn";
+    RememberWindowSize = "remember-window-size", on;
+    WindowSize = "window-size";
+    RememberSettingsCategory = "remember-settings-category", on;
+    LastSettingsCategory = "last-settings-category";
+    Inbox = "inbox";
+    MusicFolder = "music-folder";
+    MusicExtensions = "music-extensions";
+    MinimumLength = "minimum-length-s";
+    FileDropped = "file-dropped", on;
+    Subsonic = "subsonic";
+    SubsonicUser = "subsonic-user";
+    SubsonicPassword = "subsonic-password";
+    Jellyfin = "jellyfin";
+    JellyfinUser = "jellyfin-user";
+    JellyfinPassword = "jellyfin-password";
+    JellyfinToken = "jellyfin-token";
+    JellyfinUserId = "jellyfin-user-id";
+    JellyfinDevice = "jellyfin-device";
+    TidalClientId = "tidal-client-id";
+    TidalClientSecret = "tidal-client-secret";
+    TidalRefreshToken = "tidal-refresh-token";
+    SpotifyClientId = "spotify-client-id";
+    SpotifyRefreshToken = "spotify-refresh-token";
+    HifiApi = "hifi-api";
+    HifiSecret = "hifi-secret";
+    Monochrome = "monochrome";
+    HostedServices = "hosted-services", on;
+    YoutubeMusic = "youtube-music", off;
+    YoutubeMusicCookies = "youtube-music-cookies";
+    YtDlp = "yt-dlp";
+    YoutubeMusicKeepOrder = "youtube-music-keep-order", on;
+    AcoustidKey = "acoustid-key";
+    AuddToken = "audd-token";
+    ListenbrainzToken = "listenbrainz-token";
+    LastfmKey = "lastfm-key";
+    LastfmSecret = "lastfm-secret";
+    LastfmSession = "lastfm-session";
+    ListenFrom = "listen-from";
+    ListenFor = "listen-for";
+    Discord = "discord";
+    DiscordApp = "discord-app";
+    DiscordShows = "discord-shows";
+    DiscordArt = "discord-art";
+    DiscordIcon = "discord-icon";
+    DiscordProgress = "discord-progress";
+    DiscordPaused = "discord-paused";
+    Sync = "sync", on;
+    SyncNearbyOnly = "sync-nearby-only", off;
+    SyncServer = "sync-server";
+    SyncServerCertificate = "sync-server-certificate";
+    SyncStun = "sync-stun";
+    SyncKey = "sync-key";
+    SyncDevice = "sync-device";
+    SharedName = "shared-name";
+    SyncSongs = "sync-songs";
+    SyncControl = "sync-control";
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sorted {
+    Switch(Switch),
+    Valued(Valued),
 }
 
 impl ConfigKey {
-    pub const ALL: [Self; 138] = [
-        Self::Sink,
-        Self::Library,
-        Self::Vault,
-        Self::Quality,
-        Self::FilterPhase,
-        Self::TruePeak,
-        Self::RestoreLossy,
-        Self::Crossfeed,
-        Self::Dither,
-        Self::NoiseShaping,
-        Self::ReplayGain,
-        Self::ReplayGainPreAmp,
-        Self::ReplayGainUntagged,
-        Self::BitPerfect,
-        Self::Dop,
-        Self::DsdLikePcm,
-        Self::DeviceVolume,
-        Self::ForceGraphRate,
-        Self::BluetoothWake,
-        Self::BluetoothLeadMs,
-        Self::BluetoothAwakeS,
-        Self::Volume,
-        Self::BufferMs,
-        Self::Theme,
-        Self::Accent,
-        Self::TextSize,
-        Self::Language,
-        Self::FollowDesktopScheme,
-        Self::FollowDesktopTextSize,
-        Self::Online,
-        Self::EnrichAfterScan,
-        Self::EnrichOnMetered,
-        Self::MusicbrainzMirror,
-        Self::MusicbrainzReplicationToken,
-        Self::StallDownloadsOnMetered,
-        Self::Study,
-        Self::FetchLyrics,
-        Self::LyricsLanguageFromLocale,
-        Self::IdentifyBySound,
-        Self::Contact,
-        Self::Equaliser,
-        Self::EqualiserFor,
-        Self::EqualiserMeasurer,
-        Self::EqualiserMeasurerFor,
-        Self::EqualiserProfile,
-        Self::Convolution,
-        Self::SpeakerAngle,
-        Self::SpeakerElevation,
-        Self::HeadYaw,
-        Self::Resume,
-        Self::Renderers,
-        Self::FlacAbove96kFor,
-        Self::FormatsLearntFor,
-        Self::RenderersAt,
-        Self::CastAt,
-        Self::HistoryKept,
-        Self::SkipRepeatsQueue,
-        Self::PreviousRestarts,
-        Self::ShuffleStyle,
-        Self::ShuffleSpreadsArtists,
-        Self::ShuffleSpreadsAlbums,
-        Self::ShuffleFreshFirst,
-        Self::OrganiseAs,
-        Self::Notify,
-        Self::CheckForUpdates,
-        Self::UpdateDismissed,
-        Self::MinimiseButton,
-        Self::MaximiseButton,
-        Self::ScrollVolume,
-        Self::MouseNavigation,
-        Self::ReducedMotion,
-        Self::Scrollbars,
-        Self::SpectrumTilt,
-        Self::SpectrumFloor,
-        Self::SpectrumBands,
-        Self::SpectrumFalls,
-        Self::SuggestionsTab,
-        Self::MissingTab,
-        Self::TabCounts,
-        Self::RememberTab,
-        Self::LastTab,
-        Self::ArtistsDrawn,
-        Self::RememberWindowSize,
-        Self::WindowSize,
-        Self::RememberSettingsCategory,
-        Self::LastSettingsCategory,
-        Self::Inbox,
-        Self::MusicFolder,
-        Self::MusicExtensions,
-        Self::MinimumLength,
-        Self::FileDropped,
-        Self::Subsonic,
-        Self::SubsonicUser,
-        Self::SubsonicPassword,
-        Self::Jellyfin,
-        Self::JellyfinUser,
-        Self::JellyfinPassword,
-        Self::JellyfinToken,
-        Self::JellyfinUserId,
-        Self::JellyfinDevice,
-        Self::TidalClientId,
-        Self::TidalClientSecret,
-        Self::TidalRefreshToken,
-        Self::SpotifyClientId,
-        Self::SpotifyRefreshToken,
-        Self::HifiApi,
-        Self::HifiSecret,
-        Self::Monochrome,
-        Self::HostedServices,
-        Self::YoutubeMusic,
-        Self::YoutubeMusicCookies,
-        Self::YtDlp,
-        Self::YoutubeMusicKeepOrder,
-        Self::AcoustidKey,
-        Self::AuddToken,
-        Self::ListenbrainzToken,
-        Self::LastfmKey,
-        Self::LastfmSecret,
-        Self::LastfmSession,
-        Self::ListenFrom,
-        Self::ListenFor,
-        Self::Discord,
-        Self::DiscordApp,
-        Self::DiscordShows,
-        Self::DiscordArt,
-        Self::DiscordIcon,
-        Self::DiscordProgress,
-        Self::DiscordPaused,
-        Self::Sync,
-        Self::SyncNearbyOnly,
-        Self::SyncServer,
-        Self::SyncServerCertificate,
-        Self::SyncStun,
-        Self::SyncKey,
-        Self::SyncDevice,
-        Self::SharedName,
-        Self::SyncSongs,
-        Self::SyncControl,
-    ];
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Sink => "sink",
-            Self::Library => "library",
-            Self::Vault => "vault",
-            Self::Quality => "quality",
-            Self::FilterPhase => "filter-phase",
-            Self::TruePeak => "true-peak",
-            Self::RestoreLossy => "restore-lossy",
-            Self::Crossfeed => "crossfeed",
-            Self::Dither => "dither",
-            Self::NoiseShaping => "noise-shaping",
-            Self::ReplayGain => "replay-gain",
-            Self::ReplayGainPreAmp => "replay-gain-pre-amp",
-            Self::ReplayGainUntagged => "replay-gain-untagged",
-            Self::BitPerfect => "bit-perfect",
-            Self::Dop => "dop",
-            Self::DsdLikePcm => "dsd-like-pcm",
-            Self::DeviceVolume => "device-volume",
-            Self::ForceGraphRate => "force-graph-rate",
-            Self::BluetoothWake => "bluetooth-wake",
-            Self::BluetoothLeadMs => "bluetooth-lead-ms",
-            Self::BluetoothAwakeS => "bluetooth-awake-s",
-            Self::Volume => "volume",
-            Self::BufferMs => "buffer-ms",
-            Self::Theme => "theme",
-            Self::Accent => "accent",
-            Self::TextSize => "text-size",
-            Self::Language => "language",
-            Self::FollowDesktopScheme => "follow-desktop-scheme",
-            Self::FollowDesktopTextSize => "follow-desktop-text-size",
-            Self::Online => "online",
-            Self::EnrichAfterScan => "enrich-after-scan",
-            Self::EnrichOnMetered => "enrich-on-metered",
-            Self::MusicbrainzMirror => "musicbrainz-mirror",
-            Self::MusicbrainzReplicationToken => "musicbrainz-replication-token",
-            Self::StallDownloadsOnMetered => "stall-downloads-on-metered",
-            Self::Study => "study",
-            Self::FetchLyrics => "fetch-lyrics",
-            Self::LyricsLanguageFromLocale => "lyrics-language-from-locale",
-            Self::IdentifyBySound => "identify-by-sound",
-            Self::SkipRepeatsQueue => "skip-repeats-queue",
-            Self::PreviousRestarts => "previous-restarts",
-            Self::ShuffleStyle => "shuffle-style",
-            Self::ShuffleSpreadsArtists => "shuffle-spreads-artists",
-            Self::ShuffleSpreadsAlbums => "shuffle-spreads-albums",
-            Self::ShuffleFreshFirst => "shuffle-fresh-first",
-            Self::Contact => "contact",
-            Self::Equaliser => "equaliser",
-            Self::EqualiserFor => "equaliser-for",
-            Self::EqualiserMeasurer => "equaliser-measurer",
-            Self::EqualiserMeasurerFor => "equaliser-measurer-for",
-            Self::EqualiserProfile => "equaliser-profile",
-            Self::Convolution => "convolution",
-            Self::SpeakerAngle => "speaker-angle",
-            Self::SpeakerElevation => "speaker-elevation",
-            Self::HeadYaw => "head-yaw",
-            Self::Resume => "resume",
-            Self::Renderers => "renderers",
-            Self::FlacAbove96kFor => "flac-above-96k-for",
-            Self::FormatsLearntFor => "formats-learnt-for",
-            Self::RenderersAt => "renderers-at",
-            Self::CastAt => "cast-at",
-            Self::HistoryKept => "history-kept",
-            Self::OrganiseAs => "organise-as",
-            Self::Notify => "notify",
-            Self::CheckForUpdates => "check-for-updates",
-            Self::UpdateDismissed => "update-dismissed",
-            Self::MinimiseButton => "minimise-button",
-            Self::MaximiseButton => "maximise-button",
-            Self::ScrollVolume => "scroll-volume",
-            Self::MouseNavigation => "mouse-navigation",
-            Self::ReducedMotion => "reduced-motion",
-            Self::Scrollbars => "scrollbars",
-            Self::SpectrumTilt => "spectrum-tilt",
-            Self::SpectrumFloor => "spectrum-floor",
-            Self::SpectrumBands => "spectrum-bands",
-            Self::SpectrumFalls => "spectrum-falls",
-            Self::SuggestionsTab => "suggestions-tab",
-            Self::MissingTab => "missing-tab",
-            Self::TabCounts => "tab-counts",
-            Self::RememberTab => "remember-tab",
-            Self::LastTab => "last-tab",
-            Self::ArtistsDrawn => "artists-drawn",
-            Self::RememberWindowSize => "remember-window-size",
-            Self::WindowSize => "window-size",
-            Self::RememberSettingsCategory => "remember-settings-category",
-            Self::LastSettingsCategory => "last-settings-category",
-            Self::Inbox => "inbox",
-            Self::MusicExtensions => "music-extensions",
-            Self::MinimumLength => "minimum-length-s",
-            Self::MusicFolder => "music-folder",
-            Self::FileDropped => "file-dropped",
-            Self::Subsonic => "subsonic",
-            Self::SubsonicUser => "subsonic-user",
-            Self::SubsonicPassword => "subsonic-password",
-            Self::Jellyfin => "jellyfin",
-            Self::JellyfinUser => "jellyfin-user",
-            Self::JellyfinPassword => "jellyfin-password",
-            Self::JellyfinToken => "jellyfin-token",
-            Self::JellyfinUserId => "jellyfin-user-id",
-            Self::JellyfinDevice => "jellyfin-device",
-            Self::TidalClientId => "tidal-client-id",
-            Self::TidalClientSecret => "tidal-client-secret",
-            Self::TidalRefreshToken => "tidal-refresh-token",
-            Self::SpotifyClientId => "spotify-client-id",
-            Self::SpotifyRefreshToken => "spotify-refresh-token",
-            Self::HifiApi => "hifi-api",
-            Self::HifiSecret => "hifi-secret",
-            Self::Monochrome => "monochrome",
-            Self::HostedServices => "hosted-services",
-            Self::YoutubeMusic => "youtube-music",
-            Self::YoutubeMusicCookies => "youtube-music-cookies",
-            Self::YtDlp => "yt-dlp",
-            Self::YoutubeMusicKeepOrder => "youtube-music-keep-order",
-            Self::AcoustidKey => "acoustid-key",
-            Self::AuddToken => "audd-token",
-            Self::ListenbrainzToken => "listenbrainz-token",
-            Self::LastfmKey => "lastfm-key",
-            Self::LastfmSecret => "lastfm-secret",
-            Self::LastfmSession => "lastfm-session",
-            Self::ListenFrom => "listen-from",
-            Self::ListenFor => "listen-for",
-            Self::Discord => "discord",
-            Self::DiscordApp => "discord-app",
-            Self::DiscordShows => "discord-shows",
-            Self::DiscordArt => "discord-art",
-            Self::DiscordIcon => "discord-icon",
-            Self::DiscordProgress => "discord-progress",
-            Self::DiscordPaused => "discord-paused",
-            Self::Sync => "sync",
-            Self::SyncNearbyOnly => "sync-nearby-only",
-            Self::SyncServer => "sync-server",
-            Self::SyncServerCertificate => "sync-server-certificate",
-            Self::SyncStun => "sync-stun",
-            Self::SyncKey => "sync-key",
-            Self::SyncDevice => "sync-device",
-            Self::SharedName => "shared-name",
-            Self::SyncSongs => "sync-songs",
-            Self::SyncControl => "sync-control",
-        }
-    }
-
     pub const fn on_unless_said(self) -> Option<bool> {
-        match self {
-            Self::Online
-            | Self::HostedServices
-            | Self::YoutubeMusicKeepOrder
-            | Self::Sync
-            | Self::EnrichAfterScan
-            | Self::Study
-            | Self::FetchLyrics
-            | Self::Resume
-            | Self::Notify
-            | Self::CheckForUpdates
-            | Self::ScrollVolume
-            | Self::MouseNavigation
-            | Self::FileDropped
-            | Self::RememberTab
-            | Self::RememberWindowSize
-            | Self::RememberSettingsCategory => Some(true),
-            Self::YoutubeMusic
-            | Self::SyncNearbyOnly
-            | Self::EnrichOnMetered
-            | Self::MusicbrainzMirror
-            | Self::StallDownloadsOnMetered
-            | Self::LyricsLanguageFromLocale
-            | Self::IdentifyBySound
-            | Self::Equaliser
-            | Self::Renderers => Some(false),
-            _ => None,
+        match self.switch() {
+            Some(switch) => Some(switch.on_unless_said()),
+            None => None,
         }
     }
 
@@ -473,15 +252,89 @@ impl ConfigKey {
     }
 }
 
+impl Switch {
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        self.key().as_str()
+    }
+
+    pub const fn switched(self, said: Option<bool>) -> bool {
+        match said {
+            Some(said) => said,
+            None => self.on_unless_said(),
+        }
+    }
+}
+
 impl fmt::Display for ConfigKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.as_str())
     }
 }
 
+impl fmt::Display for Switch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Switches {
+    said: [Option<bool>; Switch::ALL.len()],
+}
+
+impl Default for Switches {
+    fn default() -> Self {
+        Self::UNSAID
+    }
+}
+
+impl Switches {
+    pub const UNSAID: Self = Self {
+        said: [None; Switch::ALL.len()],
+    };
+
+    pub const fn said(&self, switch: Switch) -> Option<bool> {
+        self.said[switch.index()]
+    }
+
+    pub const fn is_on(&self, switch: Switch) -> bool {
+        switch.switched(self.said(switch))
+    }
+
+    pub const fn say(&mut self, switch: Switch, on: bool) {
+        self.said[switch.index()] = Some(on);
+    }
+
+    pub const fn forget(&mut self, switch: Switch) {
+        self.said[switch.index()] = None;
+    }
+
+    #[must_use]
+    pub const fn with(mut self, switch: Switch, on: bool) -> Self {
+        self.say(switch, on);
+        self
+    }
+
+    pub fn as_said(&self) -> impl Iterator<Item = (Switch, bool)> + '_ {
+        Switch::ALL
+            .into_iter()
+            .filter_map(|switch| self.said(switch).map(|on| (switch, on)))
+    }
+}
+
+impl fmt::Debug for Switches {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map().entries(self.as_said()).finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::ConfigKey;
+    use super::{ConfigKey, Sorted, Switch, Switches};
 
     #[test]
     fn a_switch_is_what_was_said_and_else_what_it_is_unless_said() {
@@ -490,5 +343,38 @@ mod tests {
         assert!(!ConfigKey::EnrichOnMetered.switched(None));
         assert!(ConfigKey::EnrichOnMetered.switched(Some(true)));
         assert_eq!(ConfigKey::Sink.on_unless_said(), None);
+    }
+
+    #[test]
+    fn every_switch_is_the_key_it_names_and_only_a_switch_names_a_default() {
+        for switch in Switch::ALL {
+            assert_eq!(switch.key().switch(), Some(switch));
+            assert_eq!(switch.as_str(), switch.key().as_str());
+            assert_eq!(switch.key().sorted(), Sorted::Switch(switch));
+        }
+        for key in ConfigKey::ALL {
+            assert_eq!(key.switch().is_some(), key.on_unless_said().is_some());
+            match key.sorted() {
+                Sorted::Switch(switch) => assert_eq!(switch.key(), key),
+                Sorted::Valued(valued) => assert_eq!(valued.key(), key),
+            }
+        }
+    }
+
+    #[test]
+    fn switches_hold_what_was_said_apart_from_what_was_not() {
+        let mut switches = Switches::UNSAID.with(Switch::Online, false);
+
+        assert!(!switches.is_on(Switch::Online));
+        assert!(switches.is_on(Switch::Resume));
+        assert_eq!(switches.said(Switch::Resume), None);
+        assert_eq!(
+            switches.as_said().collect::<Vec<_>>(),
+            [(Switch::Online, false)]
+        );
+
+        switches.forget(Switch::Online);
+
+        assert_eq!(switches, Switches::UNSAID);
     }
 }

@@ -1,5 +1,8 @@
 use std::path::Path;
 
+#[cfg(feature = "online")]
+use resonate_core::Switch;
+
 use crate::{Result, config::Config};
 
 #[cfg(feature = "online")]
@@ -18,7 +21,7 @@ pub fn sign_in(config: &Config, settings: &Path, forget: bool) -> Result<()> {
         said!("{}", words::lastfm::forgotten());
         return Ok(());
     }
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
     let given = |held: &Option<String>| {

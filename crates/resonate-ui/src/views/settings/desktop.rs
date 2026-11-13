@@ -1,7 +1,7 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use gpui::{Context, SharedString, Window, prelude::*};
-use resonate_core::{AppId, Pictured, Presence, Shown};
+use resonate_core::{AppId, Pictured, Presence, Shown, Switch};
 
 use crate::{
     Notice, ResonateApp, Setting,
@@ -68,7 +68,7 @@ impl RootView {
         cx.global::<ResonateApp>()
             .notify
             .store(notify, Ordering::Release);
-        self.store(&Setting::Notify(notify), cx);
+        self.store(&Setting::Switched(Switch::Notify, notify), cx);
         cx.notify();
     }
 

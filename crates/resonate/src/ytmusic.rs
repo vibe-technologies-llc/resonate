@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use resonate_core::{Service, SourceId};
+use resonate_core::{Service, SourceId, Switch};
 use resonate_library::{
     KeepStopped, KeepSummary, KeptList, KeptSong, Library, PlaylistToKeep, SongToKeep,
 };
@@ -97,7 +97,7 @@ fn asked_of(link: &str) -> Result<Asked> {
 }
 
 fn account(config: &Config, settings: Option<PathBuf>) -> Result<Arc<YtMusic>> {
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
     providers::youtube_music_named(config, settings).ok_or(Error::YoutubeMusicOff)
@@ -215,7 +215,12 @@ fn keep(
     let asked = asked_of(link)?;
     let music = account(config, settings)?;
     let library = library()?;
-    queue(&asked, &music, config.keeps_youtubes_order(), &library)?;
+    queue(
+        &asked,
+        &music,
+        config.is_on(Switch::YoutubeMusicKeepOrder),
+        &library,
+    )?;
     walked_until_told(&library, music)
 }
 
@@ -243,10 +248,10 @@ fn signed_in_with(
     program: Option<PathBuf>,
     kept: &Kept,
 ) -> Result<String> {
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
-    if !config.turns_youtube_music_on() {
+    if !config.is_on(Switch::YoutubeMusic) {
         return Err(Error::YoutubeMusicOff);
     }
     let program = program.ok_or(Error::NoSignInProgram)?;
@@ -320,6 +325,8 @@ mod tests {
     #[cfg(unix)]
     use std::path::Path;
 
+    use resonate_core::{Switch, Switches};
+
     use super::*;
     use crate::signing_in::Kept;
 
@@ -327,7 +334,7 @@ mod tests {
 
     fn turned_on() -> Config {
         Config {
-            youtube_music: Some(true),
+            switches: Switches::UNSAID.with(Switch::YoutubeMusic, true),
             ..Config::default()
         }
     }
@@ -397,7 +404,7 @@ mod tests {
     #[test]
     fn a_keep_with_online_off_says_so_and_asks_nothing() {
         let offline = Config {
-            online: Some(false),
+            switches: turned_on().switches.with(Switch::Online, false),
             ..turned_on()
         };
 
@@ -473,7 +480,7 @@ mod tests {
         } = a_sign_in_folder("refused");
         let program = Some(folder.join("never-run"));
         let offline = Config {
-            online: Some(false),
+            switches: turned_on().switches.with(Switch::Online, false),
             ..turned_on()
         };
 

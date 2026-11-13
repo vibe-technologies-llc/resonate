@@ -8,6 +8,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(feature = "ui")]
+use resonate_core::Switch;
+
 use crate::{
     Error, Result,
     config::{self, Config},
@@ -196,7 +199,7 @@ pub fn checking(config: &Config) -> Option<Arc<dyn resonate_ui::Updates>> {
     online::names_where_it_was_released().then(|| {
         Arc::new(Checking {
             config: Config {
-                online: Some(true),
+                switches: config.switches.with(Switch::Online, true),
                 ..config.clone()
             },
         }) as Arc<dyn resonate_ui::Updates>

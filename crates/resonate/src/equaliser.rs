@@ -1,6 +1,6 @@
 use std::{path::Path, sync::Arc};
 
-use resonate_core::{SampleRate, eq::Profile};
+use resonate_core::{SampleRate, Switch, eq::Profile};
 use resonate_engine::NodeName;
 use resonate_eq::{
     Binding, BuiltIn, Catalogue, Corrected, Device, DeviceId, Fitted, Fitting, Kept, Measured,
@@ -663,7 +663,7 @@ fn profiles(store: &Store, config: &Config, names: &[ProfileName]) {
 fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> {
     said!(
         "{}",
-        words::equaliser::switched(switched(config.equaliser_on()))
+        words::equaliser::switched(switched(config.is_on(Switch::Equaliser)))
     );
 
     match config
@@ -881,13 +881,13 @@ fn fetch(
 pub fn bound(config: &Config) -> resonate_ui::Bindings {
     let Some(bindings) = config.equaliser_for.as_ref() else {
         return resonate_ui::Bindings {
-            enabled: config.equaliser_on(),
+            enabled: config.is_on(Switch::Equaliser),
             ..resonate_ui::Bindings::default()
         };
     };
 
     resonate_ui::Bindings {
-        enabled: config.equaliser_on(),
+        enabled: config.is_on(Switch::Equaliser),
         fallback: bindings.fallback().cloned(),
         by_sink: bindings
             .by_sink()
@@ -903,7 +903,7 @@ pub fn resolved(config: &Config) -> resonate_engine::Equalisation {
     let store = Store::at(folder);
     let Some(bindings) = config.equaliser_for.as_ref() else {
         return resonate_engine::Equalisation {
-            enabled: config.equaliser_on(),
+            enabled: config.is_on(Switch::Equaliser),
             ..resonate_engine::Equalisation::default()
         };
     };
@@ -930,7 +930,7 @@ pub fn resolved(config: &Config) -> resonate_engine::Equalisation {
     };
 
     resonate_engine::Equalisation {
-        enabled: config.equaliser_on(),
+        enabled: config.is_on(Switch::Equaliser),
         bound: bindings
             .by_sink()
             .filter_map(|(sink, binding)| {
@@ -952,6 +952,7 @@ mod tests {
     };
 
     use clap::Parser;
+    use resonate_core::Switch;
 
     use super::*;
     use crate::cli::Sub;
@@ -1123,7 +1124,7 @@ mod tests {
         );
         assert_eq!(scratch.bound(Some(&device)), Some(Binding::Own));
         assert_eq!(scratch.bound(None), None);
-        assert!(scratch.config().equaliser_on());
+        assert!(scratch.config().is_on(Switch::Equaliser));
     }
 
     fn dipped_measurement(scratch: &Scratch) -> PathBuf {
@@ -1299,7 +1300,7 @@ mod tests {
         assert!(!kept.bands().is_empty());
         assert!(kept.bands().iter().any(|band| band.gain.decibels() > 2.0));
         assert_eq!(scratch.bound(Some(&device)), Some(Binding::Profile(name)));
-        assert!(scratch.config().equaliser_on());
+        assert!(scratch.config().is_on(Switch::Equaliser));
     }
 
     #[test]
@@ -1410,7 +1411,7 @@ mod tests {
         bound_as(&scratch.settings(), None, &Binding::Own).expect("the settings are written");
 
         assert_eq!(scratch.bound(None), Some(Binding::Own));
-        assert!(scratch.config().equaliser_on());
+        assert!(scratch.config().is_on(Switch::Equaliser));
         assert!(scratch.store.owners().expect("it walks").is_empty());
     }
 

@@ -11,6 +11,8 @@ use resonate_core::MediaLocation;
 #[cfg(feature = "online")]
 use resonate_core::SourceId;
 #[cfg(feature = "online")]
+use resonate_core::Switch;
+#[cfg(feature = "online")]
 use resonate_library::PlayedInPlace;
 #[cfg(feature = "online")]
 use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Song};
@@ -411,7 +413,7 @@ pub fn browse(
     service: Option<&str>,
     wanted: &BrowsingArgs,
 ) -> Result<()> {
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
     let services = providers::in_place_named(config, settings);
@@ -428,7 +430,7 @@ pub fn browse_subsonic(
     settings: Option<PathBuf>,
     wanted: &BrowsingArgs,
 ) -> Result<()> {
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
     let services = providers::in_place_named(config, settings);

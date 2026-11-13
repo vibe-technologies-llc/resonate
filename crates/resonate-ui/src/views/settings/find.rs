@@ -1,5 +1,7 @@
 use std::{cmp::Reverse, sync::OnceLock};
 
+use resonate_core::Switch;
+
 pub(crate) use crate::SettingsCategory as Category;
 use crate::{ConfigKey, icons::Icon, system::sound_system, words};
 
@@ -446,6 +448,10 @@ impl Group {
 
     pub(crate) fn keys(self) -> &'static [ConfigKey] {
         self.described().keys
+    }
+
+    pub(crate) fn switches(self) -> impl Iterator<Item = Switch> {
+        self.keys().iter().filter_map(|key| key.switch())
     }
 
     pub(crate) fn described(self) -> Described {

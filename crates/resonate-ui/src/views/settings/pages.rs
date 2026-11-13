@@ -6,9 +6,10 @@ use std::{
 
 use gpui::TestAppContext;
 use parking_lot::Mutex;
+use resonate_core::Switch;
 use resonate_library::{Library, MusicExtensions};
 
-use super::{Armed, Category, Group, Page, defaults};
+use super::{Armed, Category, Group, Page};
 use crate::{
     ConfigKey, ResonateApp, Setting, SettingChange,
     driven::{Driven, Folder},
@@ -237,7 +238,7 @@ fn no_longer_remembering_the_category_forgets_the_one_kept(cx: &mut TestAppConte
     assert_eq!(
         written,
         [
-            stored(Setting::RememberSettingsCategory(false)),
+            stored(Setting::Switched(Switch::RememberSettingsCategory, false)),
             SettingChange::Forget(ConfigKey::LastSettingsCategory),
         ]
     );
@@ -279,7 +280,7 @@ fn the_equaliser_page_writes_the_switch_it_flips(cx: &mut TestAppContext) {
 
     let written = pane.pressing("equaliser-track", 1);
 
-    assert_eq!(written, [stored(Setting::Equaliser(!on))]);
+    assert_eq!(written, [stored(Setting::Switched(Switch::Equaliser, !on))]);
 }
 
 #[gpui::test]
@@ -289,7 +290,10 @@ fn the_playback_page_writes_the_resume_switch_and_the_shuffle_style(cx: &mut Tes
     let resumes = pane.driven.read(|root, cx| root.library.read(cx).resumes());
 
     let written = pane.pressing("resume-the-queue-track", 1);
-    assert_eq!(written, [stored(Setting::Resume(!resumes))]);
+    assert_eq!(
+        written,
+        [stored(Setting::Switched(Switch::Resume, !resumes))]
+    );
 
     let written = pane.pressing("shuffle-style-0", 1);
     assert!(matches!(
@@ -367,7 +371,7 @@ fn the_online_page_writes_the_network_switch(cx: &mut TestAppContext) {
 
     let written = pane.pressing("reference-lookups-track", 1);
 
-    assert_eq!(written, [stored(Setting::Online(!on))]);
+    assert_eq!(written, [stored(Setting::Switched(Switch::Online, !on))]);
 }
 
 #[gpui::test]
@@ -378,7 +382,10 @@ fn the_recognition_page_writes_the_study_switch(cx: &mut TestAppContext) {
 
     let written = pane.pressing("studying-tracks-track", 1);
 
-    assert_eq!(written, [stored(Setting::Study(!studies))]);
+    assert_eq!(
+        written,
+        [stored(Setting::Switched(Switch::Study, !studies))]
+    );
 }
 
 #[gpui::test]
@@ -407,7 +414,7 @@ fn the_sync_page_writes_the_switch_it_flips(cx: &mut TestAppContext) {
 
     let written = pane.pressing("sync-on-track", 1);
 
-    assert_eq!(written, [stored(Setting::Sync(!on))]);
+    assert_eq!(written, [stored(Setting::Switched(Switch::Sync, !on))]);
 }
 
 #[gpui::test]
@@ -418,7 +425,7 @@ fn the_desktop_page_writes_the_notification_switch(cx: &mut TestAppContext) {
 
     let written = pane.pressing("notify-on-a-track-change-track", 1);
 
-    assert_eq!(written, [stored(Setting::Notify(!tells))]);
+    assert_eq!(written, [stored(Setting::Switched(Switch::Notify, !tells))]);
 }
 
 #[gpui::test]
@@ -459,7 +466,10 @@ fn the_about_page_writes_the_update_switch(cx: &mut TestAppContext) {
 
     let written = pane.pressing("check-for-updates-track", 1);
 
-    assert_eq!(written, [stored(Setting::CheckForUpdates(!checks))]);
+    assert_eq!(
+        written,
+        [stored(Setting::Switched(Switch::CheckForUpdates, !checks))]
+    );
 }
 
 #[gpui::test]
@@ -475,7 +485,10 @@ fn a_group_moved_off_its_default_offers_to_be_put_back_and_writes_the_default_wh
 
     let written = pane.pressing(leaked(format!("revert-{}", Group::Lookups.title())), 1);
 
-    assert!(written.contains(&stored(Setting::Online(defaults::ONLINE))));
+    assert!(written.contains(&stored(Setting::Switched(
+        Switch::Online,
+        Switch::Online.on_unless_said()
+    ))));
 }
 
 #[gpui::test]
@@ -489,7 +502,10 @@ fn resetting_a_category_puts_each_of_its_groups_back(cx: &mut TestAppContext) {
 
     let written = pane.pressing("reset-the-category", 1);
 
-    assert!(written.contains(&stored(Setting::Online(defaults::ONLINE))));
+    assert!(written.contains(&stored(Setting::Switched(
+        Switch::Online,
+        Switch::Online.on_unless_said()
+    ))));
 }
 
 #[gpui::test]

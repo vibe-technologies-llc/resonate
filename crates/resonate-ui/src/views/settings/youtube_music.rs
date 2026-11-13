@@ -4,6 +4,7 @@ use gpui::{
     AppContext as _, BorrowAppContext as _, Context, Div, Entity, ParentElement as _, Stateful,
     Task, Window,
 };
+use resonate_core::Switch;
 
 use crate::{
     Notice, ResonateApp, Setting,
@@ -262,23 +263,23 @@ impl RootView {
             global.online.youtube_music = false;
             global.online.youtube_music_keep_order = true;
         });
-        self.store(&Setting::YoutubeMusic(false), cx);
-        self.store(&Setting::YoutubeMusicKeepOrder(true), cx);
+        self.store(&Setting::Switched(Switch::YoutubeMusic, false), cx);
+        self.store(&Setting::Switched(Switch::YoutubeMusicKeepOrder, true), cx);
         self.the_sources_moved(cx);
     }
 
-    fn turn_youtube_music(&mut self, on: bool, cx: &mut Context<Self>) {
+    pub(super) fn turn_youtube_music(&mut self, on: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.youtube_music = on);
-        self.store(&Setting::YoutubeMusic(on), cx);
+        self.store(&Setting::Switched(Switch::YoutubeMusic, on), cx);
         self.the_sources_moved(cx);
         cx.notify();
     }
 
-    fn keep_youtubes_order(&mut self, keeps: bool, cx: &mut Context<Self>) {
+    pub(super) fn keep_youtubes_order(&mut self, keeps: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.online.youtube_music_keep_order = keeps;
         });
-        self.store(&Setting::YoutubeMusicKeepOrder(keeps), cx);
+        self.store(&Setting::Switched(Switch::YoutubeMusicKeepOrder, keeps), cx);
         cx.notify();
     }
 

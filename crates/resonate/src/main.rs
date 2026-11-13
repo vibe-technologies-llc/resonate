@@ -1,4 +1,5 @@
 #![deny(clippy::print_stdout, clippy::print_stderr)]
+use resonate_core::Switch;
 
 #[macro_use]
 mod said;
@@ -325,8 +326,8 @@ fn run() -> Result<()> {
             EnrichOptions {
                 refresh: *refresh,
                 at_most: *albums,
-                studies: config.studies(),
-                lyrics: config.fetches_lyrics(),
+                studies: config.is_on(Switch::Study),
+                lyrics: config.is_on(Switch::FetchLyrics),
                 ..EnrichOptions::default()
             },
         ),

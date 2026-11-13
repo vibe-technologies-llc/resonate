@@ -12,7 +12,7 @@ behind its persisted runtime switch, enabled by default when unset. `cargo tree 
 client; `cargo tree -p resonate-library` has no `ureq`/`serde`. Android capture modules in
 `resonate-listen` are excluded while its recognizer vocabulary remains available.
 
-**Nothing about the listener leaves without their say.** `Config::online_enabled` (`online`, default
+**Nothing about the listener leaves without their say.** `Config::is_on(Switch::Online)` (`online`, default
 true) gates every request: `online::reference` is `None` when off, so `resonate enrich` says
 `Error::OnlineOff` (build without the feature: `Error::NoReference`). `contact`, `acoustid-key`,
 `audd-token`, `listenbrainz-token` and the `lastfm-` keys are empty by default, listener-set only.
@@ -37,7 +37,7 @@ counted play), only under a token or session the listener signed in for.
   asked before each request; the binary's `Followed` reads only the `contact` key
   (`config::contact_in`), only where the config file's mtime moved. `Client::reach` is a switch
   `exchange` reads before taking a turn: off, `Error::Offline` with nothing sent
-  (`Setting::Online` calls `online::reach`). The binary also keeps it in `online::REACHING`, set on
+  (`Setting::Switched(Switch::Online, _)` calls `online::reach`). The binary also keeps it in `online::REACHING`, set on
   the process client every time it is handed out, so a switch turned off before the client was first
   made still holds. Every seam's error reads `Offline` as `NetworkDown`.
 - **A metered connection stops the lookups unless the listener allows them.** `Client::gated_by`
@@ -546,7 +546,7 @@ cache rules are in `android.md`.
 
 **`crates/resonate/src/online.rs` is the only file naming `resonate_online`'s types, and has a twin
 for the build without it.** Under the feature: `reference` answers an `Online` only where
-`Config::online_enabled`; `corrections` = `Corrected::uncorrected()` + an `AutoEq` under the same
+`Config::is_on(Switch::Online)`; `corrections` = `Corrected::uncorrected()` + an `AutoEq` under the same
 condition; `lyricists` = `Lyricists::local_choosing_by_the_locale` + an `OnlineLyrics` (the last two get
 the library where there is one); `fingerprinters` and `recognisers` register the printers and
 recognisers above. `reference_asked_for` and `corrections_asked_for` = the same two or

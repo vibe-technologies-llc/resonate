@@ -168,11 +168,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `enrich.rs`. The strict rules and how an answer is heard (`hearing.rs`: refusals, the run that ends
   a pass, phrase then words) are shared; the queue, the seeks and the picture and lyric workers are
   not, so a fix to one is made twice. One pass over a small catalog trait both catalogs fill
-- [L] A setting is still spelled in some six files (`enrich-on-metered`: the binary's `config.rs`
-  field and reader, the window's `Setting` variant, its `Standing` and pane row, the man page), though
-  the window and the file share one `ConfigKey`, a switch's default is `ConfigKey::on_unless_said`
-  and the writer takes the key from `Setting::key`; the typed values and groups in that one table
-  would make a new setting one entry
 - [M · blocked: jxl-oxide reading jxl-encoder's ANS-coded output] The vault builds two JPEG XL
   encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder` for a JPEG's transcode. Measured on
   600 to 1400 px covers, `jxl-encoder` 0.3.4's lossless effort 7 is about half zune's size (0.6 to

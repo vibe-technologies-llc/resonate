@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 use parking_lot::RwLock;
 #[cfg(feature = "ui")]
 use resonate_core::Gate;
+use resonate_core::Switch;
 use resonate_library::{RecordingAsked, Reference, Wording};
 #[cfg(feature = "sync")]
 use resonate_musicbrainz::Consultation;
@@ -90,11 +91,11 @@ fn current(config: &Config) -> Config {
 #[cfg(feature = "ui")]
 fn wanted(config: &Config) -> bool {
     let current = current(config);
-    current.mirrors_musicbrainz() && current.online_enabled()
+    current.is_on(Switch::MusicbrainzMirror) && current.is_on(Switch::Online)
 }
 
 fn landed(config: &Config, mirrored: &Mirrored, held: impl FnOnce() -> Option<Arc<Mirror>>) {
-    if current(config).mirrors_musicbrainz() {
+    if current(config).is_on(Switch::MusicbrainzMirror) {
         mirrored.hold(held());
     }
 }
@@ -102,7 +103,7 @@ fn landed(config: &Config, mirrored: &Mirrored, held: impl FnOnce() -> Option<Ar
 pub fn mirrored(config: &Config) -> Arc<Mirrored> {
     Arc::clone(MIRRORED.get_or_init(|| {
         let mirrored = Mirrored::default();
-        if config.mirrors_musicbrainz() {
+        if config.is_on(Switch::MusicbrainzMirror) {
             mirrored.hold(held_mirror());
         }
         Arc::new(mirrored)
@@ -191,7 +192,7 @@ fn keeping(config: &Config) -> Keeping {
 }
 
 pub fn build(config: &Config, from: Option<&Path>, building: &Building) -> Result<PathBuf> {
-    if from.is_none() && !current(config).online_enabled() {
+    if from.is_none() && !current(config).is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
     let keeping = keeping(config);
@@ -229,7 +230,7 @@ fn token_of(config: &Config) -> Result<String> {
 }
 
 pub fn replicate(config: &Config, following: &Building) -> Result<Replicated> {
-    if !current(config).online_enabled() {
+    if !current(config).is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
     let token = token_of(config)?;
@@ -255,8 +256,8 @@ pub fn replicate(config: &Config, following: &Building) -> Result<Replicated> {
 #[cfg(feature = "ui")]
 fn follows_the_changes(config: &Config) -> bool {
     let current = current(config);
-    current.mirrors_musicbrainz()
-        && current.online_enabled()
+    current.is_on(Switch::MusicbrainzMirror)
+        && current.is_on(Switch::Online)
         && current.musicbrainz_replication_token().is_some()
 }
 
@@ -369,8 +370,8 @@ fn due_for_a_look(
     held: Option<&resonate_musicbrainz::Made>,
     at: u64,
 ) -> bool {
-    config.mirrors_musicbrainz()
-        && config.online_enabled()
+    config.is_on(Switch::MusicbrainzMirror)
+        && config.is_on(Switch::Online)
         && !lookups.is_shut()
         && held.is_none_or(|made| {
             download::is_a_dump_name(&made.dump)
@@ -535,7 +536,7 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
                 built.display().to_string(),
             )
         );
-        if !config.mirrors_musicbrainz() {
+        if !config.is_on(Switch::MusicbrainzMirror) {
             said!("{}", words::musicbrainz::mirror_off());
         }
         return Ok(());
@@ -577,7 +578,7 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
 
     said!(
         "{}",
-        if config.mirrors_musicbrainz() {
+        if config.is_on(Switch::MusicbrainzMirror) {
             words::musicbrainz::held(dump, weighed, path)
         } else {
             words::musicbrainz::held_though_off(dump, weighed, path)
@@ -791,6 +792,7 @@ mod tests {
 
     #[cfg(feature = "ui")]
     use resonate_core::{Meter, Metering};
+    use resonate_core::{Switch, Switches};
 
     use super::*;
 
@@ -808,8 +810,9 @@ mod tests {
 
     fn started_with(online: bool, mirror: bool, file: &Path) -> Config {
         Config {
-            online: Some(online),
-            musicbrainz_mirror: Some(mirror),
+            switches: Switches::UNSAID
+                .with(Switch::Online, online)
+                .with(Switch::MusicbrainzMirror, mirror),
             read_from: Some(file.to_path_buf()),
             ..Config::default()
         }
@@ -824,7 +827,7 @@ mod tests {
         let _ = fs::remove_file(&file);
 
         assert!(matches!(refused, Err(Error::OnlineOff)));
-        assert!(config.online_enabled());
+        assert!(config.is_on(Switch::Online));
     }
 
     #[test]
@@ -835,8 +838,8 @@ mod tests {
         let live = current(&config);
         let _ = fs::remove_file(&file);
 
-        assert!(live.online_enabled());
-        assert!(!live.mirrors_musicbrainz());
+        assert!(live.is_on(Switch::Online));
+        assert!(!live.is_on(Switch::MusicbrainzMirror));
     }
 
     #[test]
@@ -846,8 +849,8 @@ mod tests {
 
         let live = current(&config);
 
-        assert!(live.online_enabled());
-        assert!(live.mirrors_musicbrainz());
+        assert!(live.is_on(Switch::Online));
+        assert!(live.is_on(Switch::MusicbrainzMirror));
     }
 
     #[test]
@@ -904,16 +907,17 @@ mod tests {
         let metering = Metering::new();
         let gate = Gate::new(metering.clone(), true);
         let wanting = Config {
-            online: Some(true),
-            musicbrainz_mirror: Some(true),
+            switches: Switches::UNSAID
+                .with(Switch::Online, true)
+                .with(Switch::MusicbrainzMirror, true),
             ..Config::default()
         };
         let silent = Config {
-            online: Some(false),
+            switches: wanting.switches.with(Switch::Online, false),
             ..wanting.clone()
         };
         let not_mirroring = Config {
-            musicbrainz_mirror: Some(false),
+            switches: wanting.switches.with(Switch::MusicbrainzMirror, false),
             ..wanting.clone()
         };
         let built = 1_000_000;

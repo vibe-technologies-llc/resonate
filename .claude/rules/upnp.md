@@ -341,7 +341,7 @@ key is on (off by default: nothing is multicast unasked), `sinks --renderers` as
 wanted names a renderer; the last two wait for the first search. The window always holds one
 (`Rendering::for_the_window`, resting where none of those asks), so the settings pane's device
 list can switch it: `Rendering::switch` hands `resonate-ui` a `Renderers` (`looking`, `look`), the
-switch row under the devices calls it and stores `Setting::Renderers`, and renderers appear in
+switch row under the devices calls it and stores `Setting::Switched(Switch::Renderers, _)`, and renderers appear in
 or leave the list through the sink changes `Beside` forwards. The `renderers-at` key (`binary.md`) holds the addresses of renderers the search cannot hear:
 `Kinds::resting` hands each to `Network::locate` while the network rests, and a run holding any
 reaches them at start without a search (`Rendering::of`'s `Asked::Addresses`, the window's

@@ -1,11 +1,11 @@
-use resonate_core::ZoneId;
+use resonate_core::{Switch, ZoneId};
 use resonate_engine::{Keep, Keeping, Player, PlayerState, Queued};
 use resonate_library::Library;
 
 use crate::config::Config;
 
 pub(crate) fn resuming(config: &Config, library: Option<&Library>) -> bool {
-    if config.resumes() {
+    if config.is_on(Switch::Resume) {
         return true;
     }
     if let Some(library) = library

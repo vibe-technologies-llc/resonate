@@ -12,7 +12,7 @@ use gpui::{
     div, linear_color_stop, linear_gradient, point, prelude::*, px, quad, relative, rgb, size,
 };
 use resonate_core::{
-    HeadYaw, MediaLocation, SampleRate, SpeakerAngle, SpeakerElevation, Speakers,
+    HeadYaw, MediaLocation, SampleRate, SpeakerAngle, SpeakerElevation, Speakers, Switch,
     eq::{Band, BandKind, Preamp, Traced, TracedOn},
 };
 use resonate_engine::{
@@ -1498,7 +1498,7 @@ fn handle(plot: Plot, band: Band, chosen: bool) -> gpui::PaintQuad {
 impl RootView {
     pub(crate) fn switch_the_equaliser(&mut self, on: bool, cx: &mut Context<Self>) {
         self.equaliser.update(cx, |model, _| model.switch(on));
-        self.store(&Setting::Equaliser(on), cx);
+        self.store(&Setting::Switched(Switch::Equaliser, on), cx);
         self.tell_the_engine(cx);
     }
 

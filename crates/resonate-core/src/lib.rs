@@ -1,3 +1,5 @@
+#![recursion_limit = "512"]
+
 pub mod abx;
 mod answer;
 mod appearance;
@@ -64,7 +66,7 @@ pub use crate::{
     buffer::{AudioBuffer, SampleData},
     calendar::Calendar,
     channel::{ChannelCount, ChannelLayout, ChannelPosition, Places},
-    config_key::ConfigKey,
+    config_key::{ConfigKey, Sorted, Switch, Switches, Valued},
     date::{CivilDate, SECONDS_PER_DAY, seconds_since_the_epoch},
     eq::{HeadYaw, SpeakerAngle, SpeakerElevation, Speakers},
     error::{Error, Result},

@@ -1,5 +1,6 @@
 use std::{num::NonZeroUsize, sync::Arc, thread};
 
+use resonate_core::Switch;
 use resonate_library::{
     EnrichOptions, EnrichStats, EnrichSummary, Library, LookupOp, Outcome, PassKind, ScanOptions,
 };
@@ -44,7 +45,7 @@ pub(crate) fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Res
     finished(PassKind::Scan, summary.cancelled)?;
     let scanned = none_failed(PassKind::Scan, stats.failed.total());
 
-    if config.enriches_after_scan()
+    if config.is_on(Switch::EnrichAfterScan)
         && let Some(reference) = online::reference(config, Asking::InTheBackground)
     {
         let summary = until_told(library.enrich(
@@ -58,8 +59,8 @@ pub(crate) fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Res
             carrying_on(
                 library,
                 EnrichOptions {
-                    studies: config.studies(),
-                    lyrics: config.fetches_lyrics(),
+                    studies: config.is_on(Switch::Study),
+                    lyrics: config.is_on(Switch::FetchLyrics),
                     ..EnrichOptions::default()
                 },
             )?,

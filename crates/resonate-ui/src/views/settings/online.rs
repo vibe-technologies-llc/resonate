@@ -4,6 +4,7 @@ use std::{
 };
 
 use gpui::{Context, SharedString, div, prelude::*};
+use resonate_core::Switch;
 use resonate_listen::Listening;
 
 use crate::{
@@ -261,7 +262,7 @@ impl RootView {
 
     pub(crate) fn set_musicbrainz_mirror(&mut self, mirrors: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.musicbrainz_mirror = mirrors);
-        self.store(&Setting::MusicbrainzMirror(mirrors), cx);
+        self.store(&Setting::Switched(Switch::MusicbrainzMirror, mirrors), cx);
         cx.notify();
     }
 
@@ -318,7 +319,7 @@ impl RootView {
 
     pub(crate) fn set_enrich_on_metered(&mut self, enriches: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.enrich_on_metered = enriches);
-        self.store(&Setting::EnrichOnMetered(enriches), cx);
+        self.store(&Setting::Switched(Switch::EnrichOnMetered, enriches), cx);
         cx.notify();
     }
 
@@ -326,7 +327,10 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.online.stall_downloads_on_metered = stalls;
         });
-        self.store(&Setting::StallDownloadsOnMetered(stalls), cx);
+        self.store(
+            &Setting::Switched(Switch::StallDownloadsOnMetered, stalls),
+            cx,
+        );
         cx.notify();
     }
 
@@ -364,7 +368,7 @@ impl RootView {
         cx.global::<ResonateApp>()
             .by_sound
             .store(by_sound, Ordering::Release);
-        self.store(&Setting::IdentifyBySound(by_sound), cx);
+        self.store(&Setting::Switched(Switch::IdentifyBySound, by_sound), cx);
         cx.notify();
     }
 
@@ -404,7 +408,10 @@ impl RootView {
         cx.global::<ResonateApp>()
             .lyrics_by_the_locale
             .store(by_the_locale, Ordering::Release);
-        self.store(&Setting::LyricsByTheLocale(by_the_locale), cx);
+        self.store(
+            &Setting::Switched(Switch::LyricsLanguageFromLocale, by_the_locale),
+            cx,
+        );
         cx.notify();
     }
 
@@ -541,27 +548,27 @@ impl RootView {
             analysis.reach(on);
             cx.notify();
         });
-        self.store(&Setting::Online(on), cx);
+        self.store(&Setting::Switched(Switch::Online, on), cx);
     }
 
     pub(crate) fn set_after_scan(&mut self, after_scan: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.after_scan = after_scan);
         self.library
             .update(cx, |library, cx| library.set_after_scan(after_scan, cx));
-        self.store(&Setting::EnrichAfterScan(after_scan), cx);
+        self.store(&Setting::Switched(Switch::EnrichAfterScan, after_scan), cx);
     }
 
     pub(crate) fn set_studies(&mut self, studies: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.studies = studies);
         self.library
             .update(cx, |library, cx| library.set_studies(studies, cx));
-        self.store(&Setting::Study(studies), cx);
+        self.store(&Setting::Switched(Switch::Study, studies), cx);
     }
 
     pub(crate) fn set_lyrics(&mut self, lyrics: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.lyrics = lyrics);
         self.library
             .update(cx, |library, cx| library.set_lyrics(lyrics, cx));
-        self.store(&Setting::FetchLyrics(lyrics), cx);
+        self.store(&Setting::Switched(Switch::FetchLyrics, lyrics), cx);
     }
 }

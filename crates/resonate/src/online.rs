@@ -10,6 +10,7 @@ use std::{
 #[cfg(feature = "online")]
 use parking_lot::Mutex;
 use resonate_codec::Sources;
+use resonate_core::Switch;
 use resonate_eq::Corrected;
 #[cfg(feature = "online")]
 use resonate_library::Scrobbler;
@@ -159,7 +160,7 @@ pub fn reach(_on: bool) {}
 
 #[cfg(feature = "online")]
 pub fn reference(config: &Config, asking: Asking) -> Option<Arc<dyn Reference>> {
-    let online = config.online_enabled().then(|| {
+    let online = config.is_on(Switch::Online).then(|| {
         Arc::new(Online::with_client(client_for(config, asking)).with_spotify(spotify(config)))
             as Arc<dyn Reference>
     });
@@ -295,7 +296,7 @@ pub fn signs_in_to_spotify(
 pub fn signed_in_to_spotify(config: &Config) -> Result<String> {
     use std::sync::atomic::{AtomicBool, Ordering};
 
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
     let client_id = config
@@ -346,7 +347,7 @@ pub fn names_where_it_was_released() -> bool {
 
 #[cfg(feature = "online")]
 pub fn latest_release(config: &Config, asking: Asking) -> Result<Option<Released>> {
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
     let repository = released_from().ok_or(Error::NoReleasesNamed)?;
@@ -373,12 +374,14 @@ pub fn reference_asked_for(config: &Config, asking: Asking) -> Result<Arc<dyn Re
 }
 
 pub fn by_sound(config: &Config) -> Arc<AtomicBool> {
-    Arc::new(AtomicBool::new(config.identifies_by_sound()))
+    Arc::new(AtomicBool::new(config.is_on(Switch::IdentifyBySound)))
 }
 
 #[cfg(feature = "ui")]
 pub fn lyrics_by_the_locale(config: &Config) -> Arc<AtomicBool> {
-    Arc::new(AtomicBool::new(config.chooses_lyrics_by_the_locale()))
+    Arc::new(AtomicBool::new(
+        config.is_on(Switch::LyricsLanguageFromLocale),
+    ))
 }
 
 #[cfg(feature = "online")]
@@ -389,7 +392,7 @@ pub fn fingerprinters(
     asking: Asking,
 ) -> Fingerprinters {
     let local = Fingerprinters::none();
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return local;
     }
     let printed = match config.acoustid_key.clone() {
@@ -505,7 +508,7 @@ pub fn fingerprinters(
 
 #[cfg(feature = "online")]
 pub fn recognisers(config: &Config) -> Recognisers {
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return Recognisers::none();
     }
     let client = client(config);
@@ -524,7 +527,7 @@ pub fn recognisers(_config: &Config) -> Recognisers {
 #[cfg(feature = "online")]
 pub fn corrections(config: &Config, library: Option<Arc<Library>>) -> Corrected {
     let local = Corrected::uncorrected();
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return local;
     }
     local.and(Arc::new(AutoEq::new(client(config), library)))
@@ -546,7 +549,7 @@ pub fn lyricists(
     by_the_locale: &Arc<AtomicBool>,
 ) -> Lyricists {
     let local = Lyricists::local_choosing_by_the_locale(Arc::clone(by_the_locale));
-    if !config.online_enabled() {
+    if !config.is_on(Switch::Online) {
         return local;
     }
     local.and(Arc::new(OnlineLyrics::new(client(config), library)))
