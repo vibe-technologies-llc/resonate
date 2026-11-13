@@ -299,6 +299,9 @@ final class Library {
     private(set) var lookingForRenderers = false
     private(set) var rendererAddresses: [String] = []
     private(set) var receiverAddresses: [String] = []
+    private(set) var renderersLearnt: [RendererLearnt] = []
+    private(set) var tryingRenderer: String?
+    private(set) var rendererHeard: RendererHeard?
     @ObservationIgnored private var zonesListed: ZonesListed?
     @ObservationIgnored private var zoneTicks = 0
     @ObservationIgnored private var volumeSending = false
@@ -658,6 +661,43 @@ final class Library {
 
     static func savedReceiverAddresses() -> [String] {
         rendererSettings.stringArray(forKey: receiverAddressesKey) ?? []
+    }
+
+    func readRenderersLearnt() {
+        reachRenderers({ try $0.renderersLearnt() }) { [self] learnt in
+            if learnt != renderersLearnt { renderersLearnt = learnt }
+        }
+    }
+
+    func learnWhatRendererPlays(_ node: String) {
+        guard tryingRenderer == nil, let native else { return }
+        tryingRenderer = node
+        rendererHeard = nil
+        Task { [self] in
+            defer { tryingRenderer = nil }
+            do {
+                let read = try await Work.aside {
+                    RendererLearning(
+                        trials: try native.learnWhatRendererPlays(node: node),
+                        learnt: try native.renderersLearnt()
+                    )
+                }
+                rendererHeard = RendererHeard(node: node, trials: read.trials)
+                renderersLearnt = read.learnt
+            } catch {
+                report(error)
+            }
+        }
+    }
+
+    func forgetWhatRendererPlays(_ node: String) {
+        reachRenderers({ native in
+            try native.forgetWhatRendererPlays(node: node)
+            return try native.renderersLearnt()
+        }) { [self] learnt in
+            if rendererHeard?.node == node { rendererHeard = nil }
+            renderersLearnt = learnt
+        }
     }
 
     func readRenderers() {
@@ -2122,6 +2162,16 @@ struct RenderersRestored: Sendable {
     let looking: Bool
     let addresses: [String]
     let receivers: [String]
+}
+
+struct RendererHeard: Equatable, Sendable {
+    let node: String
+    let trials: [TrialHeard]
+}
+
+struct RendererLearning: Sendable {
+    let trials: [TrialHeard]
+    let learnt: [RendererLearnt]
 }
 
 struct RendererAddressesRead: Sendable {

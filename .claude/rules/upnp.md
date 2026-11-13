@@ -115,11 +115,16 @@ dev-dependency, for the end-to-end test.
   hardware has confirmed which renderers decode the rate: the proof is a fake renderer's, not a
   streamer's.
 - **A renderer tried is offered what it played.** `Network::learn(sink)` (the binary's
-  `sinks --learn SINK`, the settings pane's *Learn what it plays*) tries each `Trial` in turn:
-  `FlacAt192kHz` and `FlacAt176kHz` (stereo, in the first FLAC carriage the renderer takes; none,
-  and the rate is `Untried`), `SixChannels` and `EightChannels` (48 kHz, in the first carriage
-  carrying 48 kHz stereo, S24 where it takes S24; eight only once six played), each `tried_in` a
-  carriage of that one format. A trial is `Silence` through a `Feed` of its own: `SetAVTransportURI`
+  `sinks --learn SINK`, the settings pane's *Learn what it plays*, a phone's *What renderers play*)
+  tries each `Trial` in turn: `FlacAt192kHz`, `FlacAt176kHz`, `FlacAt384kHz` and `FlacAt352kHz`
+  (stereo, in the first FLAC carriage the renderer takes; none, and the rate is `Untried`; 384 and
+  352.8 kHz travel through STREAMINFO's rate as 352.8 kHz always did), `SixChannels` and
+  `EightChannels` (48 kHz, `SURROUND_TRIED_FIRST_AT`, in the first carriage carrying 48 kHz stereo,
+  S24 where it takes S24), then `SixChannelsAt96kHz` and `EightChannelsAt96kHz` (the same carriage,
+  only where it states 96 kHz), each `tried_in` a carriage of that one format. A trial waits for the
+  ones it goes beyond (`Trial::wants`: 384 kHz on 192, 352.8 on 176.4, 7.1 on 5.1, 5.1 at 96 kHz on
+  5.1, 7.1 at 96 kHz on 7.1 and 5.1 at 96 kHz) and is `Untried` where one of them did not play
+  (`Trial::is_wanting_in`). A trial is `Silence` through a `Feed` of its own: `SetAVTransportURI`
   under the title `a_format_tried` and `Play` (a SOAP fault on either is `Unplayed::Refused`), then
   `GetPositionInfo` and `GetTransportInfo` every `TRIAL_ASKED_EVERY` (250 ms) for at most
   `TRIAL_LASTS_AT_MOST` (10 s). It played (`Signals::played`) once the feed was fetched and pulled
@@ -131,12 +136,18 @@ dev-dependency, for the end-to-end test.
   (`Holders::idle`): a renderer a stream holds is `Error::InUse` and is not tried, and a stream
   opened meanwhile takes the lane, ending the learning the same way. What played (`Learning::plays`,
   a `Plays`) is kept under the renderer's node name in the network's `Learnt` and joins the stated
-  carriages (`carriage::taught`): the rates the first FLAC carriage, the layouts (`layouts_of`) the
-  carriage the surround trial was sent in, nothing else, so a stated or vouched fact is never taken
-  away. `Network::teach(Learnt)` hands the crate what the `formats-learnt-for` setting holds
-  (`binary.md`); the binary calls it before `look`, and called later it describes again each
-  renderer whose learnt formats moved and announces `SinkChange::Reformatted`, as `vouch` does
-  (`taught_again`). Learning applies at once the same way.
+  carriages (`carriage::taught`) as shapes of their own beside what the renderer said, never as a
+  product with it: a `Carriage` is the shape it stated (`said`) and the shapes it played (`played`),
+  each its rates times its layouts, and `formats` offers each shape as an entry of its own. The rates
+  played are a stereo shape of the first FLAC carriage (`with_the_rates_played`), so 384 kHz is
+  offered in stereo alone; each surround layout played (`Plays::surround`, the highest rate it played
+  at) is a shape of the carriage it was tried in at the stated rates up to that one and that one
+  (`with_the_surround_played`, the layouts `layouts_of` names less those stated), so 5.1 learnt at
+  48 kHz is never offered at a stated 192 kHz, and 5.1 learnt at 96 kHz is offered at 44.1 to 96 kHz
+  alone. A stated or vouched fact is never taken away. `Network::teach(Learnt)` hands the crate what
+  the `formats-learnt-for` setting holds (`binary.md`); the binary calls it before `look`, and called
+  later it describes again each renderer whose learnt formats moved and announces
+  `SinkChange::Reformatted`, as `vouch` does (`taught_again`). Learning applies at once the same way.
 - **Channels are offered where the protocol info states them, never guessed.** A `channels=N`
   parameter on any entry of a wrapping (1 to 8) adds that count's layouts (`layouts_of`: the named
   layout and, where the count has a different unnamed one, `Discrete(n)`); a wrapping naming none
@@ -388,6 +399,24 @@ as one sink and refuses it to a second while the first holds it bit-perfect (`au
   *Add a renderer by address* row (a text field and the list added, each removable), the list kept
   by Kotlin and Swift (`renderer-addresses`) and added again at start. The renderer's answers and the stream the renderer fetches are unicast.
 
+- **What a renderer plays is tried and kept on the phones too.** `learn_what_renderer_plays(node)`
+  (blocking, up to a minute and a half, for the caller's worker) finds the node among the UPnP
+  renderers and then the Cast receivers (`Kinds::learn`), tries it, keeps the `Plays` in the document
+  catalog's `renderers_learnt` (step 35, `RENDERERS_KEEP_WHAT_THEY_PLAYED`: `node` primary, the
+  `name`, the trials' spellings and `learnt` in Unix seconds; a spelling a later build kept is passed
+  over), teaches both kinds the whole map again (`Rendering::taught_from`, also called once as
+  `MobilePlayer::new` makes the network) and answers a `TrialHeard` per trial (whether it played and
+  the sentence, the `renderers` area's words). A renderer playing is `RendererInUse`, a node not
+  listed `UnknownRenderer`, any other failure `RendererUnlearnt` or `ReceiverUnlearnt`.
+  `renderers_learnt()` lists what is kept (`RendererLearnt`: node, name and *Plays …*) and
+  `forget_what_renderer_plays(node)` drops one and teaches again. Each phone's zones sheet opens
+  *What renderers play*: every renderer found and every one kept, with *Try* on those found
+  (one at a time, the trials said as they come back), *Forget* on those kept and what each was
+  heard to play (`NetworkRenderers.learn` on Android, `Library.learnWhatRendererPlays` on iOS, both
+  off the transport's lane)
+  (`what_a_renderer_was_tried_with_is_kept_listed_and_forgotten`,
+  `a_catalog_of_before_renderers_were_tried_keeps_its_songs_and_gains_the_table`).
+
 `crates/resonate-mobile/src/rendering.rs` proves it over a fake on loopback (an SSDP answer, a
 description with AVTransport alone, SOAP recording actions): the search lists the renderer, a zone
 bound to it is sent `SetAVTransportURI` and `Play`, keeps it in the catalog, stays on it through a
@@ -440,11 +469,14 @@ a short last block of 100 frames and one of 16-bit size included
 nothing, and a vouched renderer taking FLAC and WAVE is sent FLAC where it would be sent WAVE
 (`a_renderer_taking_flac_alone_is_offered_it_above_ninety_six_kilohertz_only_when_the_listener_vouches`,
 `a_vouched_renderer_taking_flac_and_wave_is_sent_flac_at_a_rate_it_would_otherwise_be_sent_as_wave`); a renderer that plays everything is
-learnt to play all four trials, told `Reformatted`, then offered and sent 192 kHz FLAC and six
-channels that come back bit for bit
+learnt to play all eight trials, told `Reformatted`, then offered 384 and 352.8 kHz FLAC and 5.1 and
+7.1 at 96 kHz and sent 192 kHz FLAC and six channels that come back bit for bit
 (`learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent_high_rate_flac_and_six_channels_bit_for_bit`),
 one that stops with `ERROR_OCCURRED` on what it cannot decode is learnt to play none of it and is
 offered nothing more (`a_renderer_that_stops_on_what_it_cannot_decode_is_learnt_to_play_none_of_it`),
+one decoding at most 192 kHz and six channels is offered 5.1 up to 96 kHz, not at 192 kHz, no 7.1 and
+no 384 kHz, and its 7.1 at 96 kHz is not tried
+(`a_renderer_is_offered_surround_up_to_the_rate_it_played_it_at_and_high_rates_in_stereo_alone`),
 and one a stream holds is not tried while teaching a learnt map offers it at once and teaching it
 away takes it back (`a_renderer_a_stream_holds_is_not_tried_and_teaching_what_was_learnt_offers_it_at_once`);
 an OpenHome renderer reads

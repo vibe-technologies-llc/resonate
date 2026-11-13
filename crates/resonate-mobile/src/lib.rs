@@ -18,6 +18,7 @@ mod features;
 #[cfg(test)]
 mod harness;
 mod language;
+mod learnt;
 mod listening;
 mod logging;
 mod loves;
@@ -91,6 +92,7 @@ pub use crate::{
         equaliser_text, parse_eq_profile, response_curve, ten_band_curve, ten_band_gains,
     },
     error::{Error, Result, StoreOp},
+    learnt::{RendererLearnt, TrialHeard},
     logging::{LogLevel, Logbook, keep_log},
     measurement::{
         BuiltInTarget, MeasurementFit, MeasurementOffers, MeasurementSweep, MeasurementTarget,
@@ -333,6 +335,7 @@ impl MobilePlayer {
         let routing = Arc::new(output::Routing::new());
         let kept = catalog.kept_zones()?;
         let rendering = rendering::Rendering::on_the_network();
+        rendering.taught_from(&catalog)?;
         if kept.iter().any(|zone| zone.renderer.is_some()) {
             rendering.look_behind();
         }

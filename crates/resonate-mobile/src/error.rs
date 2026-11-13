@@ -196,6 +196,18 @@ pub enum Error {
     },
     #[error("{}", words::errors::unknown_renderer())]
     UnknownRenderer,
+    #[error("{}", words::errors::renderer_in_use())]
+    RendererInUse,
+    #[error("{}", words::errors::renderer_unlearnt())]
+    RendererUnlearnt {
+        #[source]
+        source: Box<resonate_upnp::Error>,
+    },
+    #[error("{}", words::errors::receiver_unlearnt())]
+    ReceiverUnlearnt {
+        #[source]
+        source: Box<resonate_cast::Error>,
+    },
     #[error("{}", words::errors::invalid_descriptor())]
     InvalidDescriptor,
     #[error("{}", words::errors::wrong_song())]

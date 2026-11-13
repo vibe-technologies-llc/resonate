@@ -1707,6 +1707,13 @@
 "zones.addresses.added-header" = "Added";
 "zones.addresses.none" = "A network that hides its renderers from a search, or an iPhone signed for free, reaches a renderer by the address of its description and a Google Cast receiver by its address or name.";
 "zones.footer" = "Each zone plays a queue of its own. iOS sends every zone to the one route it chose, so zones here share that output unless one plays on a renderer.";
+"zones.formats" = "What renderers play";
+"zones.formats.detail" = "Try a renderer with higher rates and surround, so it is sent what it plays rather than what it says.";
+"zones.formats.forget" = "Forget";
+"zones.formats.none" = "Find renderers or add one by address, then try it here.";
+"zones.formats.try" = "Try";
+"zones.formats.trying" = "Trying each format with silence, up to a minute and a half";
+"zones.formats.untried" = "Not tried yet";
 "zones.hand-over" = "Hand the song over here";
 "zones.line.loading" = "Opening a song";
 "zones.line.paused" = "Paused";

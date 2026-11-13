@@ -214,13 +214,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [S] The phones cannot learn what a renderer or receiver plays: `sinks --learn` and the window's
-  *Learn what it plays* are the desktop's, and a phone offers a UPnP renderer what its protocol info
-  states (FLAC to 96 kHz where it states no rate) and a Cast receiver stereo FLAC to 96 kHz (`upnp.md`,
-  `cast.md`)
-- [S] Learning tries 176.4 and 192 kHz stereo and 5.1 and 7.1 at 48 kHz alone: 352.8 kHz and
-  surround above 48 kHz are offered only where the protocol info states them, and a window already
-  running hears what `sinks --learn` wrote only from its next start (`binary.md`)
 - [S] A renderer taking WAVE and not FLAC is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz,
   and handing the untouched file over does not fit the sink seam (`upnp.md`)
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio

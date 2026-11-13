@@ -100,10 +100,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.9.1] `resonate-win32`'s real side behind its seam has run nowhere: the sequencing is held by
-  the fakes on every host and the real implementations only cross-checked by `cargo xwin`, so a
-  Windows run of `cargo test -p resonate-win32 --features console` (the end-of-search code, the Game
-  Mode value, the line-input flags) is still owed
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried

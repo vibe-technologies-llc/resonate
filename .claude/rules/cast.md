@@ -40,10 +40,11 @@ codec are dev-dependencies, for the end-to-end tests.
   above and folds surround down, as for a UPnP renderer that states nothing, unless the receiver
   was tried.
 - **A receiver tried is offered what it played.** `Casting::learn(sink)` (the binary's
-  `sinks --learn SINK`, the settings pane's *Learn what it plays*) launches the Default Media
-  Receiver once and tries each `Trial` as UPnP's does (`upnp.md`'s *A renderer tried*), each a
-  FLAC `Silence` stream loaded under the title `a_format_tried` (S24; 48 kHz for the channel trials;
-  eight channels only once six played). A refused `LOAD` is `Unplayed::Refused`; then `GET_STATUS`
+  `sinks --learn SINK`, the settings pane's *Learn what it plays*, a phone's *What renderers play*)
+  launches the Default Media Receiver once and tries each `Trial` as UPnP's does (`upnp.md`'s *A
+  renderer tried*), each a FLAC `Silence` stream loaded under the title `a_format_tried` (S24; 48 kHz
+  for the first channel trials, 96 kHz for the second; a trial waiting on those it goes beyond,
+  `Trial::is_wanting_in`). A refused `LOAD` is `Unplayed::Refused`; then `GET_STATUS`
   every `TRIAL_ASKED_EVERY` for at most `TRIAL_LASTS_AT_MOST`: an entry `IDLE` with `idleReason`
   `ERROR` is `Unplayed::Errored` at once, and it played once the feed was pulled
   `PULLED_AT_LEAST`, its `playerState` is not known to be other than `PLAYING` and its
@@ -51,8 +52,10 @@ codec are dev-dependencies, for the end-to-end tests.
   `STOP` and the token withdrawn. The trials run under the receiver's lane (`Lanes::idle`), so one a
   stream holds is `Error::InUse`. What played is kept under the receiver's node name in the
   casting's `Learnt`, looked up under both names a receiver answers to (`cast:` and its id,
-  `cast:at-` and its address), and `Device::carriage` grows by it: the learnt rates and layouts
-  join the one FLAC carriage. `Casting::teach(Learnt)` hands it the `formats-learnt-for` setting,
+  `cast:at-` and its address), and `Device::carriage` grows by it: the learnt rates as a stereo
+  shape and each surround layout up to the rate it played at, beside the stated stereo FLAC
+  (`with_the_rates_played`, `with_the_surround_played`; `upnp.md`), so `allowed_rates` is the union
+  of the shapes' rates. `Casting::teach(Learnt)` hands it the `formats-learnt-for` setting,
   re-describing and announcing `SinkChange::Reformatted` for each receiver whose formats moved.
 
 ## Finding
@@ -228,6 +231,9 @@ kept on `cast:at-...` once the browse has named it) is kept under its current na
   `look_at_addresses` starts, as a renderer's is). Each phone keeps the list (`receiver-addresses`) beside `renderer-addresses`
   and adds it again at start, and the zones sheet has an *Add a receiver by address* row beside
   *Add a renderer by address* (`mobile.md`'s *Zones*).
+- **What a receiver plays is tried from the same sheet** (`upnp.md`'s *What a renderer plays is
+  tried and kept on the phones too*): `learn_what_renderer_plays` asks the casting where the node is
+  a receiver's, and the map kept teaches both kinds.
 - **An iPhone signed for free browses nothing**: the mDNS browse is multicast from the library's own
   socket, which needs `com.apple.developer.networking.multicast`, so only the address route works
   there, as for a renderer (`ios.md`, `FEATURES.md`). The browse's failure is logged and the
@@ -248,7 +254,7 @@ refused load told as refused, a rate the receiver cannot take refused before it 
 played through a real `Player` arriving bit for bit, a pause and a volume change reaching it within
 400 ms and the song resuming bit for bit, and a seek loading a fresh address within 400 ms that
 carries the song from where it landed without launching again. Learning holds a receiver that
-plays everything learnt to play all four trials, launched once and stopped after each, told
+plays everything learnt to play all eight trials, launched once and stopped after each, told
 `Reformatted` and then sent 192 kHz and six-channel FLAC that decode bit for bit
 (`learning_what_a_receiver_plays_offers_exactly_what_played_and_it_is_then_sent_high_rate_flac_and_six_channels_bit_for_bit`),
 one that goes `IDLE`/`ERROR` on a shape it cannot decode learnt to play none of it

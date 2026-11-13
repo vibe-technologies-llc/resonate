@@ -574,7 +574,11 @@ sync seals its records and talks QUIC (TLS) of its own.
   expected to be refused (`FEATURES.md`; not yet seen on a device). `Library.zones` is read when `zone` or `zones_revision`
   moves and every eighth tick while there are several (`ZonesListed`), and after each change the
   sheet makes (`changeZones`); the lock screen reads the snapshot, so it follows the zone shown
-  (`ZonesTests`).
+  (`ZonesTests`). *What renderers play* (`RendererFormatsSheet`) lists every renderer found and every
+  one tried (`Library.renderersLearnt`, read as it opens, `readRenderersLearnt`), with *Try*
+  (`learnWhatRendererPlays`, one at a time on `Work.aside`, since a run lasts up to a minute and a half,
+  `tryingRenderer` and `rendererHeard` holding the run and the trials heard) and *Forget*
+  (`forgetWhatRendererPlays`, on the renderers' lane) (`upnp.md`'s *On the phones*).
 
 - **What can be rebuilt stays out of backups** (`Backup.leaveOutDerived`, at launch and again once the
   player is open): `sync-received`, `sync-staging` (songs other devices send, fetched again) and `download-partials` (bytes a download kept) are

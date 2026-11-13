@@ -144,13 +144,17 @@ impl Device {
     }
 
     pub fn carriage(&self) -> Carriage {
-        let mut rates = RATES_TAKEN.to_vec();
-        let mut layouts = vec![ChannelLayout::Stereo];
-        if let Some(plays) = &self.plays {
-            rates.extend(plays.rates().filter(|rate| !RATES_TAKEN.contains(rate)));
-            layouts.extend(plays.layouts());
+        let taken = Carriage::new(
+            Wrapping::Flac,
+            RATES_TAKEN.to_vec(),
+            vec![ChannelLayout::Stereo],
+        );
+        match &self.plays {
+            Some(plays) => taken
+                .with_the_rates_played(plays)
+                .with_the_surround_played(plays),
+            None => taken,
         }
-        Carriage::new(Wrapping::Flac, rates, layouts)
     }
 }
 
@@ -295,7 +299,39 @@ mod tests {
             ChannelLayout::Surround71,
             SampleFormat::S24
         )));
+        assert!(!carriage.carries(StreamSpec::new(
+            SampleRate::HZ_96000,
+            ChannelLayout::Surround51,
+            SampleFormat::S24
+        )));
         assert_eq!(device.taught(Some(&Plays::default())).plays(), None);
+
+        let higher = Plays::from_iter([
+            Trial::FlacAt192kHz,
+            Trial::FlacAt384kHz,
+            Trial::SixChannels,
+            Trial::SixChannelsAt96kHz,
+        ]);
+        let carriage = Device::held_unreached(Found::at(at))
+            .taught(Some(&higher))
+            .carriage();
+
+        assert!(carriage.carries(StreamSpec::new(
+            SampleRate::HZ_384000,
+            ChannelLayout::Stereo,
+            SampleFormat::S24
+        )));
+        assert!(carriage.carries(StreamSpec::new(
+            SampleRate::HZ_96000,
+            ChannelLayout::Surround51,
+            SampleFormat::S24
+        )));
+        assert!(!carriage.carries(StreamSpec::new(
+            SampleRate::HZ_192000,
+            ChannelLayout::Surround51,
+            SampleFormat::S24
+        )));
+        assert!(carriage.rates().contains(&SampleRate::HZ_384000));
     }
 
     #[test]

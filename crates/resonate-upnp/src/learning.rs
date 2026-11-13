@@ -53,9 +53,7 @@ fn trials(
 ) -> Result<Learning> {
     let mut learning = Learning::default();
     for trial in Trial::ALL {
-        let wanted_unplayed = trial
-            .wanting()
-            .is_some_and(|wanted| learning.verdict_on(wanted) != Some(TrialVerdict::Played));
+        let wanted_unplayed = trial.is_wanting_in(&learning);
         let verdict = match carriage::tried_in(renderer.said(), trial) {
             Some((carriage, spec)) if !wanted_unplayed => {
                 let tried = Tried {

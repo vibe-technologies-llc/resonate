@@ -336,6 +336,7 @@ impl Host for Desktop {
             Reloadable::Submission | Reloadable::Sync => Reloaded::Refused,
             Reloadable::Tidal => self.tidal_signed_in_again(Path::new(settings)),
             Reloadable::Spotify => self.spotify_signed_in_again(Path::new(settings)),
+            Reloadable::Renderers => self.renderers_learnt_again(Path::new(settings)),
         }
     }
 
@@ -448,6 +449,18 @@ impl Desktop {
             }
         }
     }
+
+    fn renderers_learnt_again(&self, settings: &Path) -> Reloaded {
+        match config::load(Some(settings)) {
+            Ok(config) => self.tell_the_window(resonate_ui::Followed::Learnt(
+                config.formats_learnt_for().clone(),
+            )),
+            Err(error) => {
+                tracing::warn!(%error, "what renderers play could not be read again from the settings");
+                Reloaded::Refused
+            }
+        }
+    }
 }
 
 #[cfg(not(feature = "ui"))]
@@ -459,6 +472,10 @@ impl Desktop {
     }
 
     fn spotify_signed_in_again(&self, _settings: &Path) -> Reloaded {
+        Reloaded::Refused
+    }
+
+    fn renderers_learnt_again(&self, _settings: &Path) -> Reloaded {
         Reloaded::Refused
     }
 }

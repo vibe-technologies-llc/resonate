@@ -506,6 +506,52 @@ mod tests {
     }
 
     #[test]
+    fn what_a_renderer_was_tried_with_is_kept_listed_and_forgotten() {
+        let fake = Fake::start();
+        let harness = Harness::beside_renderers(fake.searching());
+        harness.player.look_for_renderers(true).expect("looking");
+        let renderer = found(&harness);
+
+        let unknown = harness
+            .player
+            .learn_what_renderer_plays("upnp:uuid:nobody".to_owned());
+        let heard = harness
+            .player
+            .learn_what_renderer_plays(renderer.node.clone())
+            .expect("the renderer is tried");
+        let listed = harness.player.renderers_learnt().expect("listed");
+
+        assert!(matches!(unknown, Err(Error::UnknownRenderer)));
+        assert_eq!(heard.len(), resonate_engine::Trial::ALL.len());
+        assert!(heard.iter().all(|trial| !trial.played));
+        assert_eq!(
+            heard.first().map(|trial| trial.said.as_str()),
+            Some("FLAC at 192 kHz: not tried")
+        );
+        assert_eq!(
+            listed,
+            [crate::RendererLearnt {
+                node: renderer.node.clone(),
+                name: NAME.to_owned(),
+                said: "Played none of them".to_owned(),
+            }]
+        );
+
+        harness
+            .player
+            .forget_what_renderer_plays(renderer.node)
+            .expect("forgotten");
+
+        assert!(
+            harness
+                .player
+                .renderers_learnt()
+                .expect("listed")
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn a_renderer_found_on_the_network_is_listed_and_a_zone_bound_to_it_plays_there_and_is_kept() {
         let fake = Fake::start();
         let harness = Harness::beside_renderers(fake.searching());

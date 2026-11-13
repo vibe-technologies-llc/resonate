@@ -989,6 +989,18 @@ impl RootView {
         cx.notify();
     }
 
+    pub(crate) fn follow_what_was_learnt_elsewhere(
+        &mut self,
+        learnt: Learnt,
+        cx: &mut Context<Self>,
+    ) {
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.formats_learnt_for = learnt;
+        });
+        self.teach_now(cx);
+        cx.notify();
+    }
+
     fn teach_now(&self, cx: &Context<Self>) {
         let app = cx.global::<ResonateApp>();
         if let Some(renderers) = app.renderers.clone() {
@@ -1027,8 +1039,12 @@ fn trial_named(trial: Trial) -> &'static str {
     match trial {
         Trial::FlacAt192kHz => words::settings_output::flac_at_192(),
         Trial::FlacAt176kHz => words::settings_output::flac_at_176(),
+        Trial::FlacAt384kHz => words::settings_output::flac_at_384(),
+        Trial::FlacAt352kHz => words::settings_output::flac_at_352(),
         Trial::SixChannels => words::settings_output::six_channels(),
         Trial::EightChannels => words::settings_output::eight_channels(),
+        Trial::SixChannelsAt96kHz => words::settings_output::six_channels_at_96(),
+        Trial::EightChannelsAt96kHz => words::settings_output::eight_channels_at_96(),
     }
 }
 

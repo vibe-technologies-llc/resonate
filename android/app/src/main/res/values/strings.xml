@@ -502,6 +502,13 @@
     <string name="zones_add_renderer_by_address">Add a renderer by address</string>
     <string name="zones_receiver_address_detail">For a Google Cast receiver a search does not hear</string>
     <string name="zones_add_receiver_by_address">Add a receiver by address</string>
+    <string name="zones_what_renderers_play">What renderers play</string>
+    <string name="zones_what_renderers_play_detail">Try a renderer with higher rates and surround, so it is sent what it plays rather than what it says</string>
+    <string name="zones_try_what_it_plays">Try</string>
+    <string name="zones_trying_what_it_plays">Trying each format with silence, up to a minute and a half</string>
+    <string name="zones_not_tried_yet">Not tried yet</string>
+    <string name="zones_forget_what_it_plays">Forget</string>
+    <string name="zones_tried_renderers_none">Find renderers or add one by address, then try it here</string>
     <string name="zones_description_address">Description address</string>
     <string name="zones_receiver_address">Address or host name</string>
     <string name="zones_receiver_address_example">192.168.1.30 or living-room.local</string>

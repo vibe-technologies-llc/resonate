@@ -2,6 +2,7 @@ package org.resonate.android.ui.player
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -14,12 +15,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -47,9 +50,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import org.resonate.android.R
+import org.resonate.android.RendererHeard
 import org.resonate.android.ZonePlan
 import org.resonate.android.nativecore.NetworkRenderer
 import org.resonate.android.nativecore.PlayerZone
+import org.resonate.android.nativecore.RendererLearnt
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.settings.ConfirmDialog
 import org.resonate.android.ui.settings.offeredOutputs
@@ -70,8 +75,12 @@ fun ZonesSheet(onDismiss: () -> Unit) {
     val renderers by features.renderers.listed.collectAsStateWithLifecycle()
     val addresses by features.renderers.addresses.collectAsStateWithLifecycle()
     val receiverAddresses by features.renderers.receiverAddresses.collectAsStateWithLifecycle()
+    val learnt by features.renderers.learnt.collectAsStateWithLifecycle()
+    val trying by features.renderers.trying.collectAsStateWithLifecycle()
+    val heard by features.renderers.heard.collectAsStateWithLifecycle()
     var addressing by remember { mutableStateOf(false) }
     var addressingReceiver by remember { mutableStateOf(false) }
+    var learning by remember { mutableStateOf(false) }
     val shown = zones.firstOrNull { it.shown }?.id
     LaunchedEffect(Unit) { features.refreshOutputs() }
     LaunchedEffect(looking, addresses.isNotEmpty()) {
@@ -193,7 +202,26 @@ fun ZonesSheet(onDismiss: () -> Unit) {
             ) {
                 Text(stringResource(R.string.zones_add_receiver_by_address))
             }
+            ListItem(
+                onClick = { learning = true },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                leadingContent = { Icon(Icons.Rounded.Tune, contentDescription = null) },
+                supportingContent = { Text(stringResource(R.string.zones_what_renderers_play_detail)) },
+            ) {
+                Text(stringResource(R.string.zones_what_renderers_play))
+            }
         }
+    }
+    if (learning) {
+        RendererFormatsDialog(
+            renderers = renderers,
+            learnt = learnt,
+            trying = trying,
+            heard = heard,
+            learn = { features.renderers.learn(it) },
+            forget = { features.renderers.forgetWhatItPlays(it) },
+            dismiss = { learning = false },
+        )
     }
     if (addressing) {
         RendererAddressDialog(
@@ -401,6 +429,71 @@ private fun RendererDialog(
                             }
                         }
                     }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = dismiss) { Text(stringResource(R.string.zones_close)) }
+        },
+    )
+}
+
+@Composable
+private fun RendererFormatsDialog(
+    renderers: List<NetworkRenderer>,
+    learnt: List<RendererLearnt>,
+    trying: String?,
+    heard: RendererHeard?,
+    learn: (String) -> Unit,
+    forget: (String) -> Unit,
+    dismiss: () -> Unit,
+) {
+    val listed = renderers.map { it.node to it.name }
+    val away = learnt.filter { kept -> renderers.none { it.node == kept.node } }.map { it.node to it.name }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(stringResource(R.string.zones_what_renderers_play)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (listed.isEmpty() && away.isEmpty()) {
+                    Text(stringResource(R.string.zones_tried_renderers_none))
+                }
+                (listed + away).forEach { (node, name) ->
+                    val kept = learnt.firstOrNull { it.node == node }
+                    val reachable = listed.any { it.first == node }
+                    ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        supportingContent = {
+                            Column {
+                                when {
+                                    trying == node -> {
+                                        Text(stringResource(R.string.zones_trying_what_it_plays))
+                                        LinearProgressIndicator(Modifier.padding(top = 4.dp))
+                                    }
+                                    heard?.node == node ->
+                                        heard.trials.forEach { trial -> Text(trial.said) }
+                                    kept != null -> Text(kept.said)
+                                    else -> Text(stringResource(R.string.zones_not_tried_yet))
+                                }
+                            }
+                        },
+                        trailingContent = {
+                            Row {
+                                if (kept != null) {
+                                    TextButton(onClick = { forget(node) }, enabled = trying != node) {
+                                        Text(stringResource(R.string.zones_forget_what_it_plays))
+                                    }
+                                }
+                                if (reachable) {
+                                    TextButton(onClick = { learn(node) }, enabled = trying == null) {
+                                        Text(stringResource(R.string.zones_try_what_it_plays))
+                                    }
+                                }
+                            }
+                        },
+                    ) {
+                        Text(name)
+                    }
+                }
             }
         },
         confirmButton = {

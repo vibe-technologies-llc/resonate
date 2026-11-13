@@ -489,6 +489,7 @@ pub enum Followed {
     Bindings(Bindings),
     Tidal(TidalSignIn),
     Spotify(SpotifySignIn),
+    Learnt(Learnt),
     PartyOffered(String),
     ListOffered(ListOffered),
 }

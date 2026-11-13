@@ -181,7 +181,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             },
         )
     val zones = PlayerZones(library)
-    val renderers = NetworkRenderers(context, library, settings)
+    val renderers = NetworkRenderers(context, library, settings, scope)
     val outputStream = MutableStateFlow<OutputStream?>(null)
     val outputs = MutableStateFlow<List<AudioOutput>>(emptyList())
     val selectedOutput = MutableStateFlow(0)

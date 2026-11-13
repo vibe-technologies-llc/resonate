@@ -684,7 +684,10 @@ to the boundary** (`cast.md`'s *On the phones*): `renderers()` lists both kinds 
 `select_zone_renderer` takes either (a node answering as an alias of a listed receiver is kept as
 its current name) and a receiver the search cannot hear is added by `add_receiver_address`,
 `remove_receiver_address` and `receiver_addresses`, the host keeping that list apart
-(`receiver-addresses`) beside the renderers' and adding it again at start.
+(`receiver-addresses`) beside the renderers' and adding it again at start. **What a renderer or
+receiver plays is tried here and kept in the catalog** (`learnt.rs`: `learn_what_renderer_plays`,
+`renderers_learnt`, `forget_what_renderer_plays`, step 35 `RENDERERS_KEEP_WHAT_THEY_PLAYED`;
+`upnp.md`'s *On the phones*).
 
 **A device another zone holds bit-perfect is refused, as the desktop refuses it** (`audio.md`'s
 `Zones::holding`): each zone's sink being its own, `Zones::send` never sees two zones on one sink, so

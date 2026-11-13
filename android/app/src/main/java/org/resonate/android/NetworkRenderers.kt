@@ -3,20 +3,33 @@ package org.resonate.android
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.wifi.WifiManager
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.NetworkRenderer
+import org.resonate.android.nativecore.RendererLearnt
+import org.resonate.android.nativecore.TrialHeard
 
 private const val LOOKS_FOR_RENDERERS = "renderers"
 private const val RENDERER_ADDRESSES = "renderer-addresses"
 private const val RECEIVER_ADDRESSES = "receiver-addresses"
 
+data class RendererHeard(val node: String, val trials: List<TrialHeard>)
+
 class NetworkRenderers(
     context: Context,
     private val library: LibraryRepository,
     private val settings: SharedPreferences,
+    private val scope: CoroutineScope,
 ) {
+    private val mutableLearnt = MutableStateFlow<List<RendererLearnt>>(emptyList())
+    val learnt = mutableLearnt.asStateFlow()
+    private val mutableTrying = MutableStateFlow<String?>(null)
+    val trying = mutableTrying.asStateFlow()
+    private val mutableHeard = MutableStateFlow<RendererHeard?>(null)
+    val heard = mutableHeard.asStateFlow()
     private val mutableLooking = MutableStateFlow(false)
     val looking = mutableLooking.asStateFlow()
     private val mutableListed = MutableStateFlow<List<NetworkRenderer>>(emptyList())
@@ -113,12 +126,36 @@ class NetworkRenderers(
         library.request { native -> mutableListed.value = native.renderers() }
     }
 
+    fun learn(node: String) {
+        if (!mutableTrying.compareAndSet(null, node)) return
+        mutableHeard.value = null
+        scope.launch {
+            try {
+                val trials = library.holding { it.learnWhatRendererPlays(node) }
+                mutableHeard.value = RendererHeard(node, trials)
+                mutableLearnt.value = library.holding { it.renderersLearnt() }
+            } finally {
+                mutableTrying.value = null
+            }
+        }
+    }
+
+    fun forgetWhatItPlays(node: String) {
+        library.request { native ->
+            native.forgetWhatRendererPlays(node)
+            if (mutableHeard.value?.node == node) mutableHeard.value = null
+            mutableLearnt.value = native.renderersLearnt()
+        }
+    }
+
     fun stop() {
         hearSearches(false)
         mutableLooking.value = false
         mutableListed.value = emptyList()
         mutableAddresses.value = emptyList()
         mutableReceiverAddresses.value = emptyList()
+        mutableLearnt.value = emptyList()
+        mutableHeard.value = null
     }
 
     private fun savedAddresses(): List<String> =
@@ -147,6 +184,7 @@ class NetworkRenderers(
         mutableListed.value = native.renderers()
         mutableAddresses.value = native.rendererAddresses()
         mutableReceiverAddresses.value = native.receiverAddresses()
+        mutableLearnt.value = native.renderersLearnt()
     }
 
     private fun hearSearches(hear: Boolean) {

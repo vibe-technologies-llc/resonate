@@ -857,6 +857,63 @@ mod tests {
         assert_eq!(online.tidal_refresh_token, "token");
     }
 
+    #[derive(Default)]
+    struct Taught(parking_lot::Mutex<Vec<resonate_engine::Learnt>>);
+
+    impl crate::Renderers for Taught {
+        fn looking(&self) -> bool {
+            false
+        }
+
+        fn look(&self, _on: bool) {}
+
+        fn vouch(&self, _renderers: &std::collections::BTreeSet<resonate_engine::NodeName>) {}
+
+        fn learn(
+            &self,
+            _sink: &resonate_engine::NodeName,
+        ) -> std::result::Result<resonate_engine::Learning, resonate_engine::Unlearnt> {
+            Err(resonate_engine::Unlearnt::NotListed)
+        }
+
+        fn teach(&self, learnt: &resonate_engine::Learnt) {
+            self.0.lock().push(learnt.clone());
+        }
+    }
+
+    #[gpui::test]
+    fn what_a_renderer_was_learnt_to_play_at_the_command_line_is_taught_to_the_window_at_once(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        let taught = Arc::new(Taught::default());
+        let learnt: resonate_engine::Learnt = [(
+            resonate_engine::NodeName::new("upnp:uuid:a-renderer"),
+            resonate_engine::Plays::from_iter([
+                resonate_engine::Trial::FlacAt192kHz,
+                resonate_engine::Trial::SixChannelsAt96kHz,
+            ]),
+        )]
+        .into_iter()
+        .collect();
+        driven.cx.update(|_, cx| {
+            cx.global_mut::<ResonateApp>().renderers =
+                Some(Arc::clone(&taught) as Arc<dyn crate::Renderers>);
+        });
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.follow(crate::Followed::Learnt(learnt.clone()), cx);
+        });
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|_, cx| cx.global::<ResonateApp>().formats_learnt_for.clone()),
+            learnt
+        );
+        assert_eq!(*taught.0.lock(), [learnt]);
+    }
+
     #[gpui::test]
     fn a_press_on_the_equaliser_curve_adds_a_band_a_drag_moves_it_and_a_right_press_takes_it_out(
         cx: &mut TestAppContext,

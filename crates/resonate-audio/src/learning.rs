@@ -8,24 +8,36 @@ use crate::NodeName;
 pub enum Trial {
     FlacAt192kHz,
     FlacAt176kHz,
+    FlacAt384kHz,
+    FlacAt352kHz,
     SixChannels,
     EightChannels,
+    SixChannelsAt96kHz,
+    EightChannelsAt96kHz,
 }
 
 impl Trial {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 8] = [
         Self::FlacAt192kHz,
         Self::FlacAt176kHz,
+        Self::FlacAt384kHz,
+        Self::FlacAt352kHz,
         Self::SixChannels,
         Self::EightChannels,
+        Self::SixChannelsAt96kHz,
+        Self::EightChannelsAt96kHz,
     ];
 
     pub const fn spelling(self) -> &'static str {
         match self {
             Self::FlacAt192kHz => "flac-192000",
             Self::FlacAt176kHz => "flac-176400",
+            Self::FlacAt384kHz => "flac-384000",
+            Self::FlacAt352kHz => "flac-352800",
             Self::SixChannels => "channels-6",
             Self::EightChannels => "channels-8",
+            Self::SixChannelsAt96kHz => "channels-6-96000",
+            Self::EightChannelsAt96kHz => "channels-8-96000",
         }
     }
 
@@ -39,31 +51,46 @@ impl Trial {
         match self {
             Self::FlacAt192kHz => SampleRate::HZ_192000,
             Self::FlacAt176kHz => SampleRate::HZ_176400,
+            Self::FlacAt384kHz => SampleRate::HZ_384000,
+            Self::FlacAt352kHz => SampleRate::HZ_352800,
             Self::SixChannels | Self::EightChannels => SampleRate::HZ_48000,
+            Self::SixChannelsAt96kHz | Self::EightChannelsAt96kHz => SampleRate::HZ_96000,
         }
     }
 
     pub const fn layout(self) -> ChannelLayout {
         match self {
-            Self::FlacAt192kHz | Self::FlacAt176kHz => ChannelLayout::Stereo,
-            Self::SixChannels => ChannelLayout::Surround51,
-            Self::EightChannels => ChannelLayout::Surround71,
+            Self::FlacAt192kHz | Self::FlacAt176kHz | Self::FlacAt384kHz | Self::FlacAt352kHz => {
+                ChannelLayout::Stereo
+            }
+            Self::SixChannels | Self::SixChannelsAt96kHz => ChannelLayout::Surround51,
+            Self::EightChannels | Self::EightChannelsAt96kHz => ChannelLayout::Surround71,
         }
     }
 
     pub const fn is_a_rate(self) -> bool {
-        matches!(self, Self::FlacAt192kHz | Self::FlacAt176kHz)
+        matches!(self.layout(), ChannelLayout::Stereo)
     }
 
     pub const fn spec(self, format: SampleFormat) -> StreamSpec {
         StreamSpec::new(self.rate(), self.layout(), format)
     }
 
-    pub const fn wanting(self) -> Option<Self> {
+    pub const fn wants(self) -> &'static [Self] {
         match self {
-            Self::EightChannels => Some(Self::SixChannels),
-            Self::FlacAt192kHz | Self::FlacAt176kHz | Self::SixChannels => None,
+            Self::FlacAt192kHz | Self::FlacAt176kHz | Self::SixChannels => &[],
+            Self::FlacAt384kHz => &[Self::FlacAt192kHz],
+            Self::FlacAt352kHz => &[Self::FlacAt176kHz],
+            Self::EightChannels => &[Self::SixChannels],
+            Self::SixChannelsAt96kHz => &[Self::SixChannels],
+            Self::EightChannelsAt96kHz => &[Self::EightChannels, Self::SixChannelsAt96kHz],
         }
+    }
+
+    pub fn is_wanting_in(self, learning: &Learning) -> bool {
+        self.wants()
+            .iter()
+            .any(|wanted| learning.verdict_on(*wanted) != Some(TrialVerdict::Played))
     }
 }
 
@@ -106,10 +133,18 @@ impl Plays {
             .map(Trial::rate)
     }
 
-    pub fn layouts(&self) -> impl Iterator<Item = ChannelLayout> + '_ {
-        self.trials()
-            .filter(|trial| !trial.is_a_rate())
-            .map(Trial::layout)
+    pub fn surround(&self) -> Vec<(ChannelLayout, SampleRate)> {
+        let mut highest: Vec<(ChannelLayout, SampleRate)> = Vec::new();
+        for trial in self.trials().filter(|trial| !trial.is_a_rate()) {
+            match highest
+                .iter_mut()
+                .find(|(layout, _)| *layout == trial.layout())
+            {
+                Some((_, rate)) => *rate = (*rate).max(trial.rate()),
+                None => highest.push((trial.layout(), trial.rate())),
+            }
+        }
+        highest
     }
 }
 
@@ -195,7 +230,7 @@ mod tests {
             assert_eq!(Trial::spelled(trial.spelling()), Some(trial));
         }
         assert_eq!(Trial::spelled(" channels-6 "), Some(Trial::SixChannels));
-        assert_eq!(Trial::spelled("flac-352800"), None);
+        assert_eq!(Trial::spelled("flac-768000"), None);
     }
 
     #[test]
@@ -217,13 +252,61 @@ mod tests {
         );
         assert_eq!(plays.rates().collect::<Vec<_>>(), [SampleRate::HZ_192000]);
         assert_eq!(
-            plays.layouts().collect::<Vec<_>>(),
-            [ChannelLayout::Surround51]
+            plays.surround(),
+            [(ChannelLayout::Surround51, SampleRate::HZ_48000)]
         );
         assert_eq!(
             learning.verdict_on(Trial::EightChannels),
             Some(TrialVerdict::Untried)
         );
+    }
+
+    #[test]
+    fn a_trial_beyond_another_waits_for_it_to_play() {
+        let mut learning = Learning::default();
+        learning.heard(Trial::FlacAt192kHz, TrialVerdict::Played);
+        learning.heard(
+            Trial::FlacAt176kHz,
+            TrialVerdict::Unplayed(Unplayed::Errored),
+        );
+        learning.heard(Trial::SixChannels, TrialVerdict::Played);
+        learning.heard(Trial::EightChannels, TrialVerdict::Played);
+
+        assert!(!Trial::FlacAt384kHz.is_wanting_in(&learning));
+        assert!(Trial::FlacAt352kHz.is_wanting_in(&learning));
+        assert!(!Trial::SixChannelsAt96kHz.is_wanting_in(&learning));
+        assert!(Trial::EightChannelsAt96kHz.is_wanting_in(&learning));
+
+        learning.heard(Trial::SixChannelsAt96kHz, TrialVerdict::Played);
+
+        assert!(!Trial::EightChannelsAt96kHz.is_wanting_in(&learning));
+        assert!(
+            Trial::ALL.iter().all(|trial| trial
+                .wants()
+                .iter()
+                .all(|wanted| Trial::ALL.iter().position(|t| t == wanted)
+                    < Trial::ALL.iter().position(|t| t == trial))),
+            "a trial is tried after every trial it waits for"
+        );
+    }
+
+    #[test]
+    fn surround_is_offered_up_to_the_highest_rate_it_played_at() {
+        let plays = Plays::from_iter([
+            Trial::FlacAt384kHz,
+            Trial::SixChannels,
+            Trial::SixChannelsAt96kHz,
+            Trial::EightChannels,
+        ]);
+
+        assert_eq!(
+            plays.surround(),
+            [
+                (ChannelLayout::Surround51, SampleRate::HZ_96000),
+                (ChannelLayout::Surround71, SampleRate::HZ_48000),
+            ]
+        );
+        assert_eq!(plays.rates().collect::<Vec<_>>(), [SampleRate::HZ_384000]);
     }
 
     #[test]

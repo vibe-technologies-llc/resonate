@@ -434,17 +434,19 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   A flag would name a device for one run only.
 - `formats-learnt-for` (empty unless set): a table of a renderer's or receiver's node name
   (`upnp:` and the UDN, `cast:` and its id) to an array of the trials it played (`Trial::spelling`:
-  `flac-192000`, `flac-176400`, `channels-6`, `channels-8`; an empty array is a device tried that
-  played none). A spelling this build does not know, or an entry that is not an array, is passed
+  `flac-192000`, `flac-176400`, `flac-384000`, `flac-352800`, `channels-6`, `channels-8`,
+  `channels-6-96000`, `channels-8-96000`; an empty array is a device tried that played none). A spelling this build does not know, or an entry that is not an array, is passed
   over with a warning; a value that is not a table costs the key alone (`Config::formats_learnt_for`,
   handed to `Network::teach` and `Casting::teach` before the first look; `upnp.md`'s *A renderer
   tried*). **`sinks --learn SINK`** finds the device as `sinks` would (searching, or reaching
   `--renderer-at` and `--cast-at`), says what it is doing, prints each trial's verdict through the
-  `sinks` area and writes the entry with `config::store_in_table` (`learnt_written`); a name no
+  `sinks` area and writes the entry with `config::store_in_table` (`learnt_written`) under
+  `reloading::delivering` of `Reloadable::Renderers`, so a window already running is told
+  (`renderers_learnt_again`: it reads the file's `formats-learnt-for` into
+  `Followed::Learnt`, and the pane teaches it at once, `follow_what_was_learnt_elsewhere`); a name no
   renderer or receiver answers to is `Error::NotANetworkDevice`, and a failure is
   `Error::RendererUnlearnt` or `Error::ReceiverUnlearnt` with the crate's error (`InUse` where a
-  stream holds it). A window already running learns of it only from its next start, since its
-  network was taught when it opened. The settings pane's *What renderers play* group (Output)
+  stream holds it). The settings pane's *What renderers play* group (Output)
   tries one with *Learn what it plays*, writes `Setting::FormatsLearntFor` (one entry; `None`
   removes it) and forgets one or all through `Renderers::teach`.
 - `speaker-angle`: whole degrees 5 to 90 (`resonate_core::SpeakerAngle`, 30 unless set; held by

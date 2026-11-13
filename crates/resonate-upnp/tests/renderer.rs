@@ -1990,8 +1990,28 @@ fn learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent
             ChannelLayout::Stereo,
             SampleFormat::S24,
         ),
+        StreamSpec::new(
+            SampleRate::HZ_384000,
+            ChannelLayout::Stereo,
+            SampleFormat::S24,
+        ),
+        StreamSpec::new(
+            SampleRate::HZ_352800,
+            ChannelLayout::Stereo,
+            SampleFormat::S24,
+        ),
         surround(ChannelLayout::Surround51),
         surround(ChannelLayout::Surround71),
+        StreamSpec::new(
+            SampleRate::HZ_96000,
+            ChannelLayout::Surround51,
+            SampleFormat::S24,
+        ),
+        StreamSpec::new(
+            SampleRate::HZ_96000,
+            ChannelLayout::Surround71,
+            SampleFormat::S24,
+        ),
     ] {
         assert!(
             learnt.supports(spec),
@@ -2002,7 +2022,7 @@ fn learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent
         let heard = fake.heard.lock();
         assert_eq!(
             stops_and_offers(&heard),
-            (4, 4),
+            (8, 8),
             "each trial is offered and stopped"
         );
         assert!(
@@ -2041,7 +2061,7 @@ fn learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent
     stream.set_active(true).expect("plays");
     stream.drain().expect("drains");
     fake.until("the second stream's fetch to end once drained", |heard| {
-        heard.offers.len() == 6
+        heard.offers.len() == Trial::ALL.len() + 2
             && heard.fetching.as_ref() == heard.offers.last()
             && heard.fetch_ended
     });
@@ -2079,17 +2099,60 @@ fn a_renderer_that_stops_on_what_it_cannot_decode_is_learnt_to_play_none_of_it()
                 Trial::FlacAt176kHz,
                 TrialVerdict::Unplayed(Unplayed::Errored)
             ),
+            (Trial::FlacAt384kHz, TrialVerdict::Untried),
+            (Trial::FlacAt352kHz, TrialVerdict::Untried),
             (
                 Trial::SixChannels,
                 TrialVerdict::Unplayed(Unplayed::Errored)
             ),
             (Trial::EightChannels, TrialVerdict::Untried),
+            (Trial::SixChannelsAt96kHz, TrialVerdict::Untried),
+            (Trial::EightChannelsAt96kHz, TrialVerdict::Untried),
         ]
     );
     assert!(learning.plays().is_empty());
     assert!(changes.try_recv().is_err(), "nothing learnt moves nothing");
     assert_eq!(the_renderer(&network), before);
     assert_eq!(stops_and_offers(&fake.heard.lock()), (3, 3));
+}
+
+#[test]
+fn a_renderer_is_offered_surround_up_to_the_rate_it_played_it_at_and_high_rates_in_stereo_alone() {
+    let fake = Fake::with(Profile {
+        sink: FLAC_ALONE,
+        openhome: false,
+    })
+    .decoding_at_most(192_000, 6);
+    let network = network_vouching(&fake, Vouched::default());
+    let before = the_renderer(&network);
+
+    let learning = network.learn(before.id).expect("the renderer is tried");
+
+    assert_eq!(
+        learning.plays(),
+        Plays::from_iter([
+            Trial::FlacAt192kHz,
+            Trial::FlacAt176kHz,
+            Trial::SixChannels,
+            Trial::SixChannelsAt96kHz,
+        ])
+    );
+    assert_eq!(
+        learning.verdict_on(Trial::EightChannelsAt96kHz),
+        Some(TrialVerdict::Untried)
+    );
+    let learnt = the_renderer(&network);
+    let five_one = |rate| StreamSpec::new(rate, ChannelLayout::Surround51, SampleFormat::S24);
+    assert!(learnt.supports(five_one(SampleRate::HZ_96000)));
+    assert!(learnt.supports(five_one(SampleRate::HZ_44100)));
+    assert!(!learnt.supports(five_one(SampleRate::HZ_192000)));
+    assert!(!learnt.supports(surround(ChannelLayout::Surround71)));
+    assert!(!learnt.supports(StreamSpec::new(
+        SampleRate::HZ_384000,
+        ChannelLayout::Stereo,
+        SampleFormat::S24
+    )));
+    assert!(learnt.supports(high_flac()));
 }
 
 #[test]

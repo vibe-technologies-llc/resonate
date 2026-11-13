@@ -33,15 +33,17 @@ pub enum Reloadable {
     Sync,
     Tidal,
     Spotify,
+    Renderers,
 }
 
 impl Reloadable {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Equaliser,
         Self::Submission,
         Self::Sync,
         Self::Tidal,
         Self::Spotify,
+        Self::Renderers,
     ];
 
     pub const fn name(self) -> &'static str {
@@ -51,6 +53,7 @@ impl Reloadable {
             Self::Sync => "sync",
             Self::Tidal => "tidal",
             Self::Spotify => "spotify",
+            Self::Renderers => "renderers",
         }
     }
 

@@ -1542,8 +1542,28 @@ fn learning_what_a_receiver_plays_offers_exactly_what_played_and_it_is_then_sent
             ChannelLayout::Stereo,
             SampleFormat::S24,
         ),
+        StreamSpec::new(
+            SampleRate::HZ_384000,
+            ChannelLayout::Stereo,
+            SampleFormat::S24,
+        ),
+        StreamSpec::new(
+            SampleRate::HZ_352800,
+            ChannelLayout::Stereo,
+            SampleFormat::S24,
+        ),
         surround(ChannelLayout::Surround51),
         surround(ChannelLayout::Surround71),
+        StreamSpec::new(
+            SampleRate::HZ_96000,
+            ChannelLayout::Surround51,
+            SampleFormat::S24,
+        ),
+        StreamSpec::new(
+            SampleRate::HZ_96000,
+            ChannelLayout::Surround71,
+            SampleFormat::S24,
+        ),
     ] {
         assert!(
             learnt.supports(spec),
@@ -1552,8 +1572,8 @@ fn learning_what_a_receiver_plays_offers_exactly_what_played_and_it_is_then_sent
     }
     {
         let heard = fake.heard.lock();
-        assert_eq!(heard.count("LOAD"), 4);
-        assert_eq!(heard.count("STOP"), 4, "each trial is stopped");
+        assert_eq!(heard.count("LOAD"), 8);
+        assert_eq!(heard.count("STOP"), 8, "each trial is stopped");
         assert_eq!(heard.count("LAUNCH"), 1);
     }
 
@@ -1602,11 +1622,15 @@ fn a_receiver_that_fails_what_it_cannot_decode_is_learnt_to_play_none_of_it() {
                 Trial::FlacAt176kHz,
                 TrialVerdict::Unplayed(Unplayed::Errored)
             ),
+            (Trial::FlacAt384kHz, TrialVerdict::Untried),
+            (Trial::FlacAt352kHz, TrialVerdict::Untried),
             (
                 Trial::SixChannels,
                 TrialVerdict::Unplayed(Unplayed::Errored)
             ),
             (Trial::EightChannels, TrialVerdict::Untried),
+            (Trial::SixChannelsAt96kHz, TrialVerdict::Untried),
+            (Trial::EightChannelsAt96kHz, TrialVerdict::Untried),
         ]
     );
     assert!(changes.try_recv().is_err(), "nothing learnt moves nothing");

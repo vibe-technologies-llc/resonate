@@ -25,6 +25,7 @@ struct ZonesSheet: View {
     @State private var choosing: PlayerZone?
     @State private var addressing = false
     @State private var addressingReceiver = false
+    @State private var learning = false
 
     private var reaching: Bool {
         library.lookingForRenderers || !library.rendererAddresses.isEmpty || !library.receiverAddresses.isEmpty
@@ -81,6 +82,7 @@ struct ZonesSheet: View {
                     }
                     Button("zones.renderers.add-by-address", systemImage: "plus") { addressing = true }
                     Button("zones.receivers.add-by-address", systemImage: "plus") { addressingReceiver = true }
+                    Button("zones.formats", systemImage: "slider.horizontal.3") { learning = true }
                 } header: {
                     Text("zones.renderers")
                 } footer: {
@@ -89,6 +91,7 @@ struct ZonesSheet: View {
             }
             .sheet(isPresented: $addressing) { RendererAddressSheet(kind: .renderer).sheetSized() }
             .sheet(isPresented: $addressingReceiver) { RendererAddressSheet(kind: .receiver).sheetSized() }
+            .sheet(isPresented: $learning) { RendererFormatsSheet().sheetSized() }
             .task(id: reaching) {
                 while reaching, !Task.isCancelled {
                     library.readRenderers()
@@ -153,6 +156,95 @@ struct ZonesSheet: View {
         }
         if ZonePlan.mayRemove(zone.id) {
             Button("common.remove", systemImage: "trash", role: .destructive) { removing = zone }
+        }
+    }
+}
+
+struct RendererFormatsSheet: View {
+    @Environment(Library.self) private var library
+    @Environment(\.dismiss) private var dismiss
+
+    private struct Shown: Identifiable {
+        let id: String
+        let name: String
+        let reachable: Bool
+    }
+
+    private var shown: [Shown] {
+        let listed = library.renderers.map { Shown(id: $0.node, name: $0.name, reachable: true) }
+        let away = library.renderersLearnt
+            .filter { kept in !library.renderers.contains { $0.node == kept.node } }
+            .map { Shown(id: $0.node, name: $0.name, reachable: false) }
+        return listed + away
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if shown.isEmpty {
+                    Text("zones.formats.none")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Section {
+                        ForEach(shown) { renderer in
+                            row(renderer)
+                        }
+                    } footer: {
+                        Text("zones.formats.detail")
+                    }
+                }
+            }
+            .task { library.readRenderersLearnt() }
+            .navigationTitle("zones.formats")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(role: .close) { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    @ViewBuilder
+    private func row(_ renderer: Shown) -> some View {
+        let kept = library.renderersLearnt.first { $0.node == renderer.id }
+        let trying = library.tryingRenderer
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(renderer.name)
+                Spacer()
+                if kept != nil {
+                    Button("zones.formats.forget") { library.forgetWhatRendererPlays(renderer.id) }
+                        .buttonStyle(.bordered)
+                        .disabled(trying == renderer.id)
+                }
+                if renderer.reachable {
+                    Button("zones.formats.try") { library.learnWhatRendererPlays(renderer.id) }
+                        .buttonStyle(.bordered)
+                        .disabled(trying != nil)
+                }
+            }
+            Group {
+                if trying == renderer.id {
+                    ProgressView("zones.formats.trying")
+                } else if let heard = library.rendererHeard, heard.node == renderer.id {
+                    ForEach(Array(heard.trials.enumerated()), id: \.offset) { _, trial in
+                        Label {
+                            Text(trial.said)
+                        } icon: {
+                            Image(systemName: trial.played ? "checkmark.circle" : "xmark.circle")
+                                .accessibilityHidden(true)
+                        }
+                    }
+                } else if let kept {
+                    Text(kept.said)
+                } else {
+                    Text("zones.formats.untried")
+                }
+            }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
         }
     }
 }

@@ -9,6 +9,7 @@ use resonate_engine::{
     TrialVerdict, Unplayed,
 };
 use resonate_library::{Failure, Failures};
+use resonate_mpris::Reloadable;
 use resonate_upnp::Located;
 
 use crate::{
@@ -16,7 +17,7 @@ use crate::{
     cli::Cli,
     config::{self, Config},
     error::{Error, Result},
-    rendering,
+    reloading, rendering,
     rendering::{Asked, Rendering},
     surveyed,
     table::Table,
@@ -173,12 +174,14 @@ pub(crate) fn learn_what_it_plays(
         );
     }
 
-    config::store_in_table(
-        learning.settings,
-        ConfigKey::FormatsLearntFor,
-        heard.sink.name.as_str(),
-        config::learnt_written(&heard.learning.plays()),
-    )?;
+    reloading::delivering(learning.settings, Some(Reloadable::Renderers), || {
+        config::store_in_table(
+            learning.settings,
+            ConfigKey::FormatsLearntFor,
+            heard.sink.name.as_str(),
+            config::learnt_written(&heard.learning.plays()),
+        )
+    })?;
     said!(
         "{}",
         words::sinks::kept(
@@ -193,8 +196,12 @@ fn trial_named(trial: Trial) -> &'static str {
     match trial {
         Trial::FlacAt192kHz => words::sinks::flac_at_192(),
         Trial::FlacAt176kHz => words::sinks::flac_at_176(),
+        Trial::FlacAt384kHz => words::sinks::flac_at_384(),
+        Trial::FlacAt352kHz => words::sinks::flac_at_352(),
         Trial::SixChannels => words::sinks::six_channels(),
         Trial::EightChannels => words::sinks::eight_channels(),
+        Trial::SixChannelsAt96kHz => words::sinks::six_channels_at_96(),
+        Trial::EightChannelsAt96kHz => words::sinks::eight_channels_at_96(),
     }
 }
 

@@ -31,9 +31,7 @@ fn trials(device: &Device, sink: SinkId, server: &Arc<Server>, hold: &Hold) -> R
     let session = device::launched(&link)?;
     let mut learning = Learning::default();
     for trial in Trial::ALL {
-        let wanted_unplayed = trial
-            .wanting()
-            .is_some_and(|wanted| learning.verdict_on(wanted) != Some(TrialVerdict::Played));
+        let wanted_unplayed = trial.is_wanting_in(&learning);
         let verdict = if wanted_unplayed {
             TrialVerdict::Untried
         } else {

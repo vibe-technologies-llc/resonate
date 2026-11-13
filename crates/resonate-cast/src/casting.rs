@@ -753,7 +753,7 @@ fn sink_of(id: SinkId, device: &Device) -> SinkInfo {
         }),
         profile: None,
         formats: carriage.formats(),
-        allowed_rates: carriage.rates().to_vec(),
+        allowed_rates: carriage.rates(),
         current_rate: None,
     }
 }

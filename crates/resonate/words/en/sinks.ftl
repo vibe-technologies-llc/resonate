@@ -1,8 +1,12 @@
 trying = Trying { $device } with a few seconds of silence in each format; it may play nothing for up to a minute
 flac-at-192 = FLAC at 192 kHz
 flac-at-176 = FLAC at 176.4 kHz
+flac-at-384 = FLAC at 384 kHz
+flac-at-352 = FLAC at 352.8 kHz
 six-channels = 5.1 at 48 kHz
 eight-channels = 7.1 at 48 kHz
+six-channels-at-96 = 5.1 at 96 kHz
+eight-channels-at-96 = 7.1 at 96 kHz
 played = played
 refused = refused it when it was offered
 never-fetched = never fetched it
