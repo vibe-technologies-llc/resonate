@@ -1,6 +1,7 @@
 use std::{
     f64::consts::{LN_2, PI, TAU},
     ops::Range,
+    sync::LazyLock,
 };
 
 use ahash::AHashMap;
@@ -52,10 +53,17 @@ const GAIN_STEPS_OVER_THE_ESTIMATE: usize = 1;
 const ENCODER_FILTERS_FROM: f32 = 0.2;
 const FIRST_COUPLED_BAND: usize = 8;
 const COUPLED_FRAMES_A_SEARCH: usize = 16;
+const COUPLED_FRAMES_CONFIRMED: usize = 1_000;
 const ROUNDING_POWER: f64 = 1.0 / 12.0;
 const COUPLED_ROUNDING_AT_MOST: f64 = 0.05;
-const PROPORTIONAL_WITHIN_ROUNDINGS: f64 = 4.0;
+const PROPORTIONAL_WITHIN_SPREADS: f64 = 3.0;
 const FULL_SCALE_FROM: f32 = 32_767.0;
+const COUPLED_LINES: Range<usize> =
+    BAND_EDGES[FIRST_COUPLED_BAND] * SHORTS..BAND_EDGES[BANDS] * SHORTS;
+const REACHED_FROM: usize = QUIET;
+const REACHED_PAST: usize = 2 * FRAME - QUIET + 1;
+const CLIPPED_SHARE_OF_A_BAND_AT_MOST: f64 = 0.5;
+const SPANNED_WITHIN: f64 = 1e-9;
 
 #[derive(Clone, Copy)]
 struct Energies {
@@ -603,7 +611,178 @@ pub(crate) struct Coupling {
     mdct: Mdct,
     emphasised: Vec<f32>,
     noise: [f64; BANDS],
-    clipped: [bool; 2],
+    clipped: [Vec<usize>; 2],
+}
+
+static IMPULSES: LazyLock<Vec<f32>> = LazyLock::new(impulses);
+
+fn impulses() -> Vec<f32> {
+    let window = window(2 * FRAME, QUIET);
+    let scale = (2.0 / FRAME as f64).sqrt();
+    let kernel = |at: usize, line: usize| {
+        window.get(at).map_or(0.0, |weight| {
+            let turn = PI / FRAME as f64 * (at as f64 + 0.5 + FRAME as f64 / 2.0);
+            weight * (turn * (line as f64 + 0.5)).cos()
+        })
+    };
+    let mut columns = Vec::with_capacity((REACHED_PAST - REACHED_FROM) * COUPLED_LINES.len());
+    for sample in REACHED_FROM..REACHED_PAST {
+        for line in COUPLED_LINES {
+            let own = sample.checked_sub(1).map_or(0.0, |at| kernel(at, line));
+            let next = kernel(sample, line);
+            columns.push((scale * (own - f64::from(EMPHASIS) * next)) as f32);
+        }
+    }
+    columns
+}
+
+fn line_roundings() -> Vec<f64> {
+    let emphasis = f64::from(EMPHASIS);
+    (0..FRAME)
+        .map(|line| {
+            let angle = PI * (line as f64 + 0.5) / FRAME as f64;
+            ROUNDING_POWER * (1.0 + emphasis * emphasis - 2.0 * emphasis * angle.cos())
+        })
+        .collect()
+}
+
+fn impulse_of(sample: usize, lines: &Range<usize>) -> &'static [f32] {
+    let first = (sample - REACHED_FROM) * COUPLED_LINES.len() + lines.start - COUPLED_LINES.start;
+    &IMPULSES[first..first + lines.len()]
+}
+
+struct Remainder {
+    own: f64,
+    other: f64,
+    shared: f64,
+    spanned: usize,
+}
+
+fn dot(one: &[f32], other: &[f32]) -> f64 {
+    one.iter()
+        .zip(other)
+        .map(|(a, b)| f64::from(*a) * f64::from(*b))
+        .sum()
+}
+
+fn left_by(clipped: &[usize], lines: &Range<usize>, left: &[f32], right: &[f32]) -> Remainder {
+    let columns: Vec<&[f32]> = clipped
+        .iter()
+        .map(|sample| impulse_of(*sample, lines))
+        .collect();
+    let count = columns.len();
+    let mut factor = vec![0.0_f64; count * count];
+    let mut kept: Vec<usize> = Vec::with_capacity(count);
+    let mut along_left = vec![0.0_f64; count];
+    let mut along_right = vec![0.0_f64; count];
+    for row in 0..count {
+        let own = dot(columns[row], columns[row]);
+        for (nth, column) in kept.iter().copied().enumerate() {
+            let earlier: f64 = kept[..nth]
+                .iter()
+                .map(|before| factor[row * count + before] * factor[column * count + before])
+                .sum();
+            factor[row * count + column] =
+                (dot(columns[row], columns[column]) - earlier) / factor[column * count + column];
+        }
+        let lengthwise: f64 = kept
+            .iter()
+            .map(|column| factor[row * count + column].powi(2))
+            .sum();
+        let pivot = own - lengthwise;
+        if own <= 0.0 || pivot <= SPANNED_WITHIN * own {
+            continue;
+        }
+        let diagonal = pivot.sqrt();
+        factor[row * count + row] = diagonal;
+        let solved = |along: &mut [f64], lane: &[f32]| {
+            let earlier: f64 = kept
+                .iter()
+                .map(|column| factor[row * count + column] * along[*column])
+                .sum();
+            along[row] = (dot(columns[row], lane) - earlier) / diagonal;
+        };
+        solved(&mut along_left, &left[lines.clone()]);
+        solved(&mut along_right, &right[lines.clone()]);
+        kept.push(row);
+    }
+    let left = &left[lines.clone()];
+    let right = &right[lines.clone()];
+    Remainder {
+        own: dot(left, left) - kept.iter().map(|at| along_left[*at].powi(2)).sum::<f64>(),
+        other: dot(right, right) - kept.iter().map(|at| along_right[*at].powi(2)).sum::<f64>(),
+        shared: dot(left, right)
+            - kept
+                .iter()
+                .map(|at| along_left[*at] * along_right[*at])
+                .sum::<f64>(),
+        spanned: kept.len(),
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Cell {
+    rounding: f64,
+    apart: f64,
+    dimensions: usize,
+}
+
+impl Cell {
+    fn of(own: f64, other: f64, shared: f64, noise: f64, dimensions: usize) -> Option<Self> {
+        (own > 0.0 && other > 0.0).then(|| Self {
+            rounding: noise * (1.0 / own + 1.0 / other),
+            apart: 1.0 - shared * shared / (own * other),
+            dimensions,
+        })
+    }
+
+    fn counted(self) -> bool {
+        self.rounding <= COUPLED_ROUNDING_AT_MOST
+    }
+
+    fn coupled(self) -> bool {
+        let freedom = self.dimensions.saturating_sub(1).max(1) as f64;
+        let spread = (2.0 / freedom).sqrt();
+        self.apart <= self.rounding * (1.0 + PROPORTIONAL_WITHIN_SPREADS * spread)
+    }
+}
+
+impl Coupling {
+    fn cell(&self, band: usize, clipped: &[usize], left: &[f32], right: &[f32]) -> Option<Cell> {
+        let lines = BAND_EDGES[band] * SHORTS..BAND_EDGES[band + 1] * SHORTS;
+        if clipped.is_empty() {
+            let (mut own, mut other, mut shared) = (0.0_f64, 0.0_f64, 0.0_f64);
+            for (one, two) in left[lines.clone()].iter().zip(&right[lines.clone()]) {
+                let (one, two) = (f64::from(*one), f64::from(*two));
+                own += one * one;
+                other += two * two;
+                shared += one * two;
+            }
+            return Cell::of(own, other, shared, self.noise[band], lines.len());
+        }
+        if clipped.len() as f64 > CLIPPED_SHARE_OF_A_BAND_AT_MOST * lines.len() as f64 {
+            return None;
+        }
+        let Remainder {
+            own,
+            other,
+            shared,
+            spanned,
+        } = left_by(clipped, &lines, left, right);
+        let noise = self.noise[band] * (lines.len() - spanned) as f64 / lines.len() as f64;
+        Cell::of(own, other, shared, noise, lines.len() - spanned)
+    }
+
+    fn clipped(&self) -> Vec<usize> {
+        let mut clipped: Vec<usize> = self.clipped[0]
+            .iter()
+            .chain(&self.clipped[1])
+            .copied()
+            .collect();
+        clipped.sort_unstable();
+        clipped.dedup();
+        clipped
+    }
 }
 
 impl Grid for Coupling {
@@ -616,7 +795,7 @@ impl Grid for Coupling {
     const SHAPES: usize = 1;
     const CONTROL_SHIFT: usize = FRAME / 2 + OVERLAP / 2;
     const FRAMES_A_SEARCH: usize = COUPLED_FRAMES_A_SEARCH;
-    const CONFIRMED_FRAMES: usize = 400;
+    const CONFIRMED_FRAMES: usize = COUPLED_FRAMES_CONFIRMED;
     const MID_AND_SIDE: bool = false;
     const PAIRED_ONLY: bool = true;
 
@@ -628,21 +807,16 @@ impl Grid for Coupling {
     }
 
     fn new(_: u32, _: &Band) -> Self {
+        let roundings = line_roundings();
         let mut noise = [0.0; BANDS];
         for (band, edges) in BAND_EDGES.windows(2).enumerate() {
-            noise[band] = (edges[0] * SHORTS..edges[1] * SHORTS)
-                .map(|line| {
-                    let angle = PI * (line as f64 + 0.5) / FRAME as f64;
-                    let emphasis = f64::from(EMPHASIS);
-                    ROUNDING_POWER * (1.0 + emphasis * emphasis - 2.0 * emphasis * angle.cos())
-                })
-                .sum();
+            noise[band] = roundings[edges[0] * SHORTS..edges[1] * SHORTS].iter().sum();
         }
         Self {
             mdct: Mdct::new(FRAME, vec![window(2 * FRAME, QUIET)]),
             emphasised: vec![0.0; 2 * FRAME],
             noise,
-            clipped: [false; 2],
+            clipped: [Vec::new(), Vec::new()],
         }
     }
 
@@ -650,36 +824,28 @@ impl Grid for Coupling {
         let Some(right) = right else {
             return Tally::default();
         };
-        if self.clipped[0] || self.clipped[1] {
-            return Tally::default();
-        }
+        let clipped = self.clipped();
         let mut on = 0;
         let mut counted = 0;
         for band in FIRST_COUPLED_BAND..BANDS {
-            let lines = BAND_EDGES[band] * SHORTS..BAND_EDGES[band + 1] * SHORTS;
-            let (mut own, mut other, mut shared) = (0.0_f64, 0.0_f64, 0.0_f64);
-            for (one, two) in left[lines.clone()].iter().zip(&right[lines]) {
-                let (one, two) = (f64::from(*one), f64::from(*two));
-                own += one * one;
-                other += two * two;
-                shared += one * two;
+            if let Some(cell) = self
+                .cell(band, &clipped, left, right)
+                .filter(|cell| cell.counted())
+            {
+                counted += 1;
+                on += u64::from(cell.coupled());
             }
-            if own <= 0.0 || other <= 0.0 {
-                continue;
-            }
-            let rounding = self.noise[band] * (1.0 / own + 1.0 / other);
-            if rounding > COUPLED_ROUNDING_AT_MOST {
-                continue;
-            }
-            counted += 1;
-            let apart = 1.0 - shared * shared / (own * other);
-            on += u64::from(apart <= PROPORTIONAL_WITHIN_ROUNDINGS * rounding);
         }
         Tally::counted(on, counted)
     }
 
     fn coefficients(&mut self, lane: usize, samples: &[f32], _: u64, _: usize, into: &mut [f32]) {
-        self.clipped[lane.min(1)] = samples.iter().any(|sample| sample.abs() >= FULL_SCALE_FROM);
+        let clipped = &mut self.clipped[lane.min(1)];
+        clipped.clear();
+        clipped.extend(
+            (REACHED_FROM..REACHED_PAST.min(samples.len()))
+                .filter(|at| samples[*at].abs() >= FULL_SCALE_FROM),
+        );
         for (slot, pair) in self.emphasised.iter_mut().zip(samples.windows(2)) {
             *slot = pair[1] - EMPHASIS * pair[0];
         }
@@ -698,6 +864,8 @@ mod tests {
     const FINE_BITS_AT_MOST: f64 = 4.0;
     const LEVEL: f64 = 3.0;
     const COUPLED_FROM_BAND: usize = 14;
+    const FULL_SCALE: f64 = 32_768.0;
+    const LIFT_TO_CLIP: f64 = 3.5;
 
     fn rendered(frames: &[Vec<f64>]) -> Vec<f32> {
         let window = window(2 * FRAME, QUIET);
@@ -725,7 +893,7 @@ mod tests {
         out.iter()
             .map(|sample| {
                 before = sample + f64::from(EMPHASIS) * before;
-                before.round() as f32 / SIXTEEN_BIT_STEPS
+                before.round().clamp(-FULL_SCALE, FULL_SCALE - 1.0) as f32 / SIXTEEN_BIT_STEPS
             })
             .collect()
     }
@@ -774,7 +942,7 @@ mod tests {
         Everywhere,
     }
 
-    fn coupled_from(seed: u64, moving: Moving) -> (Vec<f32>, Vec<f32>) {
+    fn coupled_from(seed: u64, moving: Moving, lift: f64) -> (Vec<f32>, Vec<f32>) {
         let mut wandering = Wandering(seed);
         let mut left = Vec::new();
         let mut right = Vec::new();
@@ -782,9 +950,10 @@ mod tests {
             let mut one = vec![0.0_f64; FRAME];
             let mut other = vec![0.0_f64; FRAME];
             for band in 0..BANDS {
-                let gain = (LEVEL + ENERGY_MEANS[band] + SCALE_OCTAVES + wandering.laplacian(0.5))
-                    .exp2()
-                    / (((BAND_EDGES[band + 1] - BAND_EDGES[band]) * SHORTS) as f64).sqrt();
+                let gain =
+                    (LEVEL + lift + ENERGY_MEANS[band] + SCALE_OCTAVES + wandering.laplacian(0.5))
+                        .exp2()
+                        / (((BAND_EDGES[band + 1] - BAND_EDGES[band]) * SHORTS) as f64).sqrt();
                 let (ratio, coupled) = match moving {
                     Moving::OnEachFrame => {
                         (0.3 + 1.4 * wandering.next(), band >= COUPLED_FROM_BAND)
@@ -843,7 +1012,7 @@ mod tests {
     #[test]
     fn channels_proportional_band_by_band_on_each_frame_are_found_and_proportional_everywhere_are_not()
      {
-        let (left, right) = coupled_from(5, Moving::OnEachFrame);
+        let (left, right) = coupled_from(5, Moving::OnEachFrame, 0.0);
         for skipped in [0, 300] {
             let steps = stepped::<Coupling>(&left, &right, skipped).expect("weighed");
 
@@ -853,11 +1022,56 @@ mod tests {
             assert_eq!(steps.tell, Tell::IntensityStereo);
         }
 
-        let (left, right) = coupled_from(5, Moving::Everywhere);
+        let (left, right) = coupled_from(5, Moving::Everywhere, 0.0);
         let steps = stepped::<Coupling>(&left, &right, 0).expect("weighed");
 
         assert!(steps.lattice > 0.9, "{steps:?}");
         assert!(steps.lattice - steps.control < 0.02, "{steps:?}");
+    }
+
+    #[test]
+    fn a_clipped_samples_lines_are_the_transform_of_its_impulse() {
+        let mut mdct = Mdct::new(FRAME, vec![window(2 * FRAME, QUIET)]);
+        let mut lines = vec![0.0; FRAME];
+        for sample in [REACHED_FROM, 700, 1_000, REACHED_PAST - 1] {
+            let mut samples = vec![0.0_f32; 2 * FRAME + 1];
+            samples[sample] = 1.0;
+            let emphasised: Vec<f32> = samples
+                .windows(2)
+                .map(|pair| pair[1] - EMPHASIS * pair[0])
+                .collect();
+            mdct.coefficients(&emphasised, 0, &mut lines);
+
+            for (ours, transformed) in impulse_of(sample, &COUPLED_LINES)
+                .iter()
+                .zip(&lines[COUPLED_LINES])
+            {
+                assert!(
+                    (ours - transformed).abs() < 1e-5,
+                    "{sample} {ours} {transformed}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn channels_coupled_on_each_frame_are_found_through_a_decode_that_clips() {
+        let (left, right) = coupled_from(5, Moving::OnEachFrame, LIFT_TO_CLIP);
+        let clipped = left
+            .iter()
+            .chain(&right)
+            .filter(|sample| sample.abs() * SIXTEEN_BIT_STEPS >= FULL_SCALE_FROM)
+            .count() as f64
+            / (2 * left.len()) as f64;
+
+        assert!(clipped > 0.01 && clipped < 0.04, "{clipped}");
+        for skipped in [0, 300] {
+            let steps = stepped::<Coupling>(&left, &right, skipped).expect("weighed");
+
+            assert!(steps.lattice > 0.3, "{skipped} {steps:?}");
+            assert!(steps.control < steps.lattice / 4.0, "{steps:?}");
+            assert!(steps.coefficients > 2_000, "{steps:?}");
+        }
     }
 
     #[test]

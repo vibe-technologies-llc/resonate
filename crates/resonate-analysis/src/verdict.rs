@@ -4,7 +4,7 @@ use resonate_codec::Codec;
 
 use crate::{Coding, Levels, Spectrum, Steps, Tell, spectrum::BAND_HZ, words};
 
-pub const JUDGED_UNDER: u32 = 7;
+pub const JUDGED_UNDER: u32 = 8;
 
 const WALL_DB: f32 = 30.0;
 const WALL_FLOOR_SLACK_DB: f32 = 15.0;

@@ -247,11 +247,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Later: Identification
 - [S] A phone cannot keep a copy of MusicBrainz of its own: the build wants some 50 GB of room, a
   gigabyte of memory and an hour; it asks a desktop holding one instead (`musicbrainz.md`)
-- [S] libopus at 64 kbps is still missed on 4 of 464 library tracks with the band
-  energies and the intensity-stereo coupling together: two loud masters whose decode clips (the
-  coupling skips a clipped frame, so too few frames are left), a quiet, sparse track with 78 cells
-  over the rounding, and one whose highs are near mono in the source itself (coupling 0.42 against
-  a control of 0.33, a significance of 9.1 against 12) (`analysis.md`)
 
 ## Later: Listen and recognition
 - [M · blocked: Shazam] Reached through an undocumented endpoint (`amp.shazam.com`); a change on its
