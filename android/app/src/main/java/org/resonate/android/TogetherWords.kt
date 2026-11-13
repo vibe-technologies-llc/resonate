@@ -151,6 +151,8 @@ object TogetherWords {
 
     fun mayEdit(list: SharedPlaylist?, followed: Boolean): Boolean = list?.mayEdit ?: !followed
 
+    fun inShare(list: SharedPlaylist?, sharedHere: Boolean): Boolean = list != null || sharedHere
+
     fun notHeld(words: Words, titles: List<String>): String? {
         if (titles.isEmpty()) return null
         val named = titles.take(NOT_HELD_NAMED_AT_MOST).joinToString(", ")

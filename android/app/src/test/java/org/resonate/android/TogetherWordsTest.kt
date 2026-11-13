@@ -177,6 +177,13 @@ class TogetherWordsTest {
     }
 
     @Test
+    fun aListTheCatalogFlagsSharedStaysInItsShareWhileSharingIsStopped() {
+        assertTrue(TogetherWords.inShare(list, sharedHere = false))
+        assertTrue(TogetherWords.inShare(null, sharedHere = true))
+        assertEquals(false, TogetherWords.inShare(null, sharedHere = false))
+    }
+
+    @Test
     fun aListReachedSaysNothingOfItsReach() {
         assertNull(TogetherWords.reach(English, SharedPlaylistReach.REACHED))
         SharedPlaylistReach.entries.filter { it != SharedPlaylistReach.REACHED }.forEach {

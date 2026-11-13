@@ -169,7 +169,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                         fills = search != null,
                         mayEdit = mayEdit,
                         onShare = if (search == null) ({ sharing = true }) else null,
-                        inShare = shared != null,
+                        inShare = TogetherWords.inShare(shared, playlist?.shared == true),
                         onPlayNext = { resonate.playNext(tracks) },
                         onQueue = { resonate.addToQueue(tracks) },
                         onAdd = { adding = true },
