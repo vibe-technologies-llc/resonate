@@ -46,7 +46,12 @@ impl RootView {
         library.tracks().identity().hash(&mut stamp);
         library.playlists().len().hash(&mut stamp);
         if self.pane.lands_where_it_was_left() {
-            let offset = self.scroll_of(self.pane).0.borrow().base_handle.offset();
+            let offset = self
+                .scroll_of(self.pane, cx)
+                .0
+                .borrow()
+                .base_handle
+                .offset();
             f32::from(offset.y).to_bits().hash(&mut stamp);
         }
         stamp.finish()

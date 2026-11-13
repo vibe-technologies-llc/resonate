@@ -274,7 +274,7 @@ impl RootView {
         let measured = self.rooms.grid_width.clone();
         let laid_out = self.rooms.grid_width.get() > px(0.0);
         if laid_out {
-            self.land_where_it_was_left(rows);
+            self.land_where_it_was_left(rows, cx);
         }
 
         let heading = self.search_heading(cx).unwrap_or_else(|| {
@@ -691,7 +691,7 @@ impl RootView {
         let listed = self.library.read(cx).artists_listed();
         let drawn = self.shows.artists;
         if drawn == ArtistsDrawn::List {
-            self.land_where_it_was_left(listed);
+            self.land_where_it_was_left(listed, cx);
         }
 
         let beyond = self.artists_found_beyond(cx);
@@ -908,7 +908,7 @@ impl RootView {
             .into();
         let held = tracks.len();
         let listed = self.library.read(cx).listed_rows();
-        self.land_where_it_was_left(listed);
+        self.land_where_it_was_left(listed, cx);
         let records = match self.library.read(cx).selection() {
             Selection::Artist(artist) => {
                 let library = self.library.read(cx);
@@ -1702,7 +1702,7 @@ impl RootView {
         let measured = self.rooms.grid_width.clone();
         let laid_out = self.rooms.grid_width.get() > px(0.0);
         if laid_out {
-            self.land_where_it_was_left(rows);
+            self.land_where_it_was_left(rows, cx);
         }
         let selected = self.library.read(cx).selection();
 

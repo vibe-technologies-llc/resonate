@@ -315,6 +315,7 @@ impl RootView {
     ) -> impl Iterator<Item = &'a Entity<Field>> {
         [
             &self.party.read(cx).chat,
+            &self.services.read(cx).search,
             &self.typed.search,
             &self.typed.zone_name,
             &self.typed.name,
@@ -335,7 +336,6 @@ impl RootView {
             &self.typed.minimum_length,
             &self.typed.root,
             &self.typed.finding,
-            &self.typed.server_search,
             &self.typed.figure,
             &self.typed.looking,
             &self.typed.spotify_client,

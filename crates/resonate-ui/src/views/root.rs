@@ -89,6 +89,7 @@ use crate::{
         queue::{QueueMeasure, QueueNames, TakenBack},
         reorder::{Creeping, Reach, Step},
         search::SearchShows,
+        served::ServicesPane,
         settings::{
             Armed, Category, CheckingYoutubeMusic, Fitting, HeldBand, LastfmSigning, Page, Plotted,
             QuickConnecting, SigningIn, SigningInToYoutubeMusic, SpotifyState, Tending,
@@ -536,7 +537,6 @@ pub(crate) struct Scrolls {
     pub(crate) missing_rows: UniformListScrollHandle,
     pub(crate) suggestion_rows: UniformListScrollHandle,
     pub(crate) picker_rows: UniformListScrollHandle,
-    pub(crate) server_rows: UniformListScrollHandle,
     pub(crate) shelves: RefCell<AHashMap<&'static str, ScrollHandle>>,
     pub(crate) left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
 }
@@ -647,7 +647,6 @@ pub(crate) struct Typed {
     pub(crate) minimum_length: Entity<Field>,
     pub(crate) root: Entity<Field>,
     pub(crate) finding: Entity<Field>,
-    pub(crate) server_search: Entity<Field>,
     pub(crate) figure: Entity<Field>,
     pub(crate) looking: Entity<Field>,
     pub(crate) measured_as: Entity<Field>,
@@ -721,6 +720,7 @@ pub struct RootView {
     pub(crate) listen: Entity<ListenModel>,
     pub(crate) party: Entity<PartyPane>,
     pub(crate) inspector: Entity<InspectorPane>,
+    pub(crate) services: Entity<ServicesPane>,
     pub(crate) listening_open: bool,
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,

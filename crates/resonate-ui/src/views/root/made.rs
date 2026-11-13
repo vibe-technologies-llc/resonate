@@ -42,6 +42,7 @@ use crate::{
         playlists::PlaylistsDrawn,
         queue::{QueueMeasure, QueueNames, TakenBack},
         search::SearchShows,
+        served::ServicesPane,
         settings::{
             Account, Category, CheckingYoutubeMusic, Fitting, LastfmAccount, LastfmSigning,
             QuickConnecting, Service, SigningIn, SigningInToYoutubeMusic, SpotifyState, Tending,
@@ -469,15 +470,8 @@ impl RootView {
         })
         .detach();
 
-        let server_search = cx.new(|cx| Field::new(words::served::search_placeholder, window, cx));
-        cx.subscribe_in(
-            &server_search,
-            window,
-            |this, _, _: &Submitted, window, cx| {
-                this.search_the_server(window, cx);
-            },
-        )
-        .detach();
+        let services = cx.new(|cx| ServicesPane::new(server.clone(), focus.clone(), window, cx));
+        cx.observe(&services, |_, _, cx| cx.notify()).detach();
 
         let figure = cx.new(|cx| Field::new(words::root::figure_placeholder, window, cx));
         cx.subscribe_in(&figure, window, |this, _, _: &Submitted, window, cx| {
@@ -528,6 +522,7 @@ impl RootView {
             listen,
             party,
             inspector,
+            services,
             listening_open: false,
             downloads_open: false,
             downloads_pressed_off: None,
@@ -606,7 +601,6 @@ impl RootView {
                 missing_rows: UniformListScrollHandle::default(),
                 suggestion_rows: UniformListScrollHandle::default(),
                 picker_rows: UniformListScrollHandle::default(),
-                server_rows: UniformListScrollHandle::new(),
                 shelves: RefCell::new(AHashMap::new()),
                 left_at: AHashMap::new(),
             },
@@ -709,7 +703,6 @@ impl RootView {
                 minimum_length,
                 root: typed_root,
                 finding,
-                server_search,
                 figure,
                 looking,
                 measured_as,

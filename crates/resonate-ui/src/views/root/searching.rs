@@ -91,10 +91,8 @@ impl RootView {
             self.leave_filter(window, cx);
             return;
         }
-        if self.typed.server_search.read(cx).is_focused(window) {
-            self.typed
-                .server_search
-                .update(cx, |field, cx| field.clear(cx));
+        if self.services.read(cx).search.read(cx).is_focused(window) {
+            self.clear_the_services_search(cx);
             window.focus(&self.focus, cx);
             cx.notify();
             return;
@@ -256,11 +254,11 @@ impl RootView {
         self.orders.ordering = None;
     }
 
-    pub(super) fn leave_the_scroll_for_the_search(&mut self) {
+    pub(super) fn leave_the_scroll_for_the_search(&mut self, cx: &App) {
         self.typing.left_for_the_search = self
             .pane
             .lands_where_it_was_left()
-            .then(|| (self.pane, self.top_row()));
+            .then(|| (self.pane, self.top_row(cx)));
     }
 
     pub(super) fn land_where_the_search_began(&mut self) {
@@ -283,7 +281,7 @@ impl RootView {
         }
         self.attention.moved();
         if was.is_empty() {
-            self.leave_the_scroll_for_the_search();
+            self.leave_the_scroll_for_the_search(cx);
             self.open_the_search(cx);
         }
         if query.is_empty() {

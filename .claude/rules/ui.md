@@ -36,16 +36,24 @@ dragged in), `Typed` (every `Field` the root holds), `SettingsShown` (the settin
 `Social` (Wrapped, sharing and party offers), `Shows` (which tab or shape a pane is drawn in) and
 `TypedAhead`.
 
-**A pane with state of its own holds it in an entity of its own.** `PartyPane` (`views/party.rs`:
-the chat field and the subscription its enter speaks through, the page's scroll, the hand-over
-armed by a first press, the timer redrawing the pane while it is shown) and `InspectorPane`
-(`views/inspector.rs`: the scroll, the room the heading measures, whether the bitrate graph is
-open) are made in `RootView::new`, which observes each and redraws when one notifies, so a pane's
-fields and subscriptions are found beside the pane and not in the root's list. The root still draws
-them (`RootView::party_pane`, `RootView::inspector`): every control of a pane goes into the root's
-focus ring (`Controls`, `in_the_pane_ring`) and a press may reach the root's navigation, so a press
-that changes only the pane's own state updates its entity (`this.party.update(…)`). A `Field` such an
-entity holds is still listed by `RootView::text_fields`, so `editing` sees it.
+**A pane with state of its own holds it in an entity of its own**, made in `RootView::new`, which
+observes it and redraws when it notifies, so a pane's fields and the subscriptions on them are found
+beside the pane and not in the root's list:
+
+- `PartyPane` (`views/party.rs`): the chat field and the subscription its enter speaks through, the
+  page's scroll, the hand-over armed by a first press, the timer redrawing the pane while it is shown.
+- `InspectorPane` (`views/inspector.rs`): the scroll, the room the heading measures, whether the
+  bitrate graph is open.
+- `ServicesPane` (`views/served.rs`): the services search field and the subscription its enter asks
+  the service through (handing the caret back to the window's own focus, which it holds a clone of),
+  and the rows' scroll, which `RootView::scroll_of` hands out for `Pane::Server`. `ServerModel`
+  stays the root's, since the sidebar asks it whether the Services row stands.
+
+The root still draws them (`RootView::party_pane`, `RootView::inspector`, `RootView::server_pane`):
+every control of a pane goes into the root's focus ring (`Controls`, `in_the_pane_ring`) and a press
+may reach the root's navigation, so a press that changes only the pane's own state updates its entity
+(`this.party.update(…)`). A `Field` such an entity holds is still listed by `RootView::text_fields`,
+so `editing` sees it.
 
 ## Chrome and input
 

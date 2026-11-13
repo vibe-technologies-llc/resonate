@@ -1,8 +1,8 @@
 use std::{ops::Range, sync::Arc};
 
 use gpui::{
-    AnyElement, Context, Div, Pixels, Point, SharedString, Stateful, Window, div, prelude::*, px,
-    rgb, uniform_list,
+    AnyElement, App, Context, Div, Entity, FocusHandle, Pixels, Point, SharedString, Stateful,
+    UniformListScrollHandle, Window, div, prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::MediaLocation;
 use resonate_engine::{Command, Placement, QueueItem, Unclaimed};
@@ -11,10 +11,11 @@ use crate::{
     Drawn, Notice, format,
     icons::{self, Icon},
     served::ServedSong,
-    serving::{Failure, Page, Place, Row, favourites_in},
+    serving::{Failure, Page, Place, Row, ServerModel, favourites_in},
     theme,
     views::{
         browser::controls_width,
+        field::{Field, Submitted},
         hint::Names,
         kit::{self, EndsInAnEllipsis as _, Tone},
         listing,
@@ -31,6 +32,48 @@ const SEGMENTS_AT_MOST: usize = 3;
 const SERVER_CONTROLS: usize = 4;
 
 const SEARCH_ID: &str = "served-search";
+
+pub(crate) struct ServicesPane {
+    pub(crate) search: Entity<Field>,
+    pub(crate) rows: UniformListScrollHandle,
+    server: Entity<ServerModel>,
+    window_focus: FocusHandle,
+}
+
+impl ServicesPane {
+    pub(crate) fn new(
+        server: Entity<ServerModel>,
+        window_focus: FocusHandle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let search = cx.new(|cx| Field::new(words::served::search_placeholder, window, cx));
+        cx.subscribe_in(&search, window, |this, _, _: &Submitted, window, cx| {
+            this.search_the_server(window, cx);
+        })
+        .detach();
+
+        Self {
+            search,
+            rows: UniformListScrollHandle::new(),
+            server,
+            window_focus,
+        }
+    }
+
+    fn search_the_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let words = self.search.read(cx).text().trim().to_owned();
+        self.server.update(cx, |server, cx| {
+            if words.is_empty() {
+                server.leave_the_search(cx);
+            } else {
+                server.open(Place::Found { words }, cx);
+            }
+        });
+        window.focus(&self.window_focus, cx);
+        cx.notify();
+    }
+}
 
 impl RootView {
     pub(crate) fn server_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -188,9 +231,7 @@ impl RootView {
                         this.server.update(cx, |server, cx| {
                             server.back(cx);
                         });
-                        this.typed
-                            .server_search
-                            .update(cx, |field, cx| field.clear(cx));
+                        this.clear_the_services_search(cx);
                     },
                     cx,
                 ))
@@ -254,9 +295,17 @@ impl RootView {
     fn choose_a_service(&mut self, index: usize, cx: &mut Context<Self>) {
         self.server
             .update(cx, |server, cx| server.choose(index, cx));
-        self.typed
-            .server_search
-            .update(cx, |field, cx| field.clear(cx));
+        self.clear_the_services_search(cx);
+    }
+
+    pub(crate) fn clear_the_services_search(&self, cx: &mut App) {
+        self.services
+            .read(cx)
+            .search
+            .clone()
+            .update(cx, |field, cx| {
+                field.clear(cx);
+            });
     }
 
     fn server_search_field(&self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -267,11 +316,10 @@ impl RootView {
                 theme::search_icon(),
                 theme::faint(),
             ))
-            .child(self.typed.server_search.clone())
+            .child(self.services.read(cx).search.clone())
             .on_click(cx.listener(|this, _, window, cx| {
-                this.typed
-                    .server_search
-                    .update(cx, |field, cx| field.take_focus(window, cx));
+                let search = this.services.read(cx).search.clone();
+                search.update(cx, |field, cx| field.take_focus(window, cx));
                 cx.notify();
             }))
     }
@@ -284,11 +332,12 @@ impl RootView {
     ) -> AnyElement {
         let shown = rows.len();
         let songs_here = matches!(place, Place::Album { .. } | Place::Mix { .. });
+        let scroll = self.services.read(cx).rows.clone();
 
         Scrollbars::of(cx)
             .around(
                 "server-scrollbar",
-                self.scrolls.server_rows.clone(),
+                scroll.clone(),
                 uniform_list(
                     "server-rows",
                     shown,
@@ -304,7 +353,7 @@ impl RootView {
                             .collect()
                     }),
                 )
-                .track_scroll(&self.scrolls.server_rows)
+                .track_scroll(&scroll)
                 .h_full()
                 .w_full(),
             )
@@ -511,19 +560,6 @@ impl RootView {
         self.server.update(cx, |server, cx| {
             server.cover(location, known.as_ref(), Drawn::InARow, cx)
         })
-    }
-
-    pub(crate) fn search_the_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let words = self.typed.server_search.read(cx).text().trim().to_owned();
-        self.server.update(cx, |server, cx| {
-            if words.is_empty() {
-                server.leave_the_search(cx);
-            } else {
-                server.open(Place::Found { words }, cx);
-            }
-        });
-        window.focus(&self.focus, cx);
-        cx.notify();
     }
 
     fn press_a_row_of_the_server(
@@ -1693,5 +1729,44 @@ mod tests {
         driven.until(|root, cx| root.server.read(cx).chosen() == 1);
 
         assert!(driven.read(|root, _| root.menu.is_none()));
+    }
+
+    #[gpui::test]
+    fn words_entered_in_the_services_search_are_asked_of_the_service_and_escape_clears_them(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven =
+            Driven::serving(cx, vec![Arc::new(Held), Arc::new(Searched)], an_account());
+        open_the_server(&mut driven);
+        driven.click("served-service-1");
+        driven.until(|root, cx| root.server.read(cx).chosen() == 1);
+
+        driven.click(SEARCH_ID);
+        driven.cx.simulate_input("days");
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| {
+            matches!(root.server.read(cx).place(), Place::Found { words } if words == "days")
+                && matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2)
+        });
+        let left_the_field = driven.read(|root, cx| {
+            let window_holds_it = root.focus.clone();
+            (
+                window_holds_it,
+                root.services.read(cx).search.read(cx).text().to_owned(),
+            )
+        });
+        let window_focused = driven
+            .cx
+            .update(|window, _| left_the_field.0.is_focused(window));
+        driven.click(SEARCH_ID);
+        driven.cx.simulate_input(" again");
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+        let cleared =
+            driven.read(|root, cx| root.services.read(cx).search.read(cx).text().to_owned());
+
+        assert_eq!(left_the_field.1, "days");
+        assert!(window_focused);
+        assert_eq!(cleared, "");
     }
 }

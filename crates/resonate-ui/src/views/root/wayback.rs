@@ -30,7 +30,7 @@ impl RootView {
         Wayback {
             pane: self.pane,
             selection: self.library.read(cx).selection(),
-            at: self.top_row(),
+            at: self.top_row(cx),
             named: self.here(cx),
             left_by: Leaving::ByALink,
         }
@@ -122,7 +122,7 @@ impl RootView {
         self.restore_wayback(forward, cx);
     }
 
-    pub(crate) fn land_where_it_was_left(&mut self, held: usize) {
+    pub(crate) fn land_where_it_was_left(&mut self, held: usize, cx: &App) {
         let Some(left_at) = self.landing_on else {
             return;
         };
@@ -133,7 +133,7 @@ impl RootView {
             return;
         }
 
-        let base = self.scroll_of(self.pane).0.borrow().base_handle.clone();
+        let base = self.scroll_of(self.pane, cx).0.borrow().base_handle.clone();
         let offset = base.offset();
         base.set_offset(point(
             offset.x,
@@ -142,8 +142,14 @@ impl RootView {
         self.landing_on = None;
     }
 
-    pub(super) fn top_row(&self) -> LeftAt {
-        let offset = self.scroll_of(self.pane).0.borrow().base_handle.offset().y;
+    pub(super) fn top_row(&self, cx: &App) -> LeftAt {
+        let offset = self
+            .scroll_of(self.pane, cx)
+            .0
+            .borrow()
+            .base_handle
+            .offset()
+            .y;
         LeftAt::read_off(offset, self.row_height_of(self.pane))
     }
 
@@ -156,12 +162,12 @@ impl RootView {
         }
     }
 
-    pub(super) fn scroll_of(&self, pane: Pane) -> &UniformListScrollHandle {
+    pub(super) fn scroll_of(&self, pane: Pane, cx: &App) -> UniformListScrollHandle {
         match pane {
-            Pane::Artists => &self.scrolls.artist_rows,
-            Pane::Albums => &self.scrolls.album_rows,
-            Pane::Queue => &self.scrolls.queue_rows,
-            Pane::Playlists => &self.scrolls.playlist_rows,
+            Pane::Artists => self.scrolls.artist_rows.clone(),
+            Pane::Albums => self.scrolls.album_rows.clone(),
+            Pane::Queue => self.scrolls.queue_rows.clone(),
+            Pane::Playlists => self.scrolls.playlist_rows.clone(),
             Pane::Tracks
             | Pane::Statistics
             | Pane::Party
@@ -172,8 +178,8 @@ impl RootView {
             | Pane::Inspector
             | Pane::Visualiser
             | Pane::Analysis
-            | Pane::Settings => &self.scrolls.track_rows,
-            Pane::Server => &self.scrolls.server_rows,
+            | Pane::Settings => self.scrolls.track_rows.clone(),
+            Pane::Server => self.services.read(cx).rows.clone(),
         }
     }
 }
