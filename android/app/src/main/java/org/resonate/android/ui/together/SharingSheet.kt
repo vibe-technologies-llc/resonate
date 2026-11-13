@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import org.resonate.android.R
+import org.resonate.android.SharingBlock
 import org.resonate.android.TogetherWords
 import org.resonate.android.nativecore.SharedPlaylist
 import org.resonate.android.nativecore.TogetherPerson
@@ -86,11 +87,9 @@ fun SharingSheet(id: ULong, name: String, onDismiss: () -> Unit) {
                 modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 8.dp),
             )
             if (list == null) {
-                val needs =
-                    config?.let {
-                        TogetherWords.sharingNeedsSync(words, it.enabled, it.nearbyOnly, online)
-                    }
-                NotShared(needs, onDismiss) { together.share(id) }
+                val block =
+                    config?.let { TogetherWords.sharingBlock(it.enabled, it.nearbyOnly, online) }
+                NotShared(block, onDismiss) { together.share(id) }
             } else {
                 Shared(id, list, onDismiss)
             }
@@ -99,18 +98,23 @@ fun SharingSheet(id: ULong, name: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun NotShared(needs: String?, onDismiss: () -> Unit, onShare: () -> Unit) {
+private fun NotShared(block: SharingBlock?, onDismiss: () -> Unit, onShare: () -> Unit) {
     val navigator = LocalNavigator.current
-    if (needs != null) {
-        Note(needs, Modifier.testTag("sharing-needs-sync"))
+    if (block != null) {
+        val destination =
+            if (block == SharingBlock.ONLINE_OFF) Screen.Settings else Screen.Sync
+        val button =
+            if (block == SharingBlock.ONLINE_OFF) R.string.sharing_open_settings
+            else R.string.sharing_open_devices
+        Note(TogetherWords.sharingNeeds(words(), block), Modifier.testTag("sharing-needs-sync"))
         ButtonRow {
             FilledTonalButton(
                 onClick = {
                     onDismiss()
-                    navigator.open(Screen.Sync)
+                    navigator.open(destination)
                 }
             ) {
-                Text(stringResource(R.string.sharing_open_devices))
+                Text(stringResource(button))
             }
         }
         return

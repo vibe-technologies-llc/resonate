@@ -859,6 +859,24 @@ mod tests {
     }
 
     #[test]
+    fn a_party_refused_for_online_being_off_says_where_to_turn_it_on_as_a_sentence() {
+        let phone = crate::playlists::tests::player();
+
+        phone.configure_online(false);
+
+        let said = phone.party_begin().expect_err("refused").to_string();
+
+        assert_eq!(
+            said,
+            "Online features are switched off. Turn them on in Settings."
+        );
+        assert_eq!(
+            Error::SyncOff.to_string(),
+            "Device sync is switched off. Turn it on in Devices."
+        );
+    }
+
+    #[test]
     fn a_party_reaches_the_server_chosen_even_while_sync_has_never_run() {
         let phone = crate::playlists::tests::player();
 

@@ -14,6 +14,12 @@ import org.resonate.android.nativecore.TogetherPerson
 
 private const val NOT_HELD_NAMED_AT_MOST = 5
 
+enum class SharingBlock {
+    SYNC_OFF,
+    NEARBY_ONLY,
+    ONLINE_OFF,
+}
+
 object TogetherWords {
     fun connection(words: Words, connection: PartyConnection): String? =
         when (connection) {
@@ -153,16 +159,27 @@ object TogetherWords {
         else words.string(R.string.together_not_held, named)
     }
 
+    fun sharingBlock(enabled: Boolean, nearbyOnly: Boolean, online: Boolean): SharingBlock? =
+        when {
+            !enabled -> SharingBlock.SYNC_OFF
+            nearbyOnly -> SharingBlock.NEARBY_ONLY
+            !online -> SharingBlock.ONLINE_OFF
+            else -> null
+        }
+
+    fun sharingNeeds(words: Words, block: SharingBlock): String =
+        words.string(
+            when (block) {
+                SharingBlock.SYNC_OFF -> R.string.together_sharing_needs_sync
+                SharingBlock.NEARBY_ONLY -> R.string.together_sharing_nearby_only
+                SharingBlock.ONLINE_OFF -> R.string.together_sharing_needs_online
+            }
+        )
+
     fun sharingNeedsSync(
         words: Words,
         enabled: Boolean,
         nearbyOnly: Boolean,
         online: Boolean,
-    ): String? =
-        when {
-            !enabled -> words.string(R.string.together_sharing_needs_sync)
-            nearbyOnly -> words.string(R.string.together_sharing_nearby_only)
-            !online -> words.string(R.string.together_sharing_needs_online)
-            else -> null
-        }
+    ): String? = sharingBlock(enabled, nearbyOnly, online)?.let { sharingNeeds(words, it) }
 }

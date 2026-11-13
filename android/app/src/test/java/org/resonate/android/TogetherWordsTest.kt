@@ -210,4 +210,21 @@ class TogetherWordsTest {
         )
         assertNull(TogetherWords.sharingNeedsSync(English, enabled = true, nearbyOnly = false, online = true))
     }
+
+    @Test
+    fun whatBlocksSharingIsNamedSoTheButtonGoesWhereTheSentenceSays() {
+        assertEquals(
+            SharingBlock.SYNC_OFF,
+            TogetherWords.sharingBlock(enabled = false, nearbyOnly = true, online = false),
+        )
+        assertEquals(
+            SharingBlock.NEARBY_ONLY,
+            TogetherWords.sharingBlock(enabled = true, nearbyOnly = true, online = false),
+        )
+        assertEquals(
+            SharingBlock.ONLINE_OFF,
+            TogetherWords.sharingBlock(enabled = true, nearbyOnly = false, online = false),
+        )
+        assertNull(TogetherWords.sharingBlock(enabled = true, nearbyOnly = false, online = true))
+    }
 }
