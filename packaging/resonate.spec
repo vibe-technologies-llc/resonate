@@ -1,5 +1,5 @@
 Name:           resonate
-Version:        0.9.0
+Version:        0.10.0
 Release:        1%{?dist}
 Summary:        High-fidelity music player with native PipeWire output
 License:        AGPL-3.0-or-later

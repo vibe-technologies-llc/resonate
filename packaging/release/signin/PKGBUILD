@@ -1,6 +1,6 @@
 pkgname=resonate-signin
 _pkgname=resonate
-_version=0.9.0
+_version=0.10.0
 pkgver=${_version//-/}
 pkgrel=1
 pkgdesc="Resonate's YouTube Music sign-in window, on WebKitGTK (needs an x86-64-v3 CPU)"
