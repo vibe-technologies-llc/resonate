@@ -15,8 +15,9 @@ pub use self::{
     key::{Access, SHARED_LINK, SharedKeys},
     moved::{Personal, Seat, access_from, decoded_seats, encoded_seats, seat_for},
     op::{
-        ENTRY_BYTES, EntryId, Listed, MEMBER_BYTES, MemberId, PUBLIC_BYTES, Person, SharedList,
-        SharedOp, decoded_ops, encoded_ops,
+        ENTRIES_KEPT_AT_MOST, ENTRY_BYTES, EntryId, LARGEST_BUNDLE_OPENED, Listed, MEMBER_BYTES,
+        MemberId, PUBLIC_BYTES, Person, ROWS_AT_MOST, SharedList, SharedOp, decoded_ops,
+        encoded_ops,
     },
     place::Place,
     service::{

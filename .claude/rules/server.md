@@ -271,6 +271,23 @@ it off.
   served from, never another (`a_page_hands_the_app_the_code_alone_and_never_a_query_of_the_fragment`). Both sides of a socket
   leave Nagle's algorithm (`set_nodelay`), since a party's clock is read over it
   (`a_page_is_answered_beside_the_socket_and_holds_nothing_of_the_invitation`).
+- **A shared playlist's page reads the list in the browser** (`shared_list.js`, `shared_list.html`,
+  `shared_reading.html` beside `pages.rs`): the script derives the space, read token and sealer
+  from the fragment's code with WebCrypto (both key forms, `shared-playlists.md`), opens a web
+  socket to the host it was served from, sends one `View` with a random device, opens each record
+  with a ChaCha20-Poly1305 written in the script (WebCrypto has none), inflates it with
+  `DecompressionStream("deflate-raw")`, folds the ops as `SharedList` does (stamps last writer wins,
+  removals final, `ENTRIES_KEPT_AT_MOST` and `ROWS_AT_MOST`, which `shared_reading` writes into the
+  script beside `PROTOCOL_VERSION` and `LARGEST_BUNDLE_OPENED`) and draws the name and songs as text.
+  It settles when the server ends the view, so a `Closed` after the records reads as a list given a
+  new link, and a `Refused` as one not held. The code never leaves the page: the server sees a view
+  of a space, as from any follower. The CSP adds `connect-src 'self'` for the socket alone; the
+  page's words are `pages.ftl`'s, handed to the script as a JSON block `in_json` writes with `<`,
+  `>` and `&` escaped, so no word closes the script. The tests run the served script under Node
+  against a real shared list, skipped without Node
+  (`a_browser_given_either_link_opens_the_list_as_it_stands_and_a_link_nobody_shared_is_not_held`,
+  `a_browser_given_the_link_of_a_list_shared_anew_is_told_it_moved`,
+  `only_a_shared_playlists_page_reads_the_list_and_its_words_cannot_close_the_script`).
 - At most 256 upgrades are in flight at once and the upgrade and `Hello` share the 10 s allowance.
   The server pings every 30 s and a reader silent for 90 s ends the session.
   `a_listener_behind_a_proxy_turns_away_a_connection_the_proxy_did_not_forward`.

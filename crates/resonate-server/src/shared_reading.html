@@ -1,0 +1,50 @@
+<script type="application/json" id="words">@WORDS@</script>
+<script id="reading">
+@READ@
+</script>
+<script>
+(function () {
+  var words = JSON.parse(document.getElementById("words").textContent);
+  var status = document.getElementById("status");
+  var address = (location.protocol === "http:" ? "ws://" : "wss://") + location.host + "/";
+  function twoDigits(value) {
+    return String(value).padStart(2, "0");
+  }
+  function clock(ms) {
+    var seconds = Math.round(ms / 1000);
+    var hours = Math.floor(seconds / 3600);
+    var minutes = Math.floor((seconds % 3600) / 60);
+    var rest = twoDigits(seconds % 60);
+    return hours > 0 ? hours + ":" + twoDigits(minutes) + ":" + rest : minutes + ":" + rest;
+  }
+  status.textContent = words.reading;
+  readShared(code, address).then(function (read) {
+    if (read.failed) {
+      status.textContent = words[read.failed];
+      return;
+    }
+    status.textContent = read.rows.length === 0 ? words.empty : "";
+    document.getElementById("name").textContent = read.name || words.unnamed;
+    var songs = document.getElementById("songs");
+    read.rows.forEach(function (song, at) {
+      var row = document.createElement("li");
+      var number = document.createElement("span");
+      number.className = "n";
+      number.textContent = String(at + 1);
+      var named = document.createElement("span");
+      named.className = "t";
+      var title = document.createElement("b");
+      title.textContent = song.title;
+      var by = document.createElement("span");
+      by.textContent = [song.artist, song.album].filter(Boolean).join(" · ");
+      named.append(title, by);
+      var length = document.createElement("span");
+      length.className = "l";
+      length.textContent = song.ms === null ? "" : clock(song.ms);
+      row.append(number, named, length);
+      songs.append(row);
+    });
+    document.getElementById("list").hidden = false;
+  });
+})();
+</script>

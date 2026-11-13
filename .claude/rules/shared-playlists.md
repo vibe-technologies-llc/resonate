@@ -49,7 +49,8 @@ touches the pairing key, there are no accounts, and the server reads nothing it 
   compact, and could write nonsense, and removal is the answer to that.
 - **A link is `resonate://shared/<code>`, with `?server=` where the list is not on the hosted server**,
   or the page `https://<host>/s/#<code>`, which chat apps linkify (`invitation.rs`). The fragment
-  never reaches the server.
+  never reaches the server; the page opens the list in the browser with it, as a follower does,
+  and shows its name and songs beside *Open in Resonate* (`server.md`).
 
 A list on a server other than the hosted one names it in its links, and its page is on that server
 (`Running::named_in_a_link`), so a self-hosted list is never sent to the hosted page.

@@ -1,3 +1,8 @@
+use resonate_sync::{
+    shared::{ENTRIES_KEPT_AT_MOST, LARGEST_BUNDLE_OPENED, ROWS_AT_MOST},
+    wire::PROTOCOL_VERSION,
+};
+
 use crate::words;
 
 const PAGE_REQUEST_READ_AT_MOST: usize = 2_048;
@@ -10,6 +15,12 @@ const ASSET_LINKS_TARGET: &str = "/.well-known/assetlinks.json";
 
 const ANDROID_PACKAGE: &str = "org.resonate.android";
 
+const SHARED_LIST: &str = include_str!("shared_list.html");
+
+const SHARED_READING: &str = include_str!("shared_reading.html");
+
+const SHARED_READER: &str = include_str!("shared_list.js");
+
 const PAGE: &str = r##"<!doctype html>
 <html lang="@LANGUAGE@">
 <head>
@@ -18,14 +29,23 @@ const PAGE: &str = r##"<!doctype html>
 <meta name="robots" content="noindex">
 <title>Resonate</title>
 <style>
-:root{color-scheme:light dark;--ground:#fff;--ink:#17151c;--faint:#5f5a69;--accent:#6d4aa0;--paper:#fff}
-@media (prefers-color-scheme:dark){:root{--ground:#121016;--ink:#f3f1f6;--faint:#a9a3b4;--accent:#b79ae0;--paper:#17121f}}
+:root{color-scheme:light dark;--ground:#fff;--ink:#17151c;--faint:#5f5a69;--accent:#6d4aa0;--paper:#fff;--line:#e4e1ea}
+@media (prefers-color-scheme:dark){:root{--ground:#121016;--ink:#f3f1f6;--faint:#a9a3b4;--accent:#b79ae0;--paper:#17121f;--line:#2c2833}}
 body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--ground);color:var(--ink);font:16px/1.5 system-ui,sans-serif;padding:16px;box-sizing:border-box}
-main{max-width:30rem}
+main{width:100%;max-width:34rem}
 h1{font-size:1.6rem;margin:0 0 .5rem}
 p{margin:0 0 1rem;color:var(--faint)}
 a.open{display:inline-block;padding:.7rem 1.2rem;border-radius:.6rem;background:var(--accent);color:var(--paper);font-weight:600;text-decoration:none}
 code{display:block;margin-top:1.2rem;word-break:break-all;color:var(--faint)}
+h2{font-size:1.25rem;margin:1.6rem 0 .4rem;overflow-wrap:anywhere}
+ol{list-style:none;padding:0;margin:0}
+li{display:flex;align-items:baseline;gap:.75rem;padding:.55rem 0;border-top:1px solid var(--line)}
+li .n,li .l{color:var(--faint);font-variant-numeric:tabular-nums}
+li .n{min-width:1.6rem;text-align:right}
+li .t{flex:1;min-width:0}
+li .t b{display:block;font-weight:600;overflow-wrap:anywhere}
+li .t span{display:block;color:var(--faint);font-size:.9rem;overflow-wrap:anywhere}
+#status:empty{display:none}
 </style>
 </head>
 <body>
@@ -35,6 +55,7 @@ code{display:block;margin-top:1.2rem;word-break:break-all;color:var(--faint)}
 <a class="open" id="open" href="#">@OPEN@</a>
 <code id="code"></code>
 <noscript><p>@NEEDS_SCRIPT@</p></noscript>
+@LIST@
 </main>
 <script>
 var code = location.hash.slice(1).split(/[?&#]/)[0].replace(/[^A-Za-z0-9-]/g, "");
@@ -43,6 +64,7 @@ document.getElementById("code").textContent = code;
 document.getElementById("open").href =
   "resonate://@KIND@/" + code + "?server=" + encodeURIComponent(server);
 </script>
+@READING@
 </body>
 </html>
 "##;
@@ -90,21 +112,72 @@ pub fn answer(asked: Asked, android_certificates: &[String]) -> Vec<u8> {
 }
 
 fn page_of(kind: &str) -> String {
-    let (heading, saying) = if kind == PARTY {
-        (words::pages::party_heading(), words::pages::party_saying())
+    let (heading, saying, list, reading) = if kind == PARTY {
+        (
+            words::pages::party_heading(),
+            words::pages::party_saying(),
+            String::new(),
+            String::new(),
+        )
     } else {
         (
             words::pages::shared_heading(),
             words::pages::shared_saying(),
+            SHARED_LIST.to_owned(),
+            shared_reading(),
         )
     };
 
-    PAGE.replace("@LANGUAGE@", resonate_words::spoken().tag())
+    PAGE.replace("@LIST@", &list)
+        .replace("@READING@", &reading)
+        .replace("@LANGUAGE@", resonate_words::spoken().tag())
         .replace("@HEADING@", &escaped(heading))
         .replace("@SAYING@", &escaped(saying))
         .replace("@OPEN@", &escaped(words::pages::open()))
         .replace("@NEEDS_SCRIPT@", &escaped(words::pages::needs_script()))
         .replace("@KIND@", kind)
+}
+
+fn shared_reading() -> String {
+    let reader = SHARED_READER
+        .replace("@VERSION@", &PROTOCOL_VERSION.to_string())
+        .replace("@LARGEST@", &LARGEST_BUNDLE_OPENED.to_string())
+        .replace("@ROWS@", &ROWS_AT_MOST.to_string())
+        .replace("@ENTRIES@", &ENTRIES_KEPT_AT_MOST.to_string());
+    let said = [
+        ("reading", words::pages::shared_reading()),
+        ("unnamed", words::pages::shared_unnamed()),
+        ("empty", words::pages::shared_empty()),
+        ("unread", words::pages::shared_unread()),
+        ("unknown", words::pages::shared_unknown()),
+        ("moved", words::pages::shared_moved()),
+        ("unreached", words::pages::shared_unreached()),
+    ];
+    let words = said
+        .iter()
+        .map(|(key, said)| format!("{}:{}", in_json(key), in_json(said)))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    SHARED_READING
+        .replace("@WORDS@", &format!("{{{words}}}"))
+        .replace("@READ@", &reader)
+}
+
+fn in_json(text: &str) -> String {
+    let mut written = String::with_capacity(text.len() + 2);
+    written.push('"');
+    for letter in text.chars() {
+        match letter {
+            '"' => written.push_str("\\\""),
+            '\\' => written.push_str("\\\\"),
+            '<' | '>' | '&' => written.push_str(&format!("\\u{:04x}", u32::from(letter))),
+            letter if letter < ' ' => written.push_str(&format!("\\u{:04x}", u32::from(letter))),
+            letter => written.push(letter),
+        }
+    }
+    written.push('"');
+    written
 }
 
 fn escaped(said: &str) -> String {
@@ -132,7 +205,7 @@ fn answered(status: &str, content_type: &str, body: &str) -> Vec<u8> {
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n\
          Connection: close\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\n\
          Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src \
-         'unsafe-inline'\r\n\r\n{body}",
+         'unsafe-inline'; connect-src 'self'\r\n\r\n{body}",
         body.len()
     )
     .into_bytes()
@@ -141,6 +214,27 @@ fn answered(status: &str, content_type: &str, body: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_shared_playlists_page_reads_the_list_and_its_words_cannot_close_the_script() {
+        let shared = page_of(SHARED_PLAYLIST);
+        let party = page_of(PARTY);
+
+        assert!(shared.contains("readShared(code, address)"));
+        assert!(
+            !shared
+                .split('@')
+                .skip(1)
+                .any(|after| after.starts_with(|letter: char| letter.is_ascii_uppercase())),
+            "a placeholder was left unfilled"
+        );
+        assert!(!party.contains("readShared"));
+        assert!(!party.contains("id=\"songs\""));
+        assert_eq!(
+            in_json("</script> \"said\" \\ \n"),
+            "\"\\u003c/script\\u003e \\\"said\\\" \\\\ \\u000a\""
+        );
+    }
 
     #[test]
     fn a_page_is_told_from_a_socket_by_its_request_line_alone() {

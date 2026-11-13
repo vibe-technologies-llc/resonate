@@ -1,8 +1,9 @@
 use std::{
     env, fs,
+    io::{Read, Write},
     net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
-    process,
+    process::{self, Command},
     sync::{
         Arc,
         atomic::{AtomicU32, AtomicU64, Ordering},
@@ -734,5 +735,136 @@ fn what_is_held_is_shown_the_moment_the_service_starts() {
         again.shared.shown().len(),
         1,
         "the terminal reads this straight after starting, with no wait to lean on"
+    );
+}
+
+fn the_page_of(hosted: &Hosted) -> String {
+    let mut asking = std::net::TcpStream::connect(hosted.address).expect("the server answers");
+    asking
+        .write_all(b"GET /s/ HTTP/1.1\r\nHost: resonate.test\r\n\r\n")
+        .expect("asked");
+    let mut answer = String::new();
+    asking.read_to_string(&mut answer).expect("answered");
+
+    answer
+}
+
+fn the_reader_on(page: &str) -> &str {
+    let opening = "<script id=\"reading\">";
+    let from = page.find(opening).expect("the page reads the list") + opening.len();
+    let to = from + page[from..].find("</script>").expect("the reader ends");
+
+    &page[from..to]
+}
+
+fn read_in_a_browser(hosted: &Hosted, reader: &str, code: &str) -> Option<String> {
+    let script = hosted.folder.join("reading.js");
+    fs::write(
+        &script,
+        format!(
+            "{reader}\nreadShared(process.argv[2], process.argv[3]).then((read) => {{ \
+             console.log(JSON.stringify(read)); process.exit(0); }});\n"
+        ),
+    )
+    .expect("the script written");
+    let ran = Command::new("node")
+        .arg(&script)
+        .arg(code)
+        .arg(format!("ws://{}/", hosted.address))
+        .output()
+        .ok()?;
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+
+    Some(String::from_utf8_lossy(&ran.stdout).trim().to_owned())
+}
+
+fn a_row(title: &str) -> String {
+    format!("{{\"title\":\"{title}\",\"artist\":\"Ada\",\"album\":\"Album\",\"ms\":200000}}")
+}
+
+#[test]
+fn a_browser_given_either_link_opens_the_list_as_it_stands_and_a_link_nobody_shared_is_not_held() {
+    if Command::new("node").arg("--version").output().is_err() {
+        eprintln!("skipped: no node to stand in for a browser");
+        return;
+    }
+    let hosted = hosted("browsed");
+    let ada = hosted.person("Ada", Shelf::default());
+    let list = ada.shelf.made("Mix", &["One", "Two", "Three"]);
+    let invites = ada.shared.share(list).expect("shared");
+    eventually("the list reaching the server", &ada, || {
+        shown_on(&ada)[0].owed == 0
+    });
+    ada.shelf.edit(list, &["Three", "One"]);
+    ada.shelf.renamed(list, "Road Trip");
+    eventually("the edit reaching the server", &ada, || {
+        ada.shared.force();
+        shown_on(&ada)[0].owed == 0 && shown_on(&ada)[0].name == "Road Trip"
+    });
+    let page = the_page_of(&hosted);
+    let reader = the_reader_on(&page);
+    let stands = format!(
+        "{{\"name\":\"Road Trip\",\"rows\":[{},{}]}}",
+        a_row("Three"),
+        a_row("One")
+    );
+
+    assert!(page.contains("connect-src 'self'"));
+    assert_eq!(
+        read_in_a_browser(&hosted, reader, &code_in(&invites.view)).as_deref(),
+        Some(stands.as_str())
+    );
+    assert_eq!(
+        read_in_a_browser(
+            &hosted,
+            reader,
+            &code_in(&invites.edit.expect("an edit link"))
+        )
+        .as_deref(),
+        Some(stands.as_str())
+    );
+    let nobodys = resonate_sync::shared::Access::minted()
+        .and_then(|access| access.viewing())
+        .expect("a key")
+        .code();
+    assert_eq!(
+        read_in_a_browser(&hosted, reader, &nobodys).as_deref(),
+        Some("{\"failed\":\"unknown\"}")
+    );
+    assert_eq!(
+        read_in_a_browser(&hosted, reader, "V-NOT-A-CODE").as_deref(),
+        Some("{\"failed\":\"unread\"}")
+    );
+}
+
+#[test]
+fn a_browser_given_the_link_of_a_list_shared_anew_is_told_it_moved() {
+    if Command::new("node").arg("--version").output().is_err() {
+        eprintln!("skipped: no node to stand in for a browser");
+        return;
+    }
+    let hosted = hosted("browsed-moved");
+    let ada = hosted.person("Ada", Shelf::default());
+    let list = ada.shelf.made("Mix", &["One"]);
+    let invites = ada.shared.share(list).expect("shared");
+    eventually("the list reaching the server", &ada, || {
+        shown_on(&ada)[0].owed == 0
+    });
+    let space = shown_on(&ada)[0].space;
+    ada.shared.reset(space, None).expect("reset");
+    eventually("the list moving", &ada, || {
+        shown_on(&ada)
+            .first()
+            .is_some_and(|shown| shown.space != space)
+    });
+    let page = the_page_of(&hosted);
+
+    assert_eq!(
+        read_in_a_browser(&hosted, the_reader_on(&page), &code_in(&invites.view)).as_deref(),
+        Some("{\"failed\":\"moved\"}")
     );
 }
