@@ -93,7 +93,7 @@ pub(crate) struct Serving {
     name: WellKnownName<'static>,
     socket: PathBuf,
     stop: Arc<AtomicBool>,
-    answering: Arc<dyn Serves<UnixStream>>,
+    answering: Arc<dyn Serves>,
     thread: Option<JoinHandle<()>>,
     claim: Option<Claim>,
 }
@@ -104,11 +104,7 @@ impl Serving {
         Self::start_in(&registry::players_folder(), zone, answering)
     }
 
-    fn start_in(
-        folder: &Path,
-        zone: ZoneId,
-        answering: Arc<dyn Serves<UnixStream>>,
-    ) -> Result<Self> {
+    fn start_in(folder: &Path, zone: ZoneId, answering: Arc<dyn Serves>) -> Result<Self> {
         kept_to_this_user(folder).map_err(|source| Error::pipe(PipeOp::Claim, source))?;
         let mut last = None;
 
@@ -154,7 +150,7 @@ impl Serving {
         socket: PathBuf,
         claim: Claim,
         listener: UnixListener,
-        answering: Arc<dyn Serves<UnixStream>>,
+        answering: Arc<dyn Serves>,
     ) -> Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let spawned = {
@@ -227,13 +223,10 @@ fn listening_at(socket: &Path) -> io::Result<UnixListener> {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        env,
-        io::{Read as _, Write as _},
-        process,
-    };
+    use std::{env, process};
 
     use super::*;
+    use crate::wire::{read_frame, write_frame};
 
     const LONGEST_PATH_A_MAC_BINDS: usize = 103;
     const A_LONG_HOME: &str = "/Users/a-listener-with-a-long-name";
@@ -258,20 +251,15 @@ mod tests {
 
     struct Echoing;
 
-    impl Serves<UnixStream> for Echoing {
-        fn serve(&self, mut stream: UnixStream) {
-            let mut heard = [0; 1];
-            while stream.read_exact(&mut heard).is_ok() {
-                if stream.write_all(&heard).is_err() {
-                    return;
-                }
-            }
+    impl Serves for Echoing {
+        fn reply_to(&self, frame: &[u8]) -> Option<Vec<u8>> {
+            Some(frame.to_vec())
         }
 
         fn close(&self) {}
     }
 
-    fn echoing() -> Arc<dyn Serves<UnixStream>> {
+    fn echoing() -> Arc<dyn Serves> {
         Arc::new(Echoing)
     }
 
@@ -281,9 +269,10 @@ mod tests {
 
     fn echoed(socket: &Path, byte: u8) -> u8 {
         let mut stream = UnixStream::connect(socket).expect("the socket answers");
-        stream.write_all(&[byte]).expect("a byte sent");
-        let mut heard = [0; 1];
-        stream.read_exact(&mut heard).expect("a byte back");
+        write_frame(&mut stream, &[byte]).expect("a byte sent");
+        let heard = read_frame(&mut stream)
+            .expect("a frame back")
+            .expect("the player answered");
         heard[0]
     }
 

@@ -120,8 +120,7 @@ impl Engine {
     pub(super) fn lands_past_the_end(&self, to: Frames) -> bool {
         self.opening.is_none()
             && self
-                .track
-                .as_ref()
+                .seeking_track()
                 .and_then(|track| track.info.duration)
                 .is_some_and(|duration| to >= duration)
     }

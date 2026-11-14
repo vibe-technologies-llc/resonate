@@ -57,20 +57,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Sync and together
 
 ## Playback and output
-- [S · 0.11.1] A refused seek still takes the gapless handover back: `Engine::seek` (and `SeekBy` in
-  `commands.rs`) calls `take_the_boundary_back` before `SeekOutOfRange`, `NotSeekable` and the seek
-  to where it already is, so a refused seek in a song's last ring of frames plays the next song's
-  opening from the ring, drains, and starts that song again from its first frame while the bus still
-  names the old one; `tests/transport.rs` tries neither refusal
-- [S · 0.12.0] WASAPI and Core Audio keep a replaced ring until the next reshape:
-  `Handing::let_go_of_the_spent` is called only inside the reshaper closure (`serving.rs` in both
-  crates), never from the service loop as PipeWire's heartbeat does, so the old consumer and its
-  buffer (up to twice `LARGEST_RING`) stay allocated until another reshape or the stream closes
-- [S · 0.12.0] A packed 24-bit PipeWire quantum over 8 192 frames may be filled short: `process.rs`'s
-  `widened` scratch is sized for `QUANTUM_LIMIT_FRAMES` and the fill takes `wanted.min` of it, with the
-  shortfall counted as no starvation; a graph whose `quantum-limit` is raised and whose buffer is
-  sized exactly for packed words would starve each quantum (unconfirmed: whether such a buffer is
-  handed out is unread)
 
 ## Catalog
 - [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
@@ -102,18 +88,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## The binary
-- [M · 0.12.0] The window's pipe and socket keep a client's thread after its player stops serving:
-  `Answering::serve` reads `closed` only after a frame arrives and `listening.rs` runs each client on
-  a detached thread that `rest` never wakes or joins, so a connected client (a long `resonate mcp`
-  session) holds a thread and the zone's `Shared` (player and host) until it next speaks or leaves
-- [S · 0.12.0] The settings writer replaces a dangling `config.toml` symlink instead of following
-  it: `config::edit` falls back to the link's own path where `canonicalize` fails, so a dotfile link
-  to a file not yet made becomes a plain file on the first write, against *Every writer follows a
-  symlinked `config.toml`* (`binary.md`)
-- [S · 0.12.0] The MusicBrainz copy follows default settings when the file will not read again after
-  a write: `settings.rs` re-reads with `config::load(..).unwrap_or_default()` for the mirror switch
-  and the replication token, so a hand-edit's syntax error there starts or stops the copy as if
-  under defaults, silently; `musicbrainz.rs` falls back to the config already held
+- [S · 0.12.0] The window's pipe and socket leave a connected client's thread blocked after the
+  player stops serving: `listening::serve_while_held` lets go of the zone's `Shared` at once, but the
+  thread sits in `read_frame` until the client next speaks or leaves (a Windows named pipe has no
+  cross-thread wake; a socket could be shut down from `rest`)
 
 ## Equaliser
 - [S · 0.12.0] A profile name Windows or a FAT volume refuses is taken as usable:

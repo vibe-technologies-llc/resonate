@@ -29,8 +29,15 @@ pub(crate) enum Measured {
 }
 
 impl Measuring {
-    pub(crate) fn wanted(config: &EngineConfig, info: &MediaInfo, gain: AppliedGain) -> bool {
+    pub(crate) fn wanted(
+        config: &EngineConfig,
+        location: &MediaLocation,
+        info: &MediaInfo,
+        gain: AppliedGain,
+    ) -> bool {
         config.true_peak
+            && location.is_local()
+            && info.is_seekable
             && gain.peak.is_none()
             && info.packing == Packing::Samples
             && (gain.requested() > Gain::UNITY || info.spec.format.is_float())

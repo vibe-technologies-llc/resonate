@@ -69,16 +69,23 @@ impl Answering {
 
     pub fn serve<S: Read + Write>(&self, mut stream: S) -> Result<()> {
         while let Some(bytes) = read_frame(&mut stream)? {
-            if self.closed.load(Ordering::Acquire) {
+            let Some(reply) = self.reply_to(&bytes) else {
                 return Ok(());
-            }
-            let reply = match Request::decode(&bytes) {
-                Ok(request) => self.answer(request),
-                Err(fault) => Self::unreadable(&fault),
             };
-            write_frame(&mut stream, &reply.encode())?;
+            write_frame(&mut stream, &reply)?;
         }
         Ok(())
+    }
+
+    pub(crate) fn reply_to(&self, bytes: &[u8]) -> Option<Vec<u8>> {
+        if self.closed.load(Ordering::Acquire) {
+            return None;
+        }
+        let reply = match Request::decode(bytes) {
+            Ok(request) => self.answer(request),
+            Err(fault) => Self::unreadable(&fault),
+        };
+        Some(reply.encode())
     }
 
     fn unreadable(fault: &WireFault) -> Reply {

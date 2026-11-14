@@ -394,9 +394,9 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   sleep timer ends here, so MPRIS, the played count and the scrobble follow the frame heard. A queue
   edited meanwhile so that it lands elsewhere starts that row afresh (`start`). **Anything that
   rebuilds the row first takes the boundary back** (`take_the_boundary_back`, from `rebind_with`,
-  a seek, `Previous`, a lost graph, a failure not the entering row's): the leaving `Track` comes
+  a seek that passed `judge_the_seek`, `Previous`, a lost graph, a failure not the entering row's): the leaving `Track` comes
   back at its heard position, the entering one is dropped and the output is marked
-  `rendered_for_another`, so no seek reuses it in place. **A failure of the entering row waits for
+  `rendered_for_another`, so no seek reuses it in place. **A refused seek leaves the boundary alone**: `judge_the_seek` weighs the seek against `seeking_track` (the leaving row while a boundary waits) and answers `SeekOutOfRange` or `NotSeekable`, or a seek to where a stream that cannot seek already is as nothing to do, all before any boundary is taken back; `SeekBy` takes it back only to move on to the next row (`a_seek_past_the_end_refused_while_a_boundary_waits_leaves_the_handover_gapless`). **A failure of the entering row waits for
   the graph to reach its boundary**: `drop_what_lies_past_the_boundary` splices away only what was
   written past the last boundary's `at` (`splice(at, written)`), the failure is held in
   `failing_past_the_boundary` while nothing more is pumped, and once `reach_the_boundary` has
@@ -575,7 +575,7 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   The listener's user data is a `process::Fed`: the `Feed` (a `Cycle` for the spec and the source)
   plus two one-way `rtrb` queues. The loop (`ActiveStream::reshape`) pushes the new `Feed`; the
   callback swaps it in at the head of a cycle and pushes the old one back, so the old ring is freed
-  on the loop (each reshape and heartbeat, `Handing::let_go_of_the_spent`), never on the RT thread;
+  on the loop (each reshape and heartbeat, `Handing::let_go_of_the_spent`), never on the RT thread; WASAPI's and Core Audio's serving loops call it each pass as well, not only inside the reshape, so a replaced ring is freed at once rather than at the next reshape;
   it takes nothing while the spent queue is full. Where the spec moves, the loop first stores
   `Taken::Otherwise` against the new spec (silence until the graph settles), points the
   `param_changed` closure's asked spec (`Rc<Cell<StreamSpec>>`) at it, and calls `update_params`
@@ -1293,7 +1293,9 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   `Library::hinting` answers from `track_studies` by the row's path and span; `Unwrapped::open` asks
   once and folds it into the gain in `levelled`. **A track nobody studied is measured where its peak
   would matter** (`true-peak` on, non-DoP sample-packed source, gain in force has no peak and asks
-  for a boost or source is float): `measure::Measuring` decodes the row whole on a `resonate-peak`
+  for a boost or source is float, and the row is a local file that seeks: a song played in place from
+  a service is never opened a second time for it, a live stream never at all, so the guard alone holds
+  its peak, `a_track_played_in_place_from_a_service_is_opened_once_and_its_peak_left_to_the_guard`): `measure::Measuring` decodes the row whole on a `resonate-peak`
   thread through a `TruePeakMeter`. `Track::peak` is a `Peak` (`Unasked`, `Measuring`,
   `Unmeasurable`) so a row that will not decode to its end is not decoded again per settings change.
 - **Samples past full scale are counted where nothing guards them.** With `true-peak` off a plan that
@@ -1467,7 +1469,10 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   words would not fit there (a quantum near the buffer's size, as at the quantum limit) is filled
   into `Cycle::widened`, allocated as the stream opens for `QUANTUM_LIMIT_FRAMES`, and packed across
   (`packed_into`), so the graph is never handed three quarters of what it asked
-  (`a_packed_quantum_filling_the_whole_buffer_is_handed_over_whole`); the ring still fills at the padded stride and `Silence::write` still lays DoP
+  (`a_packed_quantum_filling_the_whole_buffer_is_handed_over_whole`); a quantum longer than the
+  scratch is filled a scratch at a time (`fill_packed_by_chunks`, each chunk stamped
+  past the frames already placed) until the buffer is full or the ring runs dry, never cut at the
+  scratch (`a_packed_quantum_longer_than_the_scratch_is_filled_whole_in_chunks`); the ring still fills at the padded stride and `Silence::write` still lays DoP
   markers as four-byte words (the marker is byte 2, so a DoP carrier survives).
 - **The settled layout is read from the format's positions, never its count** (`format::placed`):
   the `position` array, read in WAVE order through `Places::in_order`, is the layout

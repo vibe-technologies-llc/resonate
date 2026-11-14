@@ -546,7 +546,9 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `musicbrainz.md`). On, the window opens the copy held and builds or refreshes it in the
   background (`keep_fresh`: none held, or one over 30 days old whose export `LATEST` no longer
   names). The Online category's *Reference lookups* group has the switch (`Setting::Switched(Switch::MusicbrainzMirror, _)`,
-  applied live through `musicbrainz::follow`), and under it what is held, the build's phase and
+  applied live through `musicbrainz::follow` over the file read again after the write: `settings::File`
+  holds the `Config` it last read and keeps it where the file will not read, never the defaults, as
+  `musicbrainz::current` does: `a_file_that_will_not_read_again_leaves_the_last_read_standing_rather_than_the_defaults`), and under it what is held, the build's phase and
   bytes (read through the `resonate_ui::Mirroring` seam, redrawn every second while building),
   *Build it now* and *Remove the copy*. `resonate musicbrainz` is the terminal's way in:
   - bare, it prints what is held and how many answers are kept;
@@ -621,7 +623,9 @@ reads the account again and hands a window `Followed::Spotify`. The
 window drains `Bus::followed` on the foreground (`follow_when_told`, as it drains `raise`).
 
 Every writer (`config::store`, `clear`, `store_in_table`, `clear_in_table`, `edit`): follows a
-symlinked `config.toml`; locks the containing folder for the whole read-edit-write (a window and
+symlinked `config.toml`, a dangling one too (`followed`: `canonicalize`, else `read_link` joined to the
+link's folder, up to `LINKS_FOLLOWED_AT_MOST` hops, so a dotfile link to a file not yet made gets
+that file made and stays a link: `a_link_to_a_file_not_yet_made_is_written_through_to_where_it_points`); locks the containing folder for the whole read-edit-write (a window and
 `resonate eq` cannot overwrite each other; no lock file left; on Windows `config.toml.writing`,
 `windows.md`); sweeps what a killed writer left
 (`config.toml.<pid>-<n>.new`, older builds' `config.toml.lock`, nothing else); stages under this

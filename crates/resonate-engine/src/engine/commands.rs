@@ -262,13 +262,13 @@ impl Engine {
             Command::Seek(to) => self.seek(to),
             Command::SeekBy(delta) => {
                 let now = self.position().get();
-                self.take_the_boundary_back();
                 let to = Frames(if delta < 0 {
                     now.saturating_sub(delta.unsigned_abs())
                 } else {
                     now.saturating_add(delta.unsigned_abs())
                 });
                 if self.lands_past_the_end(to) {
+                    self.take_the_boundary_back();
                     return self.next();
                 }
                 self.seek(to)

@@ -192,7 +192,7 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   one `Initialize`, and an exclusive endpoint cannot hold a second client while the first is open,
   so a rate, word or layout change genuinely closes the client and opens another, and the engine's
   reopen is that. `StillHandingOver` while the last source is untaken, `NoStream` once the thread
-  has ended.
+  has ended. **The replaced ring is let go by the loop, not left for the next reshape**: the `Handing` is shared (`Arc<Mutex<Handing>>`) between the `Reshaper` and the loop, which calls `let_go_of_the_spent` (`Serving::let_go_of_the_spent`, a `try_lock` that never waits) in each pass before it waits for room, after the previous cycle returned and never inside `fill_buffer` (`the_source_a_reshape_replaced_is_let_go_by_the_loop_without_another_reshape`).
 - **The stream thread is in MMCSS's `Pro Audio` class** (`priority::Priority`, over
   `resonate_win32::ProAudioClass`) while the request is `realtime`, left on the same thread when a
   reshape lowers it or the thread ends; where MMCSS refuses (the service stopped),

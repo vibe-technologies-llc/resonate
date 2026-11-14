@@ -13,11 +13,6 @@ are in [ROADMAP.md](ROADMAP.md).
   long they wait is unmeasured
 
 ## Performance and scale
-- [S · 0.12.0] The true-peak measurement opens and decodes a network song a second time:
-  `Measuring::wanted` weighs neither the source nor whether it seeks, and every lossy codec without a
-  declared depth is `F32`, so with `true_peak` on by default each never-studied MP3, AAC, Vorbis or
-  Opus song from Subsonic, TIDAL or YouTube Music is downloaded again whole, and a live stream is
-  decoded on a second connection for as long as it plays; measuring local sources alone would do
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
