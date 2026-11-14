@@ -58,7 +58,7 @@ impl Category {
             Self::Sync => Icon::Sync,
             Self::Desktop => Icon::Computer,
             Self::Appearance => Icon::Appearance,
-            Self::Window => Icon::WindowMaximise,
+            Self::Window => Icon::Window,
             Self::About => Icon::Info,
         }
     }
