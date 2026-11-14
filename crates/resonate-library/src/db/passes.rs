@@ -21,7 +21,7 @@ use crate::{
     RetagHandle, RetagOptions, ScanHandle, ScanOptions, StoreOp, TagSink, enrich, import,
     organise::{self},
     retag::{self, Followed, TrackToTag},
-    scan, sheeted, store, supply,
+    scan, sheeted, store, supply, undo,
 };
 
 impl Library {
@@ -124,7 +124,9 @@ impl Library {
         self.inner.write(|transaction| {
             organise::files_moved(transaction, landed)?;
             organise::noted(transaction, landed, noting)
-        })
+        })?;
+        undo::followed(&self.inner, landed);
+        Ok(())
     }
 
     pub(crate) fn staging(&self, staged: &Path) -> Result<()> {

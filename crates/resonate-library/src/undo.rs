@@ -1,10 +1,11 @@
+use ahash::AHashMap;
 use parking_lot::Mutex;
 use resonate_core::{PlaylistId, Span};
 use rusqlite::{OptionalExtension as _, Transaction, params};
 
 use crate::{
-    Error, Kept, PlaylistName, Result, SavedQuery, StoreOp, db::Inner, offered, playlist, store,
-    synced,
+    Error, Kept, Move, PlaylistName, Result, SavedQuery, StoreOp, db::Inner, offered, playlist,
+    store, synced,
 };
 
 pub(crate) const STEPS_HELD: usize = 32;
@@ -222,6 +223,32 @@ pub(crate) fn overtaken(inner: &Inner, playlists: &[PlaylistId], names: &[String
     };
     inner.steps().lock().retain(|step| !overtakes(step));
     inner.walked().lock().retain(|step| !overtakes(step));
+}
+
+pub(crate) fn followed(inner: &Inner, landed: &[Move]) {
+    let moved: AHashMap<String, String> = landed
+        .iter()
+        .flat_map(Move::files)
+        .map(|(from, to)| {
+            (
+                store::path_text(from).into_owned(),
+                store::path_text(to).into_owned(),
+            )
+        })
+        .collect();
+
+    for stack in [inner.steps(), inner.walked()] {
+        for step in stack.lock().iter_mut() {
+            let Standing::Was(held) = &mut step.standing else {
+                continue;
+            };
+            for row in held.rows.iter_mut().flatten() {
+                if let Some(to) = moved.get(&row.path) {
+                    row.path.clone_from(to);
+                }
+            }
+        }
+    }
 }
 
 pub(crate) enum Change<T> {

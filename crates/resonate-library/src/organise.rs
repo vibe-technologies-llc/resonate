@@ -2931,6 +2931,7 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
     let mut retags = prepared(tx, "UPDATE retagged SET path = ?2 WHERE path = ?1")?;
     let mut retagged_fields = prepared(tx, "UPDATE retagged_fields SET path = ?2 WHERE path = ?1")?;
     let mut entries = prepared(tx, "UPDATE playlist_entries SET path = ?2 WHERE path = ?1")?;
+    let mut offered_rows = prepared(tx, "UPDATE offered_step_rows SET path = ?2 WHERE path = ?1")?;
     let mut received = prepared(tx, "UPDATE songs_received SET path = ?2 WHERE path = ?1")?;
     let mut kept = prepared(tx, "UPDATE kept_songs SET landed = ?2 WHERE landed = ?1")?;
     let mut touched = prepared(
@@ -2967,6 +2968,7 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
             &mut retagged_fields,
             &mut received,
             &mut kept,
+            &mut offered_rows,
         ] {
             statement
                 .execute(params![from, to])
@@ -3201,6 +3203,8 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering as Counting},
     };
 
+    use resonate_core::{PlaylistId, Span};
+
     use super::*;
     use crate::{left_alone::left_long_ago, reach::LEGACY_UNITS_AT_MOST};
 
@@ -3318,6 +3322,90 @@ mod tests {
             None,
             "a refused step stayed to be refused again"
         );
+    }
+
+    fn moving_a_to_the_artists_folder() -> Move {
+        Move {
+            from: PathBuf::from("/music/a.flac"),
+            to: PathBuf::from("/music/Artist/a.flac"),
+            rows: 1,
+            companions: Vec::new(),
+            sidecars: Vec::new(),
+        }
+    }
+
+    fn paths_of(library: &Library, id: PlaylistId) -> Vec<PathBuf> {
+        library
+            .playlist_cuts(id)
+            .expect("the playlist's rows")
+            .into_iter()
+            .filter_map(|cut| cut.location.as_path().map(Path::to_path_buf))
+            .collect()
+    }
+
+    #[test]
+    fn a_row_removed_and_then_followed_to_its_new_path_is_put_back_there_by_an_undo_and_a_redo() {
+        let library = Library::open_in_memory().expect("an in-memory catalog");
+        let row = |path: &str| crate::Cut::whole(MediaLocation::local(Path::new(path)));
+        let id = library
+            .start_playlist("Evening", &[row("/music/a.flac"), row("/music/b.flac")])
+            .expect("a playlist");
+        library
+            .remove_from_playlist(id, Span::between(0, 1))
+            .expect("a row removed");
+
+        library
+            .files_moved(&[moving_a_to_the_artists_folder()], Noting::Not)
+            .expect("a move followed");
+        library.undo().expect("the removal is undone");
+
+        assert_eq!(
+            paths_of(&library, id),
+            [
+                PathBuf::from("/music/Artist/a.flac"),
+                PathBuf::from("/music/b.flac")
+            ],
+            "an undo put back a path that is no longer there"
+        );
+
+        library.redo().expect("the removal is done again");
+        library.undo().expect("and undone once more");
+
+        assert_eq!(
+            paths_of(&library, id).first(),
+            Some(&PathBuf::from("/music/Artist/a.flac"))
+        );
+    }
+
+    #[test]
+    fn a_row_a_model_removed_and_the_catalog_then_followed_is_put_back_at_its_new_path() {
+        let folder = a_folder_of_its_own();
+        let database = folder.join("library.db");
+        let model = Library::open(&database).expect("the model's catalog");
+        let ours = Library::open(&database).expect("our catalog");
+        let row = |path: &str| crate::Cut::whole(MediaLocation::local(Path::new(path)));
+        let id = ours
+            .start_playlist("Evening", &[row("/music/a.flac"), row("/music/b.flac")])
+            .expect("a playlist");
+        model.offer_edits_as_a_model();
+        model
+            .remove_from_playlist(id, Span::between(0, 1))
+            .expect("a row removed by a model");
+
+        ours.files_moved(&[moving_a_to_the_artists_folder()], Noting::Not)
+            .expect("a move followed");
+        assert_eq!(ours.take_what_a_model_offered().expect("the offer"), 1);
+        ours.undo().expect("the removal is undone");
+
+        assert_eq!(
+            paths_of(&ours, id),
+            [
+                PathBuf::from("/music/Artist/a.flac"),
+                PathBuf::from("/music/b.flac")
+            ],
+            "an offered step kept the path a move had taken away"
+        );
+        fs::remove_dir_all(folder).expect("the scratch folder goes");
     }
 
     #[cfg(not(windows))]

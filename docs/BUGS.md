@@ -94,10 +94,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   handed out is unread)
 
 ## Catalog
-- [S · 0.11.1] Undoing a playlist edit after organise or a followed move puts the old paths back:
-  `organise::files_moved` rewrites `playlist_entries` of playlists still holding the path but neither
-  `offered_step_rows` nor the steps in memory (`undo.rs`'s `Held.rows`), so a row removed, then
-  organised, then undone comes back under a path no file or row carries
 - [S · 0.11.1] A deletion is noted in `songs_deleted` before anything is trashed, in a transaction of
   its own (`db/roots.rs` `remove_tracks`, `note_before_removing`), so a file the trash refused
   (`Removal::Kept`) is still marked deleted here and never synced back, as is every file of a run

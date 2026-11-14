@@ -228,19 +228,28 @@ pub(crate) fn follow_the_moved(
     roots: &[i64],
     generation: i64,
     heard: &dyn Fn(&Path) -> Option<String>,
-) -> Result<u64> {
+) -> Result<Followed> {
     if roots.is_empty() {
-        return Ok(0);
+        return Ok(Followed::default());
     }
     let scoped = scoped(roots);
 
     let mut paired = wholes_moved(tx, &scoped, generation, heard)?;
     paired.extend(cuts_moved(tx, &scoped, generation)?);
     if paired.is_empty() {
-        return Ok(0);
+        return Ok(Followed::default());
     }
-    follow(tx, &paired, generation)?;
-    Ok(paired.iter().map(|pair| pair.rows() as u64).sum())
+    let moves = follow(tx, &paired, generation)?;
+    Ok(Followed {
+        rows: paired.iter().map(|pair| pair.rows() as u64).sum(),
+        moves,
+    })
+}
+
+#[derive(Default)]
+pub(crate) struct Followed {
+    pub(crate) rows: u64,
+    pub(crate) moves: Vec<Move>,
 }
 
 fn wholes_moved(
@@ -502,7 +511,7 @@ fn trailing_names_shared(one: &str, other: &str) -> usize {
         .count()
 }
 
-fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<()> {
+fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<Vec<Move>> {
     let moves: Vec<Move> = paired
         .iter()
         .map(|pair| Move {
@@ -543,7 +552,7 @@ fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<()
             store::reindex_the_track(tx, was)?;
         }
     }
-    Ok(())
+    Ok(moves)
 }
 
 const RETAGGED_AS_IT_MOVED: &str = "(NOT (tracks.named_by_its_stem AND arrived.named_by_its_stem)

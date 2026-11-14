@@ -1676,8 +1676,8 @@ guard and re-keys a sleeve-keyed album after moves land.
   destination now taken: stays; the track moves without. `Library::files_moved`, one transaction,
   rewrites `tracks.path`, `playlist_entries.path` (touching those playlists' `modified`),
   `lyrics_kept.path`, `lyrics_ahead.path`, `lyrics_refused.path`, `kept_songs.landed` (so a song
-  organised after it landed still seats what lands after it), `resume_rows.uri`, after first
-  deleting any `tracks`, lyric or `songs_received` row at the destination (path-keyed). The open queue follows: the
+  organised after it landed still seats what lands after it), `resume_rows.uri`, `offered_step_rows.path`, after first
+  deleting any `tracks`, lyric or `songs_received` row at the destination (path-keyed). **The undo and redo stacks follow too** (`undo::followed`, after the commit, from `Library::files_moved` and from the scan's move pairing): a step's `Held.rows` are the rows an edit took out, and a row removed before its file moved, then put back by an undo, would otherwise return under a path no file or row carries; a step another process offered is rewritten in `offered_step_rows` by the same transaction (`a_row_removed_and_then_followed_to_its_new_path_is_put_back_there_by_an_undo_and_a_redo`, `a_row_a_model_removed_and_the_catalog_then_followed_is_put_back_at_its_new_path`). The open queue follows: the
   window sends `Command::Relocate`, `resonate organise --apply` reaches every bus player via
   `org.resonate.Player1`'s `Relocate` (`mpris.md`); `Queue::relocate` follows each row through the
   moves in landing order (`queue::landed_at`). A failing rename puts back only its own move's steps,

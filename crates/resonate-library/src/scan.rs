@@ -34,7 +34,7 @@ use crate::{
     pass::{Cancelling, PassHandle, PassKind, ScanHandle},
     stem,
     store::{self, Cache, TrackRecord},
-    volumes,
+    undo, volumes,
 };
 
 const MAX_DEPTH: NonZeroU8 = match NonZeroU8::new(32) {
@@ -642,6 +642,8 @@ fn run(
                 prints.get(path).cloned()
             })
         })?;
+        undo::followed(inner, &moved.moves);
+        let moved = moved.rows;
         progress.moved.store(moved, Ordering::Relaxed);
         progress.added.fetch_sub(moved, Ordering::Relaxed);
         let removed = inner.write(|transaction| store::prune(transaction, &ids, generation))?;
