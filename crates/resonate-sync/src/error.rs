@@ -142,6 +142,11 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error(
+        "{server} is not this machine, and a plain ws:// address would send the space's token in the clear"
+    )]
+    PlainOffThisMachine { server: Box<str> },
+
     #[error("{server} is not a name a certificate can be checked against")]
     ServerName { server: Box<str> },
 

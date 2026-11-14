@@ -84,7 +84,12 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   folded key's tombstone and the merged survivor beside them.
 - **A server address of `ws://` or `wss://` runs the same frames over a WebSocket** (`web.rs`: TCP,
   TLS through `tokio-rustls` for `wss`, one binary message a frame, at most `LARGEST_FRAME`),
-  for a server behind a proxy that carries no UDP (`server.md`). Any other address is QUIC. The
+  for a server behind a proxy that carries no UDP (`server.md`). **A plain `ws://` goes only to this
+  machine**: its host must resolve to loopback alone (`on_this_machine`, an IPv4 address mapped into
+  IPv6 read as itself) or `connect` refuses it `Error::PlainOffThisMachine` before a byte is sent,
+  since `Hello` carries the space's token, which may `Append`, `Compact` or `Close`; a server
+  elsewhere, an invitation link's `http://` page included, is reached over `wss://` or not at all
+  (`a_plain_web_socket_is_refused_to_any_host_but_this_machine`). Any other address is QUIC. The
   link holds a `Carrier` (a QUIC connection, or a numbered web link) in place of a connection; the
   device pings every 25 s and a link silent for 90 s drops. A web link has no observed UDP address,
   so the server's `Welcome` and `Punched` carry `0.0.0.0:0`, which a device skips as a candidate.

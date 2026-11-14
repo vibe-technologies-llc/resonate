@@ -32,10 +32,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `appendingPathComponent` takes whole, and `open`, `delete` and `fileNumber` then reach outside the
   granted folder; `documents::location` checks only the scheme. No reachable hostile URI was found,
   but one from an imported list or another device would do it
-- [S · 0.12.0] A `ws://` sync server on another host sends the space's token in the clear:
-  `web::web_address` takes `ws` for any host and invitation links can name one, so anyone on the
-  path learns a token that may `Append`, `Compact` or `Close`; the hifi secret is refused off
-  `https://` or loopback, sync has no such guard
 - [S · 0.12.0] A peer's `FromPeer::Sending` size is believed: `peer.rs` stages the file under
   `sync-staging` up to whatever size it announced, with no ceiling like the vault's
   `LARGEST_DELIVERY`, so a paired device (an old phone never forgotten) can fill the disc

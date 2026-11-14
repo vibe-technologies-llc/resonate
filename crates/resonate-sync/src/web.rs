@@ -1,6 +1,6 @@
 use std::{
     io,
-    net::IpAddr,
+    net::{IpAddr, SocketAddr},
     pin::Pin,
     sync::{
         Arc,
@@ -19,7 +19,7 @@ use rustls::{ClientConfig, RootCertStore, crypto::ring::default_provider, versio
 use rustls_pki_types::ServerName;
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
-    net::TcpStream,
+    net::{TcpStream, lookup_host},
     time::timeout,
 };
 use tokio_rustls::TlsConnector;
@@ -151,6 +151,26 @@ pub fn web_address(server: &str) -> Option<WebAddress> {
     })
 }
 
+async fn on_this_machine(address: &WebAddress) -> Result<Vec<SocketAddr>> {
+    let resolved = lookup_host((address.host.as_str(), address.port))
+        .await
+        .map_err(|source| Error::Resolve {
+            server: address.host.clone().into(),
+            source,
+        })?
+        .collect::<Vec<_>>();
+    let only_here = !resolved.is_empty()
+        && resolved
+            .iter()
+            .all(|resolved| resolved.ip().to_canonical().is_loopback());
+    if !only_here {
+        return Err(Error::PlainOffThisMachine {
+            server: address.host.clone().into(),
+        });
+    }
+    Ok(resolved)
+}
+
 pub fn to_the_web(roots: RootCertStore) -> Result<Arc<ClientConfig>> {
     let mut tls = ClientConfig::builder_with_provider(Arc::new(default_provider()))
         .with_protocol_versions(&[&TLS13])
@@ -176,9 +196,12 @@ pub async fn connect(
     address: &WebAddress,
     tls: &Arc<ClientConfig>,
 ) -> Result<(Outgoing, Incoming)> {
-    let tcp = TcpStream::connect((address.host.as_str(), address.port))
-        .await
-        .map_err(|source| Error::stream(StreamOp::Open, source))?;
+    let tcp = if address.secure {
+        TcpStream::connect((address.host.as_str(), address.port)).await
+    } else {
+        TcpStream::connect(on_this_machine(address).await?.as_slice()).await
+    }
+    .map_err(|source| Error::stream(StreamOp::Open, source))?;
     tcp.set_nodelay(true)
         .map_err(|source| Error::stream(StreamOp::Open, source))?;
     let tunnel: Tunnel = if address.secure {
@@ -350,6 +373,30 @@ mod tests {
     use super::*;
 
     const READ_AT_ONCE: usize = 16;
+
+    #[tokio::test]
+    async fn a_plain_web_socket_is_refused_to_any_host_but_this_machine() {
+        let tls = to_the_web(RootCertStore::empty()).expect("a configuration");
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bound");
+        let port = listener.local_addr().expect("an address").port();
+        let elsewhere = web_address("ws://192.0.2.7:9/").expect("an address");
+        let mapped = web_address("ws://[::ffff:192.0.2.7]:9/").expect("an address");
+        let here = web_address(&format!("ws://127.0.0.1:{port}/")).expect("an address");
+
+        let refused = connect(&elsewhere, &tls).await;
+        let refused_mapped = connect(&mapped, &tls).await;
+        let reached = on_this_machine(&here).await;
+
+        assert!(matches!(refused, Err(Error::PlainOffThisMachine { .. })));
+        assert!(matches!(
+            refused_mapped,
+            Err(Error::PlainOffThisMachine { .. })
+        ));
+        assert_eq!(
+            reached.expect("resolved"),
+            vec![SocketAddr::from(([127, 0, 0, 1], port))]
+        );
+    }
 
     async fn sent_to_a_server_reading_at_most(
         most: usize,
