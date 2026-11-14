@@ -19,6 +19,9 @@ pub struct Located {
 impl Located {
     pub fn parse(address: &str) -> Result<Self> {
         let address = address.trim();
+        if !is_writable_in_a_request(address) {
+            return Err(Error::UnreadableAddress);
+        }
         let rest = address
             .get(..SCHEME.len())
             .filter(|scheme| scheme.eq_ignore_ascii_case(SCHEME))
@@ -45,7 +48,7 @@ impl Located {
 
     pub fn join(&self, reference: &str) -> Result<Self> {
         let reference = reference.trim();
-        if reference.is_empty() {
+        if reference.is_empty() || !is_writable_in_a_request(reference) {
             return Err(Error::UnreadableAddress);
         }
         if reference
@@ -115,6 +118,12 @@ impl fmt::Display for Located {
     }
 }
 
+fn is_writable_in_a_request(text: &str) -> bool {
+    !text
+        .chars()
+        .any(|letter| letter.is_control() || letter == ' ')
+}
+
 fn host_and_port(authority: &str) -> Result<(&str, u16)> {
     if let Some(bracketed) = authority.strip_prefix('[') {
         let (host, after) = bracketed.split_once(']').ok_or(Error::UnreadableAddress)?;
@@ -150,6 +159,30 @@ mod tests {
         assert_eq!(six.authority(), "[fe80::1]:8080");
         assert!(Located::parse("https://secure/").is_err());
         assert!(Located::parse("http://host:port/").is_err());
+    }
+
+    #[test]
+    fn an_address_or_a_reference_holding_a_control_character_or_a_space_is_refused() {
+        let base = Located::parse("http://10.0.0.5:1400/xml/device.xml").expect("reads");
+
+        for hostile in [
+            "http://10.0.0.5/ctl\r\nX-Injected: 1",
+            "http://10.0.0.5/ctl\nX: 1",
+            "http://10.0.0.5/a\0b",
+            "http://10.0.0.5/a\x7fb",
+            "http://10.0.0.5/a b",
+            "http://10.0.0.5:80\r\n/x",
+            "http://10.0.0.5\t/x",
+        ] {
+            assert!(Located::parse(hostile).is_err(), "{hostile:?} was read");
+        }
+        for hostile in ["/ctl\r\nX-Injected: 1", "ctl\nX: 1", "/a b", "/a\0b"] {
+            assert!(base.join(hostile).is_err(), "{hostile:?} was joined");
+        }
+        assert_eq!(
+            base.join("/ctl%0D%0A").expect("an escaped one").path(),
+            "/ctl%0D%0A"
+        );
     }
 
     #[test]

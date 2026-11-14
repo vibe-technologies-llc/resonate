@@ -66,7 +66,7 @@ dev-dependency, for the end-to-end test.
   lock, so the bounds are what a host answering the search can cost it.
 - **The description is read as the device wrote it**: `URLBase` where present, else the description's
   own address, joins every `controlURL` (absolute, rooted or relative to the description's folder:
-  `Located::join`); a `URLBase` or a `controlURL` naming another host than the description's
+  `Located::join`); an address or reference holding a control character (a CR or LF would inject headers into the hand-written request line) or a space is `UnreadableAddress` (`an_address_or_a_reference_holding_a_control_character_or_a_space_is_refused`); a `URLBase` or a `controlURL` naming another host than the description's
   (`Located::is_on_host_of`, the port free) is not taken, so no description points the SOAP posts
   (a stream's token and a song's title among them) at another machine or a loopback service; the renderer is the `device` (nested in a `deviceList` or not) whose `deviceType`
   names a MediaRenderer, else the first holding an AVTransport service. XML through `roxmltree`

@@ -40,10 +40,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.12.0] A peer's `FromPeer::Sending` size is believed: `peer.rs` stages the file under
   `sync-staging` up to whatever size it announced, with no ceiling like the vault's
   `LARGEST_DELIVERY`, so a paired device (an old phone never forgotten) can fill the disc
-- [S · 0.12.0] A renderer's control or description URL keeps any control characters:
-  `located::parse` and `join` keep the path as given and `http::request` writes it into the request
-  line, so a CR or LF a description encodes injects headers into the hand-written HTTP (to the
-  renderer's own host alone, which `is_on_host_of` pins)
 - [S · 0.12.0] `forwarded_by` is honoured whoever connects: `serve.rs` skips the per-address `admit`
   and reads the counted address from the configured header, so a web listener bound beyond loopback
   (`server.md` says to bind it there; nothing holds it) lets every client choose the address its
