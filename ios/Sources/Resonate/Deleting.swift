@@ -54,7 +54,9 @@ extension Library {
         var unfolded: (any Swift.Error)?
 
         for set in sets {
-            let copies = set.copies.map { DoomedFile(id: $0.id, uri: $0.uri) }
+            let keptUri = set.kept.uri
+            let named = set.copies.map { DoomedFile(id: $0.id, uri: $0.uri) }
+            let copies = (try? await Work.aside { named.filter { !folders.holdOneFile($0.uri, keptUri) } }) ?? []
             let gone = (try? await Work.aside { copies.filter { folders.deleteSong($0.uri) }.map(\.id) }) ?? []
             stuck += copies.count - gone.count
             guard !gone.isEmpty else { continue }

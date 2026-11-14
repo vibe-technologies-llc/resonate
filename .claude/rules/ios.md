@@ -1085,7 +1085,7 @@ every route change (a pair of headphones at the same rate included), not from th
   *Identical songs* (`IdenticalSongsView`, `Destination.identicalSongs`) asks `identical_songs` on
   `Work.aside` and lists each set, every file with its folder and name (marked read-only where its
   folder is); a tap chooses the copy kept, and *Delete copies* (confirmed) deletes the others set by
-  set and folds those that went into the kept one (`Library.deleteIdenticalCopies`, then the
+  set, never one `Folders.holdOneFile` finds to be the kept song's own file (device and inode), and folds those that went into the kept one (`Library.deleteIdenticalCopies`, then the
   page asks again). Both refresh the catalog, the open playlist and the playlists, and read the
   queue again where rows left it.
 - **A writable folder is organised from its row in Music folders** (`OrganiseView.swift`): a layout

@@ -1,5 +1,7 @@
 use std::{
     collections::BTreeMap,
+    os::unix::fs::MetadataExt,
+    sync::{Arc, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -7,10 +9,10 @@ use resonate_library::{identical_among, kept_first};
 use rusqlite::{OptionalExtension, Transaction};
 
 use crate::{
-    Error, MobilePlayer, Result, StoreOp, Track,
+    Documents, Error, MobilePlayer, Result, StoreOp, Track,
     catalog::{Catalog, read},
     catalog_extras::unreferenced_picture_dropped,
-    documents::{document_uri, location},
+    documents::{document_uri, location, owned},
     rewriting::crc_of,
     sync::{RECORDING_COLUMNS, recording_at},
     vanished::{handed_over, referring_tables},
@@ -25,6 +27,36 @@ fn read_error(source: rusqlite::Error) -> Error {
 
 fn write_error(source: rusqlite::Error) -> Error {
     Error::store(StoreOp::Write, source)
+}
+
+#[derive(Default)]
+pub(crate) struct Files(OnceLock<Arc<dyn Documents>>);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct FileIdentity {
+    device: u64,
+    inode: u64,
+}
+
+impl Files {
+    pub(crate) fn reach_through(&self, documents: Arc<dyn Documents>) {
+        if self.0.set(documents).is_err() {
+            tracing::debug!("the documents were already reached");
+        }
+    }
+
+    fn identity_of(&self, uri: &str) -> Option<FileIdentity> {
+        let descriptor = self.0.get()?.open_document(uri.to_owned());
+        if descriptor < 0 {
+            return None;
+        }
+        let metadata = owned(descriptor).metadata().ok()?;
+
+        metadata.is_file().then(|| FileIdentity {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+        })
+    }
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -46,8 +78,9 @@ impl MobilePlayer {
         let mut found = Vec::new();
 
         for same_size in self.songs_sharing_a_size()? {
+            let one_row_a_file = self.one_row_a_file(same_size, playing.as_deref());
             found.extend(
-                identical_among(same_size, |track| self.opened(&track.uri))
+                identical_among(one_row_a_file, |track| self.opened(&track.uri))
                     .into_iter()
                     .filter_map(|alike| kept_among(alike, playing.as_deref())),
             );
@@ -109,6 +142,23 @@ impl MobilePlayer {
             .into_values()
             .filter(|tracks| tracks.len() > 1)
             .collect())
+    }
+
+    fn one_row_a_file(&self, rows: Vec<Track>, playing: Option<&str>) -> Vec<Track> {
+        let mut unidentified = Vec::new();
+        let mut by_file = BTreeMap::<FileIdentity, Vec<Track>>::new();
+        for row in rows {
+            match self.services.files.identity_of(&row.uri) {
+                Some(identity) => by_file.entry(identity).or_default().push(row),
+                None => unidentified.push(row),
+            }
+        }
+
+        unidentified.extend(by_file.into_values().map(|mut naming_one_file| {
+            let kept_at = kept_at(&mut naming_one_file, playing);
+            naming_one_file.swap_remove(kept_at)
+        }));
+        unidentified
     }
 
     fn measured(&self, uri: &str) -> Option<u64> {
@@ -175,15 +225,19 @@ fn kept_among(mut alike: Vec<Track>, playing: Option<&str>) -> Option<IdenticalS
     if alike.len() < 2 {
         return None;
     }
-    kept_first(&mut alike, |track| track.name.as_str());
-    let kept_at = playing
-        .and_then(|uri| alike.iter().position(|track| track.uri == uri))
-        .unwrap_or(0);
+    let kept_at = kept_at(&mut alike, playing);
     let kept = alike.remove(kept_at);
     Some(IdenticalSongs {
         kept,
         copies: alike,
     })
+}
+
+fn kept_at(alike: &mut [Track], playing: Option<&str>) -> usize {
+    kept_first(alike, |track| track.name.as_str());
+    playing
+        .and_then(|uri| alike.iter().position(|track| track.uri == uri))
+        .unwrap_or(0)
 }
 
 fn counted(count: usize) -> u32 {

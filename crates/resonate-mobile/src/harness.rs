@@ -239,6 +239,7 @@ impl Harness {
 
         let documents: Arc<dyn Documents> = Arc::new(Folder(folder.clone()));
         let served = crate::served::Served::default();
+        let files = Arc::clone(&documents);
         let sources = Arc::new(served.sources(Sources::local().and(Arc::new(
             GrantedFiles::new(documents, "content").expect("a granted provider"),
         ))));
@@ -276,6 +277,7 @@ impl Harness {
             together: crate::together::Together::default(),
             rendering,
         };
+        player.services.files.reach_through(files);
 
         let songs = SONGS
             .iter()

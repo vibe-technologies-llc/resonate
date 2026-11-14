@@ -343,6 +343,62 @@ mod tests {
     }
 
     #[test]
+    fn one_file_named_by_two_rows_is_never_offered_as_a_copy_of_itself() {
+        let harness = Harness::new();
+        for (name, flipped) in [("b", 1), ("c", 2), ("d", 3)] {
+            let mut differing = silence();
+            if let Some(last) = differing.last_mut() {
+                *last ^= flipped;
+            }
+            fs::write(harness.folder.join(format!("{name}.wav")), differing)
+                .expect("a song differing by a byte");
+        }
+
+        let alias = harness
+            .player
+            .index_document(format!("{FOLDER}./a.wav"), "a.wav".into())
+            .expect("a second row naming the same file");
+        let found = harness
+            .player
+            .identical_songs()
+            .expect("the identical songs");
+
+        assert_ne!(alias.id, harness.song('a').id);
+        assert!(found.is_empty());
+    }
+
+    #[test]
+    fn a_second_row_naming_a_file_leaves_its_true_copies_offered_and_the_row_kept_out() {
+        let harness = Harness::new();
+        let mut differing = silence();
+        if let Some(last) = differing.last_mut() {
+            *last ^= 1;
+        }
+        fs::write(harness.folder.join("d.wav"), differing).expect("a song differing by a byte");
+
+        let alias = harness
+            .player
+            .index_document(format!("{FOLDER}./a.wav"), "a.wav".into())
+            .expect("a second row naming the same file");
+        let found = harness
+            .player
+            .identical_songs()
+            .expect("the identical songs");
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kept.id, harness.song('a').id);
+        assert_eq!(
+            found[0]
+                .copies
+                .iter()
+                .map(|copy| copy.id)
+                .collect::<Vec<_>>(),
+            harness.ids("bc")
+        );
+        assert!(found[0].copies.iter().all(|copy| copy.id != alias.id));
+    }
+
+    #[test]
     fn the_copy_playing_is_the_one_kept() {
         let harness = Harness::new();
         harness.resumed("ab", 1, 0);

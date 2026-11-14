@@ -1025,7 +1025,13 @@ confirmed byte for byte, so equal sizes or equal digests alone never match)
 playing is kept, else the one the desktop would keep (`kept_first`: a name not ending ` (N)`, then
 the name that sorts first; `the_copy_playing_is_the_one_kept`,
 `the_copy_kept_is_the_one_playing_else_the_one_no_copy_numbered_as_on_the_desktop`); an unreadable file is
-left out. `fold_identical_songs(kept, copies)`, called after the copies' files are gone, hands each
+left out. **Rows that open one file are one song, never copies of each other**: before the bytes are
+compared, the rows of a size are gathered by the file their descriptor opens (`one_row_a_file`: device and
+inode, regular files alone; `Services::files` holds the `Documents` to ask) and one row of each file is
+weighed, the one playing else the one `kept_first` keeps, so a file catalogued under two spellings of its
+name is never offered as its own copy, whose deletion would take the only file and send a sync to fetch it
+back (`one_file_named_by_two_rows_is_never_offered_as_a_copy_of_itself`,
+`a_second_row_naming_a_file_leaves_its_true_copies_offered_and_the_row_kept_out`). `fold_identical_songs(kept, copies)`, called after the copies' files are gone, hands each
 copy's favourite, playlist rows, listens, lyrics and studies to the one kept (`handed_over`, the
 missing-song merge) and drops its queue rows
 (`folding_a_copy_hands_its_favourite_and_playlist_rows_to_the_one_kept`,

@@ -324,6 +324,7 @@ impl MobilePlayer {
         })?;
         let catalog = Arc::new(Catalog::open(&Path::new(&folder).join("documents.sqlite"))?);
         let documents: Arc<dyn Documents> = Arc::from(documents);
+        let files = Arc::clone(&documents);
         let served = Arc::new(served::Served::default());
         let sources = Arc::new(GRANTED_SCHEMES.iter().try_fold(
             served.sources(Sources::local().spooling_under(Path::new(&folder).to_path_buf())),
@@ -378,6 +379,7 @@ impl MobilePlayer {
             rendering,
         });
         this.downloads.stall_by(this.services.downloads.clone());
+        this.services.files.reach_through(files);
         let carried_over = this.catalog.carries_queues_over()?;
         if carried_over {
             this.resume_saved_in(ZoneId::FIRST)?;
