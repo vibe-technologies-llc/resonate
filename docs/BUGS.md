@@ -44,11 +44,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `located::parse` and `join` keep the path as given and `http::request` writes it into the request
   line, so a CR or LF a description encodes injects headers into the hand-written HTTP (to the
   renderer's own host alone, which `is_on_host_of` pins)
-- [S · 0.12.0] The window's start-up lock falls to a predictable name in the shared temp folder where
-  `XDG_RUNTIME_DIR` is unset (`starting::lock_path`, `resonate-starting-<uid>.lock`, opened with no
-  `O_NOFOLLOW` or owner check), so another user creating it first loses the single window or makes
-  each launch wait `WAITS_AT_MOST`; it wants the per-user `0700` folder check `socket.rs`'s
-  `kept_to_this_user` makes
 - [S · 0.12.0] `forwarded_by` is honoured whoever connects: `serve.rs` skips the per-address `admit`
   and reads the counted address from the configured header, so a web listener bound beyond loopback
   (`server.md` says to bind it there; nothing holds it) lets every client choose the address its
