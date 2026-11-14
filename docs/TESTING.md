@@ -104,9 +104,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   and the `laid_before` tests replay each step's present text, so an edit to `V1` or a shipped step
   passes every test while phones that ran the old text keep it; a fixture of `V1` and each released
   step as tagged (or their hashes), and a `documents.sqlite` laid out at 0.1.0, would hold it
-- [S · 0.12.0] No driven test holds that the window stops redrawing once a pane or sheet is left:
-  five timers (`party.rs`, `settings/sync.rs`, `sharing.rs`, `settings/online.rs`, `analysis.rs`)
-  each end themselves by hand, and the party pane's never does (`PERFORMANCE.md`)
 - [M · 0.12.0] Parsers of untrusted bytes no fuzz target reaches: `SheetText::read` and `edited`
   (the `cue` target drives `read_cue` and `renamed_cue` alone), `matroska_tags::attached` (`padding`
   drives `rewritten`), the whole copy's trailer and record (`bound_of`, `Record::read`, which read

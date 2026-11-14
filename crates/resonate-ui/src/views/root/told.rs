@@ -114,6 +114,15 @@ impl RootView {
         self.player.read(cx).send_by_position(command);
     }
 
+    pub(crate) fn send_by_position_at(
+        &self,
+        revision: u64,
+        command: Command,
+        cx: &mut Context<Self>,
+    ) {
+        self.player.read(cx).send_by_position_at(revision, command);
+    }
+
     pub(crate) fn report(&self, notice: Notice, cx: &mut Context<Self>) {
         toast::tell(notice, cx);
     }

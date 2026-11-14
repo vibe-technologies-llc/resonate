@@ -1,11 +1,11 @@
-use std::{collections::BTreeMap, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 use gpui::{AnyElement, Context, Div, Stateful, prelude::*};
-use resonate_library::Copies;
 
 use crate::{
     Planned,
     icons::Icon,
+    models::{IdenticalSong, Identified},
     views::{
         kit,
         root::RootView,
@@ -15,30 +15,6 @@ use crate::{
 };
 
 const GROUPS_SHOWN: usize = 12;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Identical<'a> {
-    pub(super) kept: &'a Path,
-    pub(super) copies: Vec<&'a Path>,
-}
-
-pub(super) fn grouped(copies: &Copies) -> Vec<Identical<'_>> {
-    let mut by_song: BTreeMap<&Path, Vec<&Path>> = BTreeMap::new();
-    for identical in &copies.identical {
-        by_song
-            .entry(identical.kept.as_path())
-            .or_default()
-            .push(identical.copy.as_path());
-    }
-
-    by_song
-        .into_iter()
-        .map(|(kept, mut copies)| {
-            copies.sort_unstable();
-            Identical { kept, copies }
-        })
-        .collect()
-}
 
 impl RootView {
     pub(super) fn identical_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -50,7 +26,7 @@ impl RootView {
         let found = library.identical_songs().filter(|_| planned.is_shown());
         let foldable = found
             .as_ref()
-            .is_some_and(|copies| !copies.identical.is_empty());
+            .is_some_and(|found| !found.copies.identical.is_empty());
         let armed = self.is_armed(&Armed::FoldTheCopies) && foldable;
 
         kit::rows()
@@ -65,8 +41,8 @@ impl RootView {
             .when(armed, |body| {
                 body.child(note(words::settings_identical::ask_again_to_fold()))
             })
-            .when_some(found, |body, copies| {
-                body.children(listed(&copies)).child(note(told(&copies)))
+            .when_some(found, |body, found| {
+                body.children(listed(&found)).child(note(told(&found)))
             })
             .note(words::settings_identical::note())
     }
@@ -145,8 +121,8 @@ fn unfound(planned: Planned) -> &'static str {
     }
 }
 
-fn listed(copies: &Arc<Copies>) -> Vec<AnyElement> {
-    let groups = grouped(copies);
+fn listed(found: &Arc<Identified>) -> Vec<AnyElement> {
+    let groups = &found.songs;
     let mut rows: Vec<AnyElement> = groups
         .iter()
         .take(GROUPS_SHOWN)
@@ -163,11 +139,11 @@ fn listed(copies: &Arc<Copies>) -> Vec<AnyElement> {
     rows
 }
 
-fn group_row(group: &Identical<'_>) -> Div {
+fn group_row(group: &IdenticalSong) -> Div {
     let names: Vec<String> = group.copies.iter().map(|copy| named(copy)).collect();
 
     kit::named(
-        named(group.kept),
+        named(&group.kept),
         words::settings_identical::copies_of_it(group.copies.len(), names.join(", ")),
     )
 }
@@ -179,13 +155,13 @@ fn named(path: &Path) -> String {
     )
 }
 
-fn told(copies: &Copies) -> String {
-    let folding = copies.identical.len();
-    if folding == 0 && copies.differing.is_empty() {
+fn told(found: &Identified) -> String {
+    let folding = found.copies.identical.len();
+    if folding == 0 && found.copies.differing.is_empty() {
         return words::settings_identical::none_held_twice().to_owned();
     }
 
-    words::settings_identical::would_fold(folding, grouped(copies).len(), copies.differing.len())
+    words::settings_identical::would_fold(folding, found.songs.len(), found.copies.differing.len())
 }
 
 #[cfg(test)]
@@ -223,8 +199,8 @@ mod tests {
         folder.tone("Other (1).wav", 3);
         let library = scanned(&folder);
 
-        let copies = library.identical_copies().expect("the copies are found");
-        let groups = grouped(&copies);
+        let found = Identified::of(library.identical_copies().expect("the copies are found"));
+        let groups = &found.songs;
 
         assert_eq!(groups.len(), 1);
         assert!(groups[0].kept.ends_with("Song.wav"));
@@ -232,7 +208,7 @@ mod tests {
         assert!(groups[0].copies[0].ends_with("Song (1).wav"));
         assert!(groups[0].copies[1].ends_with("Song (2).wav"));
         assert!(groups[0].copies[2].ends_with("Song2.wav"));
-        assert_eq!(copies.differing.len(), 1);
+        assert_eq!(found.copies.differing.len(), 1);
     }
 
     #[gpui::test]
@@ -264,8 +240,8 @@ mod tests {
         let listed = driven
             .read(|root, cx| root.library.read(cx).identical_songs())
             .expect("the copies are listed");
-        assert_eq!(listed.identical.len(), 1);
-        assert_eq!(listed.differing.len(), 1);
+        assert_eq!(listed.copies.identical.len(), 1);
+        assert_eq!(listed.copies.differing.len(), 1);
         assert!(copy.exists());
 
         driven.click("fold-identical-songs");

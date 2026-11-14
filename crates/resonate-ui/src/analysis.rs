@@ -428,3 +428,62 @@ fn settled(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use gpui::{AppContext as _, Entity, TestAppContext};
+    use resonate_engine::Watch;
+    use resonate_library::{Fingerprinters, Library};
+
+    use super::{AnalysisModel, PROGRESS_EVERY, Studying};
+    use crate::driven::unplugged_player;
+
+    fn counted(cx: &mut TestAppContext) -> (Entity<AnalysisModel>, Entity<usize>) {
+        let model = cx.new(|_| {
+            AnalysisModel::new(
+                unplugged_player(),
+                Arc::new(Library::open_in_memory().expect("a catalog in memory")),
+                Arc::new(Fingerprinters::none()),
+                false,
+            )
+        });
+        let redrawn = cx.new(|_| 0usize);
+        let counting = redrawn.clone();
+        cx.update(|cx| {
+            cx.observe(&model, move |_, cx| {
+                counting.update(cx, |redrawn, _| *redrawn += 1);
+            })
+            .detach();
+        });
+        (model, redrawn)
+    }
+
+    fn beats(cx: &mut TestAppContext, count: u32) {
+        for _ in 0..count {
+            cx.executor().advance_clock(PROGRESS_EVERY);
+            cx.run_until_parked();
+        }
+    }
+
+    #[gpui::test]
+    fn the_progress_redraws_the_window_only_while_a_pass_runs(cx: &mut TestAppContext) {
+        let (model, redrawn) = counted(cx);
+
+        model.update(cx, |model, cx| {
+            model.studying = Studying::Running(Arc::new(Watch::default()));
+            model.tick(cx);
+        });
+        beats(cx, 3);
+        let while_running = redrawn.read_with(cx, |redrawn, _| *redrawn);
+
+        model.update(cx, |model, _| model.studying = Studying::Idle);
+        beats(cx, 1);
+        let after_it_ended = redrawn.read_with(cx, |redrawn, _| *redrawn);
+        beats(cx, 5);
+
+        assert_eq!(while_running, 3);
+        assert_eq!(redrawn.read_with(cx, |redrawn, _| *redrawn), after_it_ended);
+    }
+}

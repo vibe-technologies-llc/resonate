@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 use gpui::{
     AnyElement, App, Bounds, Canvas, ClickEvent, Context, Div, ElementId, Font, FontWeight,
     HighlightStyle, Hsla, IndentAdjustment, LineFragment, MouseMoveEvent, Pixels, Point, Role,
-    ScrollEvent, SharedString, StyledText, canvas, div, fill, linear_color_stop, linear_gradient,
-    point, prelude::*, px, rgb, size,
+    ScrollEvent, SharedString, StyledText, Task, canvas, div, fill, linear_color_stop,
+    linear_gradient, point, prelude::*, px, rgb, size,
 };
 use resonate_engine::{PlayerState, StreamDigest};
 use resonate_library::LyricsAhead;
@@ -94,12 +94,40 @@ impl RootView {
         }
 
         let wanted = self.wanted_lyrics(&state, digest.as_deref(), cx);
-        let ahead = wanted.as_ref().map_or(LyricsAhead::ZERO, |wanted| {
-            self.library.read(cx).lyrics_ahead(wanted)
-        });
         self.lyrics.update(cx, |model, cx| {
-            model.follow(asked, wanted, cx);
-            model.hold_ahead(ahead);
+            model.follow(asked, wanted.clone(), cx);
+            model.hold_ahead(LyricsAhead::ZERO);
+        });
+        self.read_the_lyrics_timing(wanted, cx);
+    }
+
+    fn read_the_lyrics_timing(&mut self, wanted: Option<Wanted>, cx: &mut Context<Self>) {
+        let Some(wanted) = wanted else {
+            self.reading_the_lyrics_timing = Task::ready(());
+            return;
+        };
+        let library = self.library.read(cx).catalog();
+        let asked = wanted.clone();
+        self.reading_the_lyrics_timing = cx.spawn(async move |this, cx| {
+            let ahead = cx
+                .background_executor()
+                .spawn(async move {
+                    library
+                        .lyrics_ahead(&asked.location, asked.span)
+                        .unwrap_or_else(|error| {
+                            tracing::debug!(%error, "how far the words run ahead could not be read");
+                            LyricsAhead::ZERO
+                        })
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.lyrics.update(cx, |model, cx| {
+                    if model.looked_for() == Some(&wanted) {
+                        model.hold_ahead(ahead);
+                        cx.notify();
+                    }
+                });
+            });
         });
     }
 
@@ -107,9 +135,10 @@ impl RootView {
         let Some(wanted) = self.lyrics.read(cx).looked_for().cloned() else {
             return;
         };
+        self.reading_the_lyrics_timing = Task::ready(());
         self.lyrics.update(cx, |model, _| model.hold_ahead(ahead));
         self.library.update(cx, |library, cx| {
-            library.hold_lyrics_ahead(&wanted, ahead, cx)
+            library.hold_lyrics_ahead(&wanted, ahead, cx);
         });
         cx.notify();
     }

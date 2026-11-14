@@ -75,8 +75,10 @@ impl RootView {
         match shift {
             Shift::Queue => self.send_by_position(Command::JumpTo(row), cx),
             Shift::Playlist(playlist) => {
-                let entries = self.library.read(cx).entries().to_vec();
-                self.play_playlist(playlist, &entries, row, true, cx);
+                let library = self.library.read(cx);
+                let narrowed = library.narrowing().is_some();
+                let entries = library.entries().to_vec();
+                self.play_playlist(playlist, &entries, row, !narrowed, cx);
             }
             Shift::Listing(Listed::Tracks) => {
                 if let Some(found) = self.library.read(cx).found_at(row) {

@@ -4624,6 +4624,45 @@ mod tests {
     }
 
     #[gpui::test]
+    fn a_row_menu_built_before_the_queue_moved_acts_on_nothing_of_the_queue_now(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = queue_open_for_menus(cx, &folder);
+        let drawn_at = driven.read(|root, cx| root.player.read(cx).queued().revision);
+
+        assert!(driven.read(|root, cx| root.player.read(cx).is_queued_at(drawn_at)));
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.drop_rows(Shift::Queue, Span::one(2), cx);
+        });
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        assert!(!driven.read(|root, cx| root.player.read(cx).is_queued_at(drawn_at)));
+
+        let before = driven.read(|root, cx| root.player.read(cx).state().queue_position);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.send_by_position_at(drawn_at, Command::JumpTo(1), cx);
+        });
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).state().queue_position),
+            before
+        );
+    }
+
+    fn queue_open_for_menus(cx: &mut TestAppContext, folder: &Folder) -> Driven {
+        let files: Vec<PathBuf> = ["one", "two", "three"]
+            .iter()
+            .map(|name| folder.tone(&format!("{name}.wav"), 1))
+            .collect();
+        let mut driven = Driven::opened_in(cx, catalog(), folder);
+        driven.play(&files);
+        driven
+    }
+
+    #[gpui::test]
     fn rows_held_in_several_chunks_are_queued_in_order_as_they_stand(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);

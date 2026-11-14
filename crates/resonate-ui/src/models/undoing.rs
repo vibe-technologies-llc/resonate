@@ -53,6 +53,30 @@ impl LibraryModel {
         self.edited(Wanted::ThePlaylists, what, change, cx);
     }
 
+    pub(super) fn kept(
+        &mut self,
+        what: Change,
+        change: impl FnOnce(&Library) -> resonate_library::Result<()> + Send + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let library = Arc::clone(&self.library);
+        let before = mem::replace(&mut self._edit, Task::ready(()));
+
+        self._edit = cx.spawn(async move |this, cx| {
+            before.await;
+            let done = cx
+                .background_executor()
+                .spawn(async move { change(&library) })
+                .await;
+            if let Err(error) = done {
+                tracing::error!(%error, edit = ?what, "an edit could not be made");
+                let _ = this.update(cx, |_, cx| {
+                    toast::tell(toast::could_not(what.doing(), &error), cx);
+                });
+            }
+        });
+    }
+
     pub(super) fn edited(
         &mut self,
         wanted: Wanted,

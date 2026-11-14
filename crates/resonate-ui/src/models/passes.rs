@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use gpui::Context;
 use resonate_core::{MediaLocation, TrackId};
@@ -7,6 +7,40 @@ use resonate_library::{
 };
 
 use super::{LibraryModel, Pass, Planned};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IdenticalSong {
+    pub kept: PathBuf,
+    pub copies: Vec<PathBuf>,
+}
+
+#[derive(Debug)]
+pub struct Identified {
+    pub copies: Copies,
+    pub songs: Vec<IdenticalSong>,
+}
+
+impl Identified {
+    pub fn of(copies: Copies) -> Self {
+        let mut by_song: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
+        for identical in &copies.identical {
+            by_song
+                .entry(identical.kept.clone())
+                .or_default()
+                .push(identical.copy.clone());
+        }
+
+        let songs = by_song
+            .into_iter()
+            .map(|(kept, mut copies)| {
+                copies.sort_unstable();
+                IdenticalSong { kept, copies }
+            })
+            .collect();
+
+        Self { copies, songs }
+    }
+}
 
 impl LibraryModel {
     pub const fn is_busy(&self) -> bool {
@@ -152,7 +186,7 @@ impl LibraryModel {
             .map(|(pass, summary)| (*pass, summary))
     }
 
-    pub fn identical_songs(&self) -> Option<Arc<Copies>> {
+    pub fn identical_songs(&self) -> Option<Arc<Identified>> {
         self.passes.identical.clone()
     }
 

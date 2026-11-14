@@ -51,22 +51,25 @@ use resonate_core::{
 };
 use resonate_library::{
     Album, AlbumFound, AlbumMatch, AlbumNotHeld, AlbumOrder, Artist, ArtistDetail, ArtistFound,
-    ArtistOrder, ArtistTotals, CatalogStamp, Copies, Day, DeliveryFolder, Direction,
-    EnrichProgress, EnrichSummary, Favoured, Fingerprinters, Found, GroupRelease, Habits,
-    HeldReleaseTrack, HiddenTracks, ImportProgress, ImportSummary, KeepStopped, KeepSummary,
-    KeptList, Layout, Learning, Library, Listen, Mbid, Meant, Measured, Missing, MissingTrack,
-    MostListened, NamedPlaylist, OrganiseProgress, OrganiseSummary, Playlist, PlaylistEntry,
-    PlaylistOrder, PollOptions, PollProgress, PollStats, RecordingMatch, Reference, ReleaseDetail,
-    RetagProgress, RetagSummary, SavedQuery, ScanProgress, Search, SongsAsked, SortOrder, Sought,
-    Statistics, Suggestion, Sung, Track, UnheldRelease, Window,
+    ArtistOrder, ArtistTotals, CatalogStamp, Day, DeliveryFolder, Direction, EnrichProgress,
+    EnrichSummary, Favoured, Fingerprinters, Found, GroupRelease, Habits, HeldReleaseTrack,
+    HiddenTracks, ImportProgress, ImportSummary, KeepStopped, KeepSummary, KeptList, Layout,
+    Learning, Library, Listen, Mbid, Meant, Measured, Missing, MissingTrack, MostListened,
+    NamedPlaylist, OrganiseProgress, OrganiseSummary, Playlist, PlaylistEntry, PlaylistOrder,
+    PollOptions, PollProgress, PollStats, RecordingMatch, Reference, ReleaseDetail, RetagProgress,
+    RetagSummary, SavedQuery, ScanProgress, Search, SongsAsked, SortOrder, Sought, Statistics,
+    Suggestion, Sung, Track, UnheldRelease, Window,
 };
 use resonate_providers::WhyAway;
 
-pub use self::pictures::{Drawn, Portrayed, Scale};
 use self::{arranged::Named, watched::load};
 pub(crate) use self::{
     arranged::queued_rows,
     pictures::{AtSide, Forget, Magnifying, Picture, drawn_within, magnified_of, picture_of},
+};
+pub use self::{
+    passes::{IdenticalSong, Identified},
+    pictures::{Drawn, Portrayed, Scale},
 };
 use crate::{
     ResonateApp,
@@ -449,6 +452,7 @@ enum Change {
     ReadTheRest,
     ChooseVersion,
     ForgetTheVersionChosen,
+    KeepTheLyricsTiming,
     LookForMissingCovers,
     Undo,
     Redo,
@@ -482,6 +486,7 @@ impl Change {
             Self::ReadTheRest => words::models::read_the_rest_of_the_discography(),
             Self::ChooseVersion => words::models::keep_that_version(),
             Self::ForgetTheVersionChosen => words::models::forget_the_version_chosen(),
+            Self::KeepTheLyricsTiming => words::models::keep_the_lyrics_timing(),
             Self::LookForMissingCovers => words::models::look_for_the_missing_covers_again(),
             Self::Undo => words::models::put_that_back(),
             Self::Redo => words::models::do_that_again(),
@@ -873,7 +878,7 @@ struct Passes {
     previewed_import: Planned,
     tagged: Option<(Pass, RetagSummary)>,
     previewed_tags: Planned,
-    identical: Option<Arc<Copies>>,
+    identical: Option<Arc<Identified>>,
     previewed_identical: Planned,
 }
 
@@ -949,6 +954,14 @@ struct Delivered {
     to_file: Option<ToFile>,
 }
 
+struct Versions {
+    chosen: AHashSet<TrackId>,
+    read: bool,
+    touched: bool,
+    _reading: Task<()>,
+    copies: Option<(TrackId, Arc<[Track]>)>,
+}
+
 struct Naming {
     named: Recent<TrackId, Named>,
     _again: Task<()>,
@@ -1000,6 +1013,8 @@ struct Running {
     work: Work,
     roots_waiting: Vec<RootWaiting>,
     poll_owed: Option<PollOptions>,
+    checking_the_wants: bool,
+    _due: Task<()>,
     _owed: Task<()>,
     _scan: Task<()>,
     _organise: Task<()>,
@@ -1054,6 +1069,7 @@ pub struct LibraryModel {
     wishes: Wishes,
     delivered: Delivered,
     naming: Naming,
+    versions: Versions,
     browse: Browse,
     choices: Choices,
     watchers: Watchers,
@@ -1321,6 +1337,13 @@ impl LibraryModel {
                 restored: false,
                 to_file: None,
             },
+            versions: Versions {
+                chosen: AHashSet::new(),
+                read: false,
+                touched: false,
+                _reading: Task::ready(()),
+                copies: None,
+            },
             naming: Naming {
                 named: Recent::new(NAMES_HELD),
                 _again: Task::ready(()),
@@ -1368,6 +1391,8 @@ impl LibraryModel {
                 work: Work::Nothing,
                 roots_waiting: Vec::new(),
                 poll_owed: None,
+                checking_the_wants: false,
+                _due: Task::ready(()),
                 _owed: Task::ready(()),
                 _scan: Task::ready(()),
                 _organise: Task::ready(()),

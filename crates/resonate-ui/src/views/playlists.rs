@@ -1225,6 +1225,7 @@ impl RootView {
             title: drawn.title.clone(),
         };
         let held = Arc::clone(entries);
+        let entries_drawn = Arc::clone(entries);
         let last = entries.len();
         let acted_on = Reaching::acting_on(reaching, &acting_on);
         let queueing: Arc<[PlaylistEntry]> = match acted_on {
@@ -1391,11 +1392,16 @@ impl RootView {
                     .offers_the_file(&location, names)
                     .apart()
                     .when_some(edited.then_some(taken), |menu, taken| {
+                        let entries_drawn = Arc::clone(&entries_drawn);
                         menu.under(
                             Icon::Discard,
                             words::menu::remove_row(),
                             "delete",
-                            move |this, _, cx| this.drop_chosen(shift, &taken, cx),
+                            move |this, _, cx| {
+                                if this.library.read(cx).entries_are(&entries_drawn) {
+                                    this.drop_chosen(shift, &taken, cx);
+                                }
+                            },
                         )
                     })
             },

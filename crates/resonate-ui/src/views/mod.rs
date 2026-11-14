@@ -27,6 +27,7 @@ mod party_offer;
 pub(crate) mod playlists;
 pub(crate) mod plot;
 mod pointed;
+mod pulse;
 mod queue;
 mod remote;
 pub(crate) mod reorder;

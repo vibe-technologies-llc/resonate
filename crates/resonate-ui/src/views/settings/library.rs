@@ -278,22 +278,12 @@ impl RootView {
         }
 
         cx.spawn(async move |this, cx| {
-            let looked = root.clone();
-            let there = cx
+            let looked = cx
                 .background_executor()
-                .spawn(async move { looked.is_dir() })
+                .spawn(async move { Looked::at(root) })
                 .await;
 
-            let _ = this.update(cx, |this, cx| {
-                if there {
-                    this.set_the_music_folder(root, cx);
-                } else {
-                    this.report(
-                        Notice::Trouble(words::settings_library::not_a_folder().to_owned()),
-                        cx,
-                    );
-                }
-            });
+            let _ = this.update(cx, |this, cx| this.set_the_music_folder(looked, cx));
         })
         .detach();
     }
@@ -1584,10 +1574,11 @@ impl RootView {
             })
     }
 
-    pub(crate) fn name_the_vault(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
+    pub(crate) fn name_the_vault(&mut self, looked: Looked, cx: &mut Context<Self>) {
         let music = cx.global::<ResonateApp>().music_folder.clone();
         let refusal =
-            unusable_as_the_vault(&folder, self.library.read(cx).roots(), music.as_deref());
+            unusable_as_the_vault(&looked, self.library.read(cx).roots(), music.as_deref());
+        let folder = looked.folder;
         if let Some(refusal) = refusal {
             self.report(Notice::Trouble(refusal.to_owned()), cx);
             return;
@@ -1782,7 +1773,7 @@ impl RootView {
     fn pick_a_folder(
         &self,
         cx: &mut Context<Self>,
-        landed: impl FnOnce(&mut Self, PathBuf, &mut Context<Self>) + 'static,
+        landed: impl FnOnce(&mut Self, Looked, &mut Context<Self>) + 'static,
     ) {
         let picked = cx.prompt_for_paths(PathPromptOptions {
             files: false,
@@ -1813,7 +1804,7 @@ impl RootView {
 
             let settled = cx
                 .background_executor()
-                .spawn(async move { folder.canonicalize().unwrap_or(folder) })
+                .spawn(async move { Looked::at(folder.canonicalize().unwrap_or(folder)) })
                 .await;
 
             let named = this.update(cx, |this, cx| landed(this, settled, cx));
@@ -1822,12 +1813,13 @@ impl RootView {
         .detach();
     }
 
-    pub(crate) fn set_the_music_folder(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
+    pub(crate) fn set_the_music_folder(&mut self, looked: Looked, cx: &mut Context<Self>) {
         let vault = self.library.read(cx).vault_root();
-        if let Some(refusal) = unusable_as_the_music_folder(&folder, vault.as_deref()) {
+        if let Some(refusal) = unusable_as_the_music_folder(&looked, vault.as_deref()) {
             self.report(Notice::Trouble(refusal.to_owned()), cx);
             return;
         }
+        let folder = looked.folder;
 
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.music_folder = Some(folder.clone());
@@ -1935,7 +1927,8 @@ impl RootView {
         self.pick_a_folder(cx, Self::set_inbox);
     }
 
-    fn set_inbox(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
+    fn set_inbox(&mut self, looked: Looked, cx: &mut Context<Self>) {
+        let folder = looked.folder;
         self.store(&Setting::Inbox(folder.clone()), cx);
         self.library
             .update(cx, |library, cx| library.set_inbox(Some(folder), cx));
@@ -1997,28 +1990,43 @@ fn folder_row(folder: &Path) -> Div {
         )
 }
 
-fn unusable_as_the_music_folder(folder: &Path, vault: Option<&Path>) -> Option<&'static str> {
-    if !folder.is_dir() {
+pub(crate) struct Looked {
+    folder: PathBuf,
+    is_a_folder: bool,
+}
+
+impl Looked {
+    pub(crate) fn at(folder: PathBuf) -> Self {
+        let is_a_folder = folder.is_dir();
+        Self {
+            folder,
+            is_a_folder,
+        }
+    }
+}
+
+fn unusable_as_the_music_folder(looked: &Looked, vault: Option<&Path>) -> Option<&'static str> {
+    if !looked.is_a_folder {
         return Some(words::settings_library::not_a_folder());
     }
     vault
-        .filter(|vault| folder.starts_with(vault))
+        .filter(|vault| looked.folder.starts_with(vault))
         .map(|_| words::settings_library::in_the_vault())
 }
 
 fn unusable_as_the_vault(
-    folder: &Path,
+    looked: &Looked,
     roots: &[PathBuf],
     music: Option<&Path>,
 ) -> Option<&'static str> {
-    if !folder.is_dir() {
+    if !looked.is_a_folder {
         return Some(words::settings_library::not_a_folder());
     }
     roots
         .iter()
         .map(PathBuf::as_path)
         .chain(music)
-        .any(|held| folder.starts_with(held))
+        .any(|held| looked.folder.starts_with(held))
         .then_some(words::settings_library::in_the_library())
 }
 
@@ -2075,11 +2083,12 @@ mod tests {
         std::fs::create_dir_all(&inside).expect("a writable temporary directory");
         std::fs::create_dir_all(&outside).expect("a writable temporary directory");
 
-        let unnamed = unusable_as_the_music_folder(&outside, None);
-        let beside = unusable_as_the_music_folder(&outside, Some(&vault));
-        let within = unusable_as_the_music_folder(&inside, Some(&vault));
-        let itself = unusable_as_the_music_folder(&vault, Some(&vault));
-        let missing = unusable_as_the_music_folder(&held.join("nowhere"), None);
+        let unnamed = unusable_as_the_music_folder(&Looked::at(outside.to_path_buf()), None);
+        let beside = unusable_as_the_music_folder(&Looked::at(outside.to_path_buf()), Some(&vault));
+        let within = unusable_as_the_music_folder(&Looked::at(inside.to_path_buf()), Some(&vault));
+        let itself = unusable_as_the_music_folder(&Looked::at(vault.to_path_buf()), Some(&vault));
+        let missing =
+            unusable_as_the_music_folder(&Looked::at(held.join("nowhere").to_path_buf()), None);
         let _ = std::fs::remove_dir_all(&held);
 
         assert_eq!(unnamed, None);
@@ -2103,11 +2112,18 @@ mod tests {
         }
         let roots = [root.clone()];
 
-        let outside = unusable_as_the_vault(&beside, &roots, Some(&music));
-        let within_a_root = unusable_as_the_vault(&inside, &roots, Some(&music));
-        let the_root = unusable_as_the_vault(&root, &roots, None);
-        let within_the_music = unusable_as_the_vault(&dropped_into, &roots, Some(&music));
-        let missing = unusable_as_the_vault(&held.join("nowhere"), &[], None);
+        let outside =
+            unusable_as_the_vault(&Looked::at(beside.to_path_buf()), &roots, Some(&music));
+        let within_a_root =
+            unusable_as_the_vault(&Looked::at(inside.to_path_buf()), &roots, Some(&music));
+        let the_root = unusable_as_the_vault(&Looked::at(root.to_path_buf()), &roots, None);
+        let within_the_music = unusable_as_the_vault(
+            &Looked::at(dropped_into.to_path_buf()),
+            &roots,
+            Some(&music),
+        );
+        let missing =
+            unusable_as_the_vault(&Looked::at(held.join("nowhere").to_path_buf()), &[], None);
         let _ = std::fs::remove_dir_all(&held);
 
         assert_eq!(outside, None);

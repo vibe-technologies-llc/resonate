@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use resonate_core::Switch;
 use resonate_library::{Library, MusicExtensions};
 
-use super::{Armed, Category, Group, Page};
+use super::{Armed, Category, Group, Page, library::Looked};
 use crate::{
     ConfigKey, ResonateApp, Setting, SettingChange,
     driven::{Driven, Folder},
@@ -315,7 +315,9 @@ fn the_library_page_writes_the_vault_a_folder_is_made_into(cx: &mut TestAppConte
 
     let root = pane.driven.root.clone();
     pane.driven.cx.update(|_, cx| {
-        root.update(cx, |root, cx| root.name_the_vault(named.clone(), cx));
+        root.update(cx, |root, cx| {
+            root.name_the_vault(Looked::at(named.clone()), cx)
+        });
     });
     let written = pane.written_after(1);
 
@@ -340,7 +342,9 @@ fn the_library_page_refuses_a_vault_inside_a_folder_the_library_scans(cx: &mut T
 
     let root = pane.driven.root.clone();
     pane.driven.cx.update(|_, cx| {
-        root.update(cx, |root, cx| root.name_the_vault(inside.clone(), cx));
+        root.update(cx, |root, cx| {
+            root.name_the_vault(Looked::at(inside.clone()), cx)
+        });
     });
     pane.driven.settle();
 

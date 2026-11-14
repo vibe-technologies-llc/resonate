@@ -10,7 +10,6 @@ use std::{
 
 use gpui::Context;
 use resonate_library::{KeepSummary, KeptSong, Library, PlaylistToKeep, PollOptions};
-use resonate_providers::Providers;
 
 use super::{
     KEEP_THREAD, KEEPS_LOOKED_AT_EVERY, KeepPass, LibraryModel, Notice, OWED_ASKED_AGAIN_AFTER,
@@ -314,22 +313,5 @@ impl LibraryModel {
                 }
             });
         });
-    }
-
-    pub(super) fn worth_asking_on_its_own(
-        &self,
-        providers: &Providers,
-        options: PollOptions,
-    ) -> bool {
-        if !providers.has_a_source() {
-            return false;
-        }
-        match self.library.is_a_want_due(options) {
-            Ok(due) => due,
-            Err(error) => {
-                tracing::warn!(%error, "the wants could not be read");
-                false
-            }
-        }
     }
 }

@@ -29,6 +29,7 @@ impl LibraryModel {
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         self.forget_what_the_catalog_may_have_changed();
         self.name_what_is_held_again(cx);
+        self.read_the_versions_chosen(cx);
         self.read(Wanted::Everything, cx);
     }
 

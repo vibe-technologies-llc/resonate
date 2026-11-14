@@ -725,9 +725,11 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   down offered only where the queue has a neighbour. `resonate_ui::Syncing` has `watch` (renews the
   watch and answers a `RemoteShown`: `Waiting`, `Zones(Vec<RemoteZoneShown>)`, `Refused`), `unwatch`
   and `press` (a `RemoteKey`, run on the background executor since it waits for the answer; a refusal
-  is a toast), with defaults so a seam with no sync answers `Refused`; `driving_redraws` redraws the
-  pane every `DRIVEN_REDRAWN_EVERY` (500 ms) while driving
-  (`a_driven_device_is_sought_jumped_moved_and_emptied_from_its_rows`).
+  is a toast), with defaults so a seam with no sync answers `Refused`; `driving_redraws` (a `Pulse`) redraws the
+  pane every `DRIVEN_REDRAWN_EVERY` (500 ms) while the driven page is drawn: leaving the page or the
+  pane ends the redraws and the device stays driven, the beat resuming when the page is drawn again
+  (`a_driven_device_is_sought_jumped_moved_and_emptied_from_its_rows`,
+  `driving_a_device_redraws_the_window_only_while_its_page_is_drawn`).
 - **The phones drive through the boundary** (`resonate-mobile`'s `sync/driving.rs`):
   `sync_watch(device)` (a `RemoteDevice`: `RemoteStanding` and `RemoteZoneState`s, the position
   played on to the moment asked), `sync_unwatch` and `sync_control(device, zone, RemoteControl)`
