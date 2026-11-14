@@ -264,13 +264,8 @@ impl Cycle {
         let fit_in_place = slice.len() / padded;
         let widened_at_most = self.widened.len() / padded;
 
-        if wanted > fit_in_place && widened_at_most > fit_in_place {
-            let frames = wanted.min(widened_at_most);
-            let Some(quantum) = self.widened.get_mut(..frames.saturating_mul(padded.get())) else {
-                return 0;
-            };
-            let written = source.fill_stamped(quantum, stamp);
-            return packed_into(quantum, written, slice);
+        if wanted > fit_in_place && widened_at_most > 0 {
+            return fill_packed_by_chunks(&mut self.widened, padded, wanted, slice, source, stamp);
         }
 
         let frames = wanted.min(fit_in_place);
@@ -371,6 +366,44 @@ fn pack(slice: &mut [u8], written: usize) -> usize {
     }
 
     filled
+}
+
+fn fill_packed_by_chunks(
+    widened: &mut [u8],
+    padded: NonZeroUsize,
+    wanted: usize,
+    slice: &mut [u8],
+    source: &mut dyn AudioSource,
+    stamp: Stamp,
+) -> usize {
+    let chunk_frames = widened.len() / padded;
+    let mut placed = 0_usize;
+    let mut filled = 0_usize;
+
+    while placed < wanted {
+        let frames = wanted.saturating_sub(placed).min(chunk_frames);
+        let Some(quantum) = widened.get_mut(..frames.saturating_mul(padded.get())) else {
+            break;
+        };
+        let written = source.fill_stamped(quantum, stamped_after(stamp, placed));
+        let Some(onto) = slice.get_mut(filled..) else {
+            break;
+        };
+        filled = filled.saturating_add(packed_into(quantum, written, onto));
+        if written < quantum.len() {
+            break;
+        }
+        placed = placed.saturating_add(frames);
+    }
+
+    filled
+}
+
+fn stamped_after(stamp: Stamp, frames: usize) -> Stamp {
+    Stamp {
+        ahead: Frames(stamp.ahead.get().saturating_add(frames as u64)),
+        ..stamp
+    }
 }
 
 fn packed_into(widened: &[u8], written: usize, slice: &mut [u8]) -> usize {
@@ -569,6 +602,63 @@ mod tests {
             frames * 2 * PACKED_WORD,
             "the graph was handed fewer packed frames than it asked for"
         );
+    }
+
+    #[test]
+    fn a_packed_quantum_longer_than_the_scratch_is_filled_whole_in_chunks() {
+        let mut cycle = cycling(SampleFormat::S24);
+        let frames = QUANTUM_LIMIT_FRAMES + QUANTUM_LIMIT_FRAMES / 2;
+        let mut source = Counting::of(words(frames * 2));
+        let mut buffer = vec![0xFF; frames * 2 * PACKED_WORD];
+
+        let filled = cycle.write(
+            Taken::AsAsked(WireWord::Packed),
+            frames as u64,
+            &mut buffer,
+            &mut source,
+            now(),
+        );
+
+        assert_eq!(
+            filled,
+            frames * 2 * PACKED_WORD,
+            "a quantum over the scratch was filled short"
+        );
+        assert_eq!(source.asked, frames * 2 * PADDED_WORD);
+        assert_eq!(
+            source.stamped.map(|stamp| stamp.ahead),
+            Some(Frames(QUANTUM_LIMIT_FRAMES as u64)),
+            "the second chunk was not stamped past the first"
+        );
+        let last_word = frames * 2 - 1;
+        assert_eq!(
+            &buffer[filled - PACKED_WORD..filled],
+            &[
+                last_word as u8,
+                (last_word >> 8) as u8,
+                (last_word >> 16) as u8
+            ],
+            "the last word handed over is not the last one the ring filled"
+        );
+    }
+
+    #[test]
+    fn a_packed_quantum_the_ring_cannot_fill_stops_at_the_chunk_it_ran_dry_in() {
+        let mut cycle = cycling(SampleFormat::S24);
+        let frames = QUANTUM_LIMIT_FRAMES + QUANTUM_LIMIT_FRAMES / 2;
+        let held = QUANTUM_LIMIT_FRAMES + 10;
+        let mut source = Counting::of(words(held * 2));
+        let mut buffer = vec![0xFF; frames * 2 * PACKED_WORD];
+
+        let filled = cycle.write(
+            Taken::AsAsked(WireWord::Packed),
+            frames as u64,
+            &mut buffer,
+            &mut source,
+            now(),
+        );
+
+        assert_eq!(filled, held * 2 * PACKED_WORD);
     }
 
     #[test]

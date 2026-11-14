@@ -78,11 +78,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Sync and together
 
 ## Playback and output
-- [S · 0.12.0] A packed 24-bit PipeWire quantum over 8 192 frames may be filled short: `process.rs`'s
-  `widened` scratch is sized for `QUANTUM_LIMIT_FRAMES` and the fill takes `wanted.min` of it, with the
-  shortfall counted as no starvation; a graph whose `quantum-limit` is raised and whose buffer is
-  sized exactly for packed words would starve each quantum (unconfirmed: whether such a buffer is
-  handed out is unread)
 
 ## Catalog
 - [S · 0.11.1] A scan of a walked root forgets the listens of the rows it prunes: `store::prune` deletes

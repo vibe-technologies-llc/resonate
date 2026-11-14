@@ -1467,7 +1467,10 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   words would not fit there (a quantum near the buffer's size, as at the quantum limit) is filled
   into `Cycle::widened`, allocated as the stream opens for `QUANTUM_LIMIT_FRAMES`, and packed across
   (`packed_into`), so the graph is never handed three quarters of what it asked
-  (`a_packed_quantum_filling_the_whole_buffer_is_handed_over_whole`); the ring still fills at the padded stride and `Silence::write` still lays DoP
+  (`a_packed_quantum_filling_the_whole_buffer_is_handed_over_whole`); a quantum longer than the
+  scratch is filled a scratch at a time (`fill_packed_by_chunks`, each chunk stamped
+  past the frames already placed) until the buffer is full or the ring runs dry, never cut at the
+  scratch (`a_packed_quantum_longer_than_the_scratch_is_filled_whole_in_chunks`); the ring still fills at the padded stride and `Silence::write` still lays DoP
   markers as four-byte words (the marker is byte 2, so a DoP carrier survives).
 - **The settled layout is read from the format's positions, never its count** (`format::placed`):
   the `position` array, read in WAVE order through `Places::in_order`, is the layout
