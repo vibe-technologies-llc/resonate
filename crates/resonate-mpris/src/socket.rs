@@ -27,7 +27,6 @@ use crate::{
 };
 
 const SOCKET_STEM: &str = "socket";
-const OURS_ALONE: u32 = 0o700;
 const READ_BY_US_ALONE: u32 = 0o600;
 const ACCEPT_THREAD: &str = "resonate-mpris-socket";
 
@@ -216,6 +215,7 @@ mod tests {
     use super::*;
     use crate::wire::{read_frame, write_frame};
 
+    const OURS_ALONE: u32 = 0o700;
     const LONGEST_PATH_A_MAC_BINDS: usize = 103;
     const A_LONG_HOME: &str = "/Users/a-listener-with-a-long-name";
     const HIGHEST_PROCESS_A_MAC_NUMBERS: u32 = 99_999;
