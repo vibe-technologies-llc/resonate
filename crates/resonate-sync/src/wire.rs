@@ -363,6 +363,12 @@ pub struct Candidates {
     pub addresses: Vec<SocketAddr>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SentBeacon {
+    pub sent_at: u64,
+    pub beacon: Beacon,
+}
+
 #[derive(Default)]
 pub struct Writer(Vec<u8>);
 
@@ -1983,6 +1989,22 @@ impl Beacon {
     }
 }
 
+impl SentBeacon {
+    pub fn encoded(&self) -> Vec<u8> {
+        let mut writer = Writer::new();
+        writer.number(self.sent_at);
+        writer.fixed(&self.beacon.encoded());
+        writer.finish()
+    }
+
+    pub fn decoded(bytes: &[u8]) -> Result<Self> {
+        let mut reader = Reader::new(bytes);
+        let sent_at = reader.number()?;
+        let beacon = Beacon::decoded(reader.rest)?;
+        Ok(Self { sent_at, beacon })
+    }
+}
+
 impl Candidates {
     pub fn encoded(&self) -> Vec<u8> {
         let mut writer = Writer::new();
@@ -3435,6 +3457,21 @@ mod tests {
         assert!(older_builds_candidates(&encoded).is_err());
         assert!(Candidates::decoded(&older_builds_list(&candidates.addresses)).is_err());
         assert!(Candidates::decoded(&older_builds_list(&[])).is_err());
+    }
+
+    #[test]
+    fn a_sent_beacon_carries_its_time_and_reads_back() {
+        let sent = SentBeacon {
+            sent_at: 1_790_000_000,
+            beacon: Beacon {
+                device: DeviceId([9; DEVICE_BYTES]),
+                port: 4000,
+                answering: true,
+                addresses: vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20))],
+            },
+        };
+
+        assert_eq!(SentBeacon::decoded(&sent.encoded()).expect("decoded"), sent);
     }
 
     #[test]

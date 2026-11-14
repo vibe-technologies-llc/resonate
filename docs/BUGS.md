@@ -32,11 +32,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `appendingPathComponent` takes whole, and `open`, `delete` and `fileNumber` then reach outside the
   granted folder; `documents::location` checks only the scheme. No reachable hostile URI was found,
   but one from an imported list or another device would do it
-- [S · 0.12.0] A nearby `Beacon` opens for ever and is answered to whatever source it came from: it
-  holds no time or counter, and `beacon_heard` puts the datagram's source first among the candidates,
-  answers it by unicast and dials it for up to a minute, so one beacon heard on the network and
-  replayed with a forged source makes every device of the space send datagrams and Initials to an
-  address of the replayer's choosing
 - [M · 0.12.0] The server bounds the frames it reads per session, not across them: `read_frame_at_most`
   allocates the announced length (up to `LARGEST_FRAME`, 32 MiB) before any body arrives and
   `reading.rs`'s `Budget` is made per session, so 2 048 connections hold tens of GiB in frame
@@ -49,6 +44,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.12.0] A peer's `FromPeer::Sending` size is believed: `peer.rs` stages the file under
   `sync-staging` up to whatever size it announced, with no ceiling like the vault's
   `LARGEST_DELIVERY`, so a paired device (an old phone never forgotten) can fill the disc
+- [S · 0.12.0] A Bonjour record still opens for ever: `record_of` seals a bare `Beacon` (no time,
+  resealed only as it moves, and iOS hands the same record every 5 s), so one record seen on the
+  network and advertised again under addresses of the replayer's choosing makes every device of the
+  space dial them for `HEARD_FOR`; a broadcast datagram is held to `BEACON_SENT_WITHIN` and heard
+  once (`heard_in`), a record wants the same with resealing every window and a cache that tells the
+  same record resolved again from a replay
 - [S · 0.12.0] A renderer's control or description URL keeps any control characters:
   `located::parse` and `join` keep the path as given and `http::request` writes it into the request
   line, so a CR or LF a description encodes injects headers into the hand-written HTTP (to the

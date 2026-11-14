@@ -2,7 +2,7 @@
 
 use libfuzzer_sys::fuzz_target;
 use resonate_sync::wire::{
-    Beacon, Candidates, FromPeer, FromServer, ToPeer, ToServer, decoded_bundle,
+    Beacon, Candidates, FromPeer, FromServer, SentBeacon, ToPeer, ToServer, decoded_bundle,
     decoded_recordings, encoded_bundle,
 };
 
@@ -22,6 +22,9 @@ fuzz_target!(|bytes: &[u8]| {
     if let Ok(beacon) = Beacon::decoded(bytes) {
         assert_eq!(Beacon::decoded(&beacon.encoded()).ok(), Some(beacon));
     }
+    if let Ok(sent) = SentBeacon::decoded(bytes) {
+        assert_eq!(SentBeacon::decoded(&sent.encoded()).ok(), Some(sent));
+    }
     if let Ok(changes) = decoded_bundle(bytes) {
         assert_eq!(
             decoded_bundle(&encoded_bundle(&changes)).ok(),
@@ -29,7 +32,10 @@ fuzz_target!(|bytes: &[u8]| {
         );
     }
     if let Ok(candidates) = Candidates::decoded(bytes) {
-        assert_eq!(Candidates::decoded(&candidates.encoded()).ok(), Some(candidates));
+        assert_eq!(
+            Candidates::decoded(&candidates.encoded()).ok(),
+            Some(candidates)
+        );
     }
     let _ = decoded_recordings(bytes);
 });

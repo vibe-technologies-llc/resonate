@@ -41,9 +41,9 @@ use crate::{
     ledger::{Follow, Me, lacked},
     merge::one_recording_a_song,
     nearby::{
-        BEACON_EVERY, Bonjour, Found, LARGEST_BEACON, Nearby, addresses_here,
-        beacon_addresses_here, beacon_bytes, beacon_of, beacon_recorded, bound, bound_v6,
-        global_addresses_here, record_of, told_over_ipv6,
+        BEACON_EVERY, BEACON_SENT_WITHIN, BEACONS_HEARD_AT_MOST, Bonjour, Found, LARGEST_BEACON,
+        Nearby, addresses_here, beacon_addresses_here, beacon_recorded, bound, bound_v6,
+        datagram_of, global_addresses_here, heard_in, record_of, told_over_ipv6,
     },
     peer::{
         Answering, DIAL_WITHIN, ExportStaged, Heard, blocking, consult, control, covers_from,
@@ -563,6 +563,7 @@ struct Syncing {
     punched_back: BTreeMap<DeviceId, Instant>,
     strangers_answered: BTreeMap<DeviceId, Instant>,
     punches_heard: HeardOnce,
+    beacons_heard: HeardOnce,
     waiting: BTreeMap<DeviceId, Vec<Work>>,
     followed: BTreeMap<DeviceId, Instant>,
     following: BTreeSet<DeviceId>,
@@ -1602,6 +1603,7 @@ impl Syncing {
             punched_back: BTreeMap::new(),
             strangers_answered: BTreeMap::new(),
             punches_heard: HeardOnce::new(PUNCH_SEALED_WITHIN, PUNCHES_HEARD_AT_MOST),
+            beacons_heard: HeardOnce::new(BEACON_SENT_WITHIN, BEACONS_HEARD_AT_MOST),
             waiting: BTreeMap::new(),
             followed: BTreeMap::new(),
             following: BTreeSet::new(),
@@ -2628,7 +2630,7 @@ impl Syncing {
         if !self.running.transfers_allowed() || self.running.told.is_empty() {
             return;
         }
-        let Some(bytes) = self.beacon_bytes(false) else {
+        let Some(beacon) = self.running.beacon(false) else {
             return;
         };
         for told in &self.running.told {
@@ -2641,6 +2643,9 @@ impl Syncing {
                 vec![*told]
             };
             for told in sent_to {
+                let Some(bytes) = self.sealed_beacon(&beacon) else {
+                    return;
+                };
                 if let Err(error) = socket.send_to(&bytes, told).await {
                     tracing::debug!(%error, %told, "a beacon could not be sent");
                 }
@@ -2648,9 +2653,8 @@ impl Syncing {
         }
     }
 
-    fn beacon_bytes(&self, answering: bool) -> Option<Vec<u8>> {
-        let beacon = self.running.beacon(answering)?;
-        beacon_bytes(&self.running.derived, &beacon)
+    fn sealed_beacon(&self, beacon: &Beacon) -> Option<Vec<u8>> {
+        datagram_of(&self.running.derived, beacon, wall_seconds())
             .inspect_err(|error| tracing::debug!(%error, "a beacon could not be sealed"))
             .ok()
     }
@@ -2669,8 +2673,14 @@ impl Syncing {
     }
 
     async fn beacon_heard(&mut self, bytes: &[u8], from: SocketAddr) {
-        if let Some(beacon) = beacon_of(&self.running.derived, bytes) {
-            self.heard_nearby(beacon, &[from], Some(from)).await;
+        match heard_in(
+            &self.running.derived,
+            bytes,
+            &mut self.beacons_heard,
+            wall_seconds(),
+        ) {
+            Ok(beacon) => self.heard_nearby(beacon, &[from], Some(from)).await,
+            Err(unheard) => tracing::debug!(%unheard, %from, "a beacon was passed over"),
         }
     }
 
@@ -2707,7 +2717,10 @@ impl Syncing {
         if !beacon.answering
             && let Some(from) = answer_to
             && let Some(socket) = self.running.beacon_socket_for(&from)
-            && let Some(answer) = self.beacon_bytes(true)
+            && let Some(answer) = self
+                .running
+                .beacon(true)
+                .and_then(|answering| self.sealed_beacon(&answering))
             && let Err(error) = socket.send_to(&answer, from).await
         {
             tracing::debug!(%error, %from, "a beacon could not be answered");

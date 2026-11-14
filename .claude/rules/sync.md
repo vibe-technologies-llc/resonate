@@ -122,7 +122,8 @@ and `the_seeds_of_a_print_asked_and_given_decode` holds them to the wire. **What
   stream, which reads as `Missing` and so as no tags, and a build asking an older sender fetches as
   it always did (`the_tags_of_a_song_travel_in_frames_an_earlier_build_refuses_whole_and_the_fetch_is_unchanged`,
   `a_song_fetched_from_a_device_arrives_with_the_tags_that_device_declares_for_it`). A `Beacon` is
-  a device, its QUIC port, whether it answers another and the addresses it may be dialled at.
+  a device, its QUIC port, whether it answers another and the addresses it may be dialled at; a
+  `SentBeacon` is the wall second it was sent at, then a `Beacon`.
 
 ## The ledger
 
@@ -990,9 +991,17 @@ The server is the way across networks; on one network devices find each other th
 (`nearby.rs`), so a listener with no server reachable, or none at all, still syncs at home. Two ways
 announce a device, both carrying the same sealed beacon, and either finds the others:
 
-- **A beacon is sealed like a record.** `RSN1` then `seal::sealed` of a `Beacon` under the space's
-  key: only a device of the code opens it, and a fresh nonce each time leaves an onlooker nothing to
-  follow. It names the QUIC port and the addresses `beacon_addresses_here` reads off the interfaces that
+- **A beacon is sealed like a record.** A datagram is `RSN2` then `seal::sealed` of a `SentBeacon`
+  under the space's key (`datagram_of`), sealed afresh for every address it is sent to; a Bonjour
+  record is `RSN1` then the sealed `Beacon` alone (`record_of`), resealed only as it moves. Only a
+  device of the code opens either, and a fresh nonce each time leaves an onlooker nothing to follow.
+  **A datagram is heard once, and only lately sent** (`heard_in`): one sent more than
+  `BEACON_SENT_WITHIN` (2 minutes) either side of this device's clock, or whose bytes were heard
+  already (`fresh::HeardOnce`, at most `BEACONS_HEARD_AT_MOST` kept for the window), is passed over
+  before anything is noted, answered or dialled, so a beacon replayed with a forged source makes no
+  device send to it (`a_beacon_replayed_or_sent_long_ago_is_not_heard_and_its_source_never_answered`).
+  A build before `RSN2` hears none of these datagrams and a build with it none of the older
+  `RSN1` ones, so the two meet over Bonjour alone. It names the QUIC port and the addresses `beacon_addresses_here` reads off the interfaces that
   are up, not loopback, not point to point: at most `ADDRESSES_BEACONED_AT_MOST` (6) IPv4 and
   `IPV6_ADDRESSES_BEACONED_AT_MOST` (2) of the global or unique local IPv6 ones, which together still
   fit one Bonjour text string even when distinct
