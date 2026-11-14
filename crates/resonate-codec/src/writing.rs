@@ -1308,7 +1308,7 @@ fn landed<L: Lands>(path: &Path, location: &MediaLocation, saving: &L) -> Result
         source,
     };
     mend_what_a_dead_writer_left(path);
-    mend_what_was_left_in(&crate::spool::spooled_under());
+    mend_what_was_left_in(&crate::spool::mended_under());
     sweep_what_a_dead_writer_staged(path);
     match cloned_beside(path) {
         Ok(Some(staged)) => return landed_through(&staged, path, location, saving),
@@ -1335,7 +1335,7 @@ fn landed_from_elsewhere<L: Lands>(
     saving: &L,
 ) -> Result<()> {
     let mut refused = io::Error::from(io::ErrorKind::PermissionDenied);
-    for folder in crate::spool::spooled_under() {
+    for folder in crate::spool::kept_under() {
         match Staged::elsewhere(&folder, path).and_then(|staged| copied_into(path, staged, saving))
         {
             Ok(staged) => {
@@ -2417,7 +2417,7 @@ mod tests {
         let _ = fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o755));
 
         let ours = format!(".echoes.flac.{}-", process::id());
-        let left: Vec<PathBuf> = crate::spool::spooled_under()
+        let left: Vec<PathBuf> = crate::spool::mended_under()
             .iter()
             .filter_map(|spool| fs::read_dir(spool).ok())
             .flat_map(|entries| entries.flatten())

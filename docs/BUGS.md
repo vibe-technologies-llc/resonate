@@ -18,14 +18,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   or listening thread
 
 ## Security
-- [M · 0.11.1] A scan or a tag write finishes a `.resonate-torn` or `.resonate-whole` copy found in
-  `/var/tmp` or `/tmp` whoever made it: `spool::spooled_under` mends in shared folders,
-  `journal::mend_what_was_left_in` checks no owner, and the track it writes over is the path the
-  copy's own trailer names (`bound_of`, a hash anyone can compute), so another local user can have
-  the listener's next scan overwrite any file the listener may write with bytes of their choosing
-  (the page record passes too, since the planter hashes the readable target). Stage and mend under a
-  per-user `0700` folder, and finish only a copy whose owner is the effective uid; Windows and macOS
-  temp folders are the user's own
 - [S · 0.11.1] The iOS folder URI check passes a `/` percent-encoded inside a segment:
   `FolderFiling.components(of:)` splits on `/` before decoding and refuses only a segment that is
   exactly `..`, so `a%2F..%2F..%2Fx` decodes to a climbing path that `Folders.resolved`'s

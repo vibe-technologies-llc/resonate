@@ -13,6 +13,8 @@ use std::{
 };
 
 use parking_lot::{Condvar, Mutex};
+#[cfg(unix)]
+use resonate_core::owner::Owner;
 use resonate_core::positioned::FileExt as _;
 use thiserror::Error;
 
@@ -22,6 +24,8 @@ pub(crate) const SPOOLED_ON_DISC_AT_MOST: u64 = 8 << 30;
 const COPIED_AT_A_TIME: usize = 64 << 10;
 #[cfg(unix)]
 const CHOSEN_TEMPORARY_FOLDER: &str = "TMPDIR";
+#[cfg(unix)]
+const PER_USER_FOLDER_STEM: &str = "resonate-";
 #[cfg(unix)]
 const KEPT_ON_DISC: &str = "/var/tmp";
 #[cfg(windows)]
@@ -268,6 +272,42 @@ pub(crate) fn spooled_under() -> Vec<PathBuf> {
     on_disc.into_iter().chain([env::temp_dir()]).collect()
 }
 
+#[cfg(windows)]
+pub(crate) fn kept_under() -> Vec<PathBuf> {
+    spooled_under()
+}
+
+#[cfg(windows)]
+pub(crate) fn mended_under() -> Vec<PathBuf> {
+    spooled_under()
+}
+
+#[cfg(unix)]
+pub(crate) fn kept_under() -> Vec<PathBuf> {
+    let owner = Owner::this_user();
+    spooled_under()
+        .into_iter()
+        .map(|folder| per_user_folder_in(&folder, owner))
+        .filter(|folder| owner.keeps_alone(folder).is_ok())
+        .collect()
+}
+
+#[cfg(unix)]
+pub(crate) fn mended_under() -> Vec<PathBuf> {
+    let owner = Owner::this_user();
+    let shared = spooled_under();
+    let kept = shared
+        .iter()
+        .map(|folder| per_user_folder_in(folder, owner))
+        .filter(|folder| owner.is_kept_alone(folder));
+    kept.chain(shared.iter().cloned()).collect()
+}
+
+#[cfg(unix)]
+fn per_user_folder_in(folder: &Path, owner: Owner) -> PathBuf {
+    folder.join(format!("{PER_USER_FOLDER_STEM}{}", owner.id()))
+}
+
 fn unnamed_file() -> io::Result<File> {
     unnamed_file_under(&spooled_under())
 }
@@ -479,6 +519,28 @@ mod tests {
             0
         );
         fs::remove_dir(&taking).expect("an unnamed spool leaves an empty folder");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_copy_is_staged_only_in_a_folder_kept_to_this_user() {
+        let owner = Owner::this_user();
+        let shared = spooled_under();
+
+        let kept = kept_under();
+
+        assert!(!kept.is_empty(), "no folder to stage in");
+        for folder in &kept {
+            assert!(owner.is_kept_alone(folder), "{folder:?} is open to others");
+            assert!(
+                shared.iter().all(|open| open != folder),
+                "{folder:?} is a shared folder"
+            );
+            assert!(
+                shared.iter().any(|open| folder.parent() == Some(open)),
+                "{folder:?} is not under a shared folder"
+            );
+        }
     }
 
     #[test]

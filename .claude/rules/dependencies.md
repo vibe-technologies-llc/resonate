@@ -206,7 +206,7 @@ here, add it there.
 - **`tracing-subscriber`**: `env-filter`, and default `tracing-log` kept: gpui logs via `log`. `resonate-mobile` takes it for the `fmt` writer of its phone log (`mobile.md`'s *Logging*).
 - **`unicode-normalization`** (`std`): core's `folded_letters`, library's `playlist::folded` and the phones' boundary (`playlists.rs`, `sync.rs`).
 - **`rustix`**: no `unsafe` in OS calls: `termios`, `getpgrp` (binary), `fs` xattrs
-  (`resonate-codec`), `getuid` (`resonate-discord`), `time`'s `clock_gettime(Monotonic)`
+  (`resonate-codec`), `getuid` (`resonate-discord`), `geteuid` (core's `Owner`, on Unix alone: the user a private folder or a file must belong to), `time`'s `clock_gettime(Monotonic)`
   (`resonate-pipewire`'s callback and Oboe's, Android alone, to read how far a device timestamp
   lies from now; `realtime.md`), `system`'s `uname` (the binary alone: the host a sync device is
   named for), `fs::statfs` (the library on macOS: the type a root's volume says it is).

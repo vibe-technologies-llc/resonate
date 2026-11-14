@@ -385,7 +385,7 @@ registry's), sorted by name, so `found`, `listed`, `named` and `zoned` are the s
   (compiled for macOS and, for its tests, on every Unix). The registry's folder there is
   `~/Library/Caches/resonate/players` (`registry::players_folder_of_a_mac`; the temporary folder's
   `resonate-players` only with no `HOME`), never `$TMPDIR`, whose files macOS sweeps after days
-  unread. `kept_to_this_user` makes it `0700` and refuses to serve in one another user owns or can
+  unread. `kept_to_this_user` (core's `Owner::keeps_alone`, shared with the codec's spool and the binary's start-up lock) makes it `0700` and refuses to serve in one another user owns or can
   reach (`PermissionDenied` as `PipeOp::Claim`). **The claim is the authority, the socket only
   where it listens**: `Serving::start_in` takes the name's `Claim` first (the held file, so a
   second player moves on to its `instance` name), unlinks whatever socket stands at the name's
