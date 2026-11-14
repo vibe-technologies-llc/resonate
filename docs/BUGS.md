@@ -154,10 +154,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   player stops serving: `listening::serve_while_held` lets go of the zone's `Shared` at once, but the
   thread sits in `read_frame` until the client next speaks or leaves (a Windows named pipe has no
   cross-thread wake; a socket could be shut down from `rest`)
-- [S · 0.12.0] The settings writer replaces a dangling `config.toml` symlink instead of following
-  it: `config::edit` falls back to the link's own path where `canonicalize` fails, so a dotfile link
-  to a file not yet made becomes a plain file on the first write, against *Every writer follows a
-  symlinked `config.toml`* (`binary.md`)
 - [S · 0.12.0] The MusicBrainz copy follows default settings when the file will not read again after
   a write: `settings.rs` re-reads with `config::load(..).unwrap_or_default()` for the mirror switch
   and the replication token, so a hand-edit's syntax error there starts or stops the copy as if

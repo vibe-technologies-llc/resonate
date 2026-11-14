@@ -621,7 +621,9 @@ reads the account again and hands a window `Followed::Spotify`. The
 window drains `Bus::followed` on the foreground (`follow_when_told`, as it drains `raise`).
 
 Every writer (`config::store`, `clear`, `store_in_table`, `clear_in_table`, `edit`): follows a
-symlinked `config.toml`; locks the containing folder for the whole read-edit-write (a window and
+symlinked `config.toml`, a dangling one too (`followed`: `canonicalize`, else `read_link` joined to the
+link's folder, up to `LINKS_FOLLOWED_AT_MOST` hops, so a dotfile link to a file not yet made gets
+that file made and stays a link: `a_link_to_a_file_not_yet_made_is_written_through_to_where_it_points`); locks the containing folder for the whole read-edit-write (a window and
 `resonate eq` cannot overwrite each other; no lock file left; on Windows `config.toml.writing`,
 `windows.md`); sweeps what a killed writer left
 (`config.toml.<pid>-<n>.new`, older builds' `config.toml.lock`, nothing else); stages under this

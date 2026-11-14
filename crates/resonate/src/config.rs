@@ -40,6 +40,7 @@ use crate::{
 };
 
 const LOCK_SUFFIX: &str = ".lock";
+const LINKS_FOLLOWED_AT_MOST: usize = 40;
 
 const CONFIG_FLAG: &str = "--config";
 
@@ -1683,7 +1684,7 @@ pub fn clear_in_table(path: &Path, key: ConfigKey, entry: &str) -> Result<()> {
 }
 
 pub fn edit(path: &Path, edits: impl FnOnce(&mut Editing<'_>) -> Result<()>) -> Result<()> {
-    let target = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let target = followed(path);
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).map_err(|source| Error::CreateDir {
             path: parent.to_path_buf(),
@@ -1703,6 +1704,23 @@ pub fn edit(path: &Path, edits: impl FnOnce(&mut Editing<'_>) -> Result<()>) -> 
         return Ok(());
     }
     write(&target, &document.to_string())
+}
+
+fn followed(path: &Path) -> PathBuf {
+    let mut standing = path.to_path_buf();
+    for _ in 0..LINKS_FOLLOWED_AT_MOST {
+        if let Ok(resolved) = fs::canonicalize(&standing) {
+            return resolved;
+        }
+        let Ok(link) = fs::read_link(&standing) else {
+            return standing;
+        };
+        standing = match standing.parent() {
+            Some(folder) => folder.join(link),
+            None => link,
+        };
+    }
+    standing
 }
 
 fn held_alone(target: &Path) -> Result<File> {
@@ -3753,6 +3771,45 @@ mod tests {
         assert_eq!(mode(&old_wal), 0o600);
         assert_eq!(mode(&old_shm), 0o600);
         assert_eq!(fs::read(&old).expect("the store"), b"rows");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_link_to_a_file_not_yet_made_is_written_through_to_where_it_points() {
+        use std::os::unix::fs::symlink;
+
+        let scratch = Scratch::new();
+        let folder = scratch.path.parent().expect("a folder").to_path_buf();
+        fs::create_dir_all(&folder).expect("a folder");
+        let kept = folder.join("dotfiles").join("config.toml");
+        symlink("dotfiles/config.toml", &scratch.path).expect("a relative dangling link");
+
+        store(&scratch.path, ConfigKey::Dither, "none").expect("a writable file");
+
+        assert!(
+            fs::symlink_metadata(&scratch.path)
+                .expect("the link stands")
+                .file_type()
+                .is_symlink(),
+            "the dangling link was replaced by a plain file"
+        );
+        assert!(
+            fs::read_to_string(&kept)
+                .expect("the target was made")
+                .contains("dither")
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_link_that_points_back_at_itself_is_given_up_on_rather_than_followed_for_ever() {
+        use std::os::unix::fs::symlink;
+
+        let scratch = Scratch::new();
+        fs::create_dir_all(scratch.path.parent().expect("a folder")).expect("a folder");
+        symlink(&scratch.path, &scratch.path).expect("a link to itself");
+
+        assert!(followed(&scratch.path).ends_with(scratch.path.file_name().expect("a name")));
     }
 
     #[test]
