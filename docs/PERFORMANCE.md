@@ -3,7 +3,6 @@
 Cost: work done more often, in more memory or on a thread it should not be on. Format and ordering
 are in [ROADMAP.md](ROADMAP.md).
 
-
 ## Startup and idle
 
 ## Android
