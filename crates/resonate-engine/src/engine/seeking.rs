@@ -2,33 +2,31 @@ use std::time::Instant;
 
 use resonate_core::Frames;
 
-use super::{DISCARD_TIMEOUT, Engine, Unanswered};
+use super::{DISCARD_TIMEOUT, Engine, Track, Unanswered};
 use crate::{CommandKind, Error, Result};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Judgement {
+    Goes,
+    StaysWhereItIs,
+}
 
 impl Engine {
     pub(super) fn seek(&mut self, to: Frames) -> Result<()> {
+        if self.opening.is_none() && self.judge_the_seek(to)? == Judgement::StaysWhereItIs {
+            return Ok(());
+        }
         self.take_the_boundary_back();
         if let Some(opening) = self.opening.as_mut() {
             opening.at = to;
             return Ok(());
         }
         let Some(track) = self.track.as_ref() else {
-            return Err(Error::InvalidTransition {
-                state: self.transport,
-                attempted: CommandKind::Seek,
-            });
+            return Ok(());
         };
-        if let Some(duration) = track.info.duration
-            && to > duration
-        {
-            return Err(Error::SeekOutOfRange {
-                track: track.id,
-                requested: to,
-                duration,
-            });
-        }
         if !track.info.is_seekable {
-            return self.seek_where_nothing_seeks(to);
+            self.seeks = self.seeks.stepped();
+            return self.start(Frames::ZERO);
         }
         let landed = if self.reuses_stream() {
             self.seek_in_place(to)
@@ -43,16 +41,30 @@ impl Engine {
         landed
     }
 
-    fn seek_where_nothing_seeks(&mut self, to: Frames) -> Result<()> {
-        let Some(track) = self.track.as_ref() else {
-            return Ok(());
+    fn judge_the_seek(&self, to: Frames) -> Result<Judgement> {
+        let Some(track) = self.seeking_track() else {
+            return Err(Error::InvalidTransition {
+                state: self.transport,
+                attempted: CommandKind::Seek,
+            });
         };
+        if let Some(duration) = track.info.duration
+            && to > duration
+        {
+            return Err(Error::SeekOutOfRange {
+                track: track.id,
+                requested: to,
+                duration,
+            });
+        }
+        if track.info.is_seekable {
+            return Ok(Judgement::Goes);
+        }
         if self.position() == to {
-            return Ok(());
+            return Ok(Judgement::StaysWhereItIs);
         }
         if to == Frames::ZERO {
-            self.seeks = self.seeks.stepped();
-            return self.start(Frames::ZERO);
+            return Ok(Judgement::Goes);
         }
         Err(Error::Decode {
             track: track.id,
@@ -60,6 +72,13 @@ impl Engine {
                 location: track.location.clone(),
             },
         })
+    }
+
+    pub(super) fn seeking_track(&self) -> Option<&Track> {
+        self.boundaries
+            .front()
+            .map(|boundary| &boundary.leaving)
+            .or(self.track.as_ref())
     }
 
     pub(super) fn rebind_where_it_stands(&mut self) -> Result<()> {

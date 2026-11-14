@@ -394,9 +394,9 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   sleep timer ends here, so MPRIS, the played count and the scrobble follow the frame heard. A queue
   edited meanwhile so that it lands elsewhere starts that row afresh (`start`). **Anything that
   rebuilds the row first takes the boundary back** (`take_the_boundary_back`, from `rebind_with`,
-  a seek, `Previous`, a lost graph, a failure not the entering row's): the leaving `Track` comes
+  a seek that passed `judge_the_seek`, `Previous`, a lost graph, a failure not the entering row's): the leaving `Track` comes
   back at its heard position, the entering one is dropped and the output is marked
-  `rendered_for_another`, so no seek reuses it in place. **A failure of the entering row waits for
+  `rendered_for_another`, so no seek reuses it in place. **A refused seek leaves the boundary alone**: `judge_the_seek` weighs the seek against `seeking_track` (the leaving row while a boundary waits) and answers `SeekOutOfRange` or `NotSeekable`, or a seek to where a stream that cannot seek already is as nothing to do, all before any boundary is taken back; `SeekBy` takes it back only to move on to the next row (`a_seek_past_the_end_refused_while_a_boundary_waits_leaves_the_handover_gapless`). **A failure of the entering row waits for
   the graph to reach its boundary**: `drop_what_lies_past_the_boundary` splices away only what was
   written past the last boundary's `at` (`splice(at, written)`), the failure is held in
   `failing_past_the_boundary` while nothing more is pumped, and once `reach_the_boundary` has

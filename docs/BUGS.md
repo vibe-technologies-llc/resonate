@@ -78,11 +78,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Sync and together
 
 ## Playback and output
-- [S · 0.11.1] A refused seek still takes the gapless handover back: `Engine::seek` (and `SeekBy` in
-  `commands.rs`) calls `take_the_boundary_back` before `SeekOutOfRange`, `NotSeekable` and the seek
-  to where it already is, so a refused seek in a song's last ring of frames plays the next song's
-  opening from the ring, drains, and starts that song again from its first frame while the bus still
-  names the old one; `tests/transport.rs` tries neither refusal
 - [S · 0.12.0] WASAPI and Core Audio keep a replaced ring until the next reshape:
   `Handing::let_go_of_the_spent` is called only inside the reshaper closure (`serving.rs` in both
   crates), never from the service loop as PipeWire's heartbeat does, so the old consumer and its

@@ -6225,6 +6225,80 @@ fn a_mute_asked_while_a_boundary_waits_silences_the_leaving_tail_and_the_enterin
     a_level_asked_while_a_boundary_waits_reaches_each_row_at_its_own_gain(Volume::MUTE, 0, 0)
 }
 
+fn a_seek_refused_while_a_boundary_waits_leaves_the_handover_gapless(
+    sources: Arc<Sources>,
+    items: Vec<QueueItem>,
+    asked: Frames,
+) -> Result<()> {
+    const ENTERING_LEVEL: i16 = 12_000;
+    const PULLED_BEFORE_THE_ASK: usize = 14_000;
+    const TOLERANCE: i16 = 16;
+
+    let frame = frame_bytes(SampleFormat::S16);
+    let (player, graph) = settled_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        sources,
+        ring_deep(),
+    )?;
+    player.send(Command::Load {
+        items,
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        SHORT_PULL_FRAMES * frame,
+        |_, graph| graph.played.len() >= PULLED_BEFORE_THE_ASK * frame,
+        "the leaving row to play until its end is in the ring",
+    );
+    thread::sleep(Duration::from_millis(300));
+    assert!(plays(&player, 1), "the boundary was reached before the ask");
+    let seeks = player.state().seeks;
+
+    let refused = player.request(Command::Seek(asked))?.wait_for(PATIENCE);
+    assert!(
+        refused
+            .as_ref()
+            .is_err_and(|error| error.cause() == Cause::CannotSeek),
+        "the seek was answered {refused:?}"
+    );
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame,
+        |_, graph| graph.played.len() >= (FRAMES + FRAMES / 2) * frame,
+        "the entering row to play",
+    );
+
+    let graph = graph.lock();
+    let entering = &left_words(&graph.played)[FRAMES..FRAMES + FRAMES / 2];
+    assert!(
+        entering
+            .iter()
+            .all(|word| (word - ENTERING_LEVEL).abs() <= TOLERANCE),
+        "the entering row did not play on from the ring"
+    );
+    assert_eq!(graph.opens, 1);
+    assert_eq!(graph.drains, 0, "a refused seek drained the stream");
+    assert_eq!(player.state().seeks, seeks);
+    assert!(plays(&player, 2));
+    Ok(())
+}
+
+#[test]
+fn a_seek_past_the_end_refused_while_a_boundary_waits_leaves_the_handover_gapless() -> Result<()> {
+    let tree = Tree::new();
+    let first = tree.write("first.wav", &steady(8_000, FRAMES));
+    let second = tree.write("second.wav", &steady(12_000, FRAMES));
+
+    a_seek_refused_while_a_boundary_waits_leaves_the_handover_gapless(
+        Arc::new(Sources::local()),
+        vec![track(&first, 1), track(&second, 2)],
+        Frames(FRAMES as u64 * 4),
+    )
+}
+
 #[test]
 fn a_row_at_another_rate_still_drains_the_stream_and_opens_one_of_its_own() -> Result<()> {
     let tree = Tree::new();
