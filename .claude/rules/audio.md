@@ -1293,7 +1293,9 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   `Library::hinting` answers from `track_studies` by the row's path and span; `Unwrapped::open` asks
   once and folds it into the gain in `levelled`. **A track nobody studied is measured where its peak
   would matter** (`true-peak` on, non-DoP sample-packed source, gain in force has no peak and asks
-  for a boost or source is float): `measure::Measuring` decodes the row whole on a `resonate-peak`
+  for a boost or source is float, and the row is a local file that seeks: a song played in place from
+  a service is never opened a second time for it, a live stream never at all, so the guard alone holds
+  its peak, `a_track_played_in_place_from_a_service_is_opened_once_and_its_peak_left_to_the_guard`): `measure::Measuring` decodes the row whole on a `resonate-peak`
   thread through a `TruePeakMeter`. `Track::peak` is a `Peak` (`Unasked`, `Measuring`,
   `Unmeasurable`) so a row that will not decode to its end is not decoded again per settings change.
 - **Samples past full scale are counted where nothing guards them.** With `true-peak` off a plan that

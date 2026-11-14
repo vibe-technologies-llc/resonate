@@ -310,7 +310,7 @@ impl Track {
 
     fn measure_where_wanted(&mut self, sources: &Arc<Sources>, config: &EngineConfig) {
         if !matches!(self.peak, Peak::Unasked)
-            || !Measuring::wanted(config, &self.info, self.replay_gain)
+            || !Measuring::wanted(config, &self.location, &self.info, self.replay_gain)
         {
             return;
         }

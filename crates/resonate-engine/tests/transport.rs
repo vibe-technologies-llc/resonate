@@ -11276,7 +11276,8 @@ fn a_float_track_over_full_scale_nobody_studied_is_measured_and_turned_down_unde
 }
 
 #[test]
-fn a_track_whose_peak_cannot_be_measured_is_not_decoded_again_for_it() -> Result<()> {
+fn a_track_played_in_place_from_a_service_is_opened_once_and_its_peak_left_to_the_guard()
+-> Result<()> {
     let named = SourceId::new("once").expect("a lowercase name");
     let once = Arc::new(ServesOnce {
         source: named.clone(),
@@ -11318,7 +11319,7 @@ fn a_track_whose_peak_cannot_be_measured_is_not_decoded_again_for_it() -> Result
             }
             played >= since.1 + 32 * block
         },
-        "the refused measurement to settle",
+        "the track to play on",
     );
     let opened = served.served.load(Ordering::Relaxed);
 
@@ -11340,9 +11341,13 @@ fn a_track_whose_peak_cannot_be_measured_is_not_decoded_again_for_it() -> Result
     }
 
     assert_eq!(
+        opened, 1,
+        "a track played in place was opened again to measure its peak"
+    );
+    assert_eq!(
         served.served.load(Ordering::Relaxed),
-        opened,
-        "a track whose peak could not be measured was opened again to measure it"
+        1,
+        "a setting changed on a track played in place opened it again to measure its peak"
     );
     Ok(())
 }
