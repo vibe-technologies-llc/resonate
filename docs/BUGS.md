@@ -101,10 +101,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   listener's to grant
 
 ## Formats
-- [S · 0.12.0] A truncated WAV whose ID3v2 tag stands before its `RIFF` may have the tag laid inside its
-  audio: `writing::chunked` copies what the `RIFF` size declares, which stops short at the file's
-  end, then appends the `id3 ` chunk within the `data` chunk's declared span, played as noise and
-  never read as a tag; whether lofty refuses such a copy before the rename is unchecked
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader

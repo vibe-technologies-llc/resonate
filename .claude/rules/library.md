@@ -1487,7 +1487,9 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   picture; a mismatch leaves `Unwritten::Unconfirmed`, catalog unmoved. **A WAV whose ID3v2 tag
   stands before its `RIFF` header has the tag moved into the RIFF** (lofty does not recognise such a
   file): `FileTags::write` stages a copy that is the RIFF plus the tag's bytes as an `id3 ` chunk
-  and settles that copy in the file's place.
+  and settles that copy in the file's place; **a copy that stops short of the size its `RIFF` declares
+  is refused** (`chunked` answers `InvalidData`), since the chunk would land inside the `data` chunk's
+  declared span and play as noise (`a_wave_cut_short_behind_an_id3_tag_is_refused_and_never_gets_its_chunk_inside_the_audio`).
 - **`Library::retag` takes the `Walk` guard** (the pass rewrites sizes and mtimes a scan's snapshot
   was taken against); a second caller gets `Error::AlreadyWalking`. A vaulted row is
   `Unwritten::Vaulted` (`vault.md`).
