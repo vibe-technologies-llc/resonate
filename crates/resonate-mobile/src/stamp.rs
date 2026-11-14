@@ -5,7 +5,7 @@ use crate::{
     catalog::{Catalog, read},
 };
 
-pub(crate) const INDEXING_REVISION: i64 = 1;
+pub(crate) const INDEXING_REVISION: i64 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct DocumentStamp {

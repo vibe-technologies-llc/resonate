@@ -16,7 +16,9 @@ import Testing
 
         #expect(groups == [.sound, .library, .online, .devices, .appearance, .app])
         #expect(shown.allSatisfy { $0.place.parent == nil && $0.said == nil })
-        #expect(shown.map(\.place.title).prefix(4) == ["Equaliser", "Sound processing", "Audio output", "Sleep timer"])
+        #expect(
+            shown.map(\.place.title).prefix(5) == ["Equaliser", "Sound processing", "Audio output", "Playback", "Sleep timer"]
+        )
         #expect(shown.last?.place == .erase)
     }
 

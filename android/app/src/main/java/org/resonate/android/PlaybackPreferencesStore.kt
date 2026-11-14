@@ -10,6 +10,7 @@ import org.resonate.android.nativecore.LossyRestoration
 import org.resonate.android.nativecore.PlaybackPreferences
 import org.resonate.android.nativecore.ResamplingPhase
 import org.resonate.android.nativecore.ResamplingQuality
+import org.resonate.android.nativecore.ShuffleStyle
 import org.resonate.android.nativecore.defaultPlaybackPreferences
 import org.resonate.android.nativecore.equaliserText
 import org.resonate.android.nativecore.parseEqProfile
@@ -37,6 +38,18 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
             restoration =
                 LossyRestoration.entries.find { it.name == storage.getString("restoration", null) }
                     ?: defaults.restoration,
+            carriesTheQueueOver = storage.getBoolean(RESUME, defaults.carriesTheQueueOver),
+            skipRepeatsTheQueue =
+                storage.getBoolean(SKIP_REPEATS_QUEUE, defaults.skipRepeatsTheQueue),
+            previousRestarts = storage.getBoolean(PREVIOUS_RESTARTS, defaults.previousRestarts),
+            shuffle =
+                ShuffleStyle.entries.find { it.name == storage.getString(SHUFFLE_STYLE, null) }
+                    ?: defaults.shuffle,
+            shuffleSpreadsArtists =
+                storage.getBoolean(SHUFFLE_SPREADS_ARTISTS, defaults.shuffleSpreadsArtists),
+            shuffleSpreadsAlbums =
+                storage.getBoolean(SHUFFLE_SPREADS_ALBUMS, defaults.shuffleSpreadsAlbums),
+            shuffleFreshFirst = storage.getBoolean(SHUFFLE_FRESH_FIRST, defaults.shuffleFreshFirst),
         )
     }
 
@@ -108,6 +121,13 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
             .putBoolean("true-peak", preferences.truePeak)
             .putString("crossfeed", preferences.crossfeed.name)
             .putString("restoration", preferences.restoration.name)
+            .putBoolean(RESUME, preferences.carriesTheQueueOver)
+            .putBoolean(SKIP_REPEATS_QUEUE, preferences.skipRepeatsTheQueue)
+            .putBoolean(PREVIOUS_RESTARTS, preferences.previousRestarts)
+            .putString(SHUFFLE_STYLE, preferences.shuffle.name)
+            .putBoolean(SHUFFLE_SPREADS_ARTISTS, preferences.shuffleSpreadsArtists)
+            .putBoolean(SHUFFLE_SPREADS_ALBUMS, preferences.shuffleSpreadsAlbums)
+            .putBoolean(SHUFFLE_FRESH_FIRST, preferences.shuffleFreshFirst)
 
     private fun keepCurve(
         edit: SharedPreferences.Editor,
@@ -152,5 +172,12 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
         const val ROUTE_NAMES = "equaliser-route-names."
         const val FOLLOW_SONG_RATE = "follow-song-rate"
         const val QUALITY_ONCE_CALLED_FAST = "FAST"
+        const val RESUME = "resume"
+        const val SKIP_REPEATS_QUEUE = "skip-repeats-queue"
+        const val PREVIOUS_RESTARTS = "previous-restarts"
+        const val SHUFFLE_STYLE = "shuffle-style"
+        const val SHUFFLE_SPREADS_ARTISTS = "shuffle-spreads-artists"
+        const val SHUFFLE_SPREADS_ALBUMS = "shuffle-spreads-albums"
+        const val SHUFFLE_FRESH_FIRST = "shuffle-fresh-first"
     }
 }

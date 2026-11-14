@@ -530,6 +530,19 @@ weigh; the ledger still passes it on in its snapshot.
   `a_print_kept_beside_a_study_is_forgotten_when_its_file_changes`,
   `a_print_landed_from_another_device_is_heard_without_decoding_the_song_again`).
 
+## Playback behaviour
+
+`PlaybackPreferences` carries the desktop's Playback category beside the sound settings:
+`skip_repeats_the_queue`, `previous_restarts` and a `ShuffleStyle` with its three Smart switches go
+to every zone as `SetSkipUnderRepeat`, `SetPreviousRestarts` and `SetSmartShuffle` where they moved
+(`commands`), and a zone opened later is sent them as it opens (`zone_opened`, `behaviour`), since
+`OutputSettings::applied_to` carries none of them. `carries_the_queue_over` is decided before the
+front end's preferences arrive, so `configure_playback` keeps it in the catalog
+(`carry_queues_over`, step 36's `queues_carried_over`) and `MobilePlayer::new` takes up the saved
+queues of every zone only where `carries_queues_over` says so. The queues are still saved while it
+is off (a handoff to another device reads them), as on the desktop. The phones give no kinship, so
+Smart shuffles as Random until they do (`audio.md`'s *Shuffle orders by kin*).
+
 ## The equaliser
 
 The room correction reads a SOFA set at the speaker pair the boundary holds (`room.rs`:

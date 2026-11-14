@@ -409,6 +409,86 @@ struct ProcessingView: View {
     }
 }
 
+struct PlaybackView: View {
+    @Environment(Library.self) private var library
+
+    var body: some View {
+        ThemedForm {
+            if let settings = library.preferences {
+                Section {
+                    Toggle(isOn: binding(settings.carriesTheQueueOver) { $0.carriesTheQueueOver = $1 }) {
+                        Text("settings.playback.inner.carry-the-queue-over")
+                        Text("playback.carry-over.off")
+                    }
+                } header: {
+                    Text("playback.resuming")
+                } footer: {
+                    Text("playback.resuming.footer")
+                }
+                Section {
+                    Picker("settings.playback.inner.shuffle-style", selection: binding(settings.shuffle) { $0.shuffle = $1 }) {
+                        Text("playback.shuffle.random").tag(ShuffleStyle.random)
+                        Text("playback.shuffle.smart").tag(ShuffleStyle.smart)
+                        Text("playback.shuffle.albums").tag(ShuffleStyle.albums)
+                    }
+                    if settings.shuffle == .smart {
+                        Toggle(isOn: binding(settings.shuffleSpreadsArtists) { $0.shuffleSpreadsArtists = $1 }) {
+                            Text("playback.spread-artists")
+                            Text("playback.spread-artists.detail")
+                        }
+                        Toggle(isOn: binding(settings.shuffleSpreadsAlbums) { $0.shuffleSpreadsAlbums = $1 }) {
+                            Text("playback.spread-albums")
+                            Text("playback.spread-albums.detail")
+                        }
+                        Toggle(isOn: binding(settings.shuffleFreshFirst) { $0.shuffleFreshFirst = $1 }) {
+                            Text("playback.fresh-first")
+                            Text("playback.fresh-first.detail")
+                        }
+                    }
+                } header: {
+                    Text("playback.shuffling")
+                } footer: {
+                    Text(Self.shuffleMeaning(settings.shuffle))
+                }
+                Section("playback.repeating") {
+                    Toggle(isOn: binding(settings.skipRepeatsTheQueue) { $0.skipRepeatsTheQueue = $1 }) {
+                        Text("settings.playback.inner.skip-repeats-the-queue")
+                        Text("playback.skip-repeats.off")
+                    }
+                }
+                Section("playback.previous") {
+                    Toggle(isOn: binding(settings.previousRestarts) { $0.previousRestarts = $1 }) {
+                        Text("settings.playback.inner.previous-restarts")
+                        Text("playback.previous-restarts.off")
+                    }
+                }
+            }
+        }
+        .navigationTitle("settings.playback.title")
+    }
+
+    private static func shuffleMeaning(_ style: ShuffleStyle) -> String {
+        switch style {
+        case .random: said("playback.shuffle.random.meaning")
+        case .smart: said("playback.shuffle.smart.meaning")
+        case .albums: said("playback.shuffle.albums.meaning")
+        }
+    }
+
+    private func binding<Value: Sendable>(
+        _ value: Value,
+        _ apply: @escaping @Sendable (inout PlaybackPreferences, Value) -> Void
+    ) -> Binding<Value> {
+        Binding(get: { value }, set: { chosen in
+            library.updatePreferences { current in
+                var next = current
+                apply(&next, chosen)
+                return next
+            }
+        })
+    }
+}
+
 struct OutputView: View {
     @Environment(Library.self) private var library
     @State private var buffer: Double?

@@ -114,8 +114,8 @@ public enum Polling {
 public enum Steering {
     public static let previousRestartsPastMs: UInt64 = 3000
 
-    public static func previousRestarts(positionMs: UInt64, durationMs: UInt64) -> Bool {
-        positionMs > previousRestartsPastMs && durationMs > previousRestartsPastMs
+    public static func previousRestarts(positionMs: UInt64, durationMs: UInt64, restarting: Bool = true) -> Bool {
+        restarting && positionMs > previousRestartsPastMs && durationMs > previousRestartsPastMs
     }
 
     public static func neighbour(of playing: Int?, step: Int, in queue: [Track], repeating: Bool) -> SteeredSong? {

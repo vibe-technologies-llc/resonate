@@ -26,6 +26,7 @@ import org.resonate.android.ui.settings.IdenticalSongsScreen
 import org.resonate.android.ui.settings.LibraryToolsScreen
 import org.resonate.android.ui.settings.OrganiseScreen
 import org.resonate.android.ui.settings.OutputScreen
+import org.resonate.android.ui.settings.PlaybackScreen
 import org.resonate.android.ui.settings.ProcessingScreen
 import org.resonate.android.ui.settings.ProviderAccountScreen
 import org.resonate.android.ui.settings.ProvidersScreen
@@ -66,6 +67,7 @@ fun ScreenContent(screen: Screen) {
         Screen.OutputCurves -> OutputCurvesScreen()
         Screen.Processing -> ProcessingScreen()
         Screen.Output -> OutputScreen()
+        Screen.Playback -> PlaybackScreen()
         Screen.Folders -> FoldersScreen()
         is Screen.Organise -> OrganiseScreen(screen.folder)
         Screen.LibraryTools -> LibraryToolsScreen()

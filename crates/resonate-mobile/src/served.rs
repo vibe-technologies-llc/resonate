@@ -984,7 +984,7 @@ mod tests {
                 .iter()
                 .map(|track| track.title.as_str())
                 .collect::<Vec<_>>(),
-            ["One of These Days", "a.wav", "A Pillow of Winds", "b.wav"]
+            ["One of These Days", "a", "A Pillow of Winds", "b"]
         );
         assert_eq!(rows.len(), 4);
         assert!(rows.iter().all(Option::is_some));
@@ -1034,7 +1034,7 @@ mod tests {
                 "One of These Days",
                 "One of These Days",
                 "A Pillow of Winds",
-                "a.wav",
+                "a",
                 "A Pillow of Winds"
             ]
         );
@@ -1108,7 +1108,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 ("One of These Days", "subsonic:track/so-1"),
-                ("a.wav", queue[1].uri.as_str()),
+                ("a", queue[1].uri.as_str()),
                 ("A Pillow of Winds", "subsonic:track/so-2"),
             ]
         );

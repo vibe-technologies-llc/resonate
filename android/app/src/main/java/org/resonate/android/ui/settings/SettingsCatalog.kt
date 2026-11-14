@@ -116,6 +116,17 @@ enum class Setting(
         ),
         names = listOf("Bluetooth"),
     ),
+    PLAYBACK(
+        SettingsGroup.SOUND,
+        R.string.settings_playback_title,
+        R.string.settings_playback_detail,
+        listOf(
+            R.string.settings_inner_carry_the_queue_over,
+            R.string.settings_inner_shuffle_style,
+            R.string.settings_inner_skip_repeats_the_queue,
+            R.string.settings_inner_previous_restarts,
+        ),
+    ),
     FOLDERS(
         SettingsGroup.LIBRARY,
         R.string.settings_folders_title,

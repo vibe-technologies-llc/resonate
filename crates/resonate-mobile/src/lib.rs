@@ -76,6 +76,7 @@ use resonate_engine::{
     Command, EngineConfig, OutputStatus, PlaybackState, PlayerState, QueueItem, QueueRows,
     RepeatMode,
 };
+use resonate_library::{NamedByTheFile, named_by_the_file};
 
 use crate::{
     arranged::{Arranged, Laid},
@@ -377,9 +378,12 @@ impl MobilePlayer {
             rendering,
         });
         this.downloads.stall_by(this.services.downloads.clone());
-        this.resume_saved_in(ZoneId::FIRST)?;
+        let carried_over = this.catalog.carries_queues_over()?;
+        if carried_over {
+            this.resume_saved_in(ZoneId::FIRST)?;
+        }
         watching::keep(&this, ZoneId::FIRST);
-        this.restore_zones(&kept)?;
+        this.restore_zones(&kept, carried_over)?;
         Ok(this)
     }
 
@@ -412,26 +416,42 @@ impl MobilePlayer {
         stamp: Option<DocumentStamp>,
         absorbing: Absorbing,
     ) -> Result<Track> {
+        self.indexed_and_named(uri, name, stamp, absorbing)
+            .map(|(track, _)| track)
+    }
+
+    pub(crate) fn indexed_and_named(
+        &self,
+        uri: String,
+        name: String,
+        stamp: Option<DocumentStamp>,
+        absorbing: Absorbing,
+    ) -> Result<(Track, NamedByTheFile)> {
         let (info, picture) = probe_pictured(&self.sources, &location(&uri)?, Picturing::Copied)?;
+        let mut named = info.tags.clone();
+        let by_the_file = named_by_the_file(&name, &mut named);
         let duration_ms = info.duration.map_or(0, |frames| {
             frames
                 .to_duration(info.spec.rate)
                 .as_millis()
                 .min(u128::from(u64::MAX)) as u64
         });
-        let track = self.catalog.upsert(Track {
-            id: 0,
-            uri,
-            title: info.tags.title.clone().unwrap_or_else(|| name.clone()),
-            name,
-            artist: info.tags.artist.clone().unwrap_or_default(),
-            album: info.tags.album.clone().unwrap_or_default(),
-            duration_ms,
-            rate: info.spec.rate.hz(),
-            codec: resonate_codec::Codec::from_id(info.codec).to_string(),
-            favourite: false,
-            ..Track::default()
-        })?;
+        let track = self.catalog.upsert_named(
+            Track {
+                id: 0,
+                uri,
+                title: named.title.unwrap_or_else(|| name.clone()),
+                name,
+                artist: named.artist.unwrap_or_default(),
+                album: info.tags.album.clone().unwrap_or_default(),
+                duration_ms,
+                rate: info.spec.rate.hz(),
+                codec: resonate_codec::Codec::from_id(info.codec).to_string(),
+                favourite: false,
+                ..Track::default()
+            },
+            by_the_file,
+        )?;
         self.services.analyses.lock().remove(&track.id);
         self.catalog.tagged(track.id, &info, stamp)?;
         if let Some(picture) = picture.into_copied() {
@@ -444,7 +464,7 @@ impl MobilePlayer {
             tracing::debug!(%error, "embedded lyrics could not be read");
         }
         self.take_the_place_of_missing(track.id, absorbing)?;
-        self.catalog.track(track.id)
+        Ok((self.catalog.track(track.id)?, by_the_file))
     }
 }
 
@@ -558,6 +578,10 @@ impl MobilePlayer {
     pub fn configure_playback(&self, preferences: PlaybackPreferences) -> Result<()> {
         let mut previous = self.preferences.lock();
         let commands = preferences.commands(&previous)?;
+        if preferences.carries_the_queue_over != self.catalog.carries_queues_over()? {
+            self.catalog
+                .carry_queues_over(preferences.carries_the_queue_over)?;
+        }
         for command in commands {
             self.command(command)?;
         }

@@ -1031,7 +1031,7 @@ mod tests {
         assert_eq!(told.verdict, study.judgement.verdict.as_str());
         assert_eq!(told.judged_under, JUDGED_UNDER);
         assert_eq!(told.band_levels.len(), BANDS);
-        assert_eq!(listed[0].recording.title, "e.wav");
+        assert_eq!(listed[0].recording.title, "e");
     }
 
     #[test]
@@ -1085,7 +1085,7 @@ mod tests {
         let after_the_file_changed = documents.studies_to_share(0, 10).expect("listed");
 
         assert_eq!(listed.len(), 1);
-        assert_eq!(listed[0].recording.title, "a.wav");
+        assert_eq!(listed[0].recording.title, "a");
         assert!(after_the_file_changed.is_empty());
     }
 

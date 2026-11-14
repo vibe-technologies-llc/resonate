@@ -621,7 +621,7 @@ mod tests {
                 .expect("sent and told"),
             2
         );
-        assert_eq!(client.playing.lock().clone(), ["d.wav"]);
+        assert_eq!(client.playing.lock().clone(), ["d"]);
 
         listened(&harness, song, true, false, 1);
         *client.refuses_playing.lock() = true;

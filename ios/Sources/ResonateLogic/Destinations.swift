@@ -27,6 +27,7 @@ public enum Destination: Hashable, Codable, Sendable {
     case output
     case sound
     case processing
+    case playback
     case songLyrics(UInt64?)
     case visualizer
     case songAnalysis(UInt64?)
@@ -71,7 +72,7 @@ public enum Destination: Hashable, Codable, Sendable {
 
     public var belongsToSettings: Bool {
         switch self {
-        case .sound, .processing, .output, .scrobbling, .spotify, .providers, .sync, .server, .folders, .appearance,
+        case .sound, .processing, .playback, .output, .scrobbling, .spotify, .providers, .sync, .server, .folders, .appearance,
             .background, .headphoneCorrection, .microphoneMeasurement, .roomCorrection, .listeningTest, .otherOutputs,
             .enrichment, .searchHistory, .notices, .syncSongs, .syncConnection, .syncControl, .syncDevice:
             true

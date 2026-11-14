@@ -37,6 +37,12 @@ extension CrossfeedLevel {
     public static func named(_ name: String?) -> CrossfeedLevel? { every.first { $0.name == name } }
 }
 
+extension ShuffleStyle {
+    public static let every: [ShuffleStyle] = [.random, .smart, .albums]
+    public var name: String { "\(self)" }
+    public static func named(_ name: String?) -> ShuffleStyle? { every.first { $0.name == name } }
+}
+
 extension LossyRestoration {
     public static let every: [LossyRestoration] = [.off, .repair, .extend]
     public var name: String { "\(self)" }

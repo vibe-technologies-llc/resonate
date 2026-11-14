@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
@@ -95,6 +96,7 @@ private val Setting.icon: ImageVector
             Setting.OUTPUT_CURVES -> Icons.Rounded.SpeakerGroup
             Setting.PROCESSING -> Icons.Rounded.GraphicEq
             Setting.OUTPUT -> Icons.Rounded.Speaker
+            Setting.PLAYBACK -> Icons.Rounded.PlayCircle
             Setting.FOLDERS -> Icons.Rounded.FolderOpen
             Setting.LIBRARY_TOOLS -> Icons.Rounded.LibraryMusic
             Setting.STATISTICS -> Icons.Rounded.BarChart
@@ -122,6 +124,7 @@ private val Setting.destination: Screen?
             Setting.OUTPUT_CURVES -> Screen.OutputCurves
             Setting.PROCESSING -> Screen.Processing
             Setting.OUTPUT -> Screen.Output
+            Setting.PLAYBACK -> Screen.Playback
             Setting.FOLDERS -> Screen.Folders
             Setting.LIBRARY_TOOLS -> Screen.LibraryTools
             Setting.STATISTICS -> Screen.Statistics

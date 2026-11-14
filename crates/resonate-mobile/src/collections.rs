@@ -267,10 +267,10 @@ impl MobilePlayer {
         song: &SearchSong,
     ) -> Result<crate::Track> {
         self.validate_download(uri.clone(), song.duration_ms)?;
-        let track = self.indexed(uri, name, None, Absorbing::FoundGone)?;
+        let (track, by_the_file) = self.indexed_and_named(uri, name, None, Absorbing::FoundGone)?;
         let identified = |id: &str| Mbid::new(id).ok().map(|id| id.to_string());
         let connection = self.catalog.0.lock();
-        connection.execute("UPDATE documents SET title = CASE WHEN title = name THEN ?2 ELSE title END, artist = coalesce(nullif(artist, ''), ?3), album = coalesce(nullif(album, ''), ?4), recording = coalesce(recording, ?5), release = coalesce(release, ?6), artist_mbid = coalesce(artist_mbid, ?7), track_number = coalesce(track_number, ?8), disc_number = coalesce(disc_number, ?9) WHERE id = ?1", params![track.id as i64, song.title, song.artist, song.album, identified(&song.recording), identified(&song.release), identified(&song.artist_id), song.position, song.disc]).map_err(write_error)?;
+        connection.execute("UPDATE documents SET title = CASE WHEN (?10 OR title = name) AND ?2 != '' THEN ?2 ELSE title END, artist = CASE WHEN (?11 OR artist = '') AND ?3 != '' THEN ?3 ELSE artist END, album = coalesce(nullif(album, ''), ?4), recording = coalesce(recording, ?5), release = coalesce(release, ?6), artist_mbid = coalesce(artist_mbid, ?7), track_number = coalesce(track_number, ?8), disc_number = coalesce(disc_number, ?9) WHERE id = ?1", params![track.id as i64, song.title, song.artist, song.album, identified(&song.recording), identified(&song.release), identified(&song.artist_id), song.position, song.disc, by_the_file.title, by_the_file.artist]).map_err(write_error)?;
         connection
             .execute(
                 "UPDATE wanted SET offered_at = unixepoch(), misses = 0 WHERE identity = ?1",

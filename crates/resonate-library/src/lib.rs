@@ -180,7 +180,10 @@ pub use crate::{
         PassedOver, RetagOptions, RetagProgress, RetagStats, RetagSummary, Retagging, Unwritten,
         Written,
     },
-    scan::{Failure, Failures, ScanOptions, ScanProgress, ScanStats, ScanSummary, disc_in_folder},
+    scan::{
+        Failure, Failures, NamedByTheFile, ScanOptions, ScanProgress, ScanStats, ScanSummary,
+        disc_in_folder, named_by_the_file,
+    },
     scrobble::{
         Billed, LOVES_TOLD_AT_ONCE, LastfmApproval, LastfmSession, LastfmSignIn, ListeningService,
         Love, Loved, LovedNames, LovesTold, SUBMITTED_AT_ONCE, Scrobble, Scrobbler, Scrobblers,

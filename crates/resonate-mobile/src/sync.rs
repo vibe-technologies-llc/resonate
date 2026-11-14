@@ -3216,6 +3216,56 @@ mod tests {
     }
 
     #[test]
+    fn an_untagged_song_is_named_by_its_stem_and_a_landing_keeps_the_senders_name_across_a_rescan()
+    {
+        let folder = folder("untagged");
+        let (player, _) = granted(&folder);
+        for place in ["a/Carry Potter - Enes.opus.wav", "landed/Enes (1).wav"] {
+            fs::create_dir_all(folder.join(place).parent().expect("a folder")).expect("a folder");
+            fs::write(folder.join(place), crate::harness::silence()).expect("a song");
+        }
+        let asked = SearchSong {
+            title: "Enes".into(),
+            artist: "Carry Potter".into(),
+            ..SearchSong::default()
+        };
+
+        let scanned = player
+            .index_document(
+                "content://test/a/Carry Potter - Enes.opus.wav".into(),
+                "Carry Potter - Enes.opus.wav".into(),
+            )
+            .expect("a scanned song");
+        let landed = player
+            .indexed_download(
+                "content://test/landed/Enes (1).wav".into(),
+                "Enes.wav".into(),
+                &asked,
+            )
+            .expect("a landing");
+        let rescanned = player
+            .index_document(
+                "content://test/landed/Enes (1).wav".into(),
+                "Enes (1).wav".into(),
+            )
+            .expect("a rescan");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert_eq!(
+            (scanned.title.as_str(), scanned.artist.as_str()),
+            ("Enes.opus", "Carry Potter")
+        );
+        assert_eq!(
+            (landed.title.as_str(), landed.artist.as_str()),
+            ("Enes", "Carry Potter")
+        );
+        assert_eq!(
+            (rescanned.title.as_str(), rescanned.artist.as_str()),
+            ("Enes", "Carry Potter")
+        );
+    }
+
+    #[test]
     fn a_folder_granted_again_restores_its_withdrawn_rows_with_their_history() {
         let folder = folder("regranted");
         let player = player(&folder);

@@ -2,7 +2,8 @@ use std::{sync::Arc, time::Duration};
 
 use resonate_core::eq::Profile;
 use resonate_engine::{
-    Command, Crossfeed, Equalisation, FilterPhase, Quality, ReplayGainMode, Restoration, Until,
+    Command, Crossfeed, Equalisation, FilterPhase, PreviousRestarts, Quality, ReplayGainMode,
+    Restoration, SkipUnderRepeat, SmartShuffle, Until,
 };
 
 use crate::{Error, Result, equaliser::EqualiserCurve};
@@ -60,6 +61,24 @@ pub enum LossyRestoration {
     Extend,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, uniffi::Enum)]
+pub enum ShuffleStyle {
+    Random,
+    #[default]
+    Smart,
+    Albums,
+}
+
+impl From<ShuffleStyle> for resonate_engine::ShuffleStyle {
+    fn from(style: ShuffleStyle) -> Self {
+        match style {
+            ShuffleStyle::Random => Self::Random,
+            ShuffleStyle::Smart => Self::Smart,
+            ShuffleStyle::Albums => Self::Albums,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct PlaybackPreferences {
     pub equaliser_enabled: bool,
@@ -72,6 +91,13 @@ pub struct PlaybackPreferences {
     pub buffer_ms: u32,
     pub dsd_like_pcm: bool,
     pub crossfeed: CrossfeedLevel,
+    pub carries_the_queue_over: bool,
+    pub skip_repeats_the_queue: bool,
+    pub previous_restarts: bool,
+    pub shuffle: ShuffleStyle,
+    pub shuffle_spreads_artists: bool,
+    pub shuffle_spreads_albums: bool,
+    pub shuffle_fresh_first: bool,
 }
 
 impl Default for PlaybackPreferences {
@@ -87,6 +113,13 @@ impl Default for PlaybackPreferences {
             buffer_ms: 500,
             dsd_like_pcm: false,
             crossfeed: CrossfeedLevel::Off,
+            carries_the_queue_over: true,
+            skip_repeats_the_queue: true,
+            previous_restarts: true,
+            shuffle: ShuffleStyle::Smart,
+            shuffle_spreads_artists: true,
+            shuffle_spreads_albums: true,
+            shuffle_fresh_first: true,
         }
     }
 }
@@ -98,6 +131,39 @@ impl PlaybackPreferences {
             fallback: Some(Arc::new(profile)),
             ..Equalisation::default()
         }
+    }
+
+    fn skip_under_repeat(&self) -> SkipUnderRepeat {
+        if self.skip_repeats_the_queue {
+            SkipUnderRepeat::RepeatsTheQueue
+        } else {
+            SkipUnderRepeat::KeepsRepeatingTheTrack
+        }
+    }
+
+    fn previous(&self) -> PreviousRestarts {
+        if self.previous_restarts {
+            PreviousRestarts::RestartsTheTrack
+        } else {
+            PreviousRestarts::AlwaysGoesBack
+        }
+    }
+
+    fn smart_shuffle(&self) -> SmartShuffle {
+        SmartShuffle {
+            style: self.shuffle.into(),
+            spreads_artists: self.shuffle_spreads_artists,
+            spreads_albums: self.shuffle_spreads_albums,
+            fresh_first: self.shuffle_fresh_first,
+        }
+    }
+
+    pub(crate) fn behaviour(&self) -> [Command; 3] {
+        [
+            Command::SetSkipUnderRepeat(self.skip_under_repeat()),
+            Command::SetPreviousRestarts(self.previous()),
+            Command::SetSmartShuffle(self.smart_shuffle()),
+        ]
     }
 
     pub(crate) fn commands(&self, previous: &Self) -> Result<Vec<Command>> {
@@ -158,6 +224,15 @@ impl PlaybackPreferences {
         if self.crossfeed != previous.crossfeed {
             commands.push(Command::SetCrossfeed(self.crossfeed.into()));
         }
+        if self.skip_repeats_the_queue != previous.skip_repeats_the_queue {
+            commands.push(Command::SetSkipUnderRepeat(self.skip_under_repeat()));
+        }
+        if self.previous_restarts != previous.previous_restarts {
+            commands.push(Command::SetPreviousRestarts(self.previous()));
+        }
+        if self.smart_shuffle() != previous.smart_shuffle() {
+            commands.push(Command::SetSmartShuffle(self.smart_shuffle()));
+        }
         Ok(commands)
     }
 }
@@ -202,6 +277,49 @@ mod tests {
 
     use super::*;
     use crate::equaliser::{EqualiserBand, EqualiserFilter, ten_band_curve};
+
+    #[test]
+    fn the_desktops_playback_choices_reach_the_engine_only_where_they_moved() {
+        let previous = PlaybackPreferences::default();
+        let mut preferences = previous.clone();
+        preferences.previous_restarts = false;
+        preferences.skip_repeats_the_queue = false;
+        preferences.shuffle = ShuffleStyle::Albums;
+        preferences.carries_the_queue_over = false;
+
+        let unmoved = previous.commands(&previous).expect("no commands");
+        let moved = preferences.commands(&previous).expect("commands");
+
+        assert!(unmoved.is_empty());
+        assert_eq!(
+            moved,
+            [
+                Command::SetSkipUnderRepeat(SkipUnderRepeat::KeepsRepeatingTheTrack),
+                Command::SetPreviousRestarts(PreviousRestarts::AlwaysGoesBack),
+                Command::SetSmartShuffle(SmartShuffle {
+                    style: resonate_engine::ShuffleStyle::Albums,
+                    ..SmartShuffle::default()
+                }),
+            ]
+        );
+        assert_eq!(
+            previous.behaviour()[2],
+            Command::SetSmartShuffle(SmartShuffle::default())
+        );
+    }
+
+    #[test]
+    fn whether_the_queue_is_carried_over_is_kept_by_the_catalog_and_is_yes_until_said() {
+        let catalog =
+            crate::catalog::Catalog::open(std::path::Path::new(":memory:")).expect("a catalog");
+
+        let at_first = catalog.carries_queues_over().expect("read");
+        catalog.carry_queues_over(false).expect("kept");
+        let after = catalog.carries_queues_over().expect("read");
+
+        assert!(at_first);
+        assert!(!after);
+    }
 
     #[test]
     fn a_shaped_curve_reaches_the_engine_and_only_what_changed_is_sent() {

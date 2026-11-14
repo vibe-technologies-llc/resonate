@@ -29,7 +29,7 @@ class SettingsCatalogTest {
             groups.map { English.string(it.title) },
         )
         assertEquals(
-            listOf(Setting.EQUALISER, Setting.PROCESSING, Setting.OUTPUT),
+            listOf(Setting.EQUALISER, Setting.PROCESSING, Setting.OUTPUT, Setting.PLAYBACK),
             matchingSettings(English, "").map { it.setting }.filter { it.group == SettingsGroup.SOUND },
         )
     }

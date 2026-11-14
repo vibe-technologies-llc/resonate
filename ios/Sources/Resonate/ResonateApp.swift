@@ -546,6 +546,7 @@ struct DestinationView: View {
         case .syncControl: SyncControlPage()
         case .syncDevice(let id): DrivenDevicePage(id: id)
         case .processing: ProcessingView()
+        case .playback: PlaybackView()
         case .appearance: AppearanceView()
         case .background: BackgroundView()
         case .identicalSongs: IdenticalSongsView()

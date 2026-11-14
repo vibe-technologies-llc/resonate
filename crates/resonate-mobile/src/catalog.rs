@@ -10,6 +10,7 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_core::{Span, ZoneId};
+use resonate_library::NamedByTheFile;
 use rusqlite::{
     CachedStatement, Connection, OptionalExtension, TransactionBehavior, functions::FunctionFlags,
     hooks::Action, params,
@@ -354,6 +355,13 @@ CREATE TABLE renderers_learnt (
 ) STRICT;
 ";
 
+const QUEUES_MAY_BE_LEFT_BEHIND_AT_OPENING: &str = "
+CREATE TABLE queues_carried_over (
+    id      INTEGER PRIMARY KEY CHECK (id = 1),
+    carried INTEGER NOT NULL
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -390,6 +398,7 @@ const MIGRATIONS: &[&str] = &[
     QUEUES_KEEP_THEIR_SHUFFLE_LIST_ORDER_AND_ROWS_PLAYED_NEXT,
     A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT,
     RENDERERS_KEEP_WHAT_THEY_PLAYED,
+    QUEUES_MAY_BE_LEFT_BEHIND_AT_OPENING,
 ];
 
 #[cfg(test)]
@@ -700,14 +709,48 @@ impl Catalog {
         self.1.load(Ordering::Acquire)
     }
 
+    pub(crate) fn carries_queues_over(&self) -> Result<bool> {
+        self.0
+            .lock()
+            .query_row(
+                "SELECT carried FROM queues_carried_over WHERE id = 1",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .optional()
+            .map(|carried| carried.unwrap_or(true))
+            .map_err(|source| Error::store(StoreOp::Read, source))
+    }
+
+    pub(crate) fn carry_queues_over(&self, carried: bool) -> Result<()> {
+        self.0
+            .lock()
+            .execute(
+                "INSERT INTO queues_carried_over (id, carried) VALUES (1, ?1)
+                 ON CONFLICT (id) DO UPDATE SET carried = excluded.carried",
+                [carried],
+            )
+            .map(drop)
+            .map_err(|source| Error::store(StoreOp::Write, source))
+    }
+
+    #[cfg(test)]
     pub(crate) fn upsert(&self, track: Track) -> Result<Track> {
+        let by_the_file = NamedByTheFile {
+            title: track.title == track.name,
+            artist: false,
+        };
+        self.upsert_named(track, by_the_file)
+    }
+
+    pub(crate) fn upsert_named(&self, track: Track, by_the_file: NamedByTheFile) -> Result<Track> {
         let connection = self.0.lock();
         connection
             .execute(
                 "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec)
             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-            ON CONFLICT(uri) DO UPDATE SET name = excluded.name, title = CASE WHEN excluded.title = excluded.name AND documents.title != documents.name THEN documents.title ELSE excluded.title END,
-            artist = coalesce(nullif(excluded.artist, ''), documents.artist), album = coalesce(nullif(excluded.album, ''), documents.album), duration_ms = excluded.duration_ms,
+            ON CONFLICT(uri) DO UPDATE SET name = excluded.name, title = CASE WHEN ?9 AND documents.title != documents.name THEN documents.title ELSE excluded.title END,
+            artist = CASE WHEN ?10 AND documents.artist != '' THEN documents.artist ELSE coalesce(nullif(excluded.artist, ''), documents.artist) END, album = coalesce(nullif(excluded.album, ''), documents.album), duration_ms = excluded.duration_ms,
             rate = excluded.rate, codec = excluded.codec, missing = 0",
                 params![
                     track.uri,
@@ -717,7 +760,9 @@ impl Catalog {
                     track.album,
                     track.duration_ms.min(i64::MAX as u64) as i64,
                     track.rate,
-                    track.codec
+                    track.codec,
+                    by_the_file.title,
+                    by_the_file.artist
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;

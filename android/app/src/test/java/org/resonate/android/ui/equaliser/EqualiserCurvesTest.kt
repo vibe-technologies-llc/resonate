@@ -17,6 +17,7 @@ import org.resonate.android.nativecore.LossyRestoration
 import org.resonate.android.nativecore.PlaybackPreferences
 import org.resonate.android.nativecore.ResamplingPhase
 import org.resonate.android.nativecore.ResamplingQuality
+import org.resonate.android.nativecore.ShuffleStyle
 
 class EqualiserCurvesTest {
     private fun preset(name: String, detail: String, preamp: Float, gains: List<Float>) =
@@ -58,6 +59,13 @@ class EqualiserCurvesTest {
             bufferMs = 500u,
             dsdLikePcm = false,
             crossfeed = CrossfeedLevel.OFF,
+            carriesTheQueueOver = true,
+            skipRepeatsTheQueue = true,
+            previousRestarts = true,
+            shuffle = ShuffleStyle.SMART,
+            shuffleSpreadsArtists = true,
+            shuffleSpreadsAlbums = true,
+            shuffleFreshFirst = true,
         )
 
     private val imported =

@@ -1024,7 +1024,13 @@ final class Library {
     }
 
     func previous() {
-        guard !Steering.previousRestarts(positionMs: clock.positionMs, durationMs: clock.durationMs) else {
+        guard
+            !Steering.previousRestarts(
+                positionMs: clock.positionMs,
+                durationMs: clock.durationMs,
+                restarting: preferences?.previousRestarts ?? true
+            )
+        else {
             steer({ $0.song = nil; $0.restarted = true }) { try $0.previous() }
             return
         }

@@ -39,6 +39,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
     case otherOutputs
     case processing
     case output
+    case playback
     case sleepTimer
     case folders
     case enrichment
@@ -63,7 +64,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
     public var group: SettingsGroup {
         switch self {
         case .equaliser, .headphoneCorrection, .microphoneMeasurement, .roomCorrection, .listeningTest, .otherOutputs,
-            .processing, .output, .sleepTimer:
+            .processing, .output, .playback, .sleepTimer:
             .sound
         case .folders, .enrichment: .library
         case .online, .providers, .server, .scrobbling, .spotify: .online
@@ -90,6 +91,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .listeningTest: .page(.listeningTest)
         case .otherOutputs: .page(.otherOutputs)
         case .processing: .page(.processing)
+        case .playback: .page(.playback)
         case .output: .page(.output)
         case .sleepTimer: .sleepTimer
         case .folders: .page(.folders)
@@ -121,6 +123,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .listeningTest: said("settings.listening-test.title")
         case .otherOutputs: said("settings.other-outputs.title")
         case .processing: said("settings.processing.title")
+        case .playback: said("settings.playback.title")
         case .output: said("settings.output.title")
         case .sleepTimer: said("settings.sleep-timer.title")
         case .folders: said("settings.folders.title")
@@ -152,6 +155,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .listeningTest: said("settings.listening-test.summary")
         case .otherOutputs: said("settings.other-outputs.summary")
         case .processing: said("settings.processing.summary")
+        case .playback: said("settings.playback.summary")
         case .output: said("settings.output.summary")
         case .sleepTimer: said("settings.sleep-timer.summary")
         case .folders: said("settings.folders.summary")
@@ -183,6 +187,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .listeningTest: "ear"
         case .otherOutputs: "hifispeaker.2"
         case .processing: "dial.medium"
+        case .playback: "play.circle"
         case .output: "hifispeaker"
         case .sleepTimer: "moon"
         case .folders: "folder"
@@ -273,6 +278,13 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
                 said("settings.processing.inner.stereo-image"),
                 said("settings.processing.inner.lossy-restoration"),
                 said("settings.processing.inner.player-volume"),
+            ]
+        case .playback:
+            [
+                said("settings.playback.inner.carry-the-queue-over"),
+                said("settings.playback.inner.shuffle-style"),
+                said("settings.playback.inner.skip-repeats-the-queue"),
+                said("settings.playback.inner.previous-restarts"),
             ]
         case .output:
             [

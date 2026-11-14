@@ -1788,6 +1788,30 @@ fn names_the_same_title(tagged: Option<&str>, parsed: &str) -> bool {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NamedByTheFile {
+    pub title: bool,
+    pub artist: bool,
+}
+
+pub fn named_by_the_file(file_name: &str, tags: &mut TagSet) -> NamedByTheFile {
+    let path = Path::new(file_name);
+    let tagged_title = tags.title.is_some();
+    let tagged_artist = tags.artist.is_some();
+
+    name_from_stem(path, tags);
+    if tags.title.is_none() {
+        tags.title = path
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned());
+    }
+
+    NamedByTheFile {
+        title: !tagged_title && tags.title.is_some(),
+        artist: !tagged_artist && tags.artist.is_some(),
+    }
+}
+
 #[derive(Clone, Copy, Default)]
 struct Stemmed {
     named: bool,

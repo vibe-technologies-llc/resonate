@@ -10,6 +10,13 @@ public struct PlaybackPreferencesStore: Sendable {
     private static let routeCurvesKey = "equaliser-curve-for"
     private static let routeCurveNamesKey = "equaliser-curve-name-for"
     private static let routeNamesKey = "equaliser-route-names"
+    private static let resumeKey = "resume"
+    private static let skipRepeatsQueueKey = "skip-repeats-queue"
+    private static let previousRestartsKey = "previous-restarts"
+    private static let shuffleStyleKey = "shuffle-style"
+    private static let shuffleSpreadsArtistsKey = "shuffle-spreads-artists"
+    private static let shuffleSpreadsAlbumsKey = "shuffle-spreads-albums"
+    private static let shuffleFreshFirstKey = "shuffle-fresh-first"
 
     private let suiteName: String
 
@@ -98,6 +105,18 @@ public struct PlaybackPreferencesStore: Sendable {
             preferences.truePeak = storage.bool(forKey: "true-peak")
         }
         preferences.crossfeed = CrossfeedLevel.named(storage.string(forKey: "crossfeed")) ?? preferences.crossfeed
+        preferences.shuffle = ShuffleStyle.named(storage.string(forKey: Self.shuffleStyleKey)) ?? preferences.shuffle
+        let switches: [(String, WritableKeyPath<PlaybackPreferences, Bool>)] = [
+            (Self.resumeKey, \.carriesTheQueueOver),
+            (Self.skipRepeatsQueueKey, \.skipRepeatsTheQueue),
+            (Self.previousRestartsKey, \.previousRestarts),
+            (Self.shuffleSpreadsArtistsKey, \.shuffleSpreadsArtists),
+            (Self.shuffleSpreadsAlbumsKey, \.shuffleSpreadsAlbums),
+            (Self.shuffleFreshFirstKey, \.shuffleFreshFirst),
+        ]
+        for (key, path) in switches where storage.object(forKey: key) != nil {
+            preferences[keyPath: path] = storage.bool(forKey: key)
+        }
 
         if let kept = storage.string(forKey: Self.curveKey) {
             let name = storage.string(forKey: Self.curveNameKey) ?? ""
@@ -123,6 +142,13 @@ public struct PlaybackPreferencesStore: Sendable {
         storage.set(preferences.truePeak, forKey: "true-peak")
         storage.set(preferences.restoration.name, forKey: "restoration")
         storage.set(preferences.crossfeed.name, forKey: "crossfeed")
+        storage.set(preferences.carriesTheQueueOver, forKey: Self.resumeKey)
+        storage.set(preferences.skipRepeatsTheQueue, forKey: Self.skipRepeatsQueueKey)
+        storage.set(preferences.previousRestarts, forKey: Self.previousRestartsKey)
+        storage.set(preferences.shuffle.name, forKey: Self.shuffleStyleKey)
+        storage.set(preferences.shuffleSpreadsArtists, forKey: Self.shuffleSpreadsArtistsKey)
+        storage.set(preferences.shuffleSpreadsAlbums, forKey: Self.shuffleSpreadsAlbumsKey)
+        storage.set(preferences.shuffleFreshFirst, forKey: Self.shuffleFreshFirstKey)
     }
 
     private func keepCurve(_ curve: EqualiserCurve, in storage: UserDefaults) {

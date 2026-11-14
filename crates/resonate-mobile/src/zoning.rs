@@ -670,17 +670,24 @@ impl MobilePlayer {
         if let Some(impulse) = self.room.applied() {
             zone.player.send(Command::SetConvolution(Some(impulse)))?;
         }
+        for command in self.preferences.lock().behaviour() {
+            zone.player.send(command)?;
+        }
         Ok(zone)
     }
 
-    pub(crate) fn restore_zones(self: &Arc<Self>, kept: &[KeptZone]) -> Result<()> {
+    pub(crate) fn restore_zones(
+        self: &Arc<Self>,
+        kept: &[KeptZone],
+        carried_over: bool,
+    ) -> Result<()> {
         let zones = self.playing.zones()?;
         for kept in kept.iter().filter(|kept| !kept.id.is_first()) {
             if let Err(error) = self.zone_opened(&zones, kept, 0) {
                 tracing::warn!(%error, zone = %kept.id, "a zone kept from the last run did not open");
                 continue;
             }
-            if let Err(error) = self.resume_saved_in(kept.id) {
+            if carried_over && let Err(error) = self.resume_saved_in(kept.id) {
                 tracing::warn!(%error, zone = %kept.id, "a zone's queue kept from the last run was not taken up");
             }
             crate::watching::keep(self, kept.id);
