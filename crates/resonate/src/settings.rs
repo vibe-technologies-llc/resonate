@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
 use clap::ValueEnum;
+#[cfg(feature = "online")]
+use parking_lot::Mutex;
 use resonate_core::{Switch, Trim};
 use resonate_engine::{
     DitherKind, FilterPhase, NodeName, NoiseShaping, Plays, PreviousRestarts, Quality,
@@ -14,7 +16,7 @@ use toml_edit::{Array, Value};
 use crate::{
     ConfigKey,
     cli::{DitherArg, FilterPhaseArg, NoiseShapingArg, QualityArg},
-    config::{self, Editing},
+    config::{self, Config, Editing},
     metered, online,
     vocabulary::Meaning,
 };
@@ -23,11 +25,34 @@ const MILLIBELS_PER_DECIBEL: f64 = 100.0;
 
 pub struct File {
     path: PathBuf,
+    #[cfg(feature = "online")]
+    held: Mutex<Config>,
 }
 
 impl File {
-    pub const fn at(path: PathBuf) -> Self {
+    #[cfg(feature = "online")]
+    pub fn at(path: PathBuf, held: Config) -> Self {
+        Self {
+            path,
+            held: Mutex::new(held),
+        }
+    }
+
+    #[cfg(not(feature = "online"))]
+    pub fn at(path: PathBuf, _: Config) -> Self {
         Self { path }
+    }
+
+    #[cfg(feature = "online")]
+    fn reread(&self) -> Config {
+        let mut held = self.held.lock();
+        match config::load(Some(&self.path)) {
+            Ok(read) => *held = read,
+            Err(error) => {
+                tracing::warn!(%error, "the settings file would not read again after a write; the last read stands")
+            }
+        }
+        held.clone()
     }
 }
 
@@ -132,21 +157,16 @@ impl Settings for File {
                 }
                 #[cfg(feature = "online")]
                 SettingChange::Store(Setting::Switched(Switch::MusicbrainzMirror, mirrors)) => {
-                    crate::musicbrainz::follow(
-                        &config::load(Some(&self.path)).unwrap_or_default(),
-                        *mirrors,
-                    );
+                    crate::musicbrainz::follow(&self.reread(), *mirrors);
                 }
                 #[cfg(feature = "online")]
                 SettingChange::Store(Setting::MusicbrainzReplicationToken(_)) => {
-                    crate::musicbrainz::follow_the_changes(
-                        &config::load(Some(&self.path)).unwrap_or_default(),
-                    );
+                    crate::musicbrainz::follow_the_changes(&self.reread());
                 }
                 #[cfg(feature = "online")]
                 SettingChange::Forget(ConfigKey::MusicbrainzMirror) => {
                     crate::musicbrainz::follow(
-                        &config::load(Some(&self.path)).unwrap_or_default(),
+                        &self.reread(),
                         ConfigKey::MusicbrainzMirror.switched(None),
                     );
                 }
@@ -447,10 +467,32 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(feature = "online")]
+    fn a_file_that_will_not_read_again_leaves_the_last_read_standing_rather_than_the_defaults() {
+        let folder = env::temp_dir().join(format!("resonate-settings-reread-{}", process::id()));
+        let path = folder.join("config.toml");
+        fs::create_dir_all(&folder).expect("a folder");
+        fs::write(&path, "musicbrainz-mirror = true\n").expect("a file");
+        let file = File::at(path.clone(), Config::default());
+
+        let read = file.reread();
+        assert!(read.is_on(Switch::MusicbrainzMirror));
+
+        fs::write(&path, "musicbrainz-mirror = [\n").expect("a broken file");
+        let again = file.reread();
+        let _ = fs::remove_dir_all(&folder);
+
+        assert!(
+            again.is_on(Switch::MusicbrainzMirror),
+            "a file that would not read started or stopped the copy as if under defaults"
+        );
+    }
+
+    #[test]
     fn music_filters_written_by_the_pane_read_back_and_reset_to_the_current_behavior() {
         let folder = env::temp_dir().join(format!("resonate-settings-filters-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let filters = resonate_library::MusicFilters {
             extensions: resonate_library::MusicExtensions::parse(&[".MP3", ".flac", ".m4a"])
                 .expect("supported extensions"),
@@ -493,7 +535,7 @@ mod tests {
     fn every_noise_shaping_the_pane_writes_reads_back_as_itself() {
         let folder = env::temp_dir().join(format!("resonate-settings-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
 
         for shaping in [
             NoiseShaping::None,
@@ -516,7 +558,7 @@ mod tests {
     fn every_youtube_music_setting_the_pane_writes_reads_back_as_itself() {
         let folder = env::temp_dir().join(format!("resonate-settings-ytmusic-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
 
         file.apply(&[
             SettingChange::Store(Setting::Switched(Switch::YoutubeMusic, true)),
@@ -549,7 +591,7 @@ mod tests {
     fn a_pre_amp_and_an_untagged_gain_the_pane_writes_read_back_as_themselves() {
         let folder = env::temp_dir().join(format!("resonate-settings-levels-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let raised = Trim::from_millibels(300).expect("a trim");
         let lowered = Trim::from_millibels(-650).expect("a trim");
 
@@ -568,7 +610,7 @@ mod tests {
     fn a_device_given_its_own_curve_by_the_pane_reads_back_bound_to_it() {
         let folder = env::temp_dir().join(format!("resonate-settings-own-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let sink = NodeName::new("alsa_output.usb-Topping_E30-00.analog-stereo");
 
         file.apply(&[SettingChange::Store(Setting::EqualiserFor {
@@ -609,7 +651,7 @@ mod tests {
     fn a_speaker_angle_the_pane_chooses_reads_back_and_one_put_back_is_gone() {
         let folder = env::temp_dir().join(format!("resonate-settings-angle-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let wide = SpeakerAngle::from_degrees(45).expect("an angle");
 
         file.apply(&[SettingChange::Store(Setting::SpeakerAngle(wide))])
@@ -629,7 +671,7 @@ mod tests {
     fn a_speaker_elevation_the_pane_chooses_reads_back_and_one_put_back_is_gone() {
         let folder = env::temp_dir().join(format!("resonate-settings-raised-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let lowered = SpeakerElevation::from_degrees(-15).expect("an elevation");
 
         file.apply(&[SettingChange::Store(Setting::SpeakerElevation(lowered))])
@@ -649,7 +691,7 @@ mod tests {
     fn a_head_yaw_the_pane_chooses_reads_back_and_one_put_back_is_gone() {
         let folder = env::temp_dir().join(format!("resonate-settings-yawed-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let turned = HeadYaw::from_degrees(-35).expect("a yaw");
 
         file.apply(&[SettingChange::Store(Setting::HeadYaw(turned))])
@@ -669,7 +711,7 @@ mod tests {
     fn a_measurer_the_pane_prefers_reads_back_and_one_put_back_is_gone() {
         let folder = env::temp_dir().join(format!("resonate-settings-measurer-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
 
         file.apply(&[SettingChange::Store(Setting::EqualiserMeasurer(Some(
             "Rtings".to_owned(),
@@ -692,7 +734,7 @@ mod tests {
         let folder =
             env::temp_dir().join(format!("resonate-settings-measurer-for-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let dac = NodeName::new("alsa_output.dac");
 
         file.apply(&[
@@ -729,7 +771,7 @@ mod tests {
             process::id()
         ));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let renderer = NodeName::new("upnp:uuid:streamer");
         let plays = Plays::from_iter([Trial::FlacAt192kHz, Trial::SixChannels]);
 
@@ -758,7 +800,7 @@ mod tests {
     fn an_inbox_the_pane_names_reads_back_and_one_put_back_is_gone() {
         let folder = env::temp_dir().join(format!("resonate-settings-inbox-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let inbox = PathBuf::from("/music/inbox");
 
         file.apply(&[SettingChange::Store(Setting::Inbox(inbox.clone()))])
@@ -781,7 +823,7 @@ mod tests {
     fn what_other_devices_may_do_reads_back_as_chosen_and_one_forgotten_is_everything_again() {
         let folder = env::temp_dir().join(format!("resonate-settings-control-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
 
         for trust in RemoteTrust::ALL {
             file.apply(&[SettingChange::Store(Setting::SyncControl(trust))])
@@ -807,7 +849,7 @@ mod tests {
     fn the_metered_switches_read_back_and_one_forgotten_is_the_default_again() {
         let folder = env::temp_dir().join(format!("resonate-settings-metered-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
 
         file.apply(&[
             SettingChange::Store(Setting::Switched(Switch::EnrichOnMetered, true)),
@@ -838,7 +880,7 @@ mod tests {
     fn renderers_the_pane_names_for_flac_read_back_as_vouched_and_none_left_clears_the_key() {
         let folder = env::temp_dir().join(format!("resonate-settings-flac-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let named: BTreeSet<NodeName> = [
             NodeName::new("upnp:uuid:streamer"),
             NodeName::new("upnp:uuid:amplifier"),
@@ -867,7 +909,7 @@ mod tests {
     fn a_vault_the_pane_names_reads_back_for_the_next_start() {
         let folder = env::temp_dir().join(format!("resonate-settings-vault-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let vault = PathBuf::from("/archive/vault");
 
         file.apply(&[SettingChange::Store(Setting::Vault(vault.clone()))])
@@ -884,7 +926,7 @@ mod tests {
     fn a_music_folder_the_pane_names_reads_back_and_one_put_back_is_gone() {
         let folder = env::temp_dir().join(format!("resonate-settings-music-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let music = PathBuf::from("/music/library");
 
         file.apply(&[SettingChange::Store(Setting::MusicFolder(music.clone()))])
@@ -907,7 +949,7 @@ mod tests {
     fn a_batch_lands_whole_in_one_write_and_a_refused_setting_leaves_the_rest() {
         let folder = env::temp_dir().join(format!("resonate-settings-batch-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let unwritable = PathBuf::from(os_bytes::os_string_from(b"/music/\xed\xa0\x80".to_vec()));
 
         let refused = file.apply(&[
@@ -945,7 +987,7 @@ mod tests {
     fn every_discord_setting_the_pane_writes_reads_back_as_the_presence_it_named() {
         let folder = env::temp_dir().join(format!("resonate-settings-discord-{}", process::id()));
         let path = folder.join("config.toml");
-        let file = File::at(path.clone());
+        let file = File::at(path.clone(), Config::default());
         let named = Presence {
             enabled: true,
             app: AppId::parse("1234567890123456789"),
