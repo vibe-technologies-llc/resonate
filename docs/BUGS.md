@@ -149,20 +149,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   bit differs from the decoder's (`Channel count mismatch`) and keeps no stream-channel state a
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
-## The window
-- [S · 0.11.1] Enter on a row of a search-narrowed playlist marks the whole playlist as playing:
-  `acting.rs` passes `true` for `whole` under `Shift::Playlist` where every pointer path passes
-  `!narrowed`, so the queue's *Continue playing* heading, the playlists' badge and the playlist's
-  last-played stamp name a list of which only the matching rows were queued
-- [S · 0.12.0] A queue or playlist row menu acts on the index it was opened at: `queue.rs` captures
-  the row's position when the menu is built and *Play* and *Take out of the queue* send it by
-  position, guarded by the revision at the press rather than the one the menu was built from, so a
-  queue moved underneath (a party request, a device driving the zone, a handover, a download playing
-  on arrival) has the wrong song jumped to or taken out; the playlist row menu removes by position
-  the same way
-- [S · 0.12.0] An analysis of no frames reports its progress as NaN: `resonate-analysis`'s
-  `watch.rs` divides by the length with no zero guard and `clamp` lets NaN through
-
 ## The binary
 - [M · 0.12.0] The window's pipe and socket keep a client's thread after its player stops serving:
   `Answering::serve` reads `closed` only after a frame arrives and `listening.rs` runs each client on

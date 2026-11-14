@@ -659,12 +659,17 @@ impl PlayerModel {
     }
 
     pub fn send_by_position(&self, command: Command) {
-        if let Err(error) = self
-            .player
-            .send_if_the_queue_is_still(self.queued.revision, command)
-        {
+        self.send_by_position_at(self.queued.revision, command);
+    }
+
+    pub fn send_by_position_at(&self, revision: u64, command: Command) {
+        if let Err(error) = self.player.send_if_the_queue_is_still(revision, command) {
             tracing::error!(?error, "the engine refused a transport command");
         }
+    }
+
+    pub fn is_queued_at(&self, revision: u64) -> bool {
+        self.queued.revision == revision
     }
 
     fn title_of(&self, track: TrackId) -> Option<String> {

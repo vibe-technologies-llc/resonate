@@ -572,6 +572,7 @@ impl RootView {
         let shown = (f32::from(height) / theme::row_height()) as usize;
         let lines = parts.lines() + parts.room_below(shown);
         let heading = self.queue_heading(&queue, cx);
+        let drawn_at = self.player.read(cx).queued().revision;
         let scroll = self.scrolls.queue_rows.clone();
         let reaching = self
             .reaching(Shift::Queue)
@@ -779,7 +780,17 @@ impl RootView {
                                                     ),
                                                     move |this, _, cx| {
                                                         cx.stop_propagation();
-                                                        this.drop_rows(Shift::Queue, acting_on, cx);
+                                                        if this
+                                                            .player
+                                                            .read(cx)
+                                                            .is_queued_at(drawn_at)
+                                                        {
+                                                            this.drop_rows(
+                                                                Shift::Queue,
+                                                                acting_on,
+                                                                cx,
+                                                            );
+                                                        }
                                                     },
                                                     cx,
                                                 )),
@@ -789,7 +800,8 @@ impl RootView {
                                                 let extending = event.modifiers().shift;
                                                 this.reach_at(Shift::Queue, index, extending, cx);
                                                 if !extending {
-                                                    this.send_by_position(
+                                                    this.send_by_position_at(
+                                                        drawn_at,
                                                         Command::JumpTo(index),
                                                         cx,
                                                     );
@@ -815,7 +827,8 @@ impl RootView {
                                                     words::menu::play(),
                                                     "enter",
                                                     move |this, _, cx| {
-                                                        this.send_by_position(
+                                                        this.send_by_position_at(
+                                                            drawn_at,
                                                             Command::JumpTo(index),
                                                             cx,
                                                         );
@@ -836,7 +849,13 @@ impl RootView {
                                                     words::menu::take_out(),
                                                     "delete",
                                                     move |this, _, cx| {
-                                                        this.drop_rows(Shift::Queue, taken, cx);
+                                                        if this
+                                                            .player
+                                                            .read(cx)
+                                                            .is_queued_at(drawn_at)
+                                                        {
+                                                            this.drop_rows(Shift::Queue, taken, cx);
+                                                        }
                                                     },
                                                 )
                                         },

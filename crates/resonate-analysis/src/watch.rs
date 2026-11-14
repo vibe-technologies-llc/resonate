@@ -71,4 +71,13 @@ mod tests {
         watch.stop();
         assert!(watch.stopped());
     }
+
+    #[test]
+    fn a_pass_over_no_frames_has_no_share_to_report_rather_than_not_a_number() {
+        let watch = Watch::default();
+
+        watch.reached(Frames(0), Some(Frames(0)));
+
+        assert_eq!(watch.share(), None);
+    }
 }

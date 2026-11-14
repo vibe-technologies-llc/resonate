@@ -15,6 +15,10 @@ impl LibraryModel {
             .then(|| self.shelf.entries.to_vec())
     }
 
+    pub fn entries_are(&self, drawn: &[PlaylistEntry]) -> bool {
+        *self.shelf.entries == *drawn
+    }
+
     pub fn playing_playlist(&self, queue: QueueStamp) -> Option<PlaylistId> {
         self.library.playing_playlist(queue)
     }
