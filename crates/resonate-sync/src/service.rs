@@ -36,6 +36,7 @@ use crate::{
         AskedForExport, AskedToConsult, Consultable, Consulting, ExportFetched, ExportHeld,
         ExportPart, ExportReceiving,
     },
+    fresh::{HeardOnce, Unfresh, wall_seconds},
     key::{Derived, PAIRING_LINK, hex, random_bytes},
     ledger::{Follow, Me, lacked},
     merge::one_recording_a_song,
@@ -55,9 +56,9 @@ use crate::{
     stun::{Reflector, STUN_PORT},
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
     wire::{
-        Beacon, COVERS_ASKED_AT_MOST, FromServer, LARGEST_FRAME, LARGEST_RECORD,
+        Beacon, COVERS_ASKED_AT_MOST, Candidates, FromServer, LARGEST_FRAME, LARGEST_RECORD,
         LYRICSFILES_ASKED_AT_MOST, PRINTS_ASKED_AT_MOST, PROTOCOL_VERSION, Refusal, ToServer,
-        decoded_bundle, decoded_candidates, encoded_bundle, encoded_candidates, encoded_change,
+        decoded_bundle, encoded_bundle, encoded_change,
     },
 };
 
@@ -93,6 +94,8 @@ const WATCH_LAPSES_AFTER: Duration = Duration::from_secs(30);
 const SERVER_ANSWERS_WITHIN: Duration = Duration::from_secs(15);
 const PUNCH_ANSWERED_AT_MOST_EVERY: Duration = Duration::from_secs(10);
 const LARGEST_CANDIDATES_OPENED: usize = 64 * 1024;
+const PUNCH_SEALED_WITHIN: Duration = Duration::from_secs(2 * 60);
+const PUNCHES_HEARD_AT_MOST: usize = 4096;
 const KNOWN_DEVICES_ANSWERED_AT_MOST: usize = 1024;
 const STRANGERS_ANSWERED_AT_MOST: usize = 16;
 const RELAY_DIAL_WITHIN: Duration = Duration::from_secs(20);
@@ -559,6 +562,7 @@ struct Syncing {
     peers: BTreeMap<DeviceId, Connection>,
     punched_back: BTreeMap<DeviceId, Instant>,
     strangers_answered: BTreeMap<DeviceId, Instant>,
+    punches_heard: HeardOnce,
     waiting: BTreeMap<DeviceId, Vec<Work>>,
     followed: BTreeMap<DeviceId, Instant>,
     following: BTreeSet<DeviceId>,
@@ -1360,33 +1364,56 @@ fn may_answer(table: &mut BTreeMap<DeviceId, Instant>, device: DeviceId, at_most
     true
 }
 
+#[derive(Debug, thiserror::Error)]
+enum Unpunched {
+    #[error("its candidates do not read")]
+    Unread(#[source] Error),
+
+    #[error("its candidates were sealed by {asker:?} for {asked:?}")]
+    ForAnotherPair { asker: DeviceId, asked: DeviceId },
+
+    #[error("its candidates are not fresh")]
+    Unfresh(#[source] Unfresh),
+}
+
+struct PunchHeard<'a> {
+    from: DeviceId,
+    to: DeviceId,
+    address: SocketAddr,
+    sealed: &'a [u8],
+}
+
 fn punched_candidates(
     derived: &Derived,
-    address: SocketAddr,
-    sealed: &[u8],
-) -> Option<Vec<SocketAddr>> {
-    let theirs = match opened(
+    heard: PunchHeard<'_>,
+    punches: &mut HeardOnce,
+    now: u64,
+) -> std::result::Result<Vec<SocketAddr>, Unpunched> {
+    let theirs = opened(
         &derived.sealer,
         derived.space,
-        sealed,
+        heard.sealed,
         LARGEST_CANDIDATES_OPENED,
     )
-    .and_then(|plain| decoded_candidates(&plain))
-    {
-        Ok(theirs) => theirs,
-        Err(error) => {
-            tracing::debug!(%error, "a peer's candidates could not be read");
-            return None;
-        }
-    };
-    let mut candidates = Vec::with_capacity(theirs.len() + 1);
-    if !address.ip().is_unspecified() {
-        candidates.push(address);
+    .and_then(|plain| Candidates::decoded(&plain))
+    .map_err(Unpunched::Unread)?;
+    if theirs.asker != heard.from || theirs.asked != heard.to {
+        return Err(Unpunched::ForAnotherPair {
+            asker: theirs.asker,
+            asked: theirs.asked,
+        });
     }
-    candidates.extend(theirs);
+    punches
+        .admit(heard.sealed, theirs.sealed_at, now)
+        .map_err(Unpunched::Unfresh)?;
+    let mut candidates = Vec::with_capacity(theirs.addresses.len() + 1);
+    if !heard.address.ip().is_unspecified() {
+        candidates.push(heard.address);
+    }
+    candidates.extend(theirs.addresses);
     candidates.dedup();
 
-    Some(candidates)
+    Ok(candidates)
 }
 
 pub(crate) async fn within<T>(waiting: impl Future<Output = Result<T>>) -> Result<T> {
@@ -1574,6 +1601,7 @@ impl Syncing {
             peers: BTreeMap::new(),
             punched_back: BTreeMap::new(),
             strangers_answered: BTreeMap::new(),
+            punches_heard: HeardOnce::new(PUNCH_SEALED_WITHIN, PUNCHES_HEARD_AT_MOST),
             waiting: BTreeMap::new(),
             followed: BTreeMap::new(),
             following: BTreeSet::new(),
@@ -2478,10 +2506,16 @@ impl Syncing {
         let Some(link) = self.server.as_ref() else {
             return Ok(());
         };
+        let candidates = Candidates {
+            asker: self.running.device,
+            asked: device,
+            sealed_at: wall_seconds(),
+            addresses: candidates,
+        };
         let sealed = sealed(
             &self.running.derived.sealer,
             self.running.derived.space,
-            &encoded_candidates(&candidates),
+            &candidates.encoded(),
         )?;
         link.say(&ToServer::Punch { to: device, sealed })
     }
@@ -2542,9 +2576,23 @@ impl Syncing {
         if connected {
             return Ok(());
         }
-        let Some(mut candidates) = punched_candidates(&self.running.derived, address, sealed)
-        else {
-            return Ok(());
+        let heard = PunchHeard {
+            from: device,
+            to: self.running.device,
+            address,
+            sealed,
+        };
+        let mut candidates = match punched_candidates(
+            &self.running.derived,
+            heard,
+            &mut self.punches_heard,
+            wall_seconds(),
+        ) {
+            Ok(candidates) => candidates,
+            Err(unpunched) => {
+                tracing::debug!(%unpunched, "a punch was not acted on");
+                return Ok(());
+            }
         };
         if !self.waiting.contains_key(&device) {
             let known = self.knows_device(device);
@@ -3277,6 +3325,25 @@ mod tests {
         SocketAddr::from(([203, 0, 113, 9], 4000))
     }
 
+    const NOW: u64 = 1_790_000_000;
+
+    fn sealed_punch(derived: &Derived, candidates: &Candidates) -> Vec<u8> {
+        sealed(&derived.sealer, derived.space, &candidates.encoded()).expect("sealed")
+    }
+
+    fn heard_punch(sealed: &[u8]) -> PunchHeard<'_> {
+        PunchHeard {
+            from: DeviceId([1; 16]),
+            to: DeviceId([2; 16]),
+            address: observed(),
+            sealed,
+        }
+    }
+
+    fn fresh_punches() -> HeardOnce {
+        HeardOnce::new(PUNCH_SEALED_WITHIN, PUNCHES_HEARD_AT_MOST)
+    }
+
     #[test]
     fn the_address_a_server_observed_joins_the_candidates_only_when_the_sealed_ones_open() {
         let derived = SyncKey::minted()
@@ -3288,25 +3355,83 @@ mod tests {
             .derived()
             .expect("derived");
         let theirs = SocketAddr::from(([192, 168, 1, 7], 5000));
-        let sealed_candidates = sealed(
-            &derived.sealer,
-            derived.space,
-            &encoded_candidates(&[theirs]),
-        )
-        .expect("sealed");
-        let foreign = sealed(
-            &stranger.sealer,
-            derived.space,
-            &encoded_candidates(&[theirs]),
-        )
-        .expect("sealed");
+        let candidates = Candidates {
+            asker: DeviceId([1; 16]),
+            asked: DeviceId([2; 16]),
+            sealed_at: NOW,
+            addresses: vec![theirs],
+        };
+        let sealed_candidates = sealed_punch(&derived, &candidates);
+        let foreign = sealed_punch(&stranger, &candidates);
+        let mut punches = fresh_punches();
 
         assert_eq!(
-            punched_candidates(&derived, observed(), &sealed_candidates),
+            punched_candidates(&derived, heard_punch(&sealed_candidates), &mut punches, NOW).ok(),
             Some(vec![observed(), theirs])
         );
-        assert_eq!(punched_candidates(&derived, observed(), &foreign), None);
-        assert_eq!(punched_candidates(&derived, observed(), &[0; 8]), None);
+        assert!(matches!(
+            punched_candidates(&derived, heard_punch(&foreign), &mut punches, NOW),
+            Err(Unpunched::Unread(_))
+        ));
+        assert!(matches!(
+            punched_candidates(&derived, heard_punch(&[0; 8]), &mut punches, NOW),
+            Err(Unpunched::Unread(_))
+        ));
+    }
+
+    #[test]
+    fn a_punch_replayed_under_another_pair_late_or_twice_dials_nothing() {
+        let derived = SyncKey::minted()
+            .expect("randomness")
+            .derived()
+            .expect("derived");
+        let candidates = Candidates {
+            asker: DeviceId([1; 16]),
+            asked: DeviceId([2; 16]),
+            sealed_at: NOW,
+            addresses: vec![SocketAddr::from(([192, 168, 1, 7], 5000))],
+        };
+        let genuine = sealed_punch(&derived, &candidates);
+        let to_another = sealed_punch(
+            &derived,
+            &Candidates {
+                asked: DeviceId([3; 16]),
+                ..candidates.clone()
+            },
+        );
+        let from_another = sealed_punch(
+            &derived,
+            &Candidates {
+                asker: DeviceId([4; 16]),
+                ..candidates.clone()
+            },
+        );
+        let stale = sealed_punch(
+            &derived,
+            &Candidates {
+                sealed_at: NOW - PUNCH_SEALED_WITHIN.as_secs() - 1,
+                ..candidates.clone()
+            },
+        );
+        let mut punches = fresh_punches();
+
+        assert!(matches!(
+            punched_candidates(&derived, heard_punch(&to_another), &mut punches, NOW),
+            Err(Unpunched::ForAnotherPair { .. })
+        ));
+        assert!(matches!(
+            punched_candidates(&derived, heard_punch(&from_another), &mut punches, NOW),
+            Err(Unpunched::ForAnotherPair { .. })
+        ));
+        assert!(matches!(
+            punched_candidates(&derived, heard_punch(&stale), &mut punches, NOW),
+            Err(Unpunched::Unfresh(Unfresh::OutsideTheWindow { .. }))
+        ));
+        assert!(punched_candidates(&derived, heard_punch(&genuine), &mut punches, NOW).is_ok());
+        assert!(matches!(
+            punched_candidates(&derived, heard_punch(&genuine), &mut punches, NOW + 1),
+            Err(Unpunched::Unfresh(Unfresh::HeardAlready))
+        ));
     }
 
     fn named(title: &str) -> Recording {

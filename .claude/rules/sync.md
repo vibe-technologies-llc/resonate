@@ -804,7 +804,18 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   the server hands the asked device the asker's observed address and those candidates; the asked
   device dials them and punches back with its own; both dial every candidate at once and the first
   connection wins. **A `Punched` frame is acted on only where its sealed candidates open under the
-  space's key** (`punched_candidates`): the address the server observed joins the candidates only then.
+  space's key and were sealed for this pair, lately, once** (`punched_candidates`): the sealed
+  `Candidates` name the asker, the asked device and the wall second they were sealed at beside the
+  addresses, and a list whose asker is not the device the frame names, whose asked device is not
+  this one, sealed more than `PUNCH_SEALED_WITHIN` (2 minutes) either side of this device's clock,
+  or heard already (`fresh::HeardOnce`, the SHA-256 of each sealed blob kept for the window, at most
+  `PUNCHES_HEARD_AT_MOST`) dials nothing (`a_punch_replayed_under_another_pair_late_or_twice_dials_nothing`).
+  The address the server observed joins the candidates only then, so the server can name an address
+  only beside a punch a device of the space asked of this one within the window, once. The list
+  opens on a zero byte, which a build before it reads as an empty list followed by bytes it refuses,
+  and a build with it refuses the earlier bare list: punches between the two fail on both sides,
+  dialling nothing, and such devices still meet on one network
+  (`candidates_name_their_pair_and_time_and_neither_build_reads_the_others_list`).
   A device the ledger lists (`Ledger::knows_device`) is answered through `punched_back`; one not yet
   listed, as a new one is before its note arrives, is answered through a table of its own capped at
   `STRANGERS_ANSWERED_AT_MOST` (16); both tables are pruned past `PUNCH_ANSWERED_AT_MOST_EVERY`, so a

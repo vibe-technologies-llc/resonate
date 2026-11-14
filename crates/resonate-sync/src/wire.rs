@@ -35,6 +35,8 @@ pub const LARGEST_BLOB: usize = LARGEST_FRAME;
 pub const LARGEST_RECORD: usize = 256 * 1024;
 pub const LARGEST_DATAGRAM: usize = 2048;
 const RECORD_AT_LEAST: usize = 2;
+const CANDIDATES_READ_AS_NONE_BEFORE: u8 = 0;
+const CANDIDATES_BOUND_TO_A_PAIR: u8 = 1;
 const BAND_LEVELS_AT_MOST: usize = 256;
 const BAND_PEAKS_AT_MOST: usize = 1_024;
 const ANSWER_LYRICS: u8 = 0;
@@ -351,6 +353,14 @@ pub struct Beacon {
     pub port: u16,
     pub answering: bool,
     pub addresses: Vec<IpAddr>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Candidates {
+    pub asker: DeviceId,
+    pub asked: DeviceId,
+    pub sealed_at: u64,
+    pub addresses: Vec<SocketAddr>,
 }
 
 #[derive(Default)]
@@ -1973,24 +1983,45 @@ impl Beacon {
     }
 }
 
-pub fn encoded_candidates(candidates: &[SocketAddr]) -> Vec<u8> {
-    let mut writer = Writer::new();
-    writer.length(candidates.len());
-    for candidate in candidates {
-        writer.address(*candidate);
+impl Candidates {
+    pub fn encoded(&self) -> Vec<u8> {
+        let mut writer = Writer::new();
+        writer.byte(CANDIDATES_READ_AS_NONE_BEFORE);
+        writer.byte(CANDIDATES_BOUND_TO_A_PAIR);
+        writer.device(self.asker);
+        writer.device(self.asked);
+        writer.number(self.sealed_at);
+        writer.length(self.addresses.len());
+        for address in &self.addresses {
+            writer.address(*address);
+        }
+        writer.finish()
     }
-    writer.finish()
-}
 
-pub fn decoded_candidates(bytes: &[u8]) -> Result<Vec<SocketAddr>> {
-    let mut reader = Reader::new(bytes);
-    let count = reader.count()?;
-    let mut candidates = reserved(count);
-    for _ in 0..count {
-        candidates.push(reader.address()?);
+    pub fn decoded(bytes: &[u8]) -> Result<Self> {
+        let mut reader = Reader::new(bytes);
+        for expected in [CANDIDATES_READ_AS_NONE_BEFORE, CANDIDATES_BOUND_TO_A_PAIR] {
+            let tag = reader.byte()?;
+            if tag != expected {
+                return Err(Error::Malformed(Malformed::Tag { tag }));
+            }
+        }
+        let asker = reader.device()?;
+        let asked = reader.device()?;
+        let sealed_at = reader.number()?;
+        let count = reader.count()?;
+        let mut addresses = reserved(count);
+        for _ in 0..count {
+            addresses.push(reader.address()?);
+        }
+        reader.done()?;
+        Ok(Self {
+            asker,
+            asked,
+            sealed_at,
+            addresses,
+        })
     }
-    reader.done()?;
-    Ok(candidates)
 }
 
 const PLATFORM_LINUX: u8 = 0;
@@ -3364,6 +3395,46 @@ mod tests {
             Beacon::decoded(&writer.finish()),
             Err(Error::Malformed(Malformed::Number))
         ));
+    }
+
+    fn older_builds_candidates(bytes: &[u8]) -> Result<Vec<SocketAddr>> {
+        let mut reader = Reader::new(bytes);
+        let count = reader.count()?;
+        let mut candidates = Vec::new();
+        for _ in 0..count {
+            candidates.push(reader.address()?);
+        }
+        reader.done()?;
+        Ok(candidates)
+    }
+
+    fn older_builds_list(addresses: &[SocketAddr]) -> Vec<u8> {
+        let mut writer = Writer::new();
+        writer.length(addresses.len());
+        for address in addresses {
+            writer.address(*address);
+        }
+        writer.finish()
+    }
+
+    #[test]
+    fn candidates_name_their_pair_and_time_and_neither_build_reads_the_others_list() {
+        let candidates = Candidates {
+            asker: DeviceId([1; DEVICE_BYTES]),
+            asked: DeviceId([2; DEVICE_BYTES]),
+            sealed_at: 1_790_000_000,
+            addresses: vec![
+                SocketAddr::from(([192, 168, 1, 7], 5000)),
+                SocketAddr::from((Ipv6Addr::LOCALHOST, 6000)),
+            ],
+        };
+
+        let encoded = candidates.encoded();
+
+        assert_eq!(Candidates::decoded(&encoded).expect("decoded"), candidates);
+        assert!(older_builds_candidates(&encoded).is_err());
+        assert!(Candidates::decoded(&older_builds_list(&candidates.addresses)).is_err());
+        assert!(Candidates::decoded(&older_builds_list(&[])).is_err());
     }
 
     #[test]

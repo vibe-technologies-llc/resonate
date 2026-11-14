@@ -2,6 +2,7 @@ mod catalog;
 mod change;
 mod consulted;
 mod error;
+mod fresh;
 #[cfg(fuzzing)]
 mod fuzzing;
 mod key;

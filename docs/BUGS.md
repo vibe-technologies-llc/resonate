@@ -32,11 +32,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `appendingPathComponent` takes whole, and `open`, `delete` and `fileNumber` then reach outside the
   granted folder; `documents::location` checks only the scheme. No reachable hostile URI was found,
   but one from an imported list or another device would do it
-- [S · 0.12.0] A server can still make a device dial an address, against `sync.md`: the sealed punch
-  candidates (`wire.rs`) carry addresses alone, no sender, target or time, and
-  `service::punched_candidates` puts the server's `address` first once any old blob opens, so a
-  server, or anyone holding an earlier blob, replays it under any device with any address and the
-  device sends QUIC Initials there. Seal the asker, the target and a coarse time, or correct the rule
 - [S · 0.12.0] A nearby `Beacon` opens for ever and is answered to whatever source it came from: it
   holds no time or counter, and `beacon_heard` puts the datagram's source first among the candidates,
   answers it by unicast and dials it for up to a minute, so one beacon heard on the network and
