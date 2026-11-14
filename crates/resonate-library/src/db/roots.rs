@@ -84,6 +84,11 @@ impl Library {
             transaction
                 .execute(ASK_AGAIN_FOR_WHAT_A_FORGOTTEN_DELIVERY_HELD, params![path])
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
+            deleted::keep_listens_as_unheld(
+                transaction,
+                "t.root_id IS NULL AND t.path = ?1",
+                params![path],
+            )?;
             let forgotten = transaction
                 .execute(
                     "DELETE FROM tracks WHERE root_id IS NULL AND path = ?1",

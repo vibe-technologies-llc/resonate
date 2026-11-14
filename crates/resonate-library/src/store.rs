@@ -1290,6 +1290,11 @@ pub fn prune(tx: &Transaction<'_>, roots: &[i64], generation: i64) -> Result<u64
     }
     let scoped = scoped(roots);
 
+    deleted::keep_listens_as_unheld(
+        tx,
+        &format!("t.seen = -?1 AND t.root_id IN ({scoped}) AND t.vault_key IS NULL"),
+        params![generation],
+    )?;
     let removed = tx
         .execute(
             &format!(
@@ -1322,6 +1327,7 @@ fn superseded_in_the_vault(tx: &Transaction<'_>, scoped: &str, generation: i64) 
         if !path_of(&path).exists() {
             continue;
         }
+        deleted::keep_listens_as_unheld(tx, "t.id = ?1", params![id])?;
         removed += tx
             .execute("DELETE FROM tracks WHERE id = ?1", params![id])
             .map_err(|source| Error::store(StoreOp::Delete, source))?;

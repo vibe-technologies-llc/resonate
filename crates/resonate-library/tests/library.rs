@@ -31495,3 +31495,79 @@ fn an_object_that_no_longer_reads_back_is_found_and_only_mended_when_asked() -> 
     );
     Ok(())
 }
+
+#[test]
+fn a_file_the_scan_prunes_keeps_its_listens_and_has_them_back_when_it_returns() -> Result<()> {
+    let tree = Tree::new();
+    let bytes = Wav::new().text(TITLE, "Echoes").build();
+    let echoes = tree.write("echoes.wav", &bytes);
+    tree.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    for _ in 0..2 {
+        let counted = library
+            .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
+            .expect("a counted play");
+        library.listened(counted.listen, Duration::from_secs(2))?;
+    }
+    let before = library.statistics(Window::Everything)?;
+
+    fs::remove_file(&echoes).expect("the file goes");
+    scan(&library, &options(&tree))?;
+
+    let after = library.statistics(Window::Everything)?;
+
+    assert_eq!(titles(&all(&library)?), vec!["Dogs"]);
+    assert_eq!(before.plays, 2);
+    assert_eq!(after.plays, before.plays);
+    assert_eq!(after.listened, before.listened);
+
+    tree.write("echoes.wav", &bytes);
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(
+        library.track_at(&echoes, None)?.expect("held again").plays,
+        2
+    );
+    assert_eq!(library.statistics(Window::Everything)?.plays, 2);
+    Ok(())
+}
+
+#[test]
+fn a_delivered_row_forgotten_keeps_its_listens() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let delivered = tree.write(
+        "delivered.wav",
+        &Wav::new().text(TITLE, "Echoes").frames(8_820).build(),
+    );
+
+    let orbits = orbits_tree();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    scan(&library, &options(&orbits))?;
+    wanted_san_tropez(&library)?;
+    let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+    library
+        .poll(inbox.registered(), PollOptions::default())?
+        .join()?;
+    let object = library.vault_objects()?[0].path.clone();
+
+    for _ in 0..2 {
+        let counted = library
+            .track_played(&MediaLocation::local(&object), None, Duration::from_secs(2))?
+            .expect("a counted play");
+        library.listened(counted.listen, Duration::from_secs(2))?;
+    }
+    let before = library.statistics(Window::Everything)?;
+
+    assert!(library.forget_delivered(&object)?);
+
+    let after = library.statistics(Window::Everything)?;
+
+    assert_eq!(before.plays, 2);
+    assert_eq!(after.plays, before.plays);
+    assert_eq!(after.listened, before.listened);
+    Ok(())
+}

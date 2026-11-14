@@ -94,14 +94,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   handed out is unread)
 
 ## Catalog
-- [S · 0.11.1] A scan of a walked root forgets the listens of the rows it prunes: `store::prune` deletes
-  unreached rows with no `deleted::keep_listens_as_unheld` first, so `listens` cascade away, while the
-  tidy of a root *not* walked (`forget_paths`) keeps them; a file deleted or moved out by hand under a
-  walked root (every root, for a bare `resonate scan`) loses its plays from Statistics, Wrapped and
-  unsent scrobbles and has nothing credited back if it returns, against *Every forgetting keeps the
-  listens* (`library.md`)
-- [S · 0.11.1] `forget_delivered` deletes the delivery's row with no `keep_listens_as_unheld`
-  (`db/roots.rs`), so forgetting a delivery that was played takes its plays from the totals
 - [M · 0.11.1] A folder or file renamed only in case on a case-folding volume (APFS, NTFS, a casefold
   folder) loses its rows' history: `moves::follow_the_moved` takes a row as gone only where
   `path.exists()` is false, which the old spelling never is there, so the new spelling's rows are
