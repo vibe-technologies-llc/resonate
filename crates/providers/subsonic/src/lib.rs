@@ -1,11 +1,8 @@
 use std::{
     fmt::{self, Write as _},
     io,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    sync::Arc,
+    time::{Duration, Instant},
 };
 
 use md5::{Digest, Md5};
@@ -25,6 +22,7 @@ use resonate_providers::{
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
 use serde_json::Value;
 use ureq::{Agent, Body, http};
+use uuid::Uuid;
 
 use crate::served::{AlbumDoc, ArtistDoc, ArtistsDoc, FoundDoc, SongDoc, id_spelt, readable};
 
@@ -104,7 +102,6 @@ pub struct Subsonic {
     asking: Agent,
     downloading: Agent,
     patience: Patience,
-    salted: Arc<AtomicU64>,
     pacing: Arc<Pacing>,
 }
 
@@ -239,7 +236,6 @@ impl Subsonic {
             asking: asking_agent(Patience::default(), Trusted::SystemStoreToo),
             downloading: downloading(Patience::default()),
             patience: Patience::default(),
-            salted: Arc::new(AtomicU64::new(0)),
             pacing: Arc::new(Pacing::new(ASKED_APART)),
         }
     }
@@ -310,16 +306,12 @@ impl Subsonic {
             .map_err(|error| self.unreachable(op, error))
     }
 
-    fn salt(&self) -> String {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |since| since.as_nanos() as u64);
-        let nth = self.salted.fetch_add(1, Ordering::Relaxed);
-        hex(&Md5::digest(format!("{now}:{nth}:{}", std::process::id())))[..12].to_owned()
+    fn salt() -> String {
+        Uuid::new_v4().simple().to_string()
     }
 
     fn url(&self, method: &str, asked: &[(&str, &str)]) -> String {
-        let salt = self.salt();
+        let salt = Self::salt();
         let mut url = format!(
             "{}/{REST}/{method}?u={}&t={}&s={salt}&v={SPOKEN_AS}&c={CALLED}&f=json",
             self.server.url.trim_end_matches('/'),
@@ -782,9 +774,15 @@ mod tests {
     }
 
     #[test]
-    fn two_requests_are_salted_apart() {
-        let subsonic = subsonic();
-        assert_ne!(subsonic.salt(), subsonic.salt());
+    fn a_salt_is_a_hundred_and_twenty_eight_bit_draw_and_no_two_repeat() {
+        let salts: std::collections::BTreeSet<String> =
+            (0..1000).map(|_| Subsonic::salt()).collect();
+
+        assert_eq!(salts.len(), 1000);
+        for salt in &salts {
+            assert_eq!(salt.len(), 32);
+            assert!(salt.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        }
     }
 
     #[test]
