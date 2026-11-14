@@ -100,6 +100,23 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.12.0] Nothing holds the phones' released schema: `catalog::FIRST_VERSION` is today's `V1`
+  and the `laid_before` tests replay each step's present text, so an edit to `V1` or a shipped step
+  passes every test while phones that ran the old text keep it; a fixture of `V1` and each released
+  step as tagged (or their hashes), and a `documents.sqlite` laid out at 0.1.0, would hold it
+- [S · 0.12.0] No driven test holds that the window stops redrawing once a pane or sheet is left:
+  five timers (`party.rs`, `settings/sync.rs`, `sharing.rs`, `settings/online.rs`, `analysis.rs`)
+  each end themselves by hand, and the party pane's never does (`PERFORMANCE.md`)
+- [M · 0.12.0] Parsers of untrusted bytes no fuzz target reaches: `SheetText::read` and `edited`
+  (the `cue` target drives `read_cue` and `renamed_cue` alone), `matroska_tags::attached` (`padding`
+  drives `rewritten`), the whole copy's trailer and record (`bound_of`, `Record::read`, which read
+  files found in the shared temp folders), the lofty reads every retag preview makes
+  (`rating_in`, `Counted::read_in`), the streamed SOFA path (`hdf5_streamed`), the vault's
+  `standing::of_a_flac` and `of_a_packed_wave`, and the UPnP stream server's request head
+  (`serve.rs`'s `judged` and `token_in`)
+- [S · 0.12.0] The hand-written SYLT reader (`sylt.rs`'s `as_lrc`) is fuzzed only if the `probe`
+  target invents an ID3v2 header and a SYLT frame from nothing: no seed in `fuzz/seeds/probe` holds
+  one, in either timestamp format
 - [S · 0.12.0] `resonate-mobile`'s `sync::copied::tests::a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it`
   fails here at its 40 s wait (*the copy kept on the phone never happened*), alone and in a whole
   run, before the move to nextest and after it
@@ -157,6 +174,19 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Dependencies
+- [S · 0.12.0] Two SIMD stacks are built under the engine: `imbl` 7.0.2 depends on `wide` 0.7 (and
+  `safe_arch` 0.7) unconditionally beside the workspace's `wide` 1.7.1, a duplicate
+  `dependencies.md`'s forced list does not name
+- [S · 0.12.0] A Mac build compiles two `objc2` majors: 0.5 (with `block2`, `objc2-foundation`,
+  `objc2-app-kit` 0.2) under gpui's `accesskit_macos` beside the 0.6 line `resonate-apple` takes,
+  which `dependencies.md` reads as no second copy; `thiserror` 1 beside 2 under glib, `jni` and `ndk`
+  is unnamed too (each wants `cargo tree -d` per target)
+- [S · 0.12.0] `image` resolves with `exr`, `qoi`, `ravif` (and so `rav1e`), `tiff` and `rayon` beside
+  the five formats `dependencies.md` names, unified in from gpui's tree; whether `Drawing` then
+  accepts a format the vocabulary does not is unchecked (`cargo tree -e features -i image`)
+- [S · 0.12.0] `same-file`, `wasapi` and `hdf5-writer` are the workspace's only dependencies written
+  without `default-features = false` and a feature list (`wasapi`'s defaults bring `log` and
+  `num-integer`)
 - [S · blocked: gpui] `cargo audit`'s other warnings are other crates' trees: `glib` 0.18.5 unsound
   (RUSTSEC-2024-0429) under `tao`, `webkit2gtk` and wry, for `resonate-signin`'s window alone; zbus
   5 under gpui's accesskit and ashpd, beside `resonate-mpris`'s zbus 6 (two built), with
@@ -164,7 +194,25 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `ttf-parser` under gpui's `usvg`; and the build-time `paste` (lofty), `proc-macro-error` (glib)
   and `basic-toml` (uniffi's askama)
 
+## Docs
+- [S · 0.12.0] `README.md` and `CLAUDE.md` say the macOS build has never run on a Mac, where
+  `macos.md` and `FEATURES.md` record a run on an M4 under macOS 26
+- [S · 0.12.0] `README.md`'s facts that no longer hold: `man 5 resonate-config` (the page is
+  `resonate-config.toml(5)`), Android's SDK 36 (`compileSdk = 37`), macOS listed for Apple Silicon
+  alone (`release.yml` builds an x86-64-v3 image too), and macOS called unsigned (it is signed ad hoc,
+  not notarised)
+- [S · 0.12.0] `android.md`'s list of the catalog's steps passes over steps 25, 27, 28 and 33
+  (`PROFILES_ARE_FOLLOWED_WHOLE`, `LISTENS_ARE_READ_BY_WHEN_THEY_BEGAN`,
+  `A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE`, `QUEUES_KEEP_THEIR_SHUFFLE_LIST_ORDER_AND_ROWS_PLAYED_NEXT`),
+  and the step check does not ask that every step be named somewhere
+
 ## Later: Structure
+- [M] Seven places delete `tracks` rows (`deleted.rs` twice, `store.rs`'s `prune`,
+  `superseded_in_the_vault` and `forget_paths`, `db/roots.rs`'s `forget_delivered`, `organise.rs`),
+  each repeating some of keeping the listens, noting `songs_deleted`, dropping `wants`,
+  `sweep_orphans` and `settle_if_owed`; the listens two of them lose (`BUGS.md`) are that drift. One
+  `forget_rows` every removal goes through, and a test refusing a raw `DELETE FROM tracks` elsewhere,
+  would hold it
 - [L] The party, inspector and services panes and the settings pane's fields are entities owning
   their state and subscriptions (`ui.md`), but `RootView` (77 fields, 133 more in its groups) still
   carries the rest: the settings pane's own state (`SettingsShown`, `Accounts`, `Remotely`), the

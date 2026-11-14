@@ -36,6 +36,12 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Windows parity
+- [M · 0.12.0] Windows has no surface for the playlists and the track list MPRIS offers on Linux:
+  SMTC carries the transport alone and the pipe answers the window's own client, so another program
+  can neither list nor activate a playlist nor read the queue (`windows.md`'s *Not on Windows yet*
+  says it is on the roadmap)
+- [S · 0.12.0] Windows' launcher icon does not follow the accent (`plain_launcher.rs` does nothing
+  there)
 - [M · blocked: hardware] Windows has played on a physical machine (a listener's, beside what
   `windows.md` records under QEMU/KVM); what a plain run there did not settle is still unseen:
   WASAPI exclusive playback at every rate and word on a real DAC, device hot-plug, the render cycle's timing, microphone and loopback capture (a loopback endpoint that
@@ -139,6 +145,17 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [L · blocked: service] A lyric reaches only a row the catalog holds; no keyless service indexes
   lyric text (LRCLIB's text search finds none)
 
+## Listening history
+- [M · 0.12.0] A listener's history on ListenBrainz or Last.fm cannot be brought in: both are told
+  plays and loves and nothing is read back (`lastfm.rs` and ListenBrainz post only), so a listener
+  arriving with years of scrobbles starts with empty Statistics, Wrapped and lists read from
+  listening. The catalog already credits listens from elsewhere idempotently (`elsewhere`,
+  `origin_device`, `origin_id`) and keeps unmatched ones in `unheld_listens`, so an import is a reader
+  per service landing strict matches as `elsewhere` listens, never told back
+- [S · 0.12.0] The listening history cannot be taken out: `history-kept` ages listens away and no
+  command writes `listens` and `unheld_listens` to a file (ListenBrainz's JSON shape would also be
+  what the import reads)
+
 ## Identification
 - [M · blocked: encoders] The quantiser steps are weighed only on the encoders this machine has
   (ffmpeg's AAC and MP2, faac, LAME, libvorbis, ffmpeg's Vorbis, twolame and libopus; fdk AAC on an
@@ -213,6 +230,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
+- [L] The catalog is not offered on the network as a UPnP MediaServer: `resonate-upnp` is a control
+  point alone, though its stream server, SSDP, description writing and live feed, with the library's
+  keyed paging, are most of a ContentDirectory's Browse; an off-by-default switch and fuzzed SOAP
+  request reading would come with it
 - [S] A renderer taking WAVE and not FLAC is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz,
   and handing the untouched file over does not fit the sink seam (`upnp.md`)
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio
