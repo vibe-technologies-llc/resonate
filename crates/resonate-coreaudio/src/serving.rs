@@ -59,18 +59,20 @@ enum Order {
 
 struct Reshaping {
     open: StreamRequest,
-    handing: Handing,
+    handing: Arc<Mutex<Handing>>,
 }
 
 fn reshaper(reshaping: Reshaping, orders: Sender<Order>) -> Reshaper {
     let reshaping = Mutex::new(reshaping);
     Box::new(move |asked, source| {
         let mut reshaping = reshaping.lock();
-        reshaping.handing.let_go_of_the_spent();
+        let handing = Arc::clone(&reshaping.handing);
+        let mut handing = handing.lock();
+        handing.let_go_of_the_spent();
         if let Some(because) = refusal_of(&reshaping.open, asked) {
             return Reshaped::Refused { source, because };
         }
-        if !reshaping.handing.has_room() {
+        if !handing.has_room() {
             return Reshaped::Refused {
                 source,
                 because: Unreshapable::StillHandingOver,
@@ -82,7 +84,7 @@ fn reshaper(reshaping: Reshaping, orders: Sender<Order>) -> Reshaper {
                 because: Unreshapable::NoStream,
             };
         }
-        match reshaping.handing.hand(source) {
+        match handing.hand(source) {
             Ok(()) => {
                 reshaping.open = asked.clone();
                 Reshaped::Kept
@@ -103,6 +105,7 @@ struct Served {
     orders: Receiver<Order>,
     announced: Sender<StreamEvent>,
     looks: Looks,
+    spent: Arc<Mutex<Handing>>,
 }
 
 pub fn launch<H, M>(
@@ -131,6 +134,7 @@ where
     };
     let (rendering, handing) =
         Rendering::fed_by(source, Arc::clone(&empty), Arc::clone(&clock), shaped);
+    let handing = Arc::new(Mutex::new(handing));
     let served = Served {
         spec,
         clock: Arc::clone(&clock),
@@ -139,6 +143,7 @@ where
         orders,
         announced,
         looks,
+        spent: Arc::clone(&handing),
     };
     thread::Builder::new()
         .name("resonate-coreaudio-stream".into())
@@ -192,10 +197,17 @@ where
     .reshaped_by(reshaper(reshaping, sending)))
 }
 
+impl Served {
+    fn let_go_of_the_spent(&self) {
+        self.spent.lock().let_go_of_the_spent();
+    }
+}
+
 fn serve<H: Hardware>(hardware: &H, served: &Served) {
     let mut state = StreamState::Paused;
     let mut drain = Drain::new();
     loop {
+        served.let_go_of_the_spent();
         let latency = match hardware.standing() {
             Standing::Gone => {
                 if state != StreamState::Failed {
@@ -313,6 +325,20 @@ mod tests {
         fn fill(&mut self, dst: &mut [u8]) -> usize {
             dst.fill(self.0);
             dst.len()
+        }
+    }
+
+    struct Counted(Arc<AtomicUsize>);
+
+    impl AudioSource for Counted {
+        fn fill(&mut self, _: &mut [u8]) -> usize {
+            0
+        }
+    }
+
+    impl Drop for Counted {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::AcqRel);
         }
     }
 
@@ -585,6 +611,24 @@ mod tests {
         opened.rendering.lock().fill(&mut bytes, None);
         assert_eq!(bytes, [0x5A; 16]);
         quiet(&opened);
+    }
+
+    #[test]
+    fn the_source_a_reshape_replaced_is_let_go_by_the_loop_without_another_reshape() {
+        let dropped = Arc::new(AtomicUsize::new(0));
+        let opened = opened_with(
+            Box::new(Counted(Arc::clone(&dropped))),
+            SampleFormat::F32,
+            None,
+        );
+
+        let reshaped = opened
+            .stream
+            .reshape(&request(SampleFormat::F32), Box::new(Marked(0x5A)));
+        opened.rendering.lock().fill(&mut [0_u8; 16], None);
+
+        assert!(matches!(reshaped, Reshaped::Kept));
+        wait_until(|| dropped.load(Ordering::Acquire) == 1);
     }
 
     #[test]

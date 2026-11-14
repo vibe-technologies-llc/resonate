@@ -575,7 +575,7 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   The listener's user data is a `process::Fed`: the `Feed` (a `Cycle` for the spec and the source)
   plus two one-way `rtrb` queues. The loop (`ActiveStream::reshape`) pushes the new `Feed`; the
   callback swaps it in at the head of a cycle and pushes the old one back, so the old ring is freed
-  on the loop (each reshape and heartbeat, `Handing::let_go_of_the_spent`), never on the RT thread;
+  on the loop (each reshape and heartbeat, `Handing::let_go_of_the_spent`), never on the RT thread; WASAPI's and Core Audio's serving loops call it each pass as well, not only inside the reshape, so a replaced ring is freed at once rather than at the next reshape;
   it takes nothing while the spent queue is full. Where the spec moves, the loop first stores
   `Taken::Otherwise` against the new spec (silence until the graph settles), points the
   `param_changed` closure's asked spec (`Rc<Cell<StreamSpec>>`) at it, and calls `update_params`

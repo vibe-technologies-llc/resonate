@@ -54,18 +54,20 @@ enum Order {
 
 struct Reshaping {
     open: StreamRequest,
-    handing: Handing,
+    handing: Arc<Mutex<Handing>>,
 }
 
 fn reshaper(reshaping: Reshaping, orders: Sender<Order>) -> Reshaper {
     let reshaping = Mutex::new(reshaping);
     Box::new(move |asked, source| {
         let mut reshaping = reshaping.lock();
-        reshaping.handing.let_go_of_the_spent();
+        let handing = Arc::clone(&reshaping.handing);
+        let mut handing = handing.lock();
+        handing.let_go_of_the_spent();
         if let Some(because) = refusal_of(&reshaping.open, asked) {
             return Reshaped::Refused { source, because };
         }
-        if !reshaping.handing.has_room() {
+        if !handing.has_room() {
             return Reshaped::Refused {
                 source,
                 because: Unreshapable::StillHandingOver,
@@ -80,7 +82,7 @@ fn reshaper(reshaping: Reshaping, orders: Sender<Order>) -> Reshaper {
                 because: Unreshapable::NoStream,
             };
         }
-        match reshaping.handing.hand(source) {
+        match handing.hand(source) {
             Ok(()) => {
                 reshaping.open = asked.clone();
                 Reshaped::Kept
@@ -117,6 +119,8 @@ where
     let (ready, started) = bounded(1);
     let (disposed, closed) = bounded(1);
     let (fed, handing) = fed_from(source);
+    let handing = Arc::new(Mutex::new(handing));
+    let letting_go = Arc::clone(&handing);
     let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
     let feeding = Feeding {
         fed,
@@ -144,6 +148,7 @@ where
                 &Serving {
                     orders: &orders,
                     announced: &announced,
+                    spent: &letting_go,
                 },
             );
             drop(hardware);
@@ -192,6 +197,15 @@ fn let_go_within(closed: &Receiver<()>, within: Duration) -> SinkResult<()> {
 struct Serving<'a> {
     orders: &'a Receiver<Order>,
     announced: &'a Sender<StreamEvent>,
+    spent: &'a Mutex<Handing>,
+}
+
+impl Serving<'_> {
+    fn let_go_of_the_spent(&self) {
+        if let Some(mut handing) = self.spent.try_lock() {
+            handing.let_go_of_the_spent();
+        }
+    }
 }
 
 struct Standing {
@@ -235,7 +249,7 @@ fn serve<H: Hardware>(hardware: &mut H, serving: &Serving<'_>) {
                 hardware.stop();
                 return;
             }
-            Next::Quiet => {}
+            Next::Quiet => serving.let_go_of_the_spent(),
         }
         if standing.state != StreamState::Streaming || hardware.wait_for_room() == Woken::TimedOut {
             continue;
@@ -364,6 +378,20 @@ mod tests {
         fn fill(&mut self, dst: &mut [u8]) -> usize {
             dst.fill(self.0);
             dst.len()
+        }
+    }
+
+    struct Counted(Arc<AtomicUsize>);
+
+    impl AudioSource for Counted {
+        fn fill(&mut self, _: &mut [u8]) -> usize {
+            0
+        }
+    }
+
+    impl Drop for Counted {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::AcqRel);
         }
     }
 
@@ -656,6 +684,19 @@ mod tests {
             opened.seen.calls_but_cycles(),
             [Call::Prioritise(true), Call::Start, Call::Prioritise(false)]
         );
+    }
+
+    #[test]
+    fn the_source_a_reshape_replaced_is_let_go_by_the_loop_without_another_reshape() {
+        let dropped = Arc::new(AtomicUsize::new(0));
+        let opened = streaming(Box::new(Counted(Arc::clone(&dropped))));
+
+        let reshaped = opened
+            .stream
+            .reshape(&request(SampleFormat::F32), Box::new(Marked(0x5A)));
+
+        assert!(matches!(reshaped, Reshaped::Kept));
+        wait_until(|| dropped.load(Ordering::Acquire) == 1);
     }
 
     #[test]
