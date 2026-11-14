@@ -1267,7 +1267,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `SeekHead` and that tail change. The `SeekHead` is laid again with its positions at their
   narrowest, in its own bytes and the `Void`s after it, which is how YouTube's 63 bytes of
   eight-byte positions take a fourth entry; a rewritten `SeekHead` or `Tags` drops its `CRC-32`
-  rather than carry a stale one. **Refused with the file untouched** (`Error::Unwritable`): a
+  rather than carry a stale one. **A `Void` is written as its header alone, its body counted and never built** (`void_of` answers a `Void` of a `header` and a `body` length; a `Laid` carries `zeroed`, the stretch of zeros `laid_on` streams from a 64 KiB buffer, which is only what an element left behind inside it or the file's new tail), so a sparse file with a multi-gigabyte `Void` after the `Tags` retags by writing a few bytes (`a_void_after_the_tags_is_never_written_whole_by_a_retag`). **Refused with the file untouched** (`Error::Unwritable`): a
   `Segment` or a child of unknown size, a `Segment` that does not end where the file does, a
   `Segment`-level `CRC-32`, a `Tags` past the first `Cluster` with no `SeekHead` ahead of it and no
   `Void` there to lay one in, a `SeekHead` with no room, a second `SeekHead` where `Tags` move, a
@@ -1321,13 +1321,20 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   refused `PermissionDenied`) and holds device, inode, length, mtime; `landed_through` weighs
   `Taken::still_stands` before the rename: an edit another program made meanwhile answers
   `Error::ChangedWhileWritten`. A folder the listener may not create in does not refuse a file they
-  may write: `landed_from_elsewhere` stages under the spool's folders (`/var/tmp`, replaced by
-  `TMPDIR`; then the temp dir) as `.<name>.<pid>-<n>.resonate-staged` and writes it back into the
+  may write: `landed_from_elsewhere` stages under `spool::kept_under`, a `resonate-<uid>` folder in each of the
+  spool's folders (`/var/tmp`, replaced by `TMPDIR`; then the temp dir), made `0700` and refused
+  unless it is a real folder (never a link) owned by the effective uid and closed to others
+  (`resonate_core::owner::Owner::keeps_alone`; a Windows or macOS temp folder is the user's own and
+  is used as it is), as `.<name>.<pid>-<n>.resonate-staged`, and writes it back into the
   track's own inode. **A copy kept outside the track's folder names its track:** before the write
   back `WholeCopy::kept_elsewhere` appends the stood record and then the track's canonical path
   (FNV-1a check, `AWAY_MAGIC` last) and renames it `.resonate-whole` in the spool; a write back
   failing part way renames it `.resonate-torn` there. Every write and every scan first runs
-  `mend_what_was_written_back_from_elsewhere` over the spool folders: a dead writer's staged copy is
+  `mend_what_was_written_back_from_elsewhere` over `spool::mended_under` (the per-user folders that
+  pass that check, then the shared spool folders for what an older build left there), and **only a
+  regular file the effective uid owns is looked at** (`Owner::owns_the_file_at`, a link never), since
+  a copy's trailer is a hash anyone can compute and `/tmp` is anyone's
+  (`a_copy_kept_elsewhere_by_another_user_is_not_finished`): a dead writer's staged copy is
   swept, a dead writer's or torn whole copy is finished over the track its record names (only where
   its file name is the one the copy's name carries, and under the same `Stood::standing` guard), a
   damaged or mismatched record writes nothing and the copy goes, a copy with no such record is not
@@ -1489,7 +1496,9 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   picture; a mismatch leaves `Unwritten::Unconfirmed`, catalog unmoved. **A WAV whose ID3v2 tag
   stands before its `RIFF` header has the tag moved into the RIFF** (lofty does not recognise such a
   file): `FileTags::write` stages a copy that is the RIFF plus the tag's bytes as an `id3 ` chunk
-  and settles that copy in the file's place.
+  and settles that copy in the file's place; **a copy that stops short of the size its `RIFF` declares
+  is refused** (`chunked` answers `InvalidData`), since the chunk would land inside the `data` chunk's
+  declared span and play as noise (`a_wave_cut_short_behind_an_id3_tag_is_refused_and_never_gets_its_chunk_inside_the_audio`).
 - **`Library::retag` takes the `Walk` guard** (the pass rewrites sizes and mtimes a scan's snapshot
   was taken against); a second caller gets `Error::AlreadyWalking`. A vaulted row is
   `Unwritten::Vaulted` (`vault.md`).

@@ -18,41 +18,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   or listening thread
 
 ## Security
-- [M · 0.11.1] A scan or a tag write finishes a `.resonate-torn` or `.resonate-whole` copy found in
-  `/var/tmp` or `/tmp` whoever made it: `spool::spooled_under` mends in shared folders,
-  `journal::mend_what_was_left_in` checks no owner, and the track it writes over is the path the
-  copy's own trailer names (`bound_of`, a hash anyone can compute), so another local user can have
-  the listener's next scan overwrite any file the listener may write with bytes of their choosing
-  (the page record passes too, since the planter hashes the readable target). Stage and mend under a
-  per-user `0700` folder, and finish only a copy whose owner is the effective uid; Windows and macOS
-  temp folders are the user's own
-- [S · 0.11.1] The iOS folder URI check passes a `/` percent-encoded inside a segment:
-  `FolderFiling.components(of:)` splits on `/` before decoding and refuses only a segment that is
-  exactly `..`, so `a%2F..%2F..%2Fx` decodes to a climbing path that `Folders.resolved`'s
-  `appendingPathComponent` takes whole, and `open`, `delete` and `fileNumber` then reach outside the
-  granted folder; `documents::location` checks only the scheme. No reachable hostile URI was found,
-  but one from an imported list or another device would do it
 - [S · 0.12.0] A Bonjour record still opens for ever: `record_of` seals a bare `Beacon` (no time,
   resealed only as it moves, and iOS hands the same record every 5 s), so one record seen on the
   network and advertised again under addresses of the replayer's choosing makes every device of the
   space dial them for `HEARD_FOR`; a broadcast datagram is held to `BEACON_SENT_WITHIN` and heard
   once (`heard_in`), a record wants the same with resealing every window and a cache that tells the
   same record resolved again from a replay
-- [S · 0.12.0] A renderer's control or description URL keeps any control characters:
-  `located::parse` and `join` keep the path as given and `http::request` writes it into the request
-  line, so a CR or LF a description encodes injects headers into the hand-written HTTP (to the
-  renderer's own host alone, which `is_on_host_of` pins)
-- [S · 0.12.0] The window's start-up lock falls to a predictable name in the shared temp folder where
-  `XDG_RUNTIME_DIR` is unset (`starting::lock_path`, `resonate-starting-<uid>.lock`, opened with no
-  `O_NOFOLLOW` or owner check), so another user creating it first loses the single window or makes
-  each launch wait `WAITS_AT_MOST`; it wants the per-user `0700` folder check `socket.rs`'s
-  `kept_to_this_user` makes
-- [S · 0.12.0] Subsonic's token salt is predictable (`subsonic/src/lib.rs` `salt`: an MD5 of the
-  time, a counter and the pid), where the scheme assumes a random one; draw it from the OS
-- [S · 0.12.0] `documents::owned` is a safe function around `File::from_raw_fd` that refuses nothing,
-  though `mobile.md` says it refuses a negative descriptor: every caller checks first today
-  (`downloads.rs`'s `fresh_destination` checks inside), so the one approved unsafe call relies on
-  each caller remembering
 
 ## Sync and together
 
@@ -68,15 +39,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   listener's to grant
 
 ## Formats
-- [S · 0.11.1] A Matroska `Tags` or `SeekHead` followed by a large `Void` makes a retag allocate and
-  write that many zeros: `matroska_tags::void_of` builds a Void's whole body (`void.resize(bytes)`)
-  for every room `room_of` counts, rebuilt on every turn of `laid_in_the_room`, so a sparse file with
-  a multi-gigabyte Void aborts the process and an ordinary large one pushes an in-place write past
-  `MOST_BYTES_WRITTEN_IN_PLACE` for nothing; a Void's header alone needs writing
-- [S · 0.12.0] A truncated WAV whose ID3v2 tag stands before its `RIFF` may have the tag laid inside its
-  audio: `writing::chunked` copies what the `RIFF` size declares, which stops short at the file's
-  end, then appends the `id3 ` chunk within the `data` chunk's declared span, played as noise and
-  never read as a tag; whether lofty refuses such a copy before the rename is unchecked
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader
@@ -94,8 +56,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   cross-thread wake; a socket could be shut down from `rest`)
 
 ## Equaliser
-- [S · 0.12.0] A profile name Windows or a FAT volume refuses is taken as usable:
-  `ProfileName::new` refuses only `/`, `\`, NUL, control characters, `.` and `..`, and `path_of`
-  writes `<name>.txt`, so a name holding `: * ? " < > |`, a trailing dot or space or a device name
-  (an AutoEq label through `ProfileName::after`) fails the save as a store error, and two names apart
-  only in case are one file on macOS and Windows (unconfirmed which labels reach it)

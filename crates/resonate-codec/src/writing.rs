@@ -605,6 +605,13 @@ fn chunked(path: &Path, staged: &File, riff_at: u64) -> io::Result<()> {
     written.write_all(&grown.to_le_bytes())?;
     written.write_all(WAVE)?;
     let within = u64::from(declared).saturating_sub(WAVE.len() as u64);
+    let standing = file
+        .metadata()?
+        .len()
+        .saturating_sub(riff_at + RIFF_HEADER_BYTES);
+    if standing < within {
+        return Err(io::Error::from(io::ErrorKind::InvalidData));
+    }
     io::copy(&mut (&mut file).take(within), &mut written)?;
     written.write_all(ID3_CHUNK)?;
     written.write_all(&tag_bytes.to_le_bytes())?;
@@ -1308,7 +1315,7 @@ fn landed<L: Lands>(path: &Path, location: &MediaLocation, saving: &L) -> Result
         source,
     };
     mend_what_a_dead_writer_left(path);
-    mend_what_was_left_in(&crate::spool::spooled_under());
+    mend_what_was_left_in(&crate::spool::mended_under());
     sweep_what_a_dead_writer_staged(path);
     match cloned_beside(path) {
         Ok(Some(staged)) => return landed_through(&staged, path, location, saving),
@@ -1335,7 +1342,7 @@ fn landed_from_elsewhere<L: Lands>(
     saving: &L,
 ) -> Result<()> {
     let mut refused = io::Error::from(io::ErrorKind::PermissionDenied);
-    for folder in crate::spool::spooled_under() {
+    for folder in crate::spool::kept_under() {
         match Staged::elsewhere(&folder, path).and_then(|staged| copied_into(path, staged, saving))
         {
             Ok(staged) => {
@@ -1940,6 +1947,44 @@ mod tests {
         }
     }
 
+    fn a_wave_behind_an_id3_tag(truncated_by: usize) -> Vec<u8> {
+        let mut tag = b"ID3\x04\x00\x00\x00\x00\x00\x0a".to_vec();
+        tag.extend_from_slice(&[0; 10]);
+        let mut bytes = tag;
+        bytes.extend_from_slice(&wave());
+        bytes.truncate(bytes.len() - truncated_by);
+        bytes
+    }
+
+    #[test]
+    fn a_wave_cut_short_behind_an_id3_tag_is_refused_and_never_gets_its_chunk_inside_the_audio() {
+        let folder = Folder::new();
+        let whole = folder.holding("whole.wav", &a_wave_behind_an_id3_tag(0));
+        let cut = folder.holding("cut.wav", &a_wave_behind_an_id3_tag(4));
+        let whole_path = whole.as_path().expect("a local file").to_path_buf();
+        let cut_path = cut.as_path().expect("a local file").to_path_buf();
+        let riff_at = |path: &Path| {
+            tag_in_front_of_a_riff(path)
+                .expect("a readable file")
+                .expect("a tag before the RIFF")
+        };
+        let rechunked = |path: &Path| {
+            let staged = folder.root.join(format!(
+                "{}.staged",
+                path.file_name().expect("a name").to_string_lossy()
+            ));
+            let file = File::create(&staged).expect("a staging file");
+            chunked(path, &file, riff_at(path))
+                .map(|()| fs::read(&staged).expect("what was staged"))
+        };
+
+        let chunked_whole = rechunked(&whole_path).expect("a whole file is chunked");
+        let refused = rechunked(&cut_path).expect_err("a cut file is refused");
+
+        assert!(chunked_whole.windows(4).any(|window| window == ID3_CHUNK));
+        assert_eq!(refused.kind(), io::ErrorKind::InvalidData);
+    }
+
     #[test]
     fn a_copy_a_dead_writer_staged_beside_the_track_is_swept_and_no_other() {
         const NEVER_A_PROCESS: u32 = 999_999_999;
@@ -2417,7 +2462,7 @@ mod tests {
         let _ = fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o755));
 
         let ours = format!(".echoes.flac.{}-", process::id());
-        let left: Vec<PathBuf> = crate::spool::spooled_under()
+        let left: Vec<PathBuf> = crate::spool::mended_under()
             .iter()
             .filter_map(|spool| fs::read_dir(spool).ok())
             .flat_map(|entries| entries.flatten())

@@ -31,12 +31,29 @@ const STAGED_SUFFIX: &str = ".new";
 const HIDDEN: &str = ".";
 const EVERY_OTHER_DEVICE: &str = "every-other-device";
 const A_DEVICE: &str = "device-";
+const REFUSED_BY_WINDOWS_AND_FAT: [char; 7] = [':', '*', '?', '"', '<', '>', '|'];
+const DEVICES_WINDOWS_RESERVES: [&str; 4] = ["CON", "PRN", "AUX", "NUL"];
+const DEVICES_WINDOWS_NUMBERS: [&str; 2] = ["COM", "LPT"];
+const A_DEVICE_NUMBER: &str = "0123456789\u{b9}\u{b2}\u{b3}";
+const FOR_A_DEVICE_NAME: &str = "profile";
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProfileName(Box<str>);
 
 impl ProfileName {
     pub fn new(text: &str) -> Result<Self> {
+        let text = text.trim();
+        let portable = !text.ends_with('.')
+            && !text.contains(REFUSED_BY_WINDOWS_AND_FAT)
+            && !is_a_device_name(text);
+
+        if !portable {
+            return Err(Error::NameNotUsable);
+        }
+        Self::standing(text)
+    }
+
+    pub fn standing(text: &str) -> Result<Self> {
         let text = text.trim();
         let usable = !text.is_empty()
             && text.len() <= NAME_AT_MOST
@@ -54,14 +71,24 @@ impl ProfileName {
     pub fn after(label: &str) -> Self {
         let mut spelled = String::with_capacity(label.len());
         for glyph in label.chars() {
-            if glyph == '/' || glyph == '\\' || glyph == '\0' || glyph.is_control() {
+            if glyph == '/'
+                || glyph == '\\'
+                || glyph == '\0'
+                || glyph.is_control()
+                || REFUSED_BY_WINDOWS_AND_FAT.contains(&glyph)
+            {
                 spelled.push('-');
             } else {
                 spelled.push(glyph);
             }
         }
         let spelled: String = spelled.split_whitespace().collect::<Vec<_>>().join(" ");
-        Self::new(cut_to_fit(&spelled)).unwrap_or_else(|_| Self("profile".into()))
+        let cut = cut_to_fit(&spelled).trim_end_matches(['.', ' ']);
+        let spoken_for = match is_a_device_name(cut) {
+            true => format!("{cut} {FOR_A_DEVICE_NAME}"),
+            false => cut.to_owned(),
+        };
+        Self::new(&spoken_for).unwrap_or_else(|_| Self(FOR_A_DEVICE_NAME.into()))
     }
 
     pub fn as_str(&self) -> &str {
@@ -174,7 +201,7 @@ impl Store {
                 return None;
             }
             let stem = path.file_stem()?.to_str()?;
-            ProfileName::new(stem).ok()
+            ProfileName::standing(stem).ok()
         });
         Ok(the_least(names, &self.folder))
     }
@@ -409,7 +436,22 @@ impl Store {
     }
 
     pub fn holds(&self, name: &ProfileName) -> bool {
-        self.path_of(name).exists()
+        self.path_of(name).exists() || self.holds_one_apart_only_in_case(name)
+    }
+
+    fn holds_one_apart_only_in_case(&self, name: &ProfileName) -> bool {
+        let Ok(walked) = fs::read_dir(&self.folder) else {
+            return false;
+        };
+        let folded = name.folded();
+        walked.flatten().any(|entry| {
+            let path = entry.path();
+            path.extension().is_some_and(|held| held == EXTENSION)
+                && path
+                    .file_stem()
+                    .and_then(OsStr::to_str)
+                    .is_some_and(|stem| stem.to_lowercase() == folded)
+        })
     }
 
     pub fn name_for_import(from: &Path, called: Option<&ProfileName>) -> ProfileName {
@@ -473,6 +515,27 @@ fn sweep_staged_in(folder: &Path) {
             let _ = fs::remove_file(&path);
         }
     }
+}
+
+fn is_a_device_name(text: &str) -> bool {
+    let stem = text
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(' ')
+        .to_uppercase();
+    if DEVICES_WINDOWS_RESERVES.contains(&stem.as_str()) {
+        return true;
+    }
+    DEVICES_WINDOWS_NUMBERS.iter().any(|device| {
+        stem.strip_prefix(device).is_some_and(|number| {
+            let mut letters = number.chars();
+            letters
+                .next()
+                .is_some_and(|digit| A_DEVICE_NUMBER.contains(digit))
+                && letters.next().is_none()
+        })
+    })
 }
 
 fn cut_to_fit(spelled: &str) -> &str {
@@ -642,6 +705,87 @@ mod tests {
             ProfileName::after("  spaced   out  ").as_str(),
             "spaced out"
         );
+    }
+
+    #[test]
+    fn a_name_windows_or_a_fat_volume_refuses_is_refused_and_a_label_is_spelt_into_one_they_take() {
+        for refused in [
+            "a:b",
+            "what?",
+            "star*",
+            "quote\"d",
+            "<less>",
+            "pipe|d",
+            "ends.",
+            "CON",
+            "con",
+            "Prn.backup",
+            "AUX ",
+            "NUL",
+            "COM1",
+            "lpt9",
+            "COM\u{b2}",
+        ] {
+            assert!(ProfileName::new(refused).is_err(), "{refused:?} was taken");
+            assert!(
+                ProfileName::standing(refused).is_ok(),
+                "{refused:?} no longer stands"
+            );
+        }
+        for taken in [
+            "COM10",
+            "CONSOLE",
+            "Console 2",
+            "COM",
+            "a.b",
+            "Sennheiser HD 650 (oratory1990)",
+        ] {
+            assert!(ProfileName::new(taken).is_ok(), "{taken:?} was refused");
+        }
+
+        for (label, spelt) in [
+            ("HD 650: oratory1990?", "HD 650- oratory1990-"),
+            ("a <b> | \"c\"", "a -b- - -c-"),
+            ("Headphones...", "Headphones"),
+            ("CON", "CON profile"),
+            ("com1", "com1 profile"),
+            ("???", "---"),
+        ] {
+            let name = ProfileName::after(label);
+
+            assert_eq!(name.as_str(), spelt, "{label:?}");
+            assert!(
+                ProfileName::new(name.as_str()).is_ok(),
+                "{label:?} became {name}"
+            );
+        }
+        assert_eq!(ProfileName::after("...").as_str(), "profile");
+    }
+
+    #[test]
+    fn a_profile_kept_under_a_name_this_build_would_not_make_is_still_listed_and_read() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+        fs::create_dir_all(&folder).expect("a writable folder");
+        fs::write(folder.join("HD 650: raw?.txt"), "Preamp: -3 dB\n").expect("a file");
+        let name = ProfileName::standing("HD 650: raw?").expect("it stood");
+
+        assert_eq!(scratch.store.names().expect("it walks"), vec![name.clone()]);
+        assert!(scratch.store.read(&name).expect("it reads").is_some());
+        assert!(ProfileName::new("HD 650: raw?").is_err());
+    }
+
+    #[test]
+    fn two_names_apart_only_in_case_are_one_file_where_the_filesystem_takes_them_so() {
+        let scratch = Scratch::new();
+        scratch
+            .store
+            .keep(&named("Sennheiser HD 650"), &profile())
+            .expect("a writable folder");
+
+        assert!(scratch.store.holds(&named("Sennheiser HD 650")));
+        assert!(scratch.store.holds(&named("sennheiser hd 650")));
+        assert!(!scratch.store.holds(&named("Sennheiser HD 600")));
     }
 
     #[test]

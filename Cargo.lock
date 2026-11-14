@@ -7145,6 +7145,7 @@ dependencies = [
  "proptest",
  "resonate-words",
  "resonate-words-build",
+ "rustix",
  "same-file",
  "thiserror 2.0.21",
  "unicode-normalization",
@@ -7562,6 +7563,7 @@ dependencies = [
  "serde_json",
  "tracing",
  "ureq",
+ "uuid",
 ]
 
 [[package]]

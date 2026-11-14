@@ -47,10 +47,7 @@ impl Files {
 
     fn identity_of(&self, uri: &str) -> Option<FileIdentity> {
         let descriptor = self.0.get()?.open_document(uri.to_owned());
-        if descriptor < 0 {
-            return None;
-        }
-        let metadata = owned(descriptor).metadata().ok()?;
+        let metadata = owned(descriptor).ok()?.metadata().ok()?;
 
         metadata.is_file().then(|| FileIdentity {
             device: metadata.dev(),

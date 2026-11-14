@@ -1,8 +1,8 @@
 use std::{
-    fs::{self, DirBuilder, Permissions},
+    fs::{self, Permissions},
     io,
     os::unix::{
-        fs::{DirBuilderExt as _, MetadataExt as _, PermissionsExt as _},
+        fs::PermissionsExt as _,
         net::{UnixListener, UnixStream},
     },
     path::{Path, PathBuf},
@@ -13,7 +13,7 @@ use std::{
     thread::{self, JoinHandle},
 };
 
-use resonate_core::ZoneId;
+use resonate_core::{ZoneId, owner::Owner};
 use zbus::names::WellKnownName;
 
 #[cfg(target_os = "macos")]
@@ -29,7 +29,6 @@ use crate::{
 const SOCKET_STEM: &str = "socket";
 const OURS_ALONE: u32 = 0o700;
 const READ_BY_US_ALONE: u32 = 0o600;
-const OPEN_TO_OTHERS: u32 = 0o077;
 const ACCEPT_THREAD: &str = "resonate-mpris-socket";
 
 fn socket_name(player: &str) -> Option<String> {
@@ -43,18 +42,7 @@ fn socket_in(folder: &Path, player: &str) -> Option<PathBuf> {
 }
 
 fn kept_to_this_user(folder: &Path) -> io::Result<()> {
-    DirBuilder::new()
-        .recursive(true)
-        .mode(OURS_ALONE)
-        .create(folder)?;
-    let standing = fs::metadata(folder)?;
-
-    let ours = standing.uid() == rustix::process::getuid().as_raw();
-    let closed = standing.mode() & OPEN_TO_OTHERS == 0;
-    match ours && closed {
-        true => Ok(()),
-        false => Err(io::Error::from(io::ErrorKind::PermissionDenied)),
-    }
+    Owner::this_user().keeps_alone(folder)
 }
 
 #[cfg(target_os = "macos")]
@@ -223,7 +211,7 @@ fn listening_at(socket: &Path) -> io::Result<UnixListener> {
 
 #[cfg(test)]
 mod tests {
-    use std::{env, process};
+    use std::{env, os::unix::fs::MetadataExt as _, process};
 
     use super::*;
     use crate::wire::{read_frame, write_frame};

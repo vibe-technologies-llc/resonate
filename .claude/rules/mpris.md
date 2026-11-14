@@ -326,8 +326,9 @@ for a hotspot have not been seen (`docs/TESTING.md`).
   `Tune`, while one giving `--config`, `--library` or `--vault` (`settings_of_its_own`) never asks
   for a window and opens its own (`binary.md`). Headless `resonate play` can't raise. The name is claimed
   only after the engine starts, so `starting::one_window_at_a_time` takes an exclusive lock on
-  `resonate-starting.lock` under `$XDG_RUNTIME_DIR` (none: `resonate-starting-<uid>.lock` in the
-  temp folder) before asking the bus and holds it until `Mpris::start` claimed the name; a second
+  `resonate-starting.lock` under `$XDG_RUNTIME_DIR` (none, on Unix: the same name inside a `resonate-<uid>` folder of the
+  temp folder, kept `0700` and refused unless it is a real folder the effective uid owns, `Owner::keeps_alone`, so no lock is taken
+  there when another user planted it; the file is opened `0600` with `O_NOFOLLOW`; on Windows the temp folder is the user's own) before asking the bus and holds it until `Mpris::start` claimed the name; a second
   launch waits at most `WAITS_AT_MOST` (15 s); an untakeable lock starts the window as before.
 - **A player is chosen by name; one reading of the bus serves every way of choosing.** `ours` =
   names that are `org.mpris.MediaPlayer2.resonate` or anything under it (an `instance`, a
@@ -390,7 +391,7 @@ registry's), sorted by name, so `found`, `listed`, `named` and `zoned` are the s
   (compiled for macOS and, for its tests, on every Unix). The registry's folder there is
   `~/Library/Caches/resonate/players` (`registry::players_folder_of_a_mac`; the temporary folder's
   `resonate-players` only with no `HOME`), never `$TMPDIR`, whose files macOS sweeps after days
-  unread. `kept_to_this_user` makes it `0700` and refuses to serve in one another user owns or can
+  unread. `kept_to_this_user` (core's `Owner::keeps_alone`, shared with the codec's spool and the binary's start-up lock) makes it `0700` and refuses to serve in one another user owns or can
   reach (`PermissionDenied` as `PipeOp::Claim`). **The claim is the authority, the socket only
   where it listens**: `Serving::start_in` takes the name's `Claim` first (the held file, so a
   second player moves on to its `instance` name), unlinks whatever socket stands at the name's

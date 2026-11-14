@@ -10,6 +10,7 @@ use std::{
 
 use resonate_core::{
     file_facts, naming, os_bytes,
+    owner::Owner,
     positioned::FileExt as _,
     writer::{self, Held, Writer},
 };
@@ -904,10 +905,14 @@ fn finished_from_elsewhere(whole: &Path, kept: &KeptBy<'_>) -> io::Result<Mended
 }
 
 pub fn mend_what_was_written_back_from_elsewhere() {
-    mend_what_was_left_in(&crate::spool::spooled_under());
+    mend_what_was_left_in(&crate::spool::mended_under());
 }
 
 pub(crate) fn mend_what_was_left_in(folders: &[PathBuf]) {
+    mend_what_was_left_by(folders, Owner::this_user());
+}
+
+fn mend_what_was_left_by(folders: &[PathBuf], owner: Owner) {
     for folder in folders {
         let Ok(entries) = fs::read_dir(folder) else {
             continue;
@@ -915,6 +920,9 @@ pub(crate) fn mend_what_was_left_in(folders: &[PathBuf]) {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let path = entry.path();
+            if !owner.owns_the_file_at(&path) {
+                continue;
+            }
             if let Some((_, writer)) = stamped_with(&name, STAGED_ELSEWHERE_SUFFIX) {
                 swept_unless_living(&path, writer);
                 continue;
@@ -1324,6 +1332,29 @@ mod tests {
 
         assert_eq!(fs::read(&track).expect("the track"), tagged);
         assert!(!whole.exists(), "the whole copy was left");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_copy_kept_elsewhere_by_another_user_is_not_finished() {
+        let folder = Folder::new("another-users");
+        let was = paged(3, 100, 10);
+        let tagged = paged(2, 50, 90);
+        let (spool, track, whole) = kept_elsewhere_by_a_dead_writer(&folder, &was, &tagged);
+        let ours = Owner::this_user();
+
+        mend_what_was_left_by(
+            slice::from_ref(&spool),
+            Owner::user(ours.id().wrapping_add(1)),
+        );
+
+        assert_eq!(fs::read(&track).expect("the track"), was);
+        assert!(whole.exists(), "another user's copy was taken away");
+
+        mend_what_was_left_by(slice::from_ref(&spool), ours);
+
+        assert_eq!(fs::read(&track).expect("the track"), tagged);
+        assert!(!whole.exists(), "our own copy was left");
     }
 
     #[test]

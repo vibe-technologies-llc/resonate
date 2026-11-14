@@ -433,7 +433,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   failed, and, where some were and sync started, sync is forced.
 - **`Folders`** is the `Documents` callback. A chosen folder is a security-scoped bookmark kept in
   Application Support (`folders.plist`); the app's own Documents folder (`UIFileSharingEnabled`,
-  `LSSupportsOpeningDocumentsInPlace`) is root `local`. A scan walks at most 32 levels, takes each file's size and modification time from the listing's resource values (`FileStamp`) and hands them to `scan_document`, so an unchanged file is not probed again (`android.md`'s *Documents and catalog*), admits
+  `LSSupportsOpeningDocumentsInPlace`) is root `local`. **A folder URI's relative path is split on `/` and each piece percent-decoded, and the whole is refused if any piece is `.`, `..` or holds a `/` or NUL** (`FolderURI.components(of:)`; `a%2F..%2F..%2Fx` once climbed out of the granted folder, and the boundary's `documents::location` refuses the same URIs, `mobile.md`). A scan walks at most 32 levels, takes each file's size and modification time from the listing's resource values (`FileStamp`) and hands them to `scan_document`, so an unchanged file is not probed again (`android.md`'s *Documents and catalog*), admits
   `audio_extensions()`, reads a folder's cover/folder/front JPEG or PNG within 8 MiB once for the
   whole folder (`FolderCovers` gathers the songs sharing it and keeps it in one `keep_folder_cover`
   call, stored once) and a same-stem `.lrc` within 1 MiB. Fresh destinations are opened `O_CREAT | O_EXCL` and held out of every scan until their writer says the file is whole (`Folders.written`; `delete` says it too), so a scan never indexes a half-written download, landing or copy. A file opened

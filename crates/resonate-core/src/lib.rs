@@ -24,6 +24,7 @@ mod media;
 mod metered;
 pub mod naming;
 pub mod os_bytes;
+pub mod owner;
 pub mod path_text;
 pub mod positioned;
 mod presence;

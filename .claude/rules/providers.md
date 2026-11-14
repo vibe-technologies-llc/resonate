@@ -433,7 +433,8 @@ given and `online` is on.
   (`turns_are_reserved_apart_and_nobody_waits_on_the_lock_while_another_sleeps`,
   `a_server_asking_to_be_asked_later_holds_back_every_caller`). TIDAL's `Asker` and Monochrome use
   the same type.
-- **The password never leaves as typed.** Each request carries user, fresh salt and `t` = MD5 of
+- **The password never leaves as typed.** Each request carries user, a fresh salt (a v4 UUID, 128 bits drawn from the OS, never derived from the clock or the pid:
+  `a_salt_is_a_hundred_and_twenty_eight_bit_draw_and_no_two_repeat`) and `t` = MD5 of
   password and salt; User-Agent bare; `Server`'s `Debug` prints `<withheld>`. `status: failed` is
   `Error::Unwelcome` where the code concerns the account (`ACCOUNT_REFUSALS`), else
   `Error::TurnedAway` (70, a song the server lacks).

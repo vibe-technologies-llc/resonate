@@ -206,7 +206,7 @@ here, add it there.
 - **`tracing-subscriber`**: `env-filter`, and default `tracing-log` kept: gpui logs via `log`. `resonate-mobile` takes it for the `fmt` writer of its phone log (`mobile.md`'s *Logging*).
 - **`unicode-normalization`** (`std`): core's `folded_letters`, library's `playlist::folded` and the phones' boundary (`playlists.rs`, `sync.rs`).
 - **`rustix`**: no `unsafe` in OS calls: `termios`, `getpgrp` (binary), `fs` xattrs
-  (`resonate-codec`), `getuid` (`resonate-discord`), `time`'s `clock_gettime(Monotonic)`
+  (`resonate-codec`), `getuid` (`resonate-discord`), `geteuid` (core's `Owner`, on Unix alone: the user a private folder or a file must belong to), `time`'s `clock_gettime(Monotonic)`
   (`resonate-pipewire`'s callback and Oboe's, Android alone, to read how far a device timestamp
   lies from now; `realtime.md`), `system`'s `uname` (the binary alone: the host a sync device is
   named for), `fs::statfs` (the library on macOS: the type a root's volume says it is).
@@ -268,7 +268,7 @@ here, add it there.
   `online`. `resonate-fetch` is core, the seam, `ureq` and the three certificate crates alone;
   `resonate-online` takes it for `retry_after`, `sha2` (pure Rust, no default features, also
   `resonate-musicbrainz`'s) and `base64` for a Spotify sign-in's PKCE challenge. `uuid`: Jellyfin's
-  generated device id and `resonate-online`'s. `md-5`: Subsonic's token (and Last.fm signing in
+  generated device id, `resonate-online`'s and Subsonic's token salt. `md-5`: Subsonic's token (and Last.fm signing in
   online). TIDAL: `base64` (`alloc`), `roxmltree` (`std`; DASH MPD), at 0.21 against gpui's 0.20:
   a second copy of a small crate, not a held-back pin.
 - **`resvg`** (`text`, `system-fonts`): `resonate-ui`'s, for the Wrapped card (`wrapped_card.rs`), at gpui's 0.46 so one SVG stack (`usvg`, `fontdb`, `tiny-skia`, `rustybuzz`) is built and one system font database loaded; a newer `resvg` would build a second stack beside gpui's (`cargo tree -d -p resonate-ui` names none). Bump it with gpui.

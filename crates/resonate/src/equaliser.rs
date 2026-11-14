@@ -125,7 +125,7 @@ fn switched(on: bool) -> &'static str {
 }
 
 fn named(text: &str) -> Result<ProfileName> {
-    Ok(ProfileName::new(text)?)
+    Ok(ProfileName::standing(text)?)
 }
 
 fn spoken_of(sink: Option<&NodeName>) -> String {

@@ -25,7 +25,7 @@ wraps, `windows.md`, and `resonate-apple`, the Core Audio and AudioToolbox calls
 UniFFI generates the FFI scaffolding; the handwritten unsafe operation is one. **An owned
 descriptor**: the front end hands Rust a descriptor it opened (Android detaches
 `ParcelFileDescriptor`, iOS calls `open(2)`), transferred once and closed by Rust's `File`; a
-negative descriptor is refused (`documents::owned`, for a document read through `Documents` and one replaced through `DocumentRewriting` alike). The same transfer (`downloads::fresh_destination`) owns a newly
+negative descriptor is refused by `documents::owned` itself, which returns `io::Result<File>` (`NotFound` for `document_not_found()`, `PermissionDenied` for any other negative), so no caller can forget the check (a document read through `Documents`, one replaced through `DocumentRewriting` and the deleting identity alike; `a_descriptor_below_zero_is_refused_by_the_transfer_itself`). The same transfer (`downloads::fresh_destination`) owns a newly
 created download or received-song destination, never an existing music document. **The iOS audio
 unit is no longer here**: the AudioToolbox calls that create, configure and dispose a RemoteIO unit,
 their sequencing, the render callback and its reading of the system's buffer list are
@@ -356,7 +356,8 @@ A document is a URI the front end resolves to a descriptor through the `Document
 `resonate-folder` (iOS: `resonate-folder://<root>/<percent-encoded relative path>`, the root a
 security-scoped bookmark the app keeps, or `local` for its own Documents folder). The key is the URI
 after `scheme:` with its escaping kept exactly. Anything else, a bare path or a `file:` URI
-included, is `InvalidUri`. A negative descriptor says why: `document_not_found()` (no such
+included, is `InvalidUri`, and so is a `resonate-folder` URI with a piece that, once percent-decoded, is `.` or `..` or holds a `/` or NUL (`a%2F..%2Fx`), the same refusal as the iOS app's `FolderURI.components(of:)`
+(`a_folder_uri_climbing_out_of_its_root_by_any_spelling_is_refused`). A negative descriptor says why: `document_not_found()` (no such
 document: Android's `FileNotFoundException`, iOS's unresolvable bookmark or `ENOENT`) reads as
 `NotFound`, `document_refused()` (any other failure) as `PermissionDenied`, and
 `hide_missing_songs` hides only a `NotFound`, so a provider's transient error leaves a song visible
