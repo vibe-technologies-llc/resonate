@@ -237,18 +237,21 @@ Invariants the layering protects (the rules files have the rest):
   empty `stitched_shaders.metal` goes into `gpui_apple`'s `OUT_DIR` once (`macos.md`). CI lints (the headless and per-feature lines too) and
   tests it natively in the `macos` job. `packaging/macos/build.sh` builds the disk image on a Mac.
 
-- `cargo build|test --workspace --exclude resonate-ui --no-default-features`: the workspace without GPUI, the
-  usual inner loop (the only way to keep gpui out); `resonate-ui` is a default member so a bare
-  `cargo run` opens the window.
-- `cargo build|test --workspace`: everything. `cargo test -p <crate> <test> -- --exact --nocapture`:
-  one test. `cargo clippy --workspace --all-targets -- -D warnings`, and the same with
+- **Tests run through `cargo nextest run`, never `cargo test`** (`build.md`): every test is a
+  process of its own, run across every binary at once; `cargo-nextest` is a requirement like the
+  toolchain (Arch's `cargo-nextest`, or `cargo install cargo-nextest --locked`).
+- `cargo nextest run --workspace --exclude resonate-ui --no-default-features`: the workspace
+  without GPUI, the usual inner loop (the only way to keep gpui out); `resonate-ui` is a default
+  member so a bare `cargo run` opens the window. `cargo build` the same way builds without testing.
+- `cargo nextest run --workspace`: everything. `cargo nextest run -p <crate> <name> --no-capture`:
+  one test; a crate's integration tests are one binary, `suite`, a module a file (`bus::`,
+  `library::`), so `-p resonate-mpris bus::` runs one file of them.
+- `cargo clippy --workspace --all-targets -- -D warnings`, and the same with
   `--workspace --exclude resonate-ui --no-default-features`, with `-p resonate --no-default-features
   --features online,mcp,discord,sync`, and with `-p resonate --no-default-features --features <f>`
   for each of `ui`, `online`, `mcp`, `discord`, `sync`: code dead without a feature is warned.
-- `dbus-run-session -- cargo test -p resonate-mpris --test bus`: the bus tests on a session bus of
-  their own; under a plain `cargo test` they skip without one.
-- `cargo nextest run --workspace --exclude resonate-ui --no-default-features`: the same tests with every test
-  process in parallel across binaries (`build.md`); not installed by any script.
+- `dbus-run-session -- cargo nextest run -p resonate-mpris bus::`: the bus tests on a session bus
+  of their own; without one they skip. CI runs the whole headless line under `dbus-run-session`.
 - `rust-formatter` formats, `rust-formatter --check` checks; never `cargo fmt`. CI cannot run it.
 - `RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages [<words>]`: every DSP stage
   against `benches/ceilings.tsv`; a stage added to the bench is added to the file.
@@ -262,20 +265,20 @@ Invariants the layering protects (the rules files have the rest):
   `loudest_through` over `RESONATE_BENCH_SONGS=<folder>`, each the best of fifteen (`analysis.md`).
   `cargo build --profile profiling`: release with symbols.
 - Tests needing the outside world skip without it: `resonate-pipewire` (`stream`, `reconnect`,
-  `formats`), `resonate-listen` (`capture`, `reconnect`, `microphone`), `resonate-coreaudio --test stream` (macOS, an output device; `RESONATE_COREAUDIO_TESTS=required` makes a skip a failure), the reconnect, `formats` and
-  `microphone` tests need `pw-cli` and host their own daemon; `resonate-mpris --test bus` (session
-  bus; notification and headset presses run under `dbus-run-session`); `resonate-codec --test
-  encoded` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`); `resonate-dsp --test restoration`
-  (ffmpeg); `resonate-library --test library`
-  (ffmpeg); `resonate-analysis --test references` (ffmpeg with libvorbis, `fpcalc`, `lame`, and `faac`, `fdkaac`, `twolame` and ffmpeg's libopus where present, each skipped without); `resonate-online --test live` (`RESONATE_ONLINE_TESTS`); `resonate --test terminal`
-  (`setsid`, a pseudo-terminal) and, on Windows, `resonate --test console` (ConPTY, an audio
-  endpoint `sinks` lists); `resonate --test dragging` (`RESONATE_DRAG_TESTS`, a hosted KWin, GTK 4
-  in python3, `spectacle`); `resonate-mpris --test trash` (`xdg-desktop-portal`, and `bwrap` with `xdg-dbus-proxy` for the
+  `formats`), `resonate-listen` (`capture`, `reconnect`, `microphone`), `resonate-coreaudio`'s `stream` (macOS, an output device; `RESONATE_COREAUDIO_TESTS=required` makes a skip a failure), the reconnect, `formats` and
+  `microphone` tests need `pw-cli` and host their own daemon; `resonate-mpris`'s `bus::` (session
+  bus; notification and headset presses run under `dbus-run-session`); `resonate-codec`'s
+  `encoded::` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`); `resonate-dsp`'s `restoration`
+  (ffmpeg); `resonate-library`'s `library::`
+  (ffmpeg); `resonate-analysis`'s `references::` (ffmpeg with libvorbis, `fpcalc`, `lame`, and `faac`, `fdkaac`, `twolame` and ffmpeg's libopus where present, each skipped without); `resonate-online`'s `live` (`RESONATE_ONLINE_TESTS`); `resonate`'s `terminal::`
+  (`setsid`, a pseudo-terminal) and, on Windows, `resonate`'s `console::` (ConPTY, an audio
+  endpoint `sinks` lists); `resonate`'s `dragging::` (`RESONATE_DRAG_TESTS`, a hosted KWin, GTK 4
+  in python3, `spectacle`); `resonate-mpris`'s `trash::` (`xdg-desktop-portal`, and `bwrap` with `xdg-dbus-proxy` for the
   sandboxed case). `resonate-subsonic`, `-jellyfin`, `-tidal`, `-monochrome` and `-ytmusic` serve fake servers
   on loopback (`-ytmusic` a fake `yt-dlp` too, on Unix).
-- `cargo run -p resonate-server -- --help`: the sync server. `cargo test -p resonate-server` runs
+- `cargo run -p resonate-server -- --help`: the sync server. `cargo nextest run -p resonate-server` runs
   it in-process with two clients over loopback (playlists, favourites, a peer fetch, a stranger's
-  key); `cargo test -p resonate-sync` holds the ledger, wire and sealing.
+  key); `cargo nextest run -p resonate-sync` holds the ledger, wire and sealing.
 - `cd packaging/server && makepkg -f`: the sync server's package, cloned from the repository's
   remote (CI points `source` at its own checkout).
 - `cd fuzz && cargo +nightly fuzz build`, then `cargo +nightly fuzz run <target> corpus/<target>
@@ -284,7 +287,7 @@ Invariants the layering protects (the rules files have the rest):
   measured against the system libsoxr, the tables of `docs/RESAMPLING.md` on stdout (`build.md`,
   the `compare-resamplers` skill). Not in CI: it needs libsoxr, and an idle machine for its timings.
 
-CI (`ci.yml`) runs the clippy and test lines, the bus tests, the DSP ceilings bench, the Windows and macOS builds, the fuzz build, the server package and the Android checks of this list; the other benches, `cargo nextest`, the profiling build, `cargo xwin` (CI builds Windows natively), the iOS checks and the SoXR comparison run locally, and `release.yml` runs on tags only. The debug profile is optimised and `target-cpu=native` is set
+CI (`ci.yml`) runs the clippy and nextest lines (the bus tests among them, under `dbus-run-session`), the DSP ceilings bench, the Windows and macOS builds, the fuzz build, the server package and the Android checks of this list; the other benches, the profiling build, `cargo xwin` (CI builds Windows natively), the iOS checks and the SoXR comparison run locally, and `release.yml` runs on tags only. The debug profile is optimised and `target-cpu=native` is set
 (`build.md`).
 
 `cargo run -- <subcommand> --help` is the grammar (`binary.md`); the binary doubles as the audio

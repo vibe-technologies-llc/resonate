@@ -8,6 +8,7 @@ url='https://github.com/vibe-technologies-llc/resonate'
 license=('AGPL-3.0-or-later')
 depends=('gcc-libs' 'systemd')
 makedepends=('rust' 'cargo' 'gcc' 'pkgconf' 'git')
+checkdepends=('cargo-nextest')
 provides=('resonate-server')
 conflicts=('resonate-server')
 backup=('etc/resonate-server/resonate-server.env')
@@ -41,7 +42,7 @@ check() {
   cd "$_pkgname"
   export RUSTUP_TOOLCHAIN=stable
   export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=native"
-  cargo test --frozen --release --package resonate-server
+  cargo nextest run --frozen --release --package resonate-server
 }
 
 package() {

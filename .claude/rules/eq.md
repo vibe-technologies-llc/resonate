@@ -1193,7 +1193,7 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   `a_microphones_own_response_is_taken_off_what_it_heard`), under the deconvolution's own
   (`a_sweep_through_a_known_filter_is_deconvolved_to_that_filters_response`,
   `the_delay_between_playing_and_hearing_changes_nothing_but_the_delay`, `resonate-dsp`).
-  `resonate-listen --test capture` plays a sweep through the desktop's monitor against a real
+  `resonate-listen`'s `capture::` plays a sweep through the desktop's monitor against a real
   daemon and skips without one. **The window's *Measure* is the same path behind a seam**
   (`resonate_ui::Measures`, `Lookups::measures`, filled by the binary's `measuring::Sweeping`; the
   window names no `resonate-dsp` and no PipeWire; `measure(through, from, hearing, calibration)`

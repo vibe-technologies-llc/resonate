@@ -3,6 +3,7 @@ name = "resonate-analysis"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+autotests = false
 
 [lib]
 doctest = false
@@ -34,6 +35,10 @@ harness = false
 [[bench]]
 name = "study"
 harness = false
+
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
 
 [lints]
 workspace = true

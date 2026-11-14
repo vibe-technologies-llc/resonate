@@ -16,7 +16,7 @@ paths:
   - "crates/resonate/build.rs"
   - "crates/resonate/resources.rs"
   - "crates/resonate/icon_resources.rs"
-  - "crates/resonate/tests/icon_resources.rs"
+  - "crates/resonate/tests/icons.rs"
   - "crates/resonate/tests/installer.rs"
   - "crates/resonate-listen/src/endpoints.rs"
   - "crates/resonate-listen/src/wasapi_*.rs"
@@ -708,7 +708,7 @@ cross-built executable carries no icon and no Linux package build gains a depend
 script also tests `CARGO_CFG_TARGET_OS`. The `.ico` is committed, ten PNG images from 16 to 256 px
 rendered from `packaging/resonate.svg` by `packaging/windows/icon.py` (`rsvg-convert`, `python3 -I
 packaging/windows/icon.py`). The Linux desktop's accent-following icon is not carried over: the
-executable's icon is the packaged colours. `tests/icon_resources.rs` includes `icon_resources.rs`
+executable's icon is the packaged colours. `tests/icons.rs` includes `icon_resources.rs`
 and runs it on every host over the committed file: each image is a numbered `RT_ICON` holding its
 bytes, the group's entries match the `.ico`'s directory with the ids in the offsets' place, the
 icon records join in ahead of a resource file, and a file that is no icon is refused by name

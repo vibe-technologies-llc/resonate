@@ -1,3 +1,27 @@
+nextest-version = { required = "0.9.151", recommended = "0.9.152" }
+
+[store]
+dir = "target/nextest"
+
+[test-groups]
+engine-alone.max-threads = 1
+
 [profile.default]
 fail-fast = false
-slow-timeout.period = "30s"
+slow-timeout = { period = "30s", terminate-after = 10 }
+
+[[profile.default.overrides]]
+filter = "package(resonate-analysis)"
+priority = 100
+
+[[profile.default.overrides]]
+filter = "package(resonate-library) | package(resonate-mobile) | package(resonate-upnp) | package(resonate-cast) | package(resonate-engine)"
+priority = 50
+
+[profile.ci]
+failure-output = "immediate-final"
+
+[[profile.ci.overrides]]
+platform = 'cfg(target_os = "macos")'
+filter = "package(resonate-engine)"
+test-group = "engine-alone"

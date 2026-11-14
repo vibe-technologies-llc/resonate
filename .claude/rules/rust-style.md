@@ -18,7 +18,7 @@ Strict: a violation is a defect.
 - put design facts in `CLAUDE.md`, `.claude/rules/`, `docs/`.
 
 **A test refuses a comment anywhere in the tree**: `no_source_in_the_workspace_carries_a_comment`
-(`crates/resonate-words-build/tests/comments.rs`, so `cargo test -p resonate-words-build` and CI's
+(`crates/resonate-words-build/tests/comments.rs`, so `cargo nextest run -p resonate-words-build` and CI's
 workspace test run it) walks `crates`, `fuzz`, `soxr-comparison`, `android`, `ios`, `packaging`,
 `.github`, `.claude` and the root manifests through `resonate_words_build::comments_in`, which
 tells a comment from a string, a raw string, a character, a lifetime and a template or

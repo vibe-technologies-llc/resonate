@@ -9,6 +9,7 @@ url='https://github.com/vibe-technologies-llc/resonate'
 license=('AGPL-3.0-or-later')
 makedepends=('rust' 'cargo' 'clang' 'pkgconf' 'vulkan-headers' 'libxkbcommon-x11' 'git'
              'webkit2gtk-4.1')
+checkdepends=('cargo-nextest')
 options=('!lto' '!debug')
 install="$_pkgname.install"
 source=("$_pkgname::git+$url.git")
@@ -41,7 +42,7 @@ check() {
   cd "$_pkgname"
   export RUSTUP_TOOLCHAIN=stable
   export RUSTFLAGS="${RUSTFLAGS:-} -C target-cpu=native"
-  cargo test --frozen --release --workspace --exclude resonate-ui --no-default-features
+  cargo nextest run --frozen --release --workspace --exclude resonate-ui --no-default-features
 }
 
 package_resonate-player-git() {

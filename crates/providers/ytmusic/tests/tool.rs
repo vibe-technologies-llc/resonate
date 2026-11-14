@@ -149,7 +149,7 @@ fn a_tool_not_there_is_the_provider_away() {
 }
 
 #[cfg(unix)]
-mod support;
+use crate::support;
 
 #[cfg(unix)]
 mod faked {

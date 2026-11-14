@@ -3,6 +3,7 @@ name = "resonate"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+autotests = false
 
 [build-dependencies]
 clap_complete.workspace = true
@@ -94,6 +95,10 @@ rustix = { workspace = true, features = ["pty"] }
 
 [target.'cfg(windows)'.dev-dependencies]
 resonate-win32 = { workspace = true, features = ["console"] }
+
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
 
 [lints]
 workspace = true

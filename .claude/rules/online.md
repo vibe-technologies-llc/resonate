@@ -530,7 +530,7 @@ nothing asked** (`no_account_asks_nothing_of_the_api_and_a_pasted_link_keeps_its
 
 **Mapping is proved over captured answers; services are reached only on request.**
 `tests/fixtures/` holds a captured document per shape, pulled into each module's tests by
-`include_str!`, so document-to-model runs on every `cargo test` with no network. Captured whole, not
+`include_str!`, so document-to-model runs on every test run with no network. Captured whole, not
 cut down; the AudD ones were written from the service's documentation. `tests/live.rs` is gated on
 `RESONATE_ONLINE_TESTS` and shares one client so pacing holds across its tests.
 

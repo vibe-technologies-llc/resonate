@@ -4,6 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "resonate-bindgen"
+path = "src/main.rs"
+test = false
+
 [dependencies]
 uniffi = { workspace = true, features = ["cli"] }
 

@@ -3,6 +3,7 @@ name = "resonate-listen"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+autotests = false
 
 [lib]
 doctest = false
@@ -35,6 +36,10 @@ resonate-coreaudio.workspace = true
 resonate-dsp.workspace = true
 resonate-wasapi.workspace = true
 resonate-words-build.workspace = true
+
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
 
 [lints]
 workspace = true

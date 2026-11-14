@@ -8,10 +8,9 @@ use std::{
 
 use resonate_core::{Frames, MediaLocation, Resumable, Resumption, Span, ZoneId};
 use resonate_library::{Library, Result, ScanOptions, SortOrder, TrackQuery};
-
-mod support;
-
 use support::link_to_directory;
+
+use crate::support;
 
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;

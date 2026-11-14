@@ -1,6 +1,3 @@
-#[path = "../../resonate-sync/tests/shelf/mod.rs"]
-mod shelf;
-
 use std::{
     env, fs,
     net::{Ipv4Addr, SocketAddr},

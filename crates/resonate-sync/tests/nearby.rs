@@ -1,5 +1,3 @@
-mod shelf;
-
 use std::{
     env, fs,
     io::Cursor,

@@ -17,11 +17,12 @@ paths:
   (push to `master`, pull requests, `workflow_dispatch`; `archlinux` containers; the token reads
   the repository and nothing more, `permissions: contents: read`): clippy (default
   features, the workspace headless, the binary without `ui` and with each feature alone, so code
-  dead without a feature is warned), headless tests of every crate but the window (the job
-  reruns the MPRIS bus tests under `dbus-run-session`, which a plain `cargo test` skips) and, in
+  dead without a feature is warned), headless tests of every crate but the window (the whole
+  nextest line under `dbus-run-session`, so the MPRIS bus tests, which skip without a bus, run in
+  it) and, in
   the whole-workspace job, only the tests of `resonate` and `resonate-ui`, two of the three crates whose
   default features the headless job does not build (the third, `resonate-signin`, whose `window`
-  feature is a default, is linted by the full clippy and tested by no job); no job runs `cargo build` before `cargo test`,
+  feature is a default, is linted by the full clippy and tested by no job); no job runs `cargo build` before `cargo nextest run`,
   which builds what it needs, and library crates set `doctest = false` since none holds a doctest, the DSP
   bench under its ceilings, the layering refusals, the fuzz build, the sync server's package
   (`server-package`), the `windows` job (`windows-latest`: clippy with `--all-targets` of the workspace but the phones'
@@ -96,20 +97,46 @@ included, each run's report and result XML uploaded as `resonate-android-tests-a
 28.2 and 16 KB ELF alignment, running the host binding tool against Android ELF metadata, so no
 Linux sound server or GUI libraries are needed.
 
-## Faster local test runs
+## Tests run through nextest
 
-`.config/nextest.toml` configures `cargo nextest run --workspace --exclude resonate-ui
---no-default-features`, which runs each test as its own process across every test binary at once
-where `cargo test` runs the binaries one after another; `dbus-run-session -- cargo nextest run -p
-resonate-mpris --test bus` replaces the bus line. CI keeps `cargo test`, and nextest is installed by
-the listener, never by a script.
+- **`cargo nextest run` is the one test runner**, locally, in every CI job and in the PKGBUILDs'
+  `check()` (`checkdepends=('cargo-nextest')`); nothing runs `cargo test`. Each test is a process of
+  its own, every binary's tests at once, so a test's globals, threads and environment never meet
+  another's (a Mac refuses a process past about two thousand threads, `macos.md`). No crate holds a
+  doctest (every library sets `doctest = false`), which nextest would not run. The Arch containers
+  install it with `pacman` (`cargo-nextest`, in `ARCH_PACKAGES`), the Windows and macOS jobs with
+  `taiki-e/install-action`.
+- **`.config/nextest.toml`**: `nextest-version` holds the oldest version the config parses under.
+  The default profile never fails fast and calls a test slow at 30 s and kills it at five minutes,
+  so a hung test fails its job long before the job's timeout. The CPU-heavy packages start first
+  (`priority`: `resonate-analysis` at 100, the library, the phones' boundary, UPnP, Cast and the
+  engine at 50), so the long tests are not the tail of a run whose sum of test time is about sixteen
+  times its length on sixteen threads. The `ci` profile, which every CI line names (`--profile ci`),
+  prints each failure again at the end and on macOS puts `resonate-engine`'s tests in the
+  `engine-alone` group (one at a time, `macos.md`).
+- **A crate's integration tests are one binary, `suite`**: `autotests = false` and one `[[test]]`
+  at `tests/suite.rs`, which names each `tests/*.rs` as a module (and holds a module two files share,
+  `support`, `shelf`, `blocking`), since every test binary links the whole dependency tree again;
+  merging the 66 binaries into 28 roughly halved the time a change in `resonate-core` takes to
+  relink every test. A crate with a single file keeps Cargo's inferred binary.
+  `every_crate_links_its_integration_tests_into_one_suite_that_names_each_file`
+  (`resonate-words-build`'s `suites.rs`) refuses a second binary and a file the suite never
+  compiles. A test runs within its file's module, so its name is `bus::…`, `library::…`; a test
+  that starts its own binary again (a hosted daemon, a bus of its own, a process killed part way)
+  names the test through `in_this_suite`, which prefixes `module_path!()`'s module, since a bare
+  name under `--exact` runs nothing and the parent would read the child's emptiness as a pass.
+  A lib or bin target holding no test sets `test = false` (`resonate-driven`, the server's and the
+  sign-in window's binaries, `resonate-bindgen`), so no empty harness is linked.
 
 ## Profiles and target
 
 - **A debug build is optimised**, since an unoptimised resampler cannot keep up with the music:
   `[profile.dev]` is `opt-level = 1`, the DSP, codec, analysis and vault crates and their heavy
-  dependencies (`rustfft`, `realfft`, `flacenc`, `zstd-sys`...) at 3; debug assertions and debuginfo
-  stay on.
+  dependencies (`rustfft`, `realfft`, `flacenc`, `zstd-sys`...) at 3; debug assertions stay on.
+  **Debuginfo is `line-tables-only`**: a panic's backtrace still names file and line, while full
+  DWARF made every test binary over half a gigabyte, most of a cold build's 31 GB of `target` and
+  most of each link. A debugger session that needs variables builds with
+  `CARGO_PROFILE_DEV_DEBUG=full`.
 - **`--profile profiling`** is release with symbols for `perf` and `cargo flamegraph`.
 - **`.cargo/config.toml` sets `target-cpu=native`** so the resampler vectorises. The `-git` Arch packages
   keep it; the release assets build for `x86-64-v3` (the macOS disk image for `aarch64-apple-darwin`'s own baseline, `RUSTFLAGS` emptied), the Flatpak and CI for the baseline, and

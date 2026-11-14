@@ -1271,7 +1271,7 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   `a_wall_that_moves_down_late_in_a_song_is_followed_without_a_step`,
   `a_steady_wall_with_the_high_frequencies_gone_for_a_moment_is_not_moved`). The patch is taken
   from the music itself, so an input band that ends takes the extension built from it with it; only
-  the stage's own move is faded. `resonate-dsp --test restoration` runs ffmpeg's MP3, AAC and
+  the stage's own move is faded. `resonate-dsp`'s `restoration` test runs ffmpeg's MP3, AAC and
   Vorbis encodes through it at several bitrates each, built from synthetic music (notes,
   strikes), and a transient-rich AAC encode at 32 kbit/s whose short-block holes it must fill;
   it skips without ffmpeg.

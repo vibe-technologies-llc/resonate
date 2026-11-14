@@ -10,6 +10,7 @@ doctest = false
 [[bin]]
 name = "resonate-signin"
 path = "src/main.rs"
+test = false
 required-features = ["window"]
 
 [features]

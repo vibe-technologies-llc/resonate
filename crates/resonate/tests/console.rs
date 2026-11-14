@@ -20,6 +20,13 @@ use resonate_win32::{
     ConsoleEvent, ConsoleMode, Process, PseudoConsole, console_input_mode, tell_the_console,
 };
 
+fn in_this_suite(test: &str) -> String {
+    let (_, module) = module_path!()
+        .split_once("::")
+        .expect("a module of the suite");
+    format!("{module}::{test}")
+}
+
 const PATIENCE: Duration = Duration::from_secs(15);
 const POLL_EVERY: Duration = Duration::from_millis(200);
 const SETTLED_FOR: Duration = Duration::from_millis(500);
@@ -184,7 +191,14 @@ impl Console {
     fn errand(&self, home: &Home, errand: &str, asked: usize) -> Process {
         let asked = asked.to_string();
         let test = env::current_exe().expect("this test's own executable");
-        let arguments = [ERRAND_TEST, "--exact", "--nocapture", "--test-threads=1"].map(OsStr::new);
+        let errand_test = in_this_suite(ERRAND_TEST);
+        let arguments = [
+            errand_test.as_str(),
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ]
+        .map(OsStr::new);
         self.console
             .spawn(
                 &test,

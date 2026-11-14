@@ -7,12 +7,11 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_ytmusic::{Cookies, Tool, VideoId};
+use support::Fake;
 use tracing::Level;
 
 #[allow(dead_code)]
-mod support;
-
-use support::Fake;
+use crate::support;
 
 #[derive(Clone, Default)]
 struct Logged(Arc<Mutex<Vec<u8>>>);

@@ -4,11 +4,10 @@ use std::fs;
 
 use resonate_providers::Error;
 use resonate_ytmusic::{Connection, Cookies, VideoId, YtMusic};
+use support::Fake;
 
 #[allow(dead_code)]
-mod support;
-
-use support::Fake;
+use crate::support;
 
 const CHECKED_WITH: &str = "https://music.youtube.com/watch?v=9RfVp-GhKfs";
 const LAPSED: &str =

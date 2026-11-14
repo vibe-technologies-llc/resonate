@@ -3,6 +3,7 @@ name = "resonate-words-build"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+autotests = false
 
 [lib]
 doctest = false
@@ -10,6 +11,10 @@ doctest = false
 [dependencies]
 fluent-syntax.workspace = true
 thiserror.workspace = true
+
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
 
 [lints]
 workspace = true

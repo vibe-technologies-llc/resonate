@@ -847,7 +847,7 @@ step would move them.
 
 ## Checks
 
-`cargo test -p resonate-mobile` runs on the host.
+`cargo nextest run -p resonate-mobile` runs on the host.
 `search_parity.rs` (test-only) scans a table of songs into a real `resonate-library` catalog, shapes their
 rows by SQL, builds the same songs in the document catalog and asks both every kind of term the grammar
 reads (`added`, `plays` with and without a window, `played`, `year`, `length`, `rate`, `depth`, every

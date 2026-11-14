@@ -39,11 +39,14 @@ use zbus::{
     names::{BusName, OwnedUniqueName, WellKnownName},
 };
 
-#[path = "../src/blocking.rs"]
-#[allow(dead_code)]
-mod blocking;
+use crate::blocking::{Connection, Proxy, connection, fdo::DBusProxy};
 
-use blocking::{Connection, Proxy, connection, fdo::DBusProxy};
+fn in_this_suite(test: &str) -> String {
+    let (_, module) = module_path!()
+        .split_once("::")
+        .expect("a module of the suite");
+    format!("{module}::{test}")
+}
 
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
@@ -3392,7 +3395,7 @@ fn on_a_bus_of_its_own(test: &str) -> bool {
         .arg(format!("--config-file={}", config.display()))
         .args(["--", "sh", "-c", SYSTEM_BUS_TOO, "sh"])
         .arg(env::current_exe().expect("the test binary names itself"))
-        .args(["--exact", test, "--nocapture"])
+        .args(["--exact", in_this_suite(test).as_str(), "--nocapture"])
         .env(ON_A_BUS_OF_ITS_OWN, "1")
         .spawn();
     let mut running = match started {

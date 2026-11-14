@@ -10,11 +10,10 @@ use std::{
 use resonate_providers::{Error, Id, Named, PlaysInPlace, Provider, ProviderOp, Rating};
 use resonate_ytmusic::{Cookies, Tool, VideoId, YtMusic};
 use serde_json::{Value, json};
+use support::Fake;
 
 #[allow(dead_code)]
-mod support;
-
-use support::Fake;
+use crate::support;
 
 const CLIENT_DATA: &str = "[\"1.20261104.00.00\"]";
 const SONGS: &str = include_str!("fixtures/songs.json");

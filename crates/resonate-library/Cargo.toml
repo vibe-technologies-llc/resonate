@@ -3,6 +3,7 @@ name = "resonate-library"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+autotests = false
 
 [lib]
 doctest = false
@@ -46,6 +47,10 @@ harness = false
 [[bench]]
 name = "paging"
 harness = false
+
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
 
 [lints]
 workspace = true

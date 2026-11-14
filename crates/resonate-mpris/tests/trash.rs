@@ -10,6 +10,13 @@ use std::{
 
 use resonate_mpris::{Trashing, trash_through_the_portal};
 
+fn in_this_suite(test: &str) -> String {
+    let (_, module) = module_path!()
+        .split_once("::")
+        .expect("a module of the suite");
+    format!("{module}::{test}")
+}
+
 const ON_A_BUS_OF_ITS_OWN: &str = "RESONATE_PORTAL_ON_A_BUS_OF_ITS_OWN";
 const THIS_TEST: &str = "a_file_is_taken_to_the_trash_by_a_portal_hosted_on_a_bus_of_its_own";
 const SANDBOXED_TEST: &str =
@@ -127,7 +134,7 @@ fn on_a_bus_of_its_own(tree: &Tree, test: &str) -> bool {
         .arg(format!("--config-file={}", config.display()))
         .arg("--")
         .arg(env::current_exe().expect("the test binary names itself"))
-        .args(["--exact", test, "--nocapture"])
+        .args(["--exact", in_this_suite(test).as_str(), "--nocapture"])
         .env(ON_A_BUS_OF_ITS_OWN, "1")
         .status();
     match ran {
@@ -301,10 +308,11 @@ fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() 
         true,
         &music,
     );
-    child
-        .args(["--info-fd", "3"])
-        .arg(&executable)
-        .args(["--exact", CHILD_TEST, "--nocapture"]);
+    child.args(["--info-fd", "3"]).arg(&executable).args([
+        "--exact",
+        in_this_suite(CHILD_TEST).as_str(),
+        "--nocapture",
+    ]);
     let ran = Command::new("sh")
         .args(["-c", r#"exec "$@" 3>"$BWRAPINFO""#, "sh", "bwrap"])
         .args(child.get_args())

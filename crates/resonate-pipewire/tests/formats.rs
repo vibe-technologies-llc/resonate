@@ -16,6 +16,13 @@ use resonate_pipewire::{
     StreamEvent, StreamRequest, StreamState, StreamVolume, Unreshapable, Words,
 };
 
+fn in_this_suite(test: &str) -> String {
+    let (_, module) = module_path!()
+        .split_once("::")
+        .expect("a module of the suite");
+    format!("{module}::{test}")
+}
+
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
 const SOCKET: &str = "pipewire-0";
 const STREAM: &str = "resonate-formats-test";
@@ -1038,7 +1045,7 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
     fs::create_dir_all(&folder).expect("a folder for the hosted daemon");
     fs::write(folder.join("hosted.conf"), HOSTED_CONFIG).expect("the hosted daemon's config");
     let ran = Command::new(env::current_exe().expect("the test binary"))
-        .args([this_test, "--exact", "--nocapture"])
+        .args([in_this_suite(this_test).as_str(), "--exact", "--nocapture"])
         .env(HOSTED_AT, &folder)
         .env("PIPEWIRE_RUNTIME_DIR", &folder)
         .status()

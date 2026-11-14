@@ -7,11 +7,10 @@ use std::{
 
 use resonate_providers::Opened;
 use resonate_ytmusic::{Cookies, Tier, VideoId, interrupt_the_tools};
+use support::Fake;
 
 #[allow(dead_code)]
-mod support;
-
-use support::Fake;
+use crate::support;
 
 const A_KILL_LANDS_WITHIN: Duration = Duration::from_secs(5);
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(10);

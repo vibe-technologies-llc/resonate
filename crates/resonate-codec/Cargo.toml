@@ -3,6 +3,7 @@ name = "resonate-codec"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+autotests = false
 
 [lib]
 doctest = false
@@ -33,6 +34,10 @@ resonate-win32.workspace = true
 
 [dev-dependencies]
 hdf5-writer.workspace = true
+
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
 
 [lints]
 workspace = true

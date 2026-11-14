@@ -3,6 +3,7 @@ name = "resonate-pipewire"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+autotests = false
 
 [lib]
 doctest = false
@@ -19,6 +20,10 @@ rustix = { workspace = true, features = ["time"] }
 smallvec.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
 
 [lints]
 workspace = true

@@ -42,8 +42,8 @@ Each seat pings the room once a second and sets `ServerClock` from the **quickes
 over 10 s, a suspended machine, forgets the window. Min-RTT removes queueing but not a path's asymmetry,
 so the error between two people is bounded by half their round trip, not known.
 
-**Measured**, `RESONATE_PARTY_SERVER=wss://resonate.tecnio.dev/ cargo test -p resonate-server --test
-together the_clock_of_two_seats -- --nocapture`: from one machine through the Cloudflare tunnel, a 76 ms
+**Measured**, `RESONATE_PARTY_SERVER=wss://resonate.tecnio.dev/ cargo nextest run -p resonate-server
+together::the_clock_of_two_seats --no-capture`: from one machine through the Cloudflare tunnel, a 76 ms
 round trip and two clocks 0.13 ms apart on average, 0.5 ms at most, over 45 s. Two real players on one
 local PipeWire graph and a loopback server stood 0.02 ms apart, steady, for a whole song (`apart_ms` in
 `resonate_sync=trace`). People in different places differ by up to half their round trip, some tens of

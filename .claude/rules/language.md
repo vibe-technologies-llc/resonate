@@ -232,5 +232,5 @@ the hand-written `resonate-config.toml(5)` beside the English one.
   preconditions, with its own two lists; it also holds every dotted key a view names
   (`Text("queue.clear")`, `String(localized:)`) to `Localizable.strings` or the stringsdict, and
   `InfoPlist.strings` to the `Info.plist` prompts it speaks.
-- `cargo test -p resonate-words -p resonate-words-build` holds negotiation, the plural forms, the
+- `cargo nextest run -p resonate-words -p resonate-words-build` holds negotiation, the plural forms, the
   static plain words and every refusal of the build.

@@ -1,5 +1,3 @@
-mod shelf;
-
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use resonate_core::{

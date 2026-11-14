@@ -55,7 +55,7 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   refused without the multicast entitlement have not been seen
 
 ## iOS
-- [M · blocked: hardware] The Core Audio tests (`resonate-coreaudio --test stream`: a tone through
+- [M · blocked: hardware] The Core Audio tests (`resonate-coreaudio`'s `stream`: a tone through
   the shared sink, a hog-mode rate switch and its restoration, a 24-bit ramp read back bit for bit
   through a loopback device) need an output device, and the hog and bit-exact halves a device named
   *BlackHole*; they skip without one, so they have run nowhere
@@ -100,6 +100,20 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.12.0] `resonate-mobile`'s `sync::copied::tests::a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it`
+  fails here at its 40 s wait (*the copy kept on the phone never happened*), alone and in a whole
+  run, before the move to nextest and after it
+- [M · 0.12.0] `resonate-analysis` is most of a test run's work: its tests sum to about 800 s of the
+  headless run's 2 560 s (`steps::tests::every_grid_reads_the_same_alone_as_on_a_crew` takes 16 s
+  alone and 81 s among the rest, each process's rayon crews contending for the same cores);
+  sharing one decode or encode between the `references::` and `analysis::` cases that make the same
+  file, or shorter signals where a case does not need seconds, would shorten every run
+- [S · 0.12.0] The phones' `enrichment::tests::hearing::` tests take about 21 s each and the
+  library's study and gathering tests 15 to 43 s; whether they wait out a timer a test could shorten
+  is unread
+- [S · 0.12.0] CI builds and runs each test line in one job; `cargo nextest archive` and
+  `--partition` would build once and spread the headless tests over runners, and a faster linker
+  (`wild`, pure Rust, or `mold`) is untried beside the default `rust-lld`
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried

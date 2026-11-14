@@ -2,10 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(cargo build:*)",
-      "Bash(cargo test:*)",
       "Bash(cargo clippy:*)",
       "Bash(cargo tree:*)",
-      "Bash(dbus-run-session -- cargo test:*)",
+      "Bash(dbus-run-session -- cargo nextest run:*)",
       "Bash(cargo nextest run:*)",
       "Bash(cargo xwin check:*)",
       "Bash(cargo bench:*)",

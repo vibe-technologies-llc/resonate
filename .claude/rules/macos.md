@@ -38,7 +38,7 @@ builds it and runs its tests, with no display and no output device. It is checke
   file of that name in `target/aarch64-apple-darwin/debug/build/gpui_apple-*/out/` lets the check
   go on, and is made again after a `cargo clean` or a gpui bump. Nothing links.
 - **On the hosted runner, built and tested.** CI's `macos` job (`macos-latest`, Apple Silicon) runs
-  the Windows job's clippy and tests natively, and `cargo test -p resonate -p resonate-ui`
+  the Windows job's clippy and tests natively, and `cargo nextest run -p resonate -p resonate-ui`
   (`build.md`). The Core Audio tests skip where there is no output device
   (`RESONATE_COREAUDIO_TESTS=required` makes a skip a failure, for a machine that has one).
 
@@ -47,7 +47,7 @@ builds it and runs its tests, with no display and no output device. It is checke
 - **A Mac's temporary folder is under a symlink** (`/var` for `/private/var`), and the library
   names a root by its real path, so a test comparing a path it made with one the catalog answered
   disagrees. The job names `TMPDIR` by its real path before the tests; on a Mac,
-  `TMPDIR=$(cd "$TMPDIR" && pwd -P) cargo test`.
+  `TMPDIR=$(cd "$TMPDIR" && pwd -P) cargo nextest run`.
 - **A process is refused threads past about two thousand**, where Linux allows tens of thousands:
   the window's harness lets go of its engine as each test ends (`ui.md`'s *Driven by tests*).
 - **APFS refuses a name that is not UTF-8** (`EILSEQ`) and folds case: the tests of names that are
@@ -64,7 +64,7 @@ builds it and runs its tests, with no display and no output device. It is checke
   its watch first proves the watch listens (`heard_a_write_first`).
 - **The hosted runner's sleeps overshoot and it stalls threads for tens of milliseconds**, which the
   engine's transport tests read as a device falling behind. The job runs `resonate-engine`'s tests
-  one at a time, on top of what `audio.md`'s *Fixtures* holds them to.
+  one at a time (the `ci` profile's `engine-alone` group in `.config/nextest.toml`), on top of what `audio.md`'s *Fixtures* holds them to.
 - `stat` is BSD's: a test reading a mode asks `stat -c %a`, then `stat -f %Lp`.
 
 `docs/FEATURES.md`'s *macOS parity* lists what is not built and what only a Mac can settle.

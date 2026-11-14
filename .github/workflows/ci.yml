@@ -20,7 +20,7 @@ env:
   ARCH_PACKAGES: >-
     base-devel git rustup clang pkgconf pipewire libpipewire wayland libxkbcommon libxkbcommon-x11
     fontconfig freetype2 ttf-dejavu vulkan-headers vulkan-icd-loader ffmpeg flac wavpack mac lame dbus
-    webkit2gtk-4.1
+    webkit2gtk-4.1 cargo-nextest
 
 jobs:
   clippy:
@@ -58,8 +58,7 @@ jobs:
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --locked --workspace --exclude resonate-ui --no-default-features
-      - run: dbus-run-session -- cargo test --locked -p resonate-mpris --test bus --no-default-features
+      - run: dbus-run-session -- cargo nextest run --locked --profile ci --workspace --exclude resonate-ui --no-default-features
 
   workspace:
     name: Tests with everything
@@ -73,7 +72,7 @@ jobs:
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --locked -p resonate -p resonate-ui
+      - run: cargo nextest run --locked --profile ci -p resonate -p resonate-ui
 
   costs:
     name: DSP costs under their ceilings
@@ -315,8 +314,11 @@ jobs:
           for feature in ui online mcp discord sync; do
             cargo clippy --locked -p resonate --all-targets --no-default-features --features "$feature" -- -D warnings
           done
-      - run: cargo test --locked --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --no-default-features
-      - run: cargo test --locked -p resonate --no-default-features --features mcp --test signals
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo nextest run --locked --profile ci --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --no-default-features
+      - run: cargo nextest run --locked --profile ci -p resonate --no-default-features --features mcp -E 'test(/^signals::/)'
 
   windows-arm64:
     name: Windows ARM64
@@ -362,13 +364,14 @@ jobs:
           done
       - name: Name the temporary folder by its real path
         run: echo "TMPDIR=$(cd "$TMPDIR" && pwd -P)" >> "$GITHUB_ENV"
-      - run: cargo test --locked --no-fail-fast --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --exclude resonate-engine --no-default-features
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - run: cargo nextest run --locked --profile ci --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --no-default-features
       - if: ${{ !cancelled() }}
-        run: cargo test --locked --no-fail-fast -p resonate-engine --no-default-features -- --test-threads=1
+        run: cargo nextest run --locked --profile ci -p resonate --no-default-features --features mcp -E 'test(/^signals::/)'
       - if: ${{ !cancelled() }}
-        run: cargo test --locked -p resonate --no-default-features --features mcp --test signals
-      - if: ${{ !cancelled() }}
-        run: cargo test --locked --no-fail-fast -p resonate -p resonate-ui
+        run: cargo nextest run --locked --profile ci -p resonate -p resonate-ui
 
   server-package:
     name: Sync server package
@@ -377,7 +380,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Install the build dependencies
-        run: pacman -Syu --noconfirm --needed base-devel git rustup
+        run: pacman -Syu --noconfirm --needed base-devel git rustup cargo-nextest
       - uses: actions/checkout@v7
       - name: Build the package from this checkout
         run: |

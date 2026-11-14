@@ -1,3 +1,10 @@
+fn in_this_suite(test: &str) -> String {
+    let (_, module) = module_path!()
+        .split_once("::")
+        .expect("a module of the suite");
+    format!("{module}::{test}")
+}
+
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt as _;
 use std::{
@@ -52,10 +59,9 @@ use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
     ProviderOp, Providers, Result as ProvidedResult, TURNED_TO_APART, WhyAway,
 };
-
-mod support;
-
 use support::{allow_writing, can_write, forbid_writing, link_to_directory, unlink_directory};
+
+use crate::support;
 
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
@@ -29888,7 +29894,8 @@ fn a_keep_killed_part_way_is_taken_up_again_and_its_staging_swept() -> Result<()
 
     let mut killed = Command::new(env::current_exe().expect("the test binary"))
         .args([
-            "a_keep_killed_part_way_is_taken_up_again_and_its_staging_swept",
+            in_this_suite("a_keep_killed_part_way_is_taken_up_again_and_its_staging_swept")
+                .as_str(),
             "--exact",
         ])
         .env(KILLED_KEEP_FOLDER, tree.path())
@@ -31070,7 +31077,10 @@ fn a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_la
 
     let mut killed = Command::new(env::current_exe().expect("the test binary"))
         .args([
-            "a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_landing",
+            in_this_suite(
+                "a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_landing",
+            )
+            .as_str(),
             "--exact",
         ])
         .env(UNREAD_KEEP_FOLDER, tree.path())

@@ -3,6 +3,7 @@ name = "resonate-musicbrainz"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+autotests = false
 
 [lib]
 doctest = false
@@ -23,6 +24,10 @@ thiserror.workspace = true
 tracing.workspace = true
 ureq = { workspace = true, optional = true }
 zstd = { workspace = true, features = ["zdict_builder"] }
+
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
 
 [lints]
 workspace = true

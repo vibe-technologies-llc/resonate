@@ -11,6 +11,13 @@ use std::{
 
 use resonate_listen::{Hearing, Listener, Listening};
 
+fn in_this_suite(test: &str) -> String {
+    let (_, module) = module_path!()
+        .split_once("::")
+        .expect("a module of the suite");
+    format!("{module}::{test}")
+}
+
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
 const THIS_TEST: &str =
     "a_capture_whose_daemon_restarts_is_opened_again_on_the_graph_that_comes_back";
@@ -184,7 +191,7 @@ fn a_capture_whose_daemon_restarts_is_opened_again_on_the_graph_that_comes_back(
 
     let folder = a_folder_of_its_own();
     let ran = Command::new(env::current_exe().expect("the test binary"))
-        .args([THIS_TEST, "--exact", "--nocapture"])
+        .args([in_this_suite(THIS_TEST).as_str(), "--exact", "--nocapture"])
         .env(HOSTED_AT, &folder)
         .env("PIPEWIRE_RUNTIME_DIR", &folder)
         .status()

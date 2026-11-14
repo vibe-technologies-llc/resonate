@@ -12,10 +12,9 @@ use resonate_core::{FrameSpan, Frames, MediaLocation, PlaylistId, Span};
 use resonate_library::{
     Cut, Direction, Error, Library, PlaylistOrder, Result, ScanOptions, ScanStats,
 };
-
-mod support;
-
 use support::link_to_directory;
+
+use crate::support;
 
 const RATE: u32 = 44_100;
 

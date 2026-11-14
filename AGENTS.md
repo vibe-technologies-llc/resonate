@@ -74,9 +74,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy --workspace --exclude resonate-ui --all-targets --no-default-features -- -D warnings
 cargo clippy -p resonate --all-targets --no-default-features --features online,mcp,discord,sync -- -D warnings
 cargo clippy -p resonate --all-targets --no-default-features --features <f> -- -D warnings   # each of ui online mcp discord sync
-cargo test  --workspace --exclude resonate-ui --no-default-features   # the usual inner loop
-cargo test  --workspace                                               # everything, gpui included
-dbus-run-session -- cargo test -p resonate-mpris --test bus          # the session-bus tests, on a bus of their own
+cargo nextest run --workspace --exclude resonate-ui --no-default-features   # the usual inner loop; never `cargo test`
+cargo nextest run --workspace                                               # everything, gpui included
+dbus-run-session -- cargo nextest run -p resonate-mpris bus::              # the session-bus tests, on a bus of their own
 RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages  # DSP costs under ceilings
 RUSTFLAGS= cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets   # Windows; CI's `windows` job runs it natively; `--target aarch64-pc-windows-msvc` is ARM64
 RUSTFLAGS= SDKROOT=<MacOSX.sdk> CC_aarch64_apple_darwin=clang AR_aarch64_apple_darwin=llvm-ar CFLAGS_aarch64_apple_darwin="--target=arm64-apple-macos13.0 -isysroot <MacOSX.sdk>" cargo clippy --target aarch64-apple-darwin --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets -- -D warnings   # macOS, types alone; CI's `macos` job builds and tests it natively (`macos.md` has the SDK and the shader file)

@@ -3,6 +3,7 @@ name = "resonate-sync"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+autotests = false
 
 [lib]
 doctest = false
@@ -38,6 +39,10 @@ resonate-words-build.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 resonate-words-build.workspace = true
+
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
 
 [lints]
 workspace = true

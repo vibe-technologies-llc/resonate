@@ -16,11 +16,7 @@ use zbus::{
     names::{BusName, WellKnownName},
 };
 
-#[path = "../src/blocking.rs"]
-#[allow(dead_code)]
-mod blocking;
-
-use blocking::{Connection, Proxy, connection, fdo::DBusProxy};
+use crate::blocking::{Connection, Proxy, connection, fdo::DBusProxy};
 
 const OBJECT_PATH: &str = "/org/mpris/MediaPlayer2";
 const ROOT: &str = "org.mpris.MediaPlayer2";

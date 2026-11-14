@@ -17,11 +17,10 @@ use resonate_providers::{
 };
 use resonate_ytmusic::{Cookies, YtMusic};
 use serde_json::{Value, json};
+use support::Fake;
 
 #[allow(dead_code)]
-mod support;
-
-use support::Fake;
+use crate::support;
 
 const SONGS: &str = include_str!("fixtures/songs.json");
 const CLIENT_DATA: &str = ")]}'\n[[\"yt.sw.adr\",null,[[[\"lt\",\"LT\",null,\"78.57.30.54\",\"resonate/0.5.0,gzip(gfe)\",67,\"1.20261104.00.00\",null]]]]]";

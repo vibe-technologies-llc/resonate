@@ -12,6 +12,13 @@ use std::{
 use resonate_listen::{Hearing, Listener, Listening};
 use resonate_pipewire::NodeName;
 
+fn in_this_suite(test: &str) -> String {
+    let (_, module) = module_path!()
+        .split_once("::")
+        .expect("a module of the suite");
+    format!("{module}::{test}")
+}
+
 const HOSTED_AT: &str = "RESONATE_HOSTED_PIPEWIRE";
 const LISTENER: &str = "resonate-listen-microphone-test";
 const MICROPHONE: &str = "resonate-hosted-microphone";
@@ -298,7 +305,7 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
     fs::create_dir_all(&folder).expect("a folder for the hosted daemon");
     fs::write(folder.join("hosted.conf"), HOSTED_CONFIG).expect("the hosted daemon's config");
     let ran = Command::new(env::current_exe().expect("the test binary"))
-        .args([this_test, "--exact", "--nocapture"])
+        .args([in_this_suite(this_test).as_str(), "--exact", "--nocapture"])
         .env(HOSTED_AT, &folder)
         .env("PIPEWIRE_RUNTIME_DIR", &folder)
         .status()
