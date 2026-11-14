@@ -150,10 +150,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `watch.rs` divides by the length with no zero guard and `clamp` lets NaN through
 
 ## The binary
-- [M · 0.12.0] The window's pipe and socket keep a client's thread after its player stops serving:
-  `Answering::serve` reads `closed` only after a frame arrives and `listening.rs` runs each client on
-  a detached thread that `rest` never wakes or joins, so a connected client (a long `resonate mcp`
-  session) holds a thread and the zone's `Shared` (player and host) until it next speaks or leaves
+- [S · 0.12.0] The window's pipe and socket leave a connected client's thread blocked after the
+  player stops serving: `listening::serve_while_held` lets go of the zone's `Shared` at once, but the
+  thread sits in `read_frame` until the client next speaks or leaves (a Windows named pipe has no
+  cross-thread wake; a socket could be shut down from `rest`)
 - [S · 0.12.0] The settings writer replaces a dangling `config.toml` symlink instead of following
   it: `config::edit` falls back to the link's own path where `canonicalize` fails, so a dotfile link
   to a file not yet made becomes a plain file on the first write, against *Every writer follows a

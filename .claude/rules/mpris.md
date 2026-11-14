@@ -376,11 +376,16 @@ registry's), sorted by name, so `found`, `listed`, `named` and `zoned` are the s
 - **`registry.rs` is the portable discovery** (a held file per player in a folder, `Held` and
   `writer_of`, tested on every host) and `pipe.rs` the `interprocess` half, `cfg(windows)`.
 - **`listening.rs` is the accept loop both transports share** (`accepting`, over a closure that
-  accepts and a `Serves<S>` that `Answering` fills): at most `CONNECTIONS_AT_MOST` (32) clients at
-  once, each on a thread of its own, a client refused costing the rest nothing and a listener that
-  refuses `ACCEPT_FAILURES_AT_MOST` (5) times in a row given up on
-  (`every_client_accepted_is_served_and_a_refused_one_costs_the_rest_nothing`,
-  `a_listener_that_keeps_refusing_is_given_up_on`).
+  accepts and a `Serves` that `Answering` fills, one frame in and one reply out): at most
+  `CONNECTIONS_AT_MOST` (32) clients at once, each on a thread of its own, a client refused costing
+  the rest nothing and a listener that refuses `ACCEPT_FAILURES_AT_MOST` (5) times in a row given up
+  on (`every_client_accepted_is_served_and_a_refused_one_costs_the_rest_nothing`,
+  `a_listener_that_keeps_refusing_is_given_up_on`). **A client's thread holds the player only
+  between a frame and its reply**: `serve_while_held` reads a frame with nothing but the stream,
+  upgrades a `Weak` to the `Serves` to answer it and lets go before it writes, so a client that
+  stays connected after `rest` (a long `resonate mcp` session) keeps its thread but not the zone's
+  `Shared`, and its next frame ends the connection
+  (`a_client_still_connected_does_not_keep_a_player_that_stopped_serving_alive`).
 - **`socket.rs` is a Mac's transport, over `std::os::unix::net` and no further dependency**
   (compiled for macOS and, for its tests, on every Unix). The registry's folder there is
   `~/Library/Caches/resonate/players` (`registry::players_folder_of_a_mac`; the temporary folder's

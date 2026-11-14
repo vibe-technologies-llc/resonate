@@ -1,31 +1,33 @@
 use std::{
     io::{self, Read, Write},
     sync::{
-        Arc,
+        Arc, Weak,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
     time::Duration,
 };
 
-use crate::answering::Answering;
+use crate::{
+    Result,
+    answering::Answering,
+    wire::{read_frame, write_frame},
+};
 
 pub(crate) const CONNECTIONS_AT_MOST: usize = 32;
 const ACCEPT_FAILURES_AT_MOST: u32 = 5;
 const ACCEPT_RETRY_AFTER: Duration = Duration::from_millis(100);
 const CONNECTION_THREAD: &str = "resonate-mpris-pipe-connection";
 
-pub(crate) trait Serves<S>: Send + Sync {
-    fn serve(&self, stream: S);
+pub(crate) trait Serves: Send + Sync {
+    fn reply_to(&self, frame: &[u8]) -> Option<Vec<u8>>;
 
     fn close(&self);
 }
 
-impl<S: Read + Write> Serves<S> for Answering {
-    fn serve(&self, stream: S) {
-        if let Err(error) = Self::serve(self, stream) {
-            tracing::debug!(%error, "a client of the pipe was let go");
-        }
+impl Serves for Answering {
+    fn reply_to(&self, frame: &[u8]) -> Option<Vec<u8>> {
+        Self::reply_to(self, frame)
     }
 
     fn close(&self) {
@@ -33,9 +35,23 @@ impl<S: Read + Write> Serves<S> for Answering {
     }
 }
 
-pub(crate) fn accepting<S: Send + 'static>(
+fn serve_while_held<S: Read + Write>(mut stream: S, held: &Weak<dyn Serves>) -> Result<()> {
+    while let Some(frame) = read_frame(&mut stream)? {
+        let Some(serving) = held.upgrade() else {
+            return Ok(());
+        };
+        let Some(reply) = serving.reply_to(&frame) else {
+            return Ok(());
+        };
+        drop(serving);
+        write_frame(&mut stream, &reply)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn accepting<S: Read + Write + Send + 'static>(
     mut accept: impl FnMut() -> io::Result<S>,
-    serving: &Arc<dyn Serves<S>>,
+    serving: &Arc<dyn Serves>,
     stop: &AtomicBool,
 ) {
     let open = Arc::new(AtomicUsize::new(0));
@@ -69,12 +85,14 @@ pub(crate) fn accepting<S: Send + 'static>(
             continue;
         }
 
-        let serving = Arc::clone(serving);
+        let held = Arc::downgrade(serving);
         let counted = Arc::clone(&open);
         let spawned = thread::Builder::new()
             .name(CONNECTION_THREAD.to_owned())
             .spawn(move || {
-                serving.serve(stream);
+                if let Err(error) = serve_while_held(stream, &held) {
+                    tracing::debug!(%error, "a client of the pipe was let go");
+                }
                 counted.fetch_sub(1, Ordering::AcqRel);
             });
         if spawned.is_err() {
@@ -84,10 +102,11 @@ pub(crate) fn accepting<S: Send + 'static>(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::{
         collections::VecDeque,
+        os::unix::net::UnixStream,
         sync::mpsc::{self, Sender},
     };
 
@@ -96,12 +115,16 @@ mod tests {
     use super::*;
 
     struct Counting {
-        served: Mutex<Sender<u32>>,
+        served: Mutex<Sender<u8>>,
     }
 
-    impl Serves<u32> for Counting {
-        fn serve(&self, stream: u32) {
-            let _ = self.served.lock().send(stream);
+    impl Serves for Counting {
+        fn reply_to(&self, frame: &[u8]) -> Option<Vec<u8>> {
+            let _ = self
+                .served
+                .lock()
+                .send(frame.first().copied().unwrap_or_default());
+            Some(frame.to_vec())
         }
 
         fn close(&self) {}
@@ -111,15 +134,29 @@ mod tests {
         io::Error::from(io::ErrorKind::ConnectionAborted)
     }
 
-    #[test]
-    fn every_client_accepted_is_served_and_a_refused_one_costs_the_rest_nothing() {
+    fn counting() -> (Arc<dyn Serves>, mpsc::Receiver<u8>) {
         let (served, arrived) = mpsc::channel();
-        let serving: Arc<dyn Serves<u32>> = Arc::new(Counting {
+        let serving: Arc<dyn Serves> = Arc::new(Counting {
             served: Mutex::new(served),
         });
+        (serving, arrived)
+    }
+
+    #[test]
+    fn every_client_accepted_is_served_and_a_refused_one_costs_the_rest_nothing() {
+        let (serving, arrived) = counting();
         let stop = Arc::new(AtomicBool::new(false));
-        let mut offered: VecDeque<io::Result<u32>> =
-            VecDeque::from([Ok(1), Err(refused()), Ok(2), Ok(3)]);
+        let mut ends = Vec::new();
+        let mut offered: VecDeque<io::Result<UnixStream>> = VecDeque::new();
+        for byte in [1_u8, 2, 3] {
+            let (near, mut far) = UnixStream::pair().expect("a pair");
+            write_frame(&mut far, &[byte]).expect("a frame sent");
+            ends.push(far);
+            offered.push_back(Ok(near));
+            if byte == 1 {
+                offered.push_back(Err(refused()));
+            }
+        }
 
         let stopping = Arc::clone(&stop);
         accepting(
@@ -133,7 +170,7 @@ mod tests {
             &stop,
         );
 
-        let mut heard: Vec<u32> = (0..3)
+        let mut heard: Vec<u8> = (0..3)
             .map(|_| {
                 arrived
                     .recv_timeout(Duration::from_secs(5))
@@ -146,22 +183,53 @@ mod tests {
 
     #[test]
     fn a_listener_that_keeps_refusing_is_given_up_on() {
-        let (served, _arrived) = mpsc::channel();
-        let serving: Arc<dyn Serves<u32>> = Arc::new(Counting {
-            served: Mutex::new(served),
-        });
+        let (serving, _arrived) = counting();
         let stop = AtomicBool::new(false);
         let mut asked = 0;
 
         accepting(
             || {
                 asked += 1;
-                Err(refused())
+                Err::<UnixStream, _>(refused())
             },
             &serving,
             &stop,
         );
 
         assert_eq!(asked, ACCEPT_FAILURES_AT_MOST);
+    }
+
+    #[test]
+    fn a_client_still_connected_does_not_keep_a_player_that_stopped_serving_alive() {
+        let (serving, arrived) = counting();
+        let held = Arc::downgrade(&serving);
+        let stop = Arc::new(AtomicBool::new(false));
+        let (near, mut far) = UnixStream::pair().expect("a pair");
+        write_frame(&mut far, &[1]).expect("a frame sent");
+        let mut offered = VecDeque::from([near]);
+
+        let stopping = Arc::clone(&stop);
+        accepting(
+            move || {
+                offered.pop_front().ok_or_else(|| {
+                    stopping.store(true, Ordering::Release);
+                    refused()
+                })
+            },
+            &serving,
+            &stop,
+        );
+        arrived
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the client served once");
+        assert!(read_frame(&mut far).expect("a reply").is_some());
+
+        drop(serving);
+
+        assert!(
+            held.upgrade().is_none(),
+            "a client that stayed connected held the player"
+        );
+        drop(far);
     }
 }

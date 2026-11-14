@@ -91,14 +91,14 @@ pub(crate) struct Serving {
     name: WellKnownName<'static>,
     player: String,
     stop: Arc<AtomicBool>,
-    answering: Arc<dyn Serves<Stream>>,
+    answering: Arc<dyn Serves>,
     thread: Option<JoinHandle<()>>,
     claim: Option<Claim>,
 }
 
 impl Serving {
     pub(crate) fn start(zone: ZoneId, answering: Arc<Answering>) -> Result<Self> {
-        let answering: Arc<dyn Serves<Stream>> = answering;
+        let answering: Arc<dyn Serves> = answering;
         let folder = registry::players_folder();
         let mut last = None;
 
@@ -145,7 +145,7 @@ impl Serving {
         player: String,
         claim: Claim,
         listener: Listener,
-        answering: Arc<dyn Serves<Stream>>,
+        answering: Arc<dyn Serves>,
     ) -> Result<Self> {
         let stop = Arc::new(AtomicBool::new(false));
         let thread = {
