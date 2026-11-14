@@ -72,6 +72,11 @@ final class Scratch {
         #expect(FolderURI.components(of: relative) == nil)
     }
 
+    @Test(arguments: ["a%2F..%2F..%2Fx", "a%2f..%2fx", "%2Fetc%2Fpasswd", "a/%2E/b", "./a", "a/b%00c"])
+    func aPieceHoldingASlashWhenDecodedOrNamingNoStepDownIsRefused(relative: String) {
+        #expect(FolderURI.components(of: relative) == nil)
+    }
+
     @Test func aDotsNameThatIsNotAClimbIsAllowed() {
         #expect(FolderURI.components(of: "a../b..c/..d.flac") == ["a..", "b..c", "..d.flac"])
     }

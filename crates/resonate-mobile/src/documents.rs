@@ -13,7 +13,9 @@ pub trait Documents: Send + Sync {
 pub(crate) const DOCUMENT_REFUSED: i32 = -1;
 pub(crate) const DOCUMENT_NOT_FOUND: i32 = -2;
 
-pub(crate) const GRANTED_SCHEMES: [&str; 2] = ["content", "resonate-folder"];
+const FOLDER_SCHEME: &str = "resonate-folder";
+
+pub(crate) const GRANTED_SCHEMES: [&str; 2] = ["content", FOLDER_SCHEME];
 
 pub(crate) struct GrantedFiles {
     pub(crate) documents: Arc<dyn Documents>,
@@ -43,18 +45,12 @@ impl MediaProvider for GrantedFiles {
         let descriptor = self
             .documents
             .open_document(format!("{}:{key}", self.source.as_str()));
-        if descriptor < 0 {
-            let kind = match descriptor {
-                DOCUMENT_NOT_FOUND => io::ErrorKind::NotFound,
-                _ => io::ErrorKind::PermissionDenied,
-            };
-            return Err(resonate_codec::Error::Io {
-                location: location.clone(),
-                source: kind.into(),
-            });
-        }
+        let file = owned(descriptor).map_err(|source| resonate_codec::Error::Io {
+            location: location.clone(),
+            source,
+        })?;
         Ok(Media {
-            stream: Box::new(Reading::new(owned(descriptor))),
+            stream: Box::new(Reading::new(file)),
             hint: location
                 .extension()
                 .map(|extension| FormatHint::Extension(extension.into())),
@@ -62,8 +58,15 @@ impl MediaProvider for GrantedFiles {
     }
 }
 
-pub(crate) fn owned(descriptor: i32) -> File {
-    unsafe { File::from_raw_fd(descriptor) }
+pub(crate) fn owned(descriptor: i32) -> io::Result<File> {
+    if descriptor < 0 {
+        let kind = match descriptor {
+            DOCUMENT_NOT_FOUND => io::ErrorKind::NotFound,
+            _ => io::ErrorKind::PermissionDenied,
+        };
+        return Err(kind.into());
+    }
+    Ok(unsafe { File::from_raw_fd(descriptor) })
 }
 
 pub(crate) fn location(uri: &str) -> Result<MediaLocation> {
@@ -74,7 +77,49 @@ pub(crate) fn location(uri: &str) -> Result<MediaLocation> {
             key.starts_with("//").then_some((scheme, key))
         })
         .ok_or(Error::InvalidUri)?;
+    if *scheme == FOLDER_SCHEME && !stays_within_its_root(key) {
+        return Err(Error::InvalidUri);
+    }
     Ok(MediaLocation::new(SourceId::new(scheme)?, key))
+}
+
+fn stays_within_its_root(key: &str) -> bool {
+    let relative = key
+        .strip_prefix("//")
+        .and_then(|rest| rest.split_once('/'))
+        .map_or("", |(_, relative)| relative);
+    relative
+        .split('/')
+        .filter(|piece| !piece.is_empty())
+        .all(|piece| is_one_step_down(&unescaped(piece)))
+}
+
+fn is_one_step_down(piece: &[u8]) -> bool {
+    !matches!(piece, b"" | b"." | b"..") && !piece.iter().any(|byte| matches!(byte, b'/' | 0))
+}
+
+fn unescaped(piece: &str) -> Vec<u8> {
+    let bytes = piece.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let hex = bytes
+            .get(at + 1..at + 3)
+            .filter(|_| bytes[at] == b'%')
+            .and_then(|pair| std::str::from_utf8(pair).ok())
+            .and_then(|pair| u8::from_str_radix(pair, 16).ok());
+        match hex {
+            Some(byte) => {
+                decoded.push(byte);
+                at += 3;
+            }
+            None => {
+                decoded.push(bytes[at]);
+                at += 1;
+            }
+        }
+    }
+    decoded
 }
 
 pub(crate) fn document_uri(location: &MediaLocation) -> Result<String> {
@@ -123,6 +168,48 @@ mod tests {
     impl Documents for Answering {
         fn open_document(&self, _: String) -> i32 {
             self.0
+        }
+    }
+
+    #[test]
+    fn a_descriptor_below_zero_is_refused_by_the_transfer_itself() {
+        let refused = owned(DOCUMENT_REFUSED).expect_err("a refused document");
+        let missing = owned(DOCUMENT_NOT_FOUND).expect_err("a missing document");
+        let nonsense = owned(i32::MIN).expect_err("not a descriptor");
+
+        assert_eq!(refused.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(missing.kind(), io::ErrorKind::NotFound);
+        assert_eq!(nonsense.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn a_folder_uri_climbing_out_of_its_root_by_any_spelling_is_refused() {
+        for climbing in [
+            "resonate-folder://abc/a%2F..%2F..%2Fx",
+            "resonate-folder://abc/a%2f..%2fx",
+            "resonate-folder://abc/%2E%2E/x",
+            "resonate-folder://abc/a/../x",
+            "resonate-folder://abc/a/%2e/x",
+            "resonate-folder://abc/a%00b",
+            "resonate-folder://abc/%2Fetc%2Fpasswd",
+        ] {
+            assert!(
+                matches!(location(climbing), Err(Error::InvalidUri)),
+                "{climbing} was accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn a_folder_uri_staying_within_its_root_is_kept_exactly_as_given() {
+        for staying in [
+            "resonate-folder://local",
+            "resonate-folder://abc/Bj%C3%B6rk/Homogenic/01%20Hunter.flac",
+            "resonate-folder://abc/a../b..c/..d.flac",
+        ] {
+            let at = location(staying).expect("a location");
+
+            assert_eq!(document_uri(&at).expect("a uri"), staying);
         }
     }
 

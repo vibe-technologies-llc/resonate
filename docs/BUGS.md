@@ -18,12 +18,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   or listening thread
 
 ## Security
-- [S · 0.11.1] The iOS folder URI check passes a `/` percent-encoded inside a segment:
-  `FolderFiling.components(of:)` splits on `/` before decoding and refuses only a segment that is
-  exactly `..`, so `a%2F..%2F..%2Fx` decodes to a climbing path that `Folders.resolved`'s
-  `appendingPathComponent` takes whole, and `open`, `delete` and `fileNumber` then reach outside the
-  granted folder; `documents::location` checks only the scheme. No reachable hostile URI was found,
-  but one from an imported list or another device would do it
 - [S · 0.12.0] A server can still make a device dial an address, against `sync.md`: the sealed punch
   candidates (`wire.rs`) carry addresses alone, no sender, target or time, and
   `service::punched_candidates` puts the server's `address` first once any old blob opens, so a
@@ -62,10 +56,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`server.md` says to bind it there; nothing holds it) lets every client choose the address its
   limits count. Refuse a non-loopback `listen` with `forwarded_by`, or honour the header only from a
   loopback peer
-- [S · 0.12.0] `documents::owned` is a safe function around `File::from_raw_fd` that refuses nothing,
-  though `mobile.md` says it refuses a negative descriptor: every caller checks first today
-  (`downloads.rs`'s `fresh_destination` checks inside), so the one approved unsafe call relies on
-  each caller remembering
 
 ## Sync and together
 

@@ -35,7 +35,11 @@ public enum FolderURI {
 
     public static func components(of relative: String) -> [String]? {
         let path = relative.split(separator: "/").map { $0.removingPercentEncoding ?? String($0) }
-        return path.contains("..") ? nil : path
+        return path.allSatisfy(isOneStepDown) ? path : nil
+    }
+
+    private static func isOneStepDown(_ piece: String) -> Bool {
+        !piece.isEmpty && piece != "." && piece != ".." && !piece.contains("/") && !piece.contains("\0")
     }
 }
 
