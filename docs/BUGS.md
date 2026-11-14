@@ -107,12 +107,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   its own (`db/roots.rs` `remove_tracks`, `note_before_removing`), so a file the trash refused
   (`Removal::Kept`) is still marked deleted here and never synced back, as is every file of a run
   that fails before the rows go; `library.md` puts the mark in the transaction that drops the rows
-- [S · 0.11.1] The write-time mend of a dead writer's whole or torn copy finishes it over whichever
-  track is being written: `mend_what_a_dead_writer_left` matches a cut name by prefix
-  (`Kept::names`) and calls `finished_writing_back` with the track in hand, where
-  `mend_a_cut_short_write` resolves the track through `track_named_by` and leaves an ambiguous
-  prefix `Unplaced` (`rust-style.md`); two tracks in a folder sharing a cut name lose the one torn
-  copy that could mend the first, or, with no page record, have its bytes laid over the second
 - [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
   root runs: `held_open_elsewhere` (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding
   the file except for a process whose `status` names root. A write lease (`F_SETLEASE` with

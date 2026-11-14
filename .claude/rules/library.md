@@ -1413,7 +1413,10 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   track was:** `stood_beside` appends an FNV-1a hash of each 4 KiB page of the track as it stood,
   both lengths and a check, `STOOD_MAGIC` last; the write-back lays the copy over in page-aligned
   chunks (`laid_over`, writing only the runs of pages that differ from the track). A dead writer's whole or torn copy is finished by the next write to that
-  track or the scan of its folder, never swept as left over, and only over a track still between the
+  track or the scan of its folder, never swept as left over, and only over the one track its name
+  resolves to (`track_named_by`; a name cut to fit the limit that two tracks of the folder share
+  names none, so the copy stays `Unplaced` whichever track is being written,
+  `a_whole_copy_cut_to_a_name_two_tracks_share_is_finished_over_neither`), and only over a track still between the
   two (`Stood::standing`): `Mended::WrittenBack`, `Finished`, `ChangedSince` (a page neither:
   another program's edit, copy dropped), `Unreadable` (record failing its check writes nothing).
 - **A row cut out of a shared file is written into the sheet that cuts it, never into the file.**

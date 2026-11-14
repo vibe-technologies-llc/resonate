@@ -946,6 +946,20 @@ fn swept_unless_living(staged: &Path, writer: u32) {
     }
 }
 
+fn finished_over_the_track_named(
+    whole: &Path,
+    kept: &KeptBy<'_>,
+    track: &Path,
+) -> io::Result<Mended> {
+    match track_named_by(folder_of(whole), kept)? {
+        Some(named) if named == track => finished_writing_back(whole, track),
+        Some(_) | None => {
+            tracing::warn!(path = %whole.display(), track = %track.display(), "the whole copy a tag write left names no one track, so it is left where it is");
+            Ok(Mended::Unplaced)
+        }
+    }
+}
+
 pub(crate) fn mend_what_a_dead_writer_left(track: &Path) {
     let Some(name) = track.file_name() else {
         return;
@@ -964,7 +978,9 @@ pub(crate) fn mend_what_a_dead_writer_left(track: &Path) {
         }
         let mended = match kept.left {
             Left::Undo => mend_a_cut_short_write(&path),
-            Left::WholeCopy | Left::TornWholeCopy => finished_writing_back(&path, track),
+            Left::WholeCopy | Left::TornWholeCopy => {
+                finished_over_the_track_named(&path, &kept, track)
+            }
         };
         if let Err(error) = mended {
             tracing::warn!(%error, path = %path.display(), "a tag write cut short could not be mended");
@@ -1223,6 +1239,32 @@ mod tests {
         mend_what_a_dead_writer_left(&track);
         assert_eq!(fs::read(&track).expect("the track"), [2_u8; 8]);
         assert!(!torn.whole.exists());
+    }
+
+    #[test]
+    fn a_whole_copy_cut_to_a_name_two_tracks_share_is_finished_over_neither() {
+        let folder = Folder::new("ambiguous-cut");
+        let stem = "ä".repeat(120);
+        let first = folder.0.join(format!("{stem}1.flac"));
+        let second = folder.0.join(format!("{stem}2.flac"));
+        fs::write(&first, [1_u8; 8]).expect("a track");
+        fs::write(&second, [2_u8; 8]).expect("another track");
+
+        let stamped = format!(".{NEVER_A_PROCESS}{KEPT_BY_AND_COUNTED}0{WHOLE_SUFFIX}");
+        let whole = folder.0.join(naming::named_within(
+            ".",
+            first.file_name().expect("a name"),
+            &stamped,
+        ));
+        fs::write(&whole, [3_u8; 8]).expect("the whole copy");
+        assert!(kept_by(whole.file_name().expect("a name")).is_some_and(|kept| kept.cut));
+
+        mend_what_a_dead_writer_left(&second);
+        mend_what_a_dead_writer_left(&first);
+
+        assert_eq!(fs::read(&first).expect("the first track"), [1_u8; 8]);
+        assert_eq!(fs::read(&second).expect("the second track"), [2_u8; 8]);
+        assert!(whole.exists());
     }
 
     #[test]
