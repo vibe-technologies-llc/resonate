@@ -1,5 +1,5 @@
 Name:           resonate-server
-Version:        0.11.0
+Version:        0.12.0
 Release:        1%{?dist}
 Summary:        Sync server for Resonate: keeps sealed records and introduces devices
 License:        AGPL-3.0-or-later
