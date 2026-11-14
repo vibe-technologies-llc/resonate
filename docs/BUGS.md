@@ -140,8 +140,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   under defaults, silently; `musicbrainz.rs` falls back to the config already held
 
 ## Equaliser
-- [S · 0.12.0] A profile name Windows or a FAT volume refuses is taken as usable:
-  `ProfileName::new` refuses only `/`, `\`, NUL, control characters, `.` and `..`, and `path_of`
-  writes `<name>.txt`, so a name holding `: * ? " < > |`, a trailing dot or space or a device name
-  (an AutoEq label through `ProfileName::after`) fails the save as a store error, and two names apart
-  only in case are one file on macOS and Windows (unconfirmed which labels reach it)

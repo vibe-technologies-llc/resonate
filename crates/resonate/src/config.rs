@@ -1431,7 +1431,7 @@ impl At<'_> {
         let Some(named) = given(self.string(value)?) else {
             return Ok(None);
         };
-        ProfileName::new(&named)
+        ProfileName::standing(&named)
             .map(|name| Some(Binding::Profile(name)))
             .map_err(|_| self.rejected())
     }
