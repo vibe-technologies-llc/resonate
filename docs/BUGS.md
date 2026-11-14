@@ -49,11 +49,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `kept_to_this_user` makes
 - [S · 0.12.0] Subsonic's token salt is predictable (`subsonic/src/lib.rs` `salt`: an MD5 of the
   time, a counter and the pid), where the scheme assumes a random one; draw it from the OS
-- [S · 0.12.0] `forwarded_by` is honoured whoever connects: `serve.rs` skips the per-address `admit`
-  and reads the counted address from the configured header, so a web listener bound beyond loopback
-  (`server.md` says to bind it there; nothing holds it) lets every client choose the address its
-  limits count. Refuse a non-loopback `listen` with `forwarded_by`, or honour the header only from a
-  loopback peer
 - [S · 0.12.0] `documents::owned` is a safe function around `File::from_raw_fd` that refuses nothing,
   though `mobile.md` says it refuses a negative descriptor: every caller checks first today
   (`downloads.rs`'s `fresh_destination` checks inside), so the one approved unsafe call relies on

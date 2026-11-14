@@ -305,6 +305,9 @@ fn run(args: Args) -> Result<(), Error> {
                 Some(web) => {
                     let listener = TcpListener::bind(web.listen).await.map_err(Error::Listen)?;
                     tracing::info!(listen = %web.listen, forwarded_by = ?web.forwarded_by, "serving sync over web sockets");
+                    if web.forwarded_by.is_some() && !web.listen.ip().is_loopback() {
+                        tracing::warn!(listen = %web.listen, "the proxy's header is trusted only from a peer on this machine; others are counted by their own address");
+                    }
                     web_server
                         .serve_web_claiming(listener, web.forwarded_by, web.android_certificates)
                         .await;

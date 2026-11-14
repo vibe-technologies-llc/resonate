@@ -269,7 +269,13 @@ it off.
   terminates TLS. Bind it to loopback. Devices use `sync-server = "wss://sync.example.org/"`.
 - **`forwarded_by = "CF-Connecting-IP"`** makes the address the allowance counts the first one in
   that header, and a connection without a parseable one is dropped, so only the proxy's path works.
-  Left out, the peer address is counted, which behind a proxy is the proxy itself: set it.
+  Left out, the peer address is counted, which behind a proxy is the proxy itself: set it. **The
+  header is trusted only from a peer on this machine** (`header_trusted_from`: a loopback address,
+  an IPv4 one mapped into IPv6 read as itself), where `cloudflared` connects from; a peer elsewhere,
+  which reached a listener bound beyond loopback around the proxy, is counted by its own address and
+  its header ignored, so no client chooses the address its limits count, and a `listen` beyond
+  loopback with `forwarded_by` is warned of at start
+  (`the_proxys_header_is_trusted_only_from_a_peer_on_this_machine`).
 - **A plain `GET` of `/s/` or `/p/` is a page, not a socket** (`pages.rs`): `serve_web` peeks at the
   stream before tungstenite, which would refuse it, and answers a static page that hands its URL
   fragment to `resonate://`. The fragment never reaches here, so the page holds nothing of an

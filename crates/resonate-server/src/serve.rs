@@ -224,6 +224,7 @@ impl Server {
             if let Err(error) = stream.set_nodelay(true) {
                 tracing::debug!(%error, "a connection could not leave Nagle's algorithm");
             }
+            let forwarded_by = header_trusted_from(forwarded_by.as_ref(), peer.ip());
             let admitted = match forwarded_by {
                 Some(_) => None,
                 None => match self.guard.admit(peer.ip()) {
@@ -235,7 +236,6 @@ impl Server {
                 continue;
             };
             let server = Arc::clone(&self);
-            let forwarded_by = forwarded_by.clone();
             let certificates = Arc::clone(&android_certificates);
             tokio::spawn(async move {
                 let Some(stream) = answered_as_a_page(stream, &certificates).await else {
@@ -976,6 +976,12 @@ async fn page_asked_of(stream: &TcpStream) -> Option<pages::Asked> {
     }
 }
 
+fn header_trusted_from(forwarded_by: Option<&Arc<str>>, peer: IpAddr) -> Option<Arc<str>> {
+    forwarded_by
+        .filter(|_| peer.to_canonical().is_loopback())
+        .cloned()
+}
+
 async fn refuse(send: &mut Writer, refusal: Refusal) -> Result<()> {
     send.send(&FromServer::Refused(refusal).encoded()).await?;
     Ok(())
@@ -994,4 +1000,39 @@ fn now() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|since| i64::try_from(since.as_secs()).unwrap_or(i64::MAX))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::Ipv6Addr;
+
+    use super::*;
+
+    #[test]
+    fn the_proxys_header_is_trusted_only_from_a_peer_on_this_machine() {
+        let header: Arc<str> = Arc::from("CF-Connecting-IP");
+        let trusted = |peer: IpAddr| header_trusted_from(Some(&header), peer);
+
+        assert_eq!(
+            trusted(IpAddr::V4(Ipv4Addr::LOCALHOST)).as_deref(),
+            Some("CF-Connecting-IP")
+        );
+        assert_eq!(
+            trusted(IpAddr::V6(Ipv6Addr::LOCALHOST)).as_deref(),
+            Some("CF-Connecting-IP")
+        );
+        assert_eq!(
+            trusted(IpAddr::V6(Ipv4Addr::LOCALHOST.to_ipv6_mapped())).as_deref(),
+            Some("CF-Connecting-IP")
+        );
+        assert_eq!(trusted(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 9))), None);
+        assert_eq!(
+            trusted(IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))),
+            None
+        );
+        assert_eq!(
+            header_trusted_from(None, IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            None
+        );
+    }
 }
