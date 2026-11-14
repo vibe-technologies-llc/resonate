@@ -896,6 +896,14 @@ impl RootView {
         });
         let heading = self.heading(cx);
         let in_an_album = matches!(self.library.read(cx).selection(), Selection::Album(_));
+        let credited: Option<String> = match self.library.read(cx).selection() {
+            Selection::Album(album) => self
+                .library
+                .read(cx)
+                .album_of(album)
+                .and_then(|album| album.artist.clone()),
+            Selection::Everything | Selection::Artist(_) => None,
+        };
         let rowed = !rows.is_empty();
         let release_tracks = self.library.read(cx).release_tracks();
         let found = self.library.read(cx).found();
@@ -1002,8 +1010,10 @@ impl RootView {
                                             let Some(row) = release_tracks.get(missing) else {
                                                 continue;
                                             };
+                                            let unheld =
+                                                Unheld::from(row).credited_as(credited.as_deref());
                                             drawn.push(
-                                                this.unheld_row(missing, Unheld::from(row), cx)
+                                                this.unheld_row(missing, unheld, cx)
                                                     .into_any_element(),
                                             );
                                         }
@@ -3377,6 +3387,17 @@ impl Unheld {
             beside: Beside::ARun,
             ..Self::from(row)
         }
+        .credited_as(row.owner.as_deref())
+    }
+
+    pub(crate) fn credited_as(self, owner: Option<&str>) -> Self {
+        match owner {
+            Some(owner) if self.artist.is_empty() => Self {
+                artist: SharedString::from(owner.to_owned()),
+                ..self
+            },
+            _ => self,
+        }
     }
 
     fn found(found: &Found, fetching: Option<Fetching>) -> Self {
@@ -4421,10 +4442,38 @@ const REACHED_RING: f32 = 2.0;
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use resonate_core::ReleaseTrackId;
     use resonate_library::{CoverSource, HeldMedium, Link, ReleaseDetail};
 
-    use super::{A_CELL_GROWS_AT_MOST, GRID_PADDING, columns_across, record_of, side_across};
+    use super::{
+        A_CELL_GROWS_AT_MOST, GRID_PADDING, Unheld, columns_across, record_of, side_across,
+    };
     use crate::theme;
+
+    #[test]
+    fn a_missing_song_credited_as_its_album_names_the_albums_artist_like_the_songs_held() {
+        let release_track = ReleaseTrackId::new(1).expect("an id");
+        let credited_alike = Unheld::of(release_track, None, 1, "Yeni Bir Flow", None, None);
+        let credited_apart = Unheld::of(
+            release_track,
+            None,
+            5,
+            "Hani Nerdeler",
+            Some("Diyar Pala & Emir"),
+            Some(Duration::from_secs(200)),
+        );
+
+        let named = credited_alike.credited_as(Some("Diyar Pala"));
+        let kept = credited_apart.credited_as(Some("Diyar Pala"));
+        let unowned =
+            Unheld::of(release_track, None, 1, "Yeni Bir Flow", None, None).credited_as(None);
+
+        assert_eq!(named.artist.as_ref(), "Diyar Pala");
+        assert_eq!(kept.artist.as_ref(), "Diyar Pala & Emir");
+        assert_eq!(unowned.artist.as_ref(), "");
+    }
 
     #[test]
     fn the_cells_of_a_grid_fill_its_width_and_never_shrink_under_a_cover() {
