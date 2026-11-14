@@ -5,14 +5,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use resonate_codec::the_folder_a_cue_names;
 use resonate_core::{MediaLocation, TrackId};
-use rusqlite::{Connection, OptionalExtension as _, Params, Transaction, params};
+use rusqlite::{Connection, Params, Transaction, params, params_from_iter};
 
 use crate::{Error, Result, StoreOp, alternatives, scan, store, synced};
 
 const LYRICS_EXTENSION: &str = "lrc";
+
+const PATHS_ASKED_AT_ONCE: usize = 256;
 
 const UNVAULTED_ROWS_OF_A_ROOT: &str = "t.root_id = ?1 AND t.vault_key IS NULL";
 
@@ -51,20 +53,35 @@ pub(crate) struct Forgotten {
 }
 
 pub(crate) fn files_of(connection: &Connection, tracks: &[TrackId]) -> Result<BTreeSet<PathBuf>> {
-    let mut files = BTreeSet::new();
-    for &track in tracks {
-        let path = connection
-            .query_row(
-                "SELECT path FROM tracks WHERE id = ?1",
-                params![track.get() as i64],
-                |row| row.get::<_, String>(0),
+    let mut paths: AHashMap<TrackId, String> = AHashMap::with_capacity(tracks.len());
+    for batch in tracks.chunks(PATHS_ASKED_AT_ONCE) {
+        let held = vec!["?"; batch.len()].join(",");
+        let mut statement = connection
+            .prepare_cached(&format!("SELECT id, path FROM tracks WHERE id IN ({held})"))
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+        let found = statement
+            .query_map(
+                params_from_iter(batch.iter().map(|track| track.get() as i64)),
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
             )
-            .optional()
-            .map_err(|source| Error::store(StoreOp::Query, source))?
-            .ok_or(Error::UnknownTrack(track))?;
-        files.insert(store::path_of(&path));
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        for (id, path) in found {
+            if let Some(track) = u64::try_from(id).ok().and_then(|id| TrackId::new(id).ok()) {
+                paths.insert(track, path);
+            }
+        }
     }
-    Ok(files)
+
+    tracks
+        .iter()
+        .map(|track| {
+            paths
+                .get(track)
+                .map(|path| store::path_of(path))
+                .ok_or(Error::UnknownTrack(*track))
+        })
+        .collect()
 }
 
 pub(crate) fn removed(
@@ -187,7 +204,8 @@ pub(crate) fn keep_listens_as_unheld(
     rows_held_by: &str,
     bound: impl Params,
 ) -> Result<()> {
-    tx.execute(
+    store::cached(
+        tx,
         &format!(
             "INSERT INTO unheld_listens
                 (path, span_start, at, began, heard, listen_id, elsewhere, origin_device, origin_id)
@@ -224,19 +242,20 @@ pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Fo
         let named = store::path_text(path);
         let offered = MediaLocation::local(path).to_uri();
 
-        let mut keys = tx
-            .prepare(
+        let held = tx
+            .prepare_cached(
                 "SELECT DISTINCT vault_key FROM tracks WHERE path = ?1 AND vault_key IS NOT NULL",
             )
-            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
-        let held = keys
-            .query_map(params![named], |row| row.get::<_, String>(0))
-            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .and_then(|mut keys| {
+                keys.query_map(params![named], |row| row.get::<_, String>(0))
+                    .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            })
             .map_err(|source| Error::store(StoreOp::Query, source))?;
         forgotten.vault_keys.extend(held);
 
         keep_listens_as_unheld(tx, ROWS_AT_A_PATH, params![named])?;
-        tx.execute(
+        store::cached(
+            tx,
             "DELETE FROM wants
               WHERE offered = ?2
                  OR release_track_id IN
@@ -245,9 +264,9 @@ pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Fo
             params![named, offered],
         )
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
-        forgotten.tracks +=
-            tx.execute("DELETE FROM tracks WHERE path = ?1", params![named])
-                .map_err(|source| Error::store(StoreOp::Delete, source))? as u64;
+        forgotten.tracks += store::cached(tx, "DELETE FROM tracks WHERE path = ?1", params![named])
+            .map_err(|source| Error::store(StoreOp::Delete, source))?
+            as u64;
     }
     if forgotten.tracks > 0 {
         store::sweep_orphans(tx)?;

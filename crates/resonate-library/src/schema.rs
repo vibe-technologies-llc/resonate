@@ -56,7 +56,14 @@ const MIGRATIONS: &[&str] = &[
     A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT,
     THE_ARTISTS_ARE_FOLDED_AGAIN_ONCE,
     AN_UNHELD_LISTEN_NEVER_REUSES_ITS_ID,
+    THE_PATHS_A_REMOVAL_OR_A_MOVE_LOOKS_UP_ARE_INDEXED,
 ];
+
+const THE_PATHS_A_REMOVAL_OR_A_MOVE_LOOKS_UP_ARE_INDEXED: &str = "
+CREATE INDEX wants_by_offered ON wants(offered);
+CREATE INDEX retagged_sheets_by_file ON retagged_sheets(file);
+CREATE INDEX offered_step_rows_by_path ON offered_step_rows(path);
+";
 
 const AN_UNHELD_LISTEN_NEVER_REUSES_ITS_ID: &str = "
 CREATE TABLE unheld_listens_numbered (
@@ -1905,6 +1912,73 @@ mod tests {
         assert_eq!(answered(1), Some(1));
         assert_eq!(answered(2), Some(500));
         assert_eq!(answered(3), None);
+    }
+
+    fn plan_of(connection: &Connection, sql: &str) -> String {
+        connection
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(3))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .expect("a plan")
+            .join("; ")
+    }
+
+    #[test]
+    fn a_catalog_laid_before_the_lookup_indexes_keeps_its_rows_and_gains_them() {
+        let connection = opened();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == THE_PATHS_A_REMOVAL_OR_A_MOVE_LOOKS_UP_ARE_INDEXED)
+            .expect("the step that indexes them");
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier step");
+        }
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+        connection
+            .execute_batch(
+                "INSERT INTO retagged_sheets (sheet, file, scope, field, was, wrote)
+                 VALUES ('a.cue', 'a.flac', -1, 'TITLE', NULL, 'Meddle');",
+            )
+            .expect("a note kept earlier");
+        assert!(
+            plan_of(
+                &connection,
+                "SELECT 1 FROM retagged_sheets WHERE file = 'a.flac'"
+            )
+            .contains("SCAN")
+        );
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        let kept: i64 = connection
+            .query_row("SELECT count(*) FROM retagged_sheets", [], |row| row.get(0))
+            .expect("the notes");
+        assert_eq!(kept, 1);
+        for (sql, index) in [
+            (
+                "DELETE FROM wants WHERE offered = 'file:///a.flac'",
+                "wants_by_offered",
+            ),
+            (
+                "UPDATE retagged_sheets SET file = 'b.flac' WHERE file = 'a.flac'",
+                "retagged_sheets_by_file",
+            ),
+            (
+                "UPDATE offered_step_rows SET path = 'b.flac' WHERE path = 'a.flac'",
+                "offered_step_rows_by_path",
+            ),
+        ] {
+            let plan = plan_of(&connection, sql);
+            assert!(plan.contains(index), "{sql} was planned as {plan}");
+        }
     }
 
     #[test]

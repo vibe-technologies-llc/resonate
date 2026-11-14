@@ -31571,3 +31571,38 @@ fn a_delivered_row_forgotten_keeps_its_listens() -> Result<()> {
     assert_eq!(after.listened, before.listened);
     Ok(())
 }
+
+#[test]
+fn deleting_more_tracks_than_one_query_reads_forgets_every_row_and_names_an_unknown_one()
+-> Result<()> {
+    const MORE_THAN_ONE_BATCH: usize = 600;
+    let tree = Tree::new();
+    for number in 0..MORE_THAN_ONE_BATCH {
+        tree.write(
+            &format!("album/{number:04}.wav"),
+            &Wav::new().text(TITLE, &format!("song {number}")).build(),
+        );
+    }
+    let library = Library::open_in_memory()?;
+    library.trash_through(Some(Arc::new(TrashedByTheDesktop {
+        asked: Mutex::new(Vec::new()),
+        answer: Removal::Removed,
+    })));
+    scan(&library, &options(&tree))?;
+    let mut tracks: Vec<TrackId> = all(&library)?.into_iter().map(|track| track.id).collect();
+    assert_eq!(tracks.len(), MORE_THAN_ONE_BATCH);
+
+    tracks.push(TrackId::MAX);
+    assert!(matches!(
+        library.delete_tracks(&tracks),
+        Err(Error::UnknownTrack(unknown)) if unknown == TrackId::MAX
+    ));
+    tracks.pop();
+
+    let deleted = library.delete_tracks(&tracks)?;
+
+    assert_eq!(deleted.tracks, MORE_THAN_ONE_BATCH as u64);
+    assert_eq!(deleted.files, MORE_THAN_ONE_BATCH as u64);
+    assert!(all(&library)?.is_empty());
+    Ok(())
+}

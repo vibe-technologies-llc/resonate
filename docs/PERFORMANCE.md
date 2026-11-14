@@ -39,13 +39,6 @@ are in [ROADMAP.md](ROADMAP.md).
   (`identical.rs`'s `grouped`: a `BTreeMap` over `copies.identical` and a sort of each group, to draw
   `GROUPS_SHOWN`), the caret's blink included; grouping once as `Copies` lands would do
 
-## Catalog
-- [S · 0.12.0] Deleting or organising many files compiles statements per path and scans two tables
-  per path: `deleted::forget_files` `prepare`s (not cached) in its loop, as do
-  `keep_listens_as_unheld` and the `wants` delete; `files_of` queries a track at a time; `wants` has
-  no index on `offered` and `retagged_sheets` none on `file`, though `forget_files` and
-  `sheeted::notes_follow_the_file` filter on them once a path (the indexes are a migration step)
-
 ## Startup and idle
 
 ## Android
