@@ -582,7 +582,7 @@ mod tests {
         assert_eq!(listed_short(12, 12, MissingShows::Tracks), None);
         assert_eq!(
             listed_short(5_000, 7_214, MissingShows::Tracks).as_deref(),
-            Some("5000 of 7214 tracks listed; type to narrow to the rest")
+            Some("5,000 of 7,214 tracks listed; type to narrow to the rest")
         );
     }
 

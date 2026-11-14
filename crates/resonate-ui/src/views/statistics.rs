@@ -1524,7 +1524,7 @@ mod tests {
         assert_eq!(chart.bars[0].first.ago, 249);
         assert_eq!(chart.bars[0].last.ago, 247);
         assert!(chart.says().ends_with("· 3 days to a bar"));
-        assert_eq!(spanned(chart.bars[0]), "29 Jan to 31 Jan".to_owned());
+        assert_eq!(spanned(chart.bars[0]), "Jan 29 to Jan 31".to_owned());
         assert_eq!(
             Dated {
                 ago: 300,
@@ -1532,7 +1532,7 @@ mod tests {
                 this_year: 2024,
             }
             .named(),
-            "9 Dec 2023"
+            "Dec 9, 2023"
         );
     }
 
