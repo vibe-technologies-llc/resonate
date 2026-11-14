@@ -32,11 +32,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `appendingPathComponent` takes whole, and `open`, `delete` and `fileNumber` then reach outside the
   granted folder; `documents::location` checks only the scheme. No reachable hostile URI was found,
   but one from an imported list or another device would do it
-- [M · 0.12.0] The server bounds the frames it reads per session, not across them: `read_frame_at_most`
-  allocates the announced length (up to `LARGEST_FRAME`, 32 MiB) before any body arrives and
-  `reading.rs`'s `Budget` is made per session, so 2 048 connections hold tens of GiB in frame
-  buffers with no ceiling but the machine's memory; one shared byte semaphore taken before the
-  allocation, refusing with `Busy`, would bound it
 - [S · 0.12.0] A `ws://` sync server on another host sends the space's token in the clear:
   `web::web_address` takes `ws` for any host and invitation links can name one, so anyone on the
   path learns a token that may `Append`, `Compact` or `Close`; the hifi secret is refused off

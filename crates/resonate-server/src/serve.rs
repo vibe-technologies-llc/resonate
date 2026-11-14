@@ -28,7 +28,7 @@ use crate::{
     guard::{Admitted, Allowance, Guard},
     hub::{Hub, Joined, Notice, notice_weight, relayed_weight},
     pages,
-    reading::{Read, read_ahead},
+    reading::{FrameBytes, Read, read_ahead},
     relay::Bucket,
     rooms::{self, JoinedRoom, Leaving, RoomLimits, RoomNotice, Rooms},
     store::{Appended, CaughtUp, Claim, Closing, Compacted, Store},
@@ -46,6 +46,7 @@ const ASKED_BYTES_READ_OUT_AT_ONCE: usize = 4 * 1024;
 const LONGEST_SWEEP_WAIT: Duration = Duration::from_secs(60 * 60);
 const UNUSED_SPACE_KEPT_FOR: i64 = 24 * 60 * 60;
 const WEB_HANDSHAKES_AT_ONCE: usize = 256;
+const WHAT_WAS_SAID_LEAVES_WITHIN: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
@@ -60,6 +61,7 @@ pub struct Limits {
     pub room_members: usize,
     pub host_back_within: Duration,
     pub room_bytes_per_second: u64,
+    pub frame_bytes: usize,
 }
 
 struct Knock {
@@ -92,6 +94,7 @@ pub struct Server {
     limits: Limits,
     guard: Arc<Guard>,
     rooms: Arc<Rooms>,
+    frames: FrameBytes,
     began: Instant,
 }
 
@@ -109,6 +112,7 @@ impl Default for Limits {
             room_members: 32,
             host_back_within: Duration::from_secs(30),
             room_bytes_per_second: 512 * 1024,
+            frame_bytes: 256 * 1024 * 1024,
         }
     }
 }
@@ -172,6 +176,7 @@ impl Server {
             guard: Guard::new(limits.allowance),
             limits,
             rooms: Arc::new(Rooms::default()),
+            frames: FrameBytes::of(limits.frame_bytes),
             began: Instant::now(),
         })
     }
@@ -278,8 +283,11 @@ impl Server {
         let Ok(Ok((send, recv))) = streams else {
             return Ok(());
         };
-        self.hello(Writer::Quic(send), Reader::Quic(recv), address, admitted)
-            .await
+        let served = self
+            .hello(Writer::Quic(send), Reader::Quic(recv), address, admitted)
+            .await;
+        let _ = timeout(WHAT_WAS_SAID_LEAVES_WITHIN, connection.closed()).await;
+        served
     }
 
     async fn welcome_web(
@@ -596,7 +604,7 @@ impl Server {
         send.send(&FromServer::RoomWelcome { members, host }.encoded())
             .await?;
 
-        let (mut frames, reading) = read_ahead(recv, ROOM_FRAME_AT_MOST);
+        let (mut frames, reading) = read_ahead(recv, ROOM_FRAME_AT_MOST, self.frames.clone());
         let mut window = Instant::now();
         let mut counted = 0_u32;
         let mut allowance = Bucket::new(self.limits.room_bytes_per_second);
@@ -604,8 +612,15 @@ impl Server {
         let ended = loop {
             tokio::select! {
                 frame = frames.recv() => {
-                    let Some(Read { frame: Ok(frame), held: _held }) = frame else {
+                    let Some(Read { frame, held: _held }) = frame else {
                         break Ok(());
+                    };
+                    let frame = match frame {
+                        Ok(frame) => frame,
+                        Err(Error::Sync(resonate_sync::Error::NoRoom { .. })) => {
+                            break refuse(&mut send, Refusal::Busy).await;
+                        }
+                        Err(_) => break Ok(()),
                     };
                     if window.elapsed() >= RATE_WINDOW {
                         window = Instant::now();
@@ -705,7 +720,7 @@ impl Server {
             send.send(&FromServer::Closed { sealed }.encoded()).await?;
         }
 
-        let (mut frames, reading) = read_ahead(recv, LARGEST_FRAME);
+        let (mut frames, reading) = read_ahead(recv, LARGEST_FRAME, self.frames.clone());
         let mut window = Instant::now();
         let mut counted = 0_u32;
         let mut allowance = Bucket::new(self.limits.relay_bytes_per_second);
@@ -713,8 +728,15 @@ impl Server {
         let ended = loop {
             tokio::select! {
                 frame = frames.recv() => {
-                    let Some(Read { frame: Ok(frame), held: _held }) = frame else {
+                    let Some(Read { frame, held: _held }) = frame else {
                         break Ok(());
+                    };
+                    let frame = match frame {
+                        Ok(frame) => frame,
+                        Err(Error::Sync(resonate_sync::Error::NoRoom { .. })) => {
+                            break refuse(&mut send, Refusal::Busy).await;
+                        }
+                        Err(_) => break Ok(()),
                     };
                     let frame = match frame {
                         ToServer::Relay { to, datagram } => {

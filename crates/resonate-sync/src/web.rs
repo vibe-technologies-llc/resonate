@@ -35,7 +35,7 @@ use tokio_tungstenite::{
 
 use crate::{
     Error, Result, StreamOp, TlsOp,
-    quic::{read_frame_at_most, send_frame},
+    quic::{read_frame_held, send_frame},
     wire::LARGEST_FRAME,
 };
 
@@ -299,31 +299,42 @@ impl Incoming {
     }
 
     pub async fn read_at_most(&mut self, most: usize) -> Result<Option<Vec<u8>>> {
-        match self {
-            Self::Quic(stream) => read_frame_at_most(stream, most).await,
-            Self::Web(stream, budget) => {
-                budget.allow(most.saturating_add(WEB_FRAMING_AT_MOST));
-                loop {
-                    let heard = timeout(WEB_SILENT_FOR, stream.next())
-                        .await
-                        .map_err(|_| Error::ServerSilent)?;
-                    match heard {
-                        None
-                        | Some(Ok(Message::Close(_)))
-                        | Some(Err(
-                            tungstenite::Error::ConnectionClosed
-                            | tungstenite::Error::AlreadyClosed,
-                        )) => return Ok(None),
-                        Some(Ok(Message::Binary(payload))) if payload.len() > most => {
-                            return Err(Error::Oversized {
-                                length: payload.len(),
-                            });
-                        }
-                        Some(Ok(Message::Binary(payload))) => return Ok(Some(payload.to_vec())),
-                        Some(Ok(_)) => {}
-                        Some(Err(error)) => return Err(Error::web(error)),
-                    }
+        let read = self.read_held(most, |_| Some(())).await?;
+        Ok(read.map(|(payload, ())| payload))
+    }
+
+    pub async fn read_held<H>(
+        &mut self,
+        most: usize,
+        hold: impl FnOnce(usize) -> Option<H>,
+    ) -> Result<Option<(Vec<u8>, H)>> {
+        let (stream, budget) = match self {
+            Self::Quic(stream) => return read_frame_held(stream, most, hold).await,
+            Self::Web(stream, budget) => (stream, budget),
+        };
+        budget.allow(most.saturating_add(WEB_FRAMING_AT_MOST));
+        loop {
+            let heard = timeout(WEB_SILENT_FOR, stream.next())
+                .await
+                .map_err(|_| Error::ServerSilent)?;
+            match heard {
+                None
+                | Some(Ok(Message::Close(_)))
+                | Some(Err(
+                    tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed,
+                )) => return Ok(None),
+                Some(Ok(Message::Binary(payload))) if payload.len() > most => {
+                    return Err(Error::Oversized {
+                        length: payload.len(),
+                    });
                 }
+                Some(Ok(Message::Binary(payload))) => {
+                    let length = payload.len();
+                    let held = hold(length).ok_or(Error::NoRoom { length })?;
+                    return Ok(Some((payload.to_vec(), held)));
+                }
+                Some(Ok(_)) => {}
+                Some(Err(error)) => return Err(Error::web(error)),
             }
         }
     }

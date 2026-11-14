@@ -185,6 +185,9 @@ pub enum Error {
     #[error("a frame of {length} bytes is past the largest one may be")]
     Oversized { length: usize },
 
+    #[error("no room is left to hold a frame of {length} bytes")]
+    NoRoom { length: usize },
+
     #[error("the server refused: {0:?}")]
     Refused(Refusal),
 

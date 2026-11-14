@@ -85,6 +85,13 @@ struct Args {
 
     #[arg(
         long,
+        default_value_t = 256 * 1024 * 1024,
+        help = "The most bytes the frames being read may hold across every session at once; a frame past it is refused as busy"
+    )]
+    frame_bytes: usize,
+
+    #[arg(
+        long,
         default_value_t = 365,
         help = "Days a space may go untouched before it is swept"
     )]
@@ -262,6 +269,7 @@ fn run(args: Args) -> Result<(), Error> {
         devices: args.devices,
         frames_per_minute: args.frames_per_minute,
         relay_bytes_per_second: args.relay_bytes_per_second,
+        frame_bytes: args.frame_bytes,
         idle_for: Duration::from_secs(args.idle_days.saturating_mul(SECONDS_PER_DAY)),
         allowance: Allowance {
             connections: args.connections,
