@@ -20,9 +20,37 @@ pub struct Budget {
     total: usize,
 }
 
+#[derive(Clone)]
+pub struct FrameBytes {
+    bytes: Arc<Semaphore>,
+    total: usize,
+}
+
+pub struct Held {
+    _read_ahead: Option<OwnedSemaphorePermit>,
+    _across_sessions: OwnedSemaphorePermit,
+}
+
 pub struct Read {
     pub frame: Result<ToServer>,
-    pub held: Option<OwnedSemaphorePermit>,
+    pub held: Option<Held>,
+}
+
+impl FrameBytes {
+    pub fn of(total: usize) -> Self {
+        let total = total.clamp(1, Semaphore::MAX_PERMITS);
+        Self {
+            bytes: Arc::new(Semaphore::new(total)),
+            total,
+        }
+    }
+
+    pub fn hold(&self, length: usize) -> Option<OwnedSemaphorePermit> {
+        let weight = length.clamp(A_FRAME_WEIGHS_AT_LEAST.min(self.total), self.total);
+        let weight = u32::try_from(weight).unwrap_or(u32::MAX);
+
+        Arc::clone(&self.bytes).try_acquire_many_owned(weight).ok()
+    }
 }
 
 impl Budget {
@@ -48,24 +76,36 @@ impl Budget {
     }
 }
 
-pub fn read_ahead(recv: Reader, most: usize) -> (Receiver<Read>, JoinHandle<()>) {
+pub fn read_ahead(
+    recv: Reader,
+    most: usize,
+    across_sessions: FrameBytes,
+) -> (Receiver<Read>, JoinHandle<()>) {
     let (frames_in, frames) = channel(READ_AHEAD_BYTES_AT_MOST / A_FRAME_WEIGHS_AT_LEAST);
-    let reading = tokio::spawn(read_frames(
-        recv,
-        frames_in,
-        most,
-        Budget::of(READ_AHEAD_BYTES_AT_MOST),
-    ));
+    let budget = Budget::of(READ_AHEAD_BYTES_AT_MOST);
+    let reading = tokio::spawn(read_frames(recv, frames_in, most, budget, across_sessions));
 
     (frames, reading)
 }
 
-async fn read_frames(mut recv: Reader, frames: Sender<Read>, most: usize, budget: Budget) {
+async fn read_frames(
+    mut recv: Reader,
+    frames: Sender<Read>,
+    most: usize,
+    budget: Budget,
+    across_sessions: FrameBytes,
+) {
     loop {
         budget.has_room().await;
-        let read = match recv.read_at_most(most).await {
-            Ok(Some(bytes)) => Read {
-                held: budget.weigh(bytes.len()).await,
+        let read = match recv
+            .read_held(most, |length| across_sessions.hold(length))
+            .await
+        {
+            Ok(Some((bytes, across))) => Read {
+                held: Some(Held {
+                    _read_ahead: budget.weigh(bytes.len()).await,
+                    _across_sessions: across,
+                }),
                 frame: ToServer::decoded(&bytes).map_err(Error::from),
             },
             Ok(None) => return,
@@ -118,6 +158,24 @@ mod tests {
 
         assert!(blocked.is_err(), "no room while the frame is held");
         assert!(freed.is_ok());
+    }
+
+    #[test]
+    fn frames_held_across_sessions_are_refused_once_their_bytes_are_spent_and_room_comes_back() {
+        let shared = FrameBytes::of(1000);
+
+        let first = shared.hold(600).expect("held");
+        let refused = shared.hold(600);
+        let small = shared.hold(1).expect("held");
+        drop(first);
+        let after = shared.hold(900);
+        let huge = shared.hold(32 * 1024 * 1024);
+
+        assert!(refused.is_none());
+        assert!(after.is_some());
+        assert!(huge.is_none());
+        drop((small, after));
+        assert!(shared.hold(32 * 1024 * 1024).is_some());
     }
 
     #[tokio::test]

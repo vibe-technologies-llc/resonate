@@ -85,6 +85,13 @@ struct Args {
 
     #[arg(
         long,
+        default_value_t = 256 * 1024 * 1024,
+        help = "The most bytes the frames being read may hold across every session at once; a frame past it is refused as busy"
+    )]
+    frame_bytes: usize,
+
+    #[arg(
+        long,
         default_value_t = 365,
         help = "Days a space may go untouched before it is swept"
     )]
@@ -262,6 +269,7 @@ fn run(args: Args) -> Result<(), Error> {
         devices: args.devices,
         frames_per_minute: args.frames_per_minute,
         relay_bytes_per_second: args.relay_bytes_per_second,
+        frame_bytes: args.frame_bytes,
         idle_for: Duration::from_secs(args.idle_days.saturating_mul(SECONDS_PER_DAY)),
         allowance: Allowance {
             connections: args.connections,
@@ -297,6 +305,9 @@ fn run(args: Args) -> Result<(), Error> {
                 Some(web) => {
                     let listener = TcpListener::bind(web.listen).await.map_err(Error::Listen)?;
                     tracing::info!(listen = %web.listen, forwarded_by = ?web.forwarded_by, "serving sync over web sockets");
+                    if web.forwarded_by.is_some() && !web.listen.ip().is_loopback() {
+                        tracing::warn!(listen = %web.listen, "the proxy's header is trusted only from a peer on this machine; others are counted by their own address");
+                    }
                     web_server
                         .serve_web_claiming(listener, web.forwarded_by, web.android_certificates)
                         .await;

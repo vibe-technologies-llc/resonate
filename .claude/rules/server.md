@@ -53,6 +53,17 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   handled; a session waiting on a write to a client that reads nothing holds one frame plus one
   being read, not a count of 32 MiB frames, and QUIC's flow control holds the client back
   (`a_frame_larger_than_the_budget_takes_all_of_it_and_nothing_is_read_until_it_is_handled`).
+- **Every session's frames share one byte budget too** (`reading::FrameBytes`, `--frame-bytes`,
+  256 MiB): on QUIC the announced length is held from it before the body is allocated
+  (`resonate_sync::Incoming::read_held`, `read_frame_held`), on a web socket the message once
+  tungstenite hands it over (it lends no length before); the hold is `try_acquire`d, never waited
+  for, and is kept with the session's permit until the frame is handled. A frame that finds no room
+  is `Error::NoRoom` and the session is refused `Busy`, so 2 048 connections each announcing
+  `LARGEST_FRAME` hold no more than the budget, not tens of GiB
+  (`frames_announced_across_sessions_past_what_the_server_holds_are_refused_as_busy`).
+- **What a QUIC session said leaves before its connection goes**: dropping a `quinn::Connection`
+  closes it at once and discards what its streams had not sent, so `welcome` waits up to
+  `WHAT_WAS_SAID_LEAVES_WITHIN` (1 s) for the client to close first, and a `Refused` reaches it.
 - **A `Hello` within 10 s or nothing**; a wrong version, token or a full space is a `Refused` frame,
   then the stream ends. **The first frame is read to at most `FIRST_FRAME_AT_MOST`** (resonate-sync's
   `wire`: a full `Heads` plus an envelope, about 12 KiB) and a room's frames to `ROOM_FRAME_AT_MOST`
@@ -132,7 +143,8 @@ party's clocks are one clock whatever each machine's says.
 ## Limits
 
 `--record-bytes` (`LARGEST_RECORD`, 256 KiB a blob, `TooLarge`; devices send nothing larger), `--space-bytes` (64 MiB a space, `SpaceFull`),
-`--frames-per-minute` (240 a connection, `TooFast` and the session ends). Errors are typed
+`--frames-per-minute` (240 a connection, `TooFast` and the session ends), `--frame-bytes` (256 MiB
+held by frames being read across every session, `Busy`). Errors are typed
 (`errors.md`); a session's failure is a debug line, never the server's.
 
 There is no account or e-mail to tie a space to, so anyone can claim spaces; the limits are what
@@ -257,7 +269,13 @@ it off.
   terminates TLS. Bind it to loopback. Devices use `sync-server = "wss://sync.example.org/"`.
 - **`forwarded_by = "CF-Connecting-IP"`** makes the address the allowance counts the first one in
   that header, and a connection without a parseable one is dropped, so only the proxy's path works.
-  Left out, the peer address is counted, which behind a proxy is the proxy itself: set it.
+  Left out, the peer address is counted, which behind a proxy is the proxy itself: set it. **The
+  header is trusted only from a peer on this machine** (`header_trusted_from`: a loopback address,
+  an IPv4 one mapped into IPv6 read as itself), where `cloudflared` connects from; a peer elsewhere,
+  which reached a listener bound beyond loopback around the proxy, is counted by its own address and
+  its header ignored, so no client chooses the address its limits count, and a `listen` beyond
+  loopback with `forwarded_by` is warned of at start
+  (`the_proxys_header_is_trusted_only_from_a_peer_on_this_machine`).
 - **A plain `GET` of `/s/` or `/p/` is a page, not a socket** (`pages.rs`): `serve_web` peeks at the
   stream before tungstenite, which would refuse it, and answers a static page that hands its URL
   fragment to `resonate://`. The fragment never reaches here, so the page holds nothing of an

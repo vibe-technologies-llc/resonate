@@ -283,6 +283,15 @@ pub async fn read_frame(stream: &mut RecvStream) -> Result<Option<Vec<u8>>> {
 }
 
 pub async fn read_frame_at_most(stream: &mut RecvStream, most: usize) -> Result<Option<Vec<u8>>> {
+    let read = read_frame_held(stream, most, |_| Some(())).await?;
+    Ok(read.map(|(payload, ())| payload))
+}
+
+pub async fn read_frame_held<H>(
+    stream: &mut RecvStream,
+    most: usize,
+    hold: impl FnOnce(usize) -> Option<H>,
+) -> Result<Option<(Vec<u8>, H)>> {
     let mut length = [0; FRAME_LENGTH_BYTES];
     match stream.read_exact(&mut length).await {
         Ok(()) => {}
@@ -301,9 +310,10 @@ pub async fn read_frame_at_most(stream: &mut RecvStream, most: usize) -> Result<
     if length > most.min(LARGEST_FRAME) {
         return Err(Error::Oversized { length });
     }
+    let held = hold(length).ok_or(Error::NoRoom { length })?;
     let mut payload = vec![0; length];
     match stream.read_exact(&mut payload).await {
-        Ok(()) => Ok(Some(payload)),
+        Ok(()) => Ok(Some((payload, held))),
         Err(quinn::ReadExactError::FinishedEarly(_)) => Err(Error::stream(
             StreamOp::Read,
             std::io::Error::from(std::io::ErrorKind::UnexpectedEof),

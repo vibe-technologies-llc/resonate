@@ -84,7 +84,12 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   folded key's tombstone and the merged survivor beside them.
 - **A server address of `ws://` or `wss://` runs the same frames over a WebSocket** (`web.rs`: TCP,
   TLS through `tokio-rustls` for `wss`, one binary message a frame, at most `LARGEST_FRAME`),
-  for a server behind a proxy that carries no UDP (`server.md`). Any other address is QUIC. The
+  for a server behind a proxy that carries no UDP (`server.md`). **A plain `ws://` goes only to this
+  machine**: its host must resolve to loopback alone (`on_this_machine`, an IPv4 address mapped into
+  IPv6 read as itself) or `connect` refuses it `Error::PlainOffThisMachine` before a byte is sent,
+  since `Hello` carries the space's token, which may `Append`, `Compact` or `Close`; a server
+  elsewhere, an invitation link's `http://` page included, is reached over `wss://` or not at all
+  (`a_plain_web_socket_is_refused_to_any_host_but_this_machine`). Any other address is QUIC. The
   link holds a `Carrier` (a QUIC connection, or a numbered web link) in place of a connection; the
   device pings every 25 s and a link silent for 90 s drops. A web link has no observed UDP address,
   so the server's `Welcome` and `Punched` carry `0.0.0.0:0`, which a device skips as a candidate.
@@ -122,7 +127,8 @@ and `the_seeds_of_a_print_asked_and_given_decode` holds them to the wire. **What
   stream, which reads as `Missing` and so as no tags, and a build asking an older sender fetches as
   it always did (`the_tags_of_a_song_travel_in_frames_an_earlier_build_refuses_whole_and_the_fetch_is_unchanged`,
   `a_song_fetched_from_a_device_arrives_with_the_tags_that_device_declares_for_it`). A `Beacon` is
-  a device, its QUIC port, whether it answers another and the addresses it may be dialled at.
+  a device, its QUIC port, whether it answers another and the addresses it may be dialled at; a
+  `SentBeacon` is the wall second it was sent at, then a `Beacon`.
 
 ## The ledger
 
@@ -806,7 +812,18 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   the server hands the asked device the asker's observed address and those candidates; the asked
   device dials them and punches back with its own; both dial every candidate at once and the first
   connection wins. **A `Punched` frame is acted on only where its sealed candidates open under the
-  space's key** (`punched_candidates`): the address the server observed joins the candidates only then.
+  space's key and were sealed for this pair, lately, once** (`punched_candidates`): the sealed
+  `Candidates` name the asker, the asked device and the wall second they were sealed at beside the
+  addresses, and a list whose asker is not the device the frame names, whose asked device is not
+  this one, sealed more than `PUNCH_SEALED_WITHIN` (2 minutes) either side of this device's clock,
+  or heard already (`fresh::HeardOnce`, the SHA-256 of each sealed blob kept for the window, at most
+  `PUNCHES_HEARD_AT_MOST`) dials nothing (`a_punch_replayed_under_another_pair_late_or_twice_dials_nothing`).
+  The address the server observed joins the candidates only then, so the server can name an address
+  only beside a punch a device of the space asked of this one within the window, once. The list
+  opens on a zero byte, which a build before it reads as an empty list followed by bytes it refuses,
+  and a build with it refuses the earlier bare list: punches between the two fail on both sides,
+  dialling nothing, and such devices still meet on one network
+  (`candidates_name_their_pair_and_time_and_neither_build_reads_the_others_list`).
   A device the ledger lists (`Ledger::knows_device`) is answered through `punched_back`; one not yet
   listed, as a new one is before its note arrives, is answered through a table of its own capped at
   `STRANGERS_ANSWERED_AT_MOST` (16); both tables are pruned past `PUNCH_ANSWERED_AT_MOST_EVERY`, so a
@@ -882,7 +899,12 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   `sync-staging` and resumes from what it holds; the catalog lands it once whole.
 - **One broken song never holds the others up.** Every wait of a fetch (the stream, the header, each
   chunk) gives up after `A_FETCH_GOES_QUIET_AFTER` (30 s), so a sender stuck on an evicted file fails
-  that song and the run goes on to the next. **A partial is resumed only from the file it began as**:
+  that song and the run goes on to the next. **A song is believed only up to
+  `LARGEST_SONG_FETCHED` (4 GiB, the most a vault's delivery holds)**: a `Sending` announcing more is
+  `Error::SongTooLarge` and the stream is stopped before a note or a byte is staged, so a paired
+  device cannot fill the disc under `sync-staging`
+  (`a_song_announced_past_the_largest_one_fetched_is_refused_before_anything_is_staged`).
+  **A partial is resumed only from the file it began as**:
   a `.from` note beside it names the sending device and the size it announced; another device, or a
   size the header no longer names, starts the song over (`peer::resumable`, `fetched_from`). The
   header carries no version of the file, so a file replaced at the same size by the same device is
@@ -981,9 +1003,17 @@ The server is the way across networks; on one network devices find each other th
 (`nearby.rs`), so a listener with no server reachable, or none at all, still syncs at home. Two ways
 announce a device, both carrying the same sealed beacon, and either finds the others:
 
-- **A beacon is sealed like a record.** `RSN1` then `seal::sealed` of a `Beacon` under the space's
-  key: only a device of the code opens it, and a fresh nonce each time leaves an onlooker nothing to
-  follow. It names the QUIC port and the addresses `beacon_addresses_here` reads off the interfaces that
+- **A beacon is sealed like a record.** A datagram is `RSN2` then `seal::sealed` of a `SentBeacon`
+  under the space's key (`datagram_of`), sealed afresh for every address it is sent to; a Bonjour
+  record is `RSN1` then the sealed `Beacon` alone (`record_of`), resealed only as it moves. Only a
+  device of the code opens either, and a fresh nonce each time leaves an onlooker nothing to follow.
+  **A datagram is heard once, and only lately sent** (`heard_in`): one sent more than
+  `BEACON_SENT_WITHIN` (2 minutes) either side of this device's clock, or whose bytes were heard
+  already (`fresh::HeardOnce`, at most `BEACONS_HEARD_AT_MOST` kept for the window), is passed over
+  before anything is noted, answered or dialled, so a beacon replayed with a forged source makes no
+  device send to it (`a_beacon_replayed_or_sent_long_ago_is_not_heard_and_its_source_never_answered`).
+  A build before `RSN2` hears none of these datagrams and a build with it none of the older
+  `RSN1` ones, so the two meet over Bonjour alone. It names the QUIC port and the addresses `beacon_addresses_here` reads off the interfaces that
   are up, not loopback, not point to point: at most `ADDRESSES_BEACONED_AT_MOST` (6) IPv4 and
   `IPV6_ADDRESSES_BEACONED_AT_MOST` (2) of the global or unique local IPv6 ones, which together still
   fit one Bonjour text string even when distinct

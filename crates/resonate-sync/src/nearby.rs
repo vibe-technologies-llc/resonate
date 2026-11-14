@@ -8,9 +8,10 @@ use socket2::{Domain, Protocol, Socket, Type};
 
 use crate::{
     Error, Result,
+    fresh::{HeardOnce, Unfresh},
     key::{Derived, hex, random_bytes},
     seal::{opened, sealed},
-    wire::{Beacon, LARGEST_DATAGRAM},
+    wire::{Beacon, LARGEST_DATAGRAM, SentBeacon},
 };
 
 pub const NEARBY_PORT: u16 = 41_734;
@@ -23,7 +24,10 @@ pub const LARGEST_BEACON: usize = 512;
 pub const ADDRESSES_BEACONED_AT_MOST: usize = 6;
 pub const GLOBAL_ADDRESSES_OFFERED_AT_MOST: usize = 4;
 pub const IPV6_ADDRESSES_BEACONED_AT_MOST: usize = 2;
-const BEACON_MAGIC: &[u8; 4] = b"RSN1";
+pub const BEACON_SENT_WITHIN: Duration = Duration::from_secs(2 * 60);
+pub const BEACONS_HEARD_AT_MOST: usize = 4096;
+const RECORD_MAGIC: &[u8; 4] = b"RSN1";
+const DATAGRAM_MAGIC: &[u8; 4] = b"RSN2";
 const ONE_HOP: u32 = 1;
 const INSTANCE_BYTES: usize = 8;
 
@@ -222,25 +226,61 @@ pub fn is_reachable_over_ipv6(address: &IpAddr) -> bool {
     !(address.is_unspecified() || address.is_loopback() || address.is_multicast() || link_local)
 }
 
-pub fn beacon_bytes(derived: &Derived, beacon: &Beacon) -> Result<Vec<u8>> {
-    let mut bytes = BEACON_MAGIC.to_vec();
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum Unheard {
+    #[error("it does not open under this code")]
+    Unsealed,
+
+    #[error("it is not fresh")]
+    Unfresh(#[source] Unfresh),
+}
+
+pub fn datagram_of(derived: &Derived, beacon: &Beacon, sent_at: u64) -> Result<Vec<u8>> {
+    let sent = SentBeacon {
+        sent_at,
+        beacon: beacon.clone(),
+    };
+    let mut bytes = DATAGRAM_MAGIC.to_vec();
+    bytes.extend(sealed(&derived.sealer, derived.space, &sent.encoded())?);
+    Ok(bytes)
+}
+
+pub fn heard_in(
+    derived: &Derived,
+    bytes: &[u8],
+    heard: &mut HeardOnce,
+    now: u64,
+) -> std::result::Result<Beacon, Unheard> {
+    let sent = bytes
+        .strip_prefix(DATAGRAM_MAGIC)
+        .and_then(|blob| opened(&derived.sealer, derived.space, blob, LARGEST_DATAGRAM).ok())
+        .and_then(|plain| SentBeacon::decoded(&plain).ok())
+        .ok_or(Unheard::Unsealed)?;
+    heard
+        .admit(bytes, sent.sent_at, now)
+        .map_err(Unheard::Unfresh)?;
+    Ok(sent.beacon)
+}
+
+fn recorded_bytes(derived: &Derived, beacon: &Beacon) -> Result<Vec<u8>> {
+    let mut bytes = RECORD_MAGIC.to_vec();
     bytes.extend(sealed(&derived.sealer, derived.space, &beacon.encoded())?);
     Ok(bytes)
 }
 
-pub fn beacon_of(derived: &Derived, bytes: &[u8]) -> Option<Beacon> {
-    let blob = bytes.strip_prefix(BEACON_MAGIC)?;
+fn recorded_beacon(derived: &Derived, bytes: &[u8]) -> Option<Beacon> {
+    let blob = bytes.strip_prefix(RECORD_MAGIC)?;
     opened(&derived.sealer, derived.space, blob, LARGEST_DATAGRAM)
         .and_then(|plain| Beacon::decoded(&plain))
         .ok()
 }
 
 pub fn record_of(derived: &Derived, beacon: &Beacon) -> Result<String> {
-    beacon_bytes(derived, beacon).map(|bytes| hex(&bytes))
+    recorded_bytes(derived, beacon).map(|bytes| hex(&bytes))
 }
 
 pub fn beacon_recorded(derived: &Derived, record: &str) -> Option<Beacon> {
-    beacon_of(derived, &unhexed(record)?)
+    recorded_beacon(derived, &unhexed(record)?)
 }
 
 fn unhexed(text: &str) -> Option<Vec<u8>> {
@@ -368,6 +408,12 @@ mod tests {
     use super::*;
     use crate::{DeviceId, SyncKey};
 
+    const NOW: u64 = 1_790_000_000;
+
+    fn fresh() -> HeardOnce {
+        HeardOnce::new(BEACON_SENT_WITHIN, BEACONS_HEARD_AT_MOST)
+    }
+
     fn beacon(addresses: usize) -> Beacon {
         Beacon {
             device: DeviceId([7; 16]),
@@ -390,15 +436,62 @@ mod tests {
             .derived()
             .expect("derived");
         let beacon = beacon(2);
+        let record = recorded_bytes(&here, &beacon).expect("sealed");
 
-        let bytes = beacon_bytes(&here, &beacon).expect("sealed");
-        let again = beacon_bytes(&here, &beacon).expect("sealed");
+        let bytes = datagram_of(&here, &beacon, NOW).expect("sealed");
+        let again = datagram_of(&here, &beacon, NOW).expect("sealed");
 
-        assert_eq!(beacon_of(&here, &bytes), Some(beacon));
-        assert_eq!(beacon_of(&elsewhere, &bytes), None);
-        assert_eq!(beacon_of(&here, &bytes[BEACON_MAGIC.len()..]), None);
+        assert_eq!(heard_in(&here, &bytes, &mut fresh(), NOW), Ok(beacon));
+        assert_eq!(
+            heard_in(&elsewhere, &bytes, &mut fresh(), NOW),
+            Err(Unheard::Unsealed)
+        );
+        assert_eq!(
+            heard_in(&here, &bytes[DATAGRAM_MAGIC.len()..], &mut fresh(), NOW),
+            Err(Unheard::Unsealed)
+        );
+        assert_eq!(
+            heard_in(&here, &record, &mut fresh(), NOW),
+            Err(Unheard::Unsealed)
+        );
         assert_ne!(bytes, again);
         assert!(bytes.len() <= LARGEST_BEACON);
+    }
+
+    #[test]
+    fn a_beacon_replayed_or_sent_long_ago_is_not_heard_and_its_source_never_answered() {
+        let here = SyncKey::minted()
+            .expect("a key")
+            .derived()
+            .expect("derived");
+        let beacon = beacon(1);
+        let mut heard = fresh();
+        let genuine = datagram_of(&here, &beacon, NOW).expect("sealed");
+        let long_ago =
+            datagram_of(&here, &beacon, NOW - BEACON_SENT_WITHIN.as_secs() - 1).expect("sealed");
+        let ahead =
+            datagram_of(&here, &beacon, NOW + BEACON_SENT_WITHIN.as_secs() + 1).expect("sealed");
+
+        assert_eq!(
+            heard_in(&here, &genuine, &mut heard, NOW),
+            Ok(beacon.clone())
+        );
+        assert_eq!(
+            heard_in(&here, &genuine, &mut heard, NOW + 1),
+            Err(Unheard::Unfresh(Unfresh::HeardAlready))
+        );
+        assert!(matches!(
+            heard_in(&here, &long_ago, &mut heard, NOW),
+            Err(Unheard::Unfresh(Unfresh::OutsideTheWindow { .. }))
+        ));
+        assert!(matches!(
+            heard_in(&here, &ahead, &mut heard, NOW),
+            Err(Unheard::Unfresh(Unfresh::OutsideTheWindow { .. }))
+        ));
+        assert!(matches!(
+            heard_in(&here, &genuine, &mut heard, NOW + 10 * 60),
+            Err(Unheard::Unfresh(Unfresh::OutsideTheWindow { .. }))
+        ));
     }
 
     #[test]
@@ -478,7 +571,7 @@ mod tests {
             .derived()
             .expect("derived");
         let beacon = beacon(1);
-        let bytes = beacon_bytes(&here, &beacon).expect("sealed");
+        let bytes = datagram_of(&here, &beacon, NOW).expect("sealed");
         let to = SocketAddr::new(
             IpAddr::V6(Ipv6Addr::LOCALHOST),
             listener.local_addr().expect("an address").port(),
@@ -498,7 +591,10 @@ mod tests {
         };
 
         assert!(from.is_ipv6());
-        assert_eq!(beacon_of(&here, &heard[..length]), Some(beacon));
+        assert_eq!(
+            heard_in(&here, &heard[..length], &mut fresh(), NOW),
+            Ok(beacon)
+        );
     }
 
     #[test]

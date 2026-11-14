@@ -4,15 +4,33 @@ use std::{
     time::Duration,
 };
 
-use quinn::{ClientConfig, Endpoint, crypto::rustls::QuicClientConfig};
+use quinn::{
+    ClientConfig, Connection, Endpoint, RecvStream, SendStream, crypto::rustls::QuicClientConfig,
+};
 use resonate_server::{Limits, Server, Store, listening, serving};
-use resonate_sync::wire::{FIRST_FRAME_AT_MOST, SERVER_ALPN};
+use resonate_sync::{
+    DeviceId, SpaceId, Token, read_frame, send_frame,
+    wire::{FIRST_FRAME_AT_MOST, FromServer, PROTOCOL_VERSION, Refusal, SERVER_ALPN, ToServer},
+};
 use rustls::{RootCertStore, crypto::ring::default_provider, version::TLS13};
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio::time::timeout;
 
 const SERVER_ENDS_THE_CONNECTION_WITHIN: Duration = Duration::from_secs(3);
+const THE_FIRST_FRAME_IS_HELD_WITHIN: Duration = Duration::from_millis(300);
 const MEBIBYTE: u32 = 1024 * 1024;
+
+struct Serving {
+    address: SocketAddr,
+    certificate: CertificateDer<'static>,
+}
+
+struct Session {
+    _client: Endpoint,
+    _connection: Connection,
+    send: SendStream,
+    recv: RecvStream,
+}
 
 fn client_trusting(certificate: CertificateDer<'static>) -> ClientConfig {
     let mut roots = RootCertStore::empty();
@@ -28,8 +46,7 @@ fn client_trusting(certificate: CertificateDer<'static>) -> ClientConfig {
     ClientConfig::new(Arc::new(crypto))
 }
 
-#[tokio::test]
-async fn a_first_frame_announced_past_the_ceiling_ends_the_connection_without_waiting_for_it() {
+fn serving_with(limits: Limits) -> Serving {
     let signing = rcgen::KeyPair::generate().expect("a key");
     let certificate = rcgen::CertificateParams::new(vec!["localhost".to_owned()])
         .and_then(|params| params.self_signed(&signing))
@@ -39,24 +56,101 @@ async fn a_first_frame_announced_past_the_ceiling_ends_the_connection_without_wa
     let endpoint =
         listening(config, SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("listening");
     let address = endpoint.local_addr().expect("an address");
-    let server = Server::new(Store::in_memory().expect("a store"), Limits::default());
+    let server = Server::new(Store::in_memory().expect("a store"), limits);
     tokio::spawn(server.serve(endpoint));
 
+    Serving {
+        address,
+        certificate: certificate.der().clone(),
+    }
+}
+
+async fn connected(serving: &Serving) -> (Endpoint, Connection) {
     let mut client = Endpoint::client(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("client");
-    client.set_default_client_config(client_trusting(certificate.der().clone()));
+    client.set_default_client_config(client_trusting(serving.certificate.clone()));
     let connection = client
-        .connect(address, "localhost")
+        .connect(serving.address, "localhost")
         .expect("connecting")
         .await
         .expect("connected");
+
+    (client, connection)
+}
+
+async fn welcomed(serving: &Serving, device: u8) -> Session {
+    let (client, connection) = connected(serving).await;
+    let (mut send, mut recv) = connection.open_bi().await.expect("a stream");
+    let hello = ToServer::Hello {
+        version: PROTOCOL_VERSION,
+        space: SpaceId([7; 16]),
+        token: Token([9; 32]),
+        device: DeviceId([device; 16]),
+        after: 0,
+    };
+
+    send_frame(&mut send, &hello.encoded()).await.expect("said");
+    let welcome = read_frame(&mut recv).await.expect("read").expect("a frame");
+
+    assert!(matches!(
+        FromServer::decoded(&welcome),
+        Ok(FromServer::Welcome { .. })
+    ));
+    Session {
+        _client: client,
+        _connection: connection,
+        send,
+        recv,
+    }
+}
+
+async fn announce(send: &mut SendStream, length: u32) {
+    send.write_all(&length.to_be_bytes())
+        .await
+        .expect("announced");
+    send.write_all(&[0; 64]).await.expect("began");
+}
+
+async fn refused_with(recv: &mut RecvStream) -> Option<Refusal> {
+    while let Ok(Some(frame)) = read_frame(recv).await {
+        if let Ok(FromServer::Refused(refusal)) = FromServer::decoded(&frame) {
+            return Some(refusal);
+        }
+    }
+    None
+}
+
+#[tokio::test]
+async fn frames_announced_across_sessions_past_what_the_server_holds_are_refused_as_busy() {
+    let serving = serving_with(Limits {
+        frame_bytes: usize::try_from(MEBIBYTE).expect("a size"),
+        ..Limits::default()
+    });
+    let mut first = welcomed(&serving, 1).await;
+    let mut second = welcomed(&serving, 2).await;
+    let announced = MEBIBYTE * 3 / 5;
+
+    announce(&mut first.send, announced).await;
+    tokio::time::sleep(THE_FIRST_FRAME_IS_HELD_WITHIN).await;
+    announce(&mut second.send, announced).await;
+    let refused = timeout(
+        SERVER_ENDS_THE_CONNECTION_WITHIN,
+        refused_with(&mut second.recv),
+    )
+    .await;
+
+    assert_eq!(refused.ok().flatten(), Some(Refusal::Busy));
+    drop(first.recv);
+}
+
+#[tokio::test]
+async fn a_first_frame_announced_past_the_ceiling_ends_the_connection_without_waiting_for_it() {
+    let serving = serving_with(Limits::default());
+    let (_client, connection) = connected(&serving).await;
     let (mut send, _recv) = connection.open_bi().await.expect("a stream");
 
     let announced = 20 * MEBIBYTE;
     assert!(usize::try_from(announced).expect("a size") > FIRST_FRAME_AT_MOST);
-    send.write_all(&announced.to_be_bytes())
-        .await
-        .expect("announced");
-    send.write_all(&[0; 64]).await.expect("began");
+    announce(&mut send, announced).await;
 
     let ended = timeout(SERVER_ENDS_THE_CONNECTION_WITHIN, connection.closed()).await;
 

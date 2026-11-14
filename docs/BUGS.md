@@ -32,28 +32,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `appendingPathComponent` takes whole, and `open`, `delete` and `fileNumber` then reach outside the
   granted folder; `documents::location` checks only the scheme. No reachable hostile URI was found,
   but one from an imported list or another device would do it
-- [S · 0.12.0] A server can still make a device dial an address, against `sync.md`: the sealed punch
-  candidates (`wire.rs`) carry addresses alone, no sender, target or time, and
-  `service::punched_candidates` puts the server's `address` first once any old blob opens, so a
-  server, or anyone holding an earlier blob, replays it under any device with any address and the
-  device sends QUIC Initials there. Seal the asker, the target and a coarse time, or correct the rule
-- [S · 0.12.0] A nearby `Beacon` opens for ever and is answered to whatever source it came from: it
-  holds no time or counter, and `beacon_heard` puts the datagram's source first among the candidates,
-  answers it by unicast and dials it for up to a minute, so one beacon heard on the network and
-  replayed with a forged source makes every device of the space send datagrams and Initials to an
-  address of the replayer's choosing
-- [M · 0.12.0] The server bounds the frames it reads per session, not across them: `read_frame_at_most`
-  allocates the announced length (up to `LARGEST_FRAME`, 32 MiB) before any body arrives and
-  `reading.rs`'s `Budget` is made per session, so 2 048 connections hold tens of GiB in frame
-  buffers with no ceiling but the machine's memory; one shared byte semaphore taken before the
-  allocation, refusing with `Busy`, would bound it
-- [S · 0.12.0] A `ws://` sync server on another host sends the space's token in the clear:
-  `web::web_address` takes `ws` for any host and invitation links can name one, so anyone on the
-  path learns a token that may `Append`, `Compact` or `Close`; the hifi secret is refused off
-  `https://` or loopback, sync has no such guard
-- [S · 0.12.0] A peer's `FromPeer::Sending` size is believed: `peer.rs` stages the file under
-  `sync-staging` up to whatever size it announced, with no ceiling like the vault's
-  `LARGEST_DELIVERY`, so a paired device (an old phone never forgotten) can fill the disc
+- [S · 0.12.0] A Bonjour record still opens for ever: `record_of` seals a bare `Beacon` (no time,
+  resealed only as it moves, and iOS hands the same record every 5 s), so one record seen on the
+  network and advertised again under addresses of the replayer's choosing makes every device of the
+  space dial them for `HEARD_FOR`; a broadcast datagram is held to `BEACON_SENT_WITHIN` and heard
+  once (`heard_in`), a record wants the same with resealing every window and a cache that tells the
+  same record resolved again from a replay
 - [S · 0.12.0] A renderer's control or description URL keeps any control characters:
   `located::parse` and `join` keep the path as given and `http::request` writes it into the request
   line, so a CR or LF a description encodes injects headers into the hand-written HTTP (to the
@@ -65,11 +49,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `kept_to_this_user` makes
 - [S · 0.12.0] Subsonic's token salt is predictable (`subsonic/src/lib.rs` `salt`: an MD5 of the
   time, a counter and the pid), where the scheme assumes a random one; draw it from the OS
-- [S · 0.12.0] `forwarded_by` is honoured whoever connects: `serve.rs` skips the per-address `admit`
-  and reads the counted address from the configured header, so a web listener bound beyond loopback
-  (`server.md` says to bind it there; nothing holds it) lets every client choose the address its
-  limits count. Refuse a non-loopback `listen` with `forwarded_by`, or honour the header only from a
-  loopback peer
 - [S · 0.12.0] `documents::owned` is a safe function around `File::from_raw_fd` that refuses nothing,
   though `mobile.md` says it refuses a negative descriptor: every caller checks first today
   (`downloads.rs`'s `fresh_destination` checks inside), so the one approved unsafe call relies on

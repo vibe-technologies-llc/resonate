@@ -47,6 +47,7 @@ const HELD_PER_FRAME: usize = 512;
 const CHUNKS_IN_FLIGHT: usize = 8;
 const NOTED_EXTENSION: &str = "from";
 pub const A_FETCH_GOES_QUIET_AFTER: Duration = Duration::from_secs(30);
+pub const LARGEST_SONG_FETCHED: u64 = 4 * 1024 * 1024 * 1024;
 
 pub async fn dialled(
     endpoint: &Endpoint,
@@ -1127,6 +1128,10 @@ async fn fetched_from(
             return Err(Error::Missing(device));
         }
     };
+    if size > LARGEST_SONG_FETCHED {
+        let _ = recv.stop(0_u32.into());
+        return Err(Error::SongTooLarge { device, size });
+    }
     if offset > 0 && noted_size(noted).await != Some(size) {
         let _ = recv.stop(0_u32.into());
         let _ = fs::remove_file(staged).await;
@@ -1352,23 +1357,25 @@ mod tests {
         assert!(!noted.exists());
     }
 
-    async fn met_by_an_older_build(mirrored: RemoteZone) -> (Endpoint, Endpoint, Connection) {
+    async fn met_answering(
+        answer: impl Fn(&[u8]) -> Option<Vec<u8>> + Send + 'static,
+    ) -> (Endpoint, Endpoint, Connection) {
         let derived = crate::SyncKey::minted()
             .and_then(|key| key.derived())
             .expect("a key");
         let identity = crate::quic::PeerIdentity::of(&derived).expect("an identity");
-        let older = Endpoint::server(
+        let answering = Endpoint::server(
             identity.serving().expect("serving"),
             SocketAddr::from(([127, 0, 0, 1], 0)),
         )
-        .expect("an older device listening");
-        let mut newer = Endpoint::client(SocketAddr::from(([127, 0, 0, 1], 0))).expect("a client");
-        newer.set_default_client_config(identity.dialling().expect("dialling"));
-        let address = older.local_addr().expect("an address");
+        .expect("a device listening");
+        let mut asking = Endpoint::client(SocketAddr::from(([127, 0, 0, 1], 0))).expect("a client");
+        asking.set_default_client_config(identity.dialling().expect("dialling"));
+        let address = answering.local_addr().expect("an address");
 
-        let answering = older.clone();
+        let listening = answering.clone();
         tokio::spawn(async move {
-            let Some(incoming) = answering.accept().await else {
+            let Some(incoming) = listening.accept().await else {
                 return;
             };
             let Ok(connection) = incoming.await else {
@@ -1378,29 +1385,92 @@ mod tests {
                 let Ok(Some(asked)) = read_frame(&mut recv).await else {
                     continue;
                 };
-                let a_plain_watch = ToPeer::Watch {
-                    revisions: Revisions::Unsaid,
-                }
-                .encoded();
-                if asked != a_plain_watch {
+                let Some(told) = answer(&asked) else {
                     drop(send);
                     continue;
-                }
-                let told = FromPeer::Zones {
-                    zones: vec![mirrored.clone()],
-                    revisions: Revisions::Unsaid,
                 };
-                let _ = send_frame(&mut send, &told.encoded()).await;
+                let _ = send.write_all(&told).await;
                 let _ = send.finish();
             }
         });
-        let connection = newer
+        let connection = asking
             .connect(address, PEER_NAME)
             .expect("dialled")
             .await
             .expect("connected");
 
-        (older, newer, connection)
+        (answering, asking, connection)
+    }
+
+    async fn met_by_an_older_build(mirrored: RemoteZone) -> (Endpoint, Endpoint, Connection) {
+        let a_plain_watch = ToPeer::Watch {
+            revisions: Revisions::Unsaid,
+        }
+        .encoded();
+        met_answering(move |asked| {
+            (asked == a_plain_watch).then(|| {
+                let told = FromPeer::Zones {
+                    zones: vec![mirrored.clone()],
+                    revisions: Revisions::Unsaid,
+                };
+                framed(&told.encoded())
+            })
+        })
+        .await
+    }
+
+    fn framed(payload: &[u8]) -> Vec<u8> {
+        let mut framed = u32::try_from(payload.len())
+            .expect("a frame")
+            .to_be_bytes()
+            .to_vec();
+        framed.extend_from_slice(payload);
+        framed
+    }
+
+    #[tokio::test]
+    async fn a_song_announced_past_the_largest_one_fetched_is_refused_before_anything_is_staged() {
+        let announced = LARGEST_SONG_FETCHED + 1;
+        let (_answering, _asking, connection) = met_answering(move |_| {
+            let mut told = framed(
+                &FromPeer::Sending {
+                    size: announced,
+                    extension: "flac".into(),
+                }
+                .encoded(),
+            );
+            told.extend_from_slice(&[0; 4096]);
+            Some(told)
+        })
+        .await;
+        let staged = staged_in("oversized");
+        let noted = staged.with_extension(NOTED_EXTENSION);
+        let device = DeviceId([5; 16]);
+        let recording = Recording {
+            mbid: None,
+            title: "Echoes".into(),
+            artist: "Pink Floyd".into(),
+            album: "Meddle".into(),
+            length: None,
+        };
+
+        let fetched = fetched_from(
+            &connection,
+            device,
+            &recording,
+            &staged,
+            &noted,
+            0,
+            &|_, _| {},
+        )
+        .await;
+
+        assert!(matches!(
+            fetched,
+            Err(Error::SongTooLarge { size, .. }) if size == announced
+        ));
+        assert!(!staged.exists());
+        assert!(!noted.exists());
     }
 
     #[tokio::test]

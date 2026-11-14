@@ -142,6 +142,11 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error(
+        "{server} is not this machine, and a plain ws:// address would send the space's token in the clear"
+    )]
+    PlainOffThisMachine { server: Box<str> },
+
     #[error("{server} is not a name a certificate can be checked against")]
     ServerName { server: Box<str> },
 
@@ -185,6 +190,9 @@ pub enum Error {
     #[error("a frame of {length} bytes is past the largest one may be")]
     Oversized { length: usize },
 
+    #[error("no room is left to hold a frame of {length} bytes")]
+    NoRoom { length: usize },
+
     #[error("the server refused: {0:?}")]
     Refused(Refusal),
 
@@ -207,6 +215,9 @@ pub enum Error {
 
     #[error("device {0:?} could not be reached")]
     Unreachable(DeviceId),
+
+    #[error("device {device:?} announced a song of {size} bytes, past the largest one fetched")]
+    SongTooLarge { device: DeviceId, size: u64 },
 
     #[error("device {0:?} does not hold that song")]
     Missing(DeviceId),
