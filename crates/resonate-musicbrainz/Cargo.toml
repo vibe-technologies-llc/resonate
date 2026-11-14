@@ -9,7 +9,7 @@ autotests = false
 doctest = false
 
 [features]
-download = ["dep:resonate-fetch", "dep:ureq"]
+download = ["dep:resonate-fetch", "dep:sha2", "dep:ureq"]
 
 [dependencies]
 bzip2 = "0.6.1"
@@ -18,7 +18,7 @@ resonate-core.workspace = true
 resonate-fetch = { workspace = true, optional = true }
 resonate-library.workspace = true
 rusqlite.workspace = true
-sha2.workspace = true
+sha2 = { workspace = true, optional = true }
 tar = { version = "0.4.46", default-features = false }
 thiserror.workspace = true
 tracing.workspace = true
