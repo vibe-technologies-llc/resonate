@@ -1568,9 +1568,11 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   told to nobody twice:
   `a_track_deleted_and_restored_gets_back_its_listens_as_they_were_and_tells_none_of_them_again`), drop every `tracks`
   row at it (plays, listens, studies cascade), then `store::sweep_orphans` and
-  `alternatives::settle`. **A deletion is remembered for the sync**: before the rows go the same
-  transaction notes the keys of each row and of its `songs_received` rows in `songs_deleted` (the
-  fourteenth migration step; `synced::note_deleted`), so a followed playlist or favourite does not
+  `alternatives::settle`. **A deletion is remembered for the sync**: before the first file goes a
+  transaction of its own notes the keys of each row and of its `songs_received` rows in
+  `songs_deleted` (the fourteenth migration step; `synced::keys_deleted_with`,
+  `deleted::note_before_removing`), since a row whose file is gone reads as not held, and a file the
+  trash refused has its keys taken back after the pass (`Marked::take_back_for`), so a followed playlist or favourite does not
   fetch the song back from another device; folding a copy (`Why::Folded`) notes nothing, and the
   mark is forgiven by *Sync now* or once the song is held again (`sync.md`)
   (`a_song_deleted_from_the_app_is_remembered_and_one_folded_into_its_twin_is_not`). A vault object no row names leaves the vault; one that will not go

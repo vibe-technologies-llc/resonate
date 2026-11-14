@@ -906,8 +906,7 @@ pub(crate) fn holds(inner: &Inner, vault: Option<&Vault>, recording: &Recording)
     })
 }
 
-pub(crate) fn note_deleted(tx: &Transaction<'_>, path: &str) -> Result<()> {
-    let now = store::to_nanos(SystemTime::now());
+pub(crate) fn keys_deleted_with(tx: &Transaction<'_>, path: &str) -> Result<Vec<String>> {
     let mut statement = tx
         .prepare_cached(&format!(
             "SELECT {RECORDING_COLUMNS} FROM tracks t {RECORDING_JOINS} WHERE t.path = ?1"
@@ -917,22 +916,54 @@ pub(crate) fn note_deleted(tx: &Transaction<'_>, path: &str) -> Result<()> {
         .query_map(params![path], |row| recording_at(row, 0))
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
-    for recording in named.into_iter().flatten() {
-        for key in [recording.key(), recording.named_key()] {
-            tx.execute(
-                "INSERT OR REPLACE INTO songs_deleted (recording, deleted) VALUES (?1, ?2)",
-                params![key.as_str(), now],
-            )
-            .map_err(|source| Error::store(StoreOp::Insert, source))?;
-        }
-    }
-    tx.execute(
-        "INSERT OR REPLACE INTO songs_deleted (recording, deleted)
-         SELECT recording, ?2 FROM songs_received WHERE path = ?1",
-        params![path, now],
+    let mut keys: Vec<String> = named
+        .into_iter()
+        .flatten()
+        .flat_map(|recording| [recording.key(), recording.named_key()])
+        .map(|key| key.as_str().to_owned())
+        .collect();
+
+    let mut received = tx
+        .prepare_cached("SELECT recording FROM songs_received WHERE path = ?1")
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let sent = received
+        .query_map(params![path], |row| row.get::<_, String>(0))
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    keys.extend(sent);
+    keys.sort_unstable();
+    keys.dedup();
+    Ok(keys)
+}
+
+pub(crate) fn is_marked_deleted(tx: &Transaction<'_>, key: &str) -> Result<bool> {
+    tx.query_row(
+        "SELECT 1 FROM songs_deleted WHERE recording = ?1",
+        params![key],
+        |_| Ok(()),
     )
-    .map_err(|source| Error::store(StoreOp::Insert, source))?;
-    Ok(())
+    .optional()
+    .map(|row| row.is_some())
+    .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub(crate) fn mark_deleted(tx: &Transaction<'_>, key: &str) -> Result<()> {
+    let now = store::to_nanos(SystemTime::now());
+    tx.execute(
+        "INSERT OR REPLACE INTO songs_deleted (recording, deleted) VALUES (?1, ?2)",
+        params![key, now],
+    )
+    .map(drop)
+    .map_err(|source| Error::store(StoreOp::Insert, source))
+}
+
+pub(crate) fn unmark_deleted(tx: &Transaction<'_>, key: &str) -> Result<()> {
+    tx.execute(
+        "DELETE FROM songs_deleted WHERE recording = ?1",
+        params![key],
+    )
+    .map(drop)
+    .map_err(|source| Error::store(StoreOp::Delete, source))
 }
 
 pub(crate) fn deleted_here(inner: &Inner, recording: &Recording) -> Result<bool> {

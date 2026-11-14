@@ -1410,6 +1410,50 @@ fn a_song_is_marked_deleted_before_its_file_goes_so_a_follow_meanwhile_does_not_
     Ok(())
 }
 
+struct TrashesOnlyWhatIsNamedAfter {
+    refused: &'static str,
+}
+
+impl Trashes for TrashesOnlyWhatIsNamedAfter {
+    fn trash(&self, file: &Path) -> Removal {
+        if file
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().contains(self.refused))
+        {
+            return Removal::Kept;
+        }
+        fs::remove_file(file).expect("the desktop takes the file");
+        Removal::Removed
+    }
+}
+
+#[test]
+fn a_song_the_trash_refused_is_not_marked_deleted_and_one_trashed_beside_it_is() -> Result<()> {
+    let tree = Tree::new();
+    let refused = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let taken = tree.song("Fearless.wav", "Fearless", "Pink Floyd", "Meddle");
+    let library = Library::open_in_memory()?;
+    library.trash_through(Some(Arc::new(TrashesOnlyWhatIsNamedAfter {
+        refused: "Echoes",
+    })));
+    scan(&library, &tree.root)?;
+
+    let tracks = [&refused, &taken].map(|path| {
+        library
+            .track_at(path, None)
+            .expect("a read")
+            .expect("scanned")
+            .id
+    });
+    let deleted = library.delete_tracks(&tracks)?;
+
+    assert_eq!((deleted.files, deleted.kept), (1, 1));
+    assert!(library.track_at(&refused, None)?.is_some());
+    assert!(!library.deleted_recording(&song("Echoes", "Pink Floyd", "Meddle"))?);
+    assert!(library.deleted_recording(&song("Fearless", "Pink Floyd", "Meddle"))?);
+    Ok(())
+}
+
 fn answers_of(answered: &[Answered]) -> Vec<(&str, &Answer)> {
     let mut answers = answered
         .iter()

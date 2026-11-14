@@ -138,10 +138,13 @@ impl Library {
             .inner
             .read(|connection| deleted::files_of(connection, tracks))?;
 
-        if why == Why::Deleted {
-            self.inner
-                .write(|transaction| deleted::note_before_removing(transaction, &files))?;
-        }
+        let marked = match why {
+            Why::Deleted => Some(
+                self.inner
+                    .write(|transaction| deleted::note_before_removing(transaction, &files))?,
+            ),
+            Why::Folded => None,
+        };
 
         let data_home = self.inner.trash_home.lock().clone();
         let through = self.inner.trashes.lock().clone();
@@ -149,6 +152,7 @@ impl Library {
         let mut done = Deleted::default();
         let mut gone = Vec::with_capacity(files.len());
         let mut emptied = Vec::new();
+        let mut refused = Vec::new();
         for path in files {
             let sidecars = deleted::sidecars_of(&path);
             match deleted::removed(&path, data_home.as_deref(), through) {
@@ -161,8 +165,15 @@ impl Library {
                     gone.push(path);
                 }
                 Removal::AlreadyGone => gone.push(path),
-                Removal::Kept => done.kept += 1,
+                Removal::Kept => {
+                    done.kept += 1;
+                    refused.push(path);
+                }
             }
+        }
+        if let Some(marked) = marked.filter(|_| !refused.is_empty()) {
+            self.inner
+                .write(|transaction| marked.take_back_for(transaction, &refused))?;
         }
         self.prune_the_emptied(&emptied)?;
 

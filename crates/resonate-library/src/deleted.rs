@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     ffi::OsStr,
     fs, io,
     path::{Path, PathBuf},
@@ -191,12 +191,56 @@ fn cuts_only(sheet: &Path, folder: &Path, file: &Path, beside: &[PathBuf]) -> bo
     cuts_the_file
 }
 
-pub(crate) fn note_before_removing(tx: &Transaction<'_>, files: &BTreeSet<PathBuf>) -> Result<()> {
+pub(crate) struct Marked {
+    by_file: BTreeMap<PathBuf, Vec<String>>,
+    already: AHashSet<String>,
+}
+
+pub(crate) fn note_before_removing(
+    tx: &Transaction<'_>,
+    files: &BTreeSet<PathBuf>,
+) -> Result<Marked> {
+    let mut marked = Marked {
+        by_file: BTreeMap::new(),
+        already: AHashSet::new(),
+    };
     for path in files {
-        synced::note_deleted(tx, &store::path_text(path))?;
+        let keys = synced::keys_deleted_with(tx, &store::path_text(path))?;
+        for key in &keys {
+            if !marked.by_file.values().any(|held| held.contains(key))
+                && synced::is_marked_deleted(tx, key)?
+            {
+                marked.already.insert(key.clone());
+            }
+            synced::mark_deleted(tx, key)?;
+        }
+        marked.by_file.insert(path.clone(), keys);
     }
 
-    Ok(())
+    Ok(marked)
+}
+
+impl Marked {
+    pub(crate) fn take_back_for(&self, tx: &Transaction<'_>, kept: &[PathBuf]) -> Result<()> {
+        let standing: AHashSet<&String> = self
+            .by_file
+            .iter()
+            .filter(|(path, _)| !kept.contains(path))
+            .flat_map(|(_, keys)| keys)
+            .collect();
+
+        for key in kept
+            .iter()
+            .filter_map(|path| self.by_file.get(path))
+            .flatten()
+        {
+            if !self.already.contains(key) && !standing.contains(key) {
+                synced::unmark_deleted(tx, key)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 pub(crate) fn keep_listens_as_unheld(

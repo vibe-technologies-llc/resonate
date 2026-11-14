@@ -94,10 +94,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   handed out is unread)
 
 ## Catalog
-- [S · 0.11.1] A deletion is noted in `songs_deleted` before anything is trashed, in a transaction of
-  its own (`db/roots.rs` `remove_tracks`, `note_before_removing`), so a file the trash refused
-  (`Removal::Kept`) is still marked deleted here and never synced back, as is every file of a run
-  that fails before the rows go; `library.md` puts the mark in the transaction that drops the rows
 - [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
   root runs: `held_open_elsewhere` (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding
   the file except for a process whose `status` names root. A write lease (`F_SETLEASE` with
