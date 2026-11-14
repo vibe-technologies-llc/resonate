@@ -94,11 +94,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   handed out is unread)
 
 ## Catalog
-- [M · 0.11.1] A folder or file renamed only in case on a case-folding volume (APFS, NTFS, a casefold
-  folder) loses its rows' history: `moves::follow_the_moved` takes a row as gone only where
-  `path.exists()` is false, which the old spelling never is there, so the new spelling's rows are
-  added, the old ones go unpaired and the prune takes plays, favourites, enrichment, the vault link
-  and studies; organise handles case (`listed_as_named`), the scan's move pairing does not
 - [S · 0.11.1] Undoing a playlist edit after organise or a followed move puts the old paths back:
   `organise::files_moved` rewrites `playlist_entries` of playlists still holding the path but neither
   `offered_step_rows` nor the steps in memory (`undo.rs`'s `Held.rows`), so a row removed, then

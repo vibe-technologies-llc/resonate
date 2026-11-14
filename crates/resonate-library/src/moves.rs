@@ -1,9 +1,12 @@
 use std::{
     cell::RefCell,
+    ffi::OsString,
+    fs,
     path::{Path, PathBuf},
 };
 
 use ahash::{AHashMap, AHashSet};
+use resonate_core::naming;
 use rusqlite::{Connection, Transaction, params};
 
 use crate::{
@@ -131,6 +134,65 @@ impl Paired {
     }
 }
 
+trait Volume {
+    fn exists(&self, path: &Path) -> bool;
+
+    fn names_in(&self, folder: &Path) -> Option<Vec<OsString>>;
+}
+
+struct Disc;
+
+impl Volume for Disc {
+    fn exists(&self, path: &Path) -> bool {
+        path.exists()
+    }
+
+    fn names_in(&self, folder: &Path) -> Option<Vec<OsString>> {
+        let listed = fs::read_dir(folder).ok()?;
+        Some(listed.flatten().map(|entry| entry.file_name()).collect())
+    }
+}
+
+struct Spelled<'v> {
+    volume: &'v dyn Volume,
+    listings: RefCell<AHashMap<PathBuf, Option<Vec<OsString>>>>,
+}
+
+impl<'v> Spelled<'v> {
+    fn over(volume: &'v dyn Volume) -> Self {
+        Self {
+            volume,
+            listings: RefCell::new(AHashMap::new()),
+        }
+    }
+
+    fn stands(&self, path: &Path) -> bool {
+        self.volume.exists(path) && path.ancestors().all(|named| self.is_listed_as_named(named))
+    }
+
+    fn is_listed_as_named(&self, path: &Path) -> bool {
+        let (Some(folder), Some(name)) = (path.parent(), path.file_name()) else {
+            return true;
+        };
+        let mut listings = self.listings.borrow_mut();
+        let listing = listings
+            .entry(folder.to_path_buf())
+            .or_insert_with(|| self.volume.names_in(folder));
+        let named = naming::composed(PathBuf::from(name));
+        listing.as_ref().is_none_or(|names| {
+            names
+                .iter()
+                .any(|listed| naming::composed(PathBuf::from(listed)) == named)
+        })
+    }
+}
+
+fn gone_from_where_spelled(rows: Vec<Row>, spelled: &Spelled<'_>) -> Vec<Row> {
+    rows.into_iter()
+        .filter(|row| !spelled.stands(&store::path_of(&row.path)))
+        .collect()
+}
+
 const WHOLE_AND_ALONE: &str = "span_frames IS NULL AND span_start = 0
      AND NOT EXISTS (SELECT 1 FROM tracks o WHERE o.path = t.path AND o.id != t.id)";
 
@@ -187,14 +249,14 @@ fn wholes_moved(
     generation: i64,
     heard: &dyn Fn(&Path) -> Option<String>,
 ) -> Result<Vec<Paired>> {
-    let gone: Vec<Row> = rows(
-        tx,
-        &format!("seen = -?1 AND root_id IN ({scoped}) AND {WHOLE_AND_ALONE}"),
-        generation,
-    )?
-    .into_iter()
-    .filter(|row| !store::path_of(&row.path).exists())
-    .collect();
+    let gone = gone_from_where_spelled(
+        rows(
+            tx,
+            &format!("seen = -?1 AND root_id IN ({scoped}) AND {WHOLE_AND_ALONE}"),
+            generation,
+        )?,
+        &Spelled::over(&Disc),
+    );
     if gone.is_empty() {
         return Ok(Vec::new());
     }
@@ -210,13 +272,14 @@ fn wholes_moved(
 }
 
 fn cuts_moved(tx: &Connection, scoped: &str, generation: i64) -> Result<Vec<Paired>> {
+    let spelled = Spelled::over(&Disc);
     let gone: Vec<Cut> = cuts(rows(
         tx,
         &format!("seen = -?1 AND root_id IN ({scoped}) AND {CUT_OR_SHARED}"),
         generation,
     )?)
     .into_iter()
-    .filter(|cut| !store::path_of(&cut.path).exists())
+    .filter(|cut| !spelled.stands(&store::path_of(&cut.path)))
     .collect();
     if gone.is_empty() {
         return Ok(Vec::new());
@@ -603,4 +666,105 @@ fn holds_nothing(tx: &Transaction<'_>, album: i64) -> Result<bool> {
         |row| row.get(0),
     )
     .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FoldingVolume {
+        spelled: Vec<PathBuf>,
+    }
+
+    impl FoldingVolume {
+        fn new(spelled: &[&str]) -> Self {
+            Self {
+                spelled: spelled.iter().map(PathBuf::from).collect(),
+            }
+        }
+    }
+
+    impl Volume for FoldingVolume {
+        fn exists(&self, path: &Path) -> bool {
+            let folded = path.to_string_lossy().to_lowercase();
+            self.spelled
+                .iter()
+                .any(|held| held.to_string_lossy().to_lowercase() == folded)
+        }
+
+        fn names_in(&self, folder: &Path) -> Option<Vec<OsString>> {
+            let names: Vec<OsString> = self
+                .spelled
+                .iter()
+                .filter(|held| held.parent() == Some(folder))
+                .filter_map(|held| held.file_name().map(OsString::from))
+                .collect();
+            Some(names)
+        }
+    }
+
+    fn row(path: &str) -> Row {
+        Row {
+            id: 1,
+            path: path.to_owned(),
+            root: Some(1),
+            album: None,
+            likeness: Likeness {
+                size: 10,
+                duration: None,
+                codec: 1,
+                title: None,
+                artist: None,
+            },
+            rate: 44_100,
+            channels: 2,
+            cut: (0, None),
+            packets: None,
+            print: None,
+        }
+    }
+
+    fn paths(rows: &[Row]) -> Vec<&str> {
+        rows.iter().map(|row| row.path.as_str()).collect()
+    }
+
+    #[test]
+    fn a_name_the_volume_finds_only_by_folding_case_is_not_a_file_standing() {
+        let volume = FoldingVolume::new(&[
+            "/music",
+            "/music/album",
+            "/music/album/song.flac",
+            "/music/Other",
+            "/music/Other/Kept.flac",
+        ]);
+        let spelled = Spelled::over(&volume);
+
+        assert!(spelled.stands(Path::new("/music/album/song.flac")));
+        assert!(spelled.stands(Path::new("/music/Other/Kept.flac")));
+        assert!(!spelled.stands(Path::new("/music/album/Song.flac")));
+        assert!(!spelled.stands(Path::new("/music/Album/song.flac")));
+        assert!(!spelled.stands(Path::new("/music/album/missing.flac")));
+    }
+
+    #[test]
+    fn a_row_renamed_only_in_case_is_gone_though_the_old_spelling_still_opens() {
+        let volume = FoldingVolume::new(&[
+            "/music",
+            "/music/album",
+            "/music/album/song.flac",
+            "/music/album/same.flac",
+        ]);
+        let rows = vec![
+            row("/music/Album/song.flac"),
+            row("/music/album/Song.flac"),
+            row("/music/album/same.flac"),
+        ];
+
+        let gone = gone_from_where_spelled(rows, &Spelled::over(&volume));
+
+        assert_eq!(
+            paths(&gone),
+            ["/music/Album/song.flac", "/music/album/Song.flac"]
+        );
+    }
 }

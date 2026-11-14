@@ -635,7 +635,10 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   discarded playlist's id, so `playlist::created` and the sync's `synced::made` clear `playlist_plays` and `playlist_sources` (a link a removal kept for undo) under the new id (`a_playlist_a_sync_makes_inherits_no_link_from_a_deleted_one_whose_id_it_takes`).
 - **Moved files are followed, not forgotten and refound.** A hand rename/move (not `organise`) =
   gone-file row + unnamed file. `moves::follow_the_moved` (before the prune) pairs a whole-file row
-  (only row at its path, file missing) with a row this scan added alike in `file_size`, `duration`,
+  (only row at its path, file missing: **a file stands only as spelled**, `Spelled::stands`: the path
+  opens and every component is listed in its folder under exactly that name, so a file or folder
+  renamed only in case on a volume that folds case is gone from its old spelling and follows its
+  history to the new one, `a_row_renamed_only_in_case_is_gone_though_the_old_spelling_still_opens`) with a row this scan added alike in `file_size`, `duration`,
   `codec`, `tagged_title`, `tagged_artist`; among several alike, `moves::told_apart` scores paths by
   names shared from the end and pairs only where each is the other's one best, sharing at least the
   file name. **Leftovers: by sound.** `pairs_by_sound` pairs rows sharing a `Sound` (exact decoded
