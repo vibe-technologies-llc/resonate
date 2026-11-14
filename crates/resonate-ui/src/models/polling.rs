@@ -141,9 +141,59 @@ impl LibraryModel {
             Prompted::ByHand | Prompted::OnItsOwn => Asking::EveryProvider,
         };
         let providers = Arc::new(self.providers_asking(asking, cx));
-        if prompted != Prompted::ByHand && !self.worth_asking_on_its_own(&providers, options) {
+        if prompted != Prompted::ByHand {
+            self.ask_whether_a_want_is_due(providers, prompted, asking, options, cx);
             return true;
         }
+        self.begin_to_poll(providers, prompted, asking, options, cx)
+    }
+
+    fn ask_whether_a_want_is_due(
+        &mut self,
+        providers: Arc<Providers>,
+        prompted: Prompted,
+        asking: Asking,
+        options: PollOptions,
+        cx: &mut Context<Self>,
+    ) {
+        if !providers.has_a_source() {
+            return;
+        }
+        if self.running.checking_the_wants {
+            self.owe_a_poll(options);
+            return;
+        }
+        self.running.checking_the_wants = true;
+        let library = Arc::clone(&self.library);
+        self.running._due = cx.spawn(async move |this, cx| {
+            let due = cx
+                .background_executor()
+                .spawn(async move { library.is_a_want_due(options) })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.running.checking_the_wants = false;
+                let due = due.unwrap_or_else(|error| {
+                    tracing::warn!(%error, "the wants could not be read");
+                    false
+                });
+                if due && this.running.work.is_busy() {
+                    this.owe_a_poll(options);
+                } else if due {
+                    this.begin_to_poll(providers, prompted, asking, options, cx);
+                }
+                this.take_up_what_waited(cx);
+            });
+        });
+    }
+
+    fn begin_to_poll(
+        &mut self,
+        providers: Arc<Providers>,
+        prompted: Prompted,
+        asking: Asking,
+        options: PollOptions,
+        cx: &mut Context<Self>,
+    ) -> bool {
         self.library.deliver_into(delivery_folder(cx));
         let handle = match self.library.poll(providers, options) {
             Ok(handle) => handle,

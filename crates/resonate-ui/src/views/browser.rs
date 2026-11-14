@@ -1259,12 +1259,13 @@ impl RootView {
                     artist: SharedString::from(track.artist.clone().unwrap_or_default()),
                     album: this.album_named(track.album_id, &track.location, track.span, cx),
                 };
-                let others = (track.alternatives > 0).then(|| {
-                    (
-                        track.clone(),
-                        this.library.read(cx).alternatives_of(track.id),
-                    )
-                });
+                let others = match (track.alternatives > 0)
+                    .then(|| this.library.read(cx).copies_held(track.id))
+                {
+                    None => None,
+                    Some(Some(copies)) => Some((track.clone(), copies.to_vec())),
+                    Some(None) => return Menu::at(at).awaiting_the_copies_of(track.id),
+                };
 
                 let chosen = this.library.read(cx).has_a_version_chosen(track_id);
                 let placeable = this.library.read(cx).can_enrich().then_some(track_id);

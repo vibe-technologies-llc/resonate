@@ -73,6 +73,7 @@ pub(crate) struct Menu {
     reached: Option<usize>,
     beneath: Option<Beneath>,
     owner: Option<ElementId>,
+    awaiting: Option<TrackId>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -170,7 +171,17 @@ impl Menu {
             reached: None,
             beneath: None,
             owner: None,
+            awaiting: None,
         }
+    }
+
+    pub(crate) const fn awaiting_the_copies_of(mut self, track: TrackId) -> Self {
+        self.awaiting = Some(track);
+        self
+    }
+
+    pub(crate) const fn awaited(&self) -> Option<TrackId> {
+        self.awaiting
     }
 
     pub(crate) fn opened_on(mut self, owner: Option<ElementId>) -> Self {
@@ -824,7 +835,13 @@ pub(crate) fn offered_at_the_reach(
         drawn.left() + px(OPENED_IN_FROM_THE_ROWS_EDGE),
         drawn.center().y,
     );
+    this.library
+        .update(cx, |library, _| library.forget_the_copies());
     let mut menu = offers(this, at, cx);
+    if let Some(track) = menu.awaited() {
+        this.open_once_the_copies_are_read(track, offers, at, None, 1, cx);
+        return None;
+    }
     menu.steps(1);
     Some(menu)
 }
@@ -838,16 +855,69 @@ pub(crate) fn opens_a_menu(
     let lit = owner
         .as_ref()
         .is_some_and(|owner| lit_by_its_menu(owner.clone(), cx));
+    let offers: Rc<Offers> = Rc::new(offers);
     element
         .when(lit, |element| element.bg(rgb(theme::hover())))
         .on_mouse_down(
             MouseButton::Right,
             cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                 cx.stop_propagation();
+                this.library
+                    .update(cx, |library, _| library.forget_the_copies());
                 let menu = offers(this, event.position, cx).opened_on(owner.clone());
-                this.open_a_menu(menu, cx);
+                match menu.awaited() {
+                    Some(track) => this.open_once_the_copies_are_read(
+                        track,
+                        Rc::clone(&offers),
+                        event.position,
+                        owner.clone(),
+                        0,
+                        cx,
+                    ),
+                    None => this.open_a_menu(menu, cx),
+                }
             }),
         )
+}
+
+impl RootView {
+    fn open_once_the_copies_are_read(
+        &mut self,
+        track: TrackId,
+        offers: Rc<Offers>,
+        at: Point<Pixels>,
+        owner: Option<ElementId>,
+        steps: isize,
+        cx: &mut Context<Self>,
+    ) {
+        let pressed = self.press_a_lookup();
+        let library = self.library.read(cx).catalog();
+        let reading = cx
+            .background_executor()
+            .spawn(async move { library.alternatives_of(track) });
+        cx.spawn(async move |this, cx| {
+            let read = reading.await;
+            let _ = this.update(cx, |this, cx| {
+                let copies = read.unwrap_or_else(|error| {
+                    tracing::warn!(%error, "the other copies of a track could not be read");
+                    Vec::new()
+                });
+                this.library
+                    .update(cx, |library, _| library.keep_the_copies(track, copies));
+                if this.window_has_moved_on_from(pressed) {
+                    return;
+                }
+                let mut menu = offers(this, at, cx).opened_on(owner);
+                if steps != 0 {
+                    menu.steps(steps);
+                }
+                if menu.awaited().is_none() {
+                    this.open_a_menu(menu, cx);
+                }
+            });
+        })
+        .detach();
+    }
 }
 
 impl Menu {

@@ -355,7 +355,7 @@ fn the_missing_tab_is_hidden_until_it_is_asked_for() {
 }
 
 mod driven {
-    use std::{path::PathBuf, sync::Arc};
+    use std::{path::PathBuf, sync::Arc, time::Duration};
 
     use gpui::{OperatingSystem, PlatformInfo, PlatformTarget, TestAppContext};
     use resonate_core::{Span, Volume};
@@ -1143,6 +1143,54 @@ mod driven {
                 .playlist_lists(PlaylistOrder::Name, Direction::Ascending)
                 .is_ok_and(|lists| lists.len() == 2)
         });
+    }
+
+    #[gpui::test]
+    fn the_party_pane_redraws_the_window_only_while_it_is_shown(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        let beat = Duration::from_millis(500);
+        let root = driven.root.clone();
+
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.set_pane(Pane::Party, cx));
+        });
+        driven.settle();
+        driven.cx.executor().advance_clock(beat);
+        driven.settle();
+
+        assert!(driven.read(|root, cx| root.party.read(cx).is_redrawing()));
+
+        driven.click("tab-albums");
+        for _ in 0..3 {
+            driven.cx.executor().advance_clock(beat);
+            driven.settle();
+        }
+
+        assert!(!driven.read(|root, cx| root.party.read(cx).is_redrawing()));
+    }
+
+    #[gpui::test]
+    fn the_sharing_sheet_redraws_the_window_only_while_it_is_open(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = catalog();
+        let playlist = library.create_playlist("Mix").expect("a playlist");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let root = driven.root.clone();
+
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.open_sharing(playlist, cx));
+        });
+        driven.settle();
+
+        assert!(driven.read(|root, _| root.social.sharing_redraws.is_some()));
+
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.close_sharing(cx));
+        });
+        driven.settle();
+
+        assert!(driven.read(|root, _| root.social.sharing_redraws.is_none()));
     }
 
     #[gpui::test]

@@ -3,42 +3,6 @@
 Cost: work done more often, in more memory or on a thread it should not be on. Format and ordering
 are in [ROADMAP.md](ROADMAP.md).
 
-## The window
-- [S · 0.11.1] Opening the party pane once redraws the whole window twice a second for the rest of
-  the run: `party.rs`'s `keep_redrawing` starts a `PANE_REDRAWN_EVERY` loop that nothing stops
-  (`redraws` is never set back to `None`), the root observes the party and each `Part` the root, so
-  every pane, idle or not, is painted at 2 Hz; `ui.md` says the timer redraws the pane while it is
-  shown
-- [M · 0.12.0] Every `Load` and `Insert` asks the catalog for chosen versions on the window's thread:
-  `RootView::send` calls `with_the_versions_chosen`, which reads `chosen_among` synchronously (a
-  fresh statement per 500 ids), about two hundred queries to play a 100 000-track listing even
-  where no version was ever chosen, and a wait on the reader pool while a scan holds it; an
-  in-memory count of `versions_chosen` rows would skip it, else it belongs on the background
-  executor
-- [S · 0.12.0] The lyrics timing nudge writes the catalog on the window's thread:
-  `nudge_the_lyrics` calls `Library::hold_lyrics_ahead`, an `IMMEDIATE` write under a 10 s busy
-  timeout, at each press of the steppers, and `lyrics_ahead` is read inside the pane's render; every
-  other edit goes through `edited_then`
-- [S · 0.12.0] Every automatic and inbox poll reads and decodes the whole `wants` table on the
-  window's thread (`keeping.rs`'s `worth_asking_on_its_own`, `Library::is_a_want_due`), thousands of
-  rows for a listener following artists or profiles; `next_want_due` in `supply.rs` could answer it
-  from what is held, or the poll could weigh it in its task
-- [M · 0.12.0] Opening a track's menu runs catalog queries on the window's thread:
-  `browser.rs` asks `alternatives_of` and `has_a_version_chosen`, the playlist row menu
-  `has_a_version_chosen`, and *Find another version*'s rating route a full-text `tracks_named`, each
-  waiting on the reader pool while a scan or lookup holds it
-- [S · 0.12.0] A folder picked or typed as the music folder or the vault is canonicalised off the
-  window's thread and then probed again on it: `unusable_as_the_music_folder` and
-  `unusable_as_the_vault` call `is_dir`, so a stalled network mount or a sleeping disc blocks the
-  window where `ui.md` says the check is made off it
-- [S · 0.12.0] Driving another device's zones redraws the whole window twice a second until *Drive* is
-  pressed again: `driving_redraws` in `settings/sync.rs` runs while `remotely.driving` is set, which
-  leaving the page or the pane does not clear (`sync.md` says *while driving*; whether the watch
-  should outlive the page wants deciding)
-- [S · 0.12.0] The identical-songs page regroups every copy on each frame it draws
-  (`identical.rs`'s `grouped`: a `BTreeMap` over `copies.identical` and a sort of each group, to draw
-  `GROUPS_SHOWN`), the caret's blink included; grouping once as `Copies` lands would do
-
 ## Catalog
 - [S · 0.12.0] Deleting or organising many files compiles statements per path and scans two tables
   per path: `deleted::forget_files` `prepare`s (not cached) in its loop, as do

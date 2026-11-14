@@ -559,7 +559,7 @@ impl RootView {
             if let Some(syncing) = syncing.as_ref() {
                 syncing.unwatch(&held);
             }
-            self.remotely.driving_redraws = None;
+            self.remotely.driving_redraws.stop();
             if held == id {
                 cx.notify();
                 return;
@@ -574,22 +574,15 @@ impl RootView {
         }
         self.remotely.driving = Some((id.to_owned(), name.to_owned()));
         self.remotely.driving_rows = DRIVEN_ROWS_AT_FIRST;
-        self.remotely.driving_redraws = Some(cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor().timer(DRIVEN_REDRAWN_EVERY).await;
-                let driving = this.update(cx, |this, cx| {
-                    cx.notify();
-                    this.remotely.driving.is_some()
-                });
-                if !driving.unwrap_or(false) {
-                    return;
-                }
-            }
-        }));
         cx.notify();
     }
 
     fn driven_zones(&mut self, id: &str, name: &str, cx: &mut Context<Self>) -> Div {
+        self.remotely.driving_redraws.beats_while_drawn(
+            DRIVEN_REDRAWN_EVERY,
+            |root: &mut Self| &mut root.remotely.driving_redraws,
+            cx,
+        );
         let shown = cx
             .global::<ResonateApp>()
             .syncing
@@ -1831,6 +1824,27 @@ mod tests {
                 .iter()
                 .all(|(_, _, _, drawn)| *drawn == Some(DRAWN_REVISION))
         );
+    }
+
+    #[gpui::test]
+    fn driving_a_device_redraws_the_window_only_while_its_page_is_drawn(cx: &mut TestAppContext) {
+        let (mut driven, _stage) = opened_on_the_sync_group(cx);
+
+        driven.click("sync-drive-desk");
+        driven.settle();
+        driven.cx.executor().advance_clock(DRIVEN_REDRAWN_EVERY);
+        driven.settle();
+
+        assert!(driven.read(|root, _| root.remotely.driving_redraws.is_beating()));
+
+        driven.click("tab-albums");
+        for _ in 0..3 {
+            driven.cx.executor().advance_clock(DRIVEN_REDRAWN_EVERY);
+            driven.settle();
+        }
+
+        assert!(!driven.read(|root, _| root.remotely.driving_redraws.is_beating()));
+        assert!(driven.read(|root, _| root.remotely.driving.is_some()));
     }
 
     #[test]

@@ -1,9 +1,11 @@
+use std::sync::Arc;
+
 use gpui::{App, Context};
 use resonate_core::{AlbumId, ArtistId, TrackId};
 use resonate_engine::QueueItem;
 use resonate_library::Track;
 
-use super::{Change, LibraryModel, Wanted, arranged::Named};
+use super::{Change, Edited, LibraryModel, Wanted, arranged::Named};
 use crate::words;
 
 impl LibraryModel {
@@ -14,23 +16,20 @@ impl LibraryModel {
         }
     }
 
-    pub fn alternatives_of(&self, id: TrackId) -> Vec<Track> {
-        self.library.alternatives_of(id).unwrap_or_else(|error| {
-            tracing::warn!(%error, "the other copies of a track could not be read");
-            Vec::new()
-        })
+    pub fn copies_held(&self, id: TrackId) -> Option<Arc<[Track]>> {
+        self.versions
+            .copies
+            .as_ref()
+            .filter(|(held, _)| *held == id)
+            .map(|(_, copies)| Arc::clone(copies))
     }
 
-    pub fn tracks_named(&self, words: &str, at_most: usize) -> Vec<Track> {
-        let query = resonate_library::TrackQuery {
-            text: Some(words.to_owned()),
-            limit: Some(at_most),
-            ..Default::default()
-        };
-        self.library.tracks(&query).unwrap_or_else(|error| {
-            tracing::warn!(%error, "the songs named alike could not be read");
-            Vec::new()
-        })
+    pub fn keep_the_copies(&mut self, id: TrackId, copies: Vec<Track>) {
+        self.versions.copies = Some((id, copies.into()));
+    }
+
+    pub fn forget_the_copies(&mut self) {
+        self.versions.copies = None;
     }
 
     pub fn choose_version(
@@ -40,13 +39,20 @@ impl LibraryModel {
         title: String,
         cx: &mut Context<Self>,
     ) {
-        self.edited(
+        self.versions.touched = true;
+        self.edited_then(
             Wanted::ThePage,
             Change::ChooseVersion,
             move |library| {
                 library
                     .choose_version(track, &version)
                     .map(|chosen| chosen.then(|| words::better::chosen(title.as_str())))
+            },
+            move |this, edited, cx| {
+                if edited == Edited::Landed {
+                    this.versions.chosen.insert(track);
+                }
+                this.read_the_versions_chosen(cx);
             },
             cx,
         );
@@ -59,6 +65,7 @@ impl LibraryModel {
         then: impl FnOnce(&mut App) + 'static,
         cx: &mut Context<Self>,
     ) {
+        self.versions.touched = true;
         self.edited_then(
             Wanted::ThePage,
             Change::ForgetTheVersionChosen,
@@ -67,12 +74,21 @@ impl LibraryModel {
                     forgotten.then(|| words::better::own_copy_again(title.as_str()))
                 })
             },
-            move |_, _, cx| cx.defer(then),
+            move |this, edited, cx| {
+                if edited == Edited::Landed {
+                    this.versions.chosen.remove(&track);
+                }
+                this.read_the_versions_chosen(cx);
+                cx.defer(then);
+            },
             cx,
         );
     }
 
     pub fn has_a_version_chosen(&self, track: TrackId) -> bool {
+        if self.versions.read {
+            return self.versions.chosen.contains(&track);
+        }
         self.library
             .version_chosen_for(track)
             .inspect_err(|error| tracing::warn!(%error, "the version chosen could not be read"))
@@ -82,12 +98,45 @@ impl LibraryModel {
     }
 
     pub(crate) fn chosen_among(&self, items: &[QueueItem]) -> resonate_library::Chosen {
-        let queued: Vec<TrackId> = items.iter().map(|item| item.id).collect();
+        let queued: Vec<TrackId> = items
+            .iter()
+            .map(|item| item.id)
+            .filter(|id| !self.versions.read || self.versions.chosen.contains(id))
+            .collect();
+        if queued.is_empty() {
+            return resonate_library::Chosen::default();
+        }
 
         self.library
             .chosen_among(&queued)
             .inspect_err(|error| tracing::warn!(%error, "the versions chosen could not be read"))
             .unwrap_or_default()
+    }
+
+    pub(super) fn read_the_versions_chosen(&mut self, cx: &mut Context<Self>) {
+        self.versions.touched = false;
+        let library = Arc::clone(&self.library);
+        self.versions._reading = cx.spawn(async move |this, cx| {
+            let read = cx
+                .background_executor()
+                .spawn(async move { library.versions_chosen() })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.versions.touched {
+                    this.read_the_versions_chosen(cx);
+                    return;
+                }
+                match read {
+                    Ok(rows) => {
+                        this.versions.chosen = rows.iter().map(|row| row.track).collect();
+                        this.versions.read = true;
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "the versions chosen could not be read");
+                    }
+                }
+            });
+        });
     }
 
     pub fn standing_of(

@@ -15,6 +15,7 @@ use crate::{
     ResonateApp, format,
     icons::Icon,
     models::Notice,
+    serial::Serial,
     served::{ServedSong, Serves},
     views::{menu::Menu, root::RootView},
     words,
@@ -226,22 +227,55 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let pressed = self.press_a_lookup();
-        let held = match sought {
-            Sought::Better => {
-                let copies = match track.alternatives {
-                    0 => Vec::new(),
-                    _ => self.library.read(cx).alternatives_of(track.id),
-                };
-                better_held(&track, copies)
+        let library = self.library.read(cx).catalog();
+        let asked = track.clone();
+        let reading = cx.background_executor().spawn(async move {
+            match sought {
+                Sought::Better => {
+                    let copies = match asked.alternatives {
+                        0 => Vec::new(),
+                        _ => library.alternatives_of(asked.id).unwrap_or_else(|error| {
+                            tracing::warn!(%error, "the other copies of a track could not be read");
+                            Vec::new()
+                        }),
+                    };
+                    better_held(&asked, copies)
+                }
+                Sought::Rated(wanted) => {
+                    let query = resonate_library::TrackQuery {
+                        text: Some(words_of(&asked)),
+                        limit: Some(HELD_WEIGHED_AT_MOST),
+                        ..Default::default()
+                    };
+                    let found = library.tracks(&query).unwrap_or_else(|error| {
+                        tracing::warn!(%error, "the songs named alike could not be read");
+                        Vec::new()
+                    });
+                    rated_held(&asked, wanted, found)
+                }
             }
-            Sought::Rated(wanted) => {
-                let found = self
-                    .library
-                    .read(cx)
-                    .tracks_named(&words_of(&track), HELD_WEIGHED_AT_MOST);
-                rated_held(&track, wanted, found)
-            }
-        };
+        });
+        cx.spawn(async move |this, cx| {
+            let held = reading.await;
+            let _ = this.update(cx, |this, cx| {
+                if this.window_has_moved_on_from(pressed) {
+                    return;
+                }
+                this.look_for_versions_beyond(sought, track, held, at, pressed, cx);
+            });
+        })
+        .detach();
+    }
+
+    fn look_for_versions_beyond(
+        &mut self,
+        sought: Sought,
+        track: Track,
+        held: Vec<Track>,
+        at: Point<Pixels>,
+        pressed: Serial,
+        cx: &mut Context<Self>,
+    ) {
         let held: Vec<(Track, Option<String>)> = held
             .into_iter()
             .map(|copy| {

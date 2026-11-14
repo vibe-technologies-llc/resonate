@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use gpui::{
-    AnyElement, Context, Div, Entity, FontWeight, ScrollHandle, SharedString, Stateful, Task,
-    Window, div, prelude::*, px, rgb,
+    AnyElement, Context, Div, Entity, FontWeight, ScrollHandle, SharedString, Stateful, Window,
+    div, prelude::*, px, rgb,
 };
 
 use crate::{
@@ -16,6 +16,7 @@ use crate::{
     views::{
         field::{Field, Submitted},
         kit::{self, EndsInAnEllipsis as _, Tone},
+        pulse::Pulse,
         root::RootView,
         scrollbar::Scrollbars,
         settings::sync::scanned,
@@ -304,7 +305,7 @@ pub(crate) struct PartyPane {
     pub(crate) chat: Entity<Field>,
     scroll: ScrollHandle,
     pub(crate) handing_armed: Option<[u8; 16]>,
-    redraws: Option<Task<()>>,
+    redraws: Pulse,
 }
 
 impl PartyPane {
@@ -319,22 +320,18 @@ impl PartyPane {
             chat,
             scroll: ScrollHandle::new(),
             handing_armed: None,
-            redraws: None,
+            redraws: Pulse::default(),
         }
     }
 
     fn keep_redrawing(&mut self, cx: &mut Context<Self>) {
-        if self.redraws.is_some() {
-            return;
-        }
-        self.redraws = Some(cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor().timer(PANE_REDRAWN_EVERY).await;
-                if this.update(cx, |_, cx| cx.notify()).is_err() {
-                    return;
-                }
-            }
-        }));
+        self.redraws
+            .beats_while_drawn(PANE_REDRAWN_EVERY, |pane: &mut Self| &mut pane.redraws, cx);
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn is_redrawing(&self) -> bool {
+        self.redraws.is_beating()
     }
 
     fn say_in_the_party(&mut self, window: &mut Window, cx: &mut Context<Self>) {

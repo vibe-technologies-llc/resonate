@@ -563,8 +563,8 @@ pub(crate) struct Remotely {
     pub(crate) heading_pressed_at: Option<Point<Pixels>>,
     pub(crate) controls: Controls,
     pub(crate) driving: Option<(String, String)>,
-    pub(crate) driving_redraws: Option<Task<()>>,
-    pub(crate) mirror_redraws: Option<Task<()>>,
+    pub(crate) driving_redraws: super::pulse::Pulse,
+    pub(crate) mirror_redraws: super::pulse::Pulse,
     pub(crate) driving_rails: std::collections::BTreeMap<u32, crate::views::slider::Rail>,
     pub(crate) driving_rows: usize,
 }
@@ -737,6 +737,7 @@ pub struct RootView {
     arranged_as: Arrangement,
     pub(crate) creeping: Option<Creeping>,
     pub(crate) creeping_on: Task<()>,
+    pub(crate) reading_the_lyrics_timing: Task<()>,
     listing_whole: Task<()>,
     pub(crate) zones: Vec<ZoneShown>,
     pub(crate) switcher: Switcher,

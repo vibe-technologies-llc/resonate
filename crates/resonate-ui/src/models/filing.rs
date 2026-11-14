@@ -245,7 +245,8 @@ impl LibraryModel {
                 this.take_up_what_waited(cx);
                 match found {
                     Ok(copies) => {
-                        this.passes.identical = Some(Arc::new(copies));
+                        this.passes.identical =
+                            Some(Arc::new(super::passes::Identified::of(copies)));
                         this.passes.previewed_identical =
                             Planned::after(Pass::Preview, false, read_at);
                     }
@@ -290,7 +291,7 @@ impl LibraryModel {
             before.await;
             let folded = cx
                 .background_executor()
-                .spawn(async move { library.fold_copies(&copies.identical) })
+                .spawn(async move { library.fold_copies(&copies.copies.identical) })
                 .await;
 
             let outcome = this.update(cx, |this, cx| {

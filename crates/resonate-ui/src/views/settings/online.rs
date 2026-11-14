@@ -157,28 +157,12 @@ impl RootView {
             .as_ref()
             .map(|mirroring| mirroring.told());
         let building = matches!(told, Some(MirrorTold::Building { .. }));
-        if building && self.remotely.mirror_redraws.is_none() {
-            self.remotely.mirror_redraws = Some(cx.spawn(async move |this, cx| {
-                loop {
-                    cx.background_executor().timer(MIRROR_REDRAWN_EVERY).await;
-                    let still = this.update(cx, |_, cx| {
-                        cx.notify();
-                        cx.global::<ResonateApp>()
-                            .mirroring
-                            .as_ref()
-                            .is_some_and(|mirroring| {
-                                matches!(mirroring.told(), MirrorTold::Building { .. })
-                            })
-                    });
-                    if !still.unwrap_or(false) {
-                        let _ = this.update(cx, |this, cx| {
-                            this.remotely.mirror_redraws = None;
-                            cx.notify();
-                        });
-                        return;
-                    }
-                }
-            }));
+        if building {
+            self.remotely.mirror_redraws.beats_while_drawn(
+                MIRROR_REDRAWN_EVERY,
+                |root: &mut Self| &mut root.remotely.mirror_redraws,
+                cx,
+            );
         }
         let held = matches!(told, Some(MirrorTold::Held { .. }));
 
