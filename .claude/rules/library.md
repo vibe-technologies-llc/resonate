@@ -1261,7 +1261,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `SeekHead` and that tail change. The `SeekHead` is laid again with its positions at their
   narrowest, in its own bytes and the `Void`s after it, which is how YouTube's 63 bytes of
   eight-byte positions take a fourth entry; a rewritten `SeekHead` or `Tags` drops its `CRC-32`
-  rather than carry a stale one. **Refused with the file untouched** (`Error::Unwritable`): a
+  rather than carry a stale one. **A `Void` is written as its header alone, its body counted and never built** (`void_of` answers a `Void` of a `header` and a `body` length; a `Laid` carries `zeroed`, the stretch of zeros `laid_on` streams from a 64 KiB buffer, which is only what an element left behind inside it or the file's new tail), so a sparse file with a multi-gigabyte `Void` after the `Tags` retags by writing a few bytes (`a_void_after_the_tags_is_never_written_whole_by_a_retag`). **Refused with the file untouched** (`Error::Unwritable`): a
   `Segment` or a child of unknown size, a `Segment` that does not end where the file does, a
   `Segment`-level `CRC-32`, a `Tags` past the first `Cluster` with no `SeekHead` ahead of it and no
   `Void` there to lay one in, a `SeekHead` with no room, a second `SeekHead` where `Tags` move, a

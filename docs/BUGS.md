@@ -101,11 +101,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   listener's to grant
 
 ## Formats
-- [S · 0.11.1] A Matroska `Tags` or `SeekHead` followed by a large `Void` makes a retag allocate and
-  write that many zeros: `matroska_tags::void_of` builds a Void's whole body (`void.resize(bytes)`)
-  for every room `room_of` counts, rebuilt on every turn of `laid_in_the_room`, so a sparse file with
-  a multi-gigabyte Void aborts the process and an ordinary large one pushes an in-place write past
-  `MOST_BYTES_WRITTEN_IN_PLACE` for nothing; a Void's header alone needs writing
 - [S · 0.12.0] A truncated WAV whose ID3v2 tag stands before its `RIFF` may have the tag laid inside its
   audio: `writing::chunked` copies what the `RIFF` size declares, which stops short at the file's
   end, then appends the `id3 ` chunk within the `data` chunk's declared span, played as noise and
