@@ -49,8 +49,8 @@ playback is the guiding constraint.
   hardware allows.
 - A **GPUI** front end, native on Wayland.
 - A **Windows** build of the same window and engine, playing through WASAPI (`windows.md`).
-- A **macOS** build of the same window and engine for Apple Silicon, playing through Core Audio,
-  cross-checked and built in CI and never yet run on a Mac (`macos.md`).
+- A **macOS** build of the same window and engine for Apple Silicon and Intel, playing through Core Audio,
+  cross-checked and built in CI and run on one Mac (`macos.md`).
 - An **Android 13+ Jetpack Compose** front end (Material 3), with the same Rust playback engine,
   opened and run from the `android/` project in Android Studio.
 - An **iOS 26+ SwiftUI** front end on the same engine and boundary, built, signed and installed from

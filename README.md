@@ -35,14 +35,15 @@ Each [GitHub release](https://github.com/vibe-technologies-llc/resonate/releases
 | Ubuntu 24.04 | `.deb` |
 | Arch | `.pkg.tar.zst`, or `resonate-player-git` from the AUR |
 | Windows (x64, ARM64) | installer `.exe` or `.zip` |
-| macOS 13+ (Apple Silicon) | `.dmg` |
+| macOS 13+ (Apple Silicon, Intel) | `.dmg` |
 | Android 13+ | `.apk` |
 | iOS 26+ | `.ipa`, plus an AltStore/SideStore source |
 
-The Linux packages target x86-64-v3; older CPUs need a source build. The Windows and macOS builds
-are unsigned, so SmartScreen and Gatekeeper will ask on first run. The IPA is signed ad hoc, so you
-sign it with your own Apple ID when sideloading. The macOS build has been type-checked and tested in
-CI but not yet run on a real Mac.
+The Linux packages target x86-64-v3; older CPUs need a source build. The Windows builds
+are unsigned, so SmartScreen will ask on first run. The macOS build is signed ad hoc and not
+notarised, so Gatekeeper refuses its first run until you allow it under Privacy & Security. The IPA
+is signed ad hoc, so you sign it with your own Apple ID when sideloading. The macOS build is tested
+in CI and has run on an Apple Silicon Mac under macOS 26.
 
 ## Build
 
@@ -70,7 +71,7 @@ links WebKitGTK.
 Packaging recipes live in `packaging/`: `PKGBUILD`, `resonate.spec`, `deb/build.sh`, the Flatpak
 manifest `org.resonate.Resonate.yml`, `windows/build.ps1` and `macos/build.sh`.
 
-Android: open `android/` in Android Studio (SDK 36, NDK 28.2.13676358, the
+Android: open `android/` in Android Studio (SDK 37, NDK 28.2.13676358, the
 `aarch64-linux-android` and `x86_64-linux-android` Rust targets) and run it. Gradle builds the Rust
 library and Kotlin bindings itself. From a terminal, `android/gradlew -p android :app:installDebug`.
 
@@ -94,7 +95,7 @@ completions are generated from the same definitions.
 
 Settings live in `$XDG_CONFIG_HOME/resonate/config.toml` (`%APPDATA%\resonate` on Windows,
 `~/Library/Application Support/resonate` on macOS). The settings pane edits the same file and keeps
-your comments and key order. `man 5 resonate-config` documents every key.
+your comments and key order. `man 5 resonate-config.toml` documents every key.
 
 ## Privacy
 

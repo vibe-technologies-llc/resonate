@@ -195,16 +195,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   and `basic-toml` (uniffi's askama)
 
 ## Docs
-- [S · 0.12.0] `README.md` and `CLAUDE.md` say the macOS build has never run on a Mac, where
-  `macos.md` and `FEATURES.md` record a run on an M4 under macOS 26
-- [S · 0.12.0] `README.md`'s facts that no longer hold: `man 5 resonate-config` (the page is
-  `resonate-config.toml(5)`), Android's SDK 36 (`compileSdk = 37`), macOS listed for Apple Silicon
-  alone (`release.yml` builds an x86-64-v3 image too), and macOS called unsigned (it is signed ad hoc,
-  not notarised)
-- [S · 0.12.0] `android.md`'s list of the catalog's steps passes over steps 25, 27, 28 and 33
-  (`PROFILES_ARE_FOLLOWED_WHOLE`, `LISTENS_ARE_READ_BY_WHEN_THEY_BEGAN`,
-  `A_PLAYLIST_MAY_BE_SHARED_WITH_OTHER_PEOPLE`, `QUEUES_KEEP_THEIR_SHUFFLE_LIST_ORDER_AND_ROWS_PLAYED_NEXT`),
-  and the step check does not ask that every step be named somewhere
+- [S · 0.12.0] The step check (`every_step_the_rules_number_stands_where_the_chain_puts_it`) does not
+  ask that every step of `MIGRATIONS` be named somewhere in the rules, so a step a list passes over
+  goes unnoticed
 
 ## Later: Structure
 - [M] Seven places delete `tracks` rows (`deleted.rs` twice, `store.rs`'s `prune`,
