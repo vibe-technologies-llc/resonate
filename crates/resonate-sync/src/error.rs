@@ -216,6 +216,9 @@ pub enum Error {
     #[error("device {0:?} could not be reached")]
     Unreachable(DeviceId),
 
+    #[error("device {device:?} announced a song of {size} bytes, past the largest one fetched")]
+    SongTooLarge { device: DeviceId, size: u64 },
+
     #[error("device {0:?} does not hold that song")]
     Missing(DeviceId),
 

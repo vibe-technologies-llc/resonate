@@ -32,9 +32,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `appendingPathComponent` takes whole, and `open`, `delete` and `fileNumber` then reach outside the
   granted folder; `documents::location` checks only the scheme. No reachable hostile URI was found,
   but one from an imported list or another device would do it
-- [S · 0.12.0] A peer's `FromPeer::Sending` size is believed: `peer.rs` stages the file under
-  `sync-staging` up to whatever size it announced, with no ceiling like the vault's
-  `LARGEST_DELIVERY`, so a paired device (an old phone never forgotten) can fill the disc
 - [S · 0.12.0] A Bonjour record still opens for ever: `record_of` seals a bare `Beacon` (no time,
   resealed only as it moves, and iOS hands the same record every 5 s), so one record seen on the
   network and advertised again under addresses of the replayer's choosing makes every device of the

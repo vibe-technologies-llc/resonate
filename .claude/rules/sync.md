@@ -897,7 +897,12 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   `sync-staging` and resumes from what it holds; the catalog lands it once whole.
 - **One broken song never holds the others up.** Every wait of a fetch (the stream, the header, each
   chunk) gives up after `A_FETCH_GOES_QUIET_AFTER` (30 s), so a sender stuck on an evicted file fails
-  that song and the run goes on to the next. **A partial is resumed only from the file it began as**:
+  that song and the run goes on to the next. **A song is believed only up to
+  `LARGEST_SONG_FETCHED` (4 GiB, the most a vault's delivery holds)**: a `Sending` announcing more is
+  `Error::SongTooLarge` and the stream is stopped before a note or a byte is staged, so a paired
+  device cannot fill the disc under `sync-staging`
+  (`a_song_announced_past_the_largest_one_fetched_is_refused_before_anything_is_staged`).
+  **A partial is resumed only from the file it began as**:
   a `.from` note beside it names the sending device and the size it announced; another device, or a
   size the header no longer names, starts the song over (`peer::resumable`, `fetched_from`). The
   header carries no version of the file, so a file replaced at the same size by the same device is
