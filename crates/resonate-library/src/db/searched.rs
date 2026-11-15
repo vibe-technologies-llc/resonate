@@ -87,9 +87,72 @@ pub(crate) fn tracks_from(inner: &Inner, query: &TrackQuery, at: TrackId) -> Res
     let Some(matching) = matching_tracks(query, None, filters) else {
         return Ok(Vec::new());
     };
-    if matching.ranked || !SortOrder::HELD_BY_AN_INDEX.contains(&query.sort) {
+    if !is_read_by_key(query, &matching) {
         return tracks(inner, query, None);
     }
+    read_from(inner, query, &matching, at)
+}
+
+const A_WHOLE_FILE: &str = "tracks.span_start = 0 AND tracks.span_frames IS NULL";
+
+fn whole_files_matching(inner: &Inner, query: &TrackQuery) -> Option<Matching> {
+    let filters = *inner.music_filters.lock();
+    let mut matching = matching_tracks(query, None, filters)?;
+    matching.filters.push(A_WHOLE_FILE.to_owned());
+    Some(matching)
+}
+
+pub(crate) fn whole_files(
+    inner: &Inner,
+    query: &TrackQuery,
+    at: Option<TrackId>,
+) -> Result<Vec<Track>> {
+    let Some(matching) = whole_files_matching(inner, query) else {
+        return Ok(Vec::new());
+    };
+    if let Some(at) = at
+        && is_read_by_key(query, &matching)
+    {
+        return read_from(inner, query, &matching, at);
+    }
+    let sql = format!(
+        "SELECT {TRACK_COLUMNS} FROM tracks{}{} ORDER BY {} LIMIT ? OFFSET ?",
+        matching.join,
+        clause(&matching.filters),
+        order_by(query.sort, query.reading, matching.ranked)
+    );
+    collect(inner, &sql, paged(matching.binds, query))
+}
+
+pub(crate) fn whole_files_counted(inner: &Inner, query: &TrackQuery) -> Result<u32> {
+    let Some(matching) = whole_files_matching(inner, query) else {
+        return Ok(0);
+    };
+    let sql = format!(
+        "SELECT count(*) FROM tracks{}{}",
+        matching.join,
+        clause(&matching.filters)
+    );
+    inner.read(|connection| {
+        connection
+            .query_row(&sql, params_from_iter(matching.binds), |row| {
+                row.get::<_, i64>(0)
+            })
+            .map(|rows| u32::try_from(rows).unwrap_or(u32::MAX))
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    })
+}
+
+fn is_read_by_key(query: &TrackQuery, matching: &Matching) -> bool {
+    !matching.ranked && SortOrder::HELD_BY_AN_INDEX.contains(&query.sort)
+}
+
+fn read_from(
+    inner: &Inner,
+    query: &TrackQuery,
+    matching: &Matching,
+    at: TrackId,
+) -> Result<Vec<Track>> {
     let order = order_by(query.sort, query.reading, false);
     let terms = keyed::terms(order);
 
@@ -122,7 +185,7 @@ pub(crate) fn tracks_from(inner: &Inner, query: &TrackQuery, at: TrackId) -> Res
                 },
                 None => None,
             };
-            let (sql, binds) = sought(&matching, seek, wanted);
+            let (sql, binds) = sought(matching, seek, wanted);
             let mut statement = reading
                 .prepare(&sql)
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;

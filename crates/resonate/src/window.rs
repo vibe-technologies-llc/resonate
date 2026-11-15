@@ -73,6 +73,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
     let sources = playing_from(Some(&library), &served);
     let rendering = Rendering::for_the_window(&config, wanted_sink(&cli, &config).as_ref());
     let renderers = rendering.switch();
+    let offered = crate::offering::Offered::for_the_window(&config, &library);
     let player = rendering.player(
         kinship::kin_from(engine_config(&cli, &config), Some(&library)),
         Arc::clone(&sources),
@@ -181,7 +182,9 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
     let present = Arc::clone(&presenter) as Arc<dyn resonate_ui::Present>;
     let leaving: resonate_ui::Leaving = {
         let zones = Arc::clone(&zones);
+        let offered = Arc::clone(&offered);
         Box::new(move || {
+            offered.leave();
             providers::stop_the_tools();
             drop(presenter);
             syncing.leave();
@@ -319,6 +322,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
             presence: config.presence(),
             present,
             renderers,
+            catalog_shared: Some(offered as Arc<dyn resonate_ui::CatalogShared>),
             synchronised: resonate_ui::Synchronised {
                 enabled: config.is_on(Switch::Sync),
                 nearby_only: config.is_on(Switch::SyncNearbyOnly),

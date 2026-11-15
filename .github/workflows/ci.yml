@@ -230,7 +230,7 @@ jobs:
           refuse resonate-audio pipewire libspa resonate-codec resonate-dsp gpui
           only resonate-upnp resonate-core resonate-audio resonate-words
           check "resonate-upnp outside its tests" "$(held_by -p resonate-upnp -e normal)" \
-            pipewire libspa gpui ureq serde rustls
+            pipewire libspa gpui ureq serde rustls rusqlite
           only resonate-cast resonate-core resonate-audio resonate-upnp resonate-words
           check "resonate-cast outside its tests" "$(held_by -p resonate-cast -e normal)" \
             pipewire libspa gpui ureq serde serde_json

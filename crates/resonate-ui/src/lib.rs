@@ -60,9 +60,9 @@ pub use crate::{
     },
     served::{ServedAlbum, ServedArtist, ServedCover, ServedFound, ServedSong, Serves, Serving},
     settings::{
-        Asking, Bindings, CaretBlink, ChecksYoutubeMusic, Continuing, Ephemeral, Followed,
-        HandedOff, JellyfinBegun, JellyfinSession, JellyfinSignIn, ListOffered, Measurers,
-        MirrorTold, Mirroring, Newer, Online, Places, Present, Registering, RemoteKey,
+        Asking, Bindings, CaretBlink, CatalogShared, ChecksYoutubeMusic, Continuing, Ephemeral,
+        Followed, HandedOff, JellyfinBegun, JellyfinSession, JellyfinSignIn, ListOffered,
+        Measurers, MirrorTold, Mirroring, Newer, Online, Places, Present, Registering, RemoteKey,
         RemoteRowShown, RemoteShown, RemoteZoneShown, Renderers, Setting, SettingChange, Settings,
         SettingsCategory, SignsInToJellyfin, SignsInToYoutubeMusic, Sourcing, SpotifySignIn,
         Stored, Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised,

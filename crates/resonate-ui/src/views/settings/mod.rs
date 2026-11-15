@@ -571,6 +571,7 @@ impl RootView {
             Group::Device => self.device_group(cx),
             Group::FlacRenderers => self.flac_renderers_group(cx),
             Group::LearntFormats => self.learnt_formats_group(cx),
+            Group::SharedCatalog => self.shared_catalog_group(cx),
             Group::DeviceVolume => self.device_volume_group(cx),
             Group::SampleRate => self.sample_rate_group(cx),
             Group::GraphRate => self.graph_rate_group(cx),

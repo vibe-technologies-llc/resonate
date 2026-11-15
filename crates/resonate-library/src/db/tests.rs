@@ -473,6 +473,56 @@ fn paging_by_the_last_key_reads_every_row_once_in_the_order_read_whole() -> Resu
 }
 
 #[test]
+fn whole_files_leave_out_a_sheets_spans_and_page_by_key_as_the_rows_read_whole() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    tied_and_unheld(&library);
+    run(
+        &library,
+        "UPDATE tracks SET span_start = 4410, span_frames = 4410 WHERE path = '/music/04';
+         UPDATE tracks SET span_start = 0, span_frames = 4410 WHERE path = '/music/08';",
+    );
+    let query = TrackQuery::default();
+    let whole: Vec<TrackId> = library
+        .tracks(&query)?
+        .into_iter()
+        .filter(|track| track.span.is_none())
+        .map(|track| track.id)
+        .collect();
+
+    let mut paged = ids(&library.whole_files(&TrackQuery {
+        limit: Some(PAGED_BY),
+        ..query.clone()
+    })?);
+    while let Some(last) = paged.last().copied() {
+        let page = ids(&library.whole_files_from(
+            &TrackQuery {
+                limit: Some(PAGED_BY + 1),
+                ..query.clone()
+            },
+            last,
+        )?);
+        assert_eq!(page.first(), Some(&last));
+        if page.len() == 1 {
+            break;
+        }
+        paged.extend(page.into_iter().skip(1));
+    }
+
+    assert_eq!(library.tracks(&query)?.len(), whole.len() + 2);
+    assert_eq!(paged, whole);
+    assert_eq!(library.whole_files_counted(&query)?, whole.len() as u32);
+    assert_eq!(
+        ids(&library.whole_files(&TrackQuery {
+            offset: 2,
+            limit: Some(2),
+            ..query.clone()
+        })?),
+        whole[2..4]
+    );
+    Ok(())
+}
+
+#[test]
 fn a_page_from_a_row_the_catalog_no_longer_holds_is_empty() -> Result<()> {
     let library = Library::open_in_memory()?;
     tied_and_unheld(&library);

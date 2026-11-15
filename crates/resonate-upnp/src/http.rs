@@ -16,6 +16,12 @@ pub(crate) const HEADERS_AT_MOST: usize = 64;
 
 pub(crate) const USER_AGENT: &str = concat!("resonate/", env!("CARGO_PKG_VERSION"));
 
+pub(crate) const SERVED_AS: &str = concat!(
+    "resonate/",
+    env!("CARGO_PKG_VERSION"),
+    " UPnP/1.0 DLNADOC/1.50"
+);
+
 const READ_IN: usize = 8 << 10;
 
 const LAST_CHUNK: &[u8] = b"0\r\n\r\n";

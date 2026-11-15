@@ -212,10 +212,15 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [L] The catalog is not offered on the network as a UPnP MediaServer: `resonate-upnp` is a control
-  point alone, though its stream server, SSDP, description writing and live feed, with the library's
-  keyed paging, are most of a ContentDirectory's Browse; an off-by-default switch and fuzzed SOAP
-  request reading would come with it
+- [M] The catalog offered on the network answers no Search and no eventing:
+  `GetSearchCapabilities` is empty, so a control point browses alone, and a `SUBSCRIBE` is refused,
+  so one waiting on `SystemUpdateID` events sees a changed catalog only when it browses again
+- [M] A song cut from a cue sheet is not offered on the network: a span of a file is no byte range
+  of it, and serving one would mean decoding it and sending it as WAVE
+- [S] The catalog is offered on the network only while the window is open: no subcommand serves it
+  headless, and the phones offer theirs not at all
+- [S] Every computer offering its catalog is named Resonate on the network, so two read alike in a
+  control point; the name is the catalog's word, never the host's
 - [S] A renderer taking WAVE and not FLAC is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz,
   and handing the untouched file over does not fit the sink seam (`upnp.md`)
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio

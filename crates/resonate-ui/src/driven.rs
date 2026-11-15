@@ -503,6 +503,7 @@ impl Driven {
                 presence: resonate_core::Presence::default(),
                 present: unseen.clone(),
                 renderers: None,
+                catalog_shared: None,
                 synchronised: crate::Synchronised::default(),
                 syncing: None,
                 together: None,

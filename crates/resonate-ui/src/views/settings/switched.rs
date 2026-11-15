@@ -38,6 +38,10 @@ impl RootView {
                 .renderers
                 .as_ref()
                 .is_some_and(|renderers| renderers.looking()),
+            Switch::ShareCatalogOnNetwork => app
+                .catalog_shared
+                .as_ref()
+                .is_some_and(|shared| shared.shared()),
             Switch::Equaliser => self.player.read(cx).output_settings().equaliser.enabled,
             Switch::Sync => app.synchronised.enabled,
             Switch::SyncNearbyOnly => app.synchronised.nearby_only,
@@ -70,6 +74,7 @@ impl RootView {
             Switch::Notify => self.set_notify(on, cx),
             Switch::CheckForUpdates => self.check_for_updates(on, cx),
             Switch::Renderers => self.look_for_renderers(on, cx),
+            Switch::ShareCatalogOnNetwork => self.share_the_catalog(on, cx),
             Switch::Equaliser => self.switch_the_equaliser(on, cx),
             Switch::Sync => self.set_sync(on, cx),
             Switch::SyncNearbyOnly => self.set_sync_nearby_only(on, cx),

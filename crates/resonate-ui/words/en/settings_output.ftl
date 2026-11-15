@@ -90,3 +90,7 @@ kept-awake-meaning = A pause keeps the headphones fed with silence for { $kept }
 held-by-another = Held bit-perfect by { $zone }
 takes-as-is = Takes { $quality } as is
 said-and-held-by = { $said }, held bit-perfect by { $zone }
+share-the-catalog-on-the-network = Offer the catalog on the network
+off-nothing-on-the-network-can-browse-it = Off, nothing on the network can browse it
+shared-catalog-note = On, the catalog is a UPnP and DLNA media server named Resonate: a streamer's app, BubbleUPnP, Kodi or VLC on this network can browse its artists, albums, songs and playlists and play the files as they are. Only devices on the local network are answered, nothing can be changed from them, and songs cut from a cue sheet are left out. Off, nothing is announced or served.
+the-catalog-cannot-be-shared = The catalog cannot be offered on the network from here.

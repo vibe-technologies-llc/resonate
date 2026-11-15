@@ -1,0 +1,6 @@
+POST /control/ContentDirectory HTTP/1.1
+Host: 10.0.0.2:8200
+Content-Type: text/xml; charset="utf-8"
+SOAPAction: "urn:schemas-upnp-org:service:ContentDirectory:1#Browse"
+Content-Length: 0
+

@@ -1,6 +1,11 @@
+mod announce;
 mod beside;
 mod carriage;
+mod catalog;
 mod description;
+mod didl;
+mod directory;
+mod door;
 mod error;
 mod feed;
 mod flac;
@@ -9,7 +14,11 @@ mod fuzzing;
 mod http;
 mod learning;
 mod located;
+mod naming;
+mod neighbours;
 mod network;
+mod offered;
+mod presented;
 mod renderer;
 mod serve;
 mod soap;
@@ -31,6 +40,9 @@ pub use crate::fuzzing::read_what_a_network_says;
 pub use crate::{
     beside::{Beside, Neighbours},
     carriage::{Carriage, Wrapping},
+    catalog::{
+        AudioKind, Bytes, Catalog, Entry, Held, Object, Opened, Page, Picture, Shelf, Shelved, Song,
+    },
     error::{Action, Asked, Error, FlacOp, Result, SearchOp, ServeOp},
     feed::Feed,
     learning::{
@@ -39,6 +51,7 @@ pub use crate::{
     },
     located::Located,
     network::{FirstSearch, Network, Searching},
+    offered::{MediaServer, Offering},
     renderer::{Renderer, Udn, Vouched},
     serve::{Server, Token},
     ssdp::{RENDERER_TYPE, SSDP},
@@ -57,6 +70,26 @@ mod said_through_the_catalog {
         let written: Vec<String> = resonate_words_build::prose_of(&source)
             .into_iter()
             .map(|said| format!("network.rs:{} {:?}", said.line, said.text))
+            .collect();
+
+        assert!(
+            written.is_empty(),
+            "words written in the code:\n{}",
+            written.join("\n")
+        );
+    }
+
+    #[test]
+    fn every_word_the_media_server_shows_a_control_point_is_said_through_its_catalog() {
+        let written: Vec<String> = ["src/naming.rs"]
+            .into_iter()
+            .flat_map(|file| {
+                let source = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(file))
+                    .expect("the media server's source");
+                resonate_words_build::prose_of(&source)
+                    .into_iter()
+                    .map(move |said| format!("{file}:{} {:?}", said.line, said.text))
+            })
             .collect();
 
         assert!(

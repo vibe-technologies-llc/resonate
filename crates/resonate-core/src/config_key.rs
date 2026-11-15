@@ -139,6 +139,7 @@ keys! {
     FormatsLearntFor = "formats-learnt-for";
     RenderersAt = "renderers-at";
     CastAt = "cast-at";
+    ShareCatalogOnNetwork = "share-catalog-on-network", off;
     HistoryKept = "history-kept";
     SkipRepeatsQueue = "skip-repeats-queue";
     PreviousRestarts = "previous-restarts";

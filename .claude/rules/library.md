@@ -265,6 +265,10 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `every_seek_past_a_key_is_read_off_the_orders_index_either_way_round`, where a seek of `IS NULL`
   on a `NOT NULL` column is passed over: SQLite answers it before reading). No index was added for
   it: the order indexes serve every seek.
+  **`Library::whole_files`, `whole_files_from` and `whole_files_counted`** are `tracks`,
+  `tracks_from` and a count with every row cut from a cue sheet left out (`span_start = 0` and no
+  `span_frames`), paged by the same keys, for what serves files as they are (`upnp.md`'s media
+  server; `whole_files_leave_out_a_sheets_spans_and_page_by_key_as_the_rows_read_whole`).
 - **Albums and artists panes have orders too, deliberately unindexed.** `AlbumOrder` and
   `ArtistOrder` read those tables, which hold thousands of rows against `tracks`' hundreds of
   thousands, so a temp B-tree beats an index. **An artist files under the name its files sort it

@@ -25,6 +25,8 @@ use crate::{
 
 const SECONDS_A_MINUTE: u64 = 60;
 
+const SHARED_CATALOG_ID: &str = "shared-catalog";
+
 const OR: &str = ", ";
 
 fn known_as(sink: &SinkInfo) -> String {
@@ -529,6 +531,39 @@ impl RootView {
         if let Some(renderers) = cx.global::<ResonateApp>().renderers.clone() {
             renderers.vouch(named);
         }
+    }
+
+    pub(super) fn shared_catalog_group(&mut self, cx: &mut Context<Self>) -> Rows {
+        let Some(shared) = cx
+            .global::<ResonateApp>()
+            .catalog_shared
+            .as_ref()
+            .map(|shared| shared.shared())
+        else {
+            return kit::rows().child(note(words::settings_output::the_catalog_cannot_be_shared()));
+        };
+
+        kit::rows()
+            .child(self.in_the_ring(
+                SHARED_CATALOG_ID,
+                switch_row(
+                    words::settings_output::share_the_catalog_on_the_network(),
+                    words::settings_output::off_nothing_on_the_network_can_browse_it(),
+                    shared,
+                    SHARED_CATALOG_ID,
+                ),
+                move |this, _, cx| this.share_the_catalog(!shared, cx),
+                cx,
+            ))
+            .note(words::settings_output::shared_catalog_note())
+    }
+
+    pub(super) fn share_the_catalog(&mut self, on: bool, cx: &mut Context<Self>) {
+        if let Some(shared) = cx.global::<ResonateApp>().catalog_shared.clone() {
+            shared.share(on);
+        }
+        self.store(&Setting::Switched(Switch::ShareCatalogOnNetwork, on), cx);
+        cx.notify();
     }
 
     pub(super) fn look_for_renderers(&mut self, on: bool, cx: &mut Context<Self>) {

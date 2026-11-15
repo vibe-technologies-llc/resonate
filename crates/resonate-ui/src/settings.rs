@@ -918,6 +918,7 @@ pub struct Stored {
     pub presence: Presence,
     pub present: Arc<dyn Present>,
     pub renderers: Option<Arc<dyn Renderers>>,
+    pub catalog_shared: Option<Arc<dyn CatalogShared>>,
     pub synchronised: Synchronised,
     pub syncing: Option<Arc<dyn Syncing>>,
     pub together: Option<Arc<dyn crate::Together>>,
@@ -965,6 +966,11 @@ fn millis(duration: Duration) -> u64 {
 
 pub trait Present: Send + Sync {
     fn follow(&self, presence: &Presence);
+}
+
+pub trait CatalogShared: Send + Sync {
+    fn shared(&self) -> bool;
+    fn share(&self, on: bool);
 }
 
 pub trait Renderers: Send + Sync {

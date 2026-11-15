@@ -244,6 +244,7 @@ pub(crate) enum Group {
     Bluetooth,
     FlacRenderers,
     LearntFormats,
+    SharedCatalog,
     Resampler,
     Dither,
     NoiseShaping,
@@ -320,7 +321,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 82] = [
+    pub(crate) const ALL: [Self; 83] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -330,6 +331,7 @@ impl Group {
         Self::Bluetooth,
         Self::FlacRenderers,
         Self::LearntFormats,
+        Self::SharedCatalog,
         Self::Resampler,
         Self::Dither,
         Self::NoiseShaping,
@@ -528,6 +530,14 @@ impl Group {
                 hint: words::settings_find::learnt_formats_hint(),
                 also_called: words::settings_find::upnp_cast_chromecast_learn_try_probe(),
                 keys: &[ConfigKey::FormatsLearntFor],
+            },
+            Self::SharedCatalog => Described {
+                category: Category::Output,
+                page: None,
+                title: words::settings_find::the_catalog_on_the_network(),
+                hint: words::settings_find::shared_catalog_hint(),
+                also_called: words::settings_find::upnp_dlna_media_server_share_browse_kodi_vlc(),
+                keys: &[ConfigKey::ShareCatalogOnNetwork],
             },
             Self::Resampler => Described {
                 category: Category::Processing,

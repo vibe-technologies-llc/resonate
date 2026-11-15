@@ -226,6 +226,9 @@ Each is reached when Resonate starts, whatever \fBrenderers\fR says, and no sear
 .B cast-at
 Array of Google Cast receivers given by IP address or by host name, each with its port (\fB192.168.1.30:8009\fR, \fBkitchen.local:8009\fR) or without it (8009), for a network that drops the multicast browse. A host name is looked up when it is reached and again each time it is tried, off the window's thread; a \fB.local\fR name the system cannot resolve is asked for over mDNS. Each is reached when Resonate starts, whatever \fBrenderers\fR says, and no browse is sent to the network unless \fBrenderers\fR is on. A receiver is named \fBcast:at-\fR and its address until the browse hears it at that address, and then \fBcast:\fR and its mDNS id; a \fBsink\fR naming it either way finds it while the address is held. Default: empty.
 .TP
+.B share-catalog-on-network
+Boolean. While the window is open, offer the local catalog to the local network as a UPnP and DLNA media server named Resonate, so a control point (a streamer's app, BubbleUPnP, Kodi, VLC) can browse its artists, albums, songs and playlists and fetch each song's file as it is. It answers searches on port 1900 and announces itself there, serves only devices at private, link-local or loopback addresses, and changes nothing in the catalog; a song cut from a cue sheet is left out. The settings pane's switch turns it on and off at once. Default: false.
+.TP
 .B flac-above-96k-for
 Array of renderer names (\fBupnp:\fR and the UDN, as \fBresonate sinks \-\-renderers\fR lists them).
 A renderer whose protocol info lists FLAC without stating a rate is offered FLAC up to 96 kHz, the

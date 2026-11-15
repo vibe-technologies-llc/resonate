@@ -3219,6 +3219,7 @@ dependencies = [
  "crossbeam-channel",
  "flacenc",
  "httparse",
+ "if-addrs",
  "mio",
  "parking_lot 0.13.0",
  "resonate-audio",
@@ -3226,6 +3227,7 @@ dependencies = [
  "resonate-words",
  "resonate-words-build",
  "roxmltree",
+ "socket2",
  "thiserror",
  "tracing",
 ]

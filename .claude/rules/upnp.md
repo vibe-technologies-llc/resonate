@@ -2,6 +2,7 @@
 paths:
   - "crates/resonate-upnp/**"
   - "crates/resonate/src/rendering.rs"
+  - "crates/resonate/src/offering.rs"
   - "crates/resonate/src/zoning.rs"
   - "crates/resonate-ui/src/views/settings/output.rs"
   - "crates/resonate-mobile/src/rendering.rs"
@@ -12,9 +13,10 @@ paths:
 
 `resonate-upnp` plays to a UPnP AV / DLNA MediaRenderer on the local network (a streamer, an
 amplifier, upmpdcli in front of an OpenHome player): it finds one, describes it, offers it a stream
-and steers it. It reaches core and `resonate-audio` alone (the `layering` job's `only` line, and a
-`check` that its normal edges hold no PipeWire, gpui, `ureq`, serde or rustls); the engine is a
-dev-dependency, for the end-to-end test.
+and steers it. It also offers the catalog to the network as a MediaServer (*The catalog offered on
+the network*). It reaches core and `resonate-audio` alone (the `layering` job's `only` line, and a
+`check` that its normal edges hold no PipeWire, gpui, `ureq`, serde, rustls or `rusqlite`); the
+engine is a dev-dependency, for the end-to-end test.
 
 ## A renderer is a sink, not a zone kind
 
@@ -363,6 +365,92 @@ resting), so a renderer given by address stays listed. `Rendering::player` is ho
 the window and every zone (`zoning::Opener`) build a `Player`: PipeWire inside `Beside` where a
 network is held, `Player::with_sources` where not. `sinks` lists the renderers with *the network*
 as what drives them.
+
+## The catalog offered on the network
+
+A UPnP AV MediaServer:1 with ContentDirectory:1 and ConnectionManager:1, so a control point on the
+local network (a streamer's app, BubbleUPnP, Kodi, VLC) browses the catalog and plays each song's
+file as it is: the renderer decodes it, nothing is transcoded, and the engine plays no part.
+
+- **The catalog is a seam, `Catalog`** (`catalog.rs`), since the crate may not see
+  `resonate-library`: `shelved` (a `Shelf`'s children in a `Page`, and their `total`), `shelf` (one
+  artist, album or playlist), `song`, `bytes_of` (an `Opened`: a `Read + Seek` of the file and its
+  `AudioKind`), `cover` and `revision`, each answering `None` for a row it does not hold and its own
+  `Failure` (logged, a SOAP `501`) where it cannot read. The binary's `offering::Shelves` fills it
+  over `Library`. The crate owns the tree: the root (`0`) holds `Shelf::TOP`, Artists (an artist,
+  then the albums by or holding them, then the songs), Albums, Songs and Playlists; a top shelf's
+  title is the crate's catalog word (`offered.ftl`) and its count the catalog's `total`.
+- **An object id is the server's own spelling, read back strictly** (`Object::read`): `0`,
+  `artists`, `albums`, `songs`, `playlists`, `artist-N`, `album-N`, `playlist-N`, `song-N`, N
+  a decimal row id with no sign or leading zero. Nothing else names an object, so no path or file
+  name from a request reaches the catalog, and a well-spelled id names only a row the catalog
+  answers for; anything else is UPnP error 701, a song's children 710
+  (`an_object_or_a_path_the_server_never_minted_is_refused`). Ids are the rows' own, so a control
+  point that keeps one (Kodi's sources) finds it again next run.
+- **Browse answers DIDL-Lite** (`didl.rs`): `BrowseMetadata` and `BrowseDirectChildren` with
+  `StartingIndex` and `RequestedCount` (0 or more than `BROWSED_AT_MOST`, 500, is that many), Filter
+  and SortCriteria read and passed over (everything is written; the catalog's order stands). A
+  container carries `childCount`, its class (storage folder, music artist, music album, playlist),
+  the album artist and an `albumArtURI` where the album holds a cover; a song is a `musicTrack` with
+  creator, artist, album, genre, track number, cover and one `res`: `http-get:*:<mime>:` the DLNA
+  flags (`DLNA_FEATURES`), size, duration, rate, channels and, for a lossless codec, bits. Every
+  text is escaped and a control character a tag may hold is dropped, so the document always reads.
+  `GetSearchCapabilities` and `GetSortCapabilities` answer empty, `GetSystemUpdateID` and every
+  `UpdateID` the catalog's `revision`; ConnectionManager answers `GetProtocolInfo` (a `Source` entry
+  per `AudioKind`, no `Sink`), `GetCurrentConnectionIDs` (`0`) and `GetCurrentConnectionInfo` for
+  `0` alone (706 otherwise). Any other action is 401, so nothing writes: no `DestroyObject`,
+  `CreateObject` or `ImportResource`. A request is read with `roxmltree`, no DTD,
+  `NODES_ASKED_AT_MOST` (1 000) nodes, its action the first element of the Body in the namespace of
+  the service posted to.
+- **What is served is the file, by its row** (`offered.rs`): `/resonate/song-N.<ext>` and
+  `/cover/album-N` are read through the same `Object` spelling (`route_of`), the bytes through
+  `bytes_of`, with `Content-Type` the `AudioKind`'s (`AudioKind::of_extension` covers every
+  `AUDIO_EXTENSIONS` entry), `Accept-Ranges`, one `Range` span (`wanted`: `a-b`, `a-`, `-n`; a list
+  or an unreadable one is the whole, past the end 416) as a `206` with `Content-Range`, and
+  `contentFeatures.dlna.org` and `transferMode.dlna.org: Streaming`, which some renderers will not
+  play without. A write may wait `A_LISTENER_WAITS_AT_MOST` (120 s), since a paused renderer stops
+  reading. The description (`/description.xml`, the device's `friendlyName` the catalog word
+  `server-name`, *Resonate*, never the host's or the listener's name) and both services'
+  descriptions are `presented.rs`'s. Every answer's `Server` is `SERVED_AS`: `resonate/<version>
+  UPnP/1.0 DLNADOC/1.50`. Eventing is not spoken: a `SUBSCRIBE` is 405.
+- **One doorway for both servers** (`door.rs`): the stream server's accept loop (non-blocking heads
+  under `mio`, `HEADS_AT_MOST` waiting, `HEAD_ENDS_WITHIN`, an answer thread only for a head that
+  names something, at most `ANSWERS_AT_MOST` at once, the rest `503`) is generic over a `Door`, and
+  the media server is one more (`resonate-upnp-offer`, answers on `resonate-upnp-offered`). Its door
+  admits only a neighbour (`neighbours::is_a_neighbour`: a private, link-local or loopback IPv4
+  address, a unique-local, link-local or loopback IPv6 one, or a mapped IPv4 one of those), reads
+  a SOAP body only under a `Content-Length` of at most `BODY_BYTES_AT_MOST` (64 KiB, else 413; none
+  is 411) within `BODY_READ_WITHIN`, and answers `GET` and `HEAD` but on a control address, `POST`
+  only there, anything else 405.
+- **SSDP** (`announce.rs`, a `resonate-upnp-announce` thread): a socket on
+  `Offering::heard_on` (`0.0.0.0:1900`, `SO_REUSEADDR` through `socket2` so another UPnP stack on
+  the machine keeps its own) joined to `239.255.255.250` on each up IPv4 neighbour interface
+  (`if-addrs`). A neighbour's `M-SEARCH` with `MAN: "ssdp:discover"` (`searched_for`) is answered
+  unicast for `ssdp:all` (all five), `upnp:rootdevice`, the UDN, `MediaServer:1` and either
+  service type (`answers_to`), its `LOCATION` the address routed toward the searcher
+  (`host_toward`), at most `ANSWERS_A_SECOND_AT_MOST` (100) datagrams a second. `ssdp:alive` goes out
+  twice for each of the five on start and every `Offering::every` (600 s) inside `CACHE-CONTROL:
+  max-age=1800`, from each interface with that interface's address as `LOCATION`; `ssdp:byebye`
+  goes out as the `MediaServer` drops, which joins the thread (`STOP_HEARD_WITHIN`, 250 ms). A test
+  points `heard_on` and `told` at loopback sockets, so nothing reaches the network.
+- **The UDN is the device's, kept across runs**: `Udn::minted` makes a version-4 UUID and the
+  binary keeps it in the private data folder as `media-server-udn` (`kept_udn`), minting another
+  where it is missing or does not read (`Udn::read`).
+- **In the binary** (`offering.rs`): `Shelves` lists artists by name with their album count, albums
+  by title (an artist's by year), an album's songs in album order, Songs by title and a playlist's
+  entries in its order, reading only whole files: a row cut from a cue sheet is a span of a file and
+  no byte range of it, so it is left out of every shelf and count, and a hidden row too. Songs, a
+  500 000-row shelf, pages by key: `Library::whole_files_counted` (kept per catalog revision) is its
+  total, and the row after each page served is remembered (`CURSORS_AT_MOST`, 256, a revision) so
+  the next page in order is `Library::whole_files_from` that row, an index seek, and a jump is
+  `Library::whole_files` by offset. An album's songs are counted and read the same way; a playlist's
+  served rows are read whole once a revision (`LISTS_KEPT_AT_MOST`, 32) and paged in memory. A song
+  is served only where its row is a local file whose extension names an `AudioKind`, and a file
+  gone is 404. `Offered` holds the running `MediaServer` (*binary.md*'s `share-catalog-on-network`).
+- **Fuzzed** with the rest of the crate (`read_what_a_network_says`): an `M-SEARCH`, a request head
+  through `routed`, a path, an object id read back as itself, a UDN, a `Range` span inside its
+  length, and a SOAP request to either service answered against an empty catalog, the envelope and
+  its DIDL each reading as XML.
 
 ## On the phones
 

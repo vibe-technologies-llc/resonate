@@ -3,6 +3,7 @@ name = "resonate-upnp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+autotests = false
 
 [lib]
 doctest = false
@@ -11,12 +12,14 @@ doctest = false
 crossbeam-channel.workspace = true
 flacenc.workspace = true
 httparse.workspace = true
+if-addrs.workspace = true
 mio.workspace = true
 parking_lot.workspace = true
 resonate-audio.workspace = true
 resonate-core.workspace = true
 resonate-words.workspace = true
 roxmltree.workspace = true
+socket2.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
@@ -27,6 +30,10 @@ resonate-words-build.workspace = true
 resonate-codec.workspace = true
 resonate-engine.workspace = true
 resonate-words-build.workspace = true
+
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
 
 [lints]
 workspace = true

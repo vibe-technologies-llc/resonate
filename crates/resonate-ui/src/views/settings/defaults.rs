@@ -218,6 +218,7 @@ fn differs_but_for_its_switches(group: Group, standing: &Standing) -> bool {
         Group::LiveSpectrum => standing.spectral != SPECTRAL,
         Group::Tabs => standing.tabs != TABS,
         Group::Equalising
+        | Group::SharedCatalog
         | Group::Syncing
         | Group::Lookups
         | Group::AfterScan

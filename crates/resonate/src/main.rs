@@ -46,6 +46,8 @@ mod missing;
 mod mpris;
 #[cfg(feature = "online")]
 mod musicbrainz;
+#[cfg(feature = "ui")]
+mod offering;
 mod online;
 mod organising;
 #[cfg(feature = "sync")]

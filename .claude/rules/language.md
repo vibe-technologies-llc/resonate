@@ -233,7 +233,9 @@ the hand-written `resonate-config.toml(5)` beside the English one.
   `shared/service.rs`), `resonate-eq`'s
   `every_word_the_equaliser_names_for_a_listener_is_said_through_its_catalog`, `resonate-vault`'s
   `every_reason_the_vault_gives_a_listener_is_said_through_its_catalog`, `resonate-upnp`'s
-  `every_word_a_renderer_is_shown_by_is_said_through_its_catalog`, `resonate-cast`'s
+  `every_word_a_renderer_is_shown_by_is_said_through_its_catalog` and
+  `every_word_the_media_server_shows_a_control_point_is_said_through_its_catalog` (`naming.rs`;
+  DIDL-Lite markup, the manufacturer's name and a SOAP fault's description are protocol, not words), `resonate-cast`'s
   `every_word_a_receiver_is_shown_by_is_said_through_its_catalog`, `resonate-coreaudio`'s
   `every_word_a_device_is_shown_by_is_said_through_its_catalog` (`survey.rs`, a Mac's output names),
   `resonate-listen`'s

@@ -447,6 +447,14 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   its address or its name*). Held and reached exactly as `renderers-at` is, with no mDNS browse
   unless `renderers` asks; `sinks --cast-at HOST[:PORT]` (repeatable) adds one for the run, an
   unreadable one `Error::CastAddress`. The settings pane has no row for it.
+- `share-catalog-on-network` (off unless set): while the window is open, offer the catalog to the
+  local network as a UPnP MediaServer (`upnp.md`'s *The catalog offered on the network*).
+  `offering::Offered::for_the_window` starts it where the key is on; the settings pane's *The
+  catalog on the network* group (Output) is its switch, written as
+  `Setting::Switched(Switch::ShareCatalogOnNetwork, _)` and applied at once through
+  `resonate_ui::CatalogShared` (`Offered::share`, the stop off the window's thread so its farewell
+  does not hold a frame); `Offered::leave` stops it as the window closes. No subcommand serves it:
+  the window alone does.
 - `flac-above-96k-for` (empty unless set): array of renderer names (`upnp:` and the UDN, as
   `sinks --renderers` lists them; others and blanks ignored, a non-text entry costs the key alone)
   that are sent FLAC above 96 kHz though their protocol info states no rate

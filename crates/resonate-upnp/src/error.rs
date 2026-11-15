@@ -139,6 +139,11 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("the media server could not hear searches on the network")]
+    Announce {
+        #[source]
+        source: io::Error,
+    },
     #[error("no renderer is known as {0}")]
     NoSuchRenderer(SinkId),
     #[error("the renderer takes no stream of {0}")]
@@ -162,6 +167,7 @@ impl Error {
             | Self::UnreadableAddress
             | Self::Search { .. }
             | Self::Serve { .. }
+            | Self::Announce { .. }
             | Self::NoSuchRenderer(_)
             | Self::InUse(_) => Operation::Connect,
             Self::FormatRefused(_) | Self::Encoding { .. } => Operation::Format,
