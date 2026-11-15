@@ -104,11 +104,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   (33 of 64 runs with 24 CPU-bound processes beside 64 test threads; its loudness figures drift when the
   fake graph is pulled late) and `queue::tests::kin_landing_after_a_shuffle_spreads_the_artists_and_keeps_the_playing_row`
   (once); neither has failed in CI, and each wants its timing made deterministic, not a longer wait
-- [M · 0.12.0] `resonate-analysis`'s run is bound by its `references::` cases: each encodes with an
-  outside tool, decodes back and runs a whole study (about 3 s of grids whatever its length) to read
-  one figure, 9 to 13 s alone and 30 to 70 s among the rest (the crate's run 87 s wall, 1 130 s
-  summed); sharing an encode between the cases that make the same file, or a study that stops once
-  the figure asked for is read, would shorten every run
 - [S · 0.12.0] CI builds and runs each test line in one job; `cargo nextest archive` and
   `--partition` would build once and spread the headless tests over runners, and a faster linker
   (`wild`, pure Rust, or `mold`) is untried beside the default `rust-lld`

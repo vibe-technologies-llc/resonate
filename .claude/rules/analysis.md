@@ -23,7 +23,11 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
 - **`analyse` and `study` are one walk, differing in a type.** `walked` opens the decoder at the
   width the vault's `pcm_of` picks. The `Drawing` trait is `Unseen` (`study`) or `Drawn` (envelope,
   spectrogram; `analyse`), so library-wide studies build nothing only a screen wants. DSD → F32 via
-  its decimator, not DoP.
+  its decimator, not DoP. **`loudness` is the same walk weighing nothing** (`Weighs::Nothing`: no
+  `Stepping` and no `Resampled` joins the crew, so none of the grids runs) and answers the study's
+  `Loudness` alone, bit for bit the one a whole `study` reads
+  (`the_loudness_read_alone_is_the_one_a_whole_study_reads`); `tests/references.rs` reads its
+  loudness cases through it, which takes about three quarters of what they cost.
 - **One decode feeds a crew, and the answers are the ones one thread would give** (`crew.rs`). The
   walk decodes, reads `Leveling` and `Printing` itself (the native samples never cross a thread)
   and hands the rest to `Crew::fanned` as `Noting` stages: `Metering`, the spectrum with whatever
@@ -241,7 +245,7 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
 - **Loudness BS.1770, range EBU Tech 3342, DR the TT meter's.** K-weighting derived per stream rate;
   channel weight by placement (`resonate_codec::Speakers::placements`, WAVE order if source names
   none): LFE 0, side `SURROUND_WEIGHT`, rear `SURROUND_WEIGHT` only with no side channel, rest 1.0.
-  Matches `ffmpeg -af ebur128` to the tenth, 5.1 included (`tests/references.rs`: stereo at 44.1, 48, 88.2, 96 and 192 kHz and 5.1 with rears or sides against ffmpeg, EBU Tech 3341's tone and gating cases, Tech 3342's range steps, a print at Chromaprint's own 11 025 Hz equal to `fpcalc`'s). True peak = `TruePeakMeter::at(rate, ..)` (the engine
+  Matches `ffmpeg -af ebur128` to the tenth, 5.1 included (`tests/references.rs`, through `loudness`: stereo at 44.1, 48, 88.2, 96 and 192 kHz and 5.1 with rears or sides against ffmpeg, EBU Tech 3341's tone and gating cases, Tech 3342's range steps, a print at Chromaprint's own 11 025 Hz equal to `fpcalc`'s). True peak = `TruePeakMeter::at(rate, ..)` (the engine
   guard's own interpolator, folding 4×, 2× or not at all by rate as the guard does, so study and
   playback agree about an over; `TruePeakMeter::new` is the 8× read the visualiser's meter has no rate for), stored `track_studies.true_peak`, handed
   to the player by `Library::hinting` (`audio.md`). **A study runs one such meter, not two**: `Metering`
@@ -575,7 +579,11 @@ could change (stored studies and kept analyses are weighed against it).
   `residues_on_vorbis_floor_are_found_on_any_short_block_grid_and_free_ones_are_not`, and in
   `tests/references.rs` the ffmpeg AAC, faac and fdkaac, dithered and hi-res, resampled AAC, LAME,
   libvorbis, twolame and ffmpeg MP2, libopus and downsampled AAC and LAME round trips beside
-  `loud_noise_and_dense_music_at_every_cd_rate_land_on_no_codecs_steps`).
+  `loud_noise_and_dense_music_at_every_cd_rate_land_on_no_codecs_steps`, which weighs the music
+  every round trip starts from once for all of them; a case makes all its decodes first, then
+  `Expectations::hold` studies them `STUDIES_AT_ONCE` (four) at a time, each on a thread of its own
+  over the one crew, and asserts each in order: a study holds about 130 MB at its height, so four
+  keep a case near 560 MB beside one's 215).
 - **What the steps were measured on.** 36 CD-rate library sources (28 at 44.1 kHz, 8 at 48), 40 s
   each, encoded and decoded back to 16-bit FLAC; the table is the sources found before, then now.
   ffmpeg's AAC at 256 kbps 36 and 36 (lattice 0.16 to 0.62), at 128 kbps 35 and 35; faac `-b 64` 3

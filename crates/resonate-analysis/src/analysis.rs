@@ -79,6 +79,7 @@ pub fn study(
 ) -> Result<Study> {
     walked(
         Crew::for_watch(watch),
+        Weighs::TheLosslessClaim,
         sources,
         location,
         span,
@@ -86,6 +87,24 @@ pub fn study(
         |_, _| Unseen,
     )
     .map(|(study, Unseen)| study)
+}
+
+pub fn loudness(
+    sources: &Sources,
+    location: &MediaLocation,
+    span: Option<FrameSpan>,
+    watch: &dyn Watching,
+) -> Result<Loudness> {
+    walked(
+        Crew::for_watch(watch),
+        Weighs::Nothing,
+        sources,
+        location,
+        span,
+        watch,
+        |_, _| Unseen,
+    )
+    .map(|(study, Unseen)| study.loudness)
 }
 
 pub fn analyse(
@@ -96,6 +115,7 @@ pub fn analyse(
 ) -> Result<Analysis> {
     let (study, drawn) = walked(
         Crew::AsTheMachineAllows,
+        Weighs::TheLosslessClaim,
         sources,
         location,
         span,
@@ -221,6 +241,12 @@ pub fn excerpt(
     Ok((!mono.is_empty()).then_some(Excerpt { rate, mono }))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Weighs {
+    TheLosslessClaim,
+    Nothing,
+}
+
 trait Drawing: Send {
     fn note_block(&mut self, interleaved: &[f32]);
 
@@ -293,6 +319,7 @@ pub(crate) fn native_format(info: &MediaInfo, codec: Codec) -> SampleFormat {
 
 fn walked<D: Drawing>(
     crew: Crew,
+    weighs: Weighs,
     sources: &Sources,
     location: &MediaLocation,
     span: Option<FrameSpan>,
@@ -323,11 +350,12 @@ fn walked<D: Drawing>(
     let mut leveling = Leveling::new(channels, format);
     let mut metering = Metering::new(&placements, rate);
     let mut printing = Printing::new(rate.hz(), channels);
-    let mut weighing = if codec.is_lossless() && codec != Codec::Dsd {
-        Weighing::new(rate.hz(), channels)
-    } else {
-        Weighing::unweighed()
-    };
+    let mut weighing =
+        if weighs == Weighs::TheLosslessClaim && codec.is_lossless() && codec != Codec::Dsd {
+            Weighing::new(rate.hz(), channels)
+        } else {
+            Weighing::unweighed()
+        };
 
     let mut walking = Walking::new(StreamSpec::new(rate, info.spec.channels, format));
     let mut frames = 0_u64;

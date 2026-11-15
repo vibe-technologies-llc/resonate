@@ -5,10 +5,11 @@ use std::{
     path::{Path, PathBuf},
     process::{self, Command},
     sync::atomic::{AtomicU32, Ordering},
+    thread,
     time::Duration,
 };
 
-use resonate_analysis::{Coding, Finding, Loudness, Tell, Verdict, Watch, study};
+use resonate_analysis::{Coding, Finding, Loudness, Study, Tell, Verdict, Watch, loudness, study};
 use resonate_codec::Sources;
 use resonate_core::MediaLocation;
 
@@ -31,6 +32,8 @@ const RANGE_AGREES_WITHIN: f32 = 0.2;
 const TRUE_PEAK_AGREES_WITHIN: f32 = 0.2;
 const TONE_AGREES_WITHIN: f32 = 0.1;
 const TONE_HZ: f32 = 997.0;
+
+const SECONDS_READ_BOTH_WAYS: u32 = 6;
 
 const PRINT_SECONDS: u32 = 20;
 const PRINT_RATE: u32 = 11_025;
@@ -59,6 +62,7 @@ const DECODE_FILTERS: [(&str, Option<u32>); 4] = [
     ("aresample=osf=s16:dither_method=triangular", None),
     ("aresample=osf=s16:dither_method=shibata", None),
 ];
+const STUDIES_AT_ONCE: usize = 4;
 const FDK_ENCODES: [(&str, &[&str]); 3] = [
     ("cbr-128", &["-b", "128000"]),
     ("cbr-256", &["-b", "256000"]),
@@ -186,9 +190,14 @@ fn tone(rate: u32, seconds: &[(u32, f32)]) -> Vec<f32> {
         .collect()
 }
 
-fn studied(path: &Path) -> resonate_analysis::Study {
+fn studied(path: &Path) -> Study {
     let location = MediaLocation::local(path);
     study(&Sources::local(), &location, None, &Watch::default()).expect("a study")
+}
+
+fn loudness_of(path: &Path) -> Loudness {
+    let location = MediaLocation::local(path);
+    loudness(&Sources::local(), &location, None, &Watch::default()).expect("a loudness")
 }
 
 fn integrated(loudness: &Loudness) -> f32 {
@@ -245,7 +254,7 @@ fn a_stereo_sine_reads_its_own_level_in_loudness_units_at_every_rate() {
 
             agrees(
                 &format!("{level} dBFS at {rate} Hz"),
-                integrated(&studied(&path).loudness),
+                integrated(&loudness_of(&path)),
                 level,
                 TONE_AGREES_WITHIN,
             );
@@ -274,7 +283,7 @@ fn quiet_stretches_beside_a_loud_one_are_gated_out_as_the_tech_3341_cases_say() 
 
             agrees(
                 &format!("case {number} at {rate} Hz"),
-                integrated(&studied(&path).loudness),
+                integrated(&loudness_of(&path)),
                 -23.0,
                 TONE_AGREES_WITHIN,
             );
@@ -295,7 +304,7 @@ fn a_range_is_the_distance_between_the_levels_a_stretch_steps_between() {
 
         agrees(
             "the range",
-            studied(&path).loudness.range.expect("a range"),
+            loudness_of(&path).range.expect("a range"),
             range,
             1.0,
         );
@@ -309,7 +318,7 @@ fn agrees_with_ebur128(tree: &Tree, name: &str, rate: u32, mask: u32) {
         eprintln!("skipped: no ffmpeg to measure {name} against");
         return;
     };
-    let loudness = studied(&path).loudness;
+    let loudness = loudness_of(&path);
 
     agrees(
         &format!("{name} integrated"),
@@ -346,6 +355,24 @@ fn five_one_programme_reads_as_ffmpegs_ebur128_does_with_rears_or_sides() {
 
     agrees_with_ebur128(&tree, "five-one-rears.wav", 48_000, FIVE_ONE_WITH_REARS);
     agrees_with_ebur128(&tree, "five-one-sides.wav", 48_000, FIVE_ONE_WITH_SIDES);
+}
+
+#[test]
+fn the_loudness_read_alone_is_the_one_a_whole_study_reads() {
+    let tree = Tree::new();
+    let rate = 48_000;
+    let channels = FIVE_ONE_WITH_REARS.count_ones() as usize;
+    let programme = programme(rate, channels);
+    let heard = &programme[..(rate * SECONDS_READ_BOTH_WAYS) as usize * channels];
+    let path = tree.wave("five-one.wav", rate, FIVE_ONE_WITH_REARS, heard);
+
+    let alone = loudness_of(&path);
+
+    assert!(
+        alone.integrated.is_some() && alone.range.is_some(),
+        "{alone:?}"
+    );
+    assert_eq!(alone, studied(&path).loudness);
 }
 
 fn fpcalc_print_of(path: &Path) -> Option<String> {
@@ -468,7 +495,7 @@ fn as_wave(from: &Path, to: &Path) -> Option<()> {
     ])
 }
 
-fn quantiser_steps_of(study: &resonate_analysis::Study) -> Option<(Coding, Option<u32>)> {
+fn quantiser_steps_of(study: &Study) -> Option<(Coding, Option<u32>)> {
     study
         .judgement
         .findings
@@ -483,10 +510,8 @@ fn quantiser_steps_of(study: &resonate_analysis::Study) -> Option<(Coding, Optio
         })
 }
 
-fn assert_a_genuine_source(path: &Path) {
-    let study = studied(path);
-
-    assert_eq!(quantiser_steps_of(&study), None, "{study:?}");
+fn assert_a_genuine_source(study: &Study) {
+    assert_eq!(quantiser_steps_of(study), None, "{study:?}");
     assert_ne!(study.judgement.verdict, Verdict::Fake, "{study:?}");
     assert!(!study.steps.is_empty(), "a lossless source is weighed");
     for steps in &study.steps {
@@ -509,16 +534,83 @@ fn assert_a_genuine_source(path: &Path) {
     }
 }
 
-fn assert_decoded_from(path: &Path, coding: Coding, resampled_from: Option<u32>, what: &str) {
-    let study = studied(path);
-
+fn assert_decoded_from(study: &Study, coding: Coding, resampled_from: Option<u32>, what: &str) {
     assert_eq!(
-        quantiser_steps_of(&study),
+        quantiser_steps_of(study),
         Some((coding, resampled_from)),
         "{what}: {:?}",
         study.steps
     );
     assert_eq!(study.judgement.verdict, Verdict::Fake, "{what}");
+}
+
+enum Expected {
+    Genuine,
+    DecodedFrom {
+        coding: Coding,
+        resampled_from: Option<u32>,
+        what: String,
+    },
+}
+
+#[derive(Default)]
+struct Expectations(Vec<(PathBuf, Expected)>);
+
+impl Expectations {
+    fn genuine(&mut self, path: PathBuf) {
+        self.0.push((path, Expected::Genuine));
+    }
+
+    fn decoded_from(
+        &mut self,
+        path: PathBuf,
+        coding: Coding,
+        resampled_from: Option<u32>,
+        what: impl Into<String>,
+    ) {
+        self.0.push((
+            path,
+            Expected::DecodedFrom {
+                coding,
+                resampled_from,
+                what: what.into(),
+            },
+        ));
+    }
+
+    fn hold(self) {
+        let paths: Vec<&Path> = self.0.iter().map(|(path, _)| path.as_path()).collect();
+        let studies = studied_at_once(&paths);
+
+        for ((_, expected), study) in self.0.iter().zip(&studies) {
+            match expected {
+                Expected::Genuine => assert_a_genuine_source(study),
+                Expected::DecodedFrom {
+                    coding,
+                    resampled_from,
+                    what,
+                } => assert_decoded_from(study, *coding, *resampled_from, what),
+            }
+        }
+    }
+}
+
+fn studied_at_once(paths: &[&Path]) -> Vec<Study> {
+    paths
+        .chunks(STUDIES_AT_ONCE)
+        .flat_map(|together| {
+            thread::scope(|scope| {
+                let studying: Vec<_> = together
+                    .iter()
+                    .map(|path| scope.spawn(move || studied(path)))
+                    .collect();
+                studying
+                    .into_iter()
+                    .map(|study| study.join().expect("a study that finished"))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect()
 }
 
 struct Sourced {
@@ -542,54 +634,55 @@ fn music_source(rate: u32) -> Option<Sourced> {
     Some(Sourced { tree, source, wave })
 }
 
+fn aac_of(source: &Path, bitrate: &str, encoded: &Path) {
+    ffmpeg(&[
+        "-i".as_ref(),
+        source.as_os_str(),
+        "-c:a".as_ref(),
+        "aac".as_ref(),
+        "-b:a".as_ref(),
+        bitrate.as_ref(),
+        encoded.as_os_str(),
+    ])
+    .expect("an AAC encode");
+}
+
+fn cut_decode() -> Option<String> {
+    Some(format!("atrim=start_sample={FRAMES_CUT_FROM_THE_DECODE}"))
+}
+
 #[test]
-fn ffmpegs_aac_at_256_and_320_kbps_decoded_back_to_flac_lands_on_its_quantiser_steps_and_the_source_does_not()
- {
+fn ffmpegs_aac_at_256_and_320_kbps_decoded_back_to_flac_lands_on_its_quantiser_steps() {
     let Some(Sourced { tree, source, .. }) = music_source(MUSIC_RATE) else {
         eprintln!("skipped: no ffmpeg to encode AAC with");
         return;
     };
-
-    assert_a_genuine_source(&source);
+    let mut expected = Expectations::default();
 
     for bitrate in AAC_BITRATES {
         let encoded = tree.root.join(format!("{bitrate}.m4a"));
-        ffmpeg(&[
-            "-i".as_ref(),
-            source.as_os_str(),
-            "-c:a".as_ref(),
-            "aac".as_ref(),
-            "-b:a".as_ref(),
-            bitrate.as_ref(),
-            encoded.as_os_str(),
-        ])
-        .expect("an AAC encode");
+        aac_of(&source, bitrate, &encoded);
         let whole = tree.root.join(format!("{bitrate}.flac"));
         let cut = tree.root.join(format!("{bitrate}-cut.flac"));
         as_flac(&encoded, &whole, None).expect("a decode");
-        as_flac(
-            &encoded,
-            &cut,
-            Some(format!("atrim=start_sample={FRAMES_CUT_FROM_THE_DECODE}")),
-        )
-        .expect("a cut decode");
+        as_flac(&encoded, &cut, cut_decode()).expect("a cut decode");
 
-        for decoded in [&whole, &cut] {
-            assert_decoded_from(decoded, Coding::Aac, None, bitrate);
+        for decoded in [whole, cut] {
+            expected.decoded_from(decoded, Coding::Aac, None, bitrate);
         }
     }
+
+    expected.hold();
 }
 
 #[test]
 fn faacs_and_fdk_aacs_decoded_back_to_flac_land_on_aacs_steps_whatever_blocks_they_choose() {
-    let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
+    let Some(Sourced { tree, wave, .. }) = music_source(MUSIC_RATE) else {
         eprintln!("skipped: no ffmpeg to write FLAC with");
         return;
     };
+    let mut expected = Expectations::default();
 
-    assert_a_genuine_source(&source);
-
-    let mut weighed = 0;
     for bitrate in FAAC_BITRATES {
         let encoded = tree.root.join(format!("faac-{bitrate}.m4a"));
         if encoder("faac", &["-b", bitrate], &wave, &encoded).is_none() {
@@ -599,8 +692,7 @@ fn faacs_and_fdk_aacs_decoded_back_to_flac_land_on_aacs_steps_whatever_blocks_th
         let decoded = tree.root.join(format!("faac-{bitrate}.flac"));
         as_flac(&encoded, &decoded, None).expect("a decode");
 
-        assert_decoded_from(&decoded, Coding::Aac, None, &format!("faac {bitrate}"));
-        weighed += 1;
+        expected.decoded_from(decoded, Coding::Aac, None, format!("faac {bitrate}"));
     }
     for (name, flags) in FDK_ENCODES {
         let encoded = tree.root.join(format!("fdk-{name}.m4a"));
@@ -611,10 +703,11 @@ fn faacs_and_fdk_aacs_decoded_back_to_flac_land_on_aacs_steps_whatever_blocks_th
         let decoded = tree.root.join(format!("fdk-{name}.flac"));
         as_flac(&encoded, &decoded, None).expect("a decode");
 
-        assert_decoded_from(&decoded, Coding::Aac, None, &format!("fdkaac {name}"));
-        weighed += 1;
+        expected.decoded_from(decoded, Coding::Aac, None, format!("fdkaac {name}"));
     }
-    eprintln!("weighed {weighed} AAC encodes");
+
+    eprintln!("weighed {} AAC encodes", expected.0.len());
+    expected.hold();
 }
 
 #[test]
@@ -624,16 +717,7 @@ fn a_lossy_decode_dithered_or_taken_to_a_hi_res_rate_still_lands_on_the_steps() 
         return;
     };
     let aac = tree.root.join("256k.m4a");
-    ffmpeg(&[
-        "-i".as_ref(),
-        source.as_os_str(),
-        "-c:a".as_ref(),
-        "aac".as_ref(),
-        "-b:a".as_ref(),
-        "256k".as_ref(),
-        aac.as_os_str(),
-    ])
-    .expect("an AAC encode");
+    aac_of(&source, "256k", &aac);
     let mp3 = tree.root.join("open.mp3");
     let has_lame = lame(&[
         "-b".as_ref(),
@@ -644,22 +728,28 @@ fn a_lossy_decode_dithered_or_taken_to_a_hi_res_rate_still_lands_on_the_steps() 
         mp3.as_os_str(),
     ])
     .is_some();
+    let mut expected = Expectations::default();
 
     for (nth, (filter, resampled_from)) in DECODE_FILTERS.into_iter().enumerate() {
         let decoded = tree.root.join(format!("aac-{nth}.flac"));
         as_flac(&aac, &decoded, Some(filter.to_owned())).expect("a decode");
-        assert_decoded_from(&decoded, Coding::Aac, resampled_from, filter);
+        expected.decoded_from(decoded, Coding::Aac, resampled_from, filter);
 
         if has_lame {
             let decoded = tree.root.join(format!("mp3-{nth}.flac"));
             as_flac(&mp3, &decoded, Some(filter.to_owned())).expect("a decode");
-            assert_decoded_from(&decoded, Coding::Mp3, resampled_from, filter);
+            expected.decoded_from(decoded, Coding::Mp3, resampled_from, filter);
         }
     }
+
+    expected.hold();
 }
 
 #[test]
 fn an_aac_decode_resampled_to_the_other_cd_rate_lands_on_aacs_steps_once_brought_back() {
+    let mut trees = Vec::new();
+    let mut expected = Expectations::default();
+
     for (rate, other) in [(MUSIC_RATE, 48_000), (48_000, MUSIC_RATE)] {
         let Some(Sourced { tree, source, .. }) = music_source(rate) else {
             eprintln!("skipped: no ffmpeg to encode AAC with");
@@ -672,30 +762,22 @@ fn an_aac_decode_resampled_to_the_other_cd_rate_lands_on_aacs_steps_once_brought
             Some(format!("aresample={other}")),
         )
         .expect("a resampled source");
-
-        assert_a_genuine_source(&resampled_source);
-
         let encoded = tree.root.join("256k.m4a");
-        ffmpeg(&[
-            "-i".as_ref(),
-            source.as_os_str(),
-            "-c:a".as_ref(),
-            "aac".as_ref(),
-            "-b:a".as_ref(),
-            "256k".as_ref(),
-            encoded.as_os_str(),
-        ])
-        .expect("an AAC encode");
+        aac_of(&source, "256k", &encoded);
         let resampled = tree.root.join("resampled.flac");
         as_flac(&encoded, &resampled, Some(format!("aresample={other}"))).expect("a decode");
 
-        assert_decoded_from(&resampled, Coding::Aac, Some(rate), "resampled AAC");
+        expected.genuine(resampled_source);
+        expected.decoded_from(resampled, Coding::Aac, Some(rate), "resampled AAC");
+        trees.push(tree);
     }
+
+    expected.hold();
 }
 
 #[test]
-fn lames_mp3_with_no_lowpass_decoded_back_to_flac_lands_on_its_granules_and_the_source_does_not() {
-    let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
+fn lames_mp3_with_no_lowpass_decoded_back_to_flac_lands_on_its_granules() {
+    let Some(Sourced { tree, wave, .. }) = music_source(MUSIC_RATE) else {
         eprintln!("skipped: no ffmpeg to encode MP3 with");
         return;
     };
@@ -711,8 +793,7 @@ fn lames_mp3_with_no_lowpass_decoded_back_to_flac_lands_on_its_granules_and_the_
         eprintln!("skipped: no lame to encode MP3 with");
         return;
     }
-
-    assert_a_genuine_source(&source);
+    let mut expected = Expectations::default();
 
     for (name, flags) in MP3_ENCODES {
         let encoded = tree.root.join(format!("{name}.mp3"));
@@ -723,30 +804,24 @@ fn lames_mp3_with_no_lowpass_decoded_back_to_flac_lands_on_its_granules_and_the_
         let cut = tree.root.join(format!("{name}-cut.flac"));
         let resampled = tree.root.join(format!("{name}-resampled.flac"));
         as_flac(&encoded, &whole, None).expect("a decode");
-        as_flac(
-            &encoded,
-            &cut,
-            Some(format!("atrim=start_sample={FRAMES_CUT_FROM_THE_DECODE}")),
-        )
-        .expect("a cut decode");
+        as_flac(&encoded, &cut, cut_decode()).expect("a cut decode");
         as_flac(&encoded, &resampled, Some("aresample=48000".to_owned())).expect("a decode");
 
-        for decoded in [&whole, &cut] {
-            assert_decoded_from(decoded, Coding::Mp3, None, name);
+        for decoded in [whole, cut] {
+            expected.decoded_from(decoded, Coding::Mp3, None, name);
         }
-        assert_decoded_from(&resampled, Coding::Mp3, Some(MUSIC_RATE), name);
+        expected.decoded_from(resampled, Coding::Mp3, Some(MUSIC_RATE), name);
     }
+
+    expected.hold();
 }
 
 #[test]
-fn mp2_from_twolame_and_ffmpeg_decoded_back_to_flac_lands_on_its_subband_levels_and_the_source_does_not()
- {
-    let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
+fn mp2_from_twolame_and_ffmpeg_decoded_back_to_flac_lands_on_its_subband_levels() {
+    let Some(Sourced { tree, wave, .. }) = music_source(MUSIC_RATE) else {
         eprintln!("skipped: no ffmpeg to encode MP2 with");
         return;
     };
-
-    assert_a_genuine_source(&source);
 
     let mut encodes = Vec::new();
     let ffmpegs = tree.root.join("ffmpeg.mp2");
@@ -774,32 +849,29 @@ fn mp2_from_twolame_and_ffmpeg_decoded_back_to_flac_lands_on_its_subband_levels_
         }
         encodes.push(("twolame", encoded));
     }
+    let mut expected = Expectations::default();
 
     for (name, encoded) in encodes {
         let whole = encoded.with_extension("flac");
         let cut = tree.root.join(format!("{name}-cut.flac"));
         as_flac(&encoded, &whole, None).expect("a decode");
-        as_flac(
-            &encoded,
-            &cut,
-            Some(format!("atrim=start_sample={FRAMES_CUT_FROM_THE_DECODE}")),
-        )
-        .expect("a cut decode");
+        as_flac(&encoded, &cut, cut_decode()).expect("a cut decode");
 
-        for decoded in [&whole, &cut] {
-            assert_decoded_from(decoded, Coding::Mp2, None, name);
+        for decoded in [whole, cut] {
+            expected.decoded_from(decoded, Coding::Mp2, None, name);
         }
     }
+
+    expected.hold();
 }
 
 #[test]
-fn libvorbis_with_no_lowpass_decoded_back_to_flac_lands_on_its_floor_and_the_source_does_not() {
-    let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
+fn libvorbis_with_no_lowpass_decoded_back_to_flac_lands_on_its_floor() {
+    let Some(Sourced { tree, wave, .. }) = music_source(MUSIC_RATE) else {
         eprintln!("skipped: no ffmpeg to encode Vorbis with");
         return;
     };
-
-    assert_a_genuine_source(&source);
+    let mut expected = Expectations::default();
 
     for quality in VORBIS_QUALITIES {
         let encoded = tree.root.join(format!("q{quality}.ogg"));
@@ -820,28 +892,23 @@ fn libvorbis_with_no_lowpass_decoded_back_to_flac_lands_on_its_floor_and_the_sou
         let whole = tree.root.join(format!("q{quality}.flac"));
         let cut = tree.root.join(format!("q{quality}-cut.flac"));
         as_flac(&encoded, &whole, None).expect("a decode");
-        as_flac(
-            &encoded,
-            &cut,
-            Some(format!("atrim=start_sample={FRAMES_CUT_FROM_THE_DECODE}")),
-        )
-        .expect("a cut decode");
+        as_flac(&encoded, &cut, cut_decode()).expect("a cut decode");
 
-        for decoded in [&whole, &cut] {
-            assert_decoded_from(decoded, Coding::Vorbis, None, quality);
+        for decoded in [whole, cut] {
+            expected.decoded_from(decoded, Coding::Vorbis, None, quality);
         }
     }
+
+    expected.hold();
 }
 
 #[test]
-fn opus_decoded_back_to_flac_lands_on_the_steps_of_its_predicted_band_energies_and_the_source_does_not()
- {
-    let Some(Sourced { tree, source, wave }) = music_source(MUSIC_RATE) else {
+fn opus_decoded_back_to_flac_lands_on_the_steps_of_its_predicted_band_energies() {
+    let Some(Sourced { tree, wave, .. }) = music_source(MUSIC_RATE) else {
         eprintln!("skipped: no ffmpeg to encode Opus with");
         return;
     };
-
-    assert_a_genuine_source(&source);
+    let mut expected = Expectations::default();
 
     for bitrate in OPUS_BITRATES {
         let encoded = tree.root.join(format!("{bitrate}.opus"));
@@ -863,12 +930,7 @@ fn opus_decoded_back_to_flac_lands_on_the_steps_of_its_predicted_band_energies_a
         let cut = tree.root.join(format!("opus-{bitrate}-cut.flac"));
         let resampled = tree.root.join(format!("opus-{bitrate}-resampled.flac"));
         as_flac(&encoded, &whole, None).expect("a decode");
-        as_flac(
-            &encoded,
-            &cut,
-            Some(format!("atrim=start_sample={FRAMES_CUT_FROM_THE_DECODE}")),
-        )
-        .expect("a cut decode");
+        as_flac(&encoded, &cut, cut_decode()).expect("a cut decode");
         as_flac(
             &encoded,
             &resampled,
@@ -876,11 +938,13 @@ fn opus_decoded_back_to_flac_lands_on_the_steps_of_its_predicted_band_energies_a
         )
         .expect("a resampled decode");
 
-        for decoded in [&whole, &cut] {
-            assert_decoded_from(decoded, Coding::Opus, None, bitrate);
+        for decoded in [whole, cut] {
+            expected.decoded_from(decoded, Coding::Opus, None, bitrate);
         }
-        assert_decoded_from(&resampled, Coding::Opus, Some(OPUS_RATE), bitrate);
+        expected.decoded_from(resampled, Coding::Opus, Some(OPUS_RATE), bitrate);
     }
+
+    expected.hold();
 }
 
 #[test]
@@ -896,20 +960,11 @@ fn a_lossy_decode_downsampled_below_its_coded_rate_lands_on_the_steps_once_broug
         Some(format!("aresample={BELOW_ITS_CODED_RATE}")),
     )
     .expect("a downsampled source");
-
-    assert_a_genuine_source(&downsampled_source);
+    let mut expected = Expectations::default();
+    expected.genuine(downsampled_source);
 
     let aac = tree.root.join("256k.m4a");
-    ffmpeg(&[
-        "-i".as_ref(),
-        source.as_os_str(),
-        "-c:a".as_ref(),
-        "aac".as_ref(),
-        "-b:a".as_ref(),
-        "256k".as_ref(),
-        aac.as_os_str(),
-    ])
-    .expect("an AAC encode");
+    aac_of(&source, "256k", &aac);
     let mut encodes = vec![(Coding::Aac, aac)];
     let mp3 = tree.root.join("192.mp3");
     if lame(&[
@@ -932,12 +987,17 @@ fn a_lossy_decode_downsampled_below_its_coded_rate_lands_on_the_steps_once_broug
         )
         .expect("a downsampled decode");
 
-        assert_decoded_from(&downsampled, coding, Some(MUSIC_RATE), coding.as_str());
+        expected.decoded_from(downsampled, coding, Some(MUSIC_RATE), coding.as_str());
     }
+
+    expected.hold();
 }
 
 #[test]
 fn loud_noise_and_dense_music_at_every_cd_rate_land_on_no_codecs_steps() {
+    let mut trees = Vec::new();
+    let mut expected = Expectations::default();
+
     for rate in [MUSIC_RATE, 48_000] {
         let tree = Tree::new();
         let mut noise = Noise(0x5eed_cafe);
@@ -960,7 +1020,10 @@ fn loud_noise_and_dense_music_at_every_cd_rate_land_on_no_codecs_steps() {
                 return;
             }
 
-            assert_a_genuine_source(&flac);
+            expected.genuine(flac);
         }
+        trees.push(tree);
     }
+
+    expected.hold();
 }

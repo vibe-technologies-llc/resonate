@@ -38,7 +38,7 @@ pub fn read_a_kept_analysis(bytes: &[u8]) {
 }
 
 pub use crate::{
-    analysis::{Analysis, Examined, Excerpt, Study, analyse, excerpt, print, study},
+    analysis::{Analysis, Examined, Excerpt, Study, analyse, excerpt, loudness, print, study},
     applied::Applied,
     bands::{BANDS, BandFigures, BandGains, BandLevels, band_figures, span_of_band},
     envelope::{ENVELOPE_COLUMNS, ENVELOPE_LANES, Envelope, Reach},
