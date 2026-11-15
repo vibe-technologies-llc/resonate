@@ -100,11 +100,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [M · 0.12.0] `resonate-analysis` is most of a test run's work: its tests sum to about 800 s of the
-  headless run's 2 560 s (`steps::tests::every_grid_reads_the_same_alone_as_on_a_crew` takes 16 s
-  alone and 81 s among the rest, each process's rayon crews contending for the same cores);
-  sharing one decode or encode between the `references::` and `analysis::` cases that make the same
-  file, or shorter signals where a case does not need seconds, would shorten every run
+- [M · 0.12.0] `resonate-analysis`'s run is bound by its `references::` cases: each encodes with an
+  outside tool, decodes back and runs a whole study (about 3 s of grids whatever its length) to read
+  one figure, 9 to 13 s alone and 30 to 70 s among the rest (the crate's run 87 s wall, 1 130 s
+  summed); sharing an encode between the cases that make the same file, or a study that stops once
+  the figure asked for is read, would shorten every run
 - [S · 0.12.0] The phones' `enrichment::tests::hearing::` tests take about 21 s each and the
   library's study and gathering tests 15 to 43 s; whether they wait out a timer a test could shorten
   is unread

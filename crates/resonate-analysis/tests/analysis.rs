@@ -977,12 +977,16 @@ fn the_bound_holds_over_what_the_decode_measures_whatever_the_curve_and_where_th
         ),
     ];
 
+    let bounds: Vec<BandGains> = curves
+        .iter()
+        .map(|(_, profile)| gains_under(profile))
+        .collect();
+
     for (song, location) in &songs {
         let studied = study(&Sources::local(), location, None, &Watch::default()).expect("a study");
-        for (curve, profile) in &curves {
-            let gains = gains_under(profile);
+        for ((curve, profile), gains) in curves.iter().zip(&bounds) {
             let decoded = peak_db_through(profile, location);
-            let bounded = decibels_of_the_bound(&gains, &studied);
+            let bounded = decibels_of_the_bound(gains, &studied);
             assert!(
                 bounded >= decoded - 0.02,
                 "{song} under {curve}: {bounded} under {decoded}"
@@ -1122,19 +1126,27 @@ fn the_bound_still_holds_over_what_the_decode_measures_with_a_correction_in_the_
         ),
     ];
 
-    for (song, location) in &songs {
-        let studied = study(&Sources::local(), location, None, &Watch::default()).expect("a study");
-        for (correction, impulse) in corrections() {
-            for (curve, profile) in &curves {
+    let chains: Vec<(&str, &str, Applied, BandGains)> = corrections()
+        .into_iter()
+        .flat_map(|(correction, impulse)| {
+            curves.iter().map(move |(curve, profile)| {
                 let applied =
                     Applied::from(Arc::clone(profile)).corrected_by(Some(impulse.clone()));
-                let decoded = peak_db_through_chain(&applied, location);
-                let bounded = decibels_of_the_bound(&bounded_under(&applied), &studied);
-                assert!(
-                    bounded >= decoded - 0.02,
-                    "{song} under {curve} and {correction}: {bounded} under {decoded}"
-                );
-            }
+                let gains = bounded_under(&applied);
+                (correction, *curve, applied, gains)
+            })
+        })
+        .collect();
+
+    for (song, location) in &songs {
+        let studied = study(&Sources::local(), location, None, &Watch::default()).expect("a study");
+        for (correction, curve, applied, gains) in &chains {
+            let decoded = peak_db_through_chain(applied, location);
+            let bounded = decibels_of_the_bound(gains, &studied);
+            assert!(
+                bounded >= decoded - 0.02,
+                "{song} under {curve} and {correction}: {bounded} under {decoded}"
+            );
         }
     }
 }
@@ -1322,13 +1334,18 @@ fn the_bound_holds_where_a_curve_could_bring_together_what_the_music_kept_apart(
         ),
     ];
 
+    let bounds: Vec<BandGains> = curves
+        .iter()
+        .map(|(_, profile)| gains_under(profile))
+        .collect();
+
     for (song, location) in &songs {
         let studied = study(&Sources::local(), location, None, &Watch::default()).expect("a study");
-        for (curve, profile) in &curves {
+        for ((curve, profile), gains) in curves.iter().zip(&bounds) {
             if *song == CLICK_UNDONE && *curve == TURNING_CHAIN {
                 continue;
             }
-            let bounded = decibels_of_the_bound(&gains_under(profile), &studied);
+            let bounded = decibels_of_the_bound(gains, &studied);
             let decoded = peak_db_through(profile, location);
 
             assert!(
@@ -1560,16 +1577,17 @@ fn a_tone_on_a_tooth_of_a_long_reverberant_tail_is_bounded_where_the_tail_meets_
         let taps = a_long_reverberant_tail(level);
         let reverberant =
             Arc::new(Impulse::new(SampleRate::HZ_44100, vec![taps.clone()]).expect("an impulse"));
+        let applied =
+            Applied::from(Arc::new(Profile::flat())).corrected_by(Some(Arc::clone(&reverberant)));
+        let gains = bounded_under(&applied);
         for (from_hz, to_hz) in [(900.0, 1_100.0), (3_000.0, 3_300.0), (7_000.0, 7_600.0)] {
             let hertz = loudest_tooth_of(&taps, from_hz, to_hz);
             let sounded = tree.wave(&format!("{level}-{hertz}.wav"), RATE, 16, &tone(hertz, 0.3));
             let studied =
                 study(&Sources::local(), &sounded, None, &Watch::default()).expect("a study");
-            let applied = Applied::from(Arc::new(Profile::flat()))
-                .corrected_by(Some(Arc::clone(&reverberant)));
 
             let decoded = peak_db_through_chain(&applied, &sounded);
-            let bounded = decibels_of_the_bound(&bounded_under(&applied), &studied);
+            let bounded = decibels_of_the_bound(&gains, &studied);
 
             assert!(
                 bounded >= decoded - 0.02,
