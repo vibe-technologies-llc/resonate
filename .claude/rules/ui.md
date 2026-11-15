@@ -16,8 +16,9 @@ they are made of, and `models/` one `impl LibraryModel` a subject (`listing`, `f
 `playlists`, `reading`, `scanning`, `enriching`, `polling`, `keeping`, `filing`, `pictures`, …) beside
 `told.rs` (what a pass says when it ends), `arranged.rs` (rows as drawn), `watched.rs` (the
 background readers) and `tests.rs`. A method another file calls is `pub(super)`. **Its state is
-held by subject, not as one flat list**: `Keeps` (the keep pass), `Charts` (statistics and whether
-they are shown), `Gaps` (the Missing pane), `Favours`, `Pictures` (the covers, portraits and the
+held by subject, not as one flat list**: `Keeps` (the keep pass), `Hearing` (whether Statistics is
+shown and whether what was heard is owed it), `Landed` (what a read brought for a pane's own entity,
+held until that entity takes it), `Favours`, `Pictures` (the covers, portraits and the
 magnifier), `Shelf` (playlists), `Passes` (organise, import, retag and identical previews),
 `Enrichment`, `Outreach` (asking the providers), `Unheld` (what a search found beyond the library),
 `Detail` (the album, artist or release opened), `Wishes`, `Delivered` (downloads), `Naming`,
@@ -49,6 +50,14 @@ the root's list:
   the service through (handing the caret back to the window's own focus, which it holds a clone of),
   and the rows' scroll, which `RootView::scroll_of` hands out for `Pane::Server`. `ServerModel`
   stays the root's, since the sidebar asks it whether the Services row stands.
+- `MissingPane` (`views/missing.rs`): the half shown (`MissingShows`), the rows' scroll and the
+  catalog's gaps: the songs and releases short, their counts and dismissals, and the runs they are
+  headed in (`missing_track_rows`, `unheld_release_rows`), which the sidebar counts from.
+- `StatisticsPane` (`views/statistics.rs`): the scroll, the counts, what was heard most, the days
+  and their `Chart`, the habits.
+- `SuggestionsPane` (`views/suggestions.rs`): the shelves' and the opened list's scrolls, what the
+  catalog offers and the suggestion opened (`Previewed`) with the task reading its rows, which names
+  them in the library's cache (`LibraryModel::remember`).
 - `SettingsFields` (`views/settings/fields.rs`): every `Field` the settings pane holds (the online
   keys and tokens, each service's account, Discord, sync, the layout and the music folder, the
   minimum length, the settings filter, the equaliser's figure, AutoEq search and *Keep as*) and the
@@ -57,7 +66,19 @@ the root's list:
   answer through the handlers that store a setting (`contact_given`, `contact_left` and kin), since
   writing the settings, the toasts and the window's focus are the root's.
 
+**A pane whose state the catalog reads takes it from `LibraryModel`'s `Landed`**: the read still
+lands in the library's one pass (`take_the_shelves`, `take_the_listing`), which leaves each pane's
+part in `Landed`; the pane observes the library and takes its part when it notifies
+(`take_what_is_short`, `take_the_counts`, `take_what_was_heard`, `take_the_offers`), and takes once
+more as it is made, since the first read may land inside `LibraryModel::new`. The three are made
+right after the library and before the root's own observation of it, so they hold the new read
+when the root lets go of a reach the rows left. The root does not observe them: it reads each while
+drawing (the sidebar counts every frame), so gpui redraws the window when one notifies. What steers
+the read stays the library's: the statistics window (`read_over`) and whether the pane is shown
+(`statistics_shown`).
+
 The root still draws them (`RootView::party_pane`, `RootView::inspector`, `RootView::server_pane`,
+`RootView::missing_pane`, `RootView::statistics_pane`, `RootView::suggestions_pane`,
 `RootView::settings`):
 every control of a pane goes into the root's focus ring (`Controls`, `in_the_pane_ring`) and a press
 may reach the root's navigation, so a press that changes only the pane's own state updates its entity
@@ -1175,8 +1196,8 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
 - **A read of the library says how much it wants.** `LibraryModel::read` takes a `Wanted`.
   `Everything`: browse panes, what stands whatever is typed (statistics, suggestions, roots:
   `Standing`; most listened, days and habits, `Heard`, only while the Statistics pane is shown,
-  `Asked::heard`, which `RootView::set_pane` and the window's opening tell `Charts::shown`; a
-  read without it leaves `Charts::owed`, and showing the pane then reads `Everything` once), shelves (playlists, wants, missing: `Shelves`). `TheSearch`: browse
+  `Asked::heard`, which `RootView::set_pane` and the window's opening tell `Hearing::shown`; a
+  read without it leaves `Hearing::owed`, and showing the pane then reads `Everything` once), shelves (playlists, wants, missing: `Shelves`). `TheSearch`: browse
   panes and shelves, leaving the standing and the wants (`reads_the_wants`). `ThePage`: the four lists
   `reach` bounds (albums, artists, tracks, scoped tracks: `Paged`) alone, for `reach_further`.
   `ThePlaylists`: shelves alone, wants included. Every gesture behind `LibraryModel::edit` writes only
@@ -1533,7 +1554,7 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   count and length in `faint`, as an album or playlist cell reads; *Play* is `kit::play_on_the_art`
   (the round accent mark a playlist cell raises too) and the queue and save marks stand on a
   `kit::cover_veil` in the art's corner, all three shown under the pointer and each stopping the
-  press, so a shelf of twenty lists holds no row of primary buttons. Pressing art or name = `LibraryModel::open_suggestion`: `SavedQuery` kept in a
+  press, so a shelf of twenty lists holds no row of primary buttons. Pressing art or name = `SuggestionsPane::open`: `SavedQuery` kept in a
   `Previewed`, first `PREVIEWED_AT_MOST` (500) rows read on the background executor; `preview_further`
   grows the window whenever the list is drawn within `LOOK_AHEAD` of full. The opened pane draws a way
   back, art at the text column's height (`Drawn::OnThePage`), kind, name, reason, count and length, the
@@ -1861,7 +1882,7 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   `a_service_that_keeps_songs_offers_a_keep_on_a_song_and_a_mix_and_a_press_queues_them`).
 - **Missing pane = what the catalog knows it is short of, headed by run, one half at a time.**
   `Pane::Missing` under `Section::Collection`; sidebar count `Missing::tracks`, hidden at zero. Two
-  tabs, `missing_tabs` (*Tracks*/*Releases*, counts), `Shows::missing` (`MissingShows`, kept
+  tabs, `missing_tabs` (*Tracks*/*Releases*, counts), `MissingPane::shows` (`MissingShows`, kept
   for the run); `MissingShows::within` hands over to the half holding something; the artist heading's
   *N releases not held* opens on *Releases*. Each tab = one `uniform_list` over
   `missing_track_rows` or `unheld_release_rows` (`Arc<[MissingRow]>`), a heading wherever the key

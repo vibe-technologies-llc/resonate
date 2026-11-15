@@ -1,11 +1,12 @@
 use std::{
     rc::Rc,
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
 use gpui::{
-    AnyElement, App, Context, Div, FontWeight, Role, SharedString, Stateful, div, prelude::*, px,
-    relative, rgb,
+    AnyElement, App, Context, Div, Entity, FontWeight, Role, ScrollHandle, SharedString, Stateful,
+    Subscription, div, prelude::*, px, relative, rgb,
 };
 use resonate_core::{
     AlbumId, ArtistId, Calendar, CivilDate,
@@ -15,9 +16,9 @@ use resonate_library::{Day, Habits, Listened, MostListened, Statistics, Window};
 use resonate_words::{Brevity, weekday_name};
 
 use crate::{
-    Selection, format,
+    LibraryModel, Selection, format,
     icons::Icon,
-    models::Portrayed,
+    models::{Portrayed, renewed},
     theme,
     views::{
         browser::portrait_frame,
@@ -89,6 +90,59 @@ struct Bar {
     plays: u64,
     listened: Duration,
     share: f32,
+}
+
+pub(crate) struct StatisticsPane {
+    scroll: ScrollHandle,
+    counts: Statistics,
+    most_listened: Arc<MostListened>,
+    by_day: Arc<[Day]>,
+    habits: Arc<Habits>,
+    charted: Arc<Chart>,
+    _landing: Subscription,
+}
+
+impl StatisticsPane {
+    pub(crate) fn new(library: &Entity<LibraryModel>, cx: &mut Context<Self>) -> Self {
+        let mut pane = Self {
+            scroll: ScrollHandle::new(),
+            counts: Statistics::default(),
+            most_listened: Arc::default(),
+            by_day: Arc::default(),
+            habits: Arc::default(),
+            charted: Arc::default(),
+            _landing: cx.observe(library, |pane, library, cx| {
+                pane.take_what_landed(&library, cx);
+            }),
+        };
+        pane.take_what_landed(library, cx);
+
+        pane
+    }
+
+    fn take_what_landed(&mut self, library: &Entity<LibraryModel>, cx: &mut Context<Self>) {
+        let (counts, heard) = library.update(cx, |library, _| {
+            (library.take_the_counts(), library.take_what_was_heard())
+        });
+        if counts.is_none() && heard.is_none() {
+            return;
+        }
+        if let Some(counts) = counts {
+            self.counts = counts;
+        }
+        if let Some(heard) = heard {
+            self.most_listened = Arc::new(heard.most_listened);
+            if renewed(&mut self.by_day, heard.by_day) {
+                self.charted = Arc::new(Chart::of(&self.by_day, SystemTime::now(), BARS_AT_MOST));
+            }
+            self.habits = Arc::new(heard.habits);
+        }
+        cx.notify();
+    }
+
+    pub(crate) const fn counts(&self) -> Statistics {
+        self.counts
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -356,13 +410,14 @@ fn across(window: Window) -> &'static str {
 
 impl RootView {
     pub(crate) fn statistics_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let library = self.library.read(cx);
-        let window = library.window();
-        let counts = library.statistics();
-        let listened = library.most_listened();
-        let chart = library.charted();
-        let habits = library.habits();
-        let days_spanned = library.listening_by_day().len();
+        let pane = self.statistics.read(cx);
+        let counts = pane.counts;
+        let listened = Arc::clone(&pane.most_listened);
+        let chart = Arc::clone(&pane.charted);
+        let habits = Arc::clone(&pane.habits);
+        let days_spanned = pane.by_day.len();
+        let scroll = pane.scroll.clone();
+        let window = self.library.read(cx).window();
         let nothing = counts.plays == 0;
         let heard = Heard {
             counts,
@@ -400,7 +455,7 @@ impl RootView {
                         .child(kit::measures_the_grid(self.rooms.grid_width.clone()))
                         .child(Scrollbars::of(cx).around(
                             "statistics-scrollbar",
-                            self.scrolls.statistics.clone(),
+                            scroll,
                             self.what_was_heard(&heard, cx),
                         )),
                 )
@@ -468,6 +523,7 @@ impl RootView {
 
     fn what_was_heard(&mut self, heard: &Heard<'_>, cx: &mut Context<Self>) -> Stateful<Div> {
         let wide = f32::from(self.rooms.grid_width.get()) >= theme::statistics_two_columns();
+        let scroll = self.statistics.read(cx).scroll.clone();
         let Heard {
             counts,
             listened,
@@ -487,7 +543,7 @@ impl RootView {
             .gap_4()
             .p_6()
             .overflow_y_scroll()
-            .track_scroll(&self.scrolls.statistics)
+            .track_scroll(&scroll)
             .child(the_headline(wide, counts, habits, days_spanned))
             .children(self.number_ones(wide, listened, cx))
             .child(charted(chart))
@@ -646,6 +702,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let shares = shares_of(&rows.iter().map(|held| held.listened).collect::<Vec<_>>());
+        let scroll = self.statistics.read(cx).scroll.clone();
         let mut listed = div().flex().flex_col().p_1();
         for (rank, held) in rows.iter().enumerate() {
             let reached = self.reaches(Shift::Listing(Listed::Heard), reached_from + rank);
@@ -658,7 +715,7 @@ impl RootView {
             let drawn = self.listened_row(kind, placed, held, opens(held.id), cx);
             listed = listed.child(reorder::marked(drawn, reached).when(reached, |row| {
                 row.child(kit::brought_into_view(
-                    self.scrolls.statistics.clone(),
+                    scroll.clone(),
                     Rc::clone(&self.rooms.reached_unseen),
                 ))
             }));
@@ -670,23 +727,23 @@ impl RootView {
     }
 
     pub(crate) fn heard_rows(&self, cx: &App) -> usize {
-        let library = self.library.read(cx);
-        if library.statistics().plays == 0 {
+        let pane = self.statistics.read(cx);
+        if pane.counts.plays == 0 {
             return 0;
         }
-        let listened = library.most_listened();
+        let listened = &pane.most_listened;
 
         listened.tracks.len() + listened.albums.len() + listened.artists.len()
     }
 
-    pub(crate) fn heard_a_page(&self) -> usize {
-        let seen = f32::from(self.scrolls.statistics.bounds().size.height);
+    pub(crate) fn heard_a_page(&self, cx: &App) -> usize {
+        let seen = f32::from(self.statistics.read(cx).scroll.bounds().size.height);
 
         ((seen / theme::tall_row_height()) as usize).max(1)
     }
 
     pub(crate) fn open_what_was_heard_at(&mut self, row: usize, cx: &mut Context<Self>) {
-        let listened = self.library.read(cx).most_listened();
+        let listened = Arc::clone(&self.statistics.read(cx).most_listened);
         let tracks = listened.tracks.len();
         let albums = tracks + listened.albums.len();
         if let Some(heard) = listened.tracks.get(row) {
@@ -1487,6 +1544,46 @@ mod tests {
                     .is_some()
             );
         }
+    }
+
+    #[gpui::test]
+    fn the_statistics_pane_reads_when_things_were_heard_and_keeps_the_one_run_the_keys_walk(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (library, _) = heard_once(&folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let root = driven.root.clone();
+        driven.settle();
+
+        driven.read(|root, cx| {
+            let statistics = root.statistics.read(cx);
+
+            assert!(
+                statistics.most_listened.tracks.is_empty(),
+                "what was heard is read only once Statistics is shown"
+            );
+            assert_eq!(statistics.habits.rhythm.days_heard, 0);
+        });
+
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.set_pane(Pane::Statistics, cx));
+        });
+        driven.settle();
+
+        driven.read(|root, cx| {
+            let statistics = root.statistics.read(cx);
+            let habits = &statistics.habits;
+
+            assert_eq!(habits.rhythm.days_heard, 1);
+            assert_eq!(
+                habits.rhythm.hours.iter().sum::<Duration>(),
+                Duration::from_secs(90)
+            );
+            assert!(habits.formats.is_some(), "what was heard has a sound");
+            assert_eq!(statistics.most_listened.tracks.len(), 1);
+            assert_eq!(root.heard_rows(cx), 1, "a track of no album by nobody");
+        });
     }
 
     #[gpui::test]

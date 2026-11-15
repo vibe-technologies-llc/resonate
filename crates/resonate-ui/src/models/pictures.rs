@@ -313,7 +313,7 @@ pub(crate) struct AtSide<K> {
     pub(crate) side: NonZeroU32,
 }
 
-pub(super) fn renewed<T: PartialEq>(held: &mut Arc<[T]>, read: Vec<T>) -> bool {
+pub(crate) fn renewed<T: PartialEq>(held: &mut Arc<[T]>, read: Vec<T>) -> bool {
     if **held == *read {
         return false;
     }

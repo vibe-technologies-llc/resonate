@@ -125,8 +125,10 @@ impl RootView {
         match shift {
             Shift::Listing(Listed::Tracks) => library.tracks_at(chosen.rows()),
             Shift::Listing(Listed::Favourites) => picked(&library.favourite_tracks()),
-            Shift::Listing(Listed::Suggested) => library
-                .opened_suggestion()
+            Shift::Listing(Listed::Suggested) => self
+                .suggestions
+                .read(cx)
+                .opened()
                 .map_or_else(Vec::new, |opened| picked(&opened.tracks)),
             Shift::Listing(Listed::Top) => {
                 let songs = TopRun::of(library).songs();
@@ -426,7 +428,7 @@ impl RootView {
         let Some((shift, held)) = self.reachable(cx) else {
             return;
         };
-        let page = self.rows_a_page(shift);
+        let page = self.rows_a_page(shift, cx);
         let from = match self.reach_in(shift, held) {
             Some(reach) => step.end(reach.rows()),
             None => self.opening_row(shift, held, cx),
@@ -475,23 +477,23 @@ impl RootView {
         true
     }
 
-    pub(super) fn rows_a_page(&self, shift: Shift) -> usize {
+    pub(super) fn rows_a_page(&self, shift: Shift, cx: &App) -> usize {
         let listing = match shift {
-            Shift::Queue => &self.scrolls.queue_rows,
-            Shift::Playlist(_) => &self.scrolls.playlist_rows,
-            Shift::Listing(Listed::Tracks) => &self.scrolls.track_rows,
-            Shift::Listing(Listed::Albums) => &self.scrolls.album_rows,
-            Shift::Listing(Listed::Artists) => &self.scrolls.artist_rows,
-            Shift::Listing(Listed::Playlists) => &self.scrolls.all_playlist_rows,
-            Shift::Listing(Listed::Favourites) => &self.scrolls.favourite_rows,
+            Shift::Queue => self.scrolls.queue_rows.clone(),
+            Shift::Playlist(_) => self.scrolls.playlist_rows.clone(),
+            Shift::Listing(Listed::Tracks) => self.scrolls.track_rows.clone(),
+            Shift::Listing(Listed::Albums) => self.scrolls.album_rows.clone(),
+            Shift::Listing(Listed::Artists) => self.scrolls.artist_rows.clone(),
+            Shift::Listing(Listed::Playlists) => self.scrolls.all_playlist_rows.clone(),
+            Shift::Listing(Listed::Favourites) => self.scrolls.favourite_rows.clone(),
             Shift::Listing(Listed::FavouriteArtists | Listed::FavouriteAlbums) => return 1,
-            Shift::Listing(Listed::Missing) => &self.scrolls.missing_rows,
-            Shift::Listing(Listed::Suggested) => &self.scrolls.suggestion_rows,
+            Shift::Listing(Listed::Missing) => self.missing.read(cx).rows(),
+            Shift::Listing(Listed::Suggested) => self.suggestions.read(cx).rows(),
             Shift::Listing(Listed::Top) => {
                 return search::SONGS_AT_THE_TOP + search::FOUND_AT_THE_TOP;
             }
-            Shift::Listing(Listed::Offered) => return self.cards_a_page(),
-            Shift::Listing(Listed::Heard) => return self.heard_a_page(),
+            Shift::Listing(Listed::Offered) => return self.cards_a_page(cx),
+            Shift::Listing(Listed::Heard) => return self.heard_a_page(cx),
         };
         let shown = listing
             .0

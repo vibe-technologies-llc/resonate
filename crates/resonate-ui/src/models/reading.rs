@@ -1,7 +1,7 @@
 use std::{
     mem,
     sync::Arc,
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant},
 };
 
 use gpui::Context;
@@ -10,20 +10,13 @@ use resonate_engine::QueueItem;
 use resonate_library::{Measured, Search, Track};
 
 use super::{
-    ALBUMS_HELD, Asked, Browsed, COVERS_WARMED, Forget, Grew, Grown, Heard, Held, LibraryModel,
-    Loaded, Paged, Reached, Selection, Shelves, Wanted, WantsRead,
-    arranged::{Named, missing_track_rows, queued_rows, unheld_release_rows},
+    ALBUMS_HELD, Asked, Browsed, COVERS_WARMED, Forget, Grew, Grown, Held, LibraryModel, Loaded,
+    Paged, Reached, Selection, Shelves, ShortOf, Wanted, WantsRead,
+    arranged::{Named, queued_rows},
     pictures::{AtSide, Drawn, renewed},
     watched::{drawn_cover, grew, load, picture_or_trouble, rows_renewed},
 };
-use crate::{
-    drawing::Drawer,
-    held::Rows,
-    recent::Recent,
-    toast,
-    views::statistics::{BARS_AT_MOST, Chart},
-    words,
-};
+use crate::{drawing::Drawer, held::Rows, recent::Recent, toast, words};
 
 impl LibraryModel {
     pub fn reload(&mut self, cx: &mut Context<Self>) {
@@ -143,7 +136,7 @@ impl LibraryModel {
                 },
             },
             window: self.window,
-            heard: self.charts.shown,
+            heard: self.hearing.shown,
         }
     }
 
@@ -296,21 +289,12 @@ impl LibraryModel {
         if let Some(wants) = shelves.wants {
             self.take_the_wants(wants);
         }
-        if renewed(&mut self.gaps.tracks, shelves.missing_tracks) {
-            self.gaps.track_rows = missing_track_rows(
-                self.gaps
-                    .tracks
-                    .iter()
-                    .map(|track| (track.album, track.disc)),
-            )
-            .into();
-        }
-        if renewed(&mut self.gaps.releases, shelves.unheld_releases) {
-            self.gaps.release_rows =
-                unheld_release_rows(self.gaps.releases.iter().map(|release| release.artist)).into();
-        }
-        self.gaps.missing = shelves.missing;
-        self.gaps.dismissed = shelves.dismissed;
+        self.landed.short_of = Some(ShortOf {
+            tracks: shelves.missing_tracks,
+            releases: shelves.unheld_releases,
+            missing: shelves.missing,
+            dismissed: shelves.dismissed,
+        });
         renewed(&mut self.shelf.playlists, shelves.playlists);
         renewed(&mut self.shelf.lists, shelves.lists);
         self.shelf.pictured = shelves.pictured;
@@ -360,21 +344,9 @@ impl LibraryModel {
         rows_renewed(&mut self.browse.scoped, paged.scoped);
     }
 
-    pub(super) fn take_what_was_heard(&mut self, heard: Heard) {
-        self.charts.most_listened = Arc::new(heard.most_listened);
-        if renewed(&mut self.charts.by_day, heard.by_day) {
-            self.charts.charted = Arc::new(Chart::of(
-                &self.charts.by_day,
-                SystemTime::now(),
-                BARS_AT_MOST,
-            ));
-        }
-        self.charts.habits = Arc::new(heard.habits);
-    }
-
     pub(crate) fn statistics_shown(&mut self, shown: bool, cx: &mut Context<Self>) {
-        self.charts.shown = shown;
-        if shown && self.charts.owed {
+        self.hearing.shown = shown;
+        if shown && self.hearing.owed {
             self.read(Wanted::Everything, cx);
         }
     }
@@ -385,12 +357,12 @@ impl LibraryModel {
         renewed(&mut self.favours.artists, browsed.favourite_artists);
         renewed(&mut self.favours.tracks, browsed.favourite_tracks);
         if let Some(standing) = browsed.standing {
-            self.charts.statistics = standing.statistics;
-            self.charts.owed = standing.heard.is_none();
+            self.landed.counts = Some(standing.statistics);
+            self.hearing.owed = standing.heard.is_none();
             if let Some(heard) = standing.heard {
-                self.take_what_was_heard(heard);
+                self.landed.heard = Some(heard);
             }
-            self.suggestions = standing.suggestions;
+            self.landed.offered = Some(standing.suggestions);
             self.roots = standing.roots;
             if self.hidden.as_ref() != &standing.hidden {
                 self.hidden = Arc::new(standing.hidden);

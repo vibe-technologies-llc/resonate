@@ -2,12 +2,9 @@ use std::sync::Arc;
 
 use gpui::SharedString;
 use resonate_core::{AlbumId, ReleaseTrackId, WantId};
-use resonate_library::{
-    Album, ArtistDetail, ArtistTotals, Found, HeldReleaseTrack, Missing, MissingTrack,
-    ReleaseDetail, UnheldRelease,
-};
+use resonate_library::{Album, ArtistDetail, ArtistTotals, Found, HeldReleaseTrack, ReleaseDetail};
 
-use super::{LibraryModel, ListedRow, MissingRow};
+use super::{LibraryModel, ListedRow, ShortOf};
 use crate::downloads::{self, Fetched, Fetching};
 
 impl LibraryModel {
@@ -76,27 +73,7 @@ impl LibraryModel {
         Some(fetching.while_polling(Some(want), &self.polling()))
     }
 
-    pub fn missing_track_rows(&self) -> Arc<[MissingRow]> {
-        Arc::clone(&self.gaps.track_rows)
-    }
-
-    pub fn unheld_release_rows(&self) -> Arc<[MissingRow]> {
-        Arc::clone(&self.gaps.release_rows)
-    }
-
-    pub fn missing_tracks(&self) -> Arc<[MissingTrack]> {
-        Arc::clone(&self.gaps.tracks)
-    }
-
-    pub fn unheld_releases(&self) -> Arc<[UnheldRelease]> {
-        Arc::clone(&self.gaps.releases)
-    }
-
-    pub const fn missing(&self) -> Missing {
-        self.gaps.missing
-    }
-
-    pub const fn dismissed(&self) -> Missing {
-        self.gaps.dismissed
+    pub(crate) const fn take_what_is_short(&mut self) -> Option<ShortOf> {
+        self.landed.short_of.take()
     }
 }

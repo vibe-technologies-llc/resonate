@@ -161,14 +161,15 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `sweep_orphans` and `settle_if_owed`; the listens two of them once lost were that drift. One
   `forget_rows` every removal goes through, and a test refusing a raw `DELETE FROM tracks` elsewhere,
   would hold it
-- [L] The party, inspector and services panes and the settings pane's fields are entities owning
-  their state and subscriptions (`ui.md`), but `RootView` (77 fields, 133 more in its groups) still
-  carries the rest: the settings pane's own state (`SettingsShown`, `Accounts`, `Remotely`), the
-  browse panes' scrolls, orders and reach, and the queue, statistics, suggestions, missing, lyrics
-  and analysis panes, with `RootView::new` some 470 lines making 23 subscriptions; `LibraryModel`
-  (48) still holds each pane's catalog state (`Charts`, `Gaps`, `Shelf`, `Detail`, …). The missing,
-  suggestions and statistics panes want a driven test pinning them before they move, and a pane's
-  drawing stays on the root while its controls live in the root's focus ring
+- [L] The party, inspector, services, missing, statistics and suggestions panes and the settings
+  pane's fields are entities owning their state and subscriptions (`ui.md`), but `RootView` (81
+  fields, 128 more in its groups) still carries the rest: the settings pane's own state
+  (`SettingsShown`, `Accounts`, `Remotely`), the browse panes' scrolls, orders and reach, and the
+  queue, lyrics and analysis panes, with `RootView::new` some 470 lines making 23 subscriptions;
+  `LibraryModel` (46) still holds the other panes' catalog state (`Shelf`, `Detail`, …). The queue,
+  lyrics and analysis panes want a driven test pinning them before they move, as the missing,
+  suggestions and statistics panes got, and a pane's drawing stays on the root while its controls
+  live in the root's focus ring
 - [M · blocked: jxl-oxide reading jxl-encoder's ANS-coded output] The vault builds two JPEG XL
   encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder` for a JPEG's transcode. Measured on
   600 to 1400 px covers, `jxl-encoder` 0.3.4's lossless effort 7 is about half zune's size (0.6 to

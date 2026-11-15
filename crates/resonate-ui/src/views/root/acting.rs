@@ -149,9 +149,9 @@ impl RootView {
             Shift::Listing(Listed::Top) => self.press_at_the_top(row, window, cx),
             Shift::Listing(Listed::Suggested) => {
                 let Some(tracks) = self
-                    .library
+                    .suggestions
                     .read(cx)
-                    .opened_suggestion()
+                    .opened()
                     .map(|opened| Arc::clone(&opened.tracks))
                 else {
                     return;

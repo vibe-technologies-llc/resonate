@@ -199,10 +199,10 @@ impl RootView {
                 (rows > 0).then_some((Shift::Listing(Listed::Missing), rows))
             }
             Pane::Suggestions => {
-                let library = self.library.read(cx);
-                let offered = library.suggestions();
-                let Some(opened) = library
-                    .opened_suggestion()
+                let pane = self.suggestions.read(cx);
+                let offered = pane.offered();
+                let Some(opened) = pane
+                    .opened()
                     .filter(|opened| offered.iter().any(|held| held.query == opened.query))
                 else {
                     let rows = offered.len();
@@ -294,13 +294,15 @@ impl RootView {
                 self.rooms.reached_unseen.set(true);
             }
             Shift::Listing(Listed::Missing) => {
-                self.scrolls
-                    .missing_rows
+                self.missing
+                    .read(cx)
+                    .rows()
                     .scroll_to_item(row, ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Suggested) => {
-                self.scrolls
-                    .suggestion_rows
+                self.suggestions
+                    .read(cx)
+                    .rows()
                     .scroll_to_item(row, ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Top | Listed::Offered | Listed::Heard) => {

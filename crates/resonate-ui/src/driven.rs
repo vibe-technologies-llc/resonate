@@ -2689,15 +2689,15 @@ mod tests {
         let named: Vec<&str> = titles.iter().map(String::as_str).collect();
         let library = scanned_catalog(&folder, &named);
         let mut driven = Driven::opened_in(cx, library, &folder);
-        driven.until(|root, cx| !root.library.read(cx).suggestions().is_empty());
+        driven.until(|root, cx| !root.suggestions.read(cx).offered().is_empty());
         driven.click("tab-suggestions");
 
         driven.click("suggestion-open-0");
 
         driven.until(|root, cx| {
-            root.library
+            root.suggestions
                 .read(cx)
-                .opened_suggestion()
+                .opened()
                 .is_some_and(|opened| !opened.tracks.is_empty())
         });
     }
@@ -2898,57 +2898,6 @@ mod tests {
         });
         let (_, favoured) = stamped(&mut driven);
         assert_ne!(favoured, first, "a favourite is shown on the playing row");
-    }
-
-    #[gpui::test]
-    fn the_statistics_pane_reads_when_things_were_heard_and_keeps_the_one_run_the_keys_walk(
-        cx: &mut TestAppContext,
-    ) {
-        let folder = Folder::new();
-        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
-        let track = library
-            .tracks(&resonate_library::TrackQuery::default())
-            .expect("the scanned tracks")
-            .remove(0);
-        let counted = library
-            .track_played(&track.location, track.span, std::time::Duration::ZERO)
-            .expect("the catalog counts the play")
-            .expect("the catalog holds the row");
-        library
-            .listened(counted.listen, std::time::Duration::from_secs(90))
-            .expect("the catalog keeps the time");
-        let mut driven = Driven::opened_in(cx, library, &folder);
-        let root = driven.root.clone();
-        driven.settle();
-
-        driven.read(|root, cx| {
-            let library = root.library.read(cx);
-
-            assert!(
-                library.most_listened().tracks.is_empty(),
-                "what was heard is read only once Statistics is shown"
-            );
-            assert_eq!(library.habits().rhythm.days_heard, 0);
-        });
-
-        driven.cx.update(|_, cx| {
-            root.update(cx, |root, cx| root.set_pane(Pane::Statistics, cx));
-        });
-        driven.settle();
-
-        driven.read(|root, cx| {
-            let library = root.library.read(cx);
-            let habits = library.habits();
-
-            assert_eq!(habits.rhythm.days_heard, 1);
-            assert_eq!(
-                habits.rhythm.hours.iter().sum::<std::time::Duration>(),
-                std::time::Duration::from_secs(90)
-            );
-            assert!(habits.formats.is_some(), "what was heard has a sound");
-            assert_eq!(library.most_listened().tracks.len(), 1);
-            assert_eq!(root.heard_rows(cx), 1, "a track of no album by nobody");
-        });
     }
 
     #[gpui::test]
@@ -3906,19 +3855,19 @@ mod tests {
         let named_titles: Vec<&str> = titles.iter().map(String::as_str).collect();
         let library = scanned_catalog(&folder, &named_titles);
         let mut driven = Driven::opened_in(cx, library, &folder);
-        driven.until(|root, cx| !root.library.read(cx).suggestions().is_empty());
+        driven.until(|root, cx| !root.suggestions.read(cx).offered().is_empty());
         driven.click("tab-suggestions");
         driven.click("suggestion-open-0");
         driven.until(|root, cx| {
-            root.library
+            root.suggestions
                 .read(cx)
-                .opened_suggestion()
+                .opened()
                 .is_some_and(|opened| opened.tracks.len() > 3)
         });
         let ids: Vec<TrackId> = driven.read(|root, cx| {
-            root.library
+            root.suggestions
                 .read(cx)
-                .opened_suggestion()
+                .opened()
                 .map(|opened| opened.tracks.iter().map(|track| track.id).collect())
                 .unwrap_or_default()
         });

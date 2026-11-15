@@ -1,20 +1,21 @@
 use std::{ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{
-    AnyElement, App, Context, Div, ElementId, FontWeight, SharedString, Stateful, div, prelude::*,
-    px, rgb, uniform_list,
+    AnyElement, App, Context, Div, ElementId, Entity, FontWeight, ScrollHandle, SharedString,
+    Stateful, Subscription, Task, UniformListScrollHandle, div, prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::AlbumId;
 use resonate_engine::Placement;
 use resonate_library::{
-    PICTURED_BY_AT_MOST, Reason, SavedQuery, Search, Suggestion, SuggestionKind, Track,
+    Library, PICTURED_BY_AT_MOST, Reason, SavedQuery, Search, Suggestion, SuggestionKind, Track,
+    TrackQuery,
 };
 
 use crate::{
-    Drawn, Pane, format,
+    Drawn, LibraryModel, Pane, Previewed, format,
     held::Rows,
     icons::Icon,
-    theme,
+    theme, toast,
     views::{
         browser::{self, Chooses, Plays, Rowed, TRACK_CONTROLS},
         hint::Names,
@@ -35,11 +36,137 @@ const SUGGESTION_CELL: &str = "suggestion-cell";
 
 const SHELF_PADDING: f32 = 24.0;
 
+pub(crate) struct SuggestionsPane {
+    library: Entity<LibraryModel>,
+    catalog: Arc<Library>,
+    shelves: ScrollHandle,
+    rows: UniformListScrollHandle,
+    offered: Arc<[Suggestion]>,
+    opened: Option<Previewed>,
+    _previewing: Task<()>,
+    _landing: Subscription,
+}
+
+impl SuggestionsPane {
+    pub(crate) fn new(
+        library: &Entity<LibraryModel>,
+        catalog: Arc<Library>,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut pane = Self {
+            library: library.clone(),
+            catalog,
+            shelves: ScrollHandle::new(),
+            rows: UniformListScrollHandle::default(),
+            offered: Arc::default(),
+            opened: None,
+            _previewing: Task::ready(()),
+            _landing: cx.observe(library, |pane, library, cx| {
+                pane.take_what_landed(&library, cx);
+            }),
+        };
+        pane.take_what_landed(library, cx);
+
+        pane
+    }
+
+    fn take_what_landed(&mut self, library: &Entity<LibraryModel>, cx: &mut Context<Self>) {
+        let Some(offered) = library.update(cx, |library, _| library.take_the_offers()) else {
+            return;
+        };
+        self.offered = offered;
+        cx.notify();
+    }
+
+    pub(crate) fn offered(&self) -> Arc<[Suggestion]> {
+        Arc::clone(&self.offered)
+    }
+
+    pub(crate) const fn opened(&self) -> Option<&Previewed> {
+        self.opened.as_ref()
+    }
+
+    pub(crate) fn rows(&self) -> UniformListScrollHandle {
+        self.rows.clone()
+    }
+
+    fn open(&mut self, query: Option<SavedQuery>, cx: &mut Context<Self>) {
+        let Some(query) = query else {
+            self.opened = None;
+            self._previewing = Task::ready(());
+            cx.notify();
+            return;
+        };
+        if self.opened.as_ref().is_some_and(|held| held.query == query) {
+            return;
+        }
+        let opening = Previewed::opening(query.clone());
+        let asked = opening.asked();
+        self.opened = Some(opening);
+        cx.notify();
+        self.read_the_preview(query, asked, cx);
+    }
+
+    fn preview_further(&mut self, drawn_to: usize, cx: &mut Context<Self>) {
+        let Some((query, asked)) = self
+            .opened
+            .as_mut()
+            .and_then(|previewed| previewed.further(drawn_to))
+        else {
+            return;
+        };
+        self.read_the_preview(query, asked, cx);
+    }
+
+    fn read_the_preview(&mut self, query: SavedQuery, asked_for: usize, cx: &mut Context<Self>) {
+        let catalog = Arc::clone(&self.catalog);
+        self._previewing = cx.spawn(async move |this, cx| {
+            let asked = query.clone();
+            let read = cx
+                .background_executor()
+                .spawn(async move {
+                    catalog.tracks(&TrackQuery {
+                        limit: Some(asked_for),
+                        ..TrackQuery::from(&asked)
+                    })
+                })
+                .await;
+
+            let landed = this.update(cx, |this, cx| {
+                let tracks = match read {
+                    Ok(tracks) => tracks,
+                    Err(error) => {
+                        tracing::error!(%error, "a suggestion could not be previewed");
+                        toast::tell(
+                            toast::could_not(words::suggestions::preview_that_suggestion(), &error),
+                            cx,
+                        );
+                        return;
+                    }
+                };
+                let still_open = this.opened.as_ref().is_some_and(|held| held.query == query);
+                this.library.update(cx, |library, cx| {
+                    library.remember(&tracks);
+                    if still_open {
+                        cx.notify();
+                    }
+                });
+                if let Some(previewed) = this.opened.as_mut().filter(|_| still_open) {
+                    previewed.tracks = tracks.into();
+                    cx.notify();
+                }
+            });
+            let _ = landed;
+        });
+    }
+}
+
 impl RootView {
     pub(crate) fn suggestions_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let library = self.library.read(cx);
-        let offered = library.suggestions();
-        let opened = library.opened_suggestion().cloned();
+        let pane = self.suggestions.read(cx);
+        let offered = Arc::clone(&pane.offered);
+        let opened = pane.opened.clone();
+        let scroll = pane.shelves.clone();
         if let Some(opened) = opened
             && let Some(suggestion) = offered.iter().find(|held| held.query == opened.query)
         {
@@ -58,7 +185,7 @@ impl RootView {
             .gap_8()
             .p(px(SHELF_PADDING))
             .overflow_y_scroll()
-            .track_scroll(&self.scrolls.suggestions);
+            .track_scroll(&scroll);
         let shelved = in_shelf_order(&offered);
         for kind in SuggestionKind::ALL {
             let cards: Vec<AnyElement> = shelved
@@ -111,11 +238,7 @@ impl RootView {
                         .min_w(px(0.0))
                         .min_h(px(0.0))
                         .child(kit::measures_the_grid(self.rooms.grid_width.clone()))
-                        .child(Scrollbars::of(cx).around(
-                            "suggestions-scrollbar",
-                            self.scrolls.suggestions.clone(),
-                            shelves,
-                        )),
+                        .child(Scrollbars::of(cx).around("suggestions-scrollbar", scroll, shelves)),
                 )
             })
             .into_any_element()
@@ -133,6 +256,7 @@ impl RootView {
         let side = self.grid_side();
         let art = self.suggestion_art(suggestion, side, Drawn::InAGrid, cx);
         let cell_id = ElementId::from(("suggestion-card", index));
+        let shelves = self.suggestions.read(cx).shelves.clone();
         let pointed = pointed::is_pointed_at(&cell_id);
 
         div()
@@ -159,7 +283,7 @@ impl RootView {
                         frame
                             .child(browser::reached_ring())
                             .child(kit::brought_into_view(
-                                self.scrolls.suggestions.clone(),
+                                shelves,
                                 Rc::clone(&self.rooms.reached_unseen),
                             ))
                     })
@@ -236,7 +360,7 @@ impl RootView {
     }
 
     pub(crate) fn offered_in_shelf_order(&self, cx: &App) -> Vec<SavedQuery> {
-        let offered = self.library.read(cx).suggestions();
+        let offered = self.suggestions.read(cx).offered();
 
         in_shelf_order(&offered)
             .into_iter()
@@ -246,12 +370,13 @@ impl RootView {
 
     pub(crate) fn open_offered(&mut self, query: SavedQuery, cx: &mut Context<Self>) {
         self.let_go_of_the_reach_in(Shift::Listing(Listed::Offered));
-        self.library
-            .update(cx, |library, cx| library.open_suggestion(Some(query), cx));
+        self.suggestions
+            .update(cx, |pane, cx| pane.open(Some(query), cx));
+        cx.notify();
     }
 
-    pub(crate) fn cards_a_page(&self) -> usize {
-        let seen = self.scrolls.suggestions.bounds().size;
+    pub(crate) fn cards_a_page(&self, cx: &App) -> usize {
+        let seen = self.suggestions.read(cx).shelves.bounds().size;
         let down = f32::from(seen.height) / (self.grid_row() + theme::grid_gap());
 
         self.grid_columns() * (down.max(1.0) as usize)
@@ -274,6 +399,7 @@ impl RootView {
         let searched = suggestion.query.text.clone().unwrap_or_default();
         let shown = tracks.len();
         let rows = Rows::from(Arc::clone(tracks));
+        let scroll = self.suggestions.read(cx).rows();
 
         let actions = kit::action_row()
             .flex_nowrap()
@@ -302,8 +428,8 @@ impl RootView {
                     words::suggestions::back_hint(),
                 ),
                 |this, _, cx| {
-                    this.library
-                        .update(cx, |library, cx| library.open_suggestion(None, cx));
+                    this.suggestions.update(cx, |pane, cx| pane.open(None, cx));
+                    cx.notify();
                 },
                 cx,
             ))
@@ -344,13 +470,13 @@ impl RootView {
             .child(
                 Scrollbars::of(cx).around(
                     "suggestion-tracks-scrollbar",
-                    self.scrolls.suggestion_rows.clone(),
+                    scroll.clone(),
                     uniform_list(
                         "suggestion-tracks",
                         shown,
                         cx.processor(move |this, range: Range<usize>, _, cx| {
-                            this.library.update(cx, |library, cx| {
-                                library.preview_further(range.end, cx);
+                            this.suggestions.update(cx, |pane, cx| {
+                                pane.preview_further(range.end, cx);
                             });
                             let mut drawn = Vec::new();
                             for index in range {
@@ -375,7 +501,7 @@ impl RootView {
                             drawn
                         }),
                     )
-                    .track_scroll(&self.scrolls.suggestion_rows)
+                    .track_scroll(&scroll)
                     .h_full()
                     .w_full(),
                 ),

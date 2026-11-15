@@ -252,10 +252,10 @@ impl RootView {
         let artists = library.artists_counted() as usize;
         let tracks = library.tracks_counted() as usize;
         let saved = library.playlists().len();
-        let missing = library.missing().tracks as usize;
+        let missing = self.missing.read(cx).counted().tracks as usize;
         let favourites = library.favourited().held();
-        let offered = library.suggestions().len();
-        let plays = library.statistics().plays as usize;
+        let offered = self.suggestions.read(cx).offered().len();
+        let plays = self.statistics.read(cx).counts().plays as usize;
         let tabs = cx.global::<ResonateApp>().tabs;
         let serving = self.server.read(cx).is_open();
         let enriching = library.shows_the_lookup();

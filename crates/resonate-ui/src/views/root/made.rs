@@ -36,7 +36,7 @@ use crate::{
         inspector::InspectorPane,
         listing::{self},
         matching::{self},
-        missing::MissingShows,
+        missing::MissingPane,
         part::Parts,
         party::PartyPane,
         playlists::PlaylistsDrawn,
@@ -50,6 +50,8 @@ use crate::{
         },
         sheets::{self},
         slider::Rail,
+        statistics::StatisticsPane,
+        suggestions::SuggestionsPane,
         typing::TypeAhead,
         visualiser::Visualiser,
         zones::{Switcher, ZoneShown},
@@ -117,6 +119,9 @@ impl RootView {
                 library.read(cx).favourited().albums,
             ),
         };
+        let missing = cx.new(|cx| MissingPane::new(&library, cx));
+        let statistics = cx.new(|cx| StatisticsPane::new(&library, cx));
+        let suggestions = cx.new(|cx| SuggestionsPane::new(&library, Arc::clone(&catalog), cx));
         let lyrics = cx.new(|_| LyricsModel::new(lyricists));
         let held_zones = zones.listed();
         let switcher = Switcher::of(held_zones.iter().map(|zone| (zone.id, zone.name.clone())));
@@ -284,6 +289,9 @@ impl RootView {
             listen,
             party,
             inspector,
+            missing,
+            statistics,
+            suggestions,
             services,
             settings_fields,
             listening_open: false,
@@ -345,9 +353,7 @@ impl RootView {
                 settings: ScrollHandle::new(),
                 settings_rail: ScrollHandle::new(),
                 sidebar: ScrollHandle::new(),
-                statistics: ScrollHandle::new(),
                 analysis: ScrollHandle::new(),
-                suggestions: ScrollHandle::new(),
                 artist_records: ScrollHandle::new(),
                 ordering: ScrollHandle::new(),
                 downloads: ScrollHandle::new(),
@@ -362,8 +368,6 @@ impl RootView {
                 album_rows: UniformListScrollHandle::default(),
                 all_playlist_rows: UniformListScrollHandle::default(),
                 favourite_rows: UniformListScrollHandle::default(),
-                missing_rows: UniformListScrollHandle::default(),
-                suggestion_rows: UniformListScrollHandle::default(),
                 picker_rows: UniformListScrollHandle::default(),
                 shelves: RefCell::new(AHashMap::new()),
                 left_at: AHashMap::new(),
@@ -487,7 +491,6 @@ impl RootView {
                 artist: ArtistShows::default(),
                 search: SearchShows::default(),
                 artists: cx.global::<ResonateApp>().artists_drawn,
-                missing: MissingShows::default(),
                 playlists: PlaylistsDrawn::default(),
                 time_left: false,
             },

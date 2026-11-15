@@ -295,13 +295,13 @@ pub(super) fn headed_by_disc(rows: Vec<((u32, u32), ListedRow)>) -> Vec<ListedRo
     listed
 }
 
-pub(super) fn missing_track_rows(albums: impl Iterator<Item = (AlbumId, u32)>) -> Vec<MissingRow> {
+pub(crate) fn missing_track_rows(albums: impl Iterator<Item = (AlbumId, u32)>) -> Vec<MissingRow> {
     let mut listed = Vec::new();
     headed_by_album_and_disc(albums, &mut listed);
     listed
 }
 
-pub(super) fn unheld_release_rows(artists: impl Iterator<Item = ArtistId>) -> Vec<MissingRow> {
+pub(crate) fn unheld_release_rows(artists: impl Iterator<Item = ArtistId>) -> Vec<MissingRow> {
     let mut listed = Vec::new();
     headed_by_run(
         artists,

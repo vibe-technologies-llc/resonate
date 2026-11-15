@@ -64,8 +64,10 @@ use resonate_providers::WhyAway;
 
 use self::{arranged::Named, watched::load};
 pub(crate) use self::{
-    arranged::queued_rows,
-    pictures::{AtSide, Forget, Magnifying, Picture, drawn_within, magnified_of, picture_of},
+    arranged::{missing_track_rows, queued_rows, unheld_release_rows},
+    pictures::{
+        AtSide, Forget, Magnifying, Picture, drawn_within, magnified_of, picture_of, renewed,
+    },
 };
 pub use self::{
     passes::{IdenticalSong, Identified},
@@ -80,9 +82,7 @@ use crate::{
     keys,
     recent::Recent,
     settings::{Online, Sourcing},
-    toast,
-    views::statistics::Chart,
-    words,
+    toast, words,
 };
 
 const PAGE: usize = 2_000;
@@ -256,10 +256,17 @@ struct Standing {
     hidden: HiddenTracks,
 }
 
-struct Heard {
-    most_listened: MostListened,
-    by_day: Vec<Day>,
-    habits: Habits,
+pub(crate) struct Heard {
+    pub(crate) most_listened: MostListened,
+    pub(crate) by_day: Vec<Day>,
+    pub(crate) habits: Habits,
+}
+
+pub(crate) struct ShortOf {
+    pub(crate) tracks: Vec<MissingTrack>,
+    pub(crate) releases: Vec<UnheldRelease>,
+    pub(crate) missing: Missing,
+    pub(crate) dismissed: Missing,
 }
 
 pub const HIDDEN_LISTED_AT_MOST: usize = 200;
@@ -353,6 +360,30 @@ pub struct Previewed {
     pub query: SavedQuery,
     pub tracks: Arc<[Track]>,
     asked: usize,
+}
+
+impl Previewed {
+    pub(crate) fn opening(query: SavedQuery) -> Self {
+        Self {
+            query,
+            tracks: Arc::default(),
+            asked: PREVIEWED_AT_MOST,
+        }
+    }
+
+    pub(crate) const fn asked(&self) -> usize {
+        self.asked
+    }
+
+    pub(crate) fn further(&mut self, drawn_to: usize) -> Option<(SavedQuery, usize)> {
+        let held = self.tracks.len();
+        if held < self.asked || drawn_to + LOOK_AHEAD < held {
+            return None;
+        }
+        self.asked = self.asked.saturating_add(PREVIEWED_AT_MOST);
+
+        Some((self.query.clone(), self.asked))
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -818,23 +849,16 @@ struct Keeps {
     _again: Task<()>,
 }
 
-struct Charts {
-    statistics: Statistics,
-    most_listened: Arc<MostListened>,
-    by_day: Arc<[Day]>,
-    habits: Arc<Habits>,
-    charted: Arc<Chart>,
+struct Hearing {
     shown: bool,
     owed: bool,
 }
 
-struct Gaps {
-    tracks: Arc<[MissingTrack]>,
-    releases: Arc<[UnheldRelease]>,
-    missing: Missing,
-    dismissed: Missing,
-    track_rows: Arc<[MissingRow]>,
-    release_rows: Arc<[MissingRow]>,
+struct Landed {
+    counts: Option<Statistics>,
+    heard: Option<Heard>,
+    short_of: Option<ShortOf>,
+    offered: Option<Arc<[Suggestion]>>,
 }
 
 struct Favours {
@@ -1031,8 +1055,6 @@ pub struct LibraryModel {
     library: Arc<Library>,
     reference: Option<Arc<dyn Reference>>,
     for_the_pass: Consulted,
-    suggestions: Arc<[Suggestion]>,
-    opened_suggestion: Option<Previewed>,
     window: Window,
     roots: Vec<PathBuf>,
     hidden: Arc<HiddenTracks>,
@@ -1054,10 +1076,9 @@ pub struct LibraryModel {
     _edit: Task<()>,
     _counted: Task<()>,
     _settled: Task<()>,
-    _previewing: Task<()>,
     keeps: Keeps,
-    charts: Charts,
-    gaps: Gaps,
+    hearing: Hearing,
+    landed: Landed,
     favours: Favours,
     pictures: Pictures,
     shelf: Shelf,
@@ -1182,8 +1203,6 @@ impl LibraryModel {
             library,
             reference,
             for_the_pass,
-            suggestions: Arc::default(),
-            opened_suggestion: None,
             window,
             roots: Vec::new(),
             hidden: Arc::default(),
@@ -1205,7 +1224,6 @@ impl LibraryModel {
             _edit: Task::ready(()),
             _counted: Task::ready(()),
             _settled: Task::ready(()),
-            _previewing: Task::ready(()),
             keeps: Keeps {
                 pass: None,
                 owed: false,
@@ -1213,22 +1231,15 @@ impl LibraryModel {
                 _running: Task::ready(()),
                 _again: Task::ready(()),
             },
-            charts: Charts {
-                statistics: Statistics::default(),
-                most_listened: Arc::default(),
-                by_day: Arc::default(),
-                habits: Arc::default(),
-                charted: Arc::default(),
+            hearing: Hearing {
                 shown: false,
                 owed: true,
             },
-            gaps: Gaps {
-                tracks: Arc::default(),
-                releases: Arc::default(),
-                missing: Missing::default(),
-                dismissed: Missing::default(),
-                track_rows: Arc::default(),
-                release_rows: Arc::default(),
+            landed: Landed {
+                counts: None,
+                heard: None,
+                short_of: None,
+                offered: None,
             },
             favours: Favours {
                 albums: Arc::default(),

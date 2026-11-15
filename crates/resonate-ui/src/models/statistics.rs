@@ -2,13 +2,9 @@ use std::sync::Arc;
 
 use gpui::Context;
 use resonate_core::{AlbumId, ArtistId};
-use resonate_library::{
-    Album, Artist, Day, Favoured, Habits, HiddenTracks, MostListened, Statistics, Suggestion,
-    Track, Window,
-};
+use resonate_library::{Album, Artist, Favoured, HiddenTracks, Statistics, Track, Window};
 
-use super::{Change, Favourited, LibraryModel, Wanted};
-use crate::views::statistics::Chart;
+use super::{Change, Favourited, Heard, LibraryModel, Wanted};
 
 impl LibraryModel {
     pub fn favourite_albums(&self) -> Arc<[Album]> {
@@ -47,24 +43,12 @@ impl LibraryModel {
         }
     }
 
-    pub const fn statistics(&self) -> Statistics {
-        self.charts.statistics
+    pub(crate) const fn take_the_counts(&mut self) -> Option<Statistics> {
+        self.landed.counts.take()
     }
 
-    pub fn most_listened(&self) -> Arc<MostListened> {
-        Arc::clone(&self.charts.most_listened)
-    }
-
-    pub fn listening_by_day(&self) -> Arc<[Day]> {
-        Arc::clone(&self.charts.by_day)
-    }
-
-    pub fn habits(&self) -> Arc<Habits> {
-        Arc::clone(&self.charts.habits)
-    }
-
-    pub(crate) fn charted(&self) -> Arc<Chart> {
-        Arc::clone(&self.charts.charted)
+    pub(crate) const fn take_what_was_heard(&mut self) -> Option<Heard> {
+        self.landed.heard.take()
     }
 
     pub const fn revision(&self) -> u64 {
@@ -82,10 +66,6 @@ impl LibraryModel {
             |library| library.show_every_hidden_track().map(|_| None),
             cx,
         );
-    }
-
-    pub fn suggestions(&self) -> Arc<[Suggestion]> {
-        Arc::clone(&self.suggestions)
     }
 
     pub const fn window(&self) -> Window {

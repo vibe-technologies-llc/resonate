@@ -1,14 +1,15 @@
 use std::{ops::Range, sync::Arc};
 
 use gpui::{
-    AnyElement, App, Context, Div, FontWeight, SharedString, Stateful, div, prelude::*, px, rgb,
-    uniform_list,
+    AnyElement, App, Context, Div, Entity, FontWeight, SharedString, Stateful, Subscription,
+    UniformListScrollHandle, div, prelude::*, px, rgb, uniform_list,
 };
 use resonate_library::{Missing, MissingTrack, UnheldRelease};
 
 use crate::{
-    MissingRow, Portrayed, Selection, format,
+    LibraryModel, MissingRow, Portrayed, Selection, format,
     icons::Icon,
+    models::{missing_track_rows, renewed, unheld_release_rows},
     theme,
     views::{
         browser::{Unheld, controls_place, portrait_frame, year_of},
@@ -59,19 +60,91 @@ impl MissingShows {
     }
 }
 
+pub(crate) struct MissingPane {
+    shows: MissingShows,
+    rows: UniformListScrollHandle,
+    tracks: Arc<[MissingTrack]>,
+    releases: Arc<[UnheldRelease]>,
+    counted: Missing,
+    dismissed: Missing,
+    track_rows: Arc<[MissingRow]>,
+    release_rows: Arc<[MissingRow]>,
+    _landing: Subscription,
+}
+
+impl MissingPane {
+    pub(crate) fn new(library: &Entity<LibraryModel>, cx: &mut Context<Self>) -> Self {
+        let mut pane = Self {
+            shows: MissingShows::default(),
+            rows: UniformListScrollHandle::default(),
+            tracks: Arc::default(),
+            releases: Arc::default(),
+            counted: Missing::default(),
+            dismissed: Missing::default(),
+            track_rows: Arc::default(),
+            release_rows: Arc::default(),
+            _landing: cx.observe(library, |pane, library, cx| {
+                pane.take_what_landed(&library, cx);
+            }),
+        };
+        pane.take_what_landed(library, cx);
+
+        pane
+    }
+
+    fn take_what_landed(&mut self, library: &Entity<LibraryModel>, cx: &mut Context<Self>) {
+        let Some(short) = library.update(cx, |library, _| library.take_what_is_short()) else {
+            return;
+        };
+        if renewed(&mut self.tracks, short.tracks) {
+            self.track_rows =
+                missing_track_rows(self.tracks.iter().map(|track| (track.album, track.disc)))
+                    .into();
+        }
+        if renewed(&mut self.releases, short.releases) {
+            self.release_rows =
+                unheld_release_rows(self.releases.iter().map(|release| release.artist)).into();
+        }
+        self.counted = short.missing;
+        self.dismissed = short.dismissed;
+        cx.notify();
+    }
+
+    fn shown(&self) -> MissingShows {
+        self.shows.within(self.tracks.len(), self.releases.len())
+    }
+
+    pub(crate) fn rows_shown(&self) -> Arc<[MissingRow]> {
+        match self.shown() {
+            MissingShows::Tracks => Arc::clone(&self.track_rows),
+            MissingShows::Releases => Arc::clone(&self.release_rows),
+        }
+    }
+
+    pub(crate) const fn counted(&self) -> Missing {
+        self.counted
+    }
+
+    pub(crate) fn rows(&self) -> UniformListScrollHandle {
+        self.rows.clone()
+    }
+}
+
 impl RootView {
     pub(crate) fn missing_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let pane = self.missing.read(cx);
+        let counted = pane.counted;
+        let dismissed = pane.dismissed;
+        let track_rows = Arc::clone(&pane.track_rows);
+        let release_rows = Arc::clone(&pane.release_rows);
+        let tracks = Arc::clone(&pane.tracks);
+        let releases = Arc::clone(&pane.releases);
+        let shows = pane.shown();
+        let scroll = pane.rows.clone();
         let library = self.library.read(cx);
-        let counted = library.missing();
-        let dismissed = library.dismissed();
-        let track_rows = library.missing_track_rows();
-        let release_rows = library.unheld_release_rows();
-        let tracks = library.missing_tracks();
-        let releases = library.unheld_releases();
         let can_enrich = library.can_enrich();
         let narrowed = library.narrowing().is_some();
         let reads = library.search().reads();
-        let shows = self.shows.missing.within(tracks.len(), releases.len());
         let both = !tracks.is_empty() && !releases.is_empty();
         let summary = match shows {
             MissingShows::Tracks => words::missing::tracks_missing_from_albums(
@@ -155,7 +228,7 @@ impl RootView {
                 pane.child(
                     Scrollbars::of(cx).around(
                         "missing-scrollbar",
-                        self.scrolls.missing_rows.clone(),
+                        scroll.clone(),
                         uniform_list(
                             match shows {
                                 MissingShows::Tracks => "missing-tracks",
@@ -218,7 +291,7 @@ impl RootView {
                                 drawn
                             }),
                         )
-                        .track_scroll(&self.scrolls.missing_rows)
+                        .track_scroll(&scroll)
                         .h_full()
                         .w_full()
                         .pt_1p5()
@@ -230,33 +303,29 @@ impl RootView {
     }
 
     pub(crate) fn show_what_is_missing(&mut self, shows: MissingShows, cx: &mut Context<Self>) {
-        if self.shows.missing != shows {
+        if self.missing.read(cx).shows != shows {
             self.let_go_of_the_reach_in(Shift::Listing(Listed::Missing));
         }
-        self.shows.missing = shows;
+        self.missing.update(cx, |pane, cx| {
+            pane.shows = shows;
+            cx.notify();
+        });
         cx.notify();
     }
 
     pub(crate) fn missing_rows_shown(&self, cx: &App) -> Arc<[MissingRow]> {
-        let library = self.library.read(cx);
-        match self.shows.missing.within(
-            library.missing_tracks().len(),
-            library.unheld_releases().len(),
-        ) {
-            MissingShows::Tracks => library.missing_track_rows(),
-            MissingShows::Releases => library.unheld_release_rows(),
-        }
+        self.missing.read(cx).rows_shown()
     }
 
     pub(crate) fn open_what_is_missing_at(&mut self, index: usize, cx: &mut Context<Self>) {
-        let library = self.library.read(cx);
-        let opened = match self.missing_rows_shown(cx).get(index).copied() {
-            Some(MissingRow::Album(at) | MissingRow::Track(at)) => library
-                .missing_tracks()
+        let pane = self.missing.read(cx);
+        let opened = match pane.rows_shown().get(index).copied() {
+            Some(MissingRow::Album(at) | MissingRow::Track(at)) => pane
+                .tracks
                 .get(at)
                 .map(|track| Selection::Album(track.album)),
-            Some(MissingRow::Artist(at) | MissingRow::Release(at)) => library
-                .unheld_releases()
+            Some(MissingRow::Artist(at) | MissingRow::Release(at)) => pane
+                .releases
                 .get(at)
                 .map(|release| Selection::Artist(release.artist)),
             Some(MissingRow::Disc(_)) | None => None,
