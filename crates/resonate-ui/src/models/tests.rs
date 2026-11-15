@@ -711,6 +711,39 @@ fn a_lookup_that_kept_lyrics_says_how_many_tracks_it_kept_them_for() {
 }
 
 #[test]
+fn a_poll_that_replaced_lossy_songs_is_told_so_beside_what_it_kept() {
+    let summary = |kept, tracks| resonate_library::PollSummary {
+        stats: PollStats {
+            kept,
+            ..PollStats::default()
+        },
+        cancelled: false,
+        replaced: resonate_library::Deleted {
+            tracks,
+            files: tracks,
+            kept: 0,
+        },
+    };
+
+    assert_eq!(
+        super::told::polled(&summary(2, 1), super::Prompted::OnItsOwn),
+        Some(Notice::Done(
+            "The inbox filled 2 wants · replaced 1 lossy song".to_owned()
+        ))
+    );
+    assert_eq!(
+        super::told::polled(&summary(0, 3), super::Prompted::OnItsOwn),
+        Some(Notice::Done(
+            "Nothing in the inbox filled a want · replaced 3 lossy songs".to_owned()
+        ))
+    );
+    assert_eq!(
+        super::told::polled(&summary(0, 0), super::Prompted::OnItsOwn),
+        None
+    );
+}
+
+#[test]
 fn only_a_playlist_edit_is_told_as_one_when_it_fails() {
     let not_playlists = [
         Change::Want,
