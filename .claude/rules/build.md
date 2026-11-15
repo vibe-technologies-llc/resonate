@@ -174,7 +174,11 @@ Linux sound server or GUI libraries are needed.
 - **What a fuzz run found stays found**: a failing input is copied into
   `crates/resonate-codec/tests/found/` and `tests/found.rs` probes and decodes each, holding every
   block to what a decoder makes (a WavPack packet claiming hours of a hole once asked for 16 GiB in
-  one block); the same test replays `fuzz/seeds/probe`.
+  one block); the same test replays `fuzz/seeds/probe`. **The hand-written SYLT reader has a seed in
+  each stamp format**: `tone-id3.mp3` times its words in milliseconds (Latin-1), `tone-sylt-frames.mp3`
+  in MPEG frames (UTF-16 with a byte-order mark, no USLT beside it), and
+  `the_probe_seeds_reach_the_timed_lyrics_reader_in_either_stamp_format` holds both to reading as
+  timed words.
   `equaliser` holds that what it writes of an EqualizerAPO profile reads back the same. `lrc`,
   `lyricsfile`, `ttml`, `playlist`, `mcp`, `ipc`, `stun` and the targets above that reach a private reader use seams compiled only under `#[cfg(fuzzing)]`; `mcp` reads
   lines and envelopes and never dispatches, a tool being free to touch the filesystem.

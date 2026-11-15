@@ -100,9 +100,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.12.0] The hand-written SYLT reader (`sylt.rs`'s `as_lrc`) is fuzzed only if the `probe`
-  target invents an ID3v2 header and a SYLT frame from nothing: no seed in `fuzz/seeds/probe` holds
-  one, in either timestamp format
 - [S · 0.12.0] `resonate-mobile`'s `sync::copied::tests::a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it`
   fails here at its 40 s wait (*the copy kept on the phone never happened*), alone and in a whole
   run, before the move to nextest and after it
