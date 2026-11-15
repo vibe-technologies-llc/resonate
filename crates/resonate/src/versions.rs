@@ -52,7 +52,9 @@ mod tests {
 
     #[test]
     fn a_song_with_a_version_chosen_is_played_as_that_version_from_the_terminal_and_a_playlist() {
-        let root = fixtures::scratch("versions-chosen");
+        let root = fixtures::scratch("versions-chosen")
+            .canonicalize()
+            .expect("the scratch folder as the scan stores it");
         let song = root.join("echoes.wav");
         let copy = root.join("elsewhere.wav");
         let other = root.join("time.wav");

@@ -959,6 +959,7 @@ fn a_packet_of_another_schema_stops_replication_where_it_stood_and_a_new_build_l
     let nothing_new = replicated_through(&mirror, &folder, Vec::new()).expect("nothing to do");
     let first = replicated_through(&mirror, &folder, vec![first_packet()]).expect("replicated");
     let amended_before = folder.join(AMENDED_FILE).is_file();
+    drop(mirror);
     let rebuilt = built_keeping(&scratch, Keeping::TheMirror);
 
     assert!(matches!(
@@ -1106,6 +1107,7 @@ fn a_received_file_that_is_no_copy_is_refused_and_the_copy_held_stays() {
     assert!(unamended.is_none());
     assert_eq!(held.made().dump, mirror.made().dump);
 
+    drop(held);
     removed_copy(&phone).expect("the copy removed");
 
     assert!(!mirror_in(&phone).exists());

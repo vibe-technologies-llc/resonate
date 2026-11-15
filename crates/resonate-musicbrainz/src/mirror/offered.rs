@@ -11,7 +11,7 @@ use rusqlite::{Connection, OpenFlags};
 
 use super::{
     AMENDED_FILE, AmendedTo, Mirror,
-    amended::{Amended, amended_to_in},
+    amended::{Amended, WAITED_FOR_A_WRITER, amended_to_in},
     import::removed,
     mirror_in,
 };
@@ -19,6 +19,8 @@ use crate::{CopyOp, Error, Result, Store, StoreOp};
 
 const SNAPSHOT_STEM: &str = "musicbrainz.amended.offered-";
 const SNAPSHOT_EXTENSION: &str = ".sqlite";
+const UNLOCKED: &str = "?nolock=1";
+const LEFT_AS_WRITTEN_IN_A_URI: &[u8] = b"/-_.~";
 
 static SNAPSHOTS_MADE: AtomicU64 = AtomicU64::new(0);
 
@@ -147,21 +149,37 @@ impl Mirror {
 }
 
 fn snapshot_of(amended: &Path, snapshot: &Path, dump: &str) -> Result<Option<AmendedTo>> {
-    let connection = Connection::open_with_flags(
-        amended,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(Error::store(Store::Amended, StoreOp::Open))?;
+    let read_by_uri = OpenFlags::SQLITE_OPEN_READ_ONLY
+        | OpenFlags::SQLITE_OPEN_NO_MUTEX
+        | OpenFlags::SQLITE_OPEN_URI;
+    let unlocked = unlocked_uri_of(snapshot);
+
+    let connection = Connection::open_with_flags(amended, read_by_uri)
+        .map_err(Error::store(Store::Amended, StoreOp::Open))?;
     connection
-        .execute("VACUUM INTO ?1", [snapshot.to_string_lossy().as_ref()])
+        .busy_timeout(WAITED_FOR_A_WRITER)
+        .map_err(Error::store(Store::Amended, StoreOp::Configure))?;
+    connection
+        .execute("VACUUM INTO ?1", [&unlocked])
         .map_err(Error::store(Store::Amended, StoreOp::Read))?;
     drop(connection);
-    let taken = Connection::open_with_flags(
-        snapshot,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(Error::store(Store::Amended, StoreOp::Open))?;
+
+    let taken = Connection::open_with_flags(&unlocked, read_by_uri)
+        .map_err(Error::store(Store::Amended, StoreOp::Open))?;
     Ok(amended_to_in(&taken, "")?.filter(|to| to.dump == dump))
+}
+
+fn unlocked_uri_of(path: &Path) -> String {
+    let mut uri = String::from("file:");
+    for byte in path.to_string_lossy().bytes() {
+        if byte.is_ascii_alphanumeric() || LEFT_AS_WRITTEN_IN_A_URI.contains(&byte) {
+            uri.push(char::from(byte));
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri.push_str(UNLOCKED);
+    uri
 }
 
 fn swept_snapshots(folder: &Path) {
@@ -213,4 +231,49 @@ pub fn received_amendments(folder: &Path, staged: &Path) -> Result<()> {
     let amended = folder.join(AMENDED_FILE);
     removed(&amended)?;
     fs::rename(staged, &amended).map_err(copy_failed(staged, CopyOp::Land))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+
+    use super::{super::amended::made_at, *};
+
+    #[test]
+    fn a_snapshot_is_named_to_sqlite_by_a_uri_that_keeps_every_letter_of_its_path() {
+        assert_eq!(
+            unlocked_uri_of(Path::new("/tmp/a b?#%/x.sqlite")),
+            "file:/tmp/a%20b%3F%23%25/x.sqlite?nolock=1"
+        );
+        assert_eq!(
+            unlocked_uri_of(Path::new(r"C:\Users\RUNNER~1\x.sqlite")),
+            "file:C%3A%5CUsers%5CRUNNER~1%5Cx.sqlite?nolock=1"
+        );
+        assert_eq!(
+            unlocked_uri_of(Path::new("/m\u{fc}sik/x.sqlite")),
+            "file:/m%C3%BCsik/x.sqlite?nolock=1"
+        );
+    }
+
+    #[test]
+    fn a_held_snapshot_is_taken_in_a_folder_whose_name_a_uri_would_misread() {
+        let folder = env::temp_dir().join(format!(
+            "resonate-musicbrainz-snapshot #% & {}",
+            process::id()
+        ));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(&folder).expect("a scratch folder");
+        let amended = folder.join(AMENDED_FILE);
+        let snapshot = folder.join(format!("{SNAPSHOT_STEM}1-0{SNAPSHOT_EXTENSION}"));
+        made_at(&amended, "20261104-002222", 7, 1).expect("the amendments laid out");
+
+        let held = Held::made(&snapshot).expect("the snapshot held");
+        let taken = snapshot_of(&amended, &snapshot, "20261104-002222").expect("a snapshot");
+        let size = fs::metadata(&snapshot).expect("the snapshot").len();
+        drop(held);
+        let _ = fs::remove_dir_all(&folder);
+
+        assert_eq!(taken.map(|to| to.sequence), Some(7));
+        assert!(size > 0);
+    }
 }

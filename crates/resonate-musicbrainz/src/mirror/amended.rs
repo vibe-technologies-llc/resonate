@@ -11,7 +11,7 @@ use crate::{
 
 pub const AMENDED_FILE: &str = "musicbrainz.amended.sqlite";
 pub const AMENDED_PACKED_AT: i32 = 15;
-const WAITED_FOR_A_WRITER: Duration = Duration::from_secs(5);
+pub(crate) const WAITED_FOR_A_WRITER: Duration = Duration::from_secs(5);
 
 pub(crate) const AMENDED_SCHEMA: &str = "
 CREATE TABLE amended_from (dump TEXT NOT NULL, sequence INTEGER NOT NULL, at INTEGER NOT NULL);

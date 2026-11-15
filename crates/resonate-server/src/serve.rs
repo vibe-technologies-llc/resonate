@@ -19,7 +19,8 @@ use rustls_pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::Semaphore,
+    sync::{Semaphore, mpsc::Receiver},
+    task::JoinHandle,
     time::{Instant, interval, timeout},
 };
 
@@ -678,8 +679,7 @@ impl Server {
                 },
             }
         };
-        reading.abort();
-        send.finish().await;
+        finished_with_nothing_unread(&mut send, frames, reading).await;
 
         ended
     }
@@ -810,8 +810,7 @@ impl Server {
                 }
             }
         };
-        reading.abort();
-        send.finish().await;
+        finished_with_nothing_unread(&mut send, frames, reading).await;
         ended
     }
 
@@ -980,6 +979,19 @@ fn header_trusted_from(forwarded_by: Option<&Arc<str>>, peer: IpAddr) -> Option<
     forwarded_by
         .filter(|_| peer.to_canonical().is_loopback())
         .cloned()
+}
+
+async fn finished_with_nothing_unread(
+    send: &mut Writer,
+    mut frames: Receiver<Read>,
+    reading: JoinHandle<()>,
+) {
+    send.finish().await;
+    let _ = timeout(WHAT_WAS_SAID_LEAVES_WITHIN, async {
+        while frames.recv().await.is_some() {}
+    })
+    .await;
+    reading.abort();
 }
 
 async fn refuse(send: &mut Writer, refusal: Refusal) -> Result<()> {

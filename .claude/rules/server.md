@@ -64,6 +64,14 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 - **What a QUIC session said leaves before its connection goes**: dropping a `quinn::Connection`
   closes it at once and discards what its streams had not sent, so `welcome` waits up to
   `WHAT_WAS_SAID_LEAVES_WITHIN` (1 s) for the client to close first, and a `Refused` reaches it.
+- **A session or a room's member ends with what its client still sends read out**
+  (`finished_with_nothing_unread`): the server finishes its side, then keeps taking the read-ahead's
+  frames until the client closes, within `WHAT_WAS_SAID_LEAVES_WITHIN`, before it lets the reader go.
+  A web socket closed with bytes unread (a guest's ping landing after the last frame, say) resets the
+  connection, and Windows and macOS drop what the client had not yet read on a reset, so a guest
+  turned out lost its `RoomEnded`, read the reset as a connection lost and joined again, where Linux
+  still hands the frame over
+  (`a_party_tells_its_guests_the_song_and_their_names_and_ends_with_its_host_turning_one_out`).
 - **A `Hello` within 10 s or nothing**; a wrong version, token or a full space is a `Refused` frame,
   then the stream ends. **The first frame is read to at most `FIRST_FRAME_AT_MOST`** (resonate-sync's
   `wire`: a full `Heads` plus an envelope, about 12 KiB) and a room's frames to `ROOM_FRAME_AT_MOST`

@@ -67,7 +67,9 @@ fn what_is_wrong_with(krate: &Path) -> Option<String> {
         ));
     }
 
-    let manifest = fs::read_to_string(krate.join("Cargo.toml")).expect("the manifest is readable");
+    let manifest = fs::read_to_string(krate.join("Cargo.toml"))
+        .expect("the manifest is readable")
+        .replace("\r\n", "\n");
     if !manifest.contains(NO_INFERRED_TESTS) || !manifest.contains(DECLARED_SUITE) {
         return Some("holds a suite its manifest does not declare as its one test".to_owned());
     }

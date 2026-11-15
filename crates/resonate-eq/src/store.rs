@@ -764,15 +764,31 @@ mod tests {
 
     #[test]
     fn a_profile_kept_under_a_name_this_build_would_not_make_is_still_listed_and_read() {
-        let scratch = Scratch::new();
-        let folder = scratch.store.folder().to_path_buf();
-        fs::create_dir_all(&folder).expect("a writable folder");
-        fs::write(folder.join("HD 650: raw?.txt"), "Preamp: -3 dB\n").expect("a file");
-        let name = ProfileName::standing("HD 650: raw?").expect("it stood");
+        const HELD_EVERYWHERE: &[&str] = &["HD 650 raw."];
+        const HELD_OUTSIDE_WINDOWS: &[&str] = &["HD 650: raw?"];
+        let kept_here = match cfg!(windows) {
+            true => HELD_EVERYWHERE.to_vec(),
+            false => [HELD_EVERYWHERE, HELD_OUTSIDE_WINDOWS].concat(),
+        };
 
-        assert_eq!(scratch.store.names().expect("it walks"), vec![name.clone()]);
-        assert!(scratch.store.read(&name).expect("it reads").is_some());
-        assert!(ProfileName::new("HD 650: raw?").is_err());
+        for kept in kept_here {
+            let scratch = Scratch::new();
+            let folder = scratch.store.folder().to_path_buf();
+            fs::create_dir_all(&folder).expect("a writable folder");
+            fs::write(folder.join(format!("{kept}.txt")), "Preamp: -3 dB\n").expect("a file");
+            let name = ProfileName::standing(kept).expect("it stood");
+
+            assert_eq!(
+                scratch.store.names().expect("it walks"),
+                vec![name.clone()],
+                "{kept:?}"
+            );
+            assert!(
+                scratch.store.read(&name).expect("it reads").is_some(),
+                "{kept:?}"
+            );
+            assert!(ProfileName::new(kept).is_err(), "{kept:?}");
+        }
     }
 
     #[test]

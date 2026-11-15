@@ -3405,6 +3405,8 @@ mod tests {
             ],
             "an offered step kept the path a move had taken away"
         );
+
+        drop((model, ours));
         fs::remove_dir_all(folder).expect("the scratch folder goes");
     }
 

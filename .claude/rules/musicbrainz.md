@@ -300,7 +300,11 @@ then their own. `REPLICATION_SEQUENCE` naming another number than the one asked 
 as it stands; `CopyPart::ItsAmendments` is a `VACUUM INTO` snapshot of the amended file beside it,
 named `musicbrainz.amended.offered-<pid>-<n>.sqlite`, held under `writer::Held` while read and
 removed when the `OfferedFile` drops, a snapshot whose writer is gone swept by the next offer
-(`writer_of`); a copy following no changes offers no amendments. `Consultation::offered` serves it
+(`writer_of`); a copy following no changes offers no amendments. SQLite writes and reads the held
+snapshot through a `nolock` URI (`unlocked_uri_of`, every letter of the path but `/-_.~`
+percent-escaped), and the amended file it is taken from waits for a writer as `Amended` does: on
+macOS a `flock` and SQLite's own `fcntl` locks are one lock, so the hold made its own snapshot busy
+(`a_held_snapshot_is_taken_in_a_folder_whose_name_a_uri_would_misread`). `Consultation::offered` serves it
 to sync's `Consultable::export`. The receiver lands them with `received_copy` (opened as a `Mirror`
 first, then the amendments of the dump before removed and the file renamed over `MIRROR_FILE`) and
 `received_amendments` (opened as amendments of the copy's dump, else
