@@ -3,7 +3,7 @@ use resonate_core::{
     Accent, Appearance, Following, ScrollbarMode, Spectral, SpectrumBands, SpectrumFalls,
     SpectrumFloor, SpectrumTilt, Switch, TextSize, Theme,
 };
-use resonate_words::LanguageChoice;
+use resonate_words::{LanguageChoice, RegionChoice};
 
 use crate::{
     ConfigKey, ResonateApp, Setting, Tabs, WindowButtons, WindowSize, theme,
@@ -72,6 +72,47 @@ impl Choice for LanguageChoice {
             Self::System => words::settings_appearance::the_first_language_the_system_lists(),
             Self::Chosen(_) => {
                 words::settings_appearance::spoken_whatever_language_the_system_lists()
+            }
+        })
+    }
+}
+
+const A_COUNT_THAT_GROUPS: u64 = 12_345;
+const A_DATE_THAT_ORDERS: (i64, i64, i64) = (2026, 11, 13);
+
+impl Choice for RegionChoice {
+    const ALL: &'static [Self] = &RegionChoice::ALL;
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::System => words::settings_appearance::follow_the_system(),
+            Self::Chosen(tag) => tag
+                .endonym()
+                .unwrap_or_else(words::settings_appearance::another_region),
+        }
+    }
+
+    fn in_force(self) -> SharedString {
+        match self {
+            Self::Chosen(tag) if tag.endonym().is_none() => SharedString::from(tag.to_string()),
+            _ => SharedString::new_static(self.label()),
+        }
+    }
+
+    fn meaning(self) -> SharedString {
+        let (year, month, day) = A_DATE_THAT_ORDERS;
+        let date = resonate_words::day_month_and_year(year, month, day);
+
+        SharedString::from(match self {
+            Self::System => words::settings_appearance::figures_as_the_system_writes_them(
+                A_COUNT_THAT_GROUPS,
+                date,
+            ),
+            Self::Chosen(_) => {
+                words::settings_appearance::figures_whatever_region_the_system_names(
+                    A_COUNT_THAT_GROUPS,
+                    date,
+                )
             }
         })
     }
@@ -474,19 +515,28 @@ impl RootView {
 
     pub(super) fn language_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let chosen = cx.global::<ResonateApp>().language;
+        let region = cx.global::<ResonateApp>().region;
 
-        kit::rows().child(kit::field(
-            words::settings_appearance::speak(),
-            self.choices(
-                "language",
-                chosen,
-                cx,
-                |this, chosen: LanguageChoice, cx| {
-                    this.speak(chosen, cx);
-                    this.store(&Setting::Language(chosen), cx);
-                },
-            ),
-        ))
+        kit::rows()
+            .child(kit::field(
+                words::settings_appearance::speak(),
+                self.choices(
+                    "language",
+                    chosen,
+                    cx,
+                    |this, chosen: LanguageChoice, cx| {
+                        this.speak(chosen, cx);
+                        this.store(&Setting::Language(chosen), cx);
+                    },
+                ),
+            ))
+            .child(kit::field(
+                words::settings_appearance::write_figures_as(),
+                self.choices("region", region, cx, |this, chosen: RegionChoice, cx| {
+                    this.settle_the_region(chosen, cx);
+                    this.store(&Setting::Region(chosen), cx);
+                }),
+            ))
     }
 
     pub(super) fn mouse_navigation_group(&mut self, cx: &mut Context<Self>) -> Rows {
@@ -624,6 +674,13 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| global.language = chosen);
         resonate_words::speak(chosen.language(&resonate_words::languages_the_listener_reads()));
         crate::app_menu::say_the_menus(cx);
+        cx.refresh_windows();
+        cx.notify();
+    }
+
+    pub(crate) fn settle_the_region(&self, chosen: RegionChoice, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.region = chosen);
+        resonate_words::settle(&chosen.conventions());
         cx.refresh_windows();
         cx.notify();
     }

@@ -1338,7 +1338,7 @@ fn part_heading(drawn: usize, run: Run, from: Option<SharedString>) -> AnyElemen
                 .gap_2()
                 .child(kit::eyebrow(run.part.named()))
                 .when(run.part.is_counted(), |heading| {
-                    heading.child(kit::figure(run.rows.rows().to_string()))
+                    heading.child(kit::figure(format::count(run.rows.rows())))
                 })
                 .when_some(from, |heading, from| {
                     heading.child(

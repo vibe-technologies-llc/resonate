@@ -399,6 +399,9 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 - `language`: `resonate_words::LanguageChoice`, `system` unless a tag is written; read before any
   subcommand runs (`resonate_words::speak`), the pane's change spoken by the window at once
   (`language.md`).
+- `region`: `resonate_words::RegionChoice`, `system` unless a tag naming a region is written (a tag
+  naming none, or no language, is refused as `ConfigValue`); `run` settles its `conventions` before
+  any subcommand runs, the pane's change settled by the window at once (`language.md`).
 - `artists-drawn`: `resonate_core::ArtistsDrawn`, `grid` unless the file says `list`.
 - `spectrum-tilt` (`flat`, `pink`, `steep`), `spectrum-floor` (`60`, `78`, `96` dB under full
   scale), `spectrum-bands` (`thirds`, `sixths`, `twelfths`), `spectrum-falls` (`slowly`, `middling`,

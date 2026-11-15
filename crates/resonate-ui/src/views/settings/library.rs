@@ -676,7 +676,7 @@ fn lookup_lines(stats: &EnrichStats) -> Vec<(&'static str, String)> {
         .map(|(section, counted)| {
             let told: Vec<String> = counted
                 .into_iter()
-                .map(|(outcome, count)| format!("{count} {}", outcome.label()))
+                .map(|(outcome, count)| format!("{} {}", format::count(count), outcome.label()))
                 .collect();
             (section.title(), told.join(" · "))
         })

@@ -127,7 +127,7 @@ impl RootView {
             .chosen(chosen)
             .names(pane.about())
             .when_some(count, |row, count| {
-                row.child(kit::figure(count.to_string()).text_color(rgb(theme::faint())))
+                row.child(kit::figure(format::count(count)).text_color(rgb(theme::faint())))
             });
         self.in_the_standing_ring(
             pane.label(),

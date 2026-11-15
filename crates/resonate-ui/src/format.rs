@@ -120,6 +120,10 @@ pub fn bytes(count: u64) -> String {
     }
 }
 
+pub fn count<N: TryInto<u64>>(count: N) -> String {
+    resonate_words::grouped(count.try_into().unwrap_or(u64::MAX))
+}
+
 pub fn progress(position: Frames, duration: Option<Frames>) -> f32 {
     let Some(duration) = duration.filter(|duration| duration.get() > 0) else {
         return 0.0;
@@ -134,6 +138,16 @@ fn rounded(db: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_count_drawn_is_grouped_the_way_the_region_settled_writes_it() {
+        resonate_words::settle(&resonate_words::Conventions::from_tags(&["de-DE"]));
+        assert_eq!(count(12_345_usize), "12.345");
+        assert_eq!(count(999_u32), "999");
+
+        resonate_words::settle(&resonate_words::Conventions::from_tags(&["en-IN"]));
+        assert_eq!(count(1_234_567_u64), "12,34,567");
+    }
 
     #[test]
     fn a_long_listening_time_is_drawn_in_hours_rather_than_minutes() {

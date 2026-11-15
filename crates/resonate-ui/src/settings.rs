@@ -27,7 +27,7 @@ use resonate_eq::Binding;
 use resonate_library::{Cut, HistoryKept, MinimumLength, MusicExtensions};
 use resonate_listen::Listening;
 use resonate_providers::Providers;
-use resonate_words::LanguageChoice;
+use resonate_words::{LanguageChoice, RegionChoice};
 
 use crate::{Launcher, Notice, Result, equaliser::Curve, words};
 
@@ -197,6 +197,7 @@ pub enum Setting {
     Accent(Option<Accent>),
     TextSize(TextSize),
     Language(LanguageChoice),
+    Region(RegionChoice),
     FollowDesktopScheme(bool),
     FollowDesktopTextSize(bool),
     MusicbrainzReplicationToken(String),
@@ -324,6 +325,7 @@ impl Setting {
             Self::Accent(_) => ConfigKey::Accent,
             Self::TextSize(_) => ConfigKey::TextSize,
             Self::Language(_) => ConfigKey::Language,
+            Self::Region(_) => ConfigKey::Region,
             Self::FollowDesktopScheme(_) => ConfigKey::FollowDesktopScheme,
             Self::FollowDesktopTextSize(_) => ConfigKey::FollowDesktopTextSize,
             Self::MusicbrainzReplicationToken(_) => ConfigKey::MusicbrainzReplicationToken,
@@ -903,6 +905,7 @@ pub struct Stored {
     pub reduced_motion: bool,
     pub scrollbars: ScrollbarMode,
     pub language: LanguageChoice,
+    pub region: RegionChoice,
     pub spectral: Spectral,
     pub tabs: Tabs,
     pub remember_tab: bool,

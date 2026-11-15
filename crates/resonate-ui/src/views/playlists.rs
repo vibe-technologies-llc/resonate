@@ -2357,7 +2357,7 @@ fn made_by(maker: Maker) -> &'static str {
 
 fn capped(rows: Option<usize>) -> SharedString {
     match rows {
-        Some(rows) => SharedString::from(rows.to_string()),
+        Some(rows) => SharedString::from(format::count(rows)),
         None => SharedString::new_static(words::playlists::no_cap()),
     }
 }

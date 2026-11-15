@@ -306,6 +306,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
             reduced_motion: config.reduces_motion_where_the_desktop_asks(desktop.reduces_motion),
             scrollbars: config.scrollbars(),
             language: config.language(),
+            region: config.region(),
             spectral: config.spectral(),
             tabs: config.tabs(),
             remember_tab: config.is_on(Switch::RememberTab),

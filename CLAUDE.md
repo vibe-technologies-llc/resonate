@@ -6,7 +6,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 |---|---|---|
 | `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, a lint that fires only on some machines, names built around a file's, a file another run may sweep, the check that rules name code that exists |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
-| `language.md` | always | the word catalogs (`resonate-words`, the `.ftl` areas and the build step), what is not translated, choosing the language, adding one, the prose check |
+| `language.md` | always | the word catalogs (`resonate-words`, the `.ftl` areas and the build step), what is not translated, choosing the language and the region, adding one, the prose check |
 | `build.md` | `.github`, `.cargo`, `fuzz`, `soxr-comparison`, the root manifest, benches | CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets, the resampler measured against SoXR |
 | `android.md` | Android Gradle project, the mobile boundary and binding tool | Compose, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
 | `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target, the phones' zones |

@@ -30,7 +30,7 @@ use resonate_eq::{Binding, ProfileName};
 use resonate_library::{HistoryKept, Layout, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::Listening;
 use resonate_upnp::{Located, Udn, Vouched};
-use resonate_words::{Language, LanguageChoice};
+use resonate_words::{Language, LanguageChoice, RegionChoice};
 use toml_edit::{DocumentMut, Item, Table};
 
 use crate::{
@@ -264,6 +264,7 @@ pub struct Config {
     pub accent: Option<Accent>,
     pub text_size: Option<TextSize>,
     pub language: Option<LanguageChoice>,
+    pub region: Option<RegionChoice>,
     pub follow_desktop_scheme: Option<bool>,
     pub follow_desktop_text_size: Option<bool>,
     pub switches: Switches,
@@ -396,6 +397,7 @@ impl fmt::Debug for Config {
             accent,
             text_size,
             language,
+            region,
             follow_desktop_scheme,
             follow_desktop_text_size,
             switches,
@@ -514,6 +516,7 @@ impl fmt::Debug for Config {
             .field("accent", accent)
             .field("text_size", text_size)
             .field("language", language)
+            .field("region", region)
             .field("follow_desktop_scheme", follow_desktop_scheme)
             .field("follow_desktop_text_size", follow_desktop_text_size)
             .field("switches", switches)
@@ -657,6 +660,10 @@ impl Bindings {
 impl Config {
     pub fn language(&self) -> LanguageChoice {
         self.language.unwrap_or_default()
+    }
+
+    pub fn region(&self) -> RegionChoice {
+        self.region.unwrap_or_default()
     }
 
     pub fn language_spoken(&self) -> Language {
@@ -1146,6 +1153,7 @@ impl Config {
             Valued::Language => {
                 config.language = Some(at.one_of(value, LanguageChoice::parse)?);
             }
+            Valued::Region => config.region = Some(at.one_of(value, RegionChoice::parse)?),
             Valued::FollowDesktopScheme => {
                 config.follow_desktop_scheme = Some(at.boolean(value)?);
             }
@@ -2037,6 +2045,47 @@ mod tests {
         );
         assert_eq!(named_on_the_command_line(&after_the_end), None);
         assert_eq!(named_on_the_command_line(&unnamed), None);
+    }
+
+    #[test]
+    fn a_region_named_in_the_file_settles_its_figures_and_a_tag_naming_none_is_refused() {
+        let german = read("region = \"de-DE\"").expect("a region");
+
+        assert_eq!(
+            german.region(),
+            RegionChoice::parse("de-DE").expect("a tag")
+        );
+        resonate_words::settle(&german.region().conventions());
+        assert_eq!(resonate_words::grouped(12_345), "12.345");
+        assert_eq!(
+            resonate_words::day_month_and_year(2026, 11, 13),
+            "13 Nov 2026"
+        );
+
+        assert_eq!(read("").expect("no region").region(), RegionChoice::System);
+        assert_eq!(
+            read("region = \"system\"").expect("the system's").region(),
+            RegionChoice::System
+        );
+        for refused in ["region = \"de\"", "region = \"klingon\"", "region = \"C\""] {
+            assert!(
+                matches!(
+                    read(refused),
+                    Err(Error::ConfigValue {
+                        key: ConfigKey::Region,
+                        ..
+                    })
+                ),
+                "{refused}"
+            );
+        }
+        assert!(matches!(
+            read("region = 49"),
+            Err(Error::ConfigType {
+                key: ConfigKey::Region,
+                ..
+            })
+        ));
     }
 
     #[test]

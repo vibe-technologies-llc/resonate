@@ -464,6 +464,9 @@ String: small, medium, large, larger or largest. The size used when the desktop'
 .B language
 String: system or en. The language the window, the terminal and the notifications speak; system takes the first language the system lists that Resonate speaks, else English. Read at start. Default: system.
 .TP
+.B region
+String: system or a language tag naming a region, such as en-GB, de-DE or de-CH. How counts are grouped and in which order dates are written, in the words of the language spoken; system takes what LC_ALL, LC_NUMERIC, LC_TIME or LANG names (on Windows and macOS, the system's region). A tag naming no region is refused. Read at start. Default: system.
+.TP
 .B follow-desktop-scheme
 Boolean. Wear the light or dark counterpart of the theme as the desktop's colour scheme asks. Default: true where
 .B theme

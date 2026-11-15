@@ -6,6 +6,16 @@ window-buttons-note = A button the compositor does not offer is left out whateve
 follow-the-system = Follow the system
 the-first-language-the-system-lists = The first language the system lists that Resonate speaks, else English.
 spoken-whatever-language-the-system-lists = Spoken whatever language the system lists.
+write-figures-as = Write figures as
+another-region = Another region
+figures-as-the-system-writes-them = As the region the system names writes them: { $count ->
+    [one] { $count } song
+   *[other] { $count } songs
+}, { $date }.
+figures-whatever-region-the-system-names = Written so whatever region the system names: { $count ->
+    [one] { $count } song
+   *[other] { $count } songs
+}, { $date }.
 always = Always
 while-scrolling = While scrolling
 never = Never

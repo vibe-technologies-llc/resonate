@@ -10,7 +10,7 @@ use resonate_core::{
 use resonate_library::{HistoryKept, Library};
 
 use crate::{
-    ResonateApp, clipboard, fonts,
+    ResonateApp, clipboard, fonts, format,
     icons::Icon,
     keys,
     models::Notice,
@@ -497,7 +497,7 @@ fn tallies_drawn(review: &YearReview) -> Stateful<Div> {
         .into_iter()
         .enumerate()
         .map(|(at, (named, count))| {
-            let reading = count.to_string();
+            let reading = format::count(count);
 
             div()
                 .id(("wrapped-tally", at))

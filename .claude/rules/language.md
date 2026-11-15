@@ -72,8 +72,9 @@ of English reads *12.345 songs* and *13 Nov 2026*. `resonate-words` holds both:
   phones': the first tag of `speak_languages` (`mobile.md`), which is the platform's own first
   choice, region included (`a_phone_names_its_conventions_by_the_first_tag_it_passes`).
 - **`settle` makes one the process's, as `speak` does the language**; the binary settles
-  `from_environment` in `run` after `speak`, and the default before anything is settled is en-US
-  (`no_tag_leaves_the_american_conventions`), so a test reads the same wherever it runs. Digits
+  `config.region().conventions()` in `run` after `speak` (the `region` key, below), and the
+  default before anything is settled is en-US (`no_tag_leaves_the_american_conventions`), so a
+  test reads the same wherever it runs. Digits
   stay Latin and the calendar Gregorian whatever the region keeps (`-u-nu-latn`, `-u-ca-gregory`,
   `digits_stay_latin_whatever_the_region_writes_its_own_in`,
   `the_calendar_stays_gregorian_in_a_region_that_keeps_another`), since every other digit on the
@@ -118,7 +119,7 @@ of English reads *12.345 songs* and *13 Nov 2026*. `resonate-words` holds both:
   file a shell (`binary.md`).
 - Log lines and test names are English.
 
-## Choosing the language
+## Choosing the language and the region
 
 - **`language` in `config.toml`** (`system`, default, or a tag) is read first thing in `run`, which
   calls `speak(config.language_spoken())`, so the terminal, the window, notifications and Discord
@@ -138,6 +139,28 @@ of English reads *12.345 songs* and *13 Nov 2026*. `resonate-words` holds both:
   `a_placeholder_is_asked_for_each_time_it_is_drawn_so_a_new_language_reaches_it`). MPRIS
   notifications, the idle inhibitor's reason and Discord's activity read `spoken()` as each is
   made, so they follow with no step of their own.
+- **`region` in `config.toml`** (`system`, default, or a tag naming a region, `de-DE`) overrides
+  the region the system names. `RegionChoice` is `System` or `Chosen(RegionTag)`; a `RegionTag` is
+  a language, an optional script and a region (`RegionTag::parse` reads a locale's spelling too,
+  `de_DE.UTF-8`, and refuses a tag with no region or no language, so the file's reader refuses it
+  as `ConfigValue`: `a_tag_naming_no_region_or_no_language_is_refused`,
+  `a_region_named_in_the_file_settles_its_figures_and_a_tag_naming_none_is_refused`).
+  `RegionChoice::conventions` is `from_environment` for `System` and the tag's own otherwise, so
+  `run` settles it whatever the subcommand and the window opens on it. The *Language* group
+  offers it beside the language (`Setting::Region`, `ResonateApp::region`):
+  `RegionTag::OFFERED` is a short list whose grouping or date order differ (en-US, en-GB, de-DE,
+  fr-FR, de-CH, en-IN), each named by its region's endonym (`RegionTag::endonym`, a proper name
+  like a language's, never translated); a tag the file names beyond them is drawn by its spelling.
+  The note under the choices writes a sample count and date as the region in force writes them.
+  `RootView::settle_the_region` settles the choice and refreshes every window, so each figure
+  drawn is formatted again (`a_region_chosen_in_the_pane_groups_the_figures_drawn_at_once_and_is_kept`);
+  a figure formatted into a string kept across frames is written anew only when that string is
+  made again. The phones have no such setting: `from_tags` follows the platform's own choice.
+- **A count the window draws goes through `format::count`** (`resonate_words::grouped`), never
+  `to_string`: a tab's, a segment's or a heading's figure, the search counts, Statistics' and
+  Wrapped's tallies, the inspector's underruns, clamped samples and packets
+  (`a_count_drawn_is_grouped_the_way_the_region_settled_writes_it`). An id, a port, a version, a
+  year, a track or row number and a measurement in milliseconds is not a count and stays as written.
 - **The grammar, the man pages, the desktop entry and the metainfo come out of `resonate-cli`'s
   catalog.** Every help and about is `words::grammar::…` (`grammar.ftl`), clap's headings, flags and
   clap_mangen's section headings `words::said::…`, and the binary's `build.rs` writes each

@@ -2280,7 +2280,7 @@ impl RootView {
                 self.in_the_pane_ring(
                     kit::segment(("artist-shows", shown as usize), label, shows == shown)
                         .gap_2()
-                        .child(kit::figure(count.to_string()).text_color(rgb(theme::faint()))),
+                        .child(kit::figure(format::count(count)).text_color(rgb(theme::faint()))),
                     move |this, _, cx| this.show_of_the_artist(shown, cx),
                     cx,
                 )

@@ -30,8 +30,8 @@ fn mirror_said(told: &MirrorTold) -> String {
             done: Some((read, of)),
         } if *of > 0 => words::settings_online::mirror_building_so_far(
             doing.to_string(),
-            format!("{:.1}", *of as f64 / BYTES_IN_A_GIGABYTE),
-            format!("{:.1}", *read as f64 / BYTES_IN_A_GIGABYTE),
+            resonate_words::decimal(*of as f64 / BYTES_IN_A_GIGABYTE, 1),
+            resonate_words::decimal(*read as f64 / BYTES_IN_A_GIGABYTE, 1),
         ),
         MirrorTold::Building { doing, .. } => {
             words::settings_online::mirror_building(doing.to_string())
@@ -42,7 +42,7 @@ fn mirror_said(told: &MirrorTold) -> String {
             amended_at: None,
         } => words::settings_online::mirror_held(
             dump.to_string(),
-            format!("{:.1}", *bytes as f64 / BYTES_IN_A_GIGABYTE),
+            resonate_words::decimal(*bytes as f64 / BYTES_IN_A_GIGABYTE, 1),
         ),
         MirrorTold::Held {
             dump,
@@ -50,7 +50,7 @@ fn mirror_said(told: &MirrorTold) -> String {
             amended_at: Some(at),
         } => words::settings_online::mirror_held_and_followed(
             dump.to_string(),
-            format!("{:.1}", *bytes as f64 / BYTES_IN_A_GIGABYTE),
+            resonate_words::decimal(*bytes as f64 / BYTES_IN_A_GIGABYTE, 1),
             resonate_core::elapsed::since(UNIX_EPOCH + Duration::from_secs(*at), SystemTime::now()),
         ),
         MirrorTold::Failed(why) => words::settings_online::mirror_failed(why.to_string()),

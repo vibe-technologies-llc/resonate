@@ -12,7 +12,7 @@ use resonate_engine::{
 };
 use resonate_library::{HistoryKept, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::{CLIP_BY_DEFAULT, Listening};
-use resonate_words::LanguageChoice;
+use resonate_words::{LanguageChoice, RegionChoice};
 
 use crate::{Synchronised, Tabs, WindowButtons, views::settings::find::Group};
 
@@ -22,6 +22,7 @@ pub(crate) const REDUCED_MOTION: bool = false;
 
 pub(crate) const SCROLLBARS: ScrollbarMode = ScrollbarMode::AutoHidden;
 pub(crate) const LANGUAGE: LanguageChoice = LanguageChoice::System;
+pub(crate) const REGION: RegionChoice = RegionChoice::System;
 pub(crate) const SPECTRAL: Spectral = Spectral {
     tilt: SpectrumTilt::Pink,
     floor: SpectrumFloor::Middling,
@@ -54,6 +55,7 @@ pub(crate) struct Standing {
     pub(crate) reduced_motion: bool,
     pub(crate) scrollbars: ScrollbarMode,
     pub(crate) language: LanguageChoice,
+    pub(crate) region: RegionChoice,
     pub(crate) spectral: Spectral,
     pub(crate) tabs: Tabs,
     pub(crate) presence: Presence,
@@ -96,6 +98,7 @@ impl Standing {
             reduced_motion: REDUCED_MOTION,
             scrollbars: SCROLLBARS,
             language: LANGUAGE,
+            region: REGION,
             spectral: SPECTRAL,
             tabs: TABS,
             presence: Presence::OFF,
@@ -211,7 +214,7 @@ fn differs_but_for_its_switches(group: Group, standing: &Standing) -> bool {
         Group::WindowButtons => standing.window_buttons != WINDOW_BUTTONS,
         Group::Motion => standing.reduced_motion != REDUCED_MOTION,
         Group::Scrollbars => standing.scrollbars != SCROLLBARS,
-        Group::Language => standing.language != LANGUAGE,
+        Group::Language => standing.language != LANGUAGE || standing.region != REGION,
         Group::LiveSpectrum => standing.spectral != SPECTRAL,
         Group::Tabs => standing.tabs != TABS,
         Group::Equalising

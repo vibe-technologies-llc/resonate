@@ -7,7 +7,7 @@ use gpui::{
 use resonate_library::{Missing, MissingTrack, UnheldRelease};
 
 use crate::{
-    MissingRow, Portrayed, Selection,
+    MissingRow, Portrayed, Selection, format,
     icons::Icon,
     theme,
     views::{
@@ -339,7 +339,7 @@ impl RootView {
                 self.in_the_pane_ring(
                     kit::segment(("missing-shows", shown as usize), label, shows == shown)
                         .gap_2()
-                        .child(kit::figure(count.to_string()).text_color(rgb(theme::faint()))),
+                        .child(kit::figure(format::count(count)).text_color(rgb(theme::faint()))),
                     move |this, _, cx| this.show_what_is_missing(shown, cx),
                     cx,
                 )

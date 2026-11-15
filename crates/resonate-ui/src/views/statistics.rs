@@ -879,7 +879,7 @@ fn counted(counts: Statistics) -> Vec<AnyElement> {
         ),
     ]
     .into_iter()
-    .map(|(id, named, count)| a_count(id, named, count.to_string()).into_any_element())
+    .map(|(id, named, count)| a_count(id, named, format::count(count)).into_any_element())
     .collect()
 }
 

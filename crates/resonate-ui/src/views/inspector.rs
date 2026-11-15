@@ -414,11 +414,11 @@ fn sink_card(output: Option<OutputStatus>) -> Div {
             ),
             (
                 words::inspector::underruns(),
-                Some(output.underruns.to_string()),
+                Some(format::count(output.underruns)),
             ),
             (
                 words::inspector::clamped_samples(),
-                (output.overs > 0).then(|| output.overs.to_string()),
+                (output.overs > 0).then(|| format::count(output.overs)),
             ),
             (
                 words::inspector::went_without(),
@@ -466,7 +466,7 @@ fn bitrate(
             ),
             (
                 words::inspector::packets(),
-                Some(profile.packets.to_string()),
+                Some(format::count(profile.packets)),
             ),
             (
                 words::inspector::profiled(),

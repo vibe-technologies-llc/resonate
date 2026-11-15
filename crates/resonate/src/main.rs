@@ -249,7 +249,7 @@ fn run() -> Result<()> {
     name_the_process();
     let config = config::load(cli.config.as_deref())?;
     resonate_words::speak(config.language_spoken());
-    resonate_words::settle(&resonate_words::Conventions::from_environment());
+    resonate_words::settle(&config.region().conventions());
 
     match &cli.command {
         Some(Sub::Sinks {

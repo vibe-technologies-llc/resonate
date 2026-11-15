@@ -110,6 +110,7 @@ keys! {
     Accent = "accent";
     TextSize = "text-size";
     Language = "language";
+    Region = "region";
     FollowDesktopScheme = "follow-desktop-scheme";
     FollowDesktopTextSize = "follow-desktop-text-size";
     Online = "online", on;

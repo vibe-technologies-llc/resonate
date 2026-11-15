@@ -490,6 +490,7 @@ impl Driven {
                 caret: crate::CaretBlink::as_built(),
                 scrollbars: resonate_core::ScrollbarMode::default(),
                 language: resonate_words::LanguageChoice::default(),
+                region: resonate_words::RegionChoice::default(),
                 spectral: resonate_core::Spectral::default(),
                 tabs: Tabs::AS_BUILT,
                 remember_tab: false,
@@ -6580,6 +6581,52 @@ mod tests {
         assert_eq!(resonate_words::spoken(), Language::English);
         assert!(names.contains(&crate::words::app_menu::playback().to_owned()));
         assert!(names.contains(&crate::words::app_menu::edit().to_owned()));
+    }
+
+    #[gpui::test]
+    fn a_region_chosen_in_the_pane_groups_the_figures_drawn_at_once_and_is_kept(
+        cx: &mut TestAppContext,
+    ) {
+        use resonate_words::RegionChoice;
+
+        let german = RegionChoice::parse("de-DE").expect("a region");
+        let at = RegionChoice::ALL
+            .iter()
+            .position(|offered| *offered == german)
+            .expect("Germany offered");
+
+        let mut driven = Driven::open(cx, catalog());
+        showing_settings(&mut driven, SettingsCategory::Appearance);
+        let recorded = recording_what_is_stored(&mut driven);
+
+        driven.click(named("region", at));
+        driven.until(|_, cx| cx.global::<ResonateApp>().region == german);
+
+        assert_eq!(crate::format::count(12_345_usize), "12.345");
+        assert_eq!(
+            resonate_words::day_month_and_year(2026, 11, 13),
+            "13 Nov 2026"
+        );
+
+        let deadline = Instant::now() + PATIENCE;
+        while !recorded.lock().iter().any(|change| {
+            *change
+                == crate::settings::SettingChange::Store(crate::settings::Setting::Region(german))
+        }) {
+            assert!(Instant::now() < deadline, "the region was never kept");
+            driven.settle();
+            thread::sleep(FRAME);
+        }
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.settle_the_region(RegionChoice::System, cx);
+        });
+        driven.settle();
+
+        assert_eq!(
+            resonate_words::settled_conventions(),
+            RegionChoice::System.conventions()
+        );
     }
 
     #[gpui::test]

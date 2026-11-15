@@ -53,6 +53,7 @@ pub(crate) use crate::views::{
 use crate::{
     AppIcon, Followed, Measurers, ResonateApp, Setting,
     app::CONTROL_CONTEXT,
+    format,
     icons::{self, Icon},
     motion, theme,
     views::{
@@ -361,7 +362,7 @@ impl RootView {
                                 .child(category.label()),
                         )
                         .when_some(found, |row, found| {
-                            row.child(kit::figure(found.to_string()).text_color(rgb(
+                            row.child(kit::figure(format::count(found)).text_color(rgb(
                                 if found == 0 {
                                     theme::faint()
                                 } else {
@@ -791,7 +792,10 @@ impl RootView {
             Group::WindowButtons => self.show_window_buttons(defaults::WINDOW_BUTTONS, cx),
             Group::Motion => self.reduce_motion(defaults::REDUCED_MOTION, cx),
             Group::Scrollbars => self.draw_scrollbars(defaults::SCROLLBARS, cx),
-            Group::Language => self.speak(defaults::LANGUAGE, cx),
+            Group::Language => {
+                self.speak(defaults::LANGUAGE, cx);
+                self.settle_the_region(defaults::REGION, cx);
+            }
             Group::LiveSpectrum => self.read_the_spectrum(defaults::SPECTRAL, cx),
             Group::Tabs => self.show_tabs(defaults::TABS, cx),
             _ => {}
@@ -814,6 +818,7 @@ impl RootView {
         let reduced_motion = cx.global::<ResonateApp>().reduced_motion;
         let scrollbars = cx.global::<ResonateApp>().scrollbars;
         let language = cx.global::<ResonateApp>().language;
+        let region = cx.global::<ResonateApp>().region;
         let spectral = cx.global::<ResonateApp>().spectral;
         let tabs = cx.global::<ResonateApp>().tabs;
         let presence = cx.global::<ResonateApp>().presence.clone();
@@ -957,6 +962,7 @@ impl RootView {
             reduced_motion,
             scrollbars,
             language,
+            region,
             spectral,
             tabs,
             presence,

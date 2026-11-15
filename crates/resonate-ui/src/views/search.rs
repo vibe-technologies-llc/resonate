@@ -10,7 +10,7 @@ use resonate_library::{
 };
 
 use crate::{
-    Beyond, LibraryModel, Notice, Selection,
+    Beyond, LibraryModel, Notice, Selection, format,
     icons::Icon,
     theme, toast,
     views::{
@@ -449,10 +449,12 @@ impl Matched {
         let asking = matches!(self.elsewhere, Some(Beyond::Asking | Beyond::Refining(_)));
         let count = held + found;
 
+        let reading = format::count(count);
+
         Some(SharedString::from(if asking {
-            format!("{count}…")
+            format!("{reading}…")
         } else {
-            count.to_string()
+            reading
         }))
     }
 }

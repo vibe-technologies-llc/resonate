@@ -1094,7 +1094,7 @@ impl Group {
                 hint: words::settings_find::language_hint(),
                 also_called:
                     words::settings_find::language_locale_translation_translated_words_english(),
-                keys: &[ConfigKey::Language],
+                keys: &[ConfigKey::Language, ConfigKey::Region],
             },
             Self::Motion => Described {
                 category: Category::Appearance,

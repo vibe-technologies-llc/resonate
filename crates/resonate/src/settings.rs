@@ -238,6 +238,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::Accent(accent) => accent.map(|accent| accent.as_str().into()),
         Setting::TextSize(size) => Some(size.as_str().into()),
         Setting::Language(chosen) => Some(chosen.as_str().into()),
+        Setting::Region(chosen) => Some(chosen.to_string().into()),
         Setting::FollowDesktopScheme(follows) => Some((*follows).into()),
         Setting::FollowDesktopTextSize(follows) => Some((*follows).into()),
         Setting::SkipUnderRepeat(skip) => Some((*skip == SkipUnderRepeat::RepeatsTheQueue).into()),
