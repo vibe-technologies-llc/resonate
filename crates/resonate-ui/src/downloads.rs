@@ -187,6 +187,7 @@ pub(crate) struct WantStanding {
     gave_up: bool,
     held: Option<TrackId>,
     album: Option<AlbumId>,
+    replacing: bool,
 }
 
 impl WantStanding {
@@ -199,7 +200,12 @@ impl WantStanding {
             gave_up: want.gave_up(),
             held: want.held,
             album: Some(want.album),
+            replacing: want.replacing.is_some(),
         }
+    }
+
+    pub(crate) const fn replacing(self) -> bool {
+        self.replacing
     }
 
     pub(crate) const fn held(self) -> Option<TrackId> {
@@ -539,6 +545,7 @@ mod tests {
             gave_up: misses >= TRIES_BEFORE_GIVING_UP,
             held: None,
             album: None,
+            replacing: false,
         }
     }
 

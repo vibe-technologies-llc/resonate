@@ -89,6 +89,7 @@ use crate::{
         playlists::{Held, Naming, PlaylistsDrawn},
         queue::{QueueMeasure, QueueNames, TakenBack},
         reorder::{Creeping, Reach, Step},
+        replacing::ReplacingSheet,
         search::SearchShows,
         served::ServicesPane,
         settings::{
@@ -527,6 +528,7 @@ pub(crate) struct Scrolls {
     pub(crate) downloads: ScrollHandle,
     pub(crate) heard_earlier: ScrollHandle,
     pub(crate) likely: ScrollHandle,
+    pub(crate) replacing: ScrollHandle,
     pub(crate) remote: ScrollHandle,
     pub(crate) search: ScrollHandle,
     pub(crate) queue_rows: UniformListScrollHandle,
@@ -704,6 +706,7 @@ pub struct RootView {
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,
     pub(crate) deleting: Option<Deleting>,
+    pub(crate) replacing: Option<ReplacingSheet>,
     pub(crate) matching: Option<Matching>,
     pub(crate) likely_asked: Serial,
     pub(crate) attention: Serial,
@@ -1128,6 +1131,13 @@ impl Render for RootView {
                 app.child(motion::faded_in(
                     self.matching_sheet(cx),
                     "matching-scrim",
+                    motion::ARRIVES_OVER,
+                ))
+            })
+            .when(self.replacing.is_some(), |app| {
+                app.child(motion::faded_in(
+                    self.replacing_sheet(cx),
+                    "replacing-scrim",
                     motion::ARRIVES_OVER,
                 ))
             })

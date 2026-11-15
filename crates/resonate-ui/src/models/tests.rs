@@ -742,6 +742,28 @@ fn a_poll_that_replaced_lossy_songs_is_told_so_beside_what_it_kept() {
 }
 
 #[test]
+fn the_toast_says_what_was_replaced_wanted_and_not_matched() {
+    let replacing = resonate_library::Replacing {
+        folded: 1,
+        wanted: 2,
+        unmatched: 0,
+        ..resonate_library::Replacing::default()
+    };
+
+    assert_eq!(
+        super::told::replaced_now(&replacing),
+        Notice::Done("1 song replaced, 2 songs wanted".to_owned())
+    );
+    assert_eq!(
+        super::told::replaced_now(&resonate_library::Replacing {
+            unmatched: 3,
+            ..resonate_library::Replacing::default()
+        }),
+        Notice::Done("3 songs not matched".to_owned())
+    );
+}
+
+#[test]
 fn only_a_playlist_edit_is_told_as_one_when_it_fails() {
     let not_playlists = [
         Change::Want,

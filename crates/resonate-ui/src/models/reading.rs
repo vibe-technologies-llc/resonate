@@ -317,6 +317,7 @@ impl LibraryModel {
         renewed(&mut self.shelf.pinned, shelves.pinned);
         self.shelf.held = shelves.held;
         renewed(&mut self.shelf.entries, shelves.entries);
+        self.shelf.lossy = shelves.lossy;
         if self.shelf.held.is_none() {
             self.shelf.opened = None;
         }

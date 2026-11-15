@@ -686,6 +686,15 @@ pub(crate) fn checkbox(
     label: impl Into<SharedString>,
     ticked: bool,
 ) -> Stateful<Div> {
+    checkbox_when(Press::Takes, id, label, ticked)
+}
+
+pub(crate) fn checkbox_when(
+    press: Press,
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    ticked: bool,
+) -> Stateful<Div> {
     let id = id.into();
     let label = label.into();
     let square = div()
@@ -713,6 +722,7 @@ pub(crate) fn checkbox(
         .found_as(&id)
         .named_as(Role::CheckBox, &label, "")
         .thrown(ticked)
+        .when(!press.takes(), Spoken::greyed_for_a_reader)
         .flex()
         .flex_none()
         .items_center()
@@ -727,8 +737,14 @@ pub(crate) fn checkbox(
             theme::muted()
         }))
         .whitespace_nowrap()
-        .cursor_pointer()
-        .hover(|row| row.bg(rgb(theme::hover())))
+        .when_else(
+            press.takes(),
+            |row| {
+                row.cursor_pointer()
+                    .hover(|row| row.bg(rgb(theme::hover())))
+            },
+            |row| row.opacity(GREYED).cursor_default(),
+        )
         .child(square)
         .child(label)
 }

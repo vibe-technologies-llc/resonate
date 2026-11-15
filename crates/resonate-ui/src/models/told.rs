@@ -5,8 +5,8 @@ use gpui::{AsyncApp, WeakEntity};
 use resonate_core::{AlbumId, MediaLocation};
 use resonate_library::{
     Covering, Deleted, Edit, EnrichSummary, GroupRelease, ImportSummary, Library, Maker,
-    OrganiseSummary, PollSummary, Reference, ReleaseMatch, RetagSummary, ScanSummary, Shared,
-    Track, Undoable,
+    OrganiseSummary, PollSummary, Reference, ReleaseMatch, Replacing, RetagSummary, ScanSummary,
+    Shared, Track, Undoable,
 };
 
 use super::{
@@ -231,6 +231,23 @@ pub(super) fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice
         told.push_str(words::models::stopped_early());
     }
     Some(Notice::Done(told))
+}
+
+pub(super) fn replaced_now(replacing: &Replacing) -> Notice {
+    let counted: [(_, fn(_) -> String); 3] = [
+        (replacing.folded, words::replacing::folded),
+        (replacing.wanted, words::replacing::wanted_count),
+        (replacing.unmatched, words::replacing::unmatched_count),
+    ];
+    let mut parts: Vec<String> = counted
+        .into_iter()
+        .filter(|(count, _)| *count > 0)
+        .map(|(count, said)| said(count))
+        .collect();
+    if parts.is_empty() {
+        parts.push(words::replacing::folded(0));
+    }
+    Notice::Done(words::replacing::told(parts.join(", ")))
 }
 
 pub(super) fn looked_up(summary: &EnrichSummary, prompted: Prompted) -> Option<Notice> {

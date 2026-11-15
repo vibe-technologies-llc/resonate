@@ -197,6 +197,8 @@ impl RootView {
     ) -> bool {
         if self.deleting.is_some() {
             self.keep_the_track(cx);
+        } else if self.replacing.is_some() {
+            self.keep_the_lossy_songs(cx);
         } else if self.matching.is_some() {
             self.leave_the_matching(window, cx);
         } else if self.social.party_offered.is_some() {
@@ -238,6 +240,7 @@ impl RootView {
             || self.orders.ordering.is_some()
             || self.listening_open
             || self.deleting.is_some()
+            || self.replacing.is_some()
             || self.matching.is_some()
             || self.social.party_offered.is_some()
             || self.social.list_offered.is_some()

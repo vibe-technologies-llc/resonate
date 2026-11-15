@@ -1208,4 +1208,136 @@ mod driven {
 
         assert_eq!(reach(&mut driven), None);
     }
+
+    fn encoded_as_echoes(folder: &Folder, name: &str, codec: &[&str]) -> Option<PathBuf> {
+        let source = Folder::new();
+        let tone = source.tone("tone.wav", 2);
+        let target = folder.path().join(name);
+        let made = std::process::Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-i"])
+            .arg(&tone)
+            .args(codec)
+            .args([
+                "-metadata",
+                "title=Echoes",
+                "-metadata",
+                "artist=Pink Floyd",
+                "-metadata",
+                "album=Meddle",
+            ])
+            .arg(&target)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        if !made.is_ok_and(|status| status.success()) || !target.exists() {
+            eprintln!("skipped: ffmpeg would not encode {name}");
+            return None;
+        }
+        Some(target)
+    }
+
+    fn playlist_row(playlist: resonate_core::PlaylistId) -> &'static str {
+        Box::leak(format!("playlist-{playlist}").into_boxed_str())
+    }
+
+    fn the_menu_offers(driven: &mut Driven, label: &str) -> Option<usize> {
+        driven.read(|root, _| {
+            root.menu
+                .as_ref()
+                .and_then(|menu| menu.labels().iter().position(|offered| offered == label))
+        })
+    }
+
+    fn opened_the_sheet_for(driven: &mut Driven, playlist: resonate_core::PlaylistId) {
+        driven.right_click(playlist_row(playlist));
+        let at = the_menu_offers(driven, crate::words::replacing::replace_lossy_songs())
+            .expect("the menu offers to replace the lossy songs");
+        driven.click(Box::leak(format!("menu-entry-{at}").into_boxed_str()));
+        driven.until(|root, _| {
+            root.replacing
+                .as_ref()
+                .is_some_and(|sheet| sheet.rows.is_some())
+        });
+    }
+
+    #[gpui::test]
+    fn a_playlists_lossy_songs_are_replaced_from_its_menu_and_the_sheet_closes_with_a_toast(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (Some(opus), Some(flac)) = (
+            encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"]),
+            encoded_as_echoes(&folder, "A.flac", &["-c:a", "flac"]),
+        ) else {
+            return;
+        };
+        let trash = Folder::new();
+        let library = catalog();
+        library.trash_into(Some(trash.path().to_path_buf()));
+        Driven::scanned(&library, &folder);
+        let whole = |path: &PathBuf| Cut::whole(resonate_core::MediaLocation::local(path));
+        let road_trip = library
+            .start_playlist("Road trip", &[whole(&opus)])
+            .expect("a playlist holding the lossy copy");
+        let bright = library
+            .start_playlist("Bright", &[whole(&flac)])
+            .expect("a playlist holding the lossless copy");
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        driven.click("tab-playlists");
+        driven.until(|root, cx| {
+            let library = root.library.read(cx);
+            library.playlists().len() == 2 && library.holds_lossy_songs(road_trip)
+        });
+
+        driven.right_click(playlist_row(bright));
+        assert_eq!(
+            the_menu_offers(&mut driven, crate::words::replacing::replace_lossy_songs()),
+            None,
+            "a playlist holding no lossy song is offered nothing to replace"
+        );
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+
+        opened_the_sheet_for(&mut driven, road_trip);
+        driven.bounds_of("replacing-sheet");
+        let (listed, ticked) = driven.read(|root, _| {
+            let sheet = root.replacing.as_ref().expect("the sheet stands");
+            let rows = sheet.rows.clone().unwrap_or_default();
+            (
+                rows.iter()
+                    .map(|row| row.track.title.clone())
+                    .collect::<Vec<_>>(),
+                rows.iter().all(|row| sheet.ticked.contains(&row.track.id)),
+            )
+        });
+        assert_eq!(listed, ["Echoes"]);
+        assert!(ticked, "the song that can be replaced starts ticked");
+
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+        assert!(driven.read(|root, _| root.replacing.is_none()));
+        assert_eq!(
+            library
+                .lossy_songs_of(road_trip)
+                .expect("the playlist read")
+                .len(),
+            1,
+            "escape replaced nothing"
+        );
+        assert!(opus.exists());
+
+        opened_the_sheet_for(&mut driven, road_trip);
+        driven.click("replace-the-lossy-songs");
+        driven.until(|_, _| {
+            library
+                .lossy_songs_of(road_trip)
+                .is_ok_and(|rows| rows.is_empty())
+        });
+        driven.until(|_, cx| {
+            toast::showing_text(cx).is_some_and(|told| told.contains("1 song replaced"))
+        });
+
+        assert!(driven.read(|root, _| root.replacing.is_none()));
+        assert!(!opus.exists(), "the lossy copy went to the trash");
+    }
 }
