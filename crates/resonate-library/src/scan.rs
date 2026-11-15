@@ -261,7 +261,7 @@ pub(crate) fn start(
             let outcome = roots(&inner, &options.roots)
                 .and_then(|roots| run(&inner, &options, roots, Beside::Tidied, &progress));
             drop(walking);
-            if outcome.is_ok() {
+            if outcome.as_ref().is_ok_and(|summary| !summary.cancelled) {
                 after();
             }
             outcome
@@ -290,7 +290,7 @@ pub(crate) fn start_over_held(
         .spawn(move || {
             let outcome = run(&inner, &options, roots, Beside::LeftToTheWatch, &progress);
             drop(walking);
-            if outcome.is_ok() {
+            if outcome.as_ref().is_ok_and(|summary| !summary.cancelled) {
                 after();
             }
             outcome

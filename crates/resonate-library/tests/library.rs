@@ -5034,6 +5034,50 @@ fn a_settle_while_another_pass_walks_the_tree_leaves_the_replacement_for_the_nex
 }
 
 #[test]
+#[cfg(unix)]
+fn a_cancelled_scan_settles_no_replacement() -> Result<()> {
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let data = Tree::new();
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+    let Some(flac) = encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes") else {
+        return Ok(());
+    };
+    scan(&library, &options(&tree))?;
+    offered(&library, &flac)?;
+    for index in 0..200 {
+        tree.write(
+            &format!("padding/{index}.wav"),
+            &Wav::new().frames(64).text(TITLE, "padding").build(),
+        );
+    }
+
+    let handle = library.scan(ScanOptions {
+        incremental: false,
+        ..options(&tree)
+    })?;
+    handle.cancel();
+    let summary = handle.join()?;
+
+    assert!(summary.cancelled, "the scan outran the cancel");
+    assert!(
+        still_pending(&library, &waiting)?,
+        "a cancelled scan settled"
+    );
+    assert!(opus.exists());
+    assert_eq!(the_row_at(&library, &flac)?.plays, 0);
+    assert_eq!(library.settle_replacements()?.files, 1);
+    assert!(!opus.exists());
+    Ok(())
+}
+
+#[test]
 fn a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_holds() -> Result<()> {
     let tree = Tree::new();
     let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {

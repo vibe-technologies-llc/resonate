@@ -104,6 +104,13 @@ impl Library {
         )
     }
 
+    pub(crate) fn scan_leaving_the_replacements_unsettled(
+        &self,
+        options: ScanOptions,
+    ) -> Result<ScanHandle> {
+        scan::start(Arc::clone(&self.inner), options, || {})
+    }
+
     fn settle_after_a_scan(self) -> impl FnOnce() + Send + 'static {
         move || {
             if let Err(error) = self.settle_replacements() {
