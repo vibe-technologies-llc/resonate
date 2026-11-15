@@ -949,6 +949,7 @@ pub(super) struct RawWant {
     pub(super) disc: i64,
     pub(super) position: i64,
     pub(super) held: Option<i64>,
+    pub(super) replacing: Option<i64>,
 }
 
 impl RawWant {
@@ -972,6 +973,7 @@ impl RawWant {
             disc: row.get(15)?,
             position: row.get(16)?,
             held: row.get(17)?,
+            replacing: row.get(18)?,
         })
     }
 
@@ -1003,6 +1005,10 @@ impl RawWant {
             held: self
                 .held
                 .map(|held| TrackId::new(held as u64))
+                .transpose()?,
+            replacing: self
+                .replacing
+                .map(|replacing| TrackId::new(replacing as u64))
                 .transpose()?,
             links,
             release_links,

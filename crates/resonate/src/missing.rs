@@ -381,6 +381,7 @@ mod tests {
             offered: None,
             misses,
             held: None,
+            replacing: None,
             links: Vec::new(),
             release_links: Vec::new(),
         }
