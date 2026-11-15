@@ -47,6 +47,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "rating"
+path = "fuzz_targets/rating.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "cue"
 path = "fuzz_targets/cue.rs"
 test = false

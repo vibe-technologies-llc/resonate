@@ -9,7 +9,7 @@ use resonate_codec::{Container, MediaStream, Reading};
 use resonate_core::MediaLocation;
 
 use crate::{
-    bare, transcoded,
+    bare, standing, transcoded,
     unpacking::{self, Unpacking},
 };
 
@@ -66,6 +66,8 @@ impl Drop for Scratch {
 pub fn unpack_a_file(bytes: &[u8]) {
     let scratch = Scratch::holding(bytes);
     let _ = unpacking::frames_of(&scratch.0);
+    let _ = standing::of_a_flac(&scratch.0);
+    let _ = standing::of_a_packed_wave(&scratch.0);
 
     let Ok(mut unpacking) = Unpacking::open(&scratch.0) else {
         return;

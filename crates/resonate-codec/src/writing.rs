@@ -774,7 +774,7 @@ impl FileTags {
     }
 }
 
-fn rating_in(mut file: File, location: &MediaLocation) -> Result<Rated> {
+pub(crate) fn rating_in(mut file: File, location: &MediaLocation) -> Result<Rated> {
     if location.as_path().is_some_and(names_a_matroska) {
         return Ok(Rated::Unrateable);
     }

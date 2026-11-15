@@ -548,6 +548,14 @@ impl Stood {
     }
 }
 
+#[cfg(fuzzing)]
+pub(crate) fn read_a_whole_copy(copy: &File) {
+    let Ok((length, _)) = bound_of(copy) else {
+        return;
+    };
+    let _ = Record::read(copy, length);
+}
+
 impl Record {
     fn read(copy: &File, length: u64) -> io::Result<Self> {
         let Some(trailer_at) = length.checked_sub(STOOD_TRAILER_BYTES) else {

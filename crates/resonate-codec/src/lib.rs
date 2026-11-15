@@ -48,7 +48,10 @@ mod writing;
 pub use symphonia::core::{codecs::audio::AudioCodecId, formats::FormatId};
 
 #[cfg(fuzzing)]
-pub use crate::fuzzing::{edit_through_an_overlay, read_a_padded_head, read_an_undo_journal};
+pub use crate::fuzzing::{
+    edit_through_an_overlay, rate_a_file, read_a_padded_head, read_a_whole_copy,
+    read_an_undo_journal,
+};
 pub use crate::{
     artwork::{Drawing, Likeness, Raster, decode_cover},
     boxes::{BoxKind, BoxLayout, Faststart, TopLevelBox},

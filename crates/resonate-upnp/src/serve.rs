@@ -184,6 +184,40 @@ fn token_in(path: &str) -> Option<Token> {
     u64::from_str_radix(token, 16).ok().map(Token)
 }
 
+enum Asked<'a> {
+    Unreadable,
+    NotAllowed,
+    Fetch { head_only: bool, path: &'a str },
+}
+
+fn asked_in(held: &[u8]) -> Asked<'_> {
+    let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+    let mut request = httparse::Request::new(&mut headers);
+    match request.parse(held) {
+        Ok(httparse::Status::Complete(_)) => {}
+        Ok(httparse::Status::Partial) | Err(_) => return Asked::Unreadable,
+    }
+    let head_only = match request.method.unwrap_or_default() {
+        "GET" => false,
+        "HEAD" => true,
+        _ => return Asked::NotAllowed,
+    };
+    Asked::Fetch {
+        head_only,
+        path: request.path.unwrap_or_default(),
+    }
+}
+
+#[cfg(fuzzing)]
+pub(crate) fn read_a_request_head(held: &[u8]) {
+    if let Asked::Fetch { path, .. } = asked_in(held) {
+        let _ = token_in(path);
+    }
+    if let Ok(text) = std::str::from_utf8(held) {
+        let _ = token_in(text);
+    }
+}
+
 struct Fetching(Arc<AtomicUsize>);
 
 impl Fetching {
@@ -254,20 +288,13 @@ impl Pending {
     }
 
     fn judged(&self, server: &Server) -> Next {
-        let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
-        let mut request = httparse::Request::new(&mut headers);
-        match request.parse(&self.held) {
-            Ok(httparse::Status::Complete(_)) => {}
-            Ok(httparse::Status::Partial) | Err(_) => return Next::Dropped,
-        }
-        let head_only = match request.method.unwrap_or_default() {
-            "GET" => false,
-            "HEAD" => true,
-            _ => return Next::Refused(NOT_ALLOWED),
-        };
-        match server.feed_at(request.path.unwrap_or_default()) {
-            Some(feed) => Next::Fetch { head_only, feed },
-            None => Next::Refused(NOT_HERE),
+        match asked_in(&self.held) {
+            Asked::Unreadable => Next::Dropped,
+            Asked::NotAllowed => Next::Refused(NOT_ALLOWED),
+            Asked::Fetch { head_only, path } => match server.feed_at(path) {
+                Some(feed) => Next::Fetch { head_only, feed },
+                None => Next::Refused(NOT_HERE),
+            },
         }
     }
 

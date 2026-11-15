@@ -988,6 +988,9 @@ pub(crate) fn rewritten<S: Read + Seek + ?Sized>(
     taken: &[TagField],
 ) -> Refusable<Rewrite> {
     let layout = laid_out(source)?;
+    if layout.all(ATTACHMENTS).len() > 1 {
+        return Err(Refused::AttachmentsStand);
+    }
     let clusters: Vec<Child> = layout.clusters().copied().collect();
     let asked = Asked { edits, taken };
     if asked.is_empty() {
@@ -1418,6 +1421,21 @@ mod tests {
             .expect("the size");
         file.write_all(&size).expect("the size written");
         Scratch(path)
+    }
+
+    #[test]
+    fn a_file_holding_two_attachments_is_refused_before_its_tags_are_rewritten() {
+        let mut body = sized(ATTACHMENTS, &[]);
+        body.extend_from_slice(&sized(ATTACHMENTS, &[]));
+        let mut file = sized(EBML_HEADER, &sized(DOC_TYPE, b"matroska"));
+        file.extend_from_slice(&id_bytes(SEGMENT));
+        file.extend_from_slice(&size_bytes(body.len() as u64, MAX_LENGTH_BYTES).expect("a size"));
+        file.extend_from_slice(&body);
+        let edits = [(TagField::Title, "Echoes".to_owned())];
+
+        let refused = rewritten(&mut Cursor::new(&file), &edits, &[]);
+
+        assert!(matches!(refused, Err(Refused::AttachmentsStand)));
     }
 
     #[test]

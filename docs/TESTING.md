@@ -100,13 +100,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [M · 0.12.0] Parsers of untrusted bytes no fuzz target reaches: `SheetText::read` and `edited`
-  (the `cue` target drives `read_cue` and `renamed_cue` alone), `matroska_tags::attached` (`padding`
-  drives `rewritten`), the whole copy's trailer and record (`bound_of`, `Record::read`, which read
-  files found in the shared temp folders), the lofty reads every retag preview makes
-  (`rating_in`, `Counted::read_in`), the streamed SOFA path (`hdf5_streamed`), the vault's
-  `standing::of_a_flac` and `of_a_packed_wave`, and the UPnP stream server's request head
-  (`serve.rs`'s `judged` and `token_in`)
 - [S · 0.12.0] The hand-written SYLT reader (`sylt.rs`'s `as_lrc`) is fuzzed only if the `probe`
   target invents an ID3v2 header and a SYLT frame from nothing: no seed in `fuzz/seeds/probe` holds
   one, in either timestamp format

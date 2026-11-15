@@ -9,11 +9,14 @@ use lofty::{
     file::FileType,
     io::{Length, Truncate},
 };
+use resonate_core::MediaLocation;
 
 use crate::{
-    TagField, journal, matroska_tags,
+    TagField, journal,
+    matroska_tags::{self, Attached},
     overlay::{Landing, Overlay},
     padded::{Head, Room},
+    writing,
 };
 
 const FILE_TYPES: [FileType; 5] = [
@@ -29,6 +32,10 @@ const ROOMS: [Room; 4] = [
     Room::Blocks(4096),
     Room::Blocks(0),
 ];
+const RATED_EXTENSIONS: [&str; 11] = [
+    "flac", "mp3", "m4a", "ogg", "opus", "wv", "ape", "wav", "aiff", "aac", "mka",
+];
+const A_PICTURE: &[u8] = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\xff\xd9";
 const LARGEST_OVERLAID_OFFSET: u64 = 96 << 10;
 const OPERATION_BYTES: usize = 4;
 
@@ -61,9 +68,41 @@ fn rewrite_a_matroska(bytes: &[u8]) {
     else {
         return;
     };
+    let mut landed = Cursor::new(bytes.to_vec());
     rewrite
-        .laid_on(&mut Cursor::new(bytes.to_vec()))
+        .laid_on(&mut landed)
         .expect("a rewrite lands on the file it was read from");
+    attach_to_a_matroska(landed.get_ref());
+}
+
+fn attach_to_a_matroska(tagged: &[u8]) {
+    let attached = Attached {
+        name: "cover.jpg",
+        media_type: "image/jpeg",
+        bytes: A_PICTURE,
+    };
+    let Ok(rewrite) = matroska_tags::attached(&mut Cursor::new(tagged), &attached) else {
+        return;
+    };
+    rewrite
+        .laid_on(&mut Cursor::new(tagged.to_vec()))
+        .expect("a picture lands on the file its tags were just laid on");
+}
+
+pub fn read_a_whole_copy(bytes: &[u8]) {
+    let scratch = Scratch::holding("whole", bytes);
+    let copy = fs::File::open(&scratch.0).expect("the scratch file opens");
+    journal::read_a_whole_copy(&copy);
+}
+
+pub fn rate_a_file(bytes: &[u8]) {
+    let Some((&kind, file)) = bytes.split_first() else {
+        return;
+    };
+    let extension = RATED_EXTENSIONS[usize::from(kind) % RATED_EXTENSIONS.len()];
+    let scratch = Scratch::holding(extension, file);
+    let opened = fs::File::open(&scratch.0).expect("the scratch file opens");
+    let _ = writing::rating_in(opened, &MediaLocation::local(scratch.0.clone()));
 }
 
 pub fn read_an_undo_journal(bytes: &[u8]) {
@@ -75,8 +114,8 @@ pub fn read_an_undo_journal(bytes: &[u8]) {
 struct Scratch(PathBuf);
 
 impl Scratch {
-    fn holding(bytes: &[u8]) -> Self {
-        let path = env::temp_dir().join(format!("resonate-fuzz-overlay-{}", process::id()));
+    fn holding(extension: &str, bytes: &[u8]) -> Self {
+        let path = env::temp_dir().join(format!("resonate-fuzz-{}.{extension}", process::id()));
         fs::write(&path, bytes).expect("a scratch file");
         Self(path)
     }
@@ -96,7 +135,7 @@ pub fn edit_through_an_overlay(bytes: &[u8]) {
         operations.split_at((usize::from(*base_length) * 64).min(operations.len()));
     let mut model = base.to_vec();
 
-    let scratch = Scratch::holding(base);
+    let scratch = Scratch::holding("overlay", base);
     let file = fs::File::options()
         .read(true)
         .write(true)

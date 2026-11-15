@@ -4,4 +4,5 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {
     resonate_codec::read_an_undo_journal(bytes);
+    resonate_codec::read_a_whole_copy(bytes);
 });

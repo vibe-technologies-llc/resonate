@@ -1269,7 +1269,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   eight-byte positions take a fourth entry; a rewritten `SeekHead` or `Tags` drops its `CRC-32`
   rather than carry a stale one. **A `Void` is written as its header alone, its body counted and never built** (`void_of` answers a `Void` of a `header` and a `body` length; a `Laid` carries `zeroed`, the stretch of zeros `laid_on` streams from a 64 KiB buffer, which is only what an element left behind inside it or the file's new tail), so a sparse file with a multi-gigabyte `Void` after the `Tags` retags by writing a few bytes (`a_void_after_the_tags_is_never_written_whole_by_a_retag`). **Refused with the file untouched** (`Error::Unwritable`): a
   `Segment` or a child of unknown size, a `Segment` that does not end where the file does, a
-  `Segment`-level `CRC-32`, a `Tags` past the first `Cluster` with no `SeekHead` ahead of it and no
+  `Segment`-level `CRC-32`, more than one `Attachments` (the write could never be confirmed, `a_file_holding_two_attachments_is_refused_before_its_tags_are_rewritten`), a `Tags` past the first `Cluster` with no `SeekHead` ahead of it and no
   `Void` there to lay one in, a `SeekHead` with no room, a second `SeekHead` where `Tags` move, a
   picture where the file's `Attachments` already hold a file named `cover…` or carrying our
   `FileUID`, or stand anywhere but the segment's tail, or `unpictured` is asked (nothing is taken out).

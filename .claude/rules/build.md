@@ -145,16 +145,16 @@ Linux sound server or GUI libraries are needed.
 ## Fuzzing
 
 - **The hand-rolled parsers are fuzzed from outside the workspace**: `fuzz/`'s `[workspace]` table
-  detaches it, so workspace lints do not reach libfuzzer's macros. Thirty-three targets: `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
-  `cue`, `lrc`, `lyricsfile`, `ttml`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`,
+  detaches it, so workspace lints do not reach libfuzzer's macros. Thirty-four targets: `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
+  `cue` (beside the sheet's reading, `SheetText`'s `own` and `edited` over every field and scope, the edit read back), `rating` (the lofty reads a retag preview makes, `rating_in` and `Counted::read_in`, the input's first byte choosing the extension), `lrc`, `lyricsfile`, `ttml`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`,
   `rewriter` (the vault's `bare` over every container and `declared_digest`), `unpacking` (zstd frame
-  indexing and the reader), `padding` (the tag writer's padded heads and its Matroska rewrite, kind 5), `journal` (an undo journal,
-  sealed by the seam so the checksum is not the fuzzer's to guess), `overlay` (the write overlay
+  indexing and the reader, and the vault's `standing::of_a_flac` and `of_a_packed_wave`), `padding` (the tag writer's padded heads and its Matroska rewrite, then a picture attached to what the rewrite laid, as a keep writes them, kind 5), `journal` (an undo journal,
+  sealed by the seam so the checksum is not the fuzzer's to guess, and a whole copy's trailer and record read off a file), `overlay` (the write overlay
   driven against a byte-vector model, then landed), `cover` (`Drawing::of` and its scalings), `transcode` (the vault's JPEG-to-JXL transcode and its reconstruction),
   `pages` (the shared-page, Spotify, YouTube, TIDAL embed and song.link readers), `manifest` (TIDAL's BTS and
-  DASH documents), `kept` (the analysis cache reader), `sofa` (an HRIR set through `hdf5-reader`), `musicbrainz`
+  DASH documents), `kept` (the analysis cache reader), `sofa` (an HRIR set through `hdf5-reader`, whole and streamed from a held source), `musicbrainz`
   (a lookup and an answer read back as themselves, and a line of the export's COPY text), `upnp` (an SSDP
-  answer, a renderer's description, a chunked body, a SOAP answer and an address, holding that no
+  answer, a renderer's description, a chunked body, a SOAP answer, an address and the stream server's request head (`serve::read_a_request_head`), holding that no
   control address leaves the host that described the renderer), `cast` (a Cast frame's protobuf and the
   JSON in it, read back as itself), `server` (the sync server's invitation page request, the
   gateway's request head and its `Range` header over a total, holding that a span lies within it; the

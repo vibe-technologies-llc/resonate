@@ -3,7 +3,7 @@ use std::{
     str,
 };
 
-use crate::{Action, Located, description, http, http::HEADERS_AT_MOST, soap, ssdp};
+use crate::{Action, Located, description, http, http::HEADERS_AT_MOST, serve, soap, ssdp};
 
 const SENDER: IpAddr = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 9));
 
@@ -13,6 +13,8 @@ pub fn read_what_a_network_says(bytes: &[u8]) {
     if let Some(location) = ssdp::location_answered(bytes, SENDER) {
         assert!(location.is_at(SENDER));
     }
+
+    serve::read_a_request_head(bytes);
 
     let _ = http::unchunked(bytes);
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
