@@ -12425,7 +12425,7 @@ fn restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap() -
     let measured = Frames::from_duration(MEASURED_FOR, SampleRate::HZ_44100).get() as usize;
     let held_to_switch =
         Frames::from_duration(HELD_BEFORE_AN_ARM_IS_SWITCHED, SampleRate::HZ_44100).get() as usize;
-    let auditioned_from = (rate / 4).next_multiple_of(BLOCK_FRAMES);
+    let auditioned_from = rate / 4;
 
     let levels = player.levels_of_the_contest(contest, &AtomicBool::new(false))?;
     let lowered = levels.lowered()?;

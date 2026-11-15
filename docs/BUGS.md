@@ -34,10 +34,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## The binary
 
 ## Equaliser
-- [M · 0.12.0] A listening test of lossy restoration is level-matched only where its arms' chains
-  begin on some frames of the song: over one MP3 of steady tones the extended arm settles from
-  0.00 to 0.09 dB louder than `levels_of` measured from the song's start, by the frame its chain
-  was built at (a whole number of 1 024-frame blocks in matched; 11 025 frames in, it stayed
-  0.09 dB loud to the end), so a test begun mid-song can be heard unmatched and an ABX told apart
-  by level; `restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap` begins its
-  audition on a whole block for it

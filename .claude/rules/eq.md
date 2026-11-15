@@ -612,7 +612,11 @@ tested.
   volume and gain) and meters each with `resonate_analysis::LoudnessMeter` (BS.1770, the study's
   meter), leaving the first `SETTLING_LEFT_UNMEASURED` (4 s, at most half the song) out because
   restoration learns its wall and long-term spectrum over that long and a listener compares what
-  follows; `ContestLevels::lowered` lowers the louder arm by the difference (`Lowered`, a `Trim`,
+  follows. The arms heard are chains built where the audition begins, not at the song's start, and
+  the measurement still holds for them because the stage settles at one wall and one level
+  wherever its chain began (`audio.md`'s whole windows): the arms are made alike rather than
+  measured again from the frame the audition began at, which a seek or a rebind moves.
+  `ContestLevels::lowered` lowers the louder arm by the difference (`Lowered`, a `Trim`,
   `Error::LevelsTooFarApart` past `Trim::WIDEST_MILLIBELS`, `LevelsUnmeasured` for silence or a
   stop). The trim scales that arm's input as it is widened (`Output::level_the_arms`), before
   every stage and the gain the ring is told of, so the ring's level arithmetic is untouched and
@@ -622,8 +626,9 @@ tested.
   and the dithered one not
   (`switching_between_two_resampler_qualities_splices_the_other_without_a_gap_or_a_step`,
   `switching_dither_on_and_off_splices_the_other_without_a_gap_or_a_step`); restoration off and
-  extended over an MP3 of steady tones, measured some 0.12 dB apart, heard within 0.02 dB of each
-  other once lowered, with no gap and no reopen
+  extended over an MP3 of steady tones, measured some 0.14 dB apart, heard within 0.02 dB of each
+  other once lowered from an audition begun a quarter second in, off any block, with no gap and no
+  reopen
   (`restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap`, skipped without
   ffmpeg's libmp3lame).
 - **`resonate abx FILE --of restoration|resampler|dither` tests a setting** (`contest_of`): A is

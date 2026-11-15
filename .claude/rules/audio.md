@@ -1272,7 +1272,16 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   **An unstudied track is extended from its first quarter second:** the long-term
   spectrum is a running mean until it has heard `LONG_TERM_SECONDS`, the wall is looked for every
   `LOOK_FOR_A_WALL_EVERY_SECONDS` from `LOOK_FOR_A_WALL_AFTER_SECONDS` and held provisionally,
-  locking at `WALL_LOCKS_AFTER_SECONDS`. Everything the wall drives (droop lift and patch) is scaled
+  locking at `WALL_LOCKS_AFTER_SECONDS`. **Both running spectra read a window only once it is
+  whole** (`whole_windows_heard`, the hops after `HOPS_BEFORE_A_WINDOW_IS_WHOLE`): a chain's first
+  windows reach back into its zeroed history, and the step from those zeros into the music is in
+  no song, wherever the chain began; read, its splatter over the wall would move the wall found at
+  lock by a band or more, which the hysteresis below then keeps, so the level the stage settles at
+  would follow the frame its chain was built at. Steady tones settle at one wall and one level from any start
+  (`the_level_an_extension_settles_at_is_the_same_wherever_its_chain_begins`, five starts on and
+  off the hop grid within `SETTLED_LEVELS_AGREE_WITHIN_DB`, 0.002 dB, a tenth of what a listening
+  test's arms are heard matched within), which a listening test's level match rests on (`eq.md`).
+  Everything the wall drives (droop lift and patch) is scaled
   by a *presence* walked over `RESTORATION_FADES_OVER_SECONDS`, so the extension fades in rather
   than stepping; a wall moving past `WALL_MOVES_PAST_HZ` fades out, moves, fades back in. A studied
   wall starts present. **The wall is followed past its lock:** a second running spectrum
@@ -1633,8 +1642,8 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   (`wait_for_the_ring_to_hold`, reading `AudioSource::frames_ready`, which the ring answers with
   what it holds to be heard, stale frames excluded, and every other source leaves `None`), since a
   starved engine's near-dry ring has no splice point and the switch rebinds instead. The
-  restoration test also begins its audition on a whole number of `BLOCK_FRAMES` (`BUGS.md`: the
-  extended arm's level follows the frame its chain began at).
+  restoration test begins its audition a quarter second in, off the `BLOCK_FRAMES` and hop grids,
+  since an extended arm settles at one level wherever its chain began.
 - **A queue test asserting how a smart shuffle spreads seeds its `Shuffler`**
   (`Shuffler::seeded`): the spread is a bound on most draws, not every one (about one clock seed
   in seventy put three or more alike neighbours into thirty rows of three artists), so

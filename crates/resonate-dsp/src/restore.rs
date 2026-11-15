@@ -100,6 +100,7 @@ const FRAME_AT_48_KHZ: usize = 1_024;
 const HOPS_A_FRAME: usize = 4;
 const SYNTHESIS_GAIN: f64 = 2.0 / HOPS_A_FRAME as f64;
 const SLICES_REMEMBERED: usize = HOPS_A_FRAME + 1;
+const HOPS_BEFORE_A_WINDOW_IS_WHOLE: u64 = HOPS_A_FRAME as u64 - 1;
 const LONG_TERM_SECONDS: f64 = 3.0;
 const HOLE_MEMORY_SLICES: usize = 17;
 const LOOK_FOR_A_WALL_AFTER_SECONDS: f64 = 0.25;
@@ -443,9 +444,17 @@ impl Restore {
         self.emitted += 1;
     }
 
+    fn whole_windows_heard(&self) -> u64 {
+        self.hops.saturating_sub(HOPS_BEFORE_A_WINDOW_IS_WHOLE)
+    }
+
     fn note(&mut self) {
-        let step = self.long_term_step.max((self.hops.max(1) as f64).recip());
-        let recent_step = self.recent_step.max((self.hops.max(1) as f64).recip());
+        let whole = self.whole_windows_heard();
+        if whole == 0 {
+            return;
+        }
+        let step = self.long_term_step.max((whole as f64).recip());
+        let recent_step = self.recent_step.max((whole as f64).recip());
         let share = (self.channels as f64).recip();
         for (long, heard) in self.long_term.iter_mut().zip(&self.heard_this_hop) {
             *long += (heard * share - *long) * step;
@@ -1388,6 +1397,10 @@ mod tests {
     const BRIEF_DIPS: [(f64, f64); 2] = [(20.0, 0.6), (24.0, 2.0)];
     const SHORT_FILL_SPILLS_AT_MOST: usize = 48;
     const SHORT_HOLE_OFFSETS: [usize; 6] = [0, 13, 29, 47, 64, 101];
+    const CHAINS_BEGIN_AT: [usize; 5] = [17, 300, 1_024, 11_025, 20_000];
+    const SETTLED_FROM: usize = 5 * 44_100;
+    const SETTLED_FOR: usize = 3 * 44_100;
+    const SETTLED_LEVELS_AGREE_WITHIN_DB: f64 = 0.002;
 
     fn restored(restoration: Restoration) -> RestoreConfig {
         RestoreConfig {
@@ -1673,6 +1686,33 @@ mod tests {
             (-45.0..=-3.0).contains(&early),
             "half a second in the extension sits at {early:.1} dB"
         );
+    }
+
+    #[test]
+    fn the_level_an_extension_settles_at_is_the_same_wherever_its_chain_begins() {
+        let song = tones(SETTLED_FROM + SETTLED_FOR, 100.0, 11_000.0, 60);
+        let settled = |begun: usize| {
+            let (extended, stage) = through(restored(Restoration::Extend), &song[begun * 2..]);
+            let heard = &extended[(SETTLED_FROM - begun) * 2..];
+            let power =
+                heard.iter().map(|sample| sample * sample).sum::<f64>() / heard.len() as f64;
+            (decibels_of_power(power), stage.wall())
+        };
+
+        let (from_the_start, wall) = settled(0);
+        assert!(wall.is_some(), "no wall was found from the song's start");
+        for begun in CHAINS_BEGIN_AT {
+            let (level, found) = settled(begun);
+            assert_eq!(
+                found, wall,
+                "a chain begun {begun} frames in found another wall"
+            );
+            assert!(
+                (level - from_the_start).abs() < SETTLED_LEVELS_AGREE_WITHIN_DB,
+                "a chain begun {begun} frames in settled {:.4} dB from one begun at the start",
+                level - from_the_start
+            );
+        }
     }
 
     #[test]
