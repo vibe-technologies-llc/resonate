@@ -16,9 +16,9 @@ use resonate_core::{Answer, Answered, Chromaprint, Link, Mbid, MediaLocation, Re
 use resonate_library::{
     Agreement, Album, AlbumQuery, CoverArt, Credit, Cut, DeliveryFolder, Direction, HeardAs,
     HeardElsewhere, HeldTags, HistoryFrom, ImageFormat, ImportOptions, Layout, Library,
-    ListeningService, LyricText, Medium, PlaylistLink, Release, ReleaseTrack, Removal, Result,
-    SavedQuery, ScanOptions, ScanStats, SongFiled, SortOrder, Sources, SyncedQueryBody, TrackQuery,
-    Trashes, Upkeep, Vault, WAITS,
+    ListeningService, LyricText, Medium, OrganiseOptions, PlaylistLink, Release, ReleaseTrack,
+    Removal, Result, SavedQuery, ScanOptions, ScanStats, SongFiled, SortOrder, Sources,
+    SyncedQueryBody, TrackQuery, Trashes, Upkeep, Vault, WAITS, Window,
 };
 
 const RATE: u32 = 44_100;
@@ -1463,6 +1463,58 @@ fn a_song_deleted_from_the_app_is_remembered_and_one_folded_into_its_twin_is_not
     library.forgive_deleted_recordings()?;
 
     assert!(!library.deleted_recording(&echoes)?);
+    Ok(())
+}
+
+fn heard_for_two_seconds(library: &Library, path: &Path) -> Result<()> {
+    let counted = library
+        .track_played(&MediaLocation::local(path), None, Duration::from_secs(2))?
+        .expect("a counted play");
+    library.listened(counted.listen, Duration::from_secs(2))
+}
+
+#[test]
+fn only_a_song_the_listener_deletes_is_marked_deleted_and_every_forgetting_keeps_the_listens()
+-> Result<()> {
+    let tree = Tree::new();
+    let pruned = tree.song("Pruned.wav", "Pruned", "Ada", "Winter");
+    let deleted = tree.song("Deleted.wav", "Deleted", "Ada", "Winter");
+    let organised = tree.song("Organised.wav", "Organised", "Ada", "Winter");
+    let library = Library::open_in_memory()?;
+    library.trash_through(Some(Arc::new(TakenByTheDesktop)));
+    scan(&library, &tree.root)?;
+    for path in [&pruned, &deleted, &organised] {
+        heard_for_two_seconds(&library, path)?;
+    }
+    let before = library.statistics(Window::Everything)?;
+
+    fs::remove_file(&pruned).expect("the file goes");
+    scan(&library, &tree.root)?;
+
+    assert!(library.track_at(&pruned, None)?.is_none());
+    assert!(!library.deleted_recording(&song("Pruned", "Ada", "Winter"))?);
+    assert_eq!(library.statistics(Window::Everything)?.plays, before.plays);
+
+    let doomed = library.track_at(&deleted, None)?.expect("scanned");
+    library.delete_tracks(&[doomed.id])?;
+
+    assert!(library.deleted_recording(&song("Deleted", "Ada", "Winter"))?);
+    assert_eq!(library.statistics(Window::Everything)?.plays, before.plays);
+
+    library
+        .organise(OrganiseOptions {
+            apply: true,
+            ..OrganiseOptions::default()
+        })?
+        .join()?;
+
+    assert!(library.track_at(&organised, None)?.is_none());
+    assert!(!library.deleted_recording(&song("Organised", "Ada", "Winter"))?);
+    assert!(!library.deleted_recording(&song("Pruned", "Ada", "Winter"))?);
+    assert_eq!(library.tracks(&TrackQuery::default())?.len(), 1);
+    let after = library.statistics(Window::Everything)?;
+    assert_eq!(after.plays, before.plays);
+    assert_eq!(after.listened, before.listened);
     Ok(())
 }
 

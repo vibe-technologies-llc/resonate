@@ -21,16 +21,14 @@ use resonate_core::{
 pub use resonate_core::{folded_letters, is_lettered};
 use resonate_providers::{A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, led_by, spelt_as};
 use resonate_vault::{Form, VaultKey};
-use rusqlite::{
-    Connection, OptionalExtension, Transaction, TransactionBehavior, params, params_from_iter,
-    types::Value,
-};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use unicode_normalization::UnicodeNormalization as _;
 
 use crate::{
     Column, CoverSource, Direction, EncodedColumn, Error, Isrc, Mbid, OrderedColumn,
     REFRESH_SPREAD, Relation, Result, RowOrder, Service, SortOrder, Spellings, StoreOp, credits,
-    deleted, synced::HeldRow,
+    forgetting::{Forgetting, Rows, forget_rows},
+    synced::HeldRow,
 };
 
 const UNIT_SEPARATOR: char = '\u{1f}';
@@ -38,8 +36,6 @@ const SLEEVE_TIER: &str = "sleeve";
 const RELEASE_TIER: &str = "release";
 const YEAR_DIGITS: usize = 4;
 const DATE_DIGITS: [usize; 3] = [YEAR_DIGITS, 6, 8];
-const FORGOTTEN_AT_ONCE: usize = 256;
-
 macro_rules! the_picture_of {
     ($album:literal) => {
         concat!("coalesce(", $album, ".cover_key, ", $album, ".cover_print)")
@@ -1290,23 +1286,17 @@ pub fn prune(tx: &Transaction<'_>, roots: &[i64], generation: i64) -> Result<u64
     }
     let scoped = scoped(roots);
 
-    deleted::keep_listens_as_unheld(
+    let removed = forget_rows(
         tx,
-        &format!("t.seen = -?1 AND t.root_id IN ({scoped}) AND t.vault_key IS NULL"),
-        params![generation],
+        Forgetting::Unreached,
+        &[Rows::Unreached {
+            roots: &scoped,
+            generation,
+        }],
     )?;
-    let removed = tx
-        .execute(
-            &format!(
-                "DELETE FROM tracks WHERE seen = -?1 AND root_id IN ({scoped})
-                    AND vault_key IS NULL"
-            ),
-            params![generation],
-        )
-        .map_err(|source| Error::store(StoreOp::Delete, source))?;
     let superseded = superseded_in_the_vault(tx, &scoped, generation)?;
 
-    Ok(removed as u64 + superseded)
+    Ok(removed + superseded)
 }
 
 fn superseded_in_the_vault(tx: &Transaction<'_>, scoped: &str, generation: i64) -> Result<u64> {
@@ -1322,17 +1312,12 @@ fn superseded_in_the_vault(tx: &Transaction<'_>, scoped: &str, generation: i64) 
         })
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
-    let mut removed = 0;
-    for (id, path) in unseen {
-        if !path_of(&path).exists() {
-            continue;
-        }
-        deleted::keep_listens_as_unheld(tx, "t.id = ?1", params![id])?;
-        removed += tx
-            .execute("DELETE FROM tracks WHERE id = ?1", params![id])
-            .map_err(|source| Error::store(StoreOp::Delete, source))?;
-    }
-    Ok(removed as u64)
+    let supersedable: Vec<Rows<'_>> = unseen
+        .into_iter()
+        .filter(|(_, path)| path_of(path).exists())
+        .map(|(id, _)| Rows::Row(id))
+        .collect();
+    forget_rows(tx, Forgetting::Superseded, &supersedable)
 }
 
 pub fn word_the_titles(connection: &mut Connection) -> Result<()> {
@@ -1438,37 +1423,6 @@ pub fn rooted_paths_at(
         .into_iter()
         .map(|(root, path)| (root, path_of(&path)))
         .collect())
-}
-
-pub fn forget_paths(tx: &Transaction<'_>, root: i64, paths: &[PathBuf]) -> Result<u64> {
-    let mut forgotten = 0;
-    for batch in paths.chunks(FORGOTTEN_AT_ONCE) {
-        let held = vec!["?"; batch.len()].join(",");
-        let unvaulted_at_these_paths =
-            format!("t.root_id = ?1 AND t.vault_key IS NULL AND t.path IN ({held})");
-        let mut bound: Vec<Value> = Vec::with_capacity(batch.len() + 1);
-        bound.push(Value::Integer(root));
-        for path in batch {
-            bound.push(Value::Text(path_text(path).into_owned()));
-        }
-
-        deleted::keep_listens_as_unheld(
-            tx,
-            &unvaulted_at_these_paths,
-            params_from_iter(bound.iter()),
-        )?;
-
-        let mut statement = tx
-            .prepare(&format!(
-                "DELETE FROM tracks WHERE root_id = ?1 AND vault_key IS NULL AND path IN ({held})"
-            ))
-            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
-        forgotten += statement
-            .execute(params_from_iter(bound))
-            .map_err(|source| Error::store(StoreOp::Delete, source))?;
-    }
-
-    Ok(forgotten as u64)
 }
 
 pub fn spellings(connection: &Connection) -> Result<Spellings> {

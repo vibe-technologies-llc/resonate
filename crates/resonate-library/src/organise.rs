@@ -31,6 +31,7 @@ use crate::{
     Library, StoreOp,
     error::{Error, FieldName, LayoutFault, MoveOp, Result},
     filed,
+    forgetting::{Forgetting, Rows, forget_rows},
     paged::{Paging, ROWS_A_PAGE},
     pass::{Cancelling, OrganiseHandle, PassHandle, PassKind},
     reach::{Part, Reach},
@@ -2920,7 +2921,6 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
     let mut stale_lyrics = prepared(tx, "DELETE FROM lyrics_kept WHERE path = ?1")?;
     let mut stale_offsets = prepared(tx, "DELETE FROM lyrics_ahead WHERE path = ?1")?;
     let mut stale_refusals = prepared(tx, "DELETE FROM lyrics_refused WHERE path = ?1")?;
-    let mut stale_tracks = prepared(tx, "DELETE FROM tracks WHERE path = ?1")?;
     let mut stale_retags = prepared(tx, "DELETE FROM retagged WHERE path = ?1")?;
     let mut stale_retagged_fields = prepared(tx, "DELETE FROM retagged_fields WHERE path = ?1")?;
     let mut stale_received = prepared(tx, "DELETE FROM songs_received WHERE path = ?1")?;
@@ -2946,11 +2946,11 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
         let from = store::path_text(from_path);
         let to = store::path_text(to_path);
 
+        forget_rows(tx, Forgetting::Displaced, &[Rows::AtPath(&to)])?;
         for statement in [
             &mut stale_lyrics,
             &mut stale_offsets,
             &mut stale_refusals,
-            &mut stale_tracks,
             &mut stale_retags,
             &mut stale_retagged_fields,
             &mut stale_received,

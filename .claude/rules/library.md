@@ -442,7 +442,7 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   sizes (`store::sized_files_under`), keeps those still there (a file is gone only where its stat says
   `NotFound` or `NotADirectory`, `scan::is_gone`: a folder readable but not searchable answers `EACCES`,
   which is no verdict), hands the rest to
-  `store::forget_paths`, **except a path whose size an audio file nothing catalogues has**: that
+  `forget_rows` as `Forgetting::Tidied`, **except a path whose size an audio file nothing catalogues has**: that
   may be a hand move no walk has paired yet, and forgetting it would cost its history, so it stays
   for the root's own walk (`moves`, then the prune) to pair or forget. The look is a `read_dir`
   of the root (`sizes_of_files_not_catalogued`, dot-names and system folders stepped over,
@@ -459,7 +459,7 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
 - **A per-row statement is prepared once a connection.** `store::cached` runs literal SQL through
   `prepare_cached`; every per-row write uses it; per-row reads and the 39-column track upsert use
   `store::queried`. A scan cycles through more statements than rusqlite's default cache of 16, so
-  `connect` raises it to `STATEMENTS_CACHED` (128). `format!`-built SQL stays on `execute`, except where it runs once a path of a removal: `deleted::forget_files` and `keep_listens_as_unheld` run through `store::cached` and `prepare_cached`, and `deleted::files_of` reads a deletion's tracks 256 at a time.
+  `connect` raises it to `STATEMENTS_CACHED` (128). `format!`-built SQL stays on `execute`, except where it runs once a path of a removal: `forgetting::forget_rows`'s statements and `deleted::forget_files`'s run through `store::cached` and `prepare_cached`, and `deleted::files_of` reads a deletion's tracks 256 at a time.
 - **A track is keyed by `(path, span_start)`.** N cue rows share a path: `UNIQUE` on the pair,
   `span_start` `NOT NULL DEFAULT 0` (NULLs are distinct in a unique index). Every lookup meaning
   *this row* takes the span beside the path (`Library::track_at`, `Library::track_played`). A
@@ -526,14 +526,33 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `vault.md`), and the listens of every row it forgets are copied into `unheld_listens` first, so
   Statistics, Wrapped and unsent scrobbles keep them and a folder added again is credited back
   (`forgetting_a_folder_leaves_its_vaulted_rows_and_keeps_the_listens_of_the_rows_it_forgets`).
-  **Every forgetting keeps the listens through `deleted::keep_listens_as_unheld`**: `forget_files`,
-  `forget_a_root`, `forget_delivered`, `store::forget_paths` (`forget_the_gone`, the scan's tidy of a
-  root it did not walk) and `store::prune` (the rows a walked root's scan did not reach, and a vaulted
-  row its file supersedes) each name the rows to forget as one condition, so a file moved off a mount
-  and back, or deleted by hand under a walked root and restored, is counted from where it was
+  **Every removal of `tracks` rows goes through `forgetting::forget_rows`**, which takes the
+  `Forgetting` reason and the `Rows` to remove (a path, a rootless path, a root's unvaulted rows,
+  batches of a root's paths, the rows a scan did not reach, one row). The reason holds what
+  differs, in one place: `Deleted` (the listener's delete and a fold, `forget_files`) drops `wants` naming a release
+  row the tracks fill or offering the path; `Folder` (`forget_a_root`), `Delivery`
+  (`forget_delivered`), `Vanished` (`forget_the_gone`'s walk), `Tidied` (the scan's tidy of a root it
+  did not walk), `Unreached` (`store::prune`) and `Superseded` (a vaulted row its file supersedes)
+  drop none; `Displaced` (organise's stale row at a move's destination) keeps no listens, since
+  the row that moves in takes the path and `history::credit_the_unheld` would credit the displaced
+  row's listens to it. Every other reason copies the listens of the rows into `unheld_listens`
+  first, so a file moved off a mount and back, or deleted by hand under a walked root and
+  restored, is counted from where it was. The condition is one clause, read by the listens' copy,
+  the wants and the `DELETE`, so they cannot name different rows, and a batch caller keeps its
+  one statement a chunk of 256 paths. `Deleted`, `Folder`, `Delivery` and `Vanished` sweep
+  orphans and settle alternatives once afterwards (`Deleted`, `Delivery` and `Vanished` only where
+  a row went, `Folder` always); `Tidied`, `Unreached`, `Superseded` and `Displaced` leave it to
+  the scan, which sweeps and settles once after every root, or to organise's own end. **No removal
+  notes `songs_deleted`**: only a listener's delete does, in a transaction of its own before the
+  file goes (`deleted::note_before_removing`, so a follow meanwhile does not fetch the song back,
+  and `Marked::take_back_for` if the trash refuses), which `forget_rows` cannot do as the rows go
+  after the files. `no_source_in_the_library_deletes_tracks_outside_forget_rows`
+  (`forgetting.rs`) refuses a `DELETE FROM tracks`, case and whitespace aside, in any source of the
+  crate but `forgetting.rs` and test modules
   (`a_file_forgotten_as_gone_keeps_its_listens_and_has_them_back_when_it_returns`,
   `a_file_the_scan_prunes_keeps_its_listens_and_has_them_back_when_it_returns`,
-  `a_delivered_row_forgotten_keeps_its_listens`).
+  `a_delivered_row_forgotten_keeps_its_listens`,
+  `only_a_song_the_listener_deletes_is_marked_deleted_and_every_forgetting_keeps_the_listens`).
 - **A version chosen for a song is kept by the song's row.** `versions_chosen` (`chosen.rs`): `track`
   primary, either `held` (another row) or `served` (a `MediaLocation::to_uri` of a song a service
   plays in place), never both, and when chosen; both ids `ON DELETE CASCADE`, so a song or a held

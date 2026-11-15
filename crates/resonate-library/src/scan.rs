@@ -29,6 +29,7 @@ use crate::{
     Error, Result, StoreOp, alternatives,
     db::Inner,
     enriched::stripped_title,
+    forgetting::{Forgetting, Rows, forget_rows},
     history, loose, moves,
     numerals::{self, SEPARATORS},
     pass::{Cancelling, PassHandle, PassKind, ScanHandle},
@@ -487,15 +488,11 @@ fn forget_at_or_under(
         }
     }
 
-    let mut forgotten = 0;
-    for (root, paths) in &gone {
-        forgotten += store::forget_paths(transaction, *root, paths)?;
-    }
-    if forgotten > 0 {
-        store::sweep_orphans(transaction)?;
-        alternatives::settle_if_owed(transaction)?;
-    }
-    Ok(forgotten)
+    let rows: Vec<Rows<'_>> = gone
+        .iter()
+        .map(|(root, paths)| Rows::UnvaultedAtPaths { root: *root, paths })
+        .collect();
+    forget_rows(transaction, Forgetting::Vanished, &rows)
 }
 
 pub(crate) fn walked_from(root: &str) -> (String, String) {
@@ -812,7 +809,16 @@ fn tidy_the_roots_beside(
             files = gone.len(),
             "tidying a root this scan did not walk"
         );
-        tidied += inner.write(|transaction| store::forget_paths(transaction, root.id, &gone))?;
+        tidied += inner.write(|transaction| {
+            forget_rows(
+                transaction,
+                Forgetting::Tidied,
+                &[Rows::UnvaultedAtPaths {
+                    root: root.id,
+                    paths: &gone,
+                }],
+            )
+        })?;
     }
 
     if tidied > 0 {

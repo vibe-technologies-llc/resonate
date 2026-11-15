@@ -155,12 +155,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   and `basic-toml` (uniffi's askama)
 
 ## Later: Structure
-- [M] Seven places delete `tracks` rows (`deleted.rs` twice, `store.rs`'s `prune`,
-  `superseded_in_the_vault` and `forget_paths`, `db/roots.rs`'s `forget_delivered`, `organise.rs`),
-  each repeating some of keeping the listens, noting `songs_deleted`, dropping `wants`,
-  `sweep_orphans` and `settle_if_owed`; the listens two of them once lost were that drift. One
-  `forget_rows` every removal goes through, and a test refusing a raw `DELETE FROM tracks` elsewhere,
-  would hold it
 - [L] The party, inspector, services, missing, statistics and suggestions panes and the settings
   pane's fields are entities owning their state and subscriptions (`ui.md`), but `RootView` (81
   fields, 128 more in its groups) still carries the rest: the settings pane's own state

@@ -13,6 +13,7 @@ mod filed;
 mod filters;
 mod fingerprint;
 mod foresight;
+mod forgetting;
 mod hearing;
 mod hinted;
 mod history;

@@ -7,18 +7,18 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::the_folder_a_cue_names;
-use resonate_core::{MediaLocation, TrackId};
-use rusqlite::{Connection, Params, Transaction, params, params_from_iter};
+use resonate_core::TrackId;
+use rusqlite::{Connection, Transaction, params, params_from_iter};
 
-use crate::{Error, Result, StoreOp, alternatives, scan, store, synced};
+use crate::{
+    Error, Result, StoreOp,
+    forgetting::{Forgetting, Rows, forget_rows},
+    scan, store, synced,
+};
 
 const LYRICS_EXTENSION: &str = "lrc";
 
 const PATHS_ASKED_AT_ONCE: usize = 256;
-
-const UNVAULTED_ROWS_OF_A_ROOT: &str = "t.root_id = ?1 AND t.vault_key IS NULL";
-
-const ROWS_AT_A_PATH: &str = "t.path = ?1";
 
 const VAULTED_ROWS_OF_A_ROOT_LEFT_ROOTLESS: &str =
     "UPDATE tracks SET root_id = NULL WHERE root_id = ?1 AND vault_key IS NOT NULL";
@@ -243,78 +243,35 @@ impl Marked {
     }
 }
 
-pub(crate) fn keep_listens_as_unheld(
-    tx: &Transaction<'_>,
-    rows_held_by: &str,
-    bound: impl Params,
-) -> Result<()> {
-    store::cached(
-        tx,
-        &format!(
-            "INSERT INTO unheld_listens
-                (path, span_start, at, began, heard, listen_id, elsewhere, origin_device, origin_id)
-         SELECT t.path, t.span_start, l.at, l.began, l.heard, l.id, l.elsewhere, l.origin_device,
-                l.origin_id
-           FROM listens l JOIN tracks t ON t.id = l.track_id
-          WHERE {rows_held_by}"
-        ),
-        bound,
-    )
-    .map_err(|source| Error::store(StoreOp::Insert, source))?;
-    Ok(())
-}
-
 pub(crate) fn forget_a_root(tx: &Transaction<'_>, root: i64) -> Result<()> {
-    keep_listens_as_unheld(tx, UNVAULTED_ROWS_OF_A_ROOT, params![root])?;
     tx.execute(VAULTED_ROWS_OF_A_ROOT_LEFT_ROOTLESS, params![root])
         .map_err(|source| Error::store(StoreOp::Update, source))?;
-    tx.execute("DELETE FROM tracks WHERE root_id = ?1", params![root])
-        .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    forget_rows(tx, Forgetting::Folder, &[Rows::UnvaultedOfRoot(root)])?;
     tx.execute("DELETE FROM roots WHERE id = ?1", params![root])
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
-    store::sweep_orphans(tx)?;
-    alternatives::settle_if_owed(tx)?;
     Ok(())
 }
 
 pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Forgotten> {
-    let mut forgotten = Forgotten {
-        tracks: 0,
-        vault_keys: AHashSet::new(),
-    };
-    for path in files {
-        let named = store::path_text(path);
-        let offered = MediaLocation::local(path).to_uri();
-
+    let mut vault_keys = AHashSet::new();
+    let named: Vec<String> = files
+        .iter()
+        .map(|path| store::path_text(path).into_owned())
+        .collect();
+    for path in &named {
         let held = tx
             .prepare_cached(
                 "SELECT DISTINCT vault_key FROM tracks WHERE path = ?1 AND vault_key IS NOT NULL",
             )
             .and_then(|mut keys| {
-                keys.query_map(params![named], |row| row.get::<_, String>(0))
+                keys.query_map(params![path], |row| row.get::<_, String>(0))
                     .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             })
             .map_err(|source| Error::store(StoreOp::Query, source))?;
-        forgotten.vault_keys.extend(held);
+        vault_keys.extend(held);
+    }
 
-        keep_listens_as_unheld(tx, ROWS_AT_A_PATH, params![named])?;
-        store::cached(
-            tx,
-            "DELETE FROM wants
-              WHERE offered = ?2
-                 OR release_track_id IN
-                    (SELECT id FROM release_tracks
-                      WHERE track_id IN (SELECT id FROM tracks WHERE path = ?1))",
-            params![named, offered],
-        )
-        .map_err(|source| Error::store(StoreOp::Delete, source))?;
-        forgotten.tracks += store::cached(tx, "DELETE FROM tracks WHERE path = ?1", params![named])
-            .map_err(|source| Error::store(StoreOp::Delete, source))?
-            as u64;
-    }
-    if forgotten.tracks > 0 {
-        store::sweep_orphans(tx)?;
-        alternatives::settle_if_owed(tx)?;
-    }
-    Ok(forgotten)
+    let rows: Vec<Rows<'_>> = named.iter().map(|path| Rows::AtPath(path)).collect();
+    let tracks = forget_rows(tx, Forgetting::Deleted, &rows)?;
+    Ok(Forgotten { tracks, vault_keys })
 }
