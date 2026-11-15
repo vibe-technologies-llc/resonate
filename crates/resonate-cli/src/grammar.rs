@@ -739,7 +739,7 @@ pub struct PlaylistArgs {
 pub struct QueueArgs {
     #[arg(
         value_name = "FILE",
-        required_unless_present_any = ["playlist", "move_to"],
+        required_unless_present_any = ["playlist", "move_to", "show", "activate"],
         help = words::grammar::queue_args_files()
     )]
     pub files: Vec<OsString>,
@@ -786,6 +786,21 @@ pub struct QueueArgs {
         help = words::grammar::queue_args_move_to()
     )]
     pub move_to: Option<String>,
+
+    #[arg(
+        long,
+        conflicts_with_all = ["files", "playlist", "next", "play", "move_to", "activate"],
+        help = words::grammar::queue_args_show()
+    )]
+    pub show: bool,
+
+    #[arg(
+        long,
+        value_name = "PLAYLIST",
+        conflicts_with_all = ["files", "playlist", "next", "play", "move_to", "show"],
+        help = words::grammar::queue_args_activate()
+    )]
+    pub activate: Option<String>,
 }
 
 #[derive(Debug, Args)]

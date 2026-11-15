@@ -36,10 +36,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Windows parity
-- [M · 0.12.0] Windows has no surface for the playlists and the track list MPRIS offers on Linux:
-  SMTC carries the transport alone and the pipe answers the window's own client, so another program
-  can neither list nor activate a playlist nor read the queue (`windows.md`'s *Not on Windows yet*
-  says it is on the roadmap)
 - [S · 0.12.0] Windows' launcher icon does not follow the accent (`plain_launcher.rs` does nothing
   there)
 - [M · blocked: hardware] Windows has played on a physical machine (a listener's, beside what

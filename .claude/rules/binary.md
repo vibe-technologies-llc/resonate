@@ -143,7 +143,15 @@ paths:
   it is the first zone, as before. `queue --move-to <N|NAME>` queues nothing: it moves what the
   `--zone` zone plays onto the named one over `HandOver` (`move_the_playback`, the target's number
   read off its bus name by `Running::zone_number`), conflicting with files, `--playlist`,
-  `--player`, `--next` and `--play`. `players` prints a `ZONE` column. `resonate mcp` reaches the
+  `--player`, `--next` and `--play`. **`queue --show` and `queue --activate PLAYLIST` are the
+  player's track list and playlists for any program**, on every system, since a Windows player has
+  no bus and its pipe answers this build's clients alone: `--show` prints the zone's rows in the
+  order loaded (`Running::rows`), the one playing marked `PLAYING_MARK`, and `--activate` asks the
+  zone's own `Playlists` and plays the one named, exactly before any case (`offered_named`, as
+  MCP's `play_playlist`), as MPRIS's `ActivatePlaylist` does; a name it does not offer is
+  `Error::NoSuchPlaylist`. Both queue nothing and conflict with the files, `--playlist`, `--next`,
+  `--play`, `--move-to` and each other
+  (`showing_or_activating_queues_nothing_and_needs_no_file`). `players` prints a `ZONE` column. `resonate mcp` reaches the
   same zones by number or name (`mcp.md`), and each zone's service names its device
   (`Host::device`, `mpris.md`). `play` is one player and so the
   first zone. The window's zones are made in `zoning.rs`: `Opener` fills the engine's `Opens` seam

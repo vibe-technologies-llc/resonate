@@ -6,13 +6,17 @@ use std::{
 };
 
 use crossbeam_channel::{bounded, never, select, tick};
-use resonate_core::{FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, Switch, Volume};
+use resonate_core::{
+    FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, Switch, TrackId, Volume, elapsed,
+};
 use resonate_engine::{
     Command, Counting, Event, Keeping, Listening, Placement, Player, QueueItem, RepeatMode, Until,
     stamp_of,
 };
 use resonate_library::{Library, Listen, Playing, PlaylistName};
-use resonate_mpris::{PlayerName, Queueing, Running, Standing, ZoneAsked};
+use resonate_mpris::{
+    Described, PlayerName, PlaylistInfo, PlaylistOrder, Queueing, Running, Standing, ZoneAsked,
+};
 
 use crate::{
     arguments::queue_items_served,
@@ -90,6 +94,12 @@ pub(crate) fn queue_onto_a_running_player(
     if let Some(to) = wanted.move_to.as_deref().map(ZoneAsked::read) {
         return move_the_playback(&running, to);
     }
+    if wanted.show {
+        return show_the_queue(&running);
+    }
+    if let Some(name) = wanted.activate.as_deref() {
+        return activate_the_playlist(&running, name);
+    }
     let rows = match wanted.playlist.as_deref() {
         Some(name) => playlist_rows(cli, config, name)?,
         None => queue_items_served(&wanted.files, &Served::of(config, settings_path(cli).ok()))
@@ -127,6 +137,73 @@ fn move_the_playback(running: &Running, to: ZoneAsked) -> Result<()> {
         words::main::moving_to(running.name().to_string(), target.to_string())
     );
     Ok(())
+}
+
+const PLAYING_MARK: &str = "▶";
+
+fn show_the_queue(running: &Running) -> Result<()> {
+    let rows = running.rows()?;
+    if rows.is_empty() {
+        said!(
+            "{}",
+            words::main::nothing_queued(running.name().to_string())
+        );
+        return Ok(());
+    }
+    let playing = running.metadata()?.map(|playing| playing.track);
+
+    said_on!("{}", queue_table(&rows, playing).render());
+    Ok(())
+}
+
+fn queue_table(rows: &[Described], playing: Option<TrackId>) -> Table {
+    let mut table = Table::new(vec![
+        columns::now(),
+        columns::title(),
+        columns::artist(),
+        columns::album(),
+        columns::length(),
+    ]);
+    for row in rows {
+        let mark = if playing == Some(row.track) {
+            PLAYING_MARK
+        } else {
+            ""
+        };
+        table.push(vec![
+            mark.to_owned(),
+            row.title.clone().unwrap_or_default(),
+            row.artist.clone().unwrap_or_default(),
+            row.album.clone().unwrap_or_default(),
+            row.length.map_or_else(String::new, elapsed::clock),
+        ]);
+    }
+    table
+}
+
+fn activate_the_playlist(running: &Running, name: &str) -> Result<()> {
+    let offered = running.playlists(PlaylistOrder::Alphabetical, false, 0, None)?;
+    let found = offered_named(&offered, name)
+        .ok_or_else(|| Error::NoSuchPlaylist(PlaylistName::new(name)))?;
+    running.activate_playlist(found.id)?;
+
+    said!(
+        "{}",
+        words::main::now_playing_playlist(running.name().to_string(), found.name.clone())
+    );
+    Ok(())
+}
+
+fn offered_named<'a>(offered: &'a [PlaylistInfo], name: &str) -> Option<&'a PlaylistInfo> {
+    let folded = name.trim().to_lowercase();
+    offered
+        .iter()
+        .find(|playlist| playlist.name == name)
+        .or_else(|| {
+            offered
+                .iter()
+                .find(|playlist| playlist.name.to_lowercase() == folded)
+        })
 }
 
 pub(crate) fn reached(player: Option<&str>, zone: Option<&str>) -> Result<Running> {
@@ -645,6 +722,68 @@ mod tests {
         ));
         assert!(one_played.played_anything().is_ok());
         assert!(left_early.played_anything().is_ok());
+    }
+
+    fn described(track: u64, title: &str) -> Described {
+        Described {
+            track: TrackId::new(track).expect("an id"),
+            location: None,
+            span: None,
+            title: Some(title.to_owned()),
+            artist: Some("Low".to_owned()),
+            album: None,
+            length: Some(Duration::from_secs(185)),
+            art: None,
+        }
+    }
+
+    #[test]
+    fn the_queue_shown_marks_the_row_playing_and_keeps_the_order_loaded() {
+        let rows = [described(4, "Lullaby"), described(9, "Words")];
+
+        let shown = queue_table(&rows, Some(TrackId::new(9).expect("an id"))).render();
+        let lines: Vec<&str> = shown.lines().collect();
+
+        assert_eq!(lines.len(), 3);
+        assert!(lines[1].contains("Lullaby") && !lines[1].contains(PLAYING_MARK));
+        assert!(lines[2].contains("Words") && lines[2].contains(PLAYING_MARK));
+        assert!(lines[2].contains("3:05"));
+    }
+
+    #[test]
+    fn a_playlist_is_activated_by_its_exact_name_before_one_differing_only_in_case() {
+        let offered = [
+            PlaylistInfo {
+                id: PlaylistId::new(1).expect("an id"),
+                name: "evening".to_owned(),
+            },
+            PlaylistInfo {
+                id: PlaylistId::new(2).expect("an id"),
+                name: "Evening".to_owned(),
+            },
+        ];
+
+        assert_eq!(
+            offered_named(&offered, "Evening").map(|found| found.id),
+            Some(PlaylistId::new(2).expect("an id"))
+        );
+        assert_eq!(
+            offered_named(&offered, "EVENING ").map(|found| found.id),
+            Some(PlaylistId::new(1).expect("an id"))
+        );
+        assert!(offered_named(&offered, "Morning").is_none());
+    }
+
+    #[test]
+    fn showing_or_activating_queues_nothing_and_needs_no_file() {
+        assert!(Cli::try_parse_from(["resonate", "queue", "--show"]).is_ok());
+        assert!(
+            Cli::try_parse_from(["resonate", "queue", "--activate", "Evening", "--zone", "2"])
+                .is_ok()
+        );
+        assert!(Cli::try_parse_from(["resonate", "queue", "--show", "a.flac"]).is_err());
+        assert!(Cli::try_parse_from(["resonate", "queue", "--activate", "x", "--show"]).is_err());
+        assert!(Cli::try_parse_from(["resonate", "queue"]).is_err());
     }
 
     fn transport_of(arguments: &[&str]) -> TransportArgs {

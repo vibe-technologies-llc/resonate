@@ -658,7 +658,10 @@ from MPRIS on Linux (`smtc.rs`, `cfg(windows)`; `transport.rs`, portable and tes
 The MPRIS service answers "no bus": `resonate-mpris` finds no session bus and the binary carries
 on without it as it does on a Linux machine with none (a running window is still reached on its
 pipe, the machine kept awake by `awake.rs`, the media transport, toasts and the metered connection
-above). The launcher's icon-follows-the-accent is a no-op. All of it is on the roadmap.
+above). What MPRIS's track list and playlists give another program on Linux, Windows gives through
+the terminal: `resonate queue --show` and `queue --activate PLAYLIST` (`binary.md`), `resonate
+players`, and `resonate mcp`'s `show_queue` and `play_playlist`, each over the pipe. The launcher's
+icon-follows-the-accent is a no-op, and is on the roadmap.
 
 ## Release
 
