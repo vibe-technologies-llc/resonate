@@ -202,11 +202,15 @@ pin each byte.
 
 ## Covers and portraits
 
-**The front is asked at the size the window draws, in one request.** `coverart::cover` asks
-`/release/<mbid>/front-500`, where that answers nothing the group's
-`/release-group/<mbid>/front-500` (the archive redirects to the image: no index first). No 500
-thumbnail yet = a miss until the next ask. Bytes sniffed by `ImageFormat::sniff`: no picture =
-`Error::Unreadable`. Paced at `COVER_ARCHIVE_INTERVAL` (100 ms).
+**The front is asked at the size the window draws, then as uploaded.** `coverart::front` asks
+`/<kind>/<mbid>/front-500` and, where that is a 404, `/<kind>/<mbid>/front` (`fronts_of`), first
+for the release and then for its group (the archive redirects to the image: no index first). The
+Internet Archive derives the 250, 500 and 1200 thumbnails hours after an upload, and until then
+only the original is served; a 404 is a settled miss that `land_cover` stamps for
+`COVERS_ASKED_AGAIN_AFTER`, so a new cover asked for at 500 alone would stay missing for a month.
+The original is one request more on a miss alone, under `LARGEST_PICTURE` like any picture. Bytes
+sniffed by `ImageFormat::sniff`: no picture = `Error::Unreadable`. Paced at
+`COVER_ARCHIVE_INTERVAL` (100 ms).
 
 `Reference::portrait` takes `&[Link]`, walking until one answers: every `image` relation (Commons;
 all tried, the first may be a shop's photograph), Wikidata, Wikipedia, Apple Music, Spotify,

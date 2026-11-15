@@ -4,13 +4,14 @@ use resonate_library::{LookupOp, Mbid};
 use crate::{Client, Error, Host, Result, client::LARGEST_PICTURE};
 
 const FRONT_AT_THE_SIZE_DRAWN: &str = "front-500";
+const FRONT_AS_UPLOADED: &str = "front";
 
 pub(crate) fn cover(
     client: &Client,
     release: &Mbid,
     group: Option<&Mbid>,
 ) -> Result<Option<CoverArt>> {
-    if let Some(art) = fetched(client, &front_of("release", release))? {
+    if let Some(art) = front(client, "release", release)? {
         return Ok(Some(art));
     }
     match group {
@@ -20,14 +21,21 @@ pub(crate) fn cover(
 }
 
 pub(crate) fn group_cover(client: &Client, group: &Mbid) -> Result<Option<CoverArt>> {
-    fetched(client, &front_of("release-group", group))
+    front(client, "release-group", group)
 }
 
-fn front_of(kind: &str, id: &Mbid) -> String {
-    format!(
-        "{}/{kind}/{id}/{FRONT_AT_THE_SIZE_DRAWN}",
-        Host::CoverArtArchive.base()
-    )
+fn front(client: &Client, kind: &str, id: &Mbid) -> Result<Option<CoverArt>> {
+    for url in fronts_of(kind, id) {
+        if let Some(art) = fetched(client, &url)? {
+            return Ok(Some(art));
+        }
+    }
+    Ok(None)
+}
+
+fn fronts_of(kind: &str, id: &Mbid) -> [String; 2] {
+    [FRONT_AT_THE_SIZE_DRAWN, FRONT_AS_UPLOADED]
+        .map(|size| format!("{}/{kind}/{id}/{size}", Host::CoverArtArchive.base()))
 }
 
 fn fetched(client: &Client, url: &str) -> Result<Option<CoverArt>> {
@@ -51,16 +59,23 @@ mod tests {
     const RELEASE: &str = "aadf62d6-d475-42e0-b622-e6da7a59fdf7";
 
     #[test]
-    fn a_front_cover_is_asked_for_by_its_id_at_the_size_the_window_draws() {
+    fn a_front_cover_is_asked_at_the_size_the_window_draws_then_as_uploaded_before_its_thumbnail_exists()
+     {
         let id = Mbid::new(RELEASE).expect("an mbid");
 
         assert_eq!(
-            front_of("release", &id),
-            format!("https://coverartarchive.org/release/{RELEASE}/front-500")
+            fronts_of("release", &id),
+            [
+                format!("https://coverartarchive.org/release/{RELEASE}/front-500"),
+                format!("https://coverartarchive.org/release/{RELEASE}/front"),
+            ]
         );
         assert_eq!(
-            front_of("release-group", &id),
-            format!("https://coverartarchive.org/release-group/{RELEASE}/front-500")
+            fronts_of("release-group", &id),
+            [
+                format!("https://coverartarchive.org/release-group/{RELEASE}/front-500"),
+                format!("https://coverartarchive.org/release-group/{RELEASE}/front"),
+            ]
         );
     }
 
