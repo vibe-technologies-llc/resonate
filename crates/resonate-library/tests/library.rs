@@ -30035,6 +30035,44 @@ fn a_lossless_delivery_filed_in_the_music_folder_replaces_the_lossy_song_at_the_
 }
 
 #[test]
+fn a_replacement_with_neither_a_vault_nor_a_music_folder_is_never_offered_a_file_in_place()
+-> Result<()> {
+    let tree = Tree::new();
+    let shop = Tree::new();
+    let (Some(opus), Some(flac)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&shop, "A.flac", "Echoes"),
+    ) else {
+        return Ok(());
+    };
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+    library.deliver_into(None);
+    let store = Arc::new(Offering::new("store", Delivering::File(flac)));
+
+    let summary = library
+        .poll(store.registered(), PollOptions::ASKING_EVERY_WANT)?
+        .join()?;
+
+    assert_eq!(store.asked().len(), 1);
+    assert_eq!(
+        (
+            summary.stats.offered,
+            summary.stats.kept,
+            summary.stats.unkept
+        ),
+        (1, 0, 1),
+        "{summary:?}"
+    );
+    assert_eq!(summary.replaced, Deleted::default());
+    assert_eq!(library.wants()?[0].offered, None);
+    assert!(still_pending(&library, &waiting)?);
+    assert!(opus.exists());
+    Ok(())
+}
+
+#[test]
 fn a_lossy_file_filed_for_a_replacement_is_taken_away_and_refused() -> Result<()> {
     let tree = Tree::new();
     let shop = Tree::new();
