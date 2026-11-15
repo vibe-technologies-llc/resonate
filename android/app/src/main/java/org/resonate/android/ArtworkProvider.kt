@@ -11,10 +11,14 @@ import android.os.ParcelFileDescriptor
 import android.os.Process
 import java.io.FileNotFoundException
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 object ArtworkUris {
     private const val SCHEME = "content"
@@ -38,6 +42,31 @@ object ArtworkReaders {
         ownApp || callerControlsMedia || callerBrowses()
 }
 
+object CoverAnswers {
+    const val ANSWERED_WITHIN_MS = 8_000L
+
+    suspend fun answer(
+        cover: suspend () -> ByteArray?,
+        send: (ByteArray) -> Unit,
+        refuse: () -> Unit,
+        within: Long = ANSWERED_WITHIN_MS,
+    ) {
+        var answered = false
+        try {
+            val jpeg = withTimeoutOrNull(within) { cover() }
+            if (jpeg != null) {
+                send(jpeg)
+                answered = true
+            }
+        } catch (_: CancellationException) {
+            currentCoroutineContext().ensureActive()
+        } catch (_: Exception) {
+        } finally {
+            if (!answered) refuse()
+        }
+    }
+}
+
 class ArtworkProvider : ContentProvider() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -56,13 +85,18 @@ class ArtworkProvider : ContentProvider() {
         val library = (context.applicationContext as ResonateApplication).library
         val (read, write) = ParcelFileDescriptor.createReliablePipe().let { it[0] to it[1] }
         scope.launch {
-            val jpeg = library.features.artworkJpeg(track, ArtworkSizes.BROWSE_EDGE)
-            try {
-                if (jpeg == null) write.closeWithError(NO_COVER)
-                else ParcelFileDescriptor.AutoCloseOutputStream(write).use { it.write(jpeg) }
-            } catch (_: IOException) {
-                write.close()
-            }
+            CoverAnswers.answer(
+                cover = { library.features.artworkJpeg(track, ArtworkSizes.BROWSE_EDGE) },
+                send = { jpeg ->
+                    ParcelFileDescriptor.AutoCloseOutputStream(write).use { it.write(jpeg) }
+                },
+                refuse = {
+                    try {
+                        write.closeWithError(NO_COVER)
+                    } catch (_: IOException) {
+                    }
+                },
+            )
         }
         return read
     }

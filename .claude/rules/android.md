@@ -155,7 +155,7 @@ digests Google publishes in UAMP's `allowed_media_browser_callers.xml`; `isBrows
 holding `MEDIA_CONTENT_CONTROL`, `ArtworkReaders`, by the calling uid, so no other installed app reads
 a cover, authority
 `<applicationId>.art`, `ArtworkUris`) answers `/track/<id>` with the JPEG `artworkJpeg` encodes at
-`ArtworkSizes.BROWSE_EDGE` through a pipe fed off the main thread, and a folder wears the cover of the
+`ArtworkSizes.BROWSE_EDGE` through a pipe fed off the main thread whose write end is always closed (`CoverAnswers.answer`: the engine is waited for at most `ANSWERED_WITHIN_MS`, 8 s, since the provider retains none, and no cover, a failed read or the engine closing closes it with an error, so no reader and no descriptor waits for ever, `CoverAnswersTest`), and a folder wears the cover of the
 track the catalog names for it (`AlbumHit.artworkTrack`, `ArtistHit.artworkTrack`, a playlist's first
 `covers`; none, none). `BrowseStyle.ofChildren` hints Albums, Artists and Playlists as grids and every
 other level as lists in each folder's extras, and `onGetLibraryRoot` answers params that say content

@@ -4,11 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android
-- [S · 0.11.1] `ArtworkProvider` can leave a cover's pipe unanswered for good: `openFile` hands back the
-  read end at once and calls `artworkJpeg` outside its `try`, which catches only `IOException`, so a
-  `CancellationException` (`EngineClosed` from `PollPace.kt`) or a `holding` that waits on an engine
-  nobody `retain`s (a host asking for covers while no engine is open) never closes the write end:
-  the reader blocks and a coroutine and a descriptor leak per request
 - [S · 0.11.1] A Kotlin callback that throws panics the Rust thread that called it: UniFFI 0.32.2
   panics on a failed callback with no `Result` (`Documents::open_document`, `OutputMixer`,
   `PlayerWatch::moved`, `Logbook`, `DocumentRewriting`), these run on the decoder, scan, output and
