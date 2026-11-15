@@ -573,6 +573,18 @@ impl Driven {
         }
     }
 
+    pub(crate) fn until_drawn(&mut self, selector: &'static str) {
+        let began = Instant::now();
+        loop {
+            self.settle();
+            if self.cx.debug_bounds(selector).is_some() {
+                return;
+            }
+            assert!(began.elapsed() < PATIENCE, "{selector} was never drawn");
+            thread::sleep(FRAME);
+        }
+    }
+
     pub(crate) fn play(&mut self, files: &[PathBuf]) {
         let rows = files
             .iter()

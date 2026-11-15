@@ -574,8 +574,290 @@ fn listed_short(listed: usize, counted: u64, shows: MissingShows) -> Option<Stri
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use gpui::{BorrowAppContext as _, TestAppContext};
+    use resonate_core::{AlbumId, Mbid};
+    use resonate_library::{
+        AlbumQuery, ArtistQuery, ArtistRelease, Library, Medium, Release, ReleaseTrack,
+    };
+
     use super::{MissingShows, Place, listed_short};
-    use crate::MissingRow;
+    use crate::{
+        MissingRow, Pane, ResonateApp, Selection,
+        driven::{Driven, Folder},
+        views::reorder::{Listed, Shift},
+    };
+
+    const THE_RELEASE: &str = "6f8d5c3a-1b2c-4d3e-8f40-000000000001";
+
+    const THE_EP: &str = "6f8d5c3a-1b2c-4d3e-8f40-000000000002";
+
+    const HELD: [&str; 2] = ["One", "Two"];
+
+    const RELEASED: [&str; 4] = ["One", "Two", "Three", "Four"];
+
+    fn mbid(text: &str) -> Mbid {
+        Mbid::new(text).expect("a well formed MBID")
+    }
+
+    fn released(position: u32, title: &str) -> ReleaseTrack {
+        ReleaseTrack {
+            position,
+            number: position.to_string(),
+            title: title.to_owned(),
+            artist: None,
+            recording: None,
+            track: None,
+            length: None,
+            isrcs: Vec::new(),
+            links: Vec::new(),
+        }
+    }
+
+    fn orbits() -> Release {
+        Release {
+            id: mbid(THE_RELEASE),
+            group: None,
+            title: "Orbits".to_owned(),
+            credit: Vec::new(),
+            date: None,
+            country: None,
+            label: None,
+            catalog_number: None,
+            barcode: None,
+            kind: Some("Album".to_owned()),
+            disambiguation: None,
+            has_front_cover: false,
+            links: Vec::new(),
+            media: vec![Medium {
+                position: 1,
+                format: None,
+                title: None,
+                tracks: RELEASED
+                    .iter()
+                    .zip(1..)
+                    .map(|(title, position)| released(position, title))
+                    .collect(),
+            }],
+        }
+    }
+
+    fn short_of_two_songs_and_an_ep(folder: &Folder) -> (Arc<Library>, AlbumId) {
+        for title in HELD {
+            folder.tagged(
+                &format!("{title}.wav"),
+                1,
+                &[
+                    (b"IART", "The Orbiters"),
+                    (b"INAM", title),
+                    (b"IPRD", "Orbits"),
+                ],
+            );
+        }
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        Driven::scanned(&library, folder);
+
+        let album = library
+            .albums(&AlbumQuery::default())
+            .expect("the scanned albums")
+            .remove(0)
+            .id;
+        let artist = library
+            .artists(&ArtistQuery::default())
+            .expect("the scanned artists")
+            .remove(0)
+            .id;
+        library
+            .land_release(album, &orbits())
+            .expect("the release lands");
+        library.rematch(album).expect("the release is matched");
+        library
+            .land_artist_releases(
+                artist,
+                &[ArtistRelease {
+                    mbid: mbid(THE_EP),
+                    title: "Hours".to_owned(),
+                    kind: Some("EP".to_owned()),
+                    secondary: Vec::new(),
+                    first_released: Some("1996-05-06".to_owned()),
+                }],
+                (0, 1),
+            )
+            .expect("the discography lands");
+
+        (library, album)
+    }
+
+    fn missing_shown(cx: &mut TestAppContext, folder: &Folder) -> (Driven, AlbumId, Arc<Library>) {
+        let (library, album) = short_of_two_songs_and_an_ep(folder);
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), folder);
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(|app, _| app.tabs.missing = true);
+        });
+        driven.settle();
+        driven.click("tab-missing");
+        driven.until(|root, cx| root.missing_rows_shown(cx).len() == 3);
+
+        (driven, album, library)
+    }
+
+    fn shown(driven: &mut Driven) -> Vec<MissingRow> {
+        driven.read(|root, cx| root.missing_rows_shown(cx).to_vec())
+    }
+
+    fn reached_at(driven: &mut Driven) -> Option<(Shift, usize)> {
+        driven.read(|root, _| root.reached().map(|reach| (reach.shift, reach.row)))
+    }
+
+    fn tabbed_onto(driven: &mut Driven, named: &'static str) -> bool {
+        const TAB_STOPS_AT_MOST: usize = 64;
+        let root = driven.root.clone();
+        (0..TAB_STOPS_AT_MOST).any(|_| {
+            driven.cx.simulate_keystrokes("tab");
+            driven
+                .cx
+                .update(|window, cx| root.read(cx).controls.at(named, cx).is_focused(window))
+        })
+    }
+
+    #[gpui::test]
+    fn the_missing_pane_heads_the_songs_an_album_is_short_of_with_the_album_and_draws_each(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _, _) = missing_shown(cx, &folder);
+
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Missing);
+        assert_eq!(
+            shown(&mut driven),
+            [
+                MissingRow::Album(0),
+                MissingRow::Track(0),
+                MissingRow::Track(1)
+            ]
+        );
+        assert!(driven.cx.debug_bounds("unheld-title-0").is_some());
+        assert!(driven.cx.debug_bounds("unheld-title-1").is_some());
+        assert!(driven.cx.debug_bounds("missing-shows-0").is_some());
+        assert!(driven.cx.debug_bounds("missing-shows-1").is_some());
+        assert!(driven.cx.debug_bounds("bring-back-dismissed").is_none());
+    }
+
+    #[gpui::test]
+    fn the_releases_tab_shows_what_an_artist_has_out_unheld_and_the_tracks_tab_shows_the_songs_again(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _, _) = missing_shown(cx, &folder);
+
+        driven.click("missing-shows-1");
+
+        assert_eq!(
+            shown(&mut driven),
+            [MissingRow::Artist(0), MissingRow::Release(0)]
+        );
+        assert!(driven.cx.debug_bounds("dismiss-release-0").is_some());
+        assert!(driven.cx.debug_bounds("unheld-title-0").is_none());
+
+        driven.click("missing-shows-0");
+
+        assert_eq!(shown(&mut driven).len(), 3);
+        assert!(driven.cx.debug_bounds("unheld-title-0").is_some());
+    }
+
+    #[gpui::test]
+    fn a_song_dismissed_leaves_the_pane_until_the_heading_brings_it_back(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, _, library) = missing_shown(cx, &folder);
+        let first = library
+            .missing_tracks(None, None)
+            .expect("the songs missing")
+            .first()
+            .map(|track| track.release_track)
+            .expect("a song is missing");
+
+        driven.click(Box::leak(
+            format!("dismiss-missing-{}", first.get()).into_boxed_str(),
+        ));
+        driven.until(|root, cx| root.missing_rows_shown(cx).len() == 2);
+
+        assert_eq!(
+            shown(&mut driven),
+            [MissingRow::Album(0), MissingRow::Track(0)]
+        );
+        assert!(driven.cx.debug_bounds("bring-back-dismissed").is_some());
+
+        driven.click("bring-back-dismissed");
+        driven.until(|root, cx| root.missing_rows_shown(cx).len() == 3);
+
+        assert!(driven.cx.debug_bounds("bring-back-dismissed").is_none());
+    }
+
+    #[gpui::test]
+    fn a_release_dismissed_leaves_its_tab_and_the_pane_hands_over_to_the_songs(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _, _) = missing_shown(cx, &folder);
+        driven.click("missing-shows-1");
+
+        driven.click("dismiss-release-0");
+        driven.until(|root, cx| root.missing_rows_shown(cx).len() == 3);
+
+        assert_eq!(shown(&mut driven)[0], MissingRow::Album(0));
+        assert!(driven.cx.debug_bounds("missing-shows-1").is_none());
+        assert!(driven.cx.debug_bounds("bring-back-dismissed").is_some());
+    }
+
+    #[gpui::test]
+    fn the_arrows_walk_the_missing_rows_and_enter_on_a_heading_opens_its_album(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, album, _) = missing_shown(cx, &folder);
+
+        driven.cx.simulate_keystrokes("down");
+        assert_eq!(
+            reached_at(&mut driven),
+            Some((Shift::Listing(Listed::Missing), 0))
+        );
+        driven.cx.simulate_keystrokes("down down");
+        assert_eq!(
+            reached_at(&mut driven),
+            Some((Shift::Listing(Listed::Missing), 2))
+        );
+
+        driven.cx.simulate_keystrokes("up up enter");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.library.read(cx).selection()),
+            Selection::Album(album)
+        );
+    }
+
+    #[gpui::test]
+    fn tab_reaches_the_releases_tab_and_enter_shows_it(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, _, _) = missing_shown(cx, &folder);
+
+        assert!(
+            tabbed_onto(&mut driven, "missing-shows-1"),
+            "tab never reached the releases tab"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        driven.settle();
+
+        assert_eq!(
+            shown(&mut driven),
+            [MissingRow::Artist(0), MissingRow::Release(0)]
+        );
+        assert!(
+            tabbed_onto(&mut driven, "dismiss-release-0"),
+            "tab never reached the release's dismissal"
+        );
+    }
 
     #[test]
     fn a_list_cut_short_of_its_count_says_so_and_a_whole_one_says_nothing() {

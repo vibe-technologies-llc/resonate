@@ -1404,10 +1404,160 @@ fn number_one(
 
 #[cfg(test)]
 mod tests {
-    use std::time::UNIX_EPOCH;
+    use std::{sync::Arc, time::UNIX_EPOCH};
+
+    use gpui::TestAppContext;
+    use resonate_core::TrackId;
+    use resonate_library::{Library, TrackQuery};
 
     use super::*;
-    use crate::views::spoken::{self, node_of};
+    use crate::{
+        Pane,
+        driven::{Driven, Folder},
+        views::spoken::{self, node_of},
+    };
+
+    fn heard_once(folder: &Folder) -> (Arc<Library>, TrackId) {
+        for title in ["Echoes", "Money", "Time"] {
+            folder.tone(&format!("{title}.wav"), 1);
+        }
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        Driven::scanned(&library, folder);
+        let track = library
+            .tracks(&TrackQuery::default())
+            .expect("the scanned tracks")
+            .remove(0);
+        let counted = library
+            .track_played(&track.location, track.span, Duration::ZERO)
+            .expect("the catalog counts the play")
+            .expect("the catalog holds the row");
+        library
+            .listened(counted.listen, Duration::from_secs(90))
+            .expect("the catalog keeps the time");
+
+        (library, track.id)
+    }
+
+    fn statistics_shown(cx: &mut TestAppContext, folder: &Folder) -> (Driven, TrackId) {
+        let (library, track) = heard_once(folder);
+        let mut driven = Driven::opened_in(cx, library, folder);
+        driven.click("tab-statistics");
+        driven.until(|root, cx| root.heard_rows(cx) == 1);
+
+        (driven, track)
+    }
+
+    fn reached_at(driven: &mut Driven) -> Option<(Shift, usize)> {
+        driven.read(|root, _| root.reached().map(|reach| (reach.shift, reach.row)))
+    }
+
+    fn tabbed_onto(driven: &mut Driven, named: &'static str) -> bool {
+        const TAB_STOPS_AT_MOST: usize = 64;
+        let root = driven.root.clone();
+        (0..TAB_STOPS_AT_MOST).any(|_| {
+            driven.cx.simulate_keystrokes("tab");
+            driven
+                .cx
+                .update(|window, cx| root.read(cx).controls.at(named, cx).is_focused(window))
+        })
+    }
+
+    #[gpui::test]
+    fn what_was_heard_is_read_once_the_pane_is_shown_and_ranked_under_its_heading(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (library, _) = heard_once(&folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+
+        assert_eq!(driven.read(|root, cx| root.heard_rows(cx)), 0);
+
+        driven.click("tab-statistics");
+        driven.until(|root, cx| root.heard_rows(cx) == 1);
+
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Statistics);
+        assert!(driven.cx.debug_bounds("open-wrapped").is_some());
+        for window in 0..Window::ALL.len() {
+            assert!(
+                driven
+                    .cx
+                    .debug_bounds(Box::leak(
+                        format!("statistics-window-{window}").into_boxed_str()
+                    ))
+                    .is_some()
+            );
+        }
+    }
+
+    #[gpui::test]
+    fn a_window_pressed_reads_what_was_heard_over_it(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, _) = statistics_shown(cx, &folder);
+
+        driven.click("statistics-window-0");
+        driven.until(|root, cx| root.library.read(cx).window() == Window::Week);
+        driven.until(|root, cx| root.heard_rows(cx) == 1);
+
+        driven.click("statistics-window-3");
+        driven.until(|root, cx| root.library.read(cx).window() == Window::Everything);
+        driven.until(|root, cx| root.heard_rows(cx) == 1);
+    }
+
+    #[gpui::test]
+    fn the_arrows_reach_what_was_heard_most_and_enter_plays_it(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, track) = statistics_shown(cx, &folder);
+
+        driven.cx.simulate_keystrokes("down");
+        assert_eq!(
+            reached_at(&mut driven),
+            Some((Shift::Listing(Listed::Heard), 0))
+        );
+
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| !root.player.read(cx).queue().is_empty());
+
+        assert_eq!(driven.queue(), [track]);
+    }
+
+    #[gpui::test]
+    fn tab_reaches_a_window_and_wrapped_and_enter_presses_them(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, _) = statistics_shown(cx, &folder);
+
+        assert!(
+            tabbed_onto(&mut driven, "statistics-window-2"),
+            "tab never reached the year's window"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| root.library.read(cx).window() == Window::Year);
+
+        assert!(
+            tabbed_onto(&mut driven, "open-wrapped"),
+            "tab never reached Wrapped"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, _| {
+            root.social.wrapped.is_some() || root.social.reading_wrapped.is_some()
+        });
+    }
+
+    #[gpui::test]
+    fn a_catalog_nothing_was_heard_from_ranks_nothing(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        folder.tone("Echoes.wav", 1);
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        Driven::scanned(&library, &folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+
+        driven.click("tab-statistics");
+        driven.settle();
+
+        assert_eq!(driven.read(|root, cx| root.heard_rows(cx)), 0);
+        assert!(driven.cx.debug_bounds("open-wrapped").is_some());
+        driven.cx.simulate_keystrokes("down");
+        assert_eq!(reached_at(&mut driven), None);
+    }
 
     const SECONDS_A_DAY: u64 = 24 * 60 * 60;
     const TODAY: u64 = 20_000;

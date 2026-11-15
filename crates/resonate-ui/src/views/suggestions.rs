@@ -598,7 +598,183 @@ fn suggestions_heading(offered: usize) -> Div {
 
 #[cfg(test)]
 mod tests {
+    use gpui::TestAppContext;
+    use resonate_core::TrackId;
+    use resonate_library::{Library, TrackQuery};
+
     use super::*;
+    use crate::driven::{Driven, Folder};
+
+    const SONGS: usize = 12;
+
+    fn twelve_songs(folder: &Folder) -> (Arc<Library>, Vec<TrackId>) {
+        for nth in 1..=SONGS {
+            folder.tone(&format!("Track {nth}.wav"), 1);
+        }
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        Driven::scanned(&library, folder);
+        let ids = library
+            .tracks(&TrackQuery::default())
+            .expect("the scanned tracks")
+            .iter()
+            .map(|track| track.id)
+            .collect();
+
+        (library, ids)
+    }
+
+    fn suggestions_shown(cx: &mut TestAppContext, folder: &Folder) -> (Driven, Vec<TrackId>) {
+        let (library, ids) = twelve_songs(folder);
+        let mut driven = Driven::opened_in(cx, library, folder);
+        driven.until(|root, cx| !root.offered_in_shelf_order(cx).is_empty());
+        driven.click("tab-suggestions");
+        driven.until_drawn("suggestion-open-0");
+
+        (driven, ids)
+    }
+
+    fn songs_drawn(driven: &mut Driven, ids: &[TrackId]) -> usize {
+        driven.settle();
+        ids.iter()
+            .filter(|id| {
+                driven
+                    .cx
+                    .debug_bounds(Box::leak(format!("track-{}", id.get()).into_boxed_str()))
+                    .is_some()
+            })
+            .count()
+    }
+
+    fn until_songs_are_drawn(driven: &mut Driven, ids: &[TrackId]) {
+        let began = std::time::Instant::now();
+        while songs_drawn(driven, ids) == 0 {
+            assert!(
+                began.elapsed() < std::time::Duration::from_secs(10),
+                "the opened suggestion never drew a song"
+            );
+        }
+    }
+
+    fn reached_at(driven: &mut Driven) -> Option<(Shift, usize)> {
+        driven.read(|root, _| root.reached().map(|reach| (reach.shift, reach.row)))
+    }
+
+    fn tabbed_onto(driven: &mut Driven, named: &'static str) -> bool {
+        const TAB_STOPS_AT_MOST: usize = 64;
+        let root = driven.root.clone();
+        (0..TAB_STOPS_AT_MOST).any(|_| {
+            driven.cx.simulate_keystrokes("tab");
+            driven
+                .cx
+                .update(|window, cx| root.read(cx).controls.at(named, cx).is_focused(window))
+        })
+    }
+
+    #[gpui::test]
+    fn the_pane_shelves_each_offer_as_a_card_and_a_card_pressed_opens_onto_its_songs_and_back(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, ids) = suggestions_shown(cx, &folder);
+        let offered = driven.read(|root, cx| root.offered_in_shelf_order(cx).len());
+
+        assert_eq!(driven.read(|root, _| root.pane), Pane::Suggestions);
+        assert!(driven.cx.debug_bounds("suggestions-back").is_none());
+        assert!(
+            driven
+                .cx
+                .debug_bounds(Box::leak(
+                    format!("suggestion-open-{}", offered - 1).into_boxed_str()
+                ))
+                .is_some(),
+            "every offer draws a card"
+        );
+        assert_eq!(songs_drawn(&mut driven, &ids), 0);
+
+        driven.click("suggestion-open-0");
+        driven.until_drawn("suggestions-back");
+        until_songs_are_drawn(&mut driven, &ids);
+
+        assert!(driven.cx.debug_bounds("suggestion-open-0").is_none());
+        assert!(driven.cx.debug_bounds("opened-suggestion-play").is_some());
+
+        driven.click("suggestions-back");
+        driven.until_drawn("suggestion-open-0");
+
+        assert!(driven.cx.debug_bounds("suggestions-back").is_none());
+        assert_eq!(songs_drawn(&mut driven, &ids), 0);
+    }
+
+    #[gpui::test]
+    fn the_arrows_reach_a_card_and_enter_opens_it_then_reach_its_songs_and_enter_plays_one(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, ids) = suggestions_shown(cx, &folder);
+
+        driven.cx.simulate_keystrokes("down");
+        assert_eq!(
+            reached_at(&mut driven),
+            Some((Shift::Listing(Listed::Offered), 0))
+        );
+
+        driven.cx.simulate_keystrokes("enter");
+        driven.until_drawn("suggestions-back");
+        until_songs_are_drawn(&mut driven, &ids);
+        driven.cx.simulate_keystrokes("down");
+        assert_eq!(
+            reached_at(&mut driven),
+            Some((Shift::Listing(Listed::Suggested), 0))
+        );
+
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| !root.player.read(cx).queue().is_empty());
+
+        assert!(driven.queue().iter().all(|queued| ids.contains(queued)));
+    }
+
+    fn focused_on(driven: &mut Driven, named: &'static str) -> bool {
+        let root = driven.root.clone();
+        driven
+            .cx
+            .update(|window, cx| root.read(cx).controls.at(named, cx).is_focused(window))
+    }
+
+    #[gpui::test]
+    fn tab_walks_the_opened_suggestions_way_back_then_its_play_and_enter_presses_each(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, ids) = suggestions_shown(cx, &folder);
+        driven.click("suggestion-open-0");
+        driven.until_drawn("suggestions-back");
+        until_songs_are_drawn(&mut driven, &ids);
+
+        assert!(
+            tabbed_onto(&mut driven, "suggestions-back"),
+            "tab never reached the way back"
+        );
+        driven.cx.simulate_keystrokes("tab");
+        assert!(focused_on(&mut driven, "opened-suggestion-play"));
+        driven.cx.simulate_keystrokes("shift-tab");
+        assert!(focused_on(&mut driven, "suggestions-back"));
+
+        driven.cx.simulate_keystrokes("enter");
+        driven.until_drawn("suggestion-open-0");
+        assert!(driven.cx.debug_bounds("suggestions-back").is_none());
+
+        driven.click("suggestion-open-0");
+        driven.until_drawn("suggestions-back");
+        until_songs_are_drawn(&mut driven, &ids);
+        assert!(
+            tabbed_onto(&mut driven, "opened-suggestion-play"),
+            "tab never reached the suggestion's Play"
+        );
+        driven.cx.simulate_keystrokes("enter");
+        driven.until(|root, cx| !root.player.read(cx).queue().is_empty());
+
+        assert!(driven.queue().iter().all(|queued| ids.contains(queued)));
+    }
 
     fn offered(name: &str, reason: Reason) -> Suggestion {
         Suggestion {
