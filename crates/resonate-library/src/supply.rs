@@ -861,7 +861,10 @@ fn paired(library: &Library) -> Result<()> {
 
 fn scanned_and_paired(library: &Library, filed: &[Filed]) -> Result<()> {
     if !filed.is_empty() {
-        match library.scan(scanning(filed)).and_then(PassHandle::join) {
+        match library
+            .scan_leaving_the_replacements_unsettled(scanning(filed))
+            .and_then(PassHandle::join)
+        {
             Ok(summary) => {
                 tracing::debug!(?summary, "the folders deliveries were filed in were read")
             }
@@ -1101,7 +1104,10 @@ impl<'a> Lanes<'a> {
         if filed.is_empty() {
             return Ok(());
         }
-        match self.library.scan(scanning(&filed)) {
+        match self
+            .library
+            .scan_leaving_the_replacements_unsettled(scanning(&filed))
+        {
             Ok(scanning) => {
                 if let Err(error) = scanning.join() {
                     tracing::warn!(%error, "the folder a delivery was filed in could not be read yet");

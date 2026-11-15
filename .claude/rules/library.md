@@ -596,10 +596,13 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   than the lossy one, its file there or its row vaulted; every pair is weighed afresh and folded in
   one write (`replacing::folded`), then `remove_tracks_under` trashes the lossy files under the same
   walk. Nobody is watching, so a copy only named alike (`TheSong`) is never taken, nor a lossy copy
-  offered. It runs once a scan's `Walk` guard has dropped, never under it nor inside a delivery's
-  `landed`: `scan::start` and `start_over_held` call the closure `Library::scan` and
-  `scan_what_is_held` hand them (`settle_after_a_scan`, a failure traced at warn) after `drop` of the
-  guard and only on an `Ok` outcome. With no replacement waiting it takes no walk; a walk refused
+  offered. It runs once a scan's `Walk` guard has dropped, never under it nor on a poll's lane:
+  `scan::start` and `start_over_held` call the closure `Library::scan` and `scan_what_is_held` hand
+  them (`settle_after_a_scan`, a failure traced at warn) after `drop` of the guard and only on an
+  `Ok` outcome not `cancelled`, so a scan `wind_down` cancels trashes nothing as the window closes
+  (`a_cancelled_scan_settles_no_replacement`). The poll's own scans (`pair_what_was_filed`,
+  `scanned_and_paired`) start through `scan_leaving_the_replacements_unsettled`, so nothing is
+  settled while other lanes run. With no replacement waiting it takes no walk; a walk refused
   (`Error::AlreadyWalking`) is traced at debug, writes nothing and answers `Deleted::default()`,
   leaving the replacement for the next scan's or poll's end. Under the walk it first calls
   `rejoin_the_replacements`: a replacement whose release row was landed again or whose match was
