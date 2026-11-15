@@ -43,6 +43,7 @@ mod query;
 mod reach;
 mod reference;
 mod renamed;
+mod replacing;
 mod resumed;
 mod retag;
 #[cfg(test)]
@@ -177,6 +178,7 @@ pub use crate::{
         wikipedia_urls,
     },
     renamed::NamesMoved,
+    replacing::{Replaceable, Replacing},
     retag::{
         PassedOver, RetagOptions, RetagProgress, RetagStats, RetagSummary, Retagging, Unwritten,
         Written,

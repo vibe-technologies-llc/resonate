@@ -13,6 +13,7 @@ mod lyrics;
 mod passes;
 mod pictures;
 mod playlists;
+mod replacing;
 mod resuming;
 mod roots;
 mod rows;

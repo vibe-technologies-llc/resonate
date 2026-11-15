@@ -4171,6 +4171,204 @@ fn two_identical_copies_of_one_song_are_listed_once_as_the_first_scanned() -> Re
     Ok(())
 }
 
+const TWO_SECONDS_OF_FRAMES: usize = 88_200;
+
+const THE_CODEC_OF_A_FILE_NAMED: [(&str, &[&str]); 4] = [
+    ("opus", &["-c:a", "libopus", "-b:a", "96k"]),
+    ("mp3", &["-c:a", "libmp3lame", "-b:a", "128k"]),
+    ("flac", &["-c:a", "flac"]),
+    ("ogg", &["-c:a", "libvorbis"]),
+];
+
+fn encoded_with_tags(tree: &Tree, name: &str, tags: &[&str]) -> Option<PathBuf> {
+    if !ffmpeg() {
+        eprintln!("skipped: no ffmpeg to build a {name}");
+        return None;
+    }
+
+    let extension = Path::new(name)
+        .extension()
+        .and_then(|found| found.to_str())?;
+    let (_, codec) = THE_CODEC_OF_A_FILE_NAMED
+        .iter()
+        .find(|(known, _)| *known == extension)?;
+    let held = Tree::new();
+    let source = held.write(
+        "tone.wav",
+        &Wav::new().frames(TWO_SECONDS_OF_FRAMES).build(),
+    );
+    let target = tree.path().join(name);
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).expect("a writable temporary directory");
+    }
+    let mut command = Command::new("ffmpeg");
+    command
+        .args(["-y", "-v", "error", "-i"])
+        .arg(&source)
+        .args(*codec);
+    for tag in tags {
+        command.args(["-metadata", tag]);
+    }
+    let encoded = command
+        .arg(&target)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    if !encoded.is_ok_and(|status| status.success()) || !target.exists() {
+        eprintln!("skipped: ffmpeg would not encode {name}");
+        return None;
+    }
+    Some(target)
+}
+
+fn pink_floyd(title: &str) -> [String; 3] {
+    [
+        format!("title={title}"),
+        "artist=Pink Floyd".to_owned(),
+        "album=Meddle".to_owned(),
+    ]
+}
+
+fn encoded_as_pink_floyd(tree: &Tree, name: &str, title: &str) -> Option<PathBuf> {
+    let tags = pink_floyd(title);
+    let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
+    encoded_with_tags(tree, name, &tags)
+}
+
+fn whole(path: &Path) -> Cut {
+    Cut::whole(MediaLocation::local(path))
+}
+
+#[test]
+fn a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held() -> Result<()> {
+    let tree = Tree::new();
+    let (Some(opus), Some(flac), Some(mp3), Some(money)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes"),
+        encoded_as_pink_floyd(&tree, "lossy/B.mp3", "Time"),
+        encoded_as_pink_floyd(&tree, "lossless/C.flac", "Money"),
+    ) else {
+        return Ok(());
+    };
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let playlist = library.start_playlist(
+        "Dark",
+        &[whole(&opus), whole(&mp3), whole(&opus), whole(&money)],
+    )?;
+    let other = library.start_playlist("Bright", &[whole(&money)])?;
+
+    let listed = library.lossy_songs_of(playlist)?;
+    assert_eq!(
+        listed
+            .iter()
+            .map(|row| row.track.title.as_str())
+            .collect::<Vec<_>>(),
+        ["Echoes", "Time"]
+    );
+    let held = listed[0].held.as_ref().expect("the lossless copy is held");
+    assert_eq!(library.track_at(&flac, None)?.expect("held").id, held.id);
+    assert!(listed[0].can_be_ticked());
+    assert_eq!(listed[1].held.as_ref().map(|copy| copy.id), None);
+    assert_eq!(listed[1].release_track, None);
+    assert!(!listed[1].can_be_ticked());
+    assert!(listed.iter().all(|row| !row.pending));
+
+    let holding = library.playlists_with_lossy_songs()?;
+    assert!(holding.contains(&playlist));
+    assert!(!holding.contains(&other));
+    Ok(())
+}
+
+const A_SHEET_CUTTING_A_LOSSY_FILE: &str = r#"PERFORMER "Pink Floyd"
+TITLE "Meddle"
+FILE "whole.opus" WAVE
+  TRACK 01 AUDIO
+    TITLE "One of These Days"
+    INDEX 01 00:00:00
+  TRACK 02 AUDIO
+    TITLE "Echoes"
+    INDEX 01 00:01:00
+"#;
+
+const A_SHEET_CUTTING_A_LOSSLESS_FILE: &str = r#"PERFORMER "Pink Floyd"
+TITLE "Meddle"
+FILE "album.flac" WAVE
+  TRACK 01 AUDIO
+    TITLE "Fearless"
+    INDEX 01 00:00:00
+  TRACK 02 AUDIO
+    TITLE "Fearless"
+    INDEX 01 00:01:00
+"#;
+
+#[test]
+fn a_cut_of_a_sheet_is_neither_a_lossy_song_to_replace_nor_a_copy_to_replace_one_with() -> Result<()>
+{
+    let tree = Tree::new();
+    let (Some(_), Some(_), Some(fearless)) = (
+        encoded_with_tags(&tree, "whole.opus", &[]),
+        encoded_with_tags(&tree, "album.flac", &[]),
+        encoded_as_pink_floyd(&tree, "fearless.mp3", "Fearless"),
+    ) else {
+        return Ok(());
+    };
+    tree.write("whole.cue", A_SHEET_CUTTING_A_LOSSY_FILE.as_bytes());
+    tree.write("album.cue", A_SHEET_CUTTING_A_LOSSLESS_FILE.as_bytes());
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+
+    let cuts: Vec<Cut> = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .filter(|row| row.span.is_some())
+        .map(|row| Cut {
+            location: row.location,
+            span: row.span,
+        })
+        .collect();
+    assert_eq!(cuts.len(), 4, "the sheets did not cut their files");
+    let mut every = cuts;
+    every.push(whole(&fearless));
+    let playlist = library.start_playlist("Cuts", &every)?;
+
+    let listed = library.lossy_songs_of(playlist)?;
+    assert_eq!(listed.len(), 1, "a cut was listed as a lossy song");
+    assert_eq!(listed[0].track.title, "Fearless");
+    assert!(
+        listed[0].held.is_none(),
+        "a cut of a sheet was offered as the copy"
+    );
+    Ok(())
+}
+
+#[test]
+fn the_version_chosen_for_a_lossy_song_is_the_copy_offered_where_it_is_lossless() -> Result<()> {
+    let tree = Tree::new();
+    let (Some(opus), Some(better), Some(chosen)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&tree, "one/A.flac", "Echoes"),
+        encoded_as_pink_floyd(&tree, "two/A.flac", "Echoes"),
+    ) else {
+        return Ok(());
+    };
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let song = library.track_at(&opus, None)?.expect("the song is held").id;
+    let chosen = library.track_at(&chosen, None)?.expect("held").id;
+    let playlist = library.start_playlist("Dark", &[whole(&opus)])?;
+
+    assert!(library.track_at(&better, None)?.is_some());
+    assert!(library.choose_version(song, &Version::Held(chosen))?);
+
+    let listed = library.lossy_songs_of(playlist)?;
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].held.as_ref().map(|copy| copy.id), Some(chosen));
+    Ok(())
+}
+
 #[test]
 fn a_copy_in_the_best_copys_own_format_is_hidden_beside_one_in_another() -> Result<()> {
     let tree = Tree::new();
