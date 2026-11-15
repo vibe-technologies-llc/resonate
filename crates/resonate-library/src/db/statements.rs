@@ -331,7 +331,8 @@ macro_rules! wants_selected {
                                    WHERE c.release_track_id = rt.id
                                      AND c.isrc IS NOT rt.isrc), ''),
                     rt.length_ms, rt.disc,
-                    rt.position, rt.track_id
+                    rt.position, rt.track_id,
+                    (SELECT r.track_id FROM replacements r WHERE r.release_track_id = rt.id)
                FROM wants w
                JOIN release_tracks rt ON rt.id = w.release_track_id
                JOIN albums a ON a.id = rt.album_id
@@ -346,7 +347,8 @@ pub(super) const WANTS_UNHELD: &str = concat!(
     wants_selected!(),
     " JOIN (SELECT wanted, count(*) AS songs FROM wants GROUP BY wanted) asked_together
         ON asked_together.wanted = w.wanted
-      WHERE rt.track_id IS NULL
+      WHERE (rt.track_id IS NULL
+             OR EXISTS (SELECT 1 FROM replacements r WHERE r.release_track_id = rt.id))
       ORDER BY asked_together.songs > 1,
                CASE WHEN asked_together.songs > 1 THEN w.wanted ELSE -w.wanted END,
                rt.disc, rt.position, w.id"

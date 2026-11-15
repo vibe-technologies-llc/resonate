@@ -193,7 +193,7 @@ impl WantStanding {
     pub(crate) fn of(want: &Want) -> Self {
         Self {
             tried: want.tried,
-            delivered: want.held.is_some() || want.offered.is_some(),
+            delivered: want.is_answered() || want.offered.is_some(),
             misses: want.misses,
             due_at: want.due_at(),
             gave_up: want.gave_up(),

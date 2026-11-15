@@ -68,8 +68,12 @@ impl Want {
         }
     }
 
+    pub const fn is_answered(&self) -> bool {
+        self.held.is_some() && (self.replacing.is_none() || self.offered.is_some())
+    }
+
     pub const fn gave_up(&self) -> bool {
-        self.held.is_none() && self.misses >= TRIES_BEFORE_GIVING_UP
+        !self.is_answered() && self.misses >= TRIES_BEFORE_GIVING_UP
     }
 
     pub(crate) fn lasts_as_long_as(&self, heard: Frames, rate: SampleRate) -> bool {
@@ -77,7 +81,7 @@ impl Want {
     }
 
     pub fn due_at(&self) -> Option<SystemTime> {
-        if self.held.is_some() {
+        if self.is_answered() {
             return None;
         }
         let Some(tried) = self.tried else {
@@ -1425,14 +1429,14 @@ impl Library {
         Ok(self
             .wants_as_they_stand()?
             .iter()
-            .filter(|want| want.held.is_none())
+            .filter(|want| !want.is_answered())
             .filter_map(|want| want.tried)
             .max())
     }
 }
 
 fn due(want: &Want, options: PollOptions, now: SystemTime) -> bool {
-    if want.held.is_some() {
+    if want.is_answered() {
         return false;
     }
     if options.every_want || want.tried.is_some_and(|tried| tried > now) {
@@ -1468,6 +1472,7 @@ mod tests {
             offered: None,
             misses: 0,
             held: None,
+            replacing: None,
             links: Vec::new(),
             release_links: Vec::new(),
         }
@@ -1534,5 +1539,41 @@ mod tests {
             SystemTime::UNIX_EPOCH
         ));
         assert_eq!(held.due_at(), None);
+    }
+
+    #[test]
+    fn a_held_want_replacing_its_song_is_due_until_a_lossless_copy_is_offered() {
+        let lossy = TrackId::new(7).expect("an id");
+        let replacing = Want {
+            held: Some(lossy),
+            replacing: Some(lossy),
+            ..want(None)
+        };
+        assert!(!replacing.is_answered());
+        assert!(replacing.due_at().is_some());
+        assert!(due(&replacing, PollOptions::default(), SystemTime::now()));
+
+        let offered = Want {
+            offered: Some("file:///music/a.flac".to_owned()),
+            ..replacing.clone()
+        };
+        assert!(offered.is_answered());
+        assert_eq!(offered.due_at(), None);
+        assert!(!due(
+            &offered,
+            PollOptions::ASKING_EVERY_WANT,
+            SystemTime::now()
+        ));
+    }
+
+    #[test]
+    fn a_held_want_replacing_nothing_is_answered_as_before() {
+        let held = Want {
+            held: Some(TrackId::new(7).expect("an id")),
+            ..want(None)
+        };
+        assert!(held.is_answered());
+        assert_eq!(held.due_at(), None);
+        assert!(!held.gave_up());
     }
 }

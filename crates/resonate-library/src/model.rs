@@ -281,6 +281,7 @@ pub struct Want {
     pub offered: Option<String>,
     pub misses: u32,
     pub held: Option<TrackId>,
+    pub replacing: Option<TrackId>,
     pub links: Vec<Link>,
     pub release_links: Vec<Link>,
 }
