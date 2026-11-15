@@ -100,9 +100,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.12.0] `resonate-mobile`'s `sync::copied::tests::a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it`
-  fails here at its 40 s wait (*the copy kept on the phone never happened*), alone and in a whole
-  run, before the move to nextest and after it
 - [M · 0.12.0] `resonate-analysis` is most of a test run's work: its tests sum to about 800 s of the
   headless run's 2 560 s (`steps::tests::every_grid_reads_the_same_alone_as_on_a_crew` takes 16 s
   alone and 81 s among the rest, each process's rayon crews contending for the same cores);
