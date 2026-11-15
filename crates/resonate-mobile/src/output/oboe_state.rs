@@ -12,6 +12,7 @@ use super::{
     formats::{OutputFormat, OutputMixer, OutputStream},
     oboe_offers::{Offers, Way},
 };
+use crate::foreign::{Callback, answered};
 
 pub(crate) const OUTPUT: SinkId = SinkId::new(1);
 const SYSTEM_DEFAULT: i32 = 0;
@@ -166,7 +167,10 @@ impl Routing {
         let Some(mixer) = self.mixer.lock().clone() else {
             return false;
         };
-        let preferred = mixer.prefer_bit_perfect(device, format);
+        let preferred = answered(Callback::PreferBitPerfect, || {
+            mixer.prefer_bit_perfect(device, format)
+        })
+        .unwrap_or(false);
         let given_up = {
             let mut held = self.preferred.lock();
             let before = held.take();
@@ -174,7 +178,7 @@ impl Routing {
             before.filter(|before| !preferred || *before != device)
         };
         if let Some(before) = given_up {
-            mixer.mix_freely(before);
+            answered(Callback::MixFreely, || mixer.mix_freely(before));
         }
         preferred
     }
@@ -185,7 +189,7 @@ impl Routing {
         };
         let mixer = self.mixer.lock().clone();
         if let Some(mixer) = mixer {
-            mixer.mix_freely(device);
+            answered(Callback::MixFreely, || mixer.mix_freely(device));
         }
     }
 
@@ -380,6 +384,28 @@ mod tests {
         assert_eq!(routing.offered(probe), vec![MIXED]);
         assert_eq!(probes.get(), 1);
         assert_eq!(routing.way_for(NATIVE), Way::Mixed);
+    }
+
+    struct Throwing;
+
+    impl OutputMixer for Throwing {
+        fn prefer_bit_perfect(&self, _: i32, _: OutputFormat) -> bool {
+            panic!("the front end threw")
+        }
+
+        fn mix_freely(&self, _: i32) {
+            panic!("the front end threw")
+        }
+    }
+
+    #[test]
+    fn a_mixer_that_throws_is_taken_as_refusing_and_the_output_thread_goes_on() {
+        let routing = Routing::new();
+
+        routing.watch_mixer(Arc::new(Throwing));
+
+        assert!(!routing.prefer_bit_perfect(USB, CD));
+        routing.mix_freely();
     }
 
     #[test]

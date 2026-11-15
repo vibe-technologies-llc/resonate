@@ -68,14 +68,15 @@ class BitPerfectMixer(private val context: Context) : OutputMixer {
 
     override fun preferBitPerfect(device: Int, format: OutputFormat): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return false
-        val manager = manager ?: return false
-        val output = deviceOf(manager, device) ?: return false
-        val attributes =
-            bitPerfectAttributes(manager, output).firstOrNull { matchesFormat(it.format, format) }
-                ?: return false
         return try {
+            val manager = manager ?: return false
+            val output = deviceOf(manager, device) ?: return false
+            val attributes =
+                bitPerfectAttributes(manager, output).firstOrNull {
+                    matchesFormat(it.format, format)
+                } ?: return false
             manager.setPreferredMixerAttributes(mediaAttributes(), output, attributes)
-        } catch (failure: RuntimeException) {
+        } catch (failure: Exception) {
             Log.w("Resonate", "Android would not take the bit-perfect mixer", failure)
             false
         }
@@ -83,11 +84,11 @@ class BitPerfectMixer(private val context: Context) : OutputMixer {
 
     override fun mixFreely(device: Int) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
-        val manager = manager ?: return
-        val output = deviceOf(manager, device) ?: return
         try {
+            val manager = manager ?: return
+            val output = deviceOf(manager, device) ?: return
             manager.clearPreferredMixerAttributes(mediaAttributes(), output)
-        } catch (failure: RuntimeException) {
+        } catch (failure: Exception) {
             Log.w("Resonate", "Android would not give the mixer back", failure)
         }
     }

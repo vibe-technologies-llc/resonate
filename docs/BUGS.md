@@ -4,13 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android
-- [S · 0.11.1] A Kotlin callback that throws panics the Rust thread that called it: UniFFI 0.32.2
-  panics on a failed callback with no `Result` (`Documents::open_document`, `OutputMixer`,
-  `PlayerWatch::moved`, `Logbook`, `DocumentRewriting`), these run on the decoder, scan, output and
-  watch threads where no `catch_unwind` stands, and release builds unwind; `OpenedFiles.descriptor`
-  catches only `FileNotFoundException` and `OutputFormats.kt`'s `deviceOf` and
-  `bitPerfectAttributes` run outside their `try`, so an unexpected exception silently ends an output
-  or listening thread
 
 ## Security
 - [S · 0.12.0] A Bonjour record still opens for ever: `record_of` seals a bare `Beacon` (no time,

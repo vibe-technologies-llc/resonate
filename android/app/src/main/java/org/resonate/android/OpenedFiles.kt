@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.Track
+import org.resonate.android.nativecore.documentRefused
 
 object OpenedNames {
     const val LOCAL_PREFIX = "resonate-folder://local/"
@@ -176,6 +177,9 @@ class OpenedFiles(private val context: Context, private val library: LibraryRepo
                 .detachFd()
         } catch (gone: java.io.FileNotFoundException) {
             null
+        } catch (failure: Exception) {
+            android.util.Log.w("Resonate", "A kept copy could not be opened", failure)
+            documentRefused()
         }
     }
 

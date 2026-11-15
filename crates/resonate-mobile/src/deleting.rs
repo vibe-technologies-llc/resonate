@@ -13,6 +13,7 @@ use crate::{
     catalog::{Catalog, read},
     catalog_extras::unreferenced_picture_dropped,
     documents::{document_uri, location, owned},
+    foreign::{Callback, answered},
     rewriting::crc_of,
     sync::{RECORDING_COLUMNS, recording_at},
     vanished::{handed_over, referring_tables},
@@ -46,7 +47,10 @@ impl Files {
     }
 
     fn identity_of(&self, uri: &str) -> Option<FileIdentity> {
-        let descriptor = self.0.get()?.open_document(uri.to_owned());
+        let documents = self.0.get()?;
+        let descriptor = answered(Callback::OpenDocument, || {
+            documents.open_document(uri.to_owned())
+        })?;
         let metadata = owned(descriptor).ok()?.metadata().ok()?;
 
         metadata.is_file().then(|| FileIdentity {

@@ -3,7 +3,10 @@ use std::{fs::File, io, os::fd::FromRawFd, sync::Arc};
 use resonate_codec::{FormatHint, Media, MediaProvider, Reading};
 use resonate_core::{AUDIO_EXTENSIONS, Locator, MediaLocation, SourceId};
 
-use crate::{Error, Result};
+use crate::{
+    Error, Result,
+    foreign::{Callback, answered},
+};
 
 #[uniffi::export(callback_interface)]
 pub trait Documents: Send + Sync {
@@ -42,9 +45,9 @@ impl MediaProvider for GrantedFiles {
                 location: location.clone(),
             });
         };
-        let descriptor = self
-            .documents
-            .open_document(format!("{}:{key}", self.source.as_str()));
+        let uri = format!("{}:{key}", self.source.as_str());
+        let descriptor = answered(Callback::OpenDocument, || self.documents.open_document(uri))
+            .unwrap_or(DOCUMENT_REFUSED);
         let file = owned(descriptor).map_err(|source| resonate_codec::Error::Io {
             location: location.clone(),
             source,
@@ -169,6 +172,28 @@ mod tests {
         fn open_document(&self, _: String) -> i32 {
             self.0
         }
+    }
+
+    struct Throwing;
+
+    impl Documents for Throwing {
+        fn open_document(&self, _: String) -> i32 {
+            panic!("the front end threw")
+        }
+    }
+
+    #[test]
+    fn a_front_end_that_throws_opening_a_document_refuses_it_and_the_thread_goes_on() {
+        let at = location("content://documents/tree/a/document/a%2Fb.flac").expect("a location");
+        let provider = GrantedFiles::new(Arc::new(Throwing), "content").expect("a provider");
+
+        let refused = provider.open(&at).err().expect("a refusal");
+
+        assert!(matches!(
+            refused,
+            resonate_codec::Error::Io { ref source, .. }
+                if source.kind() == io::ErrorKind::PermissionDenied
+        ));
     }
 
     #[test]

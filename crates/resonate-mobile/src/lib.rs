@@ -15,6 +15,7 @@ mod equaliser;
 mod error;
 mod failure;
 mod features;
+mod foreign;
 #[cfg(test)]
 mod harness;
 mod language;

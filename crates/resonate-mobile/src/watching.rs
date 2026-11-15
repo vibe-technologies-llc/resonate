@@ -9,7 +9,11 @@ use parking_lot::Mutex;
 use resonate_core::ZoneId;
 use resonate_engine::{Event, PlaybackState, QueueRows};
 
-use crate::{Error, MobilePlayer, Result, zoning::Zoned};
+use crate::{
+    Error, MobilePlayer, Result,
+    foreign::{Callback, answered},
+    zoning::Zoned,
+};
 
 const COUNTED_EVERY_WHILE_PLAYING: Duration = Duration::from_secs(1);
 const COUNTED_EVERY_OTHERWISE: Duration = Duration::from_secs(2);
@@ -28,7 +32,7 @@ impl Watching {
     pub(crate) fn tell(&self) {
         let watch = self.watch.lock().clone();
         if let Some(watch) = watch {
-            watch.moved();
+            answered(Callback::PlayerMoved, || watch.moved());
         }
     }
 }

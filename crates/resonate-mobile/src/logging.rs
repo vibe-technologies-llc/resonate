@@ -3,6 +3,8 @@ use std::{io, sync::Arc};
 use tracing::{Level, Metadata, subscriber};
 use tracing_subscriber::fmt::MakeWriter;
 
+use crate::foreign::{Callback, answered};
+
 const SHOWN_FROM: Level = Level::WARN;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -78,7 +80,9 @@ impl Drop for Line {
         let text = String::from_utf8_lossy(&self.bytes);
         let line = text.trim_end();
         if !line.is_empty() {
-            self.logbook.write(self.level, line.to_owned());
+            answered(Callback::Logbook, || {
+                self.logbook.write(self.level, line.to_owned());
+            });
         }
     }
 }
@@ -112,6 +116,26 @@ mod tests {
         fn write(&self, level: LogLevel, line: String) {
             self.0.0.lock().push((level, line));
         }
+    }
+
+    struct Throwing;
+
+    impl Logbook for Throwing {
+        fn write(&self, _: LogLevel, _: String) {
+            panic!("the front end threw")
+        }
+    }
+
+    #[test]
+    fn a_logbook_that_throws_loses_its_line_and_never_the_thread_that_wrote_it() {
+        let subscriber = subscriber_over(Arc::new(Throwing));
+
+        let written = tracing::subscriber::with_default(subscriber, || {
+            tracing::warn!("the file would not open");
+            "written"
+        });
+
+        assert_eq!(written, "written");
     }
 
     #[test]

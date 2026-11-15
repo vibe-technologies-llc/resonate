@@ -44,6 +44,20 @@ render callbacks abort on a panic, as an unwind may not cross them: `AURenderCal
 `extern "C-unwind"`, so `remote_io_render::render` catches the panic itself and calls
 `process::abort`.
 
+**A callback that throws is answered for the front end, never unwound through Rust's threads.**
+UniFFI panics where a callback returning no `Result` fails on the foreign side, and the callbacks
+run on the decoder, scan, output, watch and logging threads where no exported call's `catch_unwind`
+stands. Every call into one goes through `foreign::answered` (`Callback` names it for the warning),
+which catches the unwind and answers in its place: `open_document` and `rewrite_document` as
+`document_refused()`, `prefer_bit_perfect` as refused, `mix_freely`, `moved` and a `Logbook` line as
+done (a failed `Logbook` writes no warning, which would call it again)
+(`a_front_end_that_throws_opening_a_document_refuses_it_and_the_thread_goes_on`,
+`a_mixer_that_throws_is_taken_as_refusing_and_the_output_thread_goes_on`,
+`a_logbook_that_throws_loses_its_line_and_never_the_thread_that_wrote_it`). The Kotlin
+implementations still catch their own failures (`BitPerfectMixer` around every call it makes,
+`OpenedFiles.descriptor` answering a kept copy that will not open as refused), so the guard is the
+last answer, not the first.
+
 ## An error is the sentence the app shows
 
 `Error` is `flat_error`, so a front end sees its `Display` alone: a variant a listener can meet is

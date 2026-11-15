@@ -12,7 +12,12 @@ use resonate_core::{
     writer::{self, Held, Writer},
 };
 
-use crate::{Error, Result, documents::owned, error::RewriteOp};
+use crate::{
+    Error, Result,
+    documents::{DOCUMENT_REFUSED, owned},
+    error::RewriteOp,
+    foreign::{Callback, answered},
+};
 
 const STAGING: &str = "tag-staging";
 const UNRESTORED: &str = "tag-unrestored";
@@ -150,7 +155,10 @@ fn sweep(staging: &Path) {
 }
 
 pub(crate) fn put_back(rewriting: &dyn DocumentRewriting, uri: &str, from: &Path) -> Result<()> {
-    let descriptor = rewriting.rewrite_document(uri.to_owned());
+    let descriptor = answered(Callback::RewriteDocument, || {
+        rewriting.rewrite_document(uri.to_owned())
+    })
+    .unwrap_or(DOCUMENT_REFUSED);
     let mut document = owned(descriptor).map_err(|source| Error::TagsDocument {
         op: RewriteOp::Opened,
         source,
