@@ -64,6 +64,13 @@ impl Library {
     pub fn unwant(&self, id: WantId) -> Result<bool> {
         self.inner.write(|transaction| {
             transaction
+                .execute(
+                    "DELETE FROM replacements
+                      WHERE release_track_id = (SELECT release_track_id FROM wants WHERE id = ?1)",
+                    params![id.get() as i64],
+                )
+                .map_err(|source| Error::store(StoreOp::Delete, source))?;
+            transaction
                 .execute("DELETE FROM wants WHERE id = ?1", params![id.get() as i64])
                 .map(|removed| removed > 0)
                 .map_err(|source| Error::store(StoreOp::Delete, source))

@@ -1,10 +1,13 @@
+use std::time::SystemTime;
+
 use ahash::AHashSet;
 use resonate_core::{PlaylistId, ReleaseTrackId, TrackId};
-use rusqlite::{Connection, OptionalExtension as _, params, types::Value};
+use rusqlite::{Connection, OptionalExtension as _, Transaction, params, types::Value};
 
 use super::{Library, rows::rows};
 use crate::{
-    Error, Quality, Replaceable, Result, SongHeard, StoreOp, TheSong, Track, TrackQuery, Version,
+    Error, Quality, Replaceable, Replacing, Result, SongHeard, StoreOp, TheSong, Track, TrackQuery,
+    Version, deleted::Why, elsewhere, replacing, store,
 };
 
 const HELD_WEIGHED_AT_MOST: usize = 64;
@@ -26,7 +29,49 @@ const THE_PLAYLISTS_HOLDING_A_LOSSY_SONG: &str = concat!(
     ")"
 );
 
+const HOW_A_WHOLE_FILE_STANDS: &str = concat!(
+    "SELECT tracks.path, (",
+    lossless_codecs!(),
+    "), tracks.vault_key IS NOT NULL FROM tracks",
+    " WHERE tracks.id = ?1 AND tracks.span_start = 0 AND tracks.span_frames IS NULL"
+);
+
+const THE_RELEASE_ROW_IS_STILL_THE_TRACKS: &str =
+    "SELECT EXISTS (SELECT 1 FROM release_tracks WHERE id = ?1 AND track_id = ?2)";
+
+const A_LOSSY_SONG_WAITS: &str =
+    "INSERT OR REPLACE INTO replacements (track_id, release_track_id, asked) VALUES (?1, ?2, ?3)";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Standing {
+    Gone,
+    Lossy,
+    Lossless,
+}
+
+struct Settled {
+    replacing: Replacing,
+    taken: Vec<TrackId>,
+}
+
 impl Library {
+    pub fn replace(&self, chosen: &[Replaceable]) -> Result<Replacing> {
+        let walk = self.walk_the_tree()?;
+        let now = SystemTime::now();
+        let Settled {
+            mut replacing,
+            taken,
+        } = self
+            .inner
+            .write(|transaction| settled(transaction, chosen, now))?;
+
+        if !taken.is_empty() {
+            self.inner.playlists_changed();
+            replacing.trashed = self.remove_tracks_under(&walk, &taken, Why::Folded)?;
+        }
+        Ok(replacing)
+    }
+
     pub fn lossy_songs_of(&self, playlist: PlaylistId) -> Result<Vec<Replaceable>> {
         let mut seen = AHashSet::new();
         let mut found = Vec::new();
@@ -151,4 +196,88 @@ fn release_track_and_pending(
         .map(|id| ReleaseTrackId::new(id.cast_unsigned()))
         .transpose()?;
     Ok((release_track, pending))
+}
+
+fn settled(
+    transaction: &Transaction<'_>,
+    chosen: &[Replaceable],
+    now: SystemTime,
+) -> Result<Settled> {
+    let mut seen = AHashSet::new();
+    let mut settled = Settled {
+        replacing: Replacing::default(),
+        taken: Vec::new(),
+    };
+    for one in chosen {
+        if !seen.insert(one.track.id) || standing(transaction, &one.track)? != Standing::Lossy {
+            continue;
+        }
+        let held = match &one.held {
+            Some(copy) if standing(transaction, copy)? == Standing::Lossless => Some(copy.id),
+            Some(_) | None => None,
+        };
+        let release_track = match one.release_track {
+            Some(row) if still_held_by(transaction, row, one.track.id)? => Some(row),
+            Some(_) | None => None,
+        };
+
+        if let Some(kept) = held {
+            replacing::folded(transaction, kept, one.track.id)?;
+            settled.taken.push(one.track.id);
+            settled.replacing.folded += 1;
+        } else if let Some(row) = release_track {
+            transaction
+                .execute(
+                    A_LOSSY_SONG_WAITS,
+                    params![
+                        one.track.id.get() as i64,
+                        row.get() as i64,
+                        store::to_nanos(now)
+                    ],
+                )
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            elsewhere::rearmed(transaction, row, now)?;
+            settled.replacing.wanted += 1;
+        } else {
+            settled.replacing.unmatched += 1;
+        }
+    }
+    Ok(settled)
+}
+
+fn standing(connection: &Connection, track: &Track) -> Result<Standing> {
+    let Some(named) = track.location.as_path() else {
+        return Ok(Standing::Gone);
+    };
+    let found: Option<(String, bool, bool)> = connection
+        .query_row(
+            HOW_A_WHOLE_FILE_STANDS,
+            params![track.id.get() as i64],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    let Some((path, lossless, vaulted)) = found else {
+        return Ok(Standing::Gone);
+    };
+    let path = store::path_of(&path);
+    Ok(if path != named {
+        Standing::Gone
+    } else if !lossless {
+        Standing::Lossy
+    } else if vaulted || path.is_file() {
+        Standing::Lossless
+    } else {
+        Standing::Gone
+    })
+}
+
+fn still_held_by(connection: &Connection, row: ReleaseTrackId, track: TrackId) -> Result<bool> {
+    connection
+        .query_row(
+            THE_RELEASE_ROW_IS_STILL_THE_TRACKS,
+            params![row.get() as i64, track.get() as i64],
+            |row| row.get(0),
+        )
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
