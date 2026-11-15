@@ -1,6 +1,7 @@
 use std::{
     fs::{self, Permissions},
     io,
+    net::Shutdown,
     os::unix::{
         fs::PermissionsExt as _,
         net::{UnixListener, UnixStream},
@@ -20,7 +21,7 @@ use zbus::names::WellKnownName;
 use crate::answering::Answering;
 use crate::{
     BusOp, Error, PipeOp, Result,
-    listening::{Serves, accepting},
+    listening::{Serves, Sever, accepting},
     peer::{Peer, PipePeer},
     registry::{self, Claim},
     service::{BUS_NAME, INSTANCES, bus_name_of, instance_name},
@@ -148,6 +149,7 @@ impl Serving {
                 .spawn(move || {
                     accepting(
                         || listener.accept().map(|(stream, _)| stream),
+                        severed,
                         &answering,
                         &stop,
                     );
@@ -194,6 +196,16 @@ impl Drop for Serving {
     fn drop(&mut self) {
         self.rest();
     }
+}
+
+fn severed(stream: &UnixStream) -> Option<Sever> {
+    let held = stream
+        .try_clone()
+        .inspect_err(|error| tracing::debug!(%error, "a client of the socket cannot be severed"))
+        .ok()?;
+    Some(Box::new(move || {
+        let _ = held.shutdown(Shutdown::Both);
+    }))
 }
 
 fn listening_at(socket: &Path) -> io::Result<UnixListener> {

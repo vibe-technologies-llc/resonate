@@ -153,7 +153,7 @@ impl Serving {
             let answering = Arc::clone(&answering);
             thread::Builder::new()
                 .name(ACCEPT_THREAD.to_owned())
-                .spawn(move || accepting(|| listener.accept(), &answering, &stop))
+                .spawn(move || accepting(|| listener.accept(), |_| None, &answering, &stop))
                 .map_err(|source| Error::pipe(PipeOp::Spawn, source))?
         };
 

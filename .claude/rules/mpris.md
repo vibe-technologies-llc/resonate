@@ -386,7 +386,14 @@ registry's), sorted by name, so `found`, `listed`, `named` and `zoned` are the s
   upgrades a `Weak` to the `Serves` to answer it and lets go before it writes, so a client that
   stays connected after `rest` (a long `resonate mcp` session) keeps its thread but not the zone's
   `Shared`, and its next frame ends the connection
-  (`a_client_still_connected_does_not_keep_a_player_that_stopped_serving_alive`).
+  (`a_client_still_connected_does_not_keep_a_player_that_stopped_serving_alive`). **A wire that can
+  be severed from another thread is severed when the player stops serving**: `accepting` takes
+  `severed_by`, which answers a `Sever` for each stream accepted (a socket's is a `try_clone` shut
+  down both ways, `socket::severed`), holds it while the client's thread runs, and runs every one
+  still held once the stop is seen, so a client's thread blocked in `read_frame` reads the end and
+  goes (`a_client_still_connected_when_the_player_stops_serving_is_severed_and_its_thread_ends`).
+  A Windows named pipe answers none: its handle has no cross-thread wake, so the thread waits for the
+  client's next frame or its leaving (`docs/BUGS.md`).
 - **`socket.rs` is a Mac's transport, over `std::os::unix::net` and no further dependency**
   (compiled for macOS and, for its tests, on every Unix). The registry's folder there is
   `~/Library/Caches/resonate/players` (`registry::players_folder_of_a_mac`; the temporary folder's

@@ -32,9 +32,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## The binary
-- [S · 0.12.0] The window's pipe and socket leave a connected client's thread blocked after the
-  player stops serving: `listening::serve_while_held` lets go of the zone's `Shared` at once, but the
-  thread sits in `read_frame` until the client next speaks or leaves (a Windows named pipe has no
-  cross-thread wake; a socket could be shut down from `rest`)
+- [S · 0.12.0] The window's named pipe leaves a connected client's thread blocked after the player
+  stops serving: a socket is severed (`socket::severed`), but `pipe.rs` answers no `Sever`, since a
+  synchronous pipe handle has no cross-thread wake, so the thread sits in `read_frame` until the
+  client next speaks or leaves; reading in `interprocess`'s non-blocking mode (`set_nonblocking`, its
+  empty pipe read as `ERROR_NO_DATA`, which `std` calls a broken pipe) or overlapped I/O would let
+  the stop be seen
 
 ## Equaliser

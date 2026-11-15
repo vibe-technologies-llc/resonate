@@ -1,5 +1,7 @@
 use std::{
+    collections::BTreeMap,
     io::{self, Read, Write},
+    mem,
     sync::{
         Arc, Weak,
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -8,11 +10,36 @@ use std::{
     time::Duration,
 };
 
+use parking_lot::Mutex;
+
 use crate::{
     Result,
     answering::Answering,
     wire::{read_frame, write_frame},
 };
+
+pub(crate) type Sever = Box<dyn FnOnce() + Send>;
+
+#[derive(Default)]
+struct Connected {
+    next: u64,
+    severs: BTreeMap<u64, Sever>,
+}
+
+impl Connected {
+    fn hold(&mut self, sever: Sever) -> u64 {
+        let id = self.next;
+        self.next += 1;
+        self.severs.insert(id, sever);
+        id
+    }
+
+    fn sever_every_one(&mut self) {
+        for sever in mem::take(&mut self.severs).into_values() {
+            sever();
+        }
+    }
+}
 
 pub(crate) const CONNECTIONS_AT_MOST: usize = 32;
 const ACCEPT_FAILURES_AT_MOST: u32 = 5;
@@ -51,15 +78,18 @@ fn serve_while_held<S: Read + Write>(mut stream: S, held: &Weak<dyn Serves>) -> 
 
 pub(crate) fn accepting<S: Read + Write + Send + 'static>(
     mut accept: impl FnMut() -> io::Result<S>,
+    severed_by: impl Fn(&S) -> Option<Sever>,
     serving: &Arc<dyn Serves>,
     stop: &AtomicBool,
 ) {
     let open = Arc::new(AtomicUsize::new(0));
+    let connected = Arc::new(Mutex::new(Connected::default()));
     let mut failures = 0;
 
     loop {
         let accepted = accept();
         if stop.load(Ordering::Acquire) {
+            connected.lock().sever_every_one();
             return;
         }
         let stream = match accepted {
@@ -87,15 +117,23 @@ pub(crate) fn accepting<S: Read + Write + Send + 'static>(
 
         let held = Arc::downgrade(serving);
         let counted = Arc::clone(&open);
+        let severing = severed_by(&stream).map(|sever| connected.lock().hold(sever));
+        let released = Arc::clone(&connected);
         let spawned = thread::Builder::new()
             .name(CONNECTION_THREAD.to_owned())
             .spawn(move || {
                 if let Err(error) = serve_while_held(stream, &held) {
                     tracing::debug!(%error, "a client of the pipe was let go");
                 }
+                if let Some(id) = severing {
+                    released.lock().severs.remove(&id);
+                }
                 counted.fetch_sub(1, Ordering::AcqRel);
             });
         if spawned.is_err() {
+            if let Some(id) = severing {
+                connected.lock().severs.remove(&id);
+            }
             open.fetch_sub(1, Ordering::AcqRel);
             tracing::warn!("a client of the pipe could not be given a thread");
         }
@@ -166,6 +204,7 @@ mod tests {
                     Err(refused())
                 })
             },
+            |_| None,
             &serving,
             &stop,
         );
@@ -192,11 +231,61 @@ mod tests {
                 asked += 1;
                 Err::<UnixStream, _>(refused())
             },
+            |_| None,
             &serving,
             &stop,
         );
 
         assert_eq!(asked, ACCEPT_FAILURES_AT_MOST);
+    }
+
+    #[test]
+    fn a_client_still_connected_when_the_player_stops_serving_is_severed_and_its_thread_ends() {
+        let (serving, arrived) = counting();
+        let stop = Arc::new(AtomicBool::new(false));
+        let (near, mut far) = UnixStream::pair().expect("a pair");
+        write_frame(&mut far, &[1]).expect("a frame sent");
+        let mut offered = VecDeque::from([near]);
+        let (asked_again, waiting) = mpsc::channel::<()>();
+
+        let stopping = Arc::clone(&stop);
+        let accepted = thread::spawn(move || {
+            accepting(
+                move || match offered.pop_front() {
+                    Some(stream) => Ok(stream),
+                    None => {
+                        let _ = waiting.recv_timeout(Duration::from_secs(5));
+                        stopping.store(true, Ordering::Release);
+                        Err(refused())
+                    }
+                },
+                |stream: &UnixStream| {
+                    let held = stream.try_clone().ok()?;
+                    let sever: Sever = Box::new(move || {
+                        let _ = held.shutdown(std::net::Shutdown::Both);
+                    });
+                    Some(sever)
+                },
+                &serving,
+                &stop,
+            );
+        });
+        arrived
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the client served once");
+        assert!(read_frame(&mut far).expect("a reply").is_some());
+
+        asked_again.send(()).expect("the accept loop waits");
+        accepted.join().expect("the accept loop ends");
+
+        far.set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("a timeout");
+        assert!(
+            read_frame(&mut far)
+                .expect("the end of the stream")
+                .is_none(),
+            "the client's connection was left open"
+        );
     }
 
     #[test]
@@ -216,6 +305,7 @@ mod tests {
                     refused()
                 })
             },
+            |_| None,
             &serving,
             &stop,
         );
