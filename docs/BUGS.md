@@ -6,12 +6,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Security
-- [S · 0.12.0] A Bonjour record still opens for ever: `record_of` seals a bare `Beacon` (no time,
-  resealed only as it moves, and iOS hands the same record every 5 s), so one record seen on the
-  network and advertised again under addresses of the replayer's choosing makes every device of the
-  space dial them for `HEARD_FOR`; a broadcast datagram is held to `BEACON_SENT_WITHIN` and heard
-  once (`heard_in`), a record wants the same with resealing every window and a cache that tells the
-  same record resolved again from a replay
 
 ## Sync and together
 

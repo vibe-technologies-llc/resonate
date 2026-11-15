@@ -1005,15 +1005,30 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
 
 - **A beacon is sealed like a record.** A datagram is `RSN2` then `seal::sealed` of a `SentBeacon`
   under the space's key (`datagram_of`), sealed afresh for every address it is sent to; a Bonjour
-  record is `RSN1` then the sealed `Beacon` alone (`record_of`), resealed only as it moves. Only a
-  device of the code opens either, and a fresh nonce each time leaves an onlooker nothing to follow.
+  record is `RSN3` then the sealed `SentBeacon` too (`record_of`), spelled in the pairing code's
+  base32 (`key::in_symbols`, 1.6 letters a byte, so the fullest record still fits one TXT string,
+  which hex's two did not), and resealed where the beacon moved or `RECORD_RESEALED_EVERY` (60 s)
+  passed (`Advertised::still_says`), so an honest record is always fresh. Only a device of the code
+  opens either, and a fresh nonce each time leaves an onlooker nothing to follow. **A record is
+  heard only lately sealed, and its resolved addresses only once** (`beacon_recorded`,
+  `record_resolved`): one sealed more than `BEACON_SENT_WITHIN` either side of this device's clock
+  is passed over, and since Bonjour resolves an honest record again and again (and iOS hands each one
+  every 5 s), the same record resolved again (`Syncing::records_resolved`, a `HeardOnce` kept for
+  the window) dials only the addresses the sealed beacon names, never the ones the answer came
+  from, so a record seen on the network and advertised again under addresses of a replayer's choosing
+  makes a device dial them at most once, within two minutes of its sealing
+  (`a_record_sealed_long_ago_or_ahead_is_not_heard_and_one_resolved_again_names_no_new_address`).
+  A build before `RSN3` opens none of these records and a build with it none of the older `RSN1`
+  ones, so between the two a desktop and an Android phone meet by datagram and an iPhone through
+  the server.
   **A datagram is heard once, and only lately sent** (`heard_in`): one sent more than
   `BEACON_SENT_WITHIN` (2 minutes) either side of this device's clock, or whose bytes were heard
   already (`fresh::HeardOnce`, at most `BEACONS_HEARD_AT_MOST` kept for the window), is passed over
   before anything is noted, answered or dialled, so a beacon replayed with a forged source makes no
   device send to it (`a_beacon_replayed_or_sent_long_ago_is_not_heard_and_its_source_never_answered`).
   A build before `RSN2` hears none of these datagrams and a build with it none of the older
-  `RSN1` ones, so the two meet over Bonjour alone. It names the QUIC port and the addresses `beacon_addresses_here` reads off the interfaces that
+  `RSN1` ones, and it advertises the `RSN1` record a build with `RSN3` refuses, so the two meet
+  through the server alone. A beacon names the QUIC port and the addresses `beacon_addresses_here` reads off the interfaces that
   are up, not loopback, not point to point: at most `ADDRESSES_BEACONED_AT_MOST` (6) IPv4 and
   `IPV6_ADDRESSES_BEACONED_AT_MOST` (2) of the global or unique local IPv6 ones, which together still
   fit one Bonjour text string even when distinct

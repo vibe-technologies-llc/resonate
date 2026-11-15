@@ -206,6 +206,26 @@ pub(crate) fn read_spelled<const N: usize>(code: &str) -> Result<[u8; N]> {
     Ok(bytes)
 }
 
+pub(crate) fn in_symbols(bytes: &[u8]) -> String {
+    packed(bytes)
+        .iter()
+        .map(|value| char::from(ALPHABET[usize::from(*value)]))
+        .collect()
+}
+
+pub(crate) fn from_symbols(text: &str, at_most: usize) -> Option<Vec<u8>> {
+    let symbols = text.trim();
+    if symbols.len() > symbols_spelling(at_most) {
+        return None;
+    }
+    let values = symbols
+        .chars()
+        .map(symbol_value)
+        .collect::<Option<Vec<_>>>()?;
+    let mut bytes = vec![0; values.len() * BITS_PER_SYMBOL / 8];
+    unpacked(&values, &mut bytes).then_some(bytes)
+}
+
 fn check_values(bytes: &[u8]) -> [u8; CHECK_SYMBOLS] {
     let digested = digest(&SHA256, bytes);
     let digested = digested.as_ref();

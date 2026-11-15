@@ -42,8 +42,9 @@ use crate::{
     merge::one_recording_a_song,
     nearby::{
         BEACON_EVERY, BEACON_SENT_WITHIN, BEACONS_HEARD_AT_MOST, Bonjour, Found, LARGEST_BEACON,
-        Nearby, addresses_here, beacon_addresses_here, beacon_recorded, bound, bound_v6,
-        datagram_of, global_addresses_here, heard_in, record_of, told_over_ipv6,
+        Nearby, RECORD_RESEALED_EVERY, addresses_here, beacon_addresses_here, beacon_recorded,
+        bound, bound_v6, datagram_of, global_addresses_here, heard_in, record_of, record_resolved,
+        told_over_ipv6,
     },
     peer::{
         Answering, DIAL_WITHIN, ExportStaged, Heard, blocking, consult, control, covers_from,
@@ -344,7 +345,7 @@ struct Running {
     beacons: Option<tokio::net::UdpSocket>,
     beacons_v6: Option<tokio::net::UdpSocket>,
     told: Vec<SocketAddr>,
-    record: Mutex<Option<(Beacon, String)>>,
+    record: Mutex<Option<Advertised>>,
     events: UnboundedSender<Event>,
     answering: Arc<Answering>,
     fetching: Claims,
@@ -541,6 +542,19 @@ fn the_new_connection_kept(
     standing_for >= DIALS_CROSS_WITHIN || the_connection_kept(this, other, dialled_here)
 }
 
+struct Advertised {
+    beacon: Beacon,
+    sealed_at: u64,
+    record: String,
+}
+
+impl Advertised {
+    fn still_says(&self, beacon: &Beacon, now: u64) -> bool {
+        self.beacon == *beacon
+            && now.saturating_sub(self.sealed_at) < RECORD_RESEALED_EVERY.as_secs()
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Redial {
     at: Instant,
@@ -564,6 +578,7 @@ struct Syncing {
     strangers_answered: BTreeMap<DeviceId, Instant>,
     punches_heard: HeardOnce,
     beacons_heard: HeardOnce,
+    records_resolved: HeardOnce,
     waiting: BTreeMap<DeviceId, Vec<Work>>,
     followed: BTreeMap<DeviceId, Instant>,
     following: BTreeSet<DeviceId>,
@@ -758,8 +773,11 @@ impl Sync {
         if !self.running.nearby {
             return;
         }
-        if let Some(beacon) = beacon_recorded(&self.running.derived, record) {
-            let _ = self.commands.send(Command::Heard(beacon));
+        match beacon_recorded(&self.running.derived, record, wall_seconds()) {
+            Ok(beacon) => {
+                let _ = self.commands.send(Command::Heard(beacon));
+            }
+            Err(unheard) => tracing::debug!(%unheard, "a Bonjour record was passed over"),
         }
     }
 
@@ -1021,18 +1039,23 @@ impl Running {
             return None;
         }
         let beacon = self.beacon(false)?;
+        let now = wall_seconds();
         let mut held = self.record.lock();
-        if let Some((was, record)) = held.as_ref()
-            && *was == beacon
+        if let Some(advertised) = held.as_ref()
+            && advertised.still_says(&beacon, now)
         {
-            return Some(record.clone());
+            return Some(advertised.record.clone());
         }
-        let record = record_of(&self.derived, &beacon)
+        let record = record_of(&self.derived, &beacon, now)
             .inspect_err(
                 |error| tracing::debug!(%error, "this device's record could not be sealed"),
             )
             .ok()?;
-        *held = Some((beacon, record.clone()));
+        *held = Some(Advertised {
+            beacon,
+            sealed_at: now,
+            record: record.clone(),
+        });
         Some(record)
     }
 
@@ -1165,11 +1188,7 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
             }
             found = found_nearby(bonjour.as_ref()) => {
                 match found {
-                    Found::Record { record, at } => {
-                        if let Some(beacon) = beacon_recorded(&running.derived, &record) {
-                            syncing.heard_nearby(beacon, &at, None).await;
-                        }
-                    }
+                    Found::Record { record, at } => syncing.record_resolved(&record, &at).await,
                     Found::Nothing => {}
                     Found::Ended => bonjour = None,
                 }
@@ -1604,6 +1623,7 @@ impl Syncing {
             strangers_answered: BTreeMap::new(),
             punches_heard: HeardOnce::new(PUNCH_SEALED_WITHIN, PUNCHES_HEARD_AT_MOST),
             beacons_heard: HeardOnce::new(BEACON_SENT_WITHIN, BEACONS_HEARD_AT_MOST),
+            records_resolved: HeardOnce::new(BEACON_SENT_WITHIN, BEACONS_HEARD_AT_MOST),
             waiting: BTreeMap::new(),
             followed: BTreeMap::new(),
             following: BTreeSet::new(),
@@ -2681,6 +2701,21 @@ impl Syncing {
         ) {
             Ok(beacon) => self.heard_nearby(beacon, &[from], Some(from)).await,
             Err(unheard) => tracing::debug!(%unheard, %from, "a beacon was passed over"),
+        }
+    }
+
+    async fn record_resolved(&mut self, record: &str, at: &[SocketAddr]) {
+        match record_resolved(
+            &self.running.derived,
+            record,
+            &mut self.records_resolved,
+            wall_seconds(),
+        ) {
+            Ok(resolved) => {
+                let seen_at = if resolved.first { at } else { &[] };
+                self.heard_nearby(resolved.beacon, seen_at, None).await;
+            }
+            Err(unheard) => tracing::debug!(%unheard, "a Bonjour record was passed over"),
         }
     }
 

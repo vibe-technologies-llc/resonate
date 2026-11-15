@@ -9,7 +9,7 @@ use socket2::{Domain, Protocol, Socket, Type};
 use crate::{
     Error, Result,
     fresh::{HeardOnce, Unfresh},
-    key::{Derived, hex, random_bytes},
+    key::{Derived, from_symbols, hex, in_symbols, random_bytes},
     seal::{opened, sealed},
     wire::{Beacon, LARGEST_DATAGRAM, SentBeacon},
 };
@@ -26,7 +26,8 @@ pub const GLOBAL_ADDRESSES_OFFERED_AT_MOST: usize = 4;
 pub const IPV6_ADDRESSES_BEACONED_AT_MOST: usize = 2;
 pub const BEACON_SENT_WITHIN: Duration = Duration::from_secs(2 * 60);
 pub const BEACONS_HEARD_AT_MOST: usize = 4096;
-const RECORD_MAGIC: &[u8; 4] = b"RSN1";
+pub const RECORD_RESEALED_EVERY: Duration = Duration::from_secs(60);
+const RECORD_MAGIC: &[u8; 4] = b"RSN3";
 const DATAGRAM_MAGIC: &[u8; 4] = b"RSN2";
 const ONE_HOP: u32 = 1;
 const INSTANCE_BYTES: usize = 8;
@@ -262,41 +263,70 @@ pub fn heard_in(
     Ok(sent.beacon)
 }
 
-fn recorded_bytes(derived: &Derived, beacon: &Beacon) -> Result<Vec<u8>> {
+fn recorded_bytes(derived: &Derived, beacon: &Beacon, sealed_at: u64) -> Result<Vec<u8>> {
+    let sent = SentBeacon {
+        sent_at: sealed_at,
+        beacon: beacon.clone(),
+    };
     let mut bytes = RECORD_MAGIC.to_vec();
-    bytes.extend(sealed(&derived.sealer, derived.space, &beacon.encoded())?);
+    bytes.extend(sealed(&derived.sealer, derived.space, &sent.encoded())?);
     Ok(bytes)
 }
 
-fn recorded_beacon(derived: &Derived, bytes: &[u8]) -> Option<Beacon> {
+fn recorded_beacon(derived: &Derived, bytes: &[u8]) -> Option<SentBeacon> {
     let blob = bytes.strip_prefix(RECORD_MAGIC)?;
     opened(&derived.sealer, derived.space, blob, LARGEST_DATAGRAM)
-        .and_then(|plain| Beacon::decoded(&plain))
+        .and_then(|plain| SentBeacon::decoded(&plain))
         .ok()
 }
 
-pub fn record_of(derived: &Derived, beacon: &Beacon) -> Result<String> {
-    recorded_bytes(derived, beacon).map(|bytes| hex(&bytes))
+pub fn record_of(derived: &Derived, beacon: &Beacon, sealed_at: u64) -> Result<String> {
+    recorded_bytes(derived, beacon, sealed_at).map(|bytes| in_symbols(&bytes))
 }
 
-pub fn beacon_recorded(derived: &Derived, record: &str) -> Option<Beacon> {
-    recorded_beacon(derived, &unhexed(record)?)
+pub fn beacon_recorded(
+    derived: &Derived,
+    record: &str,
+    now: u64,
+) -> std::result::Result<Beacon, Unheard> {
+    fresh_record(derived, record, now).map(|sent| sent.beacon)
 }
 
-fn unhexed(text: &str) -> Option<Vec<u8>> {
-    let digits = text.trim().as_bytes();
-    let (pairs, odd) = digits.as_chunks::<2>();
-    if !odd.is_empty() || pairs.len() > LARGEST_BEACON {
-        return None;
+fn fresh_record(
+    derived: &Derived,
+    record: &str,
+    now: u64,
+) -> std::result::Result<SentBeacon, Unheard> {
+    let sent = from_symbols(record, LARGEST_BEACON)
+        .and_then(|bytes| recorded_beacon(derived, &bytes))
+        .ok_or(Unheard::Unsealed)?;
+    if now.abs_diff(sent.sent_at) > BEACON_SENT_WITHIN.as_secs() {
+        return Err(Unheard::Unfresh(Unfresh::OutsideTheWindow {
+            sealed_at: sent.sent_at,
+            now,
+        }));
     }
-    pairs
-        .iter()
-        .map(|pair| {
-            let high = char::from(pair[0]).to_digit(16)?;
-            let low = char::from(pair[1]).to_digit(16)?;
-            u8::try_from(high * 16 + low).ok()
-        })
-        .collect()
+    Ok(sent)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Resolved {
+    pub beacon: Beacon,
+    pub first: bool,
+}
+
+pub fn record_resolved(
+    derived: &Derived,
+    record: &str,
+    resolved: &mut HeardOnce,
+    now: u64,
+) -> std::result::Result<Resolved, Unheard> {
+    let sent = fresh_record(derived, record, now)?;
+    let first = resolved.admit(record.as_bytes(), sent.sent_at, now).is_ok();
+    Ok(Resolved {
+        beacon: sent.beacon,
+        first,
+    })
 }
 
 pub struct Bonjour {
@@ -436,7 +466,7 @@ mod tests {
             .derived()
             .expect("derived");
         let beacon = beacon(2);
-        let record = recorded_bytes(&here, &beacon).expect("sealed");
+        let record = recorded_bytes(&here, &beacon, NOW).expect("sealed");
 
         let bytes = datagram_of(&here, &beacon, NOW).expect("sealed");
         let again = datagram_of(&here, &beacon, NOW).expect("sealed");
@@ -505,16 +535,70 @@ mod tests {
             ..beacon(0)
         };
 
-        let record = record_of(&here, &fullest).expect("recorded");
+        let record = record_of(&here, &fullest, NOW).expect("recorded");
 
         assert!(
             RECORD_KEY.len() + 1 + record.len() <= usize::from(u8::MAX),
             "{} bytes",
             record.len()
         );
-        assert_eq!(beacon_recorded(&here, &record), Some(fullest));
-        assert_eq!(beacon_recorded(&here, &record[1..]), None);
-        assert_eq!(beacon_recorded(&here, "zz"), None);
+        assert_eq!(beacon_recorded(&here, &record, NOW), Ok(fullest));
+        assert_eq!(
+            beacon_recorded(&here, &record[1..], NOW),
+            Err(Unheard::Unsealed)
+        );
+        assert_eq!(beacon_recorded(&here, "zz", NOW), Err(Unheard::Unsealed));
+    }
+
+    #[test]
+    fn a_record_sealed_long_ago_or_ahead_is_not_heard_and_one_resolved_again_names_no_new_address()
+    {
+        let here = SyncKey::minted()
+            .expect("a key")
+            .derived()
+            .expect("derived");
+        let beacon = beacon(1);
+        let mut resolved = fresh();
+        let genuine = record_of(&here, &beacon, NOW).expect("recorded");
+        let resealed = record_of(&here, &beacon, NOW + 60).expect("recorded");
+        let long_ago =
+            record_of(&here, &beacon, NOW - BEACON_SENT_WITHIN.as_secs() - 1).expect("recorded");
+        let ahead =
+            record_of(&here, &beacon, NOW + BEACON_SENT_WITHIN.as_secs() + 1).expect("recorded");
+
+        assert_eq!(
+            record_resolved(&here, &genuine, &mut resolved, NOW),
+            Ok(Resolved {
+                beacon: beacon.clone(),
+                first: true
+            })
+        );
+        assert_eq!(
+            record_resolved(&here, &genuine, &mut resolved, NOW + 5),
+            Ok(Resolved {
+                beacon: beacon.clone(),
+                first: false
+            })
+        );
+        assert_eq!(
+            record_resolved(&here, &resealed, &mut resolved, NOW + 60),
+            Ok(Resolved {
+                beacon: beacon.clone(),
+                first: true
+            })
+        );
+        assert!(matches!(
+            record_resolved(&here, &long_ago, &mut resolved, NOW),
+            Err(Unheard::Unfresh(Unfresh::OutsideTheWindow { .. }))
+        ));
+        assert!(matches!(
+            beacon_recorded(&here, &ahead, NOW),
+            Err(Unheard::Unfresh(Unfresh::OutsideTheWindow { .. }))
+        ));
+        assert!(matches!(
+            beacon_recorded(&here, &genuine, NOW + 10 * 60),
+            Err(Unheard::Unfresh(Unfresh::OutsideTheWindow { .. }))
+        ));
     }
 
     #[test]
@@ -546,14 +630,14 @@ mod tests {
             ..beacon(0)
         };
 
-        let record = record_of(&here, &fullest).expect("recorded");
+        let record = record_of(&here, &fullest, NOW).expect("recorded");
 
         assert!(
             RECORD_KEY.len() + 1 + record.len() <= usize::from(u8::MAX),
             "{} bytes",
             record.len()
         );
-        assert_eq!(beacon_recorded(&here, &record), Some(fullest));
+        assert_eq!(beacon_recorded(&here, &record, NOW), Ok(fullest));
     }
 
     #[test]
