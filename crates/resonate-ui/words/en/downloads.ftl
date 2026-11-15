@@ -17,3 +17,4 @@ downloading-left = { downloading } · { $more } left
 counted-downloaded = { $count } downloaded
 counted-not-downloaded = { $count } not downloaded
 downloads = Downloads
+replacing = replacing a lossy copy

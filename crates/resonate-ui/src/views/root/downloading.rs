@@ -274,6 +274,9 @@ impl RootView {
         let library = self.library.read(cx);
         let saying = downloads::saying_while(fetching, library.fetched(download).as_ref());
         let album = library.downloaded_album(download);
+        let replacing = library
+            .replaces_a_song(download)
+            .then(words::downloads::replacing);
         let track = library
             .downloaded_track(download)
             .filter(|_| fetching == Fetching::Downloaded);
@@ -282,6 +285,7 @@ impl RootView {
             spoken::joined([
                 download.found.title.as_str(),
                 download.found.artist.as_str(),
+                replacing.unwrap_or_default(),
                 saying.as_ref(),
             ])
         };
@@ -309,6 +313,16 @@ impl RootView {
                     .ends_in_an_ellipsis()
                     .child(SharedString::from(download.found.artist.clone())),
             )
+            .when_some(replacing, |text, replacing| {
+                text.child(
+                    div()
+                        .text_size(px(theme::text_xs()))
+                        .text_color(rgb(theme::muted()))
+                        .truncate()
+                        .ends_in_an_ellipsis()
+                        .child(replacing),
+                )
+            })
             .child(
                 div()
                     .text_size(px(theme::text_xs()))

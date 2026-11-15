@@ -31,6 +31,7 @@ mod pulse;
 mod queue;
 mod remote;
 pub(crate) mod reorder;
+mod replacing;
 mod root;
 mod scrollbar;
 mod search;

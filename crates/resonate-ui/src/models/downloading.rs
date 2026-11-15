@@ -80,6 +80,13 @@ impl LibraryModel {
         self.wishes.standings.get(&download.want()?)?.held()
     }
 
+    pub fn replaces_a_song(&self, download: &Download) -> bool {
+        download
+            .want()
+            .and_then(|want| self.wishes.standings.get(&want))
+            .is_some_and(|standing| standing.replacing())
+    }
+
     pub fn downloaded_album(&self, download: &Download) -> Option<AlbumId> {
         self.wishes.standings.get(&download.want()?)?.album()
     }

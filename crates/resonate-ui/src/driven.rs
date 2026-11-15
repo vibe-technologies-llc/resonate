@@ -1755,6 +1755,7 @@ mod tests {
                 point(px(200.0), px(200.0)),
                 playlist,
                 false,
+                false,
                 cx,
             );
             root.open_a_menu(menu, cx);
@@ -1787,6 +1788,7 @@ mod tests {
             let menu = crate::views::playlists::playlist_menu(
                 point(px(200.0), px(200.0)),
                 playlist,
+                false,
                 false,
                 cx,
             );

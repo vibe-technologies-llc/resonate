@@ -19,6 +19,7 @@ mod playlists;
 mod polling;
 mod pressings;
 mod reading;
+mod replacing;
 mod scanning;
 mod sharing;
 mod statistics;
@@ -285,6 +286,7 @@ struct Shelves {
     pinned: Vec<NamedPlaylist>,
     held: Option<Playlist>,
     entries: Vec<PlaylistEntry>,
+    lossy: AHashSet<PlaylistId>,
     wants: Option<WantsRead>,
     missing_tracks: Vec<MissingTrack>,
     unheld_releases: Vec<UnheldRelease>,
@@ -889,6 +891,7 @@ struct Shelf {
     pinned: Arc<[NamedPlaylist]>,
     held: Option<Playlist>,
     entries: Arc<[PlaylistEntry]>,
+    lossy: AHashSet<PlaylistId>,
     opened: Option<PlaylistId>,
     order: PlaylistOrder,
     reading: Direction,
@@ -1267,6 +1270,7 @@ impl LibraryModel {
                 pinned: Arc::default(),
                 held: None,
                 entries: Arc::default(),
+                lossy: AHashSet::new(),
                 opened: None,
                 order,
                 reading,

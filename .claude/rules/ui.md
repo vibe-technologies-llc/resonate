@@ -441,7 +441,7 @@ so `editing` sees it.
   control's escape is `LeaveControl`, which fires before `typed`, so it runs the over-the-pane part
   (`close_what_stands_over_the_pane`) first and lets the control go only where nothing stands there:
   a sheet's focus lands on its safe control, and escape there still closes the sheet. Order, over-the-pane before
-  beside-it: delete sheet (`keep_the_track`), Listen sheet, magnified cover, playlist picker
+  beside-it: delete sheet (`keep_the_track`), the lossy songs' sheet (`keep_the_lossy_songs`), Listen sheet, magnified cover, playlist picker
   (`stop_naming`), shown record, Wrapped, sharing, Sort pop-up, open menu, downloads panel, standing toast (`toast::dismiss`), live
   type-ahead (`stop_typing`), then `dismiss_search`: close the naming row, clear the query, or (query
   empty) `RootView::step_back`. A scoped search takes two presses, words then scope: typing is not a
@@ -1991,6 +1991,29 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   `LibraryModel::delete_track` = `Library::delete_tracks` on the edit chain. No key confirms, `enter`
   included. While open it is `something_stands_over_the_pane`
   (`deleting_a_track_asks_first_and_takes_its_file_only_once_confirmed`).
+- **A playlist's lossy songs are swapped for lossless copies from a sheet** (`views/replacing.rs`,
+  `Sheet::Replacing`, `library.md`). *Replace lossy songs…* stands in `playlist_menu` after
+  *Duplicate* only where `LibraryModel::holds_lossy_songs` says so, read from the shelves'
+  `playlists_with_lossy_songs` at each reload, so the menu reads nothing on the window's thread.
+  `open_replacing` closes the menu, stands the sheet at *Reading the playlist…* and reads
+  `lossy_songs_of` on the background executor, dropped where the window's `attention` moved or the
+  sheet in front is another. Every row that can be ticked (a held lossless copy, or a release row to
+  want) arrives ticked; a `kit::checkbox_when` row names the song (`spoken::song`), its
+  `kit::format_badge` and why it stands (*you hold a FLAC copy*, *wanted through MusicBrainz*), and
+  one not matched or already being replaced is `kit::Press::Greyed`. *Tick all* in the heading row
+  ticks every tickable row or, all ticked, unticks them. A note in `muted` says each lossy copy goes
+  to the trash once its lossless copy is held, in place of a confirmation, the trash being reversible.
+  *Cancel* (`KEEP_THE_LOSSY_SONGS`, the welcome), escape and a press outside keep the songs
+  (`keep_the_lossy_songs`); *Replace N songs* (greyed at none) closes the sheet and calls
+  `LibraryModel::replace_lossy_songs`: `Library::replace` on the background executor, a toast from
+  `replaced_now` (*1 song replaced, 2 songs wanted*), `fetch_or_say_nobody_can` where anything was
+  wanted, an `AlreadyWalking` said as another task running, then an `Everything` read. A want a
+  replacement waits on stands in the Downloads panel like any other, marked *replacing a lossy copy*
+  (`WantStanding::replacing`, `replaces_a_song`); its *Cancel* is `cancel_download`, whose `unwant`
+  cancels the replacement and leaves the lossy copy
+  (`a_playlists_lossy_songs_are_replaced_from_its_menu_and_the_sheet_closes_with_a_toast`,
+  `every_row_that_can_be_ticked_starts_ticked_and_tick_all_turns_them_together`,
+  `the_toast_says_what_was_replaced_wanted_and_not_matched`).
 - **A search is a page of its own; what the library lacks is never buried under what it holds.**
   `views/search.rs`. `RootView::search_in_front` answers a `SearchShows` wherever the box holds words,
   the pane in front is Albums, Artists or Tracks, nothing is scoped and no songs are being added to a

@@ -1006,7 +1006,8 @@ impl RootView {
                         words::playlists::more_hint(),
                     ),
                     move |this, at, cx| {
-                        this.open_a_menu(playlist_menu(at, opened, pinned, cx), cx);
+                        let lossy = this.library.read(cx).holds_lossy_songs(opened);
+                        this.open_a_menu(playlist_menu(at, opened, pinned, lossy, cx), cx);
                     },
                     cx,
                 ))
@@ -2136,7 +2137,8 @@ fn playlist_menu_among_the_chosen(
         let playlists = this.library.read(cx).playlists_at(chosen.rows());
         return chosen_playlists_menu(at, playlists);
     }
-    playlist_menu(at, id, pinned, cx)
+    let lossy = this.library.read(cx).holds_lossy_songs(id);
+    playlist_menu(at, id, pinned, lossy, cx)
 }
 
 fn chosen_playlists_menu(at: Point<Pixels>, playlists: Vec<PlaylistId>) -> Menu {
@@ -2162,7 +2164,13 @@ fn chosen_playlists_menu(at: Point<Pixels>, playlists: Vec<PlaylistId>) -> Menu 
         )
 }
 
-pub(crate) fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool, cx: &App) -> Menu {
+pub(crate) fn playlist_menu(
+    at: Point<Pixels>,
+    id: PlaylistId,
+    pinned: bool,
+    lossy: bool,
+    cx: &App,
+) -> Menu {
     let menu = Menu::at(at)
         .does(Icon::Play, words::menu::play(), move |this, _, cx| {
             this.play_the_playlist(id, cx);
@@ -2201,6 +2209,13 @@ pub(crate) fn playlist_menu(at: Point<Pixels>, id: PlaylistId, pinned: bool, cx:
                     .update(cx, |library, cx| library.duplicate_playlist(id, cx));
             },
         )
+        .when_some(lossy.then_some(id), |menu, id| {
+            menu.does(
+                Icon::Fold,
+                words::replacing::replace_lossy_songs(),
+                move |this, _, cx| this.open_replacing(id, cx),
+            )
+        })
         .apart()
         .does(
             Icon::Share,
