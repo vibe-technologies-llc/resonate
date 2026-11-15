@@ -57,12 +57,22 @@ const MIGRATIONS: &[&str] = &[
     THE_ARTISTS_ARE_FOLDED_AGAIN_ONCE,
     AN_UNHELD_LISTEN_NEVER_REUSES_ITS_ID,
     THE_PATHS_A_REMOVAL_OR_A_MOVE_LOOKS_UP_ARE_INDEXED,
+    A_LOSSY_SONG_WAITS_TO_BE_REPLACED,
 ];
 
 const THE_PATHS_A_REMOVAL_OR_A_MOVE_LOOKS_UP_ARE_INDEXED: &str = "
 CREATE INDEX wants_by_offered ON wants(offered);
 CREATE INDEX retagged_sheets_by_file ON retagged_sheets(file);
 CREATE INDEX offered_step_rows_by_path ON offered_step_rows(path);
+";
+
+const A_LOSSY_SONG_WAITS_TO_BE_REPLACED: &str = "
+CREATE TABLE replacements (
+    track_id         INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+    release_track_id INTEGER REFERENCES release_tracks(id) ON DELETE SET NULL,
+    asked            INTEGER NOT NULL
+) STRICT;
+CREATE INDEX replacements_by_release_track ON replacements(release_track_id);
 ";
 
 const AN_UNHELD_LISTEN_NEVER_REUSES_ITS_ID: &str = "
@@ -2157,6 +2167,38 @@ mod tests {
         assert_eq!(
             stamped(&connection).expect("the stamp reads back"),
             Some(SCHEMA_FINGERPRINT)
+        );
+    }
+
+    #[test]
+    fn a_catalog_from_before_lossy_songs_were_replaced_keeps_its_rows_and_gains_the_table() {
+        let connection = opened();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == A_LOSSY_SONG_WAITS_TO_BE_REPLACED)
+            .expect("the step that makes the table");
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier step");
+        }
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        let waiting: i64 = connection
+            .query_row("SELECT count(*) FROM replacements", [], |row| row.get(0))
+            .expect("the table stands");
+        assert_eq!(waiting, 0);
+        assert!(
+            plan_of(
+                &connection,
+                "SELECT track_id FROM replacements WHERE release_track_id = 1"
+            )
+            .contains("replacements_by_release_track")
         );
     }
 
