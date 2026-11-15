@@ -32,7 +32,7 @@ online = [
     "dep:resonate-ytmusic"
 ]
 sync = ["dep:resonate-driven", "dep:resonate-sync"]
-ui = ["dep:resonate-ui"]
+ui = ["dep:resonate-lyrics", "dep:resonate-ui"]
 
 [dependencies]
 clap.workspace = true
