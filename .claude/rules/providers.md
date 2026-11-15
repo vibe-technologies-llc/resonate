@@ -202,7 +202,10 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   `a_last_resort_offer_is_not_taken_while_an_earlier_provider_was_late`,
   `a_last_resort_is_passed_over_when_an_earlier_round_of_the_want_did_not_say_no`,
   `a_last_resort_is_asked_after_an_earlier_offer_the_poll_declined`,
-  `a_provider_named_alone_is_asked_though_it_is_a_last_resort`).
+  `a_provider_named_alone_is_asked_though_it_is_a_last_resort`). **A want replacing a lossy song
+  (`Want::replacing`, `library.md`'s *Replacing a lossy song*) is never asked of a last resort**:
+  `Lanes::asked` turns to `Providers::without_last_resorts` for it, so a lossy file is never
+  downloaded for it at all (`a_replacement_is_never_asked_of_a_last_resort`).
 - **An offer that cannot be opened falls through.** `Pumped` opens on the `resonate-delivery` thread
   under the same stall deadline and cancel as its bytes. `Gone` passes to the next offer; an `Err`
   counts `refused`, notes the provider `Away` where `is_the_provider_away`, leaves the want
@@ -245,7 +248,22 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   refusals older than `REFUSALS_REMEMBERED_FOR` (30 days) dropped
   (`an_offer_refused_as_not_the_song_is_declined_by_the_next_poll_which_starts_elsewhere`);
   `want_in` forgets a want's refusals
-  (`a_refused_offer_is_offered_again_once_the_want_is_asked_for_again`).
+  (`a_refused_offer_is_offered_again_once_the_want_is_asked_for_again`). **A want replacing a
+  lossy song keeps only a lossless delivery, vault and music folder alike**: `landed` answers a
+  vault `Keeping::Kept` whose `codec` is lossy `NotTheSong` before its length is weighed, and
+  `filed_for` probes the filed file before claiming album keys, removing a lossy one as
+  `Unfiled::Lossy` (`NotTheSong` too), so the next offer is taken
+  (`a_lossy_delivery_for_a_replacement_is_refused_and_the_next_provider_asked`,
+  `a_lossy_file_filed_for_a_replacement_is_taken_away_and_refused`). Its delivery lands as a new
+  track while the lossy song still holds the release row: a filing as a new rooted row, a vault
+  delivery as a new rootless row, `note_delivered` passing over its `still_unheld` refusal for it
+  (the `track_id IS NULL` pairing still leaves the row alone), and `wants.offered` names it either
+  way. **The poll settles replacements once its lanes end**: `run` calls
+  `rejoin_the_replacements` before the lanes start and, after the last `scanned_and_paired` and
+  only where the poll was not cancelled, `settle_replacements`, whose `Deleted` is
+  `PollSummary::replaced` (a failure traced at warn, nothing replaced) and which the window's
+  toast tells (`told::polled`)
+  (`a_lossless_delivery_filed_in_the_music_folder_replaces_the_lossy_song_at_the_polls_end`).
 - **No vault open: a delivery is filed in the music folder.** `Library::deliver_into` names a
   `DeliveryFolder` (`music-folder`, `organise-as`), set by the binary at open and by the window
   before every poll; with neither, a stream is `unkept` and a file only offered. `filed.rs` renders
@@ -268,7 +286,8 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   nullable for this) and every pass over the user's files joins `roots`, so a scan's prune, forget,
   `organise`, `tag`, `vault --import`, `vault --release` never reach it. **A row held meanwhile
   keeps its pairing**: `note_delivered` checks inside its transaction that the row is still unheld,
-  else writes nothing, answers `None`, counts `unkept`.
+  else writes nothing, answers `None`, counts `unkept`; a replacement's want alone is noted on a
+  held row (above).
 - **Forgetting a delivery.** `offered` is the object's URI; a want whose release track holds a row
   is `held`, never due again. `Library::forget_delivered` removes the rootless row a path names
   (`resonate forget`, the window's *Forget this delivery*), nothing a scan filed; the object is left

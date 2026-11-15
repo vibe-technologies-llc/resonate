@@ -221,6 +221,10 @@ the-inbox-filled = { $count ->
    *[other] The inbox filled { $count } wants
 }
 could-not-be-kept = { $count } couldn't be kept
+replaced-lossy-songs = { $count ->
+    [one] replaced 1 lossy song
+   *[other] replaced { $count } lossy songs
+}
 albums-and-artists-answered = { $albums ->
     [one] { $albums } album
    *[other] { $albums } albums

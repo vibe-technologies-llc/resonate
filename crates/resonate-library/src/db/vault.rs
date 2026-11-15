@@ -453,7 +453,7 @@ impl Library {
         let gain = declared.heard_gain();
 
         let id = self.inner.write(|transaction| {
-            if !still_unheld(transaction, want.release_track)? {
+            if want.replacing.is_none() && !still_unheld(transaction, want.release_track)? {
                 return Ok(None);
             }
             note_the_delivered_object(transaction, kept, &held, &offered, took)?;

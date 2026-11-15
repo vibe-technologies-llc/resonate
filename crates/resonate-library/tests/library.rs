@@ -29881,6 +29881,193 @@ impl Provider for LastResort {
     }
 }
 
+fn filing_into(library: &Library, tree: &Tree) {
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.path().to_path_buf(),
+        layout: Layout::default(),
+    }));
+}
+
+fn files_named(folder: &Path, extension: &str) -> Vec<PathBuf> {
+    every_file_under(folder)
+        .into_iter()
+        .filter(|path| path.extension() == Some(OsStr::new(extension)))
+        .collect()
+}
+
+fn named_only_by_the_playlist(library: &Library, waiting: &Waiting, file: &Path) -> Result<()> {
+    let cuts = library.playlist_cuts(waiting.playlist)?;
+    assert_eq!(cuts.len(), 2);
+    assert!(
+        cuts.iter().all(|cut| cut.location.as_path() == Some(file)),
+        "the playlist still names the lossy copy: {cuts:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_replacement_is_never_asked_of_a_last_resort() -> Result<()> {
+    let tree = Tree::new();
+    let shop = Tree::new();
+    let (Some(opus), Some(flac)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&shop, "A.flac", "Echoes"),
+    ) else {
+        return Ok(());
+    };
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+    filing_into(&library, &tree);
+    let tube = Arc::new(Offering::new("tube", Delivering::File(flac)));
+    let providers = Arc::new(
+        Providers::none().and(Arc::new(LastResort(Arc::clone(&tube))) as Arc<dyn Provider>),
+    );
+
+    let summary = library
+        .poll(providers, PollOptions::ASKING_EVERY_WANT)?
+        .join()?;
+
+    assert!(
+        tube.asked().is_empty(),
+        "a last resort was asked for a lossless copy"
+    );
+    assert_eq!(summary.stats.offered, 0, "{summary:?}");
+    assert_eq!(summary.replaced, Deleted::default());
+    assert!(opus.exists());
+    assert!(still_pending(&library, &waiting)?);
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn a_lossy_delivery_for_a_replacement_is_refused_and_the_next_provider_asked() -> Result<()> {
+    let tree = Tree::new();
+    let shop = Tree::new();
+    let (Some(opus), Some(offered_opus), Some(flac)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&shop, "one/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&shop, "two/A.flac", "Echoes"),
+    ) else {
+        return Ok(());
+    };
+    let held = Tree::new();
+    let data = Tree::new();
+    let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
+    let library = Library::open_with_vault(&tree.path().join("library.db"), vault)?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+    let one = Arc::new(Offering::new("one", Delivering::File(offered_opus)));
+    let two = Arc::new(Offering::new("two", Delivering::File(flac)));
+
+    let summary = library
+        .poll(
+            asking_in_turn(&[&one, &two]),
+            PollOptions::ASKING_EVERY_WANT,
+        )?
+        .join()?;
+
+    assert_eq!(
+        (
+            summary.stats.offered,
+            summary.stats.kept,
+            summary.stats.unkept
+        ),
+        (2, 1, 1),
+        "{summary:?}"
+    );
+    assert_eq!((one.asked().len(), two.asked().len()), (1, 1));
+    assert_eq!(summary.replaced.files, 1, "{summary:?}");
+    let mut kept = Vec::new();
+    for object in library.vault_objects()? {
+        kept.extend(library.track_at(&object.path, None)?);
+    }
+    assert_eq!(kept.len(), 1, "the vault holds {kept:?}");
+    let kept = kept.remove(0);
+    assert!(kept.codec.is_lossless(), "{kept:?}");
+    assert_eq!(kept.plays, 2);
+    let kept_at = kept
+        .location
+        .as_path()
+        .expect("the vault's row names its object")
+        .to_path_buf();
+    named_only_by_the_playlist(&library, &waiting, &kept_at)?;
+    assert!(!opus.exists());
+    assert!(trashed(&data, "A.opus"));
+    assert!(library.wants()?.is_empty(), "the want outlived its answer");
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn a_lossless_delivery_filed_in_the_music_folder_replaces_the_lossy_song_at_the_polls_end()
+-> Result<()> {
+    let tree = Tree::new();
+    let shop = Tree::new();
+    let (Some(opus), Some(flac)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&shop, "A.flac", "Echoes"),
+    ) else {
+        return Ok(());
+    };
+    let data = Tree::new();
+    let library = Library::open(&data.path().join("library.db"))?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+    filing_into(&library, &tree);
+    let store = Arc::new(Offering::new("store", Delivering::File(flac)));
+
+    let summary = library
+        .poll(store.registered(), PollOptions::ASKING_EVERY_WANT)?
+        .join()?;
+
+    assert_eq!(summary.stats.kept, 1, "{summary:?}");
+    assert_eq!(summary.replaced.files, 1, "{summary:?}");
+    let filed = files_named(tree.path(), "flac");
+    assert_eq!(filed.len(), 1, "{filed:?}");
+    named_only_by_the_playlist(&library, &waiting, &filed[0])?;
+    assert_eq!(the_row_at(&library, &filed[0])?.plays, 2);
+    assert!(!opus.exists());
+    assert!(trashed(&data, "A.opus"));
+    Ok(())
+}
+
+#[test]
+fn a_lossy_file_filed_for_a_replacement_is_taken_away_and_refused() -> Result<()> {
+    let tree = Tree::new();
+    let shop = Tree::new();
+    let (Some(opus), Some(mp3)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&shop, "A.mp3", "Echoes"),
+    ) else {
+        return Ok(());
+    };
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+    filing_into(&library, &tree);
+    let before = every_file_under(tree.path());
+    let store = Arc::new(Offering::new("store", Delivering::File(mp3)));
+
+    let summary = library
+        .poll(store.registered(), PollOptions::ASKING_EVERY_WANT)?
+        .join()?;
+
+    assert_eq!(summary.stats.kept, 0, "{summary:?}");
+    assert_eq!(summary.replaced, Deleted::default());
+    assert_eq!(
+        every_file_under(tree.path()),
+        before,
+        "a lossy filing was left in the music folder"
+    );
+    assert!(files_named(tree.path(), "mp3").is_empty());
+    assert!(opus.exists());
+    assert!(still_pending(&library, &waiting)?);
+    Ok(())
+}
+
 #[test]
 fn a_last_resort_is_not_asked_in_a_later_round_after_an_earlier_provider_refused() -> Result<()> {
     let held = Tree::new();

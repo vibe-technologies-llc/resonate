@@ -9,7 +9,8 @@ use std::{
 };
 
 use resonate_codec::{
-    CoverArt, DecodeStatus, Decoder, FileTags, Sources, TagEdit, TagField, TagSink as _, Writing,
+    Codec, CoverArt, DecodeStatus, Decoder, FileTags, Sources, TagEdit, TagField, TagSink as _,
+    Writing,
 };
 use resonate_core::{
     AudioBuffer, Frames, Isrc, MediaLocation, SampleRate, WholeFile, naming, writer::Held,
@@ -47,6 +48,7 @@ pub(crate) enum Unfiled {
     OutOfReach,
     TooLarge,
     Undecodable,
+    Lossy,
     NotAsLongAsWanted { heard: Duration },
     Io(io::Error),
     Catalog(Error),
@@ -108,6 +110,12 @@ pub(crate) fn filed_for(
         reader,
         extension,
     )?;
+    if want.replacing.is_some()
+        && let Err(unfiled) = lossless(&filed.path)
+    {
+        let _ = fs::remove_file(&filed.path);
+        return Err(unfiled);
+    }
 
     if let Err(error) = library.claim_album_keys(
         want.album,
@@ -234,6 +242,16 @@ fn weighed(path: &Path, listed: Option<Duration>) -> std::result::Result<(), Unf
         Err(Unfiled::NotAsLongAsWanted {
             heard: heard.to_duration(rate),
         })
+    }
+}
+
+fn lossless(path: &Path) -> std::result::Result<(), Unfiled> {
+    let info = resonate_codec::probe(&Sources::local(), &MediaLocation::local(path))
+        .map_err(|_| Unfiled::Undecodable)?;
+    if Codec::from_id(info.codec).is_lossless() {
+        Ok(())
+    } else {
+        Err(Unfiled::Lossy)
     }
 }
 

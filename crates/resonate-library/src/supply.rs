@@ -25,7 +25,7 @@ use resonate_providers::{
 use resonate_vault::{Halt, Keeping, Taking};
 
 use crate::{
-    Error, Library, Result, ScanOptions, Want,
+    Deleted, Error, Library, Result, ScanOptions, Want,
     filed::{self, Filed, Unfiled},
     linked::LENGTHS_AGREE_WITHIN,
     organise,
@@ -446,6 +446,15 @@ fn landed(
     };
 
     match keeping {
+        Ok(Keeping::Kept(kept)) if want.replacing.is_some() && !kept.codec.is_lossless() => {
+            tracing::warn!(
+                %taken_from,
+                codec = ?kept.codec,
+                "a lossy delivery for a song being replaced was refused"
+            );
+            progress.unkept.fetch_add(1, Ordering::Relaxed);
+            Ok(Landed::NotTheSong)
+        }
         Ok(Keeping::Kept(kept)) if !want.lasts_as_long_as(kept.frames, kept.spec.rate) => {
             tracing::warn!(
                 %taken_from,
@@ -674,6 +683,7 @@ fn pump(reader: &mut dyn Read, into: &SyncSender<Pumping>) {
 pub struct PollSummary {
     pub stats: PollStats,
     pub cancelled: bool,
+    pub replaced: Deleted,
 }
 
 pub(crate) fn start(
@@ -828,7 +838,7 @@ fn filed_in_the_music_folder(
             progress.unkept.fetch_add(1, Ordering::Relaxed);
             Ok(Landed::NotTheSong)
         }
-        Err(unfiled @ (Unfiled::TooLarge | Unfiled::Undecodable)) => {
+        Err(unfiled @ (Unfiled::TooLarge | Unfiled::Undecodable | Unfiled::Lossy)) => {
             tracing::warn!(%taken_from, ?unfiled, "a delivered track was refused");
             progress.unkept.fetch_add(1, Ordering::Relaxed);
             Ok(Landed::NotTheSong)
@@ -1175,8 +1185,15 @@ impl<'a> Lanes<'a> {
             ..want.identity()
         };
         let foreseen = self.foreseen_answer(want, &declined, &rounds.gone);
+        let past_the_last_resorts;
+        let asked_of = if want.replacing.is_some() {
+            past_the_last_resorts = self.providers.without_last_resorts();
+            &past_the_last_resorts
+        } else {
+            self.providers
+        };
         let answer = foreseen.unwrap_or_else(|| {
-            self.providers.first(
+            asked_of.first(
                 &identity,
                 &Asking {
                     within: self.options.answers_within,
@@ -1345,6 +1362,7 @@ fn run(
 ) -> Result<PollSummary> {
     organise::sweep_what_a_dead_writer_staged(library);
     scanned_and_paired(library, &[])?;
+    rejoined(library);
     let lanes = Lanes {
         library,
         providers,
@@ -1385,6 +1403,11 @@ fn run(
         return Err(error);
     }
     scanned_and_paired(library, &lanes.filed.into_inner())?;
+    let replaced = if progress.is_cancelled() {
+        Deleted::default()
+    } else {
+        settled(library)
+    };
 
     let stats = progress.snapshot();
     if stats.kept > 0 {
@@ -1393,6 +1416,29 @@ fn run(
     Ok(PollSummary {
         stats,
         cancelled: progress.is_cancelled(),
+        replaced,
+    })
+}
+
+fn rejoined(library: &Library) {
+    match library.rejoin_the_replacements() {
+        Ok(0) => {}
+        Ok(rejoined) => {
+            tracing::info!(
+                rejoined,
+                "replacements rejoined the release rows their songs hold"
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "the replacements could not rejoin their release rows before the poll");
+        }
+    }
+}
+
+fn settled(library: &Library) -> Deleted {
+    library.settle_replacements().unwrap_or_else(|error| {
+        tracing::warn!(%error, "the replacements could not be settled as the poll ended");
+        Deleted::default()
     })
 }
 

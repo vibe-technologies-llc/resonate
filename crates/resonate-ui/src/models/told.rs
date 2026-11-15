@@ -212,7 +212,8 @@ pub(super) fn folding_told(folded: resonate_library::Result<Deleted>) -> Notice 
 
 pub(super) fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice> {
     let stats = summary.stats;
-    if stats.kept == 0 && prompted != Prompted::ByHand && !summary.cancelled {
+    let replaced = summary.replaced.tracks;
+    if stats.kept == 0 && replaced == 0 && prompted != Prompted::ByHand && !summary.cancelled {
         return None;
     }
 
@@ -222,6 +223,9 @@ pub(super) fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice
     };
     if stats.unkept > 0 {
         told = [told, words::models::could_not_be_kept(stats.unkept)].join(" · ");
+    }
+    if replaced > 0 {
+        told = [told, words::models::replaced_lossy_songs(replaced)].join(" · ");
     }
     if summary.cancelled {
         told.push_str(words::models::stopped_early());
