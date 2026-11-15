@@ -26,6 +26,23 @@ impl IdenticalCopy {
     pub const fn copy_id(&self) -> TrackId {
         self.copy_id
     }
+
+    pub(crate) fn hand_over(&self) -> HandOver<'_> {
+        HandOver {
+            kept: self.kept_id,
+            kept_path: &self.kept,
+            taken: self.copy_id,
+            taken_path: &self.copy,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct HandOver<'a> {
+    pub(crate) kept: TrackId,
+    pub(crate) kept_path: &'a Path,
+    pub(crate) taken: TrackId,
+    pub(crate) taken_path: &'a Path,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -101,11 +118,11 @@ fn identical_classes(wholes: &BTreeMap<PathBuf, Whole>) -> Vec<Vec<Member<'_>>> 
     classes
 }
 
-pub(crate) fn handed_over(transaction: &Transaction<'_>, copy: &IdenticalCopy) -> Result<()> {
-    let kept = copy.kept_id.get() as i64;
-    let taken = copy.copy_id.get() as i64;
-    let kept_path = store::path_text(&copy.kept).into_owned();
-    let copy_path = store::path_text(&copy.copy).into_owned();
+pub(crate) fn handed_over(transaction: &Transaction<'_>, over: &HandOver<'_>) -> Result<()> {
+    let kept = over.kept.get() as i64;
+    let taken = over.taken.get() as i64;
+    let kept_path = store::path_text(over.kept_path).into_owned();
+    let copy_path = store::path_text(over.taken_path).into_owned();
     let changed = |sql: &str, values: &[&dyn ToSql]| {
         transaction
             .execute(sql, values)
@@ -147,8 +164,8 @@ pub(crate) fn handed_over(transaction: &Transaction<'_>, copy: &IdenticalCopy) -
     changed(
         "UPDATE resume_rows SET uri = ?1 WHERE uri = ?2",
         params![
-            MediaLocation::local(&copy.kept).to_uri(),
-            MediaLocation::local(&copy.copy).to_uri()
+            MediaLocation::local(over.kept_path).to_uri(),
+            MediaLocation::local(over.taken_path).to_uri()
         ],
     )?;
     changed(

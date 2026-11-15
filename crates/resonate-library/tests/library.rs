@@ -48,12 +48,12 @@ use resonate_library::{
     PollHandle, PollOptions, PollProgress, PollSummary, Popularity, ProfileLink, ProfilePlaylist,
     Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
     Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-    ReleaseTrack, Removal, Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE,
-    SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit,
-    SheetField, SheetScope, Sidecar, SongLink, SongToKeep, SongsAsked, SortOrder, Sought, Sources,
-    StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
-    TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Upkeep, Vault,
-    VaultWeighingStats, Version, Waits, Window, Wording, Written,
+    ReleaseTrack, Removal, Replaceable, Result, RetagOptions, RetagSummary, RowOrder,
+    SUBMITTED_AT_ONCE, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service,
+    SheetEdit, SheetField, SheetScope, Sidecar, SongLink, SongToKeep, SongsAsked, SortOrder,
+    Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet,
+    TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease,
+    Unwritten, Upkeep, Vault, VaultWeighingStats, Version, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -4366,6 +4366,404 @@ fn the_version_chosen_for_a_lossy_song_is_the_copy_offered_where_it_is_lossless(
     let listed = library.lossy_songs_of(playlist)?;
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].held.as_ref().map(|copy| copy.id), Some(chosen));
+    Ok(())
+}
+
+fn the_row_at(library: &Library, path: &Path) -> Result<Track> {
+    Ok(library
+        .track_at(path, None)?
+        .expect("the file is catalogued"))
+}
+
+fn played_through(library: &Library, path: &Path, times: usize) -> Result<()> {
+    for _ in 0..times {
+        library
+            .track_played(&MediaLocation::local(path), None, Duration::from_secs(2))?
+            .expect("a play of a catalogued file is counted");
+    }
+    Ok(())
+}
+
+fn listens_of(database: &Path, track: TrackId) -> i64 {
+    beside(database)
+        .query_row(
+            "SELECT count(*) FROM listens WHERE track_id = ?1",
+            [track.get() as i64],
+            |row| row.get(0),
+        )
+        .expect("the listens are counted")
+}
+
+fn paired_on_a_release(library: &Library, songs: &[&Track]) -> Result<Vec<ReleaseTrackId>> {
+    let album = songs[0].album_id.expect("the song files under an album");
+    let rows = songs
+        .iter()
+        .zip(1..)
+        .map(|(song, position)| release_row(position, &song.title, Vec::new()))
+        .collect();
+    library.land_release(album, &orbits(rows, Vec::new()))?;
+    library.rematch(album)?;
+    let held = library.release_tracks(album)?;
+    Ok(songs
+        .iter()
+        .map(|song| {
+            held.iter()
+                .find(|row| row.track == Some(song.id))
+                .map(|row| row.id)
+                .expect("the release row is paired with the song")
+        })
+        .collect())
+}
+
+fn trashed(data: &Tree, name: &str) -> bool {
+    data.path().join("Trash/files").join(name).is_file()
+}
+
+#[test]
+#[cfg(unix)]
+fn a_lossy_song_with_a_lossless_copy_held_is_replaced_at_once_and_its_history_goes_with_it()
+-> Result<()> {
+    let tree = Tree::new();
+    let (Some(opus), Some(flac)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes"),
+    ) else {
+        return Ok(());
+    };
+    let data = Tree::new();
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let lossy = the_row_at(&library, &opus)?;
+    let lossless = the_row_at(&library, &flac)?;
+    played_through(&library, &opus, 3)?;
+    library.favour(Favoured::Track(lossy.id), true)?;
+    assert!(library.choose_version(lossy.id, &Version::Held(lossless.id))?);
+    let road_trip = library.start_playlist("Road trip", &[whole(&opus), whole(&opus)])?;
+    let night = library.start_playlist("Night", &[whole(&opus)])?;
+    let heard = listens_of(&database, lossy.id);
+
+    let replacing = library.replace(&library.lossy_songs_of(road_trip)?)?;
+
+    assert_eq!(
+        (replacing.folded, replacing.wanted, replacing.unmatched),
+        (1, 0, 0),
+        "{replacing:?}"
+    );
+    assert_eq!(replacing.trashed.files, 1);
+    let kept = the_row_at(&library, &flac)?;
+    assert_eq!(kept.plays, 3);
+    assert!(kept.favourite.is_some(), "the favourite stayed behind");
+    assert_eq!(listens_of(&database, lossless.id), heard);
+    for (playlist, entries) in [(road_trip, 2), (night, 1)] {
+        let cuts = library.playlist_cuts(playlist)?;
+        assert_eq!(cuts.len(), entries);
+        assert!(
+            cuts.iter()
+                .all(|cut| cut.location.as_path() == Some(flac.as_path())),
+            "a playlist still names the lossy copy: {cuts:?}"
+        );
+    }
+    assert!(!opus.exists());
+    assert!(trashed(&data, "A.opus"));
+    assert!(library.track(lossy.id)?.is_none());
+    assert!(library.versions_chosen()?.is_empty());
+    assert!(library.lossy_songs_of(road_trip)?.is_empty());
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn two_lossy_copies_of_one_song_are_both_replaced_by_the_one_lossless_copy() -> Result<()> {
+    let tree = Tree::new();
+    let (Some(opus), Some(mp3), Some(flac)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&tree, "lossy/A.mp3", "Echoes"),
+        encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes"),
+    ) else {
+        return Ok(());
+    };
+    let data = Tree::new();
+    let library = Library::open_in_memory()?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    played_through(&library, &opus, 2)?;
+    played_through(&library, &mp3, 1)?;
+    let playlist = library.start_playlist("Road trip", &[whole(&opus), whole(&mp3)])?;
+
+    let replacing = library.replace(&library.lossy_songs_of(playlist)?)?;
+
+    assert_eq!(replacing.folded, 2, "{replacing:?}");
+    assert_eq!(replacing.trashed.files, 2);
+    assert_eq!(the_row_at(&library, &flac)?.plays, 3);
+    assert!(trashed(&data, "A.opus"));
+    assert!(trashed(&data, "A.mp3"));
+    Ok(())
+}
+
+#[test]
+fn a_lossy_song_matched_on_musicbrainz_is_wanted_and_waits_while_one_with_neither_is_counted_unmatched()
+-> Result<()> {
+    let tree = Tree::new();
+    let (Some(opus), Some(mp3)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&tree, "lossy/B.mp3", "Time"),
+    ) else {
+        return Ok(());
+    };
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let lossy = the_row_at(&library, &opus)?;
+    let paired = paired_on_a_release(&library, &[&lossy])?[0];
+    let playlist = library.start_playlist("Road trip", &[whole(&opus), whole(&mp3)])?;
+
+    let replacing = library.replace(&library.lossy_songs_of(playlist)?)?;
+
+    assert_eq!(
+        (replacing.folded, replacing.wanted, replacing.unmatched),
+        (0, 1, 1),
+        "{replacing:?}"
+    );
+    assert_eq!(replacing.trashed, Deleted::default());
+    let wants = library.wants()?;
+    assert_eq!(wants.len(), 1);
+    assert_eq!(wants[0].release_track, paired);
+    assert_eq!(wants[0].replacing, Some(lossy.id));
+    assert!(
+        !wants[0].is_answered(),
+        "the lossy copy answered its own replacement"
+    );
+    assert!(opus.exists());
+    let listed = library.lossy_songs_of(playlist)?;
+    let waiting = listed
+        .iter()
+        .find(|row| row.track.id == lossy.id)
+        .expect("the lossy song is still listed");
+    assert!(waiting.pending);
+    Ok(())
+}
+
+#[test]
+fn a_lossy_song_a_want_once_delivered_is_wanted_again_with_its_offer_forgotten_and_its_refusals_kept()
+-> Result<()> {
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    let lossy = the_row_at(&library, &opus)?;
+    let paired = paired_on_a_release(&library, &[&lossy])?[0];
+    let want = library.want(paired)?;
+    {
+        let other = beside(&database);
+        other
+            .execute(
+                "UPDATE wants SET offered = ?1, tried = 5, misses = 2 WHERE id = ?2",
+                rusqlite::params![MediaLocation::local(&opus).to_uri(), want.get() as i64],
+            )
+            .expect("the want names the lossy delivery");
+        other
+            .execute(
+                "INSERT INTO refused_offers (want_id, taken_from, refused) VALUES (?1, 'inbox:short', 1)",
+                [want.get() as i64],
+            )
+            .expect("an offer was refused for the want");
+    }
+    let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
+
+    let replacing = library.replace(&library.lossy_songs_of(playlist)?)?;
+
+    assert_eq!(replacing.wanted, 1, "{replacing:?}");
+    let wants = library.wants()?;
+    assert_eq!(wants.len(), 1);
+    assert_eq!(wants[0].id, want);
+    assert_eq!(wants[0].offered, None);
+    assert_eq!(wants[0].tried, None);
+    assert_eq!(wants[0].misses, 0);
+    let refused: i64 = beside(&database)
+        .query_row(
+            "SELECT count(*) FROM refused_offers WHERE want_id = ?1",
+            [want.get() as i64],
+            |row| row.get(0),
+        )
+        .expect("the refusals are counted");
+    assert_eq!(refused, 1, "re-arming the want forgot what it refused");
+    Ok(())
+}
+
+struct HeldOpenByTheDesktop {
+    reached: Mutex<Option<Sender<()>>>,
+    lifted: Mutex<Receiver<()>>,
+}
+
+impl Trashes for HeldOpenByTheDesktop {
+    fn trash(&self, file: &Path) -> Removal {
+        if let Some(reached) = self.reached.lock().take() {
+            reached.send(()).expect("the test waits for the trash");
+        }
+        self.lifted.lock().recv().expect("the test lifts the trash");
+        fs::remove_file(file).expect("the desktop takes the file");
+        Removal::Removed
+    }
+}
+
+#[test]
+fn a_replacement_waits_while_another_pass_walks_the_tree_and_writes_nothing() -> Result<()> {
+    let tree = Tree::new();
+    let (Some(opus), Some(flac), Some(mp3)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes"),
+        encoded_as_pink_floyd(&tree, "lossy/B.mp3", "Time"),
+    ) else {
+        return Ok(());
+    };
+    let doomed = tree.write("doomed.wav", &Wav::new().text(TITLE, "doomed").build());
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let lossy = the_row_at(&library, &opus)?;
+    let unmatched = the_row_at(&library, &mp3)?;
+    paired_on_a_release(&library, &[&unmatched])?;
+    played_through(&library, &opus, 1)?;
+    let doomed = the_row_at(&library, &doomed)?.id;
+    let playlist = library.start_playlist("Road trip", &[whole(&opus), whole(&mp3)])?;
+    let listed = library.lossy_songs_of(playlist)?;
+    assert!(listed.iter().all(Replaceable::can_be_ticked), "{listed:?}");
+
+    let (reached, reaches) = mpsc::channel();
+    let (lift, lifted) = mpsc::channel();
+    library.trash_through(Some(Arc::new(HeldOpenByTheDesktop {
+        reached: Mutex::new(Some(reached)),
+        lifted: Mutex::new(lifted),
+    })));
+    thread::scope(|scope| -> Result<()> {
+        let deleting = scope.spawn(|| library.delete_tracks(&[doomed]));
+        reaches.recv().expect("the deletion reached the trash");
+
+        let refused = library.replace(&listed);
+        assert!(matches!(refused, Err(Error::AlreadyWalking)), "{refused:?}");
+
+        lift.send(()).expect("the deletion still waits");
+        deleting.join().expect("the deletion finished")?;
+        Ok(())
+    })?;
+
+    assert!(library.wants()?.is_empty(), "a want was written");
+    assert!(
+        library
+            .lossy_songs_of(playlist)?
+            .iter()
+            .all(|row| !row.pending),
+        "a replacement was written"
+    );
+    assert_eq!(the_row_at(&library, &flac)?.plays, 0);
+    assert_eq!(the_row_at(&library, &opus)?.plays, 1);
+    assert!(
+        library
+            .playlist_cuts(playlist)?
+            .iter()
+            .all(|cut| cut.location.as_path() != Some(flac.as_path())),
+        "the playlist was handed over"
+    );
+    assert!(opus.exists());
+    assert!(library.track(lossy.id)?.is_some());
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn a_vaulted_lossy_song_is_replaced_and_its_file_and_object_let_go() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let (Some(opus), Some(flac)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes"),
+    ) else {
+        return Ok(());
+    };
+    let data = Tree::new();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    vaulted(&library, true)?;
+    let object = library
+        .vault_objects()?
+        .into_iter()
+        .find(|object| object.taken_from == opus)
+        .expect("the lossy song went into the vault");
+    played_through(&library, &opus, 2)?;
+    let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
+
+    let replacing = library.replace(&library.lossy_songs_of(playlist)?)?;
+
+    assert_eq!(replacing.folded, 1, "{replacing:?}");
+    assert!(!opus.exists());
+    assert!(trashed(&data, "A.opus"));
+    assert!(
+        library
+            .vault_objects()?
+            .iter()
+            .all(|kept| kept.key != object.key),
+        "the lossy song's vault object was kept"
+    );
+    assert!(!object.path.exists());
+    assert_eq!(the_row_at(&library, &flac)?.plays, 2);
+    Ok(())
+}
+
+#[test]
+fn a_lossy_song_is_not_replaced_by_a_lossless_copy_whose_file_is_gone() -> Result<()> {
+    let tree = Tree::new();
+    let (Some(opus), Some(flac)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes"),
+    ) else {
+        return Ok(());
+    };
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    played_through(&library, &opus, 1)?;
+    let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
+    let listed = library.lossy_songs_of(playlist)?;
+    assert!(listed[0].held.is_some());
+    fs::remove_file(&flac).expect("the lossless copy goes");
+
+    let replacing = library.replace(&listed)?;
+
+    assert_eq!(
+        (replacing.folded, replacing.unmatched),
+        (0, 1),
+        "{replacing:?}"
+    );
+    assert!(opus.exists());
+    assert_eq!(the_row_at(&library, &opus)?.plays, 1);
+    Ok(())
+}
+
+#[test]
+fn dismissing_a_replacements_want_cancels_it_and_leaves_the_lossy_song() -> Result<()> {
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let lossy = the_row_at(&library, &opus)?;
+    paired_on_a_release(&library, &[&lossy])?;
+    let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
+    library.replace(&library.lossy_songs_of(playlist)?)?;
+    let want = library.wants()?.remove(0);
+    assert_eq!(want.replacing, Some(lossy.id));
+
+    assert!(library.unwant(want.id)?);
+
+    let listed = library.lossy_songs_of(playlist)?;
+    assert_eq!(listed.len(), 1);
+    assert!(!listed[0].pending, "the replacement outlived its want");
+    assert!(library.wants()?.is_empty());
+    assert!(opus.exists());
     Ok(())
 }
 

@@ -8,7 +8,7 @@ use resonate_core::{TrackId, naming};
 use rusqlite::{OptionalExtension as _, params};
 
 use super::{
-    Library,
+    Library, Walk,
     statements::{ASK_AGAIN_FOR_WHAT_A_FORGOTTEN_DELIVERY_HELD, REMEMBER_THE_DELIVERY_FORGOTTEN},
 };
 use crate::{
@@ -110,7 +110,7 @@ impl Library {
         }
         self.inner.write(|transaction| {
             for copy in numbered {
-                copies::handed_over(transaction, copy)?;
+                copies::handed_over(transaction, &copy.hand_over())?;
             }
             Ok(())
         })?;
@@ -124,7 +124,16 @@ impl Library {
     }
 
     fn remove_tracks(&self, tracks: &[TrackId], why: Why) -> Result<Deleted> {
-        let _walk = self.walk_the_tree()?;
+        let walk = self.walk_the_tree()?;
+        self.remove_tracks_under(&walk, tracks, why)
+    }
+
+    pub(super) fn remove_tracks_under(
+        &self,
+        _walk: &Walk,
+        tracks: &[TrackId],
+        why: Why,
+    ) -> Result<Deleted> {
         let files = self
             .inner
             .read(|connection| deleted::files_of(connection, tracks))?;

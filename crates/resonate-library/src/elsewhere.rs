@@ -777,12 +777,7 @@ pub(crate) fn want_in(
         return Err(Error::UnknownReleaseTrack(release_track));
     }
 
-    tx.execute(
-        "INSERT INTO wants (release_track_id, wanted) VALUES (?1, ?2)
-         ON CONFLICT(release_track_id) DO NOTHING",
-        params![row, store::to_nanos(now)],
-    )
-    .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    wanted(tx, row, now)?;
     tx.execute(
         "UPDATE wants SET tried = NULL, misses = 0
           WHERE release_track_id = ?1 AND offered IS NULL",
@@ -802,6 +797,35 @@ pub(crate) fn want_in(
         params![row],
     )
     .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    want_of(tx, row)
+}
+
+pub(crate) fn rearmed(
+    tx: &Transaction<'_>,
+    release_track: ReleaseTrackId,
+    now: SystemTime,
+) -> Result<WantId> {
+    let row = release_track.get() as i64;
+    wanted(tx, row, now)?;
+    tx.execute(
+        "UPDATE wants SET offered = NULL, tried = NULL, misses = 0 WHERE release_track_id = ?1",
+        params![row],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
+    want_of(tx, row)
+}
+
+fn wanted(tx: &Transaction<'_>, row: i64, now: SystemTime) -> Result<()> {
+    tx.execute(
+        "INSERT INTO wants (release_track_id, wanted) VALUES (?1, ?2)
+         ON CONFLICT(release_track_id) DO NOTHING",
+        params![row, store::to_nanos(now)],
+    )
+    .map_err(|source| Error::store(StoreOp::Insert, source))?;
+    Ok(())
+}
+
+fn want_of(tx: &Transaction<'_>, row: i64) -> Result<WantId> {
     let id: i64 = tx
         .query_row(
             "SELECT id FROM wants WHERE release_track_id = ?1",
