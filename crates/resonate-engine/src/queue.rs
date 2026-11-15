@@ -1949,6 +1949,8 @@ mod tests {
         );
     }
 
+    const SPREAD_SEED: u64 = 0x5EED;
+
     fn artist_of(n: usize) -> u64 {
         (n % 3) as u64
     }
@@ -1972,6 +1974,7 @@ mod tests {
     #[test]
     fn kin_landing_after_a_shuffle_spreads_the_artists_and_keeps_the_playing_row() {
         let mut queue = loaded(30, 4);
+        queue.shuffler = Shuffler::seeded(SPREAD_SEED);
         queue.set_smart_shuffle(SmartShuffle {
             fresh_first: false,
             ..SmartShuffle::default()

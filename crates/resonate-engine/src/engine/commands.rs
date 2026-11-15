@@ -27,6 +27,16 @@ impl Engine {
     }
 
     pub(super) fn emit(&mut self, event: Event) {
+        self.events_unpublished.push_back(event);
+    }
+
+    pub(super) fn tell_what_was_published(&mut self) {
+        while let Some(event) = self.events_unpublished.pop_front() {
+            self.tell(event);
+        }
+    }
+
+    fn tell(&mut self, event: Event) {
         self.hand_over_what_is_owed();
         if !self.events_owed.is_empty() {
             self.owe(event);

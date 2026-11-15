@@ -100,10 +100,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.12.0] Two engine tests still fail under heavy load alone: `restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap`
-  (33 of 64 runs with 24 CPU-bound processes beside 64 test threads; its loudness figures drift when the
-  fake graph is pulled late) and `queue::tests::kin_landing_after_a_shuffle_spreads_the_artists_and_keeps_the_playing_row`
-  (once); neither has failed in CI, and each wants its timing made deterministic, not a longer wait
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried

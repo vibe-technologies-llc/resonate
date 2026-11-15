@@ -129,6 +129,10 @@ impl Tap {
         self.rate
     }
 
+    pub fn written(&self) -> Frames {
+        Frames(self.written.load(Ordering::Acquire))
+    }
+
     pub fn around(&self, now: Instant, left: &mut [f32], right: &mut [f32]) -> Caught {
         let wanted = left.len().min(right.len());
         let written = self.written.load(Ordering::Acquire);

@@ -486,6 +486,7 @@ pub struct Engine {
     graph_last_lost: Option<Instant>,
     graph_still_away: Option<Error>,
     fill_owed: bool,
+    events_unpublished: VecDeque<Event>,
     events_owed: VecDeque<Event>,
     underruns_told_at: Option<Instant>,
     missing_untold: Frames,
@@ -672,6 +673,7 @@ impl Engine {
             graph_last_lost: None,
             graph_still_away: None,
             fill_owed: false,
+            events_unpublished: VecDeque::new(),
             events_owed: VecDeque::new(),
             underruns_told_at: None,
             missing_untold: Frames::ZERO,
@@ -747,6 +749,7 @@ impl Engine {
                 self.hand_over_what_is_owed();
                 self.answer_what_waited_on_the_opening_too_long();
                 self.publish();
+                self.tell_what_was_published();
                 self.answer();
 
                 if !heard.is_what(&self) {

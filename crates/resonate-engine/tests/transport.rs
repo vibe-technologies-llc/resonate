@@ -12039,6 +12039,7 @@ const RESTORED_TONES_HZ: [u32; 12] = [
 ];
 const HEARD_BEFORE_MEASURING: Duration = Duration::from_secs(4);
 const MEASURED_FOR: Duration = Duration::from_secs(3);
+const HELD_BEFORE_AN_ARM_IS_SWITCHED: Duration = Duration::from_millis(250);
 
 fn auditioning(
     sinks: Vec<SinkInfo>,
@@ -12071,6 +12072,68 @@ fn pull_for(player: &Player, graph: &Arc<Mutex<Graph>>, stride: usize, frames: u
         AUDITIONS_PULLED_TIMES_REAL_TIME,
         |_, graph| graph.played.len() / stride >= until,
         what,
+    );
+}
+
+fn pull_to(graph: &Arc<Mutex<Graph>>, stride: usize, frame: usize, what: &str) {
+    let deadline = Instant::now() + PATIENCE;
+    while Instant::now() < deadline {
+        let pause = {
+            let mut held = graph.lock();
+            let left = frame.saturating_sub(held.played.len() / stride);
+            if left == 0 {
+                return;
+            }
+            let block = left.min(BLOCK_FRAMES) * stride;
+            held.pull(block);
+            held.pause_after_pulling(block, AUDITIONS_PULLED_TIMES_REAL_TIME)
+        };
+        thread::sleep(pause);
+    }
+    panic!("timed out pulling {what}; {}", pulls(&graph.lock()));
+}
+
+fn pull_until_reopened(graph: &Arc<Mutex<Graph>>, stride: usize, opens: usize) -> usize {
+    let deadline = Instant::now() + PATIENCE;
+    while Instant::now() < deadline {
+        let pause = {
+            let mut held = graph.lock();
+            if let Some(opened) = held.opened_after.get(opens) {
+                return opened / stride;
+            }
+            held.pull(BLOCK_FRAMES * stride);
+            held.pause_after_pulling(BLOCK_FRAMES * stride, AUDITIONS_PULLED_TIMES_REAL_TIME)
+        };
+        thread::sleep(pause);
+    }
+    panic!(
+        "timed out waiting for the audition's stream to open; {}",
+        pulls(&graph.lock())
+    );
+}
+
+fn wait_for_the_ring_to_hold(
+    player: &Player,
+    graph: &Arc<Mutex<Graph>>,
+    stride: usize,
+    opened_at: usize,
+    frames: usize,
+) {
+    let Tapped::Samples(tap) = player.tap() else {
+        panic!("an audition's stream is tapped");
+    };
+    let pulled = graph.lock().played.len() / stride - opened_at;
+    let deadline = Instant::now() + PATIENCE;
+    while Instant::now() < deadline {
+        let held = (tap.written().get() as usize).saturating_sub(pulled);
+        if held >= frames {
+            return;
+        }
+        thread::sleep(SHORTEST_PAUSE_BETWEEN_PULLS);
+    }
+    panic!(
+        "timed out waiting for the engine to write {frames} frames ahead of the graph; {}",
+        transport(player)
     );
 }
 
@@ -12350,36 +12413,29 @@ fn restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap() -
     let settled =
         Frames::from_duration(HEARD_BEFORE_MEASURING, SampleRate::HZ_44100).get() as usize;
     let measured = Frames::from_duration(MEASURED_FOR, SampleRate::HZ_44100).get() as usize;
+    let held_to_switch =
+        Frames::from_duration(HELD_BEFORE_AN_ARM_IS_SWITCHED, SampleRate::HZ_44100).get() as usize;
+    let auditioned_from = (rate / 4).next_multiple_of(BLOCK_FRAMES);
 
     let levels = player.levels_of_the_contest(contest, &AtomicBool::new(false))?;
     let lowered = levels.lowered()?;
-    pull_for(&player, &graph, stride, rate / 4, "the song to play");
+    pull_to(&graph, stride, auditioned_from, "the song to play");
+    let opens = graph.lock().opens;
     answered(&player, audition_of(contest, Arm::A, lowered))?;
-    let began = graph.lock().played.len() / stride;
-    pull_for(
-        &player,
-        &graph,
-        stride,
-        settled + measured,
-        "arm A to be heard",
-    );
+    let began = pull_until_reopened(&graph, stride, opens);
+    let switched_at = began + settled + measured;
+    pull_to(&graph, stride, switched_at, "arm A to be heard");
     let opens = graph.lock().opens;
     spliced_since(&player);
-    let switched_at = graph.lock().played.len() / stride;
+    wait_for_the_ring_to_hold(&player, &graph, stride, began, held_to_switch);
     answered(&player, audition_of(contest, Arm::B, lowered))?;
-    pull_for(
-        &player,
-        &graph,
-        stride,
-        rate / 2 + measured,
-        "arm B to be heard",
-    );
+    let b_from = switched_at + rate / 2;
+    pull_to(&graph, stride, b_from + measured, "arm B to be heard");
 
     let spliced = spliced_since(&player);
     let graph = graph.lock();
     let samples = floats_of_the_graph(&graph.played);
     let heard_a = loudness_over(&samples, switched_at - measured..switched_at);
-    let b_from = switched_at + rate / 2;
     let heard_b = loudness_over(&samples, b_from..b_from + measured);
     assert!(
         levels.apart_db().abs() > RESTORATION_MOVES_THE_TONES_BY_AT_LEAST_DB,
@@ -12393,8 +12449,7 @@ fn restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap() -
         lowered.by.millibels()
     );
     assert!(
-        longest_silence(&samples[(began + rate / 2) * 2..(b_from + measured) * 2])
-            < SILENT_RUN_AT_MOST_FRAMES,
+        longest_silence(&samples[began * 2..(b_from + measured) * 2]) < SILENT_RUN_AT_MOST_FRAMES,
         "a gap opened while the arms were switched"
     );
     assert_eq!(
