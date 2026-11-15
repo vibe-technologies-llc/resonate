@@ -5088,7 +5088,8 @@ fn a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_hold
 }
 
 #[test]
-fn a_replacement_whose_match_is_forgotten_is_dropped_and_the_lossy_song_kept() -> Result<()> {
+fn a_replacement_whose_match_is_forgotten_waits_unpending_and_rejoins_once_matched_again()
+-> Result<()> {
     let tree = Tree::new();
     let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
         return Ok(());
@@ -5107,13 +5108,28 @@ fn a_replacement_whose_match_is_forgotten_is_dropped_and_the_lossy_song_kept() -
 
     assert_eq!(library.settle_replacements()?, Deleted::default());
 
-    assert!(
-        replacements_of(&database, waiting.lossy.id).is_empty(),
-        "a replacement with nothing to fetch on was kept"
+    assert_eq!(
+        replacements_of(&database, waiting.lossy.id),
+        [None],
+        "a replacement left between a release's landing and its rematch was cancelled"
     );
     assert!(!still_pending(&library, &waiting)?);
     assert!(opus.exists());
     assert_eq!(the_row_at(&library, &opus)?.plays, 2);
+
+    let again = paired_as_the_recording(&library, &waiting.lossy, None, RELEASE)?;
+    assert_eq!(library.settle_replacements()?, Deleted::default());
+
+    assert_eq!(
+        replacements_of(&database, waiting.lossy.id),
+        [Some(again.get() as i64)]
+    );
+    let wants = library.wants()?;
+    assert_eq!(wants.len(), 1, "{wants:?}");
+    assert_eq!(wants[0].release_track, again);
+    assert_eq!(wants[0].replacing, Some(waiting.lossy.id));
+    assert!(still_pending(&library, &waiting)?);
+    assert!(opus.exists());
     Ok(())
 }
 
