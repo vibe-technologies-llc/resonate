@@ -1,0 +1,1 @@
+upnp:class derivedfrom "object.item.audioItem" and (dc:title contains "say \"hi\"" or upnp:artist = "A\\B") or upnp:genre exists false

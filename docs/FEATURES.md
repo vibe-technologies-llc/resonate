@@ -212,9 +212,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [M] The catalog offered on the network answers no Search and no eventing:
-  `GetSearchCapabilities` is empty, so a control point browses alone, and a `SUBSCRIBE` is refused,
-  so one waiting on `SystemUpdateID` events sees a changed catalog only when it browses again
 - [M] A song cut from a cue sheet is not offered on the network: a span of a file is no byte range
   of it, and serving one would mean decoding it and sending it as WAVE
 - [S] The phones do not offer their catalogs on the network, only the desktop does
@@ -222,6 +219,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   control point; the name is the catalog's word, never the host's
 - [S] A renderer taking WAVE and not FLAC is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz,
   and handing the untouched file over does not fit the sink seam (`upnp.md`)
+- [S] A search from the network answers under the root and Songs alone: under an artist, an album
+  or a playlist it is UPnP error 720, as the albums, playlists and songs below one would each have
+  to be narrowed to it beside the search
+- [S] `ContainerUpdateIDs` is not evented, so a control point holding one container's children
+  reads them again whenever `SystemUpdateID` moves; the catalog's revision names no container
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio
   are Apple's own, with no published specification to build against
 

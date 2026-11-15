@@ -7,6 +7,8 @@ use std::{
 
 use resonate_core::{AlbumId, ArtistId, PlaylistId, TrackId};
 
+use crate::{criteria::Property, didl};
+
 const ROOT: &str = "0";
 
 const ARTISTS: &str = "artists";
@@ -195,8 +197,78 @@ pub struct Picture {
     pub mime: &'static str,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Kind {
+    Artist,
+    Album,
+    Song,
+    Playlist,
+}
+
+impl Kind {
+    pub(crate) const fn field_of(self, property: Property) -> Option<Field> {
+        match (self, property) {
+            (_, Property::Title) => Some(Field::Title),
+            (Self::Song, Property::Creator | Property::Artist)
+            | (Self::Album, Property::Artist) => Some(Field::Artist),
+            (Self::Song, Property::Album) => Some(Field::Album),
+            (Self::Song, Property::Genre) => Some(Field::Genre),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn class(self) -> &'static str {
+        match self {
+            Self::Artist => didl::ARTIST,
+            Self::Album => didl::ALBUM,
+            Self::Song => didl::TRACK,
+            Self::Playlist => didl::PLAYLIST,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Field {
+    Title,
+    Artist,
+    Album,
+    Genre,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Test {
+    Is,
+    IsNot,
+    Contains,
+    Lacks,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Query {
+    Everything,
+    All(Vec<Self>),
+    Any(Vec<Self>),
+    Text {
+        field: Field,
+        test: Test,
+        text: String,
+    },
+    Present {
+        field: Field,
+        held: bool,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Searched {
+    Found(Shelved),
+    Unanswered,
+}
+
 pub trait Catalog: Send + Sync + 'static {
     type Failure: StdError + Send + Sync + 'static;
+
+    fn searched(&self, kind: Kind, query: &Query, page: Page) -> Result<Searched, Self::Failure>;
 
     fn shelved(&self, shelf: Shelf, page: Page) -> Result<Option<Shelved>, Self::Failure>;
 

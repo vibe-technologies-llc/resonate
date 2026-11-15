@@ -191,8 +191,8 @@ Linux sound server or GUI libraries are needed.
   (a lookup and an answer read back as themselves, and a line of the export's COPY text), `upnp` (an SSDP
   answer, a renderer's description, a chunked body, a SOAP answer, an address and the stream server's request head (`serve::read_a_request_head`), holding that no
   control address leaves the host that described the renderer; and what a control point asks the
-  media server: an `M-SEARCH`, a request head and path, an object id, a `Range` span and a SOAP
-  request answered against an empty catalog, the answer reading as XML), `cast` (a Cast frame's protobuf and the
+  media server: an `M-SEARCH`, a request head and path, a GENA head, a `SearchCriteria`, an object
+  id, a `Range` span and a SOAP request answered against an empty catalog, the answer reading as XML), `cast` (a Cast frame's protobuf and the
   JSON in it, read back as itself), `server` (the sync server's invitation page request, the
   gateway's request head and its `Range` header over a total, holding that a span lies within it; the
   input's first eight bytes are the total), `ipc` (the frames `resonate-mpris`'s `wire.rs` carries

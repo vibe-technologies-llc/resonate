@@ -2,11 +2,13 @@ mod announce;
 mod beside;
 mod carriage;
 mod catalog;
+mod criteria;
 mod description;
 mod didl;
 mod directory;
 mod door;
 mod error;
+mod events;
 mod feed;
 mod flac;
 #[cfg(fuzzing)]
@@ -41,7 +43,8 @@ pub use crate::{
     beside::{Beside, Neighbours},
     carriage::{Carriage, Wrapping},
     catalog::{
-        AudioKind, Bytes, Catalog, Entry, Held, Object, Opened, Page, Picture, Shelf, Shelved, Song,
+        AudioKind, Bytes, Catalog, Entry, Field, Held, Kind, Object, Opened, Page, Picture, Query,
+        Searched, Shelf, Shelved, Song, Test,
     },
     error::{Action, Asked, Error, FlacOp, Result, SearchOp, ServeOp},
     feed::Feed,

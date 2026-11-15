@@ -10,13 +10,15 @@ use std::{path::PathBuf, thread};
 use parking_lot::Mutex;
 #[cfg(feature = "ui")]
 use resonate_core::Switch;
-use resonate_core::{AlbumId, PlaylistId, TrackId};
+use resonate_core::{AlbumId, PlaylistId, TrackId, is_lettered};
 use resonate_library::{
-    Album, AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Error as LibraryError, Library,
-    PlaylistOrder, SortOrder, Track, TrackQuery,
+    Album, AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Asked, Clause, Column, Condition,
+    Error as LibraryError, Library, PlaylistOrder, Reach, Search, SortOrder, Track, TrackQuery,
+    Word,
 };
 use resonate_upnp::{
-    AudioKind, Catalog, Entry, Held, Opened, Page, Picture, Shelf, Shelved, Song, Udn,
+    AudioKind, Catalog, Entry, Field, Held, Kind, Opened, Page, Picture, Query, Searched, Shelf,
+    Shelved, Song, Test, Udn,
 };
 #[cfg(feature = "ui")]
 use resonate_upnp::{MediaServer, Offering};
@@ -33,6 +35,14 @@ const LISTS_KEPT_AT_MOST: usize = 32;
 const SONGS_IN: SortOrder = SortOrder::Title;
 
 const ON_AN_ALBUM_IN: SortOrder = SortOrder::AlbumThenTrack;
+
+const CLAUSES_AT_MOST: usize = 32;
+
+const ALTERNATIVES_AT_MOST: usize = 16;
+
+const QUOTE: char = '"';
+
+const WHOLE: char = '=';
 
 pub(crate) struct Shelves {
     library: Arc<Library>,
@@ -136,6 +146,74 @@ impl Shelves {
             })
             .map(Entry::Song)
             .collect())
+    }
+
+    fn artists(&self, query: ArtistQuery, page: Page) -> Result<Shelved, LibraryError> {
+        let library = &self.library;
+        let total = library.artists_counted(&query)?;
+        let mut held = Vec::new();
+        if page.most > 0 {
+            for artist in library.artists(&ArtistQuery {
+                offset: page.from as usize,
+                limit: Some(page.most as usize),
+                ..query
+            })? {
+                held.push(Entry::Shelf(Held {
+                    shelf: Shelf::Artist(artist.id),
+                    children: library.albums_counted(&by_the_artist(artist.id))?,
+                    title: artist.name,
+                    artist: None,
+                    cover: None,
+                }));
+            }
+        }
+        Ok(Shelved { held, total })
+    }
+
+    fn whole_files_in(&self, query: TrackQuery, page: Page) -> Result<Shelved, LibraryError> {
+        let total = self.library.whole_files_counted(&query)?;
+        if page.most == 0 || page.from >= total {
+            return Ok(Shelved {
+                held: Vec::new(),
+                total,
+            });
+        }
+        let rows = self.library.whole_files(&TrackQuery {
+            offset: page.from as usize,
+            limit: Some(page.most as usize),
+            ..query
+        })?;
+        Ok(Shelved {
+            held: self.songs_of(&rows)?,
+            total,
+        })
+    }
+
+    fn playlists(&self, named: Option<&str>, page: Page) -> Result<Shelved, LibraryError> {
+        let library = &self.library;
+        let total = library.playlist_count(named)?;
+        let mut held = Vec::new();
+        if page.most > 0 {
+            for playlist in library.playlists_within(
+                PlaylistOrder::Name,
+                PlaylistOrder::Name.reads(),
+                named,
+                page.from as usize,
+                page.most as usize,
+            )? {
+                let children = self
+                    .listed(playlist.id)?
+                    .map_or(0, |listed| u32::try_from(listed.len()).unwrap_or(u32::MAX));
+                held.push(Entry::Shelf(Held {
+                    shelf: Shelf::Playlist(playlist.id),
+                    title: playlist.name,
+                    artist: None,
+                    children,
+                    cover: None,
+                }));
+            }
+        }
+        Ok(Shelved { held, total })
     }
 
     fn album_held(&self, album: &Album) -> Result<Held, LibraryError> {
@@ -283,48 +361,51 @@ fn song_of(track: &Track, album: Option<&str>) -> Option<Song> {
 impl Catalog for Shelves {
     type Failure = LibraryError;
 
+    fn searched(&self, kind: Kind, query: &Query, page: Page) -> Result<Searched, LibraryError> {
+        let found = match kind {
+            Kind::Song => searched_as(query, song_column, Denials::Read).map(|text| {
+                self.whole_files_in(
+                    TrackQuery {
+                        text,
+                        sort: SONGS_IN,
+                        reading: SONGS_IN.reads(),
+                        ..TrackQuery::default()
+                    },
+                    page,
+                )
+            }),
+            Kind::Album => searched_as(query, album_column, Denials::Refused).map(|text| {
+                self.albums(
+                    AlbumQuery {
+                        text,
+                        ..albums_named(None)
+                    },
+                    page,
+                )
+            }),
+            Kind::Artist => searched_as(query, artist_column, Denials::Refused)
+                .map(|text| self.artists(artists_named(text), page)),
+            Kind::Playlist => {
+                playlists_named(query).map(|named| self.playlists(named.as_deref(), page))
+            }
+        };
+        match found {
+            Some(shelved) => Ok(Searched::Found(shelved?)),
+            None => Ok(Searched::Unanswered),
+        }
+    }
+
     fn shelved(&self, shelf: Shelf, page: Page) -> Result<Option<Shelved>, LibraryError> {
         let library = &self.library;
         Ok(Some(match shelf {
-            Shelf::Artists => {
-                let query = ArtistQuery {
-                    sort: ArtistOrder::Name,
-                    reading: ArtistOrder::Name.reads(),
-                    ..ArtistQuery::default()
-                };
-                let total = library.artists_counted(&query)?;
-                let mut held = Vec::new();
-                if page.most > 0 {
-                    for artist in library.artists(&ArtistQuery {
-                        offset: page.from as usize,
-                        limit: Some(page.most as usize),
-                        ..query
-                    })? {
-                        held.push(Entry::Shelf(Held {
-                            shelf: Shelf::Artist(artist.id),
-                            children: library.albums_counted(&by_the_artist(artist.id))?,
-                            title: artist.name,
-                            artist: None,
-                            cover: None,
-                        }));
-                    }
-                }
-                Shelved { held, total }
-            }
+            Shelf::Artists => self.artists(artists_named(None), page)?,
             Shelf::Artist(id) => {
                 if library.artist_detail(id)?.is_none() {
                     return Ok(None);
                 }
                 self.albums(by_the_artist(id), page)?
             }
-            Shelf::Albums => self.albums(
-                AlbumQuery {
-                    sort: AlbumOrder::Title,
-                    reading: AlbumOrder::Title.reads(),
-                    ..AlbumQuery::default()
-                },
-                page,
-            )?,
+            Shelf::Albums => self.albums(albums_named(None), page)?,
             Shelf::Album(id) => {
                 let Some(album) = library.album(id)? else {
                     return Ok(None);
@@ -348,31 +429,7 @@ impl Catalog for Shelves {
                 Shelved { held, total }
             }
             Shelf::Songs => self.songs(page)?,
-            Shelf::Playlists => {
-                let total = library.playlist_count(None)?;
-                let mut held = Vec::new();
-                if page.most > 0 {
-                    for playlist in library.playlists_within(
-                        PlaylistOrder::Name,
-                        PlaylistOrder::Name.reads(),
-                        None,
-                        page.from as usize,
-                        page.most as usize,
-                    )? {
-                        let children = self
-                            .listed(playlist.id)?
-                            .map_or(0, |listed| u32::try_from(listed.len()).unwrap_or(u32::MAX));
-                        held.push(Entry::Shelf(Held {
-                            shelf: Shelf::Playlist(playlist.id),
-                            title: playlist.name,
-                            artist: None,
-                            children,
-                            cover: None,
-                        }));
-                    }
-                }
-                Shelved { held, total }
-            }
+            Shelf::Playlists => self.playlists(None, page)?,
             Shelf::Playlist(id) => return self.played_from(id, page),
         }))
     }
@@ -458,6 +515,233 @@ impl Catalog for Shelves {
     fn revision(&self) -> u32 {
         let revision = self.library.catalog_revision();
         u32::try_from(revision % (u64::from(u32::MAX) + 1)).unwrap_or_default()
+    }
+}
+
+fn artists_named(text: Option<String>) -> ArtistQuery {
+    ArtistQuery {
+        text,
+        sort: ArtistOrder::Name,
+        reading: ArtistOrder::Name.reads(),
+        ..ArtistQuery::default()
+    }
+}
+
+fn albums_named(text: Option<String>) -> AlbumQuery {
+    AlbumQuery {
+        text,
+        sort: AlbumOrder::Title,
+        reading: AlbumOrder::Title.reads(),
+        ..AlbumQuery::default()
+    }
+}
+
+const fn song_column(field: Field) -> Option<Column> {
+    Some(match field {
+        Field::Title => Column::Title,
+        Field::Artist => Column::Artist,
+        Field::Album => Column::Album,
+        Field::Genre => Column::Genre,
+    })
+}
+
+const fn album_column(field: Field) -> Option<Column> {
+    match field {
+        Field::Title => Some(Column::Album),
+        Field::Artist => Some(Column::Artist),
+        Field::Album | Field::Genre => None,
+    }
+}
+
+const fn artist_column(field: Field) -> Option<Column> {
+    match field {
+        Field::Title => Some(Column::Artist),
+        Field::Artist | Field::Album | Field::Genre => None,
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Denials {
+    Read,
+    Refused,
+}
+
+#[derive(Clone)]
+struct Atom {
+    word: Word,
+    denied: bool,
+}
+
+enum Formula {
+    All(Vec<Self>),
+    Any(Vec<Self>),
+    Atom(Atom),
+}
+
+fn has_letters(text: &str) -> bool {
+    text.chars().any(is_lettered)
+}
+
+fn unquoted(text: &str) -> String {
+    text.chars().filter(|letter| *letter != QUOTE).collect()
+}
+
+fn begun_words(text: &str) -> Vec<String> {
+    text.split_whitespace()
+        .map(|word| unquoted(word).trim_start_matches(WHOLE).to_owned())
+        .filter(|word| has_letters(word))
+        .collect()
+}
+
+fn atom(column: Column, text: String, reach: Reach, denied: bool) -> Formula {
+    Formula::Atom(Atom {
+        word: Word {
+            column: Some(column),
+            text,
+            reach,
+        },
+        denied,
+    })
+}
+
+fn formula(
+    query: &Query,
+    column_of: fn(Field) -> Option<Column>,
+    denials: Denials,
+) -> Option<Formula> {
+    let refuses_denials = denials == Denials::Refused;
+    Some(match query {
+        Query::Everything => Formula::All(Vec::new()),
+        Query::All(all) => Formula::All(
+            all.iter()
+                .map(|one| formula(one, column_of, denials))
+                .collect::<Option<_>>()?,
+        ),
+        Query::Any(any) => Formula::Any(
+            any.iter()
+                .map(|one| formula(one, column_of, denials))
+                .collect::<Option<_>>()?,
+        ),
+        Query::Present { .. } => return None,
+        Query::Text { field, test, text } => {
+            let column = column_of(*field)?;
+            match test {
+                Test::Is | Test::IsNot => {
+                    let denied = *test == Test::IsNot;
+                    if (denied && refuses_denials) || !has_letters(text) {
+                        return None;
+                    }
+                    atom(column, unquoted(text), Reach::Whole, denied)
+                }
+                Test::Contains | Test::Lacks => {
+                    let denied = *test == Test::Lacks;
+                    let words = begun_words(text);
+                    if (denied && refuses_denials) || words.is_empty() {
+                        return None;
+                    }
+                    let atoms = words
+                        .into_iter()
+                        .map(|word| atom(column, word, Reach::Begins, denied))
+                        .collect();
+                    if denied {
+                        Formula::Any(atoms)
+                    } else {
+                        Formula::All(atoms)
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn clauses(formula: &Formula) -> Option<Vec<Vec<Atom>>> {
+    match formula {
+        Formula::Atom(atom) => Some(vec![vec![atom.clone()]]),
+        Formula::All(all) => {
+            let mut held = Vec::new();
+            for one in all {
+                held.extend(clauses(one)?);
+                if held.len() > CLAUSES_AT_MOST {
+                    return None;
+                }
+            }
+            Some(held)
+        }
+        Formula::Any(any) => {
+            let mut held: Vec<Vec<Atom>> = vec![Vec::new()];
+            for one in any {
+                let either = clauses(one)?;
+                let mut crossed = Vec::new();
+                for before in &held {
+                    for clause in &either {
+                        if before.len() + clause.len() > ALTERNATIVES_AT_MOST {
+                            return None;
+                        }
+                        crossed.push(before.iter().chain(clause).cloned().collect());
+                        if crossed.len() > CLAUSES_AT_MOST {
+                            return None;
+                        }
+                    }
+                }
+                held = crossed;
+            }
+            Some(held)
+        }
+    }
+}
+
+fn searched_as(
+    query: &Query,
+    column_of: fn(Field) -> Option<Column>,
+    denials: Denials,
+) -> Option<Option<String>> {
+    let clauses = clauses(&formula(query, column_of, denials)?)?;
+    if clauses.iter().any(Vec::is_empty) {
+        return None;
+    }
+    if clauses.is_empty() {
+        return Some(None);
+    }
+    let search = Search {
+        clauses: clauses
+            .into_iter()
+            .map(|any| Clause {
+                any: any
+                    .into_iter()
+                    .map(|atom| Asked {
+                        denied: atom.denied,
+                        all: std::iter::once(Condition::Word(atom.word)).collect(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    };
+    Some(Some(search.to_string()))
+}
+
+fn playlists_named(query: &Query) -> Option<Option<String>> {
+    let named = |query: &Query| match query {
+        Query::Text {
+            field: Field::Title,
+            test: Test::Contains,
+            text,
+        } => {
+            let words: Vec<&str> = text
+                .split(|letter: char| !is_lettered(letter))
+                .filter(|word| !word.is_empty())
+                .collect();
+            (!words.is_empty()).then(|| words.join(" "))
+        }
+        _ => None,
+    };
+    match query {
+        Query::Everything => Some(None),
+        Query::All(all) => all
+            .iter()
+            .map(named)
+            .collect::<Option<Vec<String>>>()
+            .map(|words| Some(words.join(" "))),
+        query => named(query).map(Some),
     }
 }
 
@@ -654,6 +938,165 @@ mod tests {
         assert_eq!(
             shelves.song(first.id).expect("read").map(|song| song.album),
             Some(Some("Record".to_owned()))
+        );
+    }
+
+    const GENRE: &[u8; 4] = b"TCON";
+
+    fn text(field: Field, test: Test, text: &str) -> Query {
+        Query::Text {
+            field,
+            test,
+            text: text.to_owned(),
+        }
+    }
+
+    fn titles(searched: Searched) -> (Vec<String>, u32) {
+        let Searched::Found(shelved) = searched else {
+            panic!("the search was not answered");
+        };
+        let titles = shelved
+            .held
+            .into_iter()
+            .map(|entry| match entry {
+                Entry::Song(song) => song.title,
+                Entry::Shelf(held) => held.title,
+            })
+            .collect();
+        (titles, shelved.total)
+    }
+
+    #[test]
+    fn a_search_from_the_network_is_read_through_the_librarys_own_folded_search() {
+        let root = scratch("offered-search");
+        for (file, title, artist, album, genre) in [
+            ("a.wav", "Human Behaviour", "Björk", "Debut", "Pop"),
+            ("b.wav", "Army of Me", "Bjork", "Post", "Electronic"),
+            ("c.wav", "Hyperballad", "Other", "Rest", "Pop"),
+        ] {
+            fs::write(
+                root.join(file),
+                tagged_wave(&[
+                    (TITLE, title),
+                    (ARTIST, artist),
+                    (ALBUM, album),
+                    (GENRE, genre),
+                ]),
+            )
+            .expect("a song");
+        }
+        let library = Arc::new(scanned(&root));
+        let shelves = Shelves::over(Arc::clone(&library));
+        let every = Page::first(10);
+        let searched = |kind: Kind, query: &Query, page: Page| {
+            shelves.searched(kind, query, page).expect("searched")
+        };
+
+        let by_the_artist = titles(searched(
+            Kind::Song,
+            &text(Field::Artist, Test::Is, "BJORK"),
+            every,
+        ));
+        let second_page = titles(searched(
+            Kind::Song,
+            &text(Field::Artist, Test::Is, "björk"),
+            Page { from: 1, most: 1 },
+        ));
+        let begun = titles(searched(
+            Kind::Song,
+            &text(Field::Title, Test::Contains, "behav"),
+            every,
+        ));
+        let but_not = titles(searched(
+            Kind::Song,
+            &Query::All(vec![
+                text(Field::Artist, Test::Contains, "bjork"),
+                text(Field::Title, Test::Lacks, "army"),
+            ]),
+            every,
+        ));
+        let either = titles(searched(
+            Kind::Song,
+            &Query::Any(vec![
+                text(Field::Genre, Test::Is, "electronic"),
+                text(Field::Album, Test::Contains, "rest"),
+            ]),
+            every,
+        ));
+        let everything = titles(searched(Kind::Song, &Query::Everything, Page::counting()));
+        let albums = titles(searched(
+            Kind::Album,
+            &text(Field::Title, Test::Contains, "post"),
+            every,
+        ));
+        let artists = titles(searched(
+            Kind::Artist,
+            &text(Field::Title, Test::Contains, "bjo"),
+            every,
+        ));
+        let unanswered = [
+            (
+                Kind::Song,
+                Query::Present {
+                    field: Field::Genre,
+                    held: true,
+                },
+            ),
+            (Kind::Song, text(Field::Title, Test::Contains, "!!!")),
+            (Kind::Album, text(Field::Title, Test::Lacks, "post")),
+            (Kind::Artist, text(Field::Title, Test::IsNot, "other")),
+            (Kind::Artist, text(Field::Album, Test::Is, "post")),
+            (Kind::Playlist, text(Field::Title, Test::Is, "mix")),
+        ]
+        .map(|(kind, query)| searched(kind, &query, every));
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(by_the_artist.1, 2);
+        assert_eq!(by_the_artist.0, ["Army of Me", "Human Behaviour"]);
+        assert_eq!(second_page, (vec!["Human Behaviour".to_owned()], 2));
+        assert_eq!(begun.0, ["Human Behaviour"]);
+        assert_eq!(but_not.0, ["Human Behaviour"]);
+        assert_eq!(either.0, ["Army of Me", "Hyperballad"]);
+        assert_eq!(everything, (Vec::new(), 3));
+        assert_eq!(albums.0, ["Post"]);
+        assert_eq!(artists.1, 1);
+        assert!(
+            unanswered
+                .iter()
+                .all(|searched| *searched == Searched::Unanswered)
+        );
+    }
+
+    #[test]
+    fn a_query_from_the_network_is_written_as_a_search_that_reads_back_as_itself() {
+        for query in [
+            text(Field::Title, Test::Contains, "Say \"hi\" =now"),
+            text(Field::Artist, Test::Is, "AC/DC \"live\""),
+            Query::Any(vec![
+                text(Field::Title, Test::Lacks, "one two"),
+                Query::All(vec![
+                    text(Field::Genre, Test::IsNot, "Rock"),
+                    text(Field::Album, Test::Contains, "-or"),
+                ]),
+            ]),
+        ] {
+            let written = searched_as(&query, song_column, Denials::Read)
+                .flatten()
+                .expect("a search");
+
+            assert_eq!(Search::read(&written).to_string(), written, "{query:?}");
+            assert!(!written.contains("\"\""), "{written}");
+        }
+        let many = Query::Any(
+            (0..ALTERNATIVES_AT_MOST + 1)
+                .map(|at| text(Field::Title, Test::Is, &format!("word{at}")))
+                .collect(),
+        );
+
+        assert_eq!(searched_as(&many, song_column, Denials::Read), None);
+        assert_eq!(
+            searched_as(&Query::Everything, song_column, Denials::Read),
+            Some(None)
         );
     }
 

@@ -4,22 +4,25 @@ use std::{
     io::{self, Read, Seek, SeekFrom, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream},
     sync::{
-        Arc,
+        Arc, Weak,
         atomic::{AtomicBool, Ordering},
     },
+    thread,
     time::{Duration, Instant},
 };
 
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender};
 use mio::Waker;
 use resonate_core::{AlbumId, TrackId};
 
 use crate::{
-    Result, Udn,
+    Error, Result, ServeOp, Udn,
     announce::{Announcer, Announcing},
     catalog::{Catalog, Object, Shelf},
     didl::{COVERS_UNDER, DLNA_FEATURES, SONGS_UNDER},
     directory::{self, Answered, Asking, Service},
-    door::{Door, Doorway, Judged, Limits},
+    door::{BUSY, Door, Doorway, Judged, Limits},
+    events::{self, Kept, Subscribers, Subscribing},
     http::{self, HEADERS_AT_MOST, SERVED_AS},
     naming, neighbours, presented,
     serve::NOT_HERE,
@@ -50,8 +53,20 @@ const UUID_GROUPS: [usize; 5] = [8, 4, 4, 4, 12];
 
 const UUID_PREFIX: &str = "uuid:";
 
-const NOT_ALLOWED: &[u8] = b"HTTP/1.1 405 Method Not Allowed\r\nAllow: GET, HEAD, POST\r\n\
-      Content-Length: 0\r\nConnection: close\r\n\r\n";
+const NOT_ALLOWED: &[u8] = b"HTTP/1.1 405 Method Not Allowed\r\nAllow: GET, HEAD, POST, \
+      SUBSCRIBE, UNSUBSCRIBE\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
+const MALFORMED: &[u8] =
+    b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
+const UNMET: &[u8] =
+    b"HTTP/1.1 412 Precondition Failed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
+const ENDED: &[u8] = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
+const REVISION_READ_EVERY: Duration = Duration::from_secs(1);
+
+const EVENTS_WAIT_AT_MOST: Duration = Duration::from_millis(250);
 
 const TOO_LARGE: &[u8] =
     b"HTTP/1.1 413 Content Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
@@ -133,12 +148,24 @@ pub struct MediaServer<C: Catalog> {
 impl<C: Catalog> MediaServer<C> {
     pub fn start(catalog: Arc<C>, udn: Udn, offering: Offering) -> Result<Self> {
         let (doorway, opened) = Doorway::bind(offering.serving_on)?;
+        let (told, heard) = crossbeam_channel::bounded(1);
+        let shared = Arc::new(Shared {
+            catalog,
+            udn: udn.clone(),
+            stopped: AtomicBool::new(false),
+            subscribers: Subscribers::default(),
+            told,
+        });
+        let evented = Arc::downgrade(&shared);
+        thread::Builder::new()
+            .name("resonate-upnp-events".to_owned())
+            .spawn(move || tell_each_change(&evented, &heard))
+            .map_err(|source| Error::Serve {
+                op: ServeOp::Listen,
+                source,
+            })?;
         let hall = Arc::new(Hall {
-            shared: Arc::new(Shared {
-                catalog,
-                udn: udn.clone(),
-                stopped: AtomicBool::new(false),
-            }),
+            shared,
             waker: opened.waker,
         });
         doorway.open(Arc::downgrade(&hall), SHIPPED, "resonate-upnp-offer")?;
@@ -180,6 +207,35 @@ struct Shared<C> {
     catalog: Arc<C>,
     udn: Udn,
     stopped: AtomicBool,
+    subscribers: Subscribers,
+    told: Sender<()>,
+}
+
+fn tell_each_change<C: Catalog>(shared: &Weak<Shared<C>>, heard: &Receiver<()>) {
+    let mut read_at: Option<Instant> = None;
+    let mut revision = 0;
+    loop {
+        match heard.recv_timeout(EVENTS_WAIT_AT_MOST) {
+            Ok(()) | Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return,
+        }
+        let Some(shared) = shared.upgrade() else {
+            return;
+        };
+        if shared.stopped.load(Ordering::Acquire) {
+            return;
+        }
+        if read_at.is_none_or(|read_at| read_at.elapsed() >= REVISION_READ_EVERY) {
+            revision = shared.catalog.revision();
+            read_at = Some(Instant::now());
+        }
+        for telling in shared.subscribers.due(revision) {
+            if shared.stopped.load(Ordering::Acquire) {
+                return;
+            }
+            shared.subscribers.settle(&telling, events::tell(&telling));
+        }
+    }
 }
 
 struct Hall<C> {
@@ -200,6 +256,7 @@ pub(crate) enum Route {
     Description,
     Scpd(Service),
     Control(Service),
+    Event(Service),
     Song(TrackId),
     Cover(AlbumId),
 }
@@ -209,6 +266,8 @@ pub(crate) enum Method {
     Get,
     Head,
     Post,
+    Subscribe,
+    Unsubscribe,
 }
 
 pub(crate) enum Routed {
@@ -229,13 +288,21 @@ pub(crate) fn routed(held: &[u8]) -> Routed {
         "GET" => Method::Get,
         "HEAD" => Method::Head,
         "POST" => Method::Post,
+        "SUBSCRIBE" => Method::Subscribe,
+        "UNSUBSCRIBE" => Method::Unsubscribe,
         _ => return Routed::NotAllowed,
     };
     let Some(route) = request.path.and_then(route_of) else {
         return Routed::NotHere;
     };
-    let posted = matches!(route, Route::Control(_));
-    if posted != (method == Method::Post) {
+    let allowed = match route {
+        Route::Control(_) => method == Method::Post,
+        Route::Event(_) => matches!(method, Method::Subscribe | Method::Unsubscribe),
+        Route::Description | Route::Scpd(_) | Route::Song(_) | Route::Cover(_) => {
+            matches!(method, Method::Get | Method::Head)
+        }
+    };
+    if !allowed {
         return Routed::NotAllowed;
     }
     Routed::To(route, method)
@@ -252,6 +319,9 @@ pub(crate) fn route_of(path: &str) -> Option<Route> {
         }
         if path == presented::control_path(service) {
             return Some(Route::Control(service));
+        }
+        if path == presented::event_path(service) {
+            return Some(Route::Event(service));
         }
     }
     if let Some(named) = path.strip_prefix(SONGS_UNDER) {
@@ -311,6 +381,7 @@ impl<C: Catalog> Door for Hall<C> {
                 said(&mut stream, "200 OK", XML, described.as_bytes(), head_only)
             }
             Route::Control(service) => controlled(shared, service, stream, held),
+            Route::Event(service) => subscribed(shared, service, task.method, stream, &held),
             Route::Song(id) => match shared.catalog.bytes_of(id) {
                 Ok(Some(opened)) => {
                     let range = header_in(&held, "Range");
@@ -376,6 +447,55 @@ fn said(
         return Ok(());
     }
     stream.write_all(body)
+}
+
+fn subscribed<C: Catalog>(
+    shared: &Shared<C>,
+    service: Service,
+    method: Method,
+    mut stream: TcpStream,
+    held: &[u8],
+) -> io::Result<()> {
+    let method = match method {
+        Method::Unsubscribe => events::Method::Unsubscribe,
+        Method::Get | Method::Head | Method::Post | Method::Subscribe => events::Method::Subscribe,
+    };
+    let peer = stream.peer_addr()?.ip();
+    let subscribers = &shared.subscribers;
+    let (sid, kept) = match events::subscribing(held, method, peer) {
+        Subscribing::Malformed => return stream.write_all(MALFORMED),
+        Subscribing::Unmet => return stream.write_all(UNMET),
+        Subscribing::Ended { sid } => {
+            if !subscribers.end(service, &sid) {
+                return stream.write_all(UNMET);
+            }
+            return stream.write_all(ENDED);
+        }
+        Subscribing::Renewed { sid, kept } => match subscribers.renew(service, &sid, kept) {
+            Kept::Granted(kept) => (sid, kept),
+            Kept::Unknown => return stream.write_all(UNMET),
+        },
+        Subscribing::New { callback, kept } => {
+            match subscribers.subscribe(service, callback, kept) {
+                Some(sid) => (sid, kept),
+                None => return stream.write_all(BUSY),
+            }
+        }
+    };
+    let answered = write_subscribed(&mut stream, &sid, kept);
+    subscribers.answered(&sid);
+    let _ = shared.told.try_send(());
+    answered
+}
+
+fn write_subscribed(stream: &mut TcpStream, sid: &str, kept: Duration) -> io::Result<()> {
+    let head = format!(
+        "HTTP/1.1 200 OK\r\nSID: {sid}\r\nTIMEOUT: Second-{}\r\nServer: {SERVED_AS}\r\n\
+         Content-Length: 0\r\nConnection: close\r\n\r\n",
+        kept.as_secs()
+    );
+    stream.write_all(head.as_bytes())?;
+    stream.flush()
 }
 
 fn controlled<C: Catalog>(
@@ -613,6 +733,10 @@ mod tests {
             route_of("/ConnectionManager.xml"),
             Some(Route::Scpd(Service::ConnectionManager))
         );
+        assert_eq!(
+            route_of("/event/ContentDirectory"),
+            Some(Route::Event(Service::ContentDirectory))
+        );
         assert_eq!(route_of("/resonate/song-9.flac"), Some(Route::Song(song)));
         assert_eq!(
             route_of("/resonate/song-9.flac?x=1"),
@@ -630,6 +754,7 @@ mod tests {
             "/cover/song-9",
             "/etc/passwd",
             "/control/AVTransport",
+            "/event/AVTransport",
         ] {
             assert_eq!(route_of(refused), None, "{refused}");
         }

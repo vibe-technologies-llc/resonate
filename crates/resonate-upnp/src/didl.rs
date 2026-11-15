@@ -2,7 +2,10 @@ use std::{fmt::Write as _, time::Duration};
 
 use resonate_core::AlbumId;
 
-use crate::catalog::{AudioKind, Held, Object, Shelf, Song};
+use crate::{
+    catalog::{AudioKind, Held, Object, Shelf, Song},
+    directory,
+};
 
 pub(crate) const DLNA_FEATURES: &str =
     "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000";
@@ -16,15 +19,15 @@ const OPENS: &str = concat!(
 
 const CLOSES: &str = "</DIDL-Lite>";
 
-const FOLDER: &str = "object.container.storageFolder";
+pub(crate) const FOLDER: &str = "object.container.storageFolder";
 
-const ARTIST: &str = "object.container.person.musicArtist";
+pub(crate) const ARTIST: &str = "object.container.person.musicArtist";
 
-const ALBUM: &str = "object.container.album.musicAlbum";
+pub(crate) const ALBUM: &str = "object.container.album.musicAlbum";
 
-const PLAYLIST: &str = "object.container.playlistContainer";
+pub(crate) const PLAYLIST: &str = "object.container.playlistContainer";
 
-const TRACK: &str = "object.item.audioItem.musicTrack";
+pub(crate) const TRACK: &str = "object.item.audioItem.musicTrack";
 
 const NO_PARENT: &str = "-1";
 
@@ -129,9 +132,11 @@ impl<'a> Didl<'a> {
             .map_or_else(|| NO_PARENT.to_owned(), |parent| parent.to_string());
         let _ = write!(
             self.written,
-            "<container id=\"{}\" parentID=\"{parent}\" restricted=\"1\" searchable=\"0\" \
+            "<container id=\"{}\" parentID=\"{parent}\" restricted=\"1\" searchable=\"{}\" \
              childCount=\"{}\"><dc:title>",
-            container.id, container.children,
+            container.id,
+            u8::from(directory::is_searchable(container.id)),
+            container.children,
         );
         xml_text(container.title, &mut self.written);
         let _ = write!(

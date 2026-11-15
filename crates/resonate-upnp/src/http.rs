@@ -48,7 +48,11 @@ pub(crate) fn exchange(asking: &Asking<'_>, asked: Asked) -> Result<Answer> {
     exchange_before(asking, asked, Instant::now() + ANSWERED_WITHIN)
 }
 
-fn exchange_before(asking: &Asking<'_>, asked: Asked, deadline: Instant) -> Result<Answer> {
+pub(crate) fn exchange_before(
+    asking: &Asking<'_>,
+    asked: Asked,
+    deadline: Instant,
+) -> Result<Answer> {
     let reached = |source: io::Error| Error::Network { asked, source };
 
     let address = asking.to.reached_at().map_err(reached)?;

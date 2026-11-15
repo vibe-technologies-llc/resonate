@@ -1,0 +1,6 @@
+SUBSCRIBE /event/ContentDirectory HTTP/1.1
+HOST: 10.0.0.2:8200
+CALLBACK: <http://10.0.0.9:49152/notify>
+NT: upnp:event
+TIMEOUT: Second-300
+

@@ -3,8 +3,9 @@ use std::fmt::Write as _;
 use roxmltree::{Document, ParsingOptions};
 
 use crate::{
-    catalog::{AudioKind, Catalog, Entry, Held, Object, Page, Shelf},
-    didl::{Didl, escaped},
+    catalog::{AudioKind, Catalog, Entry, Held, Kind, Object, Page, Query, Searched, Shelf},
+    criteria::{self, Criterion, Described, Reduced, SEARCH_CAPABILITIES},
+    didl::{Didl, FOLDER, escaped},
     naming,
 };
 
@@ -18,7 +19,7 @@ const ARGUMENTS_AT_MOST: usize = 16;
 
 pub(crate) const BROWSED_AT_MOST: u32 = 500;
 
-const THE_ONE_CONNECTION: &str = "0";
+pub(crate) const THE_ONE_CONNECTION: &str = "0";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Service {
@@ -67,6 +68,8 @@ pub(crate) enum Fault {
     NoSuchObject,
     NoSuchContainer,
     InvalidConnection,
+    UnsupportedCriteria,
+    CannotProcess,
 }
 
 impl Fault {
@@ -77,7 +80,9 @@ impl Fault {
             Self::ActionFailed => 501,
             Self::NoSuchObject => 701,
             Self::InvalidConnection => 706,
+            Self::UnsupportedCriteria => 708,
             Self::NoSuchContainer => 710,
+            Self::CannotProcess => 720,
         }
     }
 
@@ -88,7 +93,9 @@ impl Fault {
             Self::ActionFailed => "Action Failed",
             Self::NoSuchObject => "No such object",
             Self::InvalidConnection => "Invalid connection reference",
+            Self::UnsupportedCriteria => "Unsupported or invalid search criteria",
             Self::NoSuchContainer => "No such container",
+            Self::CannotProcess => "Cannot process the request",
         }
     }
 }
@@ -151,8 +158,9 @@ impl<C: Catalog> Asking<'_, C> {
     pub(crate) fn answer(&self, service: Service, called: &Called) -> Answered {
         let said = match (service, called.action.as_str()) {
             (Service::ContentDirectory, "Browse") => self.browse(called),
+            (Service::ContentDirectory, "Search") => self.search(called),
             (Service::ContentDirectory, "GetSearchCapabilities") => {
-                Ok(vec![("SearchCaps", String::new())])
+                Ok(vec![("SearchCaps", SEARCH_CAPABILITIES.to_owned())])
             }
             (Service::ContentDirectory, "GetSortCapabilities") => {
                 Ok(vec![("SortCaps", String::new())])
@@ -177,20 +185,8 @@ impl<C: Catalog> Asking<'_, C> {
     }
 
     fn browse(&self, called: &Called) -> Result<Vec<(&'static str, String)>, Fault> {
-        let object = called
-            .argument("ObjectID")
-            .ok_or(Fault::InvalidArgs)
-            .map(|id| Object::read(id.trim()).ok_or(Fault::NoSuchObject))??;
-        let counted = |name: &str| -> Result<u32, Fault> {
-            called.argument(name).map_or(Ok(0), |count| {
-                count.trim().parse().map_err(|_| Fault::InvalidArgs)
-            })
-        };
-        let from = counted("StartingIndex")?;
-        let most = match counted("RequestedCount")? {
-            0 => BROWSED_AT_MOST,
-            most => most.min(BROWSED_AT_MOST),
-        };
+        let object = object_named(called, "ObjectID")?;
+        let Page { from, most } = page_asked(called)?;
 
         let mut didl = Didl::new(self.base);
         let (returned, total) = match called.argument("BrowseFlag").map(str::trim) {
@@ -210,6 +206,101 @@ impl<C: Catalog> Asking<'_, C> {
             ("TotalMatches", total.to_string()),
             ("UpdateID", self.catalog.revision().to_string()),
         ])
+    }
+
+    fn search(&self, called: &Called) -> Result<Vec<(&'static str, String)>, Fault> {
+        let container = object_named(called, "ContainerID")?;
+        let criterion = criteria::read(called.argument("SearchCriteria").unwrap_or_default())
+            .map_err(|refusal| {
+                tracing::debug!(
+                    ?refusal,
+                    "a search a control point asked could not be answered"
+                );
+                Fault::UnsupportedCriteria
+            })?;
+        let page = page_asked(called)?;
+        let within = match container {
+            Object::Root => &SEARCHED_UNDER_THE_ROOT[..],
+            Object::Shelf(Shelf::Songs) => &SEARCHED_AMONG_THE_SONGS[..],
+            Object::Shelf(shelf) => {
+                self.held(shelf)?;
+                return Err(Fault::CannotProcess);
+            }
+            Object::Song(id) => {
+                return Err(match self.catalog.song(id).map_err(failed)? {
+                    Some(_) => Fault::NoSuchContainer,
+                    None => Fault::NoSuchObject,
+                });
+            }
+        };
+
+        let mut didl = Didl::new(self.base);
+        let mut returned = 0;
+        let mut total: u32 = 0;
+        for sought in within {
+            let next = page.from.saturating_add(returned);
+            let wanted = Page {
+                from: next.saturating_sub(total),
+                most: page.most - returned,
+            };
+            let (taken, held) = self.sought(*sought, &criterion, wanted, &mut didl)?;
+            returned += taken;
+            total = total.saturating_add(held);
+        }
+
+        Ok(vec![
+            ("Result", didl.finished()),
+            ("NumberReturned", returned.to_string()),
+            ("TotalMatches", total.to_string()),
+            ("UpdateID", self.catalog.revision().to_string()),
+        ])
+    }
+
+    fn sought(
+        &self,
+        sought: Sought,
+        criterion: &Criterion,
+        page: Page,
+        didl: &mut Didl<'_>,
+    ) -> Result<(u32, u32), Fault> {
+        let kind = match sought {
+            Sought::Folder(shelf) => {
+                let described = Described {
+                    class: FOLDER,
+                    kind: None,
+                    title: Some(naming::title_of(shelf)),
+                };
+                if criteria::reduced(criterion, &described) != Reduced::Always {
+                    return Ok((0, 0));
+                }
+                if page.from > 0 || page.most == 0 {
+                    return Ok((0, 1));
+                }
+                didl.shelf(&self.held(shelf)?, Object::Root);
+                return Ok((1, 1));
+            }
+            Sought::Of(kind) => kind,
+        };
+        let query = match criteria::reduced(criterion, &Described::of(kind)) {
+            Reduced::Never => return Ok((0, 0)),
+            Reduced::Always => Query::Everything,
+            Reduced::Asks(query) => query,
+        };
+        let shelved = match self.catalog.searched(kind, &query, page).map_err(failed)? {
+            Searched::Found(shelved) => shelved,
+            Searched::Unanswered => {
+                tracing::debug!(?kind, ?query, "the catalog answers no such search");
+                return Err(Fault::UnsupportedCriteria);
+            }
+        };
+        let returned = shelved.held.len().min(page.most as usize);
+        for entry in shelved.held.iter().take(returned) {
+            match entry {
+                Entry::Shelf(held) => didl.shelf(held, held.shelf.parent()),
+                Entry::Song(song) => didl.song(song, Object::Shelf(Shelf::Songs)),
+            }
+        }
+        Ok((returned as u32, shelved.total))
     }
 
     fn metadata(&self, object: Object, didl: &mut Didl<'_>) -> Result<(), Fault> {
@@ -291,6 +382,50 @@ impl<C: Catalog> Asking<'_, C> {
         }
         Ok((returned as u32, shelved.total))
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Sought {
+    Folder(Shelf),
+    Of(Kind),
+}
+
+const SEARCHED_UNDER_THE_ROOT: [Sought; 8] = [
+    Sought::Folder(Shelf::Artists),
+    Sought::Folder(Shelf::Albums),
+    Sought::Folder(Shelf::Songs),
+    Sought::Folder(Shelf::Playlists),
+    Sought::Of(Kind::Artist),
+    Sought::Of(Kind::Album),
+    Sought::Of(Kind::Playlist),
+    Sought::Of(Kind::Song),
+];
+
+const SEARCHED_AMONG_THE_SONGS: [Sought; 1] = [Sought::Of(Kind::Song)];
+
+pub(crate) const fn is_searchable(object: Object) -> bool {
+    matches!(object, Object::Root | Object::Shelf(Shelf::Songs))
+}
+
+fn object_named(called: &Called, name: &str) -> Result<Object, Fault> {
+    called
+        .argument(name)
+        .ok_or(Fault::InvalidArgs)
+        .map(|id| Object::read(id.trim()).ok_or(Fault::NoSuchObject))?
+}
+
+fn page_asked(called: &Called) -> Result<Page, Fault> {
+    let counted = |name: &str| -> Result<u32, Fault> {
+        called.argument(name).map_or(Ok(0), |count| {
+            count.trim().parse().map_err(|_| Fault::InvalidArgs)
+        })
+    };
+    let from = counted("StartingIndex")?;
+    let most = match counted("RequestedCount")? {
+        0 => BROWSED_AT_MOST,
+        most => most.min(BROWSED_AT_MOST),
+    };
+    Ok(Page { from, most })
 }
 
 fn failed(error: impl std::error::Error) -> Fault {

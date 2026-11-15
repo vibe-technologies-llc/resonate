@@ -58,12 +58,13 @@ impl Action {
 pub enum Asked {
     Description,
     Action(Action),
+    Event,
 }
 
 impl Asked {
     const fn operation(self) -> Operation {
         match self {
-            Self::Description => Operation::Connect,
+            Self::Description | Self::Event => Operation::Connect,
             Self::Action(action) => action.operation(),
         }
     }

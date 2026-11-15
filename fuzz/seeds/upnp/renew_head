@@ -1,0 +1,5 @@
+SUBSCRIBE /event/ContentDirectory HTTP/1.1
+HOST: 10.0.0.2:8200
+SID: uuid:4c1b3a27-0000-4000-8000-000000000001
+TIMEOUT: Second-infinite
+

@@ -375,7 +375,8 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
 - **The catalog is a seam, `Catalog`** (`catalog.rs`), since the crate may not see
   `resonate-library`: `shelved` (a `Shelf`'s children in a `Page`, and their `total`), `shelf` (one
   artist, album or playlist), `song`, `bytes_of` (an `Opened`: a `Read + Seek` of the file and its
-  `AudioKind`), `cover` and `revision`, each answering `None` for a row it does not hold and its own
+  `AudioKind`), `cover`, `searched` (one `Kind`'s rows a typed `Query` holds, in a `Page`, or
+  `Searched::Unanswered`) and `revision`, each answering `None` for a row it does not hold and its own
   `Failure` (logged, a SOAP `501`) where it cannot read. The binary's `offering::Shelves` fills it
   over `Library`. The crate owns the tree: the root (`0`) holds `Shelf::TOP`, Artists (an artist,
   then the albums by or holding them, then the songs), Albums, Songs and Playlists; a top shelf's
@@ -395,8 +396,8 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   creator, artist, album, genre, track number, cover and one `res`: `http-get:*:<mime>:` the DLNA
   flags (`DLNA_FEATURES`), size, duration, rate, channels and, for a lossless codec, bits. Every
   text is escaped and a control character a tag may hold is dropped, so the document always reads.
-  `GetSearchCapabilities` and `GetSortCapabilities` answer empty, `GetSystemUpdateID` and every
-  `UpdateID` the catalog's `revision`; ConnectionManager answers `GetProtocolInfo` (a `Source` entry
+  `GetSortCapabilities` answers empty, `GetSystemUpdateID` and every `UpdateID` the catalog's
+  `revision`; ConnectionManager answers `GetProtocolInfo` (a `Source` entry
   per `AudioKind`, no `Sink`), `GetCurrentConnectionIDs` (`0`) and `GetCurrentConnectionInfo` for
   `0` alone (706 otherwise). Any other action is 401, so nothing writes: no `DestroyObject`,
   `CreateObject` or `ImportResource`. A request is read with `roxmltree`, no DTD,
@@ -412,7 +413,46 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   reading. The description (`/description.xml`, the device's `friendlyName` the catalog word
   `server-name`, *Resonate*, never the host's or the listener's name) and both services'
   descriptions are `presented.rs`'s. Every answer's `Server` is `SERVED_AS`: `resonate/<version>
-  UPnP/1.0 DLNADOC/1.50`. Eventing is not spoken: a `SUBSCRIBE` is 405.
+  UPnP/1.0 DLNADOC/1.50`.
+- **Search reads `SearchCriteria` by hand and asks the catalog a typed query** (`criteria.rs`).
+  `GetSearchCapabilities` answers `SEARCH_CAPABILITIES`: `dc:title`, `dc:creator`, `upnp:artist`,
+  `upnp:album`, `upnp:genre`, `upnp:class`. `criteria::read` is the spec's grammar (`*`, `and`
+  binding tighter than `or`, brackets, `=`, `!=`, `contains`, `doesNotContain`, `derivedfrom` on
+  `upnp:class` alone, `exists true|false`, a quoted value with `\"` and `\\` its only escapes, the
+  words read in any case) and never panics: at most `CRITERIA_BYTES_AT_MOST` (4 KiB), `DEPTH_AT_MOST`
+  (16) brackets deep and `RELATIONS_AT_MOST` (64) relations, so a query asked of the catalog is
+  bounded too. An unreadable criterion, an ordering (`<`, `>=`), a property beyond those six
+  (`@id`, `res@size`, `upnp:artist@role`) and a query the catalog answers `Unanswered` are all UPnP
+  error 708, never a wrong answer. Each criterion is `reduced` per object kind it may find: a
+  class test is settled by the kind's DIDL class (`derivedfrom` a class or a dotted prefix of it, in
+  any case), a property the kind does not carry (an album's genre, an artist's `upnp:artist`) is
+  missing, so `=` and `contains` fail on it and `!=` and `doesNotContain` hold, and what is left is a
+  `Query` (`All`, `Any`, `Text` of a `Field`, a `Test` and the text, `Present`) or settled
+  `Always`/`Never`; a kind settled `Never` is not asked. The search answers under the root, which
+  holds the four top shelves (their titles weighed in the crate, folded: `text_holds`), then
+  artists, albums, playlists and songs, the `Page` running through them in that order with
+  `TotalMatches` their sum, and under Songs, which holds songs alone; those two carry
+  `searchable="1"` (`is_searchable`), any other container is 720, a song 710, a container no row
+  holds 701. A song found is written with Songs as its parent, an album Albums, an artist Artists, a
+  playlist Playlists, as `BrowseMetadata` writes them.
+- **Eventing is GENA on `/event/<service>`** (`events.rs`): `SUBSCRIBE` with `NT: upnp:event` and a
+  `CALLBACK` subscribes, with a `SID` and neither renews, `UNSUBSCRIBE` with a `SID` ends
+  (`subscribing`); a `SID` beside `NT` or `CALLBACK` is 400, a `SID` the service does not hold or a
+  subscription missing either is 412. A callback is taken only where it is an `http` address whose
+  host is the subscriber's own IP address and a neighbour's (`Located::is_at`), the first of at most
+  four in the header: a name, another neighbour or anything off the network is 412, so the server
+  sends nothing a request could aim elsewhere. `TIMEOUT: Second-N` is held between `KEPT_AT_LEAST`
+  (60 s) and `KEPT_AT_MOST` (1 800 s, also for `infinite` or none) and answered as granted; at most
+  `SUBSCRIBERS_AT_MOST` (32) are held, the rest 503. One `resonate-upnp-events` thread per server
+  (`tell_each_change`, holding the server weakly, so it ends with it) reads the catalog's
+  `revision` every `REVISION_READ_EVERY` (1 s) and tells each subscriber once its answer is written:
+  the initial event (`SEQ` 0) of every evented variable (`property_set`: ContentDirectory's
+  `SystemUpdateID`, ConnectionManager's protocol info and connection ids, which never change), then
+  ContentDirectory's `SystemUpdateID` each time the revision moved, at most every
+  `TOLD_AT_MOST_EVERY` (2 s, the spec's moderated rate) a subscriber, `SEQ` counting on and wrapping
+  to 1. `ContainerUpdateIDs` is not evented: the revision names no container. A `NOTIFY` not
+  answered 2xx within `TOLD_WITHIN` (2 s) drops the subscriber. `SystemUpdateID` moves because the
+  binary's `revision` is `Library::catalog_revision`, which every catalog write moves.
 - **One doorway for both servers** (`door.rs`): the stream server's accept loop (non-blocking heads
   under `mio`, `HEADS_AT_MOST` waiting, `HEAD_ENDS_WITHIN`, an answer thread only for a head that
   names something, at most `ANSWERS_AT_MOST` at once, the rest `503`) is generic over a `Door`, and
@@ -420,8 +460,9 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   admits only a neighbour (`neighbours::is_a_neighbour`: a private, link-local or loopback IPv4
   address, a unique-local, link-local or loopback IPv6 one, or a mapped IPv4 one of those), reads
   a SOAP body only under a `Content-Length` of at most `BODY_BYTES_AT_MOST` (64 KiB, else 413; none
-  is 411) within `BODY_READ_WITHIN`, and answers `GET` and `HEAD` but on a control address, `POST`
-  only there, anything else 405.
+  is 411) within `BODY_READ_WITHIN`, and answers `GET` and `HEAD` but on a control or event
+  address, `POST` only on a control address, `SUBSCRIBE` and `UNSUBSCRIBE` only on an event address,
+  anything else 405.
 - **SSDP** (`announce.rs`, a `resonate-upnp-announce` thread): a socket on
   `Offering::heard_on` (`0.0.0.0:1900`, `SO_REUSEADDR` through `socket2` so another UPnP stack on
   the machine keeps its own) joined to `239.255.255.250` on each up IPv4 neighbour interface
@@ -446,11 +487,20 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   `Library::whole_files` by offset. An album's songs are counted and read the same way; a playlist's
   served rows are read whole once a revision (`LISTS_KEPT_AT_MOST`, 32) and paged in memory. A song
   is served only where its row is a local file whose extension names an `AudioKind`, and a file
-  gone is 404. `Offered` holds the running `MediaServer` for the window (*binary.md*'s `share-catalog-on-network`), and `resonate offer` runs one with no window until interrupted (`offer::offer`).
+  gone is 404. A search is the library's own (`searched_as`): a query becomes a typed `Search` in
+  conjunctive form (at most `CLAUSES_AT_MOST`, 32, clauses of `ALTERNATIVES_AT_MOST`, 16, else
+  unanswered) written as its text, so it is folded as the search box folds it and an artist is one
+  artist however spelled: `=` is a whole name (`artist:="…"`, the artist by id), `contains` each
+  word beginning a word of the column, `!=` and `doesNotContain` their denials; a text with no
+  letter or digit, or `Present`, is unanswered. Songs read `whole_files` by it, albums `albums` by
+  its `album:` and `artist:` words, artists `artists` by `artist:`, both refusing a denial (a
+  denied word over the grouped rows is not the container's own), and playlists answer `contains`
+  on their name alone (`playlists_named`). `Offered` holds the running `MediaServer` for the window (*binary.md*'s `share-catalog-on-network`), and `resonate offer` runs one with no window until interrupted (`offer::offer`).
 - **Fuzzed** with the rest of the crate (`read_what_a_network_says`): an `M-SEARCH`, a request head
-  through `routed`, a path, an object id read back as itself, a UDN, a `Range` span inside its
-  length, and a SOAP request to either service answered against an empty catalog, the envelope and
-  its DIDL each reading as XML.
+  through `routed`, a GENA head (a callback taken only at the sender, a timeout inside its bounds), a
+  path, an object id read back as itself, a UDN, a `Range` span inside its length, a
+  `SearchCriteria` reduced for every kind within `RELATIONS_AT_MOST`, and a SOAP request to either
+  service answered against an empty catalog, the envelope and its DIDL each reading as XML.
 
 ## On the phones
 

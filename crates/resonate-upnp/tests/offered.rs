@@ -1,14 +1,17 @@
 use std::{
     io::{self, Cursor, Read, Write},
-    net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, UdpSocket},
-    sync::Arc,
+    net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket},
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
     time::{Duration, Instant},
 };
 
 use resonate_core::{AlbumId, ArtistId, PlaylistId, TrackId};
 use resonate_upnp::{
-    AudioKind, Catalog, Entry, Held, MediaServer, Offering, Opened, Page, Picture, Shelf, Shelved,
-    Song, Udn,
+    AudioKind, Catalog, Entry, Field, Held, Kind, MediaServer, Offering, Opened, Page, Picture,
+    Query, Searched, Shelf, Shelved, Song, Test, Udn,
 };
 use roxmltree::Document;
 
@@ -27,6 +30,7 @@ struct Shelves {
     albums: Vec<(AlbumId, &'static str, ArtistId)>,
     artists: Vec<(ArtistId, &'static str)>,
     playlists: Vec<(PlaylistId, &'static str, Vec<TrackId>)>,
+    revision: AtomicU32,
 }
 
 fn artist(raw: u64) -> ArtistId {
@@ -82,6 +86,7 @@ impl Shelves {
                 "Mixed",
                 vec![track(3), track(1)],
             )],
+            revision: AtomicU32::new(7),
         }
     }
 
@@ -105,6 +110,53 @@ impl Shelves {
     }
 }
 
+type Fields<'a> = Vec<(Field, Option<&'a str>)>;
+
+fn holds(query: &Query, fields: &[(Field, Option<&str>)]) -> Option<bool> {
+    let field = |asked: Field| {
+        fields
+            .iter()
+            .find(|(field, _)| *field == asked)
+            .and_then(|(_, held)| *held)
+    };
+    Some(match query {
+        Query::Everything => true,
+        Query::All(all) => {
+            for one in all {
+                if !holds(one, fields)? {
+                    return Some(false);
+                }
+            }
+            true
+        }
+        Query::Any(any) => {
+            for one in any {
+                if holds(one, fields)? {
+                    return Some(true);
+                }
+            }
+            false
+        }
+        Query::Text {
+            field: asked,
+            test,
+            text,
+        } => {
+            let held = field(*asked).map(str::to_lowercase);
+            let text = text.to_lowercase();
+            match (test, held) {
+                (Test::Is, Some(held)) => held == text,
+                (Test::Contains, Some(held)) => held.contains(&text),
+                (Test::IsNot, Some(held)) => held != text,
+                (Test::Lacks, Some(held)) => !held.contains(&text),
+                (Test::Is | Test::Contains, None) => false,
+                (Test::IsNot | Test::Lacks, None) => true,
+            }
+        }
+        Query::Present { .. } => return None,
+    })
+}
+
 fn paged(entries: Vec<Entry>, page: Page) -> Shelved {
     Shelved {
         total: entries.len() as u32,
@@ -118,6 +170,65 @@ fn paged(entries: Vec<Entry>, page: Page) -> Shelved {
 
 impl Catalog for Shelves {
     type Failure = io::Error;
+
+    fn searched(&self, kind: Kind, query: &Query, page: Page) -> io::Result<Searched> {
+        let candidates: Vec<(Entry, Fields<'_>)> = match kind {
+            Kind::Song => self
+                .songs
+                .iter()
+                .map(|song| {
+                    (
+                        Entry::Song(song.clone()),
+                        vec![
+                            (Field::Title, Some(song.title.as_str())),
+                            (Field::Artist, song.artist.as_deref()),
+                            (Field::Album, song.album.as_deref()),
+                            (Field::Genre, song.genre.as_deref()),
+                        ],
+                    )
+                })
+                .collect(),
+            Kind::Album => self
+                .albums
+                .iter()
+                .filter_map(|(id, title, _)| {
+                    let held = self.album_held(*id)?;
+                    Some((
+                        Entry::Shelf(held),
+                        vec![
+                            (Field::Title, Some(*title)),
+                            (Field::Artist, Some("The Band")),
+                        ],
+                    ))
+                })
+                .collect(),
+            Kind::Artist => self
+                .artists
+                .iter()
+                .filter_map(|(id, name)| {
+                    let held = self.shelf(Shelf::Artist(*id)).ok().flatten()?;
+                    Some((Entry::Shelf(held), vec![(Field::Title, Some(*name))]))
+                })
+                .collect(),
+            Kind::Playlist => self
+                .playlists
+                .iter()
+                .filter_map(|(id, name, _)| {
+                    let held = self.shelf(Shelf::Playlist(*id)).ok().flatten()?;
+                    Some((Entry::Shelf(held), vec![(Field::Title, Some(*name))]))
+                })
+                .collect(),
+        };
+        let mut found = Vec::new();
+        for (entry, fields) in candidates {
+            match holds(query, &fields) {
+                Some(true) => found.push(entry),
+                Some(false) => {}
+                None => return Ok(Searched::Unanswered),
+            }
+        }
+        Ok(Searched::Found(paged(found, page)))
+    }
 
     fn shelved(&self, shelf: Shelf, page: Page) -> io::Result<Option<Shelved>> {
         let entries: Vec<Entry> = match shelf {
@@ -221,21 +332,23 @@ impl Catalog for Shelves {
     }
 
     fn revision(&self) -> u32 {
-        7
+        self.revision.load(Ordering::Acquire)
     }
 }
 
 struct Started {
     server: MediaServer<Shelves>,
     told: UdpSocket,
+    shelves: Arc<Shelves>,
 }
 
 fn started() -> Started {
     let told = UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of the server");
     told.set_read_timeout(Some(HEARD_WITHIN))
         .expect("a read timeout");
+    let shelves = Arc::new(Shelves::new());
     let server = MediaServer::start(
-        Arc::new(Shelves::new()),
+        Arc::clone(&shelves),
         Udn::new("uuid:4c1b3a27-0000-4000-8000-000000000001"),
         Offering {
             heard_on: SocketAddr::new(LOOPBACK, 0),
@@ -245,7 +358,11 @@ fn started() -> Started {
         },
     )
     .expect("the server starts");
-    Started { server, told }
+    Started {
+        server,
+        told,
+        shelves,
+    }
 }
 
 fn header<'a>(head: &'a str, name: &str) -> Option<&'a str> {
@@ -410,7 +527,7 @@ fn discovered(server: &MediaServer<Shelves>) -> SocketAddr {
 
 #[test]
 fn a_control_point_finds_the_server_browses_its_shelves_page_by_page_and_fetches_a_song() {
-    let Started { server, told } = started();
+    let Started { server, told, .. } = started();
 
     let alive = heard(&told, |told| told.contains("NTS: ssdp:alive"));
     assert!(alive.starts_with("NOTIFY * HTTP/1.1"));
@@ -511,6 +628,7 @@ fn an_object_or_a_path_the_server_never_minted_is_refused() {
     let Started {
         server,
         told: _told,
+        ..
     } = started();
     let at = discovered(&server);
 
@@ -555,4 +673,394 @@ fn an_object_or_a_path_the_server_never_minted_is_refused() {
         405
     );
     assert_eq!(fetched(at, "/control/ContentDirectory", None).status, 405);
+}
+
+fn xml_escaped(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn called(address: SocketAddr, action: &str, arguments: &str) -> Browsed {
+    let body = format!(
+        "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" \
+         s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"><s:Body><u:{action} \
+         xmlns:u=\"{DIRECTORY}\">{arguments}</u:{action}></s:Body></s:Envelope>"
+    );
+    let answer = asked(
+        address,
+        &format!(
+            "POST /control/ContentDirectory HTTP/1.1\r\nHost: {address}\r\nContent-Type: \
+             text/xml; charset=\"utf-8\"\r\nSOAPAction: \"{DIRECTORY}#{action}\"\r\n\
+             Content-Length: {}\r\n\r\n",
+            body.len()
+        ),
+        body.as_bytes(),
+    );
+    Browsed {
+        status: answer.status,
+        body: String::from_utf8(answer.body).expect("text"),
+    }
+}
+
+fn searched(address: SocketAddr, container: &str, criteria: &str, from: u32, most: u32) -> Browsed {
+    called(
+        address,
+        "Search",
+        &format!(
+            "<ContainerID>{container}</ContainerID><SearchCriteria>{}</SearchCriteria>\
+             <Filter>*</Filter><StartingIndex>{from}</StartingIndex><RequestedCount>{most}\
+             </RequestedCount><SortCriteria></SortCriteria>",
+            xml_escaped(criteria)
+        ),
+    )
+}
+
+impl Browsed {
+    fn every_id(&self) -> Vec<String> {
+        let didl = self.didl();
+        let document = Document::parse(&didl).expect("a DIDL document");
+        document
+            .descendants()
+            .filter(|node| matches!(node.tag_name().name(), "container" | "item"))
+            .filter_map(|node| node.attribute("id").map(str::to_owned))
+            .collect()
+    }
+}
+
+fn searched_page_by_page(at: SocketAddr, criteria: &str, most: u32) -> (Vec<String>, u32) {
+    let mut ids = Vec::new();
+    let mut from = 0;
+    loop {
+        let page = searched(at, "0", criteria, from, most);
+        assert_eq!(page.status, 200, "{criteria}: {}", page.body);
+        let total = page.counted("TotalMatches");
+        let returned = page.counted("NumberReturned");
+        assert!(returned <= most);
+        assert_eq!(page.every_id().len() as u32, returned);
+        ids.extend(page.every_id());
+        from += returned;
+        if returned == 0 || from >= total {
+            return (ids, total);
+        }
+    }
+}
+
+#[test]
+fn a_control_point_searches_the_catalog_by_artist_and_by_title_page_by_page() {
+    let Started {
+        server,
+        told: _told,
+        ..
+    } = started();
+    let at = discovered(&server);
+
+    let capabilities = called(at, "GetSearchCapabilities", "");
+    let by_the_band = searched_page_by_page(
+        at,
+        "upnp:class derivedfrom \"object.item.audioItem\" and upnp:artist = \"the band\"",
+        2,
+    );
+    let titled = searched(at, "0", "dc:title contains \"three\"", 0, 0);
+    let named_album = searched(at, "0", "dc:title contains \"album\"", 0, 0);
+    let among_the_songs = searched(at, "songs", "dc:title contains \"album\"", 0, 0);
+    let everything = searched_page_by_page(at, "*", 3);
+    let root = browsed(at, "0", "BrowseMetadata", 0, 0);
+
+    assert!(
+        capabilities
+            .named("SearchCaps")
+            .is_some_and(|caps| caps.contains("dc:title") && caps.contains("upnp:artist"))
+    );
+    assert_eq!(
+        by_the_band,
+        (
+            vec!["song-1", "song-2", "song-3", "song-4", "song-5"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            5
+        )
+    );
+    assert_eq!(titled.every_id(), ["song-2", "song-3"]);
+    assert!(titled.didl().contains("parentID=\"songs\""));
+    assert_eq!(named_album.every_id(), ["albums", "album-1", "album-2"]);
+    assert_eq!(named_album.counted("TotalMatches"), 3);
+    assert_eq!(among_the_songs.counted("TotalMatches"), 0);
+    assert_eq!(everything.1, 13);
+    assert_eq!(
+        everything.0,
+        [
+            "artists",
+            "albums",
+            "songs",
+            "playlists",
+            "artist-1",
+            "album-1",
+            "album-2",
+            "playlist-1",
+            "song-1",
+            "song-2",
+            "song-3",
+            "song-4",
+            "song-5"
+        ]
+    );
+    assert!(root.didl().contains("searchable=\"1\""));
+}
+
+#[test]
+fn a_search_the_catalog_cannot_answer_is_refused_not_answered_wrongly() {
+    let Started {
+        server,
+        told: _told,
+        ..
+    } = started();
+    let at = discovered(&server);
+
+    for criteria in [
+        "upnp:genre exists true",
+        "res@size > \"1\"",
+        "dc:title < \"b\"",
+        "dc:title contains",
+        "@id = \"song-1\"",
+        "dc:title contains \"a\" and (upnp:artist = \"b\"",
+        "",
+    ] {
+        let refused = searched(at, "0", criteria, 0, 0);
+        assert_eq!(refused.status, 500, "{criteria:?}");
+        assert_eq!(
+            refused.named("errorCode").as_deref(),
+            Some("708"),
+            "{criteria:?}"
+        );
+    }
+    assert_eq!(
+        searched(at, "album-1", "*", 0, 0)
+            .named("errorCode")
+            .as_deref(),
+        Some("720")
+    );
+    assert_eq!(
+        searched(at, "album-99", "*", 0, 0)
+            .named("errorCode")
+            .as_deref(),
+        Some("701")
+    );
+    assert_eq!(
+        searched(at, "song-1", "*", 0, 0)
+            .named("errorCode")
+            .as_deref(),
+        Some("710")
+    );
+}
+
+struct Notified {
+    head: String,
+    body: String,
+}
+
+fn notified(listener: &TcpListener) -> Notified {
+    listener.set_nonblocking(true).expect("a listener");
+    let deadline = Instant::now() + HEARD_WITHIN;
+    let mut stream = loop {
+        match listener.accept() {
+            Ok((stream, _)) => break stream,
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                assert!(Instant::now() < deadline, "no event was told in time");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => panic!("no event could be heard: {error}"),
+        }
+    };
+    stream.set_nonblocking(false).expect("a stream");
+    stream
+        .set_read_timeout(Some(HEARD_WITHIN))
+        .expect("a read timeout");
+    let mut held = Vec::new();
+    let mut buffer = [0; 4096];
+    let (ends, length) = loop {
+        let read = stream.read(&mut buffer).expect("an event");
+        assert!(read > 0, "an event ended early");
+        held.extend_from_slice(&buffer[..read]);
+        if let Some(at) = held.windows(4).position(|window| window == b"\r\n\r\n") {
+            let head = String::from_utf8_lossy(&held[..at]).into_owned();
+            let length: usize = header(&head, "Content-Length")
+                .and_then(|length| length.parse().ok())
+                .expect("a length");
+            if held.len() >= at + 4 + length {
+                break (at + 4, length);
+            }
+        }
+    };
+    stream
+        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
+        .expect("answers");
+    Notified {
+        head: String::from_utf8_lossy(&held[..ends]).into_owned(),
+        body: String::from_utf8_lossy(&held[ends..ends + length]).into_owned(),
+    }
+}
+
+fn subscribed(at: SocketAddr, method: &str, service: &str, headers: &str) -> Answer {
+    asked(
+        at,
+        &format!("{method} /event/{service} HTTP/1.1\r\nHOST: {at}\r\n{headers}\r\n"),
+        &[],
+    )
+}
+
+#[test]
+fn a_subscriber_is_told_of_every_change_to_the_catalog_until_it_unsubscribes() {
+    let Started {
+        server,
+        told: _told,
+        shelves,
+    } = started();
+    let at = discovered(&server);
+    let listener = TcpListener::bind(SocketAddr::new(LOOPBACK, 0)).expect("a callback");
+    let callback = format!(
+        "http://{}/notify",
+        listener.local_addr().expect("an address")
+    );
+
+    let subscription = subscribed(
+        at,
+        "SUBSCRIBE",
+        "ContentDirectory",
+        &format!("CALLBACK: <{callback}>\r\nNT: upnp:event\r\nTIMEOUT: Second-300\r\n"),
+    );
+    let sid = header(&subscription.head, "SID")
+        .expect("a subscription id")
+        .to_owned();
+    let first = notified(&listener);
+    shelves.revision.store(8, Ordering::Release);
+    let changed = notified(&listener);
+    let renewed = subscribed(
+        at,
+        "SUBSCRIBE",
+        "ContentDirectory",
+        &format!("SID: {sid}\r\nTIMEOUT: Second-60\r\n"),
+    );
+    let both = subscribed(
+        at,
+        "SUBSCRIBE",
+        "ContentDirectory",
+        &format!("SID: {sid}\r\nNT: upnp:event\r\n"),
+    );
+    let elsewhere = subscribed(
+        at,
+        "SUBSCRIBE",
+        "ConnectionManager",
+        &format!("SID: {sid}\r\n"),
+    );
+    let ended = subscribed(
+        at,
+        "UNSUBSCRIBE",
+        "ContentDirectory",
+        &format!("SID: {sid}\r\n"),
+    );
+    let ended_again = subscribed(
+        at,
+        "UNSUBSCRIBE",
+        "ContentDirectory",
+        &format!("SID: {sid}\r\n"),
+    );
+    let renewed_after = subscribed(
+        at,
+        "SUBSCRIBE",
+        "ContentDirectory",
+        &format!("SID: {sid}\r\n"),
+    );
+    let connections = subscribed(
+        at,
+        "SUBSCRIBE",
+        "ConnectionManager",
+        &format!("CALLBACK: <{callback}>\r\nNT: upnp:event\r\n"),
+    );
+    let connections_told = notified(&listener);
+
+    assert_eq!(subscription.status, 200);
+    assert!(sid.starts_with("uuid:"));
+    assert_eq!(header(&subscription.head, "TIMEOUT"), Some("Second-300"));
+    assert!(first.head.starts_with("NOTIFY /notify HTTP/1.1"));
+    assert_eq!(header(&first.head, "NT"), Some("upnp:event"));
+    assert_eq!(header(&first.head, "NTS"), Some("upnp:propchange"));
+    assert_eq!(header(&first.head, "SID"), Some(sid.as_str()));
+    assert_eq!(header(&first.head, "SEQ"), Some("0"));
+    assert!(first.body.contains("<SystemUpdateID>7</SystemUpdateID>"));
+    assert_eq!(header(&changed.head, "SEQ"), Some("1"));
+    assert!(changed.body.contains("<SystemUpdateID>8</SystemUpdateID>"));
+    assert_eq!(renewed.status, 200);
+    assert_eq!(header(&renewed.head, "SID"), Some(sid.as_str()));
+    assert_eq!(header(&renewed.head, "TIMEOUT"), Some("Second-60"));
+    assert_eq!(both.status, 400);
+    assert_eq!(elsewhere.status, 412);
+    assert_eq!(ended.status, 200);
+    assert_eq!(ended_again.status, 412);
+    assert_eq!(renewed_after.status, 412);
+    assert_eq!(connections.status, 200);
+    assert_eq!(header(&connections.head, "TIMEOUT"), Some("Second-1800"));
+    assert!(
+        connections_told
+            .body
+            .contains("<CurrentConnectionIDs>0</CurrentConnectionIDs>")
+    );
+}
+
+#[test]
+fn a_callback_elsewhere_is_refused_and_a_subscriber_that_does_not_answer_is_dropped() {
+    let Started {
+        server,
+        told: _told,
+        ..
+    } = started();
+    let at = discovered(&server);
+    let gone_to = {
+        let listener = TcpListener::bind(SocketAddr::new(LOOPBACK, 0)).expect("a callback");
+        listener.local_addr().expect("an address")
+    };
+
+    for headers in [
+        "CALLBACK: <http://8.8.8.8:80/notify>\r\nNT: upnp:event\r\n".to_owned(),
+        format!(
+            "CALLBACK: <http://127.0.0.2:{}/notify>\r\nNT: upnp:event\r\n",
+            gone_to.port()
+        ),
+        format!("CALLBACK: <http://{gone_to}/notify>\r\n"),
+        format!("CALLBACK: <http://{gone_to}/notify>\r\nNT: upnp:other\r\n"),
+        "NT: upnp:event\r\n".to_owned(),
+    ] {
+        assert_eq!(
+            subscribed(at, "SUBSCRIBE", "ContentDirectory", &headers).status,
+            412,
+            "{headers:?}"
+        );
+    }
+    let dropped = subscribed(
+        at,
+        "SUBSCRIBE",
+        "ContentDirectory",
+        &format!("CALLBACK: <http://{gone_to}/notify>\r\nNT: upnp:event\r\n"),
+    );
+    let sid = header(&dropped.head, "SID")
+        .expect("a subscription id")
+        .to_owned();
+    let deadline = Instant::now() + HEARD_WITHIN;
+    let renewed = loop {
+        let renewed = subscribed(
+            at,
+            "SUBSCRIBE",
+            "ContentDirectory",
+            &format!("SID: {sid}\r\n"),
+        );
+        if renewed.status != 200 || Instant::now() >= deadline {
+            break renewed.status;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
+
+    assert_eq!(dropped.status, 200);
+    assert_eq!(renewed, 412);
 }

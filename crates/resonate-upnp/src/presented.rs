@@ -8,7 +8,7 @@ pub(crate) const DESCRIBED_AT: &str = "/description.xml";
 
 pub(crate) const CONTROLLED_UNDER: &str = "/control/";
 
-const EVENTED_UNDER: &str = "/event/";
+pub(crate) const EVENTED_UNDER: &str = "/event/";
 
 const DESCRIBED_UNDER: &str = "/";
 
@@ -24,6 +24,10 @@ pub(crate) fn control_path(service: Service) -> String {
     format!("{CONTROLLED_UNDER}{}", service.name())
 }
 
+pub(crate) fn event_path(service: Service) -> String {
+    format!("{EVENTED_UNDER}{}", service.name())
+}
+
 pub(crate) fn device(udn: &Udn, name: &str) -> String {
     let mut services = String::new();
     for service in Service::ALL {
@@ -31,10 +35,11 @@ pub(crate) fn device(udn: &Udn, name: &str) -> String {
             services,
             "<service><serviceType>{}</serviceType><serviceId>urn:upnp-org:serviceId:{name}\
              </serviceId><SCPDURL>{}</SCPDURL><controlURL>{}</controlURL><eventSubURL>\
-             {EVENTED_UNDER}{name}</eventSubURL></service>",
+             {}</eventSubURL></service>",
             service.kind(),
             description_path(service),
             control_path(service),
+            event_path(service),
             name = service.name(),
         );
     }
@@ -132,6 +137,21 @@ const DIRECTORY_ACTIONS: &[(&str, &[Argument])] = &[
             answered("UpdateID", "A_ARG_TYPE_UpdateID"),
         ],
     ),
+    (
+        "Search",
+        &[
+            given("ContainerID", "A_ARG_TYPE_ObjectID"),
+            given("SearchCriteria", "A_ARG_TYPE_SearchCriteria"),
+            given("Filter", "A_ARG_TYPE_Filter"),
+            given("StartingIndex", "A_ARG_TYPE_Index"),
+            given("RequestedCount", "A_ARG_TYPE_Count"),
+            given("SortCriteria", "A_ARG_TYPE_SortCriteria"),
+            answered("Result", "A_ARG_TYPE_Result"),
+            answered("NumberReturned", "A_ARG_TYPE_Count"),
+            answered("TotalMatches", "A_ARG_TYPE_Count"),
+            answered("UpdateID", "A_ARG_TYPE_UpdateID"),
+        ],
+    ),
 ];
 
 const DIRECTORY_VARIABLES: &[Variable] = &[
@@ -146,6 +166,7 @@ const DIRECTORY_VARIABLES: &[Variable] = &[
     ),
     variable("A_ARG_TYPE_Filter", "string"),
     variable("A_ARG_TYPE_SortCriteria", "string"),
+    variable("A_ARG_TYPE_SearchCriteria", "string"),
     variable("A_ARG_TYPE_Index", "ui4"),
     variable("A_ARG_TYPE_Count", "ui4"),
     variable("A_ARG_TYPE_UpdateID", "ui4"),

@@ -8,9 +8,13 @@ use resonate_core::{AlbumId, TrackId};
 
 use crate::{
     Action, Located, Udn, announce,
-    catalog::{Catalog, Held, Object, Opened, Page, Picture, Shelf, Shelved, Song},
+    catalog::{
+        Catalog, Held, Kind, Object, Opened, Page, Picture, Query, Searched, Shelf, Shelved, Song,
+    },
+    criteria::{self, Described, RELATIONS_AT_MOST},
     description,
     directory::{self, Answered, Asking, Service},
+    events::{self, Subscribing},
     http,
     http::HEADERS_AT_MOST,
     offered::{self, Wanted},
@@ -23,6 +27,16 @@ struct Nothing;
 
 impl Catalog for Nothing {
     type Failure = io::Error;
+
+    fn searched(&self, _: Kind, query: &Query, page: Page) -> io::Result<Searched> {
+        Ok(match query {
+            Query::Present { .. } => Searched::Unanswered,
+            _ => Searched::Found(Shelved {
+                held: Vec::new(),
+                total: page.from,
+            }),
+        })
+    }
 
     fn shelved(&self, shelf: Shelf, page: Page) -> io::Result<Option<Shelved>> {
         Ok(shelf.is_top().then(|| Shelved {
@@ -52,12 +66,36 @@ impl Catalog for Nothing {
     }
 }
 
+fn relations_in(query: &Query) -> usize {
+    match query {
+        Query::Everything => 0,
+        Query::All(all) | Query::Any(all) => all.iter().map(relations_in).sum(),
+        Query::Text { .. } | Query::Present { .. } => 1,
+    }
+}
+
 fn read_what_a_control_point_asks(bytes: &[u8], text: Option<&str>) {
     let _ = announce::searched_for(bytes);
     let _ = offered::routed(bytes);
+    for method in [events::Method::Subscribe, events::Method::Unsubscribe] {
+        if let Subscribing::New { callback, kept } = events::subscribing(bytes, method, SENDER) {
+            assert!(callback.is_at(SENDER));
+            assert!(kept >= events::KEPT_AT_LEAST && kept <= events::KEPT_AT_MOST);
+        }
+    }
     let Some(text) = text else {
         return;
     };
+
+    if let Ok(criterion) = criteria::read(text) {
+        for kind in [Kind::Artist, Kind::Album, Kind::Song, Kind::Playlist] {
+            if let criteria::Reduced::Asks(query) =
+                criteria::reduced(&criterion, &Described::of(kind))
+            {
+                assert!(relations_in(&query) <= RELATIONS_AT_MOST);
+            }
+        }
+    }
 
     let _ = offered::route_of(text);
     if let Some(object) = Object::read(text) {
