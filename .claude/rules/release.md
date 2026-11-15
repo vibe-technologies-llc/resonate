@@ -45,6 +45,9 @@ paths:
   AltStore source) on it, and only then pushes the tag; `release.yml`'s `release` job finds the draft
   and leaves it, and `publish` attaches the rest. Pushing the tag alone still releases, without the
   IPA, since a published release takes no asset afterwards.
+- **A release appends the phones' new catalog steps to `STEPS_RELEASED`** (`resonate-mobile`'s
+  `catalog_released_tests.rs`, `android.md`), each with the FNV-1a of its text (`fingerprint_of`),
+  in the release commit, so the steps it ships are never edited after.
 - **Releases are immutable**: the workflow creates the release as a draft, attaches the assets and
   only then publishes it, since a published release accepts no new asset. A tag name that a
   published release has used can never be used again, even after the release is deleted, so a

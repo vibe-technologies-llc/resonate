@@ -2475,3 +2475,7 @@ mod tests {
         assert_eq!(at, 40);
     }
 }
+
+#[cfg(test)]
+#[path = "catalog_released_tests.rs"]
+mod released;

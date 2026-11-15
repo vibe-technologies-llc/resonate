@@ -28,6 +28,7 @@ mod tests {
     ];
 
     const ONLY_UNDER_TEST: &[&str] = &[
+        "catalog_released_tests.rs",
         "catalog_steps_tests.rs",
         "harness.rs",
         "resuming_tests.rs",
