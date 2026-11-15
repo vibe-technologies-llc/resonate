@@ -783,6 +783,11 @@ fn filed_in_the_music_folder(
     let progress = landing.progress;
     let taken_from = delivered.taken_from();
     let Some(into) = library.delivering_into() else {
+        if want.replacing.is_some() {
+            tracing::warn!(%taken_from, want = %want.id, "a song being replaced needs a vault or a music folder to keep its lossless copy in, so the delivery is not kept");
+            progress.unkept.fetch_add(1, Ordering::Relaxed);
+            return Ok(Landed::Unkept);
+        }
         return Ok(match delivered.delivery {
             Delivery::File(_) => Landed::Kept(taken_from),
             Delivery::Stream { .. } => {

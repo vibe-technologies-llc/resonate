@@ -266,7 +266,7 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   (`a_lossless_delivery_filed_in_the_music_folder_replaces_the_lossy_song_at_the_polls_end`).
 - **No vault open: a delivery is filed in the music folder.** `Library::deliver_into` names a
   `DeliveryFolder` (`music-folder`, `organise-as`), set by the binary at open and by the window
-  before every poll; with neither, a stream is `unkept` and a file only offered. `filed.rs` renders
+  before every poll; with neither, a stream is `unkept` and a file only offered, except for a want replacing a lossy song, which keeps neither (`unkept`, nothing offered: `a_replacement_with_neither_a_vault_nor_a_music_folder_is_never_offered_a_file_in_place`). `filed.rs` renders
   the path under the folder's `Naming`, stages bytes as hidden `.<name>.<pid>-<n>.resonate-delivery`
   beside it (at most `LARGEST_FILED`), noted in `staged_writes` before a byte is written so a poll
   killed mid-filing leaves a file the next poll sweeps (`organise::sweep_what_a_dead_writer_staged`,
