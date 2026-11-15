@@ -1399,14 +1399,20 @@ fn takes_out_again(offer: Option<Offer>) -> SharedString {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{path::PathBuf, sync::Arc, time::Duration};
 
-    use resonate_core::{MediaLocation, Span, TrackId};
-    use resonate_library::{Library, NamesMoved};
+    use gpui::TestAppContext;
+    use resonate_core::{MediaLocation, Span, TrackId, ZoneId};
+    use resonate_engine::Command;
+    use resonate_library::{Direction, Library, NamesMoved, RowOrder};
 
     use super::{
         KEPT_GESTURES, Line, Named, Offer, Part, QueueItem, QueueLength, QueueParts, QueueRows,
         Run, Standing, TakenBack, named_again, puts_back, runs_of, takes_out_again, took_out,
+    };
+    use crate::{
+        Pane,
+        driven::{Driven, Folder},
     };
 
     fn length_at(queue: u64, library: &Library) -> QueueLength {
@@ -1792,6 +1798,235 @@ mod tests {
             takes_out_again(Some(Offer { rows: 1, behind: 2 }))
                 .ends_with("More put backs are behind it")
         );
+    }
+
+    fn queue_of(
+        cx: &mut TestAppContext,
+        folder: &Folder,
+        seconds: &[u32],
+    ) -> (Driven, Vec<PathBuf>) {
+        let files: Vec<PathBuf> = seconds
+            .iter()
+            .zip(SPOKEN)
+            .map(|(seconds, name)| folder.tone(&format!("{name}.wav"), *seconds))
+            .collect();
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        Driven::scanned(&library, folder);
+        let mut driven = Driven::opened_in(cx, library, folder);
+
+        driven.play(&files);
+        driven.click("queue");
+        driven.until(|root, _| root.pane == Pane::Queue);
+
+        (driven, files)
+    }
+
+    const SPOKEN: [&str; 4] = ["charlie", "alpha", "delta", "bravo"];
+
+    fn row_of(id: TrackId) -> &'static str {
+        Box::leak(format!("queued-{}", id.get()).into_boxed_str())
+    }
+
+    fn measured(driven: &mut Driven) -> Option<(Duration, usize)> {
+        driven.read(|root, _| {
+            root.queue_length
+                .held
+                .map(|held| (held.total, held.unmeasured))
+        })
+    }
+
+    fn named_in_order(driven: &mut Driven) -> Vec<String> {
+        driven.read(|root, cx| {
+            root.player
+                .read(cx)
+                .queue()
+                .iter()
+                .map(|item| crate::format::stem(&item.location))
+                .collect()
+        })
+    }
+
+    fn ordered_by(driven: &mut Driven) -> (RowOrder, Direction) {
+        driven.read(|root, _| (root.orders.queue_order, root.orders.queue_reading))
+    }
+
+    #[gpui::test]
+    fn the_queue_pane_draws_every_queued_row_and_measures_how_long_they_run(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _) = queue_of(cx, &folder, &[1, 2, 3]);
+
+        for id in driven.queue() {
+            driven.until_drawn(row_of(id));
+        }
+        driven.until(|root, _| root.queue_length.held.is_some());
+
+        assert_eq!(measured(&mut driven), Some((Duration::from_secs(6), 0)));
+        assert!(driven.cx.debug_bounds("clear-queue").is_some());
+        assert!(driven.cx.debug_bounds("queue-to-playlist-all").is_some());
+        assert!(driven.cx.debug_bounds("put-the-queue-back").is_none());
+    }
+
+    #[gpui::test]
+    fn a_song_the_catalog_does_not_hold_leaves_the_length_measured_at_least(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, mut files) = queue_of(cx, &folder, &[2, 1]);
+        files.push(folder.tone("unscanned.wav", 4));
+
+        driven.play(&files);
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 3);
+        driven.until(|root, _| {
+            root.queue_length
+                .held
+                .is_some_and(|held| held.unmeasured == 1)
+        });
+
+        assert_eq!(measured(&mut driven), Some((Duration::from_secs(3), 1)));
+    }
+
+    #[gpui::test]
+    fn the_queue_cleared_is_offered_back_and_once_put_back_is_offered_out_again(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _) = queue_of(cx, &folder, &[1, 1, 1]);
+        let before = driven.queue();
+
+        driven.click("clear-queue");
+        driven.until(|root, cx| root.player.read(cx).queue().is_empty());
+        driven.until_drawn("put-the-queue-back");
+
+        assert!(driven.cx.debug_bounds("clear-queue").is_none());
+
+        driven.click("put-the-queue-back");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 3);
+        driven.until_drawn("take-the-queue-out-again");
+
+        assert_eq!(driven.queue(), before);
+        assert!(driven.cx.debug_bounds("put-the-queue-back").is_none());
+
+        driven.click("take-the-queue-out-again");
+        driven.until(|root, cx| root.player.read(cx).queue().is_empty());
+        driven.until_drawn("put-the-queue-back");
+    }
+
+    #[gpui::test]
+    fn the_queue_put_in_order_from_its_sort_pop_up_plays_in_that_order_and_keeps_the_choice(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _) = queue_of(cx, &folder, &[1, 1, 1, 1]);
+        let title = RowOrder::ALL
+            .iter()
+            .position(|order| *order == RowOrder::Title)
+            .expect("the queue offers the title");
+
+        assert_eq!(named_in_order(&mut driven), SPOKEN);
+
+        driven.click("order-queue");
+        driven.click(Box::leak(format!("order-choice-{title}").into_boxed_str()));
+        driven.until(|root, cx| {
+            root.player
+                .read(cx)
+                .queue()
+                .first()
+                .is_some_and(|item| crate::format::stem(&item.location) == "alpha")
+        });
+
+        assert_eq!(
+            named_in_order(&mut driven),
+            ["alpha", "bravo", "charlie", "delta"]
+        );
+        assert_eq!(
+            ordered_by(&mut driven),
+            (RowOrder::Title, Direction::Ascending)
+        );
+
+        driven.click("order-reading-1");
+        driven.until(|root, cx| {
+            root.player
+                .read(cx)
+                .queue()
+                .first()
+                .is_some_and(|item| crate::format::stem(&item.location) == "delta")
+        });
+
+        assert_eq!(
+            named_in_order(&mut driven),
+            ["delta", "charlie", "bravo", "alpha"]
+        );
+        assert_eq!(
+            ordered_by(&mut driven),
+            (RowOrder::Title, Direction::Descending)
+        );
+    }
+
+    #[gpui::test]
+    fn a_long_queue_is_scrolled_to_the_row_reached_and_to_the_row_that_starts_playing(
+        cx: &mut TestAppContext,
+    ) {
+        const ROWS: usize = 90;
+        let folder = Folder::new();
+        let files: Vec<PathBuf> = (0..ROWS)
+            .map(|row| folder.tone(&format!("{row:02}.wav"), 1))
+            .collect();
+        let mut driven = Driven::opened_in(
+            cx,
+            Arc::new(Library::open_in_memory().expect("a catalog in memory")),
+            &folder,
+        );
+        driven.play(&files);
+        driven.click("queue");
+        let queued = driven.queue();
+        driven.until_drawn(row_of(queued[0]));
+
+        assert!(driven.cx.debug_bounds(row_of(queued[ROWS - 1])).is_none());
+
+        let root = driven.root.clone();
+        driven.cx.update(|window, cx| {
+            let focus = root.read(cx).focus.clone();
+            window.focus(&focus, cx);
+        });
+        driven.settle();
+        driven.cx.simulate_keystrokes("end");
+        driven.until_drawn(row_of(queued[ROWS - 1]));
+
+        assert!(driven.cx.debug_bounds(row_of(queued[0])).is_none());
+
+        driven.cx.simulate_keystrokes("home");
+        driven.until_drawn(row_of(queued[0]));
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.send_by_position(Command::JumpTo(ROWS - 2), cx);
+        });
+        driven.until(|root, cx| root.player.read(cx).state().queue_position == Some(ROWS - 2));
+        driven.until_drawn(row_of(queued[ROWS - 2]));
+    }
+
+    #[gpui::test]
+    fn showing_another_zone_lets_go_of_the_rows_offered_back(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, _) = queue_of(cx, &folder, &[1, 1]);
+        driven.click("clear-queue");
+        driven.until(|root, cx| root.player.read(cx).queue().is_empty());
+        driven.until_drawn("put-the-queue-back");
+
+        driven
+            .root
+            .update(&mut driven.cx, |root, cx| root.add_a_zone(cx));
+        driven.until(|root, _| root.zones.len() == 2);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.show_zone(ZoneId::FIRST, cx);
+        });
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, _| root.switcher.selected()),
+            ZoneId::FIRST
+        );
+        assert!(driven.cx.debug_bounds("put-the-queue-back").is_none());
     }
 
     #[test]

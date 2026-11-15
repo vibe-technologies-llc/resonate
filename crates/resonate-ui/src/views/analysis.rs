@@ -1039,7 +1039,7 @@ mod tests {
     use super::{spectrogram_said, spectrum_said, verdict_colour, waveform_said};
     use crate::{
         Pane,
-        analysis::Hearing,
+        analysis::{Hearing, Studying},
         driven::{Driven, Folder},
     };
 
@@ -1197,6 +1197,90 @@ mod tests {
             .expect("the catalog reads")
             .remove(0);
         assert_eq!(track.artist.as_deref(), Some("Pink Floyd"));
+    }
+
+    fn studying_what_plays(cx: &mut TestAppContext, folder: &Folder) -> Driven {
+        let track = folder.tone("one.wav", 5);
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        Driven::scanned(&library, folder);
+        let mut driven = Driven::opened_in(cx, library, folder);
+        driven.play(&[track]);
+
+        driven
+    }
+
+    fn studied(driven: &mut Driven) -> bool {
+        driven.read(|root, cx| matches!(root.analysis.read(cx).studying(), Studying::Done(_)))
+    }
+
+    fn scrolled(driven: &mut Driven) -> gpui::Pixels {
+        driven.read(|root, _| root.scrolls.analysis.offset().y)
+    }
+
+    fn drawn_within(driven: &mut Driven) -> gpui::Bounds<gpui::Pixels> {
+        driven.read(|root, _| root.scrolls.analysis.bounds())
+    }
+
+    fn until_drawn(driven: &mut Driven) {
+        driven.until(|root, cx| {
+            matches!(root.analysis.read(cx).studying(), Studying::Done(_))
+                && root.scrolls.analysis.bounds().size.height > gpui::px(0.0)
+        });
+    }
+
+    #[gpui::test]
+    fn the_song_playing_is_studied_only_once_the_pane_is_in_front_and_what_was_found_is_drawn(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = studying_what_plays(cx, &folder);
+        driven.settle();
+
+        assert!(
+            driven.read(|root, cx| matches!(root.analysis.read(cx).studying(), Studying::Idle))
+        );
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(Pane::Analysis, cx);
+        });
+        until_drawn(&mut driven);
+
+        assert!(studied(&mut driven));
+        assert!(drawn_within(&mut driven).size.width > gpui::px(0.0));
+    }
+
+    #[gpui::test]
+    fn the_analysis_pane_scrolls_in_a_short_window_and_is_found_where_it_was_left(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = studying_what_plays(cx, &folder);
+        driven
+            .cx
+            .simulate_resize(gpui::size(gpui::px(crate::driven::WIDE), gpui::px(520.0)));
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(Pane::Analysis, cx);
+        });
+        until_drawn(&mut driven);
+
+        assert_eq!(scrolled(&mut driven), gpui::px(0.0));
+
+        let within = drawn_within(&mut driven).center();
+        driven.scroll_at(within, 240.0);
+        let left_at = scrolled(&mut driven);
+
+        assert!(left_at < gpui::px(0.0), "the pane did not scroll");
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(Pane::Albums, cx);
+        });
+        driven.settle();
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(Pane::Analysis, cx);
+        });
+        until_drawn(&mut driven);
+
+        assert_eq!(scrolled(&mut driven), left_at);
     }
 
     #[test]

@@ -1054,7 +1054,121 @@ fn said_ahead(ahead: LyricsAhead) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, sync::Arc};
+
+    use gpui::TestAppContext;
+    use resonate_core::MediaLocation;
+    use resonate_library::Library;
+
     use super::*;
+    use crate::{
+        Pane,
+        driven::{Driven, Folder},
+    };
+
+    fn sung(
+        cx: &mut TestAppContext,
+        folder: &Folder,
+        held: LyricsAhead,
+    ) -> (Driven, Arc<Library>, MediaLocation) {
+        let track = folder.tone("one.wav", 5);
+        fs::write(
+            folder.path().join("one.lrc"),
+            "[00:00.50]first words\n[00:03.00]second words\n",
+        )
+        .expect("a sidecar beside the track");
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        Driven::scanned(&library, folder);
+        let location = MediaLocation::local(&track);
+        library
+            .hold_lyrics_ahead(&location, None, held)
+            .expect("the catalog keeps how far the words run ahead");
+        let mut driven = Driven::singing(cx, Arc::clone(&library), folder);
+
+        driven.play(&[track]);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(Pane::Lyrics, cx);
+        });
+        driven.until(|root, cx| root.lyrics.read(cx).text().len() == 2);
+
+        (driven, library, location)
+    }
+
+    fn ahead_of(driven: &mut Driven) -> LyricsAhead {
+        driven.read(|root, cx| root.lyrics.read(cx).ahead())
+    }
+
+    fn kept_until(
+        driven: &mut Driven,
+        library: &Library,
+        location: &MediaLocation,
+        ahead: LyricsAhead,
+    ) {
+        driven.until(|_, _| library.lyrics_ahead(location, None).ok() == Some(ahead));
+    }
+
+    #[gpui::test]
+    fn the_steps_move_the_words_later_and_earlier_and_the_catalog_keeps_how_far(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, library, location) = sung(cx, &folder, LyricsAhead::ZERO);
+        driven.until_drawn("lyrics-later");
+
+        assert_eq!(ahead_of(&mut driven), LyricsAhead::ZERO);
+        assert!(driven.cx.debug_bounds("lyrics-ahead").is_none());
+
+        driven.click("lyrics-later");
+        driven.click("lyrics-later");
+        let twice = LyricsAhead::ZERO.later().later();
+        driven.until(|root, cx| root.lyrics.read(cx).ahead() == twice);
+        kept_until(&mut driven, &library, &location, twice);
+        driven.until_drawn("lyrics-ahead");
+
+        driven.click("lyrics-earlier");
+        driven.until(|root, cx| root.lyrics.read(cx).ahead() == LyricsAhead::ZERO.later());
+        kept_until(&mut driven, &library, &location, LyricsAhead::ZERO.later());
+
+        driven.click("lyrics-ahead");
+        driven.until(|root, cx| root.lyrics.read(cx).ahead().is_zero());
+        kept_until(&mut driven, &library, &location, LyricsAhead::ZERO);
+
+        assert!(driven.cx.debug_bounds("lyrics-ahead").is_none());
+    }
+
+    #[gpui::test]
+    fn how_far_the_words_were_moved_for_a_song_is_read_back_as_it_plays(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let held = LyricsAhead::of_millis(400).expect("within reach");
+        let (mut driven, _, _) = sung(cx, &folder, held);
+
+        driven.until(|root, cx| root.lyrics.read(cx).ahead() == held);
+        driven.until_drawn("lyrics-ahead");
+
+        assert_eq!(ahead_of(&mut driven), held);
+    }
+
+    #[gpui::test]
+    fn the_lyrics_pane_reads_the_sheet_beside_the_song_and_draws_each_line(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _, _) = sung(cx, &folder, LyricsAhead::ZERO);
+
+        driven.until_drawn("lyric-0");
+        driven.until_drawn("lyric-1");
+
+        assert!(driven.read(|root, cx| root.lyrics.read(cx).is_synced()));
+        assert!(driven.cx.debug_bounds("lyric-reading-0").is_some());
+        assert!(driven.cx.debug_bounds("lyric-reading-1").is_some());
+
+        driven.click("lyric-reading-1");
+
+        assert_eq!(
+            driven.read(|root, cx| root.lyrics.read(cx).reading()),
+            crate::lyrics::Reading::Whole
+        );
+    }
 
     #[test]
     fn how_far_the_words_are_moved_is_said_in_tenths_of_a_second_minus_for_sooner() {
