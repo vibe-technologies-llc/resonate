@@ -166,7 +166,7 @@ impl RootView {
         match pane {
             Pane::Artists => self.scrolls.artist_rows.clone(),
             Pane::Albums => self.scrolls.album_rows.clone(),
-            Pane::Queue => self.scrolls.queue_rows.clone(),
+            Pane::Queue => self.queue.read(cx).rows(),
             Pane::Playlists => self.scrolls.playlist_rows.clone(),
             Pane::Tracks
             | Pane::Statistics

@@ -50,6 +50,21 @@ the root's list:
   the service through (handing the caret back to the window's own focus, which it holds a clone of),
   and the rows' scroll, which `RootView::scroll_of` hands out for `Pane::Server`. `ServerModel`
   stays the root's, since the sidebar asks it whether the Services row stands.
+- `QueuePane` (`views/queue.rs`): the rows' scroll (`QueuePane::rows`, which `RootView::scroll_of`,
+  `rows_a_page`, `show_row` and `lift_the_playing_row` hand out for the queue) and the height it is
+  measured at, the order and reading chosen (`QueuePane::order`, which `queue_sorted` and the Sort
+  pop-up read), the playing row last followed (`Following`), the rows taken out (`TakenBack`), the
+  length (`QueueMeasure`) and the names (`QueueNames`) with the tasks reading them, and the task
+  keying a sort. Each read is handed what it reads over (`Over`: the zone shown's `Queued` and
+  engine, the catalog), since the zone shown is the root's. Two answers are the root's to act on, so
+  the pane says them and the root subscribes: `NamesRead` (`jump_where_typed`) and `PutInOrder`
+  (`queue_put_in_order` sends the order only if the queue still stands at the revision it keyed).
+  Showing another zone lets go of the names and the rows taken out (`QueuePane::another_zone_shown`).
+- `LyricsModel` (`lyrics.rs`): the sheet, its motion and its scroll (the lyrics pane, below), the
+  lookup and the read of how far the words run ahead (`read_how_far_ahead`).
+  `RootView::look_for_lyrics` builds what is asked from the zone shown and hands it over.
+- `AnalysisModel` (`analysis.rs`): the study and the recognition of the row shown, the painted
+  spectrogram, where the plot stands, and the pane's scroll (`AnalysisModel::scroll`).
 - `MissingPane` (`views/missing.rs`): the half shown (`MissingShows`), the rows' scroll and the
   catalog's gaps: the songs and releases short, their counts and dismissals, and the runs they are
   headed in (`missing_track_rows`, `unheld_release_rows`), which the sidebar counts from.
@@ -78,6 +93,7 @@ the read stays the library's: the statistics window (`read_over`) and whether th
 (`statistics_shown`).
 
 The root still draws them (`RootView::party_pane`, `RootView::inspector`, `RootView::server_pane`,
+`RootView::queue_pane`, `RootView::lyrics_pane`, `RootView::analysis_pane`,
 `RootView::missing_pane`, `RootView::statistics_pane`, `RootView::suggestions_pane`,
 `RootView::settings`):
 every control of a pane goes into the root's focus ring (`Controls`, `in_the_pane_ring`) and a press
@@ -1413,8 +1429,8 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `LyricsAhead::STEP_MS` 100, within `MOST_MS` 30 s; `resonate-library`'s `sung.rs`): minus is sooner,
   plus later, and the reading between them is signed the same way (*−0.3 s*, `said_ahead`, though
   `LyricsAhead` itself counts how far the words run ahead), lit and putting the sheet's own timing back
-  when pressed, faint at *0.0 s*, its width held so the marks stay under the pointer. `look_for_lyrics` reads `Library::lyrics_ahead` into
-  `LyricsModel::hold_ahead`; `nudge_the_lyrics` writes `Library::hold_lyrics_ahead` through `LibraryModel::kept`, in the edit chain on the background executor, and `read_the_lyrics_timing` reads it there when a track is followed (the sheet holds no timing until it lands, and a nudge pressed first wins). The pane reads every
+  when pressed, faint at *0.0 s*, its width held so the marks stay under the pointer. `nudge_the_lyrics` sets
+  `LyricsModel::hold_ahead` and writes `Library::hold_lyrics_ahead` through `LibraryModel::kept`, in the edit chain on the background executor; `look_for_lyrics` hands the catalog to `LyricsModel::read_how_far_ahead`, which reads `Library::lyrics_ahead` there when a track is followed (the sheet holds no timing until it lands, and a nudge pressed first wins: `hold_ahead` drops the read). The pane reads every
   line at `ahead.read(clock)`; a line press seeks to `ahead.back(moment)`
   (`RootView::seek_to_moment`, clamped to the duration). A wheel sets `led_by_hand` (no following for
   `HANDS_OFF`, heading shows *Follow*); a press or track change resumes.
@@ -1606,9 +1622,9 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   track: recorded, not scrolled to. It lifts the *NOW PLAYING* heading to the pane's top
   (`QueueParts::opens_at`, `lift_the_playing_row` scrolls strictly: gpui's `scroll_to_item` does
   nothing for a line in view); `QueueParts::room_below` adds blank lines where a heading near the end
-  could not reach the top, and the list is not built until `queue_height` is measured. Opening the
+  could not reach the top, and the list is not built until the pane's height (`QueuePane`) is measured. Opening the
   queue forgets the row last shown; a row that moved while another pane was in front is not recorded.
-  `Following` is windowless arithmetic tested in `views/root.rs`.
+  `Following` is windowless arithmetic tested in `views/root/tests.rs`, held by `QueuePane`.
 - **The *Reads* row reads back the search box; it claims nothing about a listing.** `listing::reads` =
   one chip per clause off `Search::reads` in every pane's heading (counts only beside albums and
   artists). `Matching::grouped` carries the whole grammar into albums, artists and tracks,

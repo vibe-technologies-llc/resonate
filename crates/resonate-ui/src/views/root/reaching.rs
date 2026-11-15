@@ -479,7 +479,7 @@ impl RootView {
 
     pub(super) fn rows_a_page(&self, shift: Shift, cx: &App) -> usize {
         let listing = match shift {
-            Shift::Queue => self.scrolls.queue_rows.clone(),
+            Shift::Queue => self.queue.read(cx).rows(),
             Shift::Playlist(_) => self.scrolls.playlist_rows.clone(),
             Shift::Listing(Listed::Tracks) => self.scrolls.track_rows.clone(),
             Shift::Listing(Listed::Albums) => self.scrolls.album_rows.clone(),

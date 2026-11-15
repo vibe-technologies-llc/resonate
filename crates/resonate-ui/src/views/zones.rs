@@ -16,7 +16,6 @@ use crate::{
         hint::Names as _,
         kit::{self, EndsInAnEllipsis as _},
         menu::{self, Menu},
-        queue::{QueueNames, TakenBack},
         root::RootView,
         spoken::Spoken as _,
     },
@@ -315,8 +314,7 @@ impl RootView {
         self.reach = None;
         self.typing.landed_by_a_jump = None;
         self.rails.seek_pointed = None;
-        self.queue_names = QueueNames::default();
-        self.took_out = TakenBack::default();
+        self.queue.update(cx, |queue, _| queue.another_zone_shown());
         cx.notify();
     }
 

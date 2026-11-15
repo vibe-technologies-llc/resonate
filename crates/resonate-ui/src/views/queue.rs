@@ -1,12 +1,12 @@
-use std::{cmp::Ordering, rc::Rc, sync::Arc, time::Duration};
+use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Div, SharedString, Task, div, prelude::*, px, rgb,
-    uniform_list,
+    AnyElement, App, ClickEvent, Context, Div, EventEmitter, Pixels, SharedString, Task,
+    UniformListScrollHandle, div, prelude::*, px, rgb, uniform_list,
 };
 use resonate_core::{AlbumId, FrameSpan, MediaLocation, Span, TrackId};
-use resonate_engine::{Command, Placement, Player, QueueItem, QueueRows};
+use resonate_engine::{Command, Placement, Player, QueueItem, QueueRows, Queued};
 use resonate_library::{
     CatalogStamp, Cut, Direction, Favoured, Library, Lit, NamesMoved, RowOrder, Track,
     folded_letters,
@@ -26,7 +26,7 @@ use crate::{
         menu::{self, Called, Menu},
         playlists::{Held, ROW_GROUP},
         reorder::{self, Carried, Chosen, LiftedTo, Shift, Step},
-        root::{RootView, empty, row},
+        root::{Following, PlayingRow, RootView, empty, row},
         scrollbar::Scrollbars,
         sorting::{self, Ordered},
         spoken::{self, Placed, Spoken},
@@ -35,17 +35,251 @@ use crate::{
 };
 
 #[derive(Default)]
-pub(crate) struct QueueMeasure {
+struct QueueMeasure {
     held: Option<QueueLength>,
     asked: Option<QueueLength>,
     reading: Option<Task<()>>,
 }
 
 #[derive(Default)]
-pub(crate) struct QueueNames {
+struct QueueNames {
     named: Option<(NamedAt, Arc<[Named]>)>,
     asked: Option<NamedAt>,
     reading: Option<Task<()>>,
+}
+
+pub(crate) struct QueuePane {
+    rows: UniformListScrollHandle,
+    height: Rc<Cell<Pixels>>,
+    order: RowOrder,
+    reading: Direction,
+    following: Following,
+    took_out: TakenBack,
+    length: QueueMeasure,
+    names: QueueNames,
+    ordering: Task<()>,
+}
+
+pub(crate) struct NamesRead;
+
+pub(crate) struct PutInOrder {
+    revision: u64,
+    rows: Vec<usize>,
+}
+
+impl EventEmitter<NamesRead> for QueuePane {}
+
+impl EventEmitter<PutInOrder> for QueuePane {}
+
+struct Over {
+    queued: Queued,
+    player: Arc<Player>,
+    library: Arc<Library>,
+}
+
+impl Over {
+    fn named_at(&self) -> NamedAt {
+        NamedAt {
+            queue: self.queued.revision,
+            names: self.library.names_stamp(),
+            media: self.player.media_revision(),
+        }
+    }
+}
+
+impl QueuePane {
+    pub(crate) fn new() -> Self {
+        Self {
+            rows: UniformListScrollHandle::default(),
+            height: Rc::default(),
+            order: RowOrder::default(),
+            reading: Direction::default(),
+            following: Following::default(),
+            took_out: TakenBack::default(),
+            length: QueueMeasure::default(),
+            names: QueueNames::default(),
+            ordering: Task::ready(()),
+        }
+    }
+
+    pub(crate) fn rows(&self) -> UniformListScrollHandle {
+        self.rows.clone()
+    }
+
+    pub(crate) const fn order(&self) -> (RowOrder, Direction) {
+        (self.order, self.reading)
+    }
+
+    pub(crate) fn follows(&mut self, playing: Option<PlayingRow>, shown: bool) -> Option<usize> {
+        self.following.follows(playing, shown)
+    }
+
+    pub(crate) fn follow_afresh(&mut self) {
+        self.following = Following::default();
+    }
+
+    pub(crate) fn keeping_all(&mut self, queue: &QueueRows, runs: &[Span]) -> Option<usize> {
+        self.took_out.keeping_all(queue, runs)
+    }
+
+    pub(crate) fn another_zone_shown(&mut self) {
+        self.names = QueueNames::default();
+        self.took_out = TakenBack::default();
+    }
+
+    fn names(&mut self, over: Over, cx: &mut Context<Self>) -> Option<Arc<[Named]>> {
+        let revision = over.named_at();
+        let held = self
+            .names
+            .named
+            .as_ref()
+            .map(|(named, names)| (*named, Arc::clone(names)));
+        if held.as_ref().is_some_and(|(named, _)| {
+            named.queue == revision.queue && named.names_still_hold_at(&revision)
+        }) {
+            return held.map(|(_, names)| names);
+        }
+        self.name(revision, over, cx);
+        held.filter(|(named, _)| named.queue == revision.queue)
+            .map(|(_, names)| names)
+    }
+
+    fn name(&mut self, revision: NamedAt, over: Over, cx: &mut Context<Self>) {
+        if self.names.asked == Some(revision) {
+            return;
+        }
+        self.names.asked = Some(revision);
+        let Over {
+            queued,
+            player,
+            library,
+        } = over;
+        let standing = self
+            .names
+            .named
+            .as_ref()
+            .filter(|(named, _)| named.media == revision.media)
+            .map(|(named, names)| Standing {
+                names: Arc::clone(names),
+                moved: library.names_moved_since(named.names),
+            });
+
+        self.names.reading = Some(cx.spawn(async move |this, cx| {
+            let names: Arc<[Named]> = cx
+                .background_executor()
+                .spawn(async move {
+                    named_again(
+                        &library,
+                        &player,
+                        queued.rows.iter().map(Arc::as_ref),
+                        standing,
+                    )
+                })
+                .await;
+            let landed = this.update(cx, |this, cx| {
+                this.names.named = Some((revision, names));
+                cx.emit(NamesRead);
+                cx.notify();
+            });
+            let _ = landed;
+        }));
+    }
+
+    fn length(&mut self, over: Over, cx: &mut Context<Self>) -> Option<(Duration, usize)> {
+        let measured = QueueLength {
+            queue: over.queued.revision,
+            rows: over.library.rows_stamp(),
+            total: Duration::ZERO,
+            unmeasured: 0,
+        };
+        if let Some(held) = self.length.held
+            && held.measures(measured)
+        {
+            return Some((held.total, held.unmeasured));
+        }
+
+        self.measure(measured, over, cx);
+        self.length.held.map(|held| (held.total, held.unmeasured))
+    }
+
+    fn measure(&mut self, measured: QueueLength, over: Over, cx: &mut Context<Self>) {
+        if self
+            .length
+            .asked
+            .is_some_and(|asked| asked.measures(measured))
+        {
+            return;
+        }
+        self.length.asked = Some(measured);
+        let Over {
+            queued, library, ..
+        } = over;
+
+        self.length.reading = Some(cx.spawn(async move |this, cx| {
+            let (total, unmeasured) = cx
+                .background_executor()
+                .spawn(async move {
+                    let rows = queued_rows(&library, queued.rows.iter().map(Arc::as_ref));
+                    let lengths: Vec<Option<Duration>> = rows
+                        .iter()
+                        .map(|track| {
+                            let track = track.as_ref()?;
+                            track
+                                .duration
+                                .map(|frames| frames.to_duration(track.spec.rate))
+                        })
+                        .collect();
+                    let unmeasured = lengths.iter().filter(|length| length.is_none()).count();
+                    (lengths.into_iter().flatten().sum::<Duration>(), unmeasured)
+                })
+                .await;
+            let landed = this.update(cx, |this, cx| {
+                this.length.held = Some(QueueLength {
+                    total,
+                    unmeasured,
+                    ..measured
+                });
+                cx.notify();
+            });
+            let _ = landed;
+        }));
+    }
+
+    fn put_in_order(
+        &mut self,
+        order: RowOrder,
+        reading: Direction,
+        over: Over,
+        cx: &mut Context<Self>,
+    ) {
+        self.order = order;
+        self.reading = reading;
+
+        let Over {
+            queued,
+            player,
+            library,
+        } = over;
+        if queued.rows.len() < 2 {
+            return;
+        }
+
+        self.ordering = cx.spawn(async move |this, cx| {
+            let revision = queued.revision;
+            let rows = queued.rows.clone();
+            let ordered: Vec<usize> = cx
+                .background_executor()
+                .spawn(async move { ordered_rows(&library, &player, &rows, order, reading) })
+                .await;
+            let landed = this.update(cx, |_, cx| {
+                cx.emit(PutInOrder {
+                    revision,
+                    rows: ordered,
+                });
+            });
+            let _ = landed;
+        });
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -75,64 +309,26 @@ impl NamedAt {
 }
 
 impl RootView {
-    pub(crate) fn names_in_the_queue(&mut self, cx: &mut Context<Self>) -> Option<Arc<[Named]>> {
-        let revision = NamedAt {
-            queue: self.player.read(cx).queued().revision,
-            names: self.library.read(cx).catalog().names_stamp(),
-            media: self.player.read(cx).engine().media_revision(),
-        };
-        let held = self
-            .queue_names
-            .named
-            .as_ref()
-            .map(|(named, names)| (*named, Arc::clone(names)));
-        if held.as_ref().is_some_and(|(named, _)| {
-            named.queue == revision.queue && named.names_still_hold_at(&revision)
-        }) {
-            return held.map(|(_, names)| names);
+    fn queue_over(&self, cx: &App) -> Over {
+        let player = self.player.read(cx);
+        Over {
+            queued: player.queued(),
+            player: player.engine(),
+            library: self.library.read(cx).catalog(),
         }
-        self.name_the_queue(revision, cx);
-        held.filter(|(named, _)| named.queue == revision.queue)
-            .map(|(_, names)| names)
     }
 
-    fn name_the_queue(&mut self, revision: NamedAt, cx: &mut Context<Self>) {
-        if self.queue_names.asked == Some(revision) {
+    pub(crate) fn names_in_the_queue(&mut self, cx: &mut Context<Self>) -> Option<Arc<[Named]>> {
+        let over = self.queue_over(cx);
+        self.queue.update(cx, |queue, cx| queue.names(over, cx))
+    }
+
+    pub(crate) fn queue_put_in_order(&self, ordered: &PutInOrder, cx: &mut Context<Self>) {
+        if self.player.read(cx).queued().revision != ordered.revision {
             return;
         }
-        self.queue_names.asked = Some(revision);
-        let queued = self.player.read(cx).queued();
-        let player = self.player.read(cx).engine();
-        let library = self.library.read(cx).catalog();
-        let standing = self
-            .queue_names
-            .named
-            .as_ref()
-            .filter(|(named, _)| named.media == revision.media)
-            .map(|(named, names)| Standing {
-                names: Arc::clone(names),
-                moved: library.names_moved_since(named.names),
-            });
-
-        self.queue_names.reading = Some(cx.spawn(async move |this, cx| {
-            let names: Arc<[Named]> = cx
-                .background_executor()
-                .spawn(async move {
-                    named_again(
-                        &library,
-                        &player,
-                        queued.rows.iter().map(Arc::as_ref),
-                        standing,
-                    )
-                })
-                .await;
-            let landed = this.update(cx, |this, cx| {
-                this.queue_names.named = Some((revision, names));
-                this.jump_where_typed(cx);
-                cx.notify();
-            });
-            let _ = landed;
-        }));
+        self.send(Command::Order(ordered.rows.clone()), cx);
+        cx.notify();
     }
 }
 
@@ -547,7 +743,7 @@ impl RootView {
                 Some(words::queue::how_to_fill()),
             );
             let heading = self
-                .holds_what_was_taken_out(&queue)
+                .holds_what_was_taken_out(&queue, cx)
                 .then(|| self.queue_heading(&queue, cx));
 
             return reorder::takes_a_lift(
@@ -568,12 +764,15 @@ impl RootView {
         let parts = self.queue_parts(cx);
         let from = self.playing_from(cx);
         let queued = queue.len();
-        let height = self.rooms.queue_height.get();
+        let (scroll, measured) = {
+            let pane = self.queue.read(cx);
+            (pane.rows(), Rc::clone(&pane.height))
+        };
+        let height = measured.get();
         let shown = (f32::from(height) / theme::row_height()) as usize;
         let lines = parts.lines() + parts.room_below(shown);
         let heading = self.queue_heading(&queue, cx);
         let drawn_at = self.player.read(cx).queued().revision;
-        let scroll = self.scrolls.queue_rows.clone();
         let reaching = self
             .reaching(Shift::Queue)
             .map(|rows| Reaching::of(&queue, rows));
@@ -584,7 +783,7 @@ impl RootView {
                 "",
                 true,
                 ROW_CONTROLS,
-                sorting::queue_sorted(self),
+                sorting::queue_sorted(self, cx),
                 &self.rooms.columns_fit,
                 &self.controls,
                 cx,
@@ -605,9 +804,7 @@ impl RootView {
                     lines,
                     cx,
                 )
-                .child(kit::measures_its_height(Rc::clone(
-                    &self.rooms.queue_height,
-                )))
+                .child(kit::measures_its_height(measured))
                 .when(height > px(0.0), |rows| {
                     rows.child(
                         uniform_list(
@@ -875,76 +1072,18 @@ impl RootView {
                         .w_full(),
                     )
                 })
-                .child(
-                    Scrollbars::of(cx).vertical("queue-scrollbar", self.scrolls.queue_rows.clone()),
-                ),
+                .child(Scrollbars::of(cx).vertical("queue-scrollbar", scroll)),
             )
             .into_any_element()
     }
 
-    fn holds_what_was_taken_out(&self, queue: &QueueRows) -> bool {
-        self.took_out.offered(queue).is_some()
+    fn holds_what_was_taken_out(&self, queue: &QueueRows, cx: &App) -> bool {
+        self.queue.read(cx).took_out.offered(queue).is_some()
     }
 
     fn queue_length(&mut self, cx: &mut Context<Self>) -> Option<(Duration, usize)> {
-        let measured = QueueLength {
-            queue: self.player.read(cx).queued().revision,
-            rows: self.library.read(cx).catalog().rows_stamp(),
-            total: Duration::ZERO,
-            unmeasured: 0,
-        };
-        if let Some(held) = self.queue_length.held
-            && held.measures(measured)
-        {
-            return Some((held.total, held.unmeasured));
-        }
-
-        self.measure_the_queue(measured, cx);
-        self.queue_length
-            .held
-            .map(|held| (held.total, held.unmeasured))
-    }
-
-    fn measure_the_queue(&mut self, measured: QueueLength, cx: &mut Context<Self>) {
-        if self
-            .queue_length
-            .asked
-            .is_some_and(|asked| asked.measures(measured))
-        {
-            return;
-        }
-        self.queue_length.asked = Some(measured);
-        let queued = self.player.read(cx).queued();
-        let library = self.library.read(cx).catalog();
-
-        self.queue_length.reading = Some(cx.spawn(async move |this, cx| {
-            let (total, unmeasured) = cx
-                .background_executor()
-                .spawn(async move {
-                    let rows = queued_rows(&library, queued.rows.iter().map(Arc::as_ref));
-                    let lengths: Vec<Option<Duration>> = rows
-                        .iter()
-                        .map(|track| {
-                            let track = track.as_ref()?;
-                            track
-                                .duration
-                                .map(|frames| frames.to_duration(track.spec.rate))
-                        })
-                        .collect();
-                    let unmeasured = lengths.iter().filter(|length| length.is_none()).count();
-                    (lengths.into_iter().flatten().sum::<Duration>(), unmeasured)
-                })
-                .await;
-            let landed = this.update(cx, |this, cx| {
-                this.queue_length.held = Some(QueueLength {
-                    total,
-                    unmeasured,
-                    ..measured
-                });
-                cx.notify();
-            });
-            let _ = landed;
-        }));
+        let over = self.queue_over(cx);
+        self.queue.update(cx, |queue, cx| queue.length(over, cx))
     }
 
     fn queue_heading(&mut self, queue: &QueueRows, cx: &mut Context<Self>) -> Div {
@@ -966,8 +1105,10 @@ impl RootView {
             under.push(words::queue::waiting(waiting));
         }
 
-        let taken_out = self.took_out.offered(queue);
-        let put_back = self.took_out.offered_again(queue);
+        let (taken_out, put_back) = {
+            let took_out = &self.queue.read(cx).took_out;
+            (took_out.offered(queue), took_out.offered_again(queue))
+        };
         let queued = !queue.is_empty();
         let handed_off = cx
             .global::<ResonateApp>()
@@ -1087,7 +1228,10 @@ impl RootView {
 
     pub(crate) fn put_the_queue_back(&mut self, cx: &mut Context<Self>) -> bool {
         let queued = self.player.read(cx).queue();
-        let Some(taken) = self.took_out.take(&queued) else {
+        let Some(taken) = self
+            .queue
+            .update(cx, |queue, _| queue.took_out.take(&queued))
+        else {
             return false;
         };
         self.send(
@@ -1141,7 +1285,10 @@ impl RootView {
 
     pub(crate) fn take_the_queue_out_again(&mut self, cx: &mut Context<Self>) -> bool {
         let queued = self.player.read(cx).queue();
-        let Some(rows) = self.took_out.take_again(&queued) else {
+        let Some(rows) = self
+            .queue
+            .update(cx, |queue, _| queue.took_out.take_again(&queued))
+        else {
             return false;
         };
         self.send_by_position(Command::Remove(rows), cx);
@@ -1149,11 +1296,15 @@ impl RootView {
     }
 
     pub(crate) fn queue_in_order(&self, cx: &mut Context<Self>) -> Div {
+        let (order, reading) = self.queue.read(cx).order();
         self.order_choices(
-            self.orders.queue_order,
-            self.orders.queue_reading,
+            order,
+            reading,
             |this, order, cx| this.put_the_queue_in_order(order, Direction::Ascending, cx),
-            |this, reading, cx| this.put_the_queue_in_order(this.orders.queue_order, reading, cx),
+            |this, reading, cx| {
+                let (order, _) = this.queue.read(cx).order();
+                this.put_the_queue_in_order(order, reading, cx);
+            },
             cx,
         )
     }
@@ -1164,32 +1315,10 @@ impl RootView {
         reading: Direction,
         cx: &mut Context<Self>,
     ) {
-        self.orders.queue_order = order;
-        self.orders.queue_reading = reading;
-
-        let queued = self.player.read(cx).queued();
-        if queued.rows.len() < 2 {
-            cx.notify();
-            return;
-        }
-        let player = self.player.read(cx).engine();
-        let library = self.library.read(cx).catalog();
-
-        self.queue_ordered = Some(cx.spawn(async move |this, cx| {
-            let rows = queued.rows.clone();
-            let ordered: Vec<usize> = cx
-                .background_executor()
-                .spawn(async move { ordered_rows(&library, &player, &rows, order, reading) })
-                .await;
-            let landed = this.update(cx, |this, cx| {
-                if this.player.read(cx).queued().revision != queued.revision {
-                    return;
-                }
-                this.send(Command::Order(ordered), cx);
-                cx.notify();
-            });
-            let _ = landed;
-        }));
+        let over = self.queue_over(cx);
+        self.queue.update(cx, |queue, cx| {
+            queue.put_in_order(order, reading, over, cx);
+        });
         cx.notify();
     }
 }
@@ -1401,7 +1530,7 @@ fn takes_out_again(offer: Option<Offer>) -> SharedString {
 mod tests {
     use std::{path::PathBuf, sync::Arc, time::Duration};
 
-    use gpui::TestAppContext;
+    use gpui::{App, TestAppContext};
     use resonate_core::{MediaLocation, Span, TrackId, ZoneId};
     use resonate_engine::Command;
     use resonate_library::{Direction, Library, NamesMoved, RowOrder};
@@ -1413,6 +1542,7 @@ mod tests {
     use crate::{
         Pane,
         driven::{Driven, Folder},
+        views::root::RootView,
     };
 
     fn length_at(queue: u64, library: &Library) -> QueueLength {
@@ -1827,12 +1957,12 @@ mod tests {
         Box::leak(format!("queued-{}", id.get()).into_boxed_str())
     }
 
+    fn held_length(root: &RootView, cx: &App) -> Option<QueueLength> {
+        root.queue.read(cx).length.held
+    }
+
     fn measured(driven: &mut Driven) -> Option<(Duration, usize)> {
-        driven.read(|root, _| {
-            root.queue_length
-                .held
-                .map(|held| (held.total, held.unmeasured))
-        })
+        driven.read(|root, cx| held_length(root, cx).map(|held| (held.total, held.unmeasured)))
     }
 
     fn named_in_order(driven: &mut Driven) -> Vec<String> {
@@ -1847,7 +1977,7 @@ mod tests {
     }
 
     fn ordered_by(driven: &mut Driven) -> (RowOrder, Direction) {
-        driven.read(|root, _| (root.orders.queue_order, root.orders.queue_reading))
+        driven.read(|root, cx| root.queue.read(cx).order())
     }
 
     #[gpui::test]
@@ -1860,7 +1990,7 @@ mod tests {
         for id in driven.queue() {
             driven.until_drawn(row_of(id));
         }
-        driven.until(|root, _| root.queue_length.held.is_some());
+        driven.until(|root, cx| held_length(root, cx).is_some());
 
         assert_eq!(measured(&mut driven), Some((Duration::from_secs(6), 0)));
         assert!(driven.cx.debug_bounds("clear-queue").is_some());
@@ -1878,11 +2008,7 @@ mod tests {
 
         driven.play(&files);
         driven.until(|root, cx| root.player.read(cx).queue().len() == 3);
-        driven.until(|root, _| {
-            root.queue_length
-                .held
-                .is_some_and(|held| held.unmeasured == 1)
-        });
+        driven.until(|root, cx| held_length(root, cx).is_some_and(|held| held.unmeasured == 1));
 
         assert_eq!(measured(&mut driven), Some((Duration::from_secs(3), 1)));
     }

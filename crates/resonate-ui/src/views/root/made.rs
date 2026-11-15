@@ -13,8 +13,8 @@ use resonate_engine::Command;
 use resonate_library::{Direction, RowOrder, SortOrder, is_a_followed_link};
 
 use super::{
-    Accounts, Arrangement, Dropped, Following, Orders, Pane, Rails, Remembered, Remotely, Rooms,
-    RootView, Scrolls, SettingsShown, Shows, Social, Typed, TypedAhead, WINDOW_SIZE_SETTLE,
+    Accounts, Arrangement, Dropped, Orders, Pane, Rails, Remembered, Remotely, Rooms, RootView,
+    Scrolls, SettingsShown, Shows, Social, Typed, TypedAhead, WINDOW_SIZE_SETTLE,
 };
 use crate::{
     EqualiserModel, LibraryModel, LyricsModel, ResonateApp, Setting, WindowSize,
@@ -41,7 +41,7 @@ use crate::{
         party::PartyPane,
         playlists::PlaylistsDrawn,
         pulse::Pulse,
-        queue::{QueueMeasure, QueueNames, TakenBack},
+        queue::{NamesRead, PutInOrder, QueuePane},
         search::SearchShows,
         served::ServicesPane,
         settings::{
@@ -146,6 +146,16 @@ impl RootView {
         cx.observe(&party, |_, _, cx| cx.notify()).detach();
         let inspector = cx.new(|_| InspectorPane::default());
         cx.observe(&inspector, |_, _, cx| cx.notify()).detach();
+        let queue = cx.new(|_| QueuePane::new());
+        cx.observe(&queue, |_, _, cx| cx.notify()).detach();
+        cx.subscribe(&queue, |this, _, _: &NamesRead, cx| {
+            this.jump_where_typed(cx)
+        })
+        .detach();
+        cx.subscribe(&queue, |this, _, ordered: &PutInOrder, cx| {
+            this.queue_put_in_order(ordered, cx);
+        })
+        .detach();
         cx.observe_global::<Toaster>(|_, cx| cx.notify()).detach();
         player.read(cx).listen_in(true);
         cx.observe_in(&library, window, |this, library, window, cx| {
@@ -289,6 +299,7 @@ impl RootView {
             listen,
             party,
             inspector,
+            queue,
             missing,
             statistics,
             suggestions,
@@ -316,14 +327,10 @@ impl RootView {
             sheets: sheets::Standing::default(),
             announced: announcing::Announcer::default(),
             announcing_again: None,
-            took_out: TakenBack::default(),
-            queue_length: QueueMeasure::default(),
-            queue_ordered: None,
             earlier_plays_asked: false,
             zones: shown_zones,
             switcher,
             naming_the_zone: None,
-            following: Following::default(),
             came_from: Vec::new(),
             goes_forward: Vec::new(),
             titled: None,
@@ -335,12 +342,10 @@ impl RootView {
             arranged_as,
             creeping: None,
             creeping_on: Task::ready(()),
-            reading_the_lyrics_timing: Task::ready(()),
             listing_whole: Task::ready(()),
             magnified: None,
             pointer_inside: true,
             beneath_closes: Task::ready(()),
-            queue_names: QueueNames::default(),
             drawn_at: SystemTime::now(),
             scale: Scale::ONE,
             resolved: RefCell::new(None),
@@ -353,7 +358,6 @@ impl RootView {
                 settings: ScrollHandle::new(),
                 settings_rail: ScrollHandle::new(),
                 sidebar: ScrollHandle::new(),
-                analysis: ScrollHandle::new(),
                 artist_records: ScrollHandle::new(),
                 ordering: ScrollHandle::new(),
                 downloads: ScrollHandle::new(),
@@ -361,7 +365,6 @@ impl RootView {
                 likely: ScrollHandle::new(),
                 remote: ScrollHandle::new(),
                 search: ScrollHandle::default(),
-                queue_rows: UniformListScrollHandle::default(),
                 playlist_rows: UniformListScrollHandle::default(),
                 track_rows: UniformListScrollHandle::default(),
                 artist_rows: UniformListScrollHandle::default(),
@@ -380,7 +383,6 @@ impl RootView {
                 status: Rc::new(Cell::new(px(0.0))),
                 heading: Rc::new(Cell::new(px(0.0))),
                 columns_fit: listing::Fitting::default(),
-                queue_height: Rc::default(),
                 reached_unseen: Rc::default(),
             },
             remotely: Remotely {
@@ -420,8 +422,6 @@ impl RootView {
                 curve_plotted: Rc::default(),
             },
             orders: Orders {
-                queue_order: RowOrder::default(),
-                queue_reading: Direction::default(),
                 row_order: RowOrder::default(),
                 row_reading: Direction::default(),
                 keeping: false,

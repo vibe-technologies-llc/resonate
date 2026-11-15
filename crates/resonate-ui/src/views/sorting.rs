@@ -764,17 +764,19 @@ pub(crate) fn playlist_sorted(this: &RootView) -> Sorted {
     }
 }
 
-pub(crate) fn queue_sorted(this: &RootView) -> Sorted {
+pub(crate) fn queue_sorted(this: &RootView, cx: &App) -> Sorted {
+    let (order, reading) = this.queue.read(cx).order();
     Sorted {
         number: Sortable::Number,
-        by: row_column(this.orders.queue_order),
-        reading: this.orders.queue_reading,
+        by: row_column(order),
+        reading,
         offers: ROW_COLUMNS,
         saying: words::sorting::column_hint(),
         press: |this, column, cx| {
             let wanted = row_order(column);
-            let reading = if this.orders.queue_order == wanted {
-                this.orders.queue_reading.flipped()
+            let (order, reading) = this.queue.read(cx).order();
+            let reading = if order == wanted {
+                reading.flipped()
             } else {
                 Direction::Ascending
             };

@@ -168,7 +168,10 @@ impl RootView {
         let painted = self
             .analysis
             .update(cx, |model, cx| model.spectrogram(stops, cx));
-        let plotted = self.analysis.read(cx).plotted.clone();
+        let (plotted, scroll) = {
+            let model = self.analysis.read(cx);
+            (model.plotted.clone(), model.scroll())
+        };
         let taking = hearing.leads().then(|| {
             div().flex().pt_2().child(self.in_the_pane_ring(
                 kit::button(
@@ -198,7 +201,7 @@ impl RootView {
             .gap_4()
             .p_6()
             .overflow_y_scroll()
-            .track_scroll(&self.scrolls.analysis)
+            .track_scroll(&scroll)
             .children(leading)
             .child(verdict_card(analysis))
             .child(
@@ -249,7 +252,7 @@ impl RootView {
             .children(trailing);
 
         Scrollbars::of(cx)
-            .around("analysis-scrollbar", self.scrolls.analysis.clone(), pane)
+            .around("analysis-scrollbar", scroll, pane)
             .into_any_element()
     }
 }
@@ -1214,17 +1217,17 @@ mod tests {
     }
 
     fn scrolled(driven: &mut Driven) -> gpui::Pixels {
-        driven.read(|root, _| root.scrolls.analysis.offset().y)
+        driven.read(|root, cx| root.analysis.read(cx).scroll().offset().y)
     }
 
     fn drawn_within(driven: &mut Driven) -> gpui::Bounds<gpui::Pixels> {
-        driven.read(|root, _| root.scrolls.analysis.bounds())
+        driven.read(|root, cx| root.analysis.read(cx).scroll().bounds())
     }
 
     fn until_drawn(driven: &mut Driven) {
         driven.until(|root, cx| {
             matches!(root.analysis.read(cx).studying(), Studying::Done(_))
-                && root.scrolls.analysis.bounds().size.height > gpui::px(0.0)
+                && root.analysis.read(cx).scroll().bounds().size.height > gpui::px(0.0)
         });
     }
 

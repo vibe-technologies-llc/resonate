@@ -87,7 +87,7 @@ use crate::{
         part::Parts,
         party::PartyPane,
         playlists::{Held, Naming, PlaylistsDrawn},
-        queue::{QueueMeasure, QueueNames, TakenBack},
+        queue::QueuePane,
         reorder::{Creeping, Reach, Step},
         search::SearchShows,
         served::ServicesPane,
@@ -258,14 +258,14 @@ enum Pointer {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct PlayingRow {
+pub(crate) struct PlayingRow {
     row: usize,
     track: Option<TrackId>,
     queue: QueueStamp,
 }
 
 impl PlayingRow {
-    fn of(state: &PlayerState) -> Option<Self> {
+    pub(crate) fn of(state: &PlayerState) -> Option<Self> {
         Some(Self {
             row: state.queue_position?,
             track: state.current.as_ref().map(|current| current.id),
@@ -282,12 +282,16 @@ impl PlayingRow {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct Following {
+pub(crate) struct Following {
     shown: Option<PlayingRow>,
 }
 
 impl Following {
-    fn follows(&mut self, playing: Option<PlayingRow>, queue_is_shown: bool) -> Option<usize> {
+    pub(crate) fn follows(
+        &mut self,
+        playing: Option<PlayingRow>,
+        queue_is_shown: bool,
+    ) -> Option<usize> {
         let Some(now) = playing else {
             self.shown = None;
             return None;
@@ -521,7 +525,6 @@ pub(crate) struct Scrolls {
     pub(crate) settings: ScrollHandle,
     pub(crate) settings_rail: ScrollHandle,
     pub(crate) sidebar: ScrollHandle,
-    pub(crate) analysis: ScrollHandle,
     pub(crate) artist_records: ScrollHandle,
     pub(crate) ordering: ScrollHandle,
     pub(crate) downloads: ScrollHandle,
@@ -529,7 +532,6 @@ pub(crate) struct Scrolls {
     pub(crate) likely: ScrollHandle,
     pub(crate) remote: ScrollHandle,
     pub(crate) search: ScrollHandle,
-    pub(crate) queue_rows: UniformListScrollHandle,
     pub(crate) playlist_rows: UniformListScrollHandle,
     pub(crate) track_rows: UniformListScrollHandle,
     pub(crate) artist_rows: UniformListScrollHandle,
@@ -549,7 +551,6 @@ pub(crate) struct Rooms {
     pub(crate) status: Rc<Cell<Pixels>>,
     pub(crate) heading: Rc<Cell<Pixels>>,
     pub(crate) columns_fit: listing::Fitting,
-    pub(crate) queue_height: Rc<Cell<Pixels>>,
     pub(crate) reached_unseen: Rc<Cell<bool>>,
 }
 
@@ -593,8 +594,6 @@ pub(crate) struct Rails {
 }
 
 pub(crate) struct Orders {
-    pub(crate) queue_order: RowOrder,
-    pub(crate) queue_reading: Direction,
     pub(crate) row_order: RowOrder,
     pub(crate) row_reading: Direction,
     pub(crate) keeping: bool,
@@ -695,6 +694,7 @@ pub struct RootView {
     pub(crate) listen: Entity<ListenModel>,
     pub(crate) party: Entity<PartyPane>,
     pub(crate) inspector: Entity<InspectorPane>,
+    pub(crate) queue: Entity<QueuePane>,
     pub(crate) missing: Entity<MissingPane>,
     pub(crate) statistics: Entity<StatisticsPane>,
     pub(crate) suggestions: Entity<SuggestionsPane>,
@@ -722,9 +722,6 @@ pub struct RootView {
     pub(crate) sheets: sheets::Standing,
     pub(crate) announced: announcing::Announcer,
     pub(crate) announcing_again: announcing::Waking,
-    pub(crate) took_out: TakenBack,
-    pub(crate) queue_length: QueueMeasure,
-    pub(crate) queue_ordered: Option<Task<()>>,
     pub(crate) earlier_plays_asked: bool,
     came_from: Vec<Wayback>,
     goes_forward: Vec<Wayback>,
@@ -737,16 +734,13 @@ pub struct RootView {
     arranged_as: Arrangement,
     pub(crate) creeping: Option<Creeping>,
     pub(crate) creeping_on: Task<()>,
-    pub(crate) reading_the_lyrics_timing: Task<()>,
     listing_whole: Task<()>,
     pub(crate) zones: Vec<ZoneShown>,
     pub(crate) switcher: Switcher,
     pub(crate) naming_the_zone: Option<ZoneId>,
-    following: Following,
     pub(crate) magnified: Option<Magnified>,
     pointer_inside: bool,
     pub(crate) beneath_closes: Task<()>,
-    pub(crate) queue_names: QueueNames,
     drawn_at: SystemTime,
     scale: Scale,
     pub(crate) resolved: RefCell<Option<Resolved>>,

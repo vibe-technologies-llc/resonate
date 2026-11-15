@@ -60,11 +60,16 @@ impl RootView {
             .update(cx, |library, cx| library.keep_the_queue(id, keep, cx));
     }
 
-    pub(crate) fn follow_the_playing_row(&mut self, player: &Entity<PlayerModel>, cx: &App) {
+    pub(crate) fn follow_the_playing_row(
+        &mut self,
+        player: &Entity<PlayerModel>,
+        cx: &mut Context<Self>,
+    ) {
         let playing = PlayingRow::of(player.read(cx).state());
+        let shown = self.pane == Pane::Queue;
         if self
-            .following
-            .follows(playing, self.pane == Pane::Queue)
+            .queue
+            .update(cx, |queue, _| queue.follows(playing, shown))
             .is_none()
         {
             return;
@@ -75,8 +80,9 @@ impl RootView {
 
     pub(super) fn lift_the_playing_row(&self, cx: &App) {
         if let Some(top) = self.queue_parts(cx).opens_at() {
-            self.scrolls
-                .queue_rows
+            self.queue
+                .read(cx)
+                .rows()
                 .scroll_to_item_strict(top, ScrollStrategy::Top);
         }
     }

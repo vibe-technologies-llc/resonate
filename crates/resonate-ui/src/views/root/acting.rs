@@ -209,7 +209,9 @@ impl RootView {
 
     pub(crate) fn drop_queue_runs(&mut self, runs: Vec<Span>, cx: &mut Context<Self>) {
         let queued = self.player.read(cx).queue();
-        let kept = self.took_out.keeping_all(&queued, &runs);
+        let kept = self
+            .queue
+            .update(cx, |queue, _| queue.keeping_all(&queued, &runs));
 
         self.reach = Reach::after_dropping_runs(Shift::Queue, &runs, queued.len());
         self.typing.landed_by_a_jump = None;

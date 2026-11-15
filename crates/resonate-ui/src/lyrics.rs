@@ -9,7 +9,7 @@ use gpui::{
 };
 use resonate_core::{Frames, TrackId};
 use resonate_engine::{PlaybackState, PlayerState, Seeks, StreamDigest};
-use resonate_library::LyricsAhead;
+use resonate_library::{Library, LyricsAhead};
 use resonate_lyrics::{Lyricists, Lyrics, Sweep, Timing, Voice, Waiting, Wanted};
 
 use crate::{models::Scale, theme, views::kit, words};
@@ -597,6 +597,7 @@ pub struct LyricsModel {
     fading_breath: Option<FadingBreath>,
     clock: Option<Clock>,
     ahead: LyricsAhead,
+    reading_ahead: Task<()>,
     _find: Task<()>,
 }
 
@@ -629,6 +630,7 @@ impl LyricsModel {
             fading_breath: None,
             clock: None,
             ahead: LyricsAhead::ZERO,
+            reading_ahead: Task::ready(()),
             _find: Task::ready(()),
         }
     }
@@ -638,7 +640,42 @@ impl LyricsModel {
     }
 
     pub fn hold_ahead(&mut self, ahead: LyricsAhead) {
+        self.reading_ahead = Task::ready(());
         self.ahead = ahead;
+    }
+
+    pub fn read_how_far_ahead(
+        &mut self,
+        wanted: Option<Wanted>,
+        catalog: Arc<Library>,
+        cx: &mut Context<Self>,
+    ) {
+        self.ahead = LyricsAhead::ZERO;
+        let Some(wanted) = wanted else {
+            self.reading_ahead = Task::ready(());
+            return;
+        };
+        let asked = wanted.clone();
+        self.reading_ahead = cx.spawn(async move |this, cx| {
+            let ahead = cx
+                .background_executor()
+                .spawn(async move {
+                    catalog
+                        .lyrics_ahead(&asked.location, asked.span)
+                        .unwrap_or_else(|error| {
+                            tracing::debug!(%error, "how far the words run ahead could not be read");
+                            LyricsAhead::ZERO
+                        })
+                })
+                .await;
+            let landed = this.update(cx, |this, cx| {
+                if this.looked_for() == Some(&wanted) {
+                    this.ahead = ahead;
+                    cx.notify();
+                }
+            });
+            let _ = landed;
+        });
     }
 
     pub const fn looked_for(&self) -> Option<&Wanted> {

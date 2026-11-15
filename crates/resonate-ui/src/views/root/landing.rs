@@ -250,8 +250,9 @@ impl RootView {
     pub(super) fn show_row(&self, shift: Shift, row: usize, cx: &App) {
         match shift {
             Shift::Queue => self
-                .scrolls
-                .queue_rows
+                .queue
+                .read(cx)
+                .rows()
                 .scroll_to_item(self.queue_parts(cx).line_of(row), ScrollStrategy::Center),
             Shift::Playlist(_) => self
                 .scrolls

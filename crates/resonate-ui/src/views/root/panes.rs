@@ -4,9 +4,7 @@ use gpui::{App, Context, Point, Window};
 use resonate_core::Span;
 use resonate_engine::Command;
 
-use super::{
-    Following, Landing, Leaving, Pane, RootView, Wayback, in_front_of, landing, stepped_pane,
-};
+use super::{Landing, Leaving, Pane, RootView, Wayback, in_front_of, landing, stepped_pane};
 use crate::{
     ResonateApp,
     views::{
@@ -127,7 +125,7 @@ impl RootView {
             library.statistics_shown(pane == Pane::Statistics, cx);
         });
         if opens_the_queue {
-            self.following = Following::default();
+            self.queue.update(cx, |queue, _| queue.follow_afresh());
             let player = self.player.clone();
             self.follow_the_playing_row(&player, cx);
         }

@@ -1,6 +1,6 @@
 use std::{cell::Cell, num::NonZeroUsize, rc::Rc, sync::Arc, time::Duration};
 
-use gpui::{Bounds, Context, Pixels, Task};
+use gpui::{Bounds, Context, Pixels, ScrollHandle, Task};
 use resonate_core::{FrameSpan, MediaLocation, TrackId};
 use resonate_engine::{Analysis, AnalysisError, Player, Reach, Watch};
 use resonate_library::{Agreement, Fingerprinters, HeardAs, Library, Sounded, Studied};
@@ -87,6 +87,7 @@ pub(crate) struct AnalysisModel {
     painted: Option<Painted>,
     painting: Option<(Row, Vec<u32>)>,
     pub(crate) plotted: Rc<Cell<Bounds<Pixels>>>,
+    scroll: ScrollHandle,
     running: Task<()>,
     ticking: Task<()>,
     asking: Task<()>,
@@ -113,11 +114,16 @@ impl AnalysisModel {
             painted: None,
             painting: None,
             plotted: Rc::default(),
+            scroll: ScrollHandle::new(),
             running: Task::ready(()),
             ticking: Task::ready(()),
             asking: Task::ready(()),
             drawing: Task::ready(()),
         }
+    }
+
+    pub(crate) fn scroll(&self) -> ScrollHandle {
+        self.scroll.clone()
     }
 
     pub(crate) fn studying(&self) -> Studying {
