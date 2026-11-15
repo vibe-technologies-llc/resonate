@@ -4767,6 +4767,410 @@ fn dismissing_a_replacements_want_cancels_it_and_leaves_the_lossy_song() -> Resu
     Ok(())
 }
 
+fn paired_as_the_recording(
+    library: &Library,
+    song: &Track,
+    recording: Option<&str>,
+    release: &str,
+) -> Result<ReleaseTrackId> {
+    let album = song.album_id.expect("the song files under an album");
+    let mut row = release_row(1, &song.title, Vec::new());
+    row.recording = recording.map(mbid);
+    library.land_release(
+        album,
+        &Release {
+            id: mbid(release),
+            ..orbits(vec![row], Vec::new())
+        },
+    )?;
+    library.rematch(album)?;
+    Ok(library
+        .release_tracks(album)?
+        .into_iter()
+        .find(|row| row.track == Some(song.id))
+        .map(|row| row.id)
+        .expect("the release row is paired with the song"))
+}
+
+struct Waiting {
+    lossy: Track,
+    row: ReleaseTrackId,
+    playlist: PlaylistId,
+}
+
+fn waiting_to_be_replaced(
+    library: &Library,
+    opus: &Path,
+    recording: Option<&str>,
+) -> Result<Waiting> {
+    let lossy = the_row_at(library, opus)?;
+    let row = paired_as_the_recording(library, &lossy, recording, RELEASE)?;
+    played_through(library, opus, 2)?;
+    let playlist = library.start_playlist("Road trip", &[whole(opus), whole(opus)])?;
+    let replacing = library.replace(&library.lossy_songs_of(playlist)?)?;
+    assert_eq!(replacing.wanted, 1, "{replacing:?}");
+    Ok(Waiting {
+        lossy,
+        row,
+        playlist,
+    })
+}
+
+fn replacements_of(database: &Path, track: TrackId) -> Vec<Option<i64>> {
+    let connection = beside(database);
+    let mut statement = connection
+        .prepare("SELECT release_track_id FROM replacements WHERE track_id = ?1")
+        .expect("the replacements are read");
+    statement
+        .query_map([track.get() as i64], |row| row.get(0))
+        .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+        .expect("the replacements are read")
+}
+
+fn still_pending(library: &Library, waiting: &Waiting) -> Result<bool> {
+    Ok(library
+        .lossy_songs_of(waiting.playlist)?
+        .iter()
+        .any(|row| row.track.id == waiting.lossy.id && row.pending))
+}
+
+fn offered(library: &Library, file: &Path) -> Result<()> {
+    let want = library.wants()?.remove(0);
+    library.note_tried(want.id, Some(&MediaLocation::local(file)))
+}
+
+fn tagged_as_the_recording(tree: &Tree, name: &str, recording: &str) -> Option<PathBuf> {
+    let mut tags = pink_floyd("Echoes").to_vec();
+    tags.push(format!("MUSICBRAINZ_TRACKID={recording}"));
+    let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
+    encoded_with_tags(tree, name, &tags)
+}
+
+#[test]
+#[cfg(unix)]
+fn a_lossless_copy_delivered_for_a_replacement_takes_the_lossy_songs_place() -> Result<()> {
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let data = Tree::new();
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+    let mut tags = pink_floyd("Echoes").to_vec();
+    tags.push(format!("MUSICBRAINZ_ALBUMID={RELEASE}"));
+    let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
+    let Some(flac) = encoded_with_tags(&tree, "lossless/A.flac", &tags) else {
+        return Ok(());
+    };
+    scan(&library, &options(&tree))?;
+    assert!(
+        still_pending(&library, &waiting)?,
+        "a copy named alike was taken before it was offered"
+    );
+    offered(&library, &flac)?;
+
+    let settled = library.settle_replacements()?;
+
+    assert_eq!(settled.files, 1, "{settled:?}");
+    let kept = the_row_at(&library, &flac)?;
+    assert_eq!(kept.plays, 2);
+    let cuts = library.playlist_cuts(waiting.playlist)?;
+    assert_eq!(cuts.len(), 2);
+    assert!(
+        cuts.iter()
+            .all(|cut| cut.location.as_path() == Some(flac.as_path())),
+        "the playlist still names the lossy copy: {cuts:?}"
+    );
+    let album = waiting
+        .lossy
+        .album_id
+        .expect("the song files under an album");
+    let row = library
+        .release_tracks(album)?
+        .into_iter()
+        .find(|row| row.id == waiting.row)
+        .expect("the release row stays");
+    assert_eq!(row.track, Some(kept.id));
+    assert!(library.wants()?.is_empty(), "the want outlived its answer");
+    assert!(replacements_of(&database, waiting.lossy.id).is_empty());
+    assert!(!opus.exists());
+    assert!(trashed(&data, "A.opus"));
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn a_lossless_copy_holding_the_same_recording_takes_the_lossy_songs_place() -> Result<()> {
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let data = Tree::new();
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
+    let Some(flac) = tagged_as_the_recording(&tree, "lossless/A.flac", RECORDING) else {
+        return Ok(());
+    };
+
+    scan(&library, &options(&tree))?;
+
+    assert!(!opus.exists(), "the scan left the lossy song in place");
+    assert!(trashed(&data, "A.opus"));
+    assert_eq!(the_row_at(&library, &flac)?.plays, 2);
+    assert!(replacements_of(&database, waiting.lossy.id).is_empty());
+    assert!(library.wants()?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_lossless_copy_named_alike_alone_never_replaces_a_song_unattended() -> Result<()> {
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
+    let Some(flac) = encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes") else {
+        return Ok(());
+    };
+    scan(&library, &options(&tree))?;
+
+    let settled = library.settle_replacements()?;
+
+    assert_eq!(settled, Deleted::default());
+    assert!(still_pending(&library, &waiting)?);
+    assert!(opus.exists());
+    assert!(flac.exists());
+    assert_eq!(the_row_at(&library, &opus)?.plays, 2);
+    assert_eq!(library.wants()?[0].release_track, waiting.row);
+    Ok(())
+}
+
+#[test]
+fn a_lossy_copy_offered_for_a_replacement_is_never_taken_for_it() -> Result<()> {
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
+    let Some(other) = tagged_as_the_recording(&tree, "delivered/A.opus", RECORDING) else {
+        return Ok(());
+    };
+    scan(&library, &options(&tree))?;
+    offered(&library, &other)?;
+
+    let settled = library.settle_replacements()?;
+
+    assert_eq!(settled, Deleted::default());
+    assert!(still_pending(&library, &waiting)?);
+    assert!(opus.exists());
+    assert!(other.exists());
+    assert_eq!(the_row_at(&library, &opus)?.plays, 2);
+    Ok(())
+}
+
+#[test]
+fn a_settle_while_another_pass_walks_the_tree_leaves_the_replacement_for_the_next() -> Result<()> {
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let doomed = tree.write("doomed.wav", &Wav::new().text(TITLE, "doomed").build());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    let doomed = the_row_at(&library, &doomed)?.id;
+    let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+    let Some(flac) = encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes") else {
+        return Ok(());
+    };
+    scan(&library, &options(&tree))?;
+    offered(&library, &flac)?;
+
+    let (reached, reaches) = mpsc::channel();
+    let (lift, lifted) = mpsc::channel();
+    library.trash_through(Some(Arc::new(HeldOpenByTheDesktop {
+        reached: Mutex::new(Some(reached)),
+        lifted: Mutex::new(lifted),
+    })));
+    thread::scope(|scope| -> Result<()> {
+        let deleting = scope.spawn(|| library.delete_tracks(&[doomed]));
+        reaches.recv().expect("the deletion reached the trash");
+
+        let refused = library.settle_replacements()?;
+        assert_eq!(refused, Deleted::default());
+
+        lift.send(()).expect("the deletion still waits");
+        deleting.join().expect("the deletion finished")?;
+        Ok(())
+    })?;
+
+    assert!(
+        still_pending(&library, &waiting)?,
+        "the replacement was taken"
+    );
+    assert_eq!(library.wants()?.len(), 1, "the want was taken");
+    assert_eq!(the_row_at(&library, &flac)?.plays, 0);
+    assert_eq!(the_row_at(&library, &opus)?.plays, 2);
+    assert!(opus.exists());
+
+    lift.send(()).expect("the trash waits for the next");
+    let settled = library.settle_replacements()?;
+
+    assert_eq!(settled.files, 1, "{settled:?}");
+    assert!(!opus.exists());
+    assert_eq!(the_row_at(&library, &flac)?.plays, 2);
+    assert!(replacements_of(&database, waiting.lossy.id).is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_holds() -> Result<()> {
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+    assert_eq!(
+        replacements_of(&database, waiting.lossy.id),
+        [Some(waiting.row.get() as i64)]
+    );
+
+    let album = waiting
+        .lossy
+        .album_id
+        .expect("the song files under an album");
+    library.land_release(
+        album,
+        &orbits(
+            vec![
+                release_row(1, "Speak to Me", Vec::new()),
+                release_row(2, &waiting.lossy.title, Vec::new()),
+            ],
+            Vec::new(),
+        ),
+    )?;
+    library.rematch(album)?;
+    let again = library
+        .release_tracks(album)?
+        .into_iter()
+        .find(|row| row.track == Some(waiting.lossy.id))
+        .map(|row| row.id)
+        .expect("the song holds a row of the release landed again");
+    assert_ne!(again, waiting.row, "the release was not landed again");
+    assert_eq!(replacements_of(&database, waiting.lossy.id), [None]);
+
+    assert_eq!(library.settle_replacements()?, Deleted::default());
+
+    assert_eq!(
+        replacements_of(&database, waiting.lossy.id),
+        [Some(again.get() as i64)]
+    );
+    let wants = library.wants()?;
+    assert_eq!(wants.len(), 1, "{wants:?}");
+    assert_eq!(wants[0].release_track, again);
+    assert_eq!(wants[0].replacing, Some(waiting.lossy.id));
+    assert!(still_pending(&library, &waiting)?);
+    assert!(opus.exists());
+    Ok(())
+}
+
+#[test]
+fn a_replacement_whose_match_is_forgotten_is_dropped_and_the_lossy_song_kept() -> Result<()> {
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+    let album = waiting
+        .lossy
+        .album_id
+        .expect("the song files under an album");
+
+    assert!(library.forget_the_match(album)?);
+    assert_eq!(replacements_of(&database, waiting.lossy.id), [None]);
+
+    assert_eq!(library.settle_replacements()?, Deleted::default());
+
+    assert!(
+        replacements_of(&database, waiting.lossy.id).is_empty(),
+        "a replacement with nothing to fetch on was kept"
+    );
+    assert!(!still_pending(&library, &waiting)?);
+    assert!(opus.exists());
+    assert_eq!(the_row_at(&library, &opus)?.plays, 2);
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn a_lossless_copy_on_another_album_keeps_its_own_row_and_leaves_the_lossy_songs_row_unheld()
+-> Result<()> {
+    let tree = Tree::new();
+    let (Some(opus), Some(_)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&tree, "lossy/B.mp3", "Time"),
+    ) else {
+        return Ok(());
+    };
+    let data = Tree::new();
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
+    let tags = [
+        "title=Echoes".to_owned(),
+        "artist=Pink Floyd".to_owned(),
+        "album=Live at Pompeii".to_owned(),
+    ];
+    let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
+    let Some(flac) = encoded_with_tags(&tree, "live/A.flac", &tags) else {
+        return Ok(());
+    };
+    scan(&library, &options(&tree))?;
+    let live = the_row_at(&library, &flac)?;
+    let own = paired_as_the_recording(&library, &live, Some(RECORDING), HOURS)?;
+    let live_album = live.album_id.expect("the copy files under an album");
+    assert_ne!(live_album, waiting.lossy.album_id.expect("filed"));
+    offered(&library, &flac)?;
+
+    let settled = library.settle_replacements()?;
+
+    assert_eq!(settled.files, 1, "{settled:?}");
+    let held_own = library
+        .release_tracks(live_album)?
+        .into_iter()
+        .find(|row| row.id == own)
+        .expect("the copy's own row stays");
+    assert_eq!(held_own.track, Some(live.id));
+    let lossy_album = waiting.lossy.album_id.expect("filed");
+    let left = library
+        .release_tracks(lossy_album)?
+        .into_iter()
+        .find(|row| row.id == waiting.row)
+        .expect("the lossy song's row stays on its album");
+    assert_eq!(left.track, None);
+    assert!(!opus.exists());
+    assert_eq!(the_row_at(&library, &flac)?.plays, 2);
+    Ok(())
+}
+
 #[test]
 fn a_copy_in_the_best_copys_own_format_is_hidden_beside_one_in_another() -> Result<()> {
     let tree = Tree::new();

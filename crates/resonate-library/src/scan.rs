@@ -244,7 +244,11 @@ pub struct ScanSummary {
     pub cancelled: bool,
 }
 
-pub(crate) fn start(inner: Arc<Inner>, options: ScanOptions) -> Result<ScanHandle> {
+pub(crate) fn start(
+    inner: Arc<Inner>,
+    options: ScanOptions,
+    after: impl FnOnce() + Send + 'static,
+) -> Result<ScanHandle> {
     let walking = inner.walk_the_tree()?;
     let progress = Arc::new(ScanProgress::default());
     let owned = Arc::clone(&progress);
@@ -256,6 +260,9 @@ pub(crate) fn start(inner: Arc<Inner>, options: ScanOptions) -> Result<ScanHandl
             let outcome = roots(&inner, &options.roots)
                 .and_then(|roots| run(&inner, &options, roots, Beside::Tidied, &progress));
             drop(walking);
+            if outcome.is_ok() {
+                after();
+            }
             outcome
         })
         .map_err(|source| Error::ThreadSpawn { source })?;
@@ -266,6 +273,7 @@ pub(crate) fn start(inner: Arc<Inner>, options: ScanOptions) -> Result<ScanHandl
 pub(crate) fn start_over_held(
     inner: Arc<Inner>,
     options: ScanOptions,
+    after: impl FnOnce() + Send + 'static,
 ) -> Result<Option<ScanHandle>> {
     let walking = inner.walk_the_tree()?;
     let roots = held_roots(&inner, &options.roots)?;
@@ -281,6 +289,9 @@ pub(crate) fn start_over_held(
         .spawn(move || {
             let outcome = run(&inner, &options, roots, Beside::LeftToTheWatch, &progress);
             drop(walking);
+            if outcome.is_ok() {
+                after();
+            }
             outcome
         })
         .map_err(|source| Error::ThreadSpawn { source })?;
