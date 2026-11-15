@@ -17,9 +17,10 @@ paths:
   (push to `master`, pull requests, `workflow_dispatch`; `archlinux` containers; the token reads
   the repository and nothing more, `permissions: contents: read`): clippy (default
   features, the workspace headless, the binary without `ui` and with each feature alone, so code
-  dead without a feature is warned), headless tests of every crate but the window (the whole
-  nextest line under `dbus-run-session`, so the MPRIS bus tests, which skip without a bus, run in
-  it) and, in
+  dead without a feature is warned), headless tests of every crate but the window (built once by
+  `headless-build`, `cargo nextest archive` of the whole nextest line, then run by four `headless`
+  jobs, one a `--partition hash:N/4`, each under `dbus-run-session` so the MPRIS bus tests, which
+  skip without a bus, run in them; the next paragraph) and, in
   the whole-workspace job, only the tests of `resonate` and `resonate-ui`, two of the three crates whose
   default features the headless job does not build (the third, `resonate-signin`, whose `window`
   feature is a default, is linted by the full clippy and tested by no job); no job runs `cargo build` before `cargo nextest run`,
@@ -79,6 +80,30 @@ paths:
   each image uploaded as the artifact `resonate-macos-<architecture>` and nothing published.
   `gh workflow run macos-dmg.yml --ref <branch>` starts it.
 
+- **The headless tests are built once and spread over four runners.** `headless-build` runs
+  `cargo nextest archive --locked --profile ci --workspace --exclude resonate-ui --no-default-features`
+  with the cargo cache, and uploads the archive (about 1.1 GB, `compression-level: 0` since the
+  archive is zstd already, kept a day) as the artifact `headless-tests`; `headless` is a matrix of
+  four, each downloading it, checking the repository out and running
+  `cargo-nextest nextest run --archive-file headless.tar.zst --extract-to . --workspace-remap . --profile ci --partition hash:N/4`.
+  The test jobs install no toolchain: `cargo-nextest` is called directly, not as `cargo nextest`,
+  since a run from an archive needs no cargo, and `HEADLESS_RUN_PACKAGES` is what the tests run
+  with (`pipewire` and `libpipewire`, the one library the test binaries link and the daemon and
+  `pw-cli` that the reconnect, `formats` and microphone tests host, `dbus`, `ffmpeg`, `flac`,
+  `wavpack`, `mac`, `lame` for the encoded and reference tests, `git` for the checkout) beside
+  nextest. **Each test job extracts into the checkout (`--extract-to .`), at the build job's own
+  path**: a test binary holds `env!("CARGO_MANIFEST_DIR")` and `env!("CARGO_BIN_EXE_resonate")` as
+  absolute paths of the build job, and the tests that read the tree at runtime (the comment, rules
+  and suite checks of `resonate-words-build`) and the ones that run the binary reach it by them, so
+  the checkout and the `target` it gains must sit where the build had them; `--workspace-remap .`
+  tells nextest where the sources are (its config, the working directories) the same way. `hash`
+  partitions by test name, so the four runs hold 1 777, 1 658, 1 713 and 1 700 of the 6 848 tests,
+  the heavy cases (`resonate-analysis`'s `references::`) scattering among them; `fail-fast` is off
+  in the matrix so one failing part does not hide another's. The whole-workspace job (`-p resonate -p resonate-ui`, a
+  few hundred tests behind a build of GPUI) and the Windows and macOS lines (one build each, on
+  runners billed by the minute, the macOS engine tests one at a time) stay one job each: an archive
+  would add a 1 GB upload and as many downloads to save nothing the build does not still cost.
+
 CI and the release jobs install WebKitGTK 4.1 (`webkit2gtk-4.1`, Fedora's `webkit2gtk4.1-devel`,
 Ubuntu's `libwebkit2gtk-4.1-dev`) for `resonate-signin`'s window.
 
@@ -137,6 +162,16 @@ Linux sound server or GUI libraries are needed.
   DWARF made every test binary over half a gigabyte, most of a cold build's 31 GB of `target` and
   most of each link. A debugger session that needs variables builds with
   `CARGO_PROFILE_DEV_DEBUG=full`.
+- **The linker stays `rust-lld`, rustc's default on x86-64 Linux.** Measured over the headless test
+  build (`cargo test --no-run --workspace --exclude resonate-ui --no-default-features`, 61 links,
+  16 threads, every link timed through a wrapper, one target directory each): cold build `rust-lld`
+  190.6 s, `wild` 0.11.0 193.0 s, `mold` 3.0.0 182.8 s; after touching `resonate-core`'s `lib.rs`,
+  `rust-lld` 33.8 and 33.3 s, `wild` 37.3 and 51.9 s (summed link time 108 s against 191 s), `mold`
+  14.6 s (one run). `wild` is slower than the default here and is not pursued. `mold` shortens a
+  relink after a change in core by more than half and a cold build by 4 per cent, but it is a
+  system package none of the Fedora, DEB, Flatpak and Arch recipes carry and no crate brings, and a
+  `.cargo/config.toml` naming it would break every build without it, so a build that wants it
+  sets it in a `RUSTFLAGS` of its own (the measurement turned the default off with `-C linker-features=-lld` and put a directory holding `mold` as `ld` first on the linker's search path with `-C link-arg=-B`).
 - **`--profile profiling`** is release with symbols for `perf` and `cargo flamegraph`.
 - **`.cargo/config.toml` sets `target-cpu=native`** so the resampler vectorises. The `-git` Arch packages
   keep it; the release assets build for `x86-64-v3` (the macOS disk image for `aarch64-apple-darwin`'s own baseline, `RUSTFLAGS` emptied), the Flatpak and CI for the baseline, and
