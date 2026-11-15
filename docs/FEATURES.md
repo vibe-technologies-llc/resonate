@@ -168,6 +168,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · blocked: servers] Subsonic matches a recording id or ISRC but not the release-track id the
   inbox accepts: the API's `musicBrainzId` names the recording; nothing in a song names the release
   track
+- [M] Replacing a playlist's lossy songs with lossless copies is offered from the window's playlist menu alone: the phones, the terminal's `playlist` command and MCP have no way to start it
 
 ## Later: The vault
 - [L · blocked: flacenc] `flacenc` 0.5.1, the latest, caps the Rice parameter at 14, the rate at 96
