@@ -84,15 +84,16 @@ impl Write for Socket {
 
 impl Wire for Socket {
     fn receive(&mut self, within: Duration, into: &mut Vec<u8>) -> Result<()> {
-        configured(self.0.set_read_timeout(Some(within)))?;
+        reconfigured(self.0.set_read_timeout(Some(within)))?;
         self.read_some(into)
     }
 
     fn poll(&mut self, into: &mut Vec<u8>) -> Result<()> {
-        configured(self.0.set_nonblocking(true))?;
+        reconfigured(self.0.set_nonblocking(true))?;
         let received = self.read_some(into);
-        configured(self.0.set_nonblocking(false))?;
-        received
+        let restored = reconfigured(self.0.set_nonblocking(false));
+        received?;
+        restored
     }
 }
 
@@ -100,10 +101,7 @@ impl Socket {
     fn read_some(&mut self, into: &mut Vec<u8>) -> Result<()> {
         let mut chunk = [0; READ_AT_ONCE];
         match self.0.read(&mut chunk) {
-            Ok(0) => Err(Error::Socket {
-                op: IpcOp::Read,
-                source: io::ErrorKind::UnexpectedEof.into(),
-            }),
+            Ok(0) => Err(gone()),
             Ok(read) => {
                 into.extend_from_slice(&chunk[..read]);
                 Ok(())
@@ -217,11 +215,26 @@ fn configured(result: io::Result<()>) -> Result<()> {
     })
 }
 
+fn reconfigured(result: io::Result<()>) -> Result<()> {
+    match result {
+        Err(error) if error.kind() == io::ErrorKind::InvalidInput => Err(gone()),
+        other => configured(other),
+    }
+}
+
+fn gone() -> Error {
+    Error::Socket {
+        op: IpcOp::Read,
+        source: io::ErrorKind::UnexpectedEof.into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
         fs,
         io::Write,
+        net::Shutdown,
         os::unix::net::UnixListener,
         process,
         sync::{
@@ -640,6 +653,51 @@ mod tests {
             peer_of(&stream).expect("credentials"),
             Some(rustix::process::getuid().as_raw())
         );
+    }
+
+    #[test]
+    fn a_refusal_to_configure_a_socket_discord_shut_is_the_socket_gone() {
+        let refused = io::Error::from(io::ErrorKind::InvalidInput);
+
+        let gone = reconfigured(Err(refused));
+        let failed = reconfigured(Err(io::ErrorKind::PermissionDenied.into()));
+
+        assert!(matches!(
+            gone,
+            Err(Error::Socket {
+                op: IpcOp::Read,
+                source
+            }) if source.kind() == io::ErrorKind::UnexpectedEof
+        ));
+        assert!(matches!(
+            failed,
+            Err(Error::Socket {
+                op: IpcOp::Configure,
+                ..
+            })
+        ));
+        assert!(reconfigured(Ok(())).is_ok());
+    }
+
+    #[test]
+    fn a_socket_shut_both_ways_is_read_as_gone_whether_waited_on_or_polled() {
+        let (ours, theirs) = UnixStream::pair().expect("a pair");
+        theirs.shutdown(Shutdown::Both).expect("shut");
+        let mut socket = Socket(ours);
+        let mut into = Vec::new();
+
+        let waited = socket.receive(Duration::from_millis(50), &mut into);
+        let polled = socket.poll(&mut into);
+
+        for outcome in [waited, polled] {
+            assert!(matches!(
+                outcome,
+                Err(Error::Socket {
+                    op: IpcOp::Read,
+                    ..
+                })
+            ));
+        }
     }
 
     #[test]

@@ -37,6 +37,11 @@ Binary only (`discord` feature); `cargo tree -p resonate-discord` stays free of 
   read whole and a timeout loses nothing; a read waits at most `ANSWERS_WITHIN`. Handshake waits
   `READY_WITHIN` for `READY`; `ERROR` instead is `Refused` at once. `Close` 4000 = unknown
   application: warned once, waited out until the id changes. `Ping` gets `Pong`.
+- **A socket Discord has shut reads as gone, never as a failure to configure**: macOS answers
+  `EINVAL` to a read timeout or non-blocking switch set on a socket shut both ways, so
+  `socket.rs`'s `reconfigured` turns an `InvalidInput` there into the end-of-stream read error
+  (`gone`), and `poll` lets the read's own error outrank a failed restore
+  (`a_refusal_to_configure_a_socket_discord_shut_is_the_socket_gone`).
 - **A refused activity keeps the session** (closing would reconnect every few seconds to be
   refused the same payload): `due` re-offers it after `SENT_AGAIN_AFTER_A_REFUSAL` doubled per
   refusal up to `SENT_AGAIN_AT_MOST`; a changed activity goes on normal spacing

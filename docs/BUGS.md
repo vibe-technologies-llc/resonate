@@ -32,9 +32,5 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## The binary
-- [S · 0.11.1] `resonate-discord`'s `socket.rs` sets a read timeout before every receive; on macOS
-  `setsockopt` answers `EINVAL` once Discord has shut the socket both ways, so a closed socket is reported
-  as a `Configure` failure rather than as the socket gone (the same macOS behaviour failed `resonate-mpris`'s
-  listening test); unproved on a Mac
 
 ## Equaliser
