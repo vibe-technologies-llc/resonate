@@ -47,9 +47,6 @@ const THE_REPLACEMENTS_REJOIN_THE_ROWS_THEIR_SONGS_HOLD: &str = "UPDATE replacem
       WHERE release_track_id IS NULL
   RETURNING release_track_id";
 
-const THE_REPLACEMENTS_WITH_NOTHING_TO_FETCH_ON_GO: &str =
-    "DELETE FROM replacements WHERE release_track_id IS NULL";
-
 const THE_REPLACEMENTS_WAITING: &str = "SELECT r.track_id, w.offered
        FROM replacements r
        LEFT JOIN wants w ON w.release_track_id = r.release_track_id
@@ -161,9 +158,6 @@ impl Library {
                 Vec::new(),
                 |row| row.get::<_, Option<i64>>(0).map(Ok),
             )?;
-            transaction
-                .execute(THE_REPLACEMENTS_WITH_NOTHING_TO_FETCH_ON_GO, [])
-                .map_err(|source| Error::store(StoreOp::Delete, source))?;
             let mut joined = 0;
             for row in rejoined.into_iter().flatten() {
                 elsewhere::wanted(transaction, row, now)?;
@@ -303,7 +297,8 @@ fn release_track_and_pending(
         .map_err(|source| Error::store(StoreOp::Query, source))?;
     let pending: bool = connection
         .query_row(
-            "SELECT EXISTS (SELECT 1 FROM replacements WHERE track_id = ?1)",
+            "SELECT EXISTS (SELECT 1 FROM replacements
+                             WHERE track_id = ?1 AND release_track_id IS NOT NULL)",
             params![at],
             |row| row.get(0),
         )

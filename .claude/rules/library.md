@@ -628,15 +628,20 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `rejoin_the_replacements`: a replacement whose release row was landed again or whose match was
   forgotten (`land_release` and `forget_the_match` delete the rows, `ON DELETE SET NULL`) is
   pointed at the row its track now holds and that row wanted (`elsewhere::wanted`, `ON CONFLICT DO
-  NOTHING`); one whose track holds no row is dropped, so the sheet never shows it waiting forever,
-  and the lossy song stays
+  NOTHING`); one whose track holds no row is never deleted but left with a NULL row for every later
+  rejoin to try again, so a settle landing between enrichment's land and rematch writes cancels
+  nothing. Such a row is not `pending` (`lossy_songs_of` counts one only where `release_track_id IS
+  NOT NULL`), so the listener can tick the song again and `replace` overwrites it (`INSERT OR
+  REPLACE` on `track_id`); a copy holding the recording MBID still settles it. A release row handed
+  to the copy goes with the lossy song's album if the fold leaves that album to the orphan sweep
+  (the copy filed under another album); no file and no history is at risk, only that pairing
   (`a_lossless_copy_delivered_for_a_replacement_takes_the_lossy_songs_place`,
   `a_lossless_copy_holding_the_same_recording_takes_the_lossy_songs_place`,
   `a_lossless_copy_named_alike_alone_never_replaces_a_song_unattended`,
   `a_lossy_copy_offered_for_a_replacement_is_never_taken_for_it`,
   `a_settle_while_another_pass_walks_the_tree_leaves_the_replacement_for_the_next`,
   `a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_holds`,
-  `a_replacement_whose_match_is_forgotten_is_dropped_and_the_lossy_song_kept`,
+  `a_replacement_whose_match_is_forgotten_waits_unpending_and_rejoins_once_matched_again`,
   `a_lossless_copy_on_another_album_keeps_its_own_row_and_leaves_the_lossy_songs_row_unheld`,
   `a_lossy_song_with_a_lossless_copy_held_is_replaced_at_once_and_its_history_goes_with_it`,
   `two_lossy_copies_of_one_song_are_both_replaced_by_the_one_lossless_copy`,
