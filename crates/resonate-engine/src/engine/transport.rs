@@ -173,10 +173,10 @@ impl Engine {
     }
 
     pub(super) fn finish_fading(&mut self) {
-        let retired = self
-            .retiring
-            .as_ref()
-            .is_some_and(|retiring| retiring.output.has_gone_quiet(retiring.since));
+        let retired = self.retiring.as_mut().is_some_and(|retiring| {
+            retiring.output.note_the_pulls();
+            retiring.output.has_gone_quiet(retiring.since)
+        });
         if retired {
             self.hand_on_what_has_retired();
         }

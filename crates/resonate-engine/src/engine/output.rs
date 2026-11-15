@@ -242,7 +242,14 @@ impl Output {
     }
 
     pub(super) fn has_gone_quiet(&self, since: Instant) -> bool {
-        self.producer.is_quiet() || since.elapsed() >= self.quiet_within()
+        self.producer.is_quiet()
+            || self.is_left_unpulled(since)
+            || since.elapsed() >= QUIET_WITHIN_AT_MOST
+    }
+
+    fn is_left_unpulled(&self, since: Instant) -> bool {
+        let pulled_at = self.last_pulled.map_or(since, |(_, at)| at.max(since));
+        pulled_at.elapsed() >= PULLED_WITHIN
     }
 
     pub(super) fn note_the_pulls(&mut self) {

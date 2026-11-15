@@ -23,7 +23,7 @@ static CURRENT: LazyLock<RwLock<Conventions>> =
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
-    #[cfg_attr(target_os = "android", expect(clippy::missing_const_for_thread_local))]
+    #[cfg_attr(target_os = "android", allow(clippy::missing_const_for_thread_local))]
     static BUILT: RefCell<Option<(u64, Rc<Settled>)>> = const { RefCell::new(None) };
 }
 

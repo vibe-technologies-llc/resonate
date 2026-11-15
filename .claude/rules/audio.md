@@ -455,8 +455,14 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   two ends: the producer asks for silence or sound, the consumer walks its `level` there a frame at a
   time, then feeds silence without consuming (`is_quiet`). The DoP ring is never scaled (a
   multiplied marker is noise) and goes quiet at once on its marked silence. **Pause** stands the
-  stream down once the consumer is quiet (`finish_fading`), or after `quiet_within` where the graph
-  never pulled. **Stop, track change, every rebind** retire the output (`Engine::retiring`): fade
+  stream down once the consumer is quiet (`finish_fading`), or once the graph has stopped pulling
+  (`Output::has_gone_quiet`: no pull for `PULLED_WITHIN` since the fade began or the last pull,
+  the retiring output's pulls noted each pass like the bound one's), and at the latest
+  `QUIET_WITHIN_AT_MOST` after the fade began, for a ring pulled without walking its fade (held for
+  a lockstep). A late callback still hears the fade: timed from the fade's start, a pull more than
+  40 ms off closed the stream before the fade was pulled, a click where a fade was meant
+  (`a_zone_hands_its_song_over_to_another_that_fades_in_where_it_was_heard_while_it_fades_out_and_stops`
+  on a Mac runner). **Stop, track change, every rebind** retire the output (`Engine::retiring`): fade
   out, close once quiet; `promote` opens no new stream until then (a player holds one stream of its
   own at a time, so a pinned graph rate or an exclusive sink is never asked to carry two of its
   streams at differing rates; the client itself holds any number, below). **Seek in place** fades old audio out, new in. A stream opened mid-track opens
@@ -1590,8 +1596,8 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   has pulled the test graph at real time, not eight times it, so
   `a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each_only_adds_to_the_last`
   is given `PROFILED_SECONDS` more. A pause's, a stop's and a
-  handover's fade out are pulled in whole blocks for the same reason: at 64 frames a pull, a Mac's
-  overshot sleeps had `QUIET_WITHIN_AT_LEAST` (40 ms) close the stream partway down the fade. The
+  handover's fade out are pulled in whole blocks for the same reason, so the fade is pulled whole
+  within one or two pulls. The
   handover's blocks come at real time, as the wait for the other zone would see eight times real
   time run the ring dry. **A nudge measured across an underrun is nudged again** (`nudged_once`,
   up to `NUDGES_TRIED_WHILE_THE_RING_RUNS_DRY`, read off `OutputStatus::underruns`): a Mac runner
@@ -1610,6 +1616,15 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   stops pulling at each boundary it has passed until that row is announced).
 - **A test asserting which row plays pauses the transport first** (`stand_still`): a decode failing
   on a loaded machine reaches `Engine::fail`, which skips.
+- **A test's player is handed over once its first survey has landed** (`once_surveyed`, in
+  `player`, `settled_over` and `player_with_tail`): `Player::new` answers before that survey, so a
+  test that gated the survey (`survey_gate`) or counted `enumerations` straight after building one
+  caught the first survey instead of the one it meant, and a starved engine thread blocked there
+  never took the `Load` (`a_load_while_the_survey_is_out_is_answered_at_once_and_bound_once_it_comes_back`,
+  `CommandPending` after `PATIENCE`). **A test that changes the graph waits for the engine to see the
+  change before pulling on** (`a_row_that_found_no_device_to_start_on_is_announced_once_it_plays`
+  waits for `Player::sinks` to empty): the fake graph opens a stream on a device it no longer lists,
+  so a starved engine played the next row through on the device it had not yet seen go.
 - **Real-file fixtures are built by ffmpeg at test time; the suite skips without it.**
   `crates/resonate-codec/tests/encoded.rs` also builds a rip through `flac`/`metaflac`, MP3s through
   ffmpeg's `libmp3lame`, and writes one CAF itself (ffmpeg's muxer refuses AAC).

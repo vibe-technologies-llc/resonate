@@ -35,6 +35,15 @@ the first line of a `.swift` file (SwiftPM reads it). Generated and fetched fold
 - **`BTreeMap`/`BTreeSet`** where order matters and hashing does not (sink discovery: stable device list).
 - **`parking_lot::{Mutex, RwLock}`, never `std::sync`'s** (no poisoning, no `unwrap()`); `std::sync::{Arc, atomic}` as usual.
 
+## A lint that fires only on some machines
+
+**A lint whose firing depends on the toolchain's components is allowed, never expected.** Clippy's
+`missing_const_for_thread_local` flags `resonate-words`' already-`const` `thread_local!` on Android
+(whose `std` keeps thread locals in OS keys) only where `rust-src` is installed, since it reads the
+initialiser from `std`'s source: with it (a desktop toolchain) the lint fires, without it (CI's
+minimal profile) an `expect` is unfulfilled. So `regional.rs` carries
+`cfg_attr(target_os = "android", allow(...))`, which passes either way.
+
 ## Text read from a file
 
 **A listener's file text goes through `resonate_core::text`, never assumed UTF-8.** `text::decoded` takes a UTF-16 byte-order mark, else valid UTF-8, else `chardetng`'s code-page guess, and returns the `TextEncoding` so a writer restores it (`text::encoded`, `None` where the code page lacks a letter). Users: cue sheet, playlist sheet, RIFF `INFO` list (one guess for all values), LRC/`.txt` lyric sidecar, EqualizerAPO profile, DSDIFF edited-master text. Self-defining formats (XSPF, Lyricsfile, ID3 frame encoding byte) read as defined. It lives in core because codec, library, lyrics and equaliser all read text and none may see the others.

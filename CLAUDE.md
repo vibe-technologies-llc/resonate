@@ -4,7 +4,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 
 | File | Scope | Covers |
 |---|---|---|
-| `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, names built around a file's, a file another run may sweep, the check that rules name code that exists |
+| `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, a lint that fires only on some machines, names built around a file's, a file another run may sweep, the check that rules name code that exists |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
 | `language.md` | always | the word catalogs (`resonate-words`, the `.ftl` areas and the build step), what is not translated, choosing the language, adding one, the prose check |
 | `build.md` | `.github`, `.cargo`, `fuzz`, `soxr-comparison`, the root manifest, benches | CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets, the resampler measured against SoXR |

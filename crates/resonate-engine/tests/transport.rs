@@ -580,7 +580,12 @@ fn reshaping_player(
     let (backend, graph) = FakeSink::new(sinks);
     let backend = backend.reshaping(reshaping);
     let player = Player::with_backend(config(), move |_| Ok(Box::new(backend)))?;
-    Ok((player, graph))
+    Ok((once_surveyed(player), graph))
+}
+
+fn once_surveyed(player: Player) -> Player {
+    player.sinks_once_surveyed(PATIENCE);
+    player
 }
 
 struct InMemory {
@@ -864,7 +869,7 @@ fn settled_over(
 ) -> Result<(Player, Arc<Mutex<Graph>>)> {
     let (backend, graph) = FakeSink::new(sinks);
     let player = Player::with_sources_and_backend(config, sources, move |_| Ok(Box::new(backend)))?;
-    Ok((player, graph))
+    Ok((once_surveyed(player), graph))
 }
 
 fn player_with_tail(
@@ -874,7 +879,7 @@ fn player_with_tail(
 ) -> Result<(Player, Arc<Mutex<Graph>>)> {
     let (backend, graph) = FakeSink::with_tail(sinks, latency, answers_drain);
     let player = Player::with_backend(config(), move |_| Ok(Box::new(backend)))?;
-    Ok((player, graph))
+    Ok((once_surveyed(player), graph))
 }
 
 fn track(path: &Path, id: u64) -> QueueItem {
@@ -4622,6 +4627,11 @@ fn a_row_that_found_no_device_to_start_on_is_announced_once_it_plays() -> Result
             .map(|announce| announce.send(SinkChange::Removed(SinkId::new(1))));
         assert!(removed.is_some_and(|sent| sent.is_ok()));
     }
+    wait_for(
+        &player,
+        |player| player.sinks().is_empty(),
+        "the engine to see the device gone",
+    );
     play_until(
         &player,
         &graph,
