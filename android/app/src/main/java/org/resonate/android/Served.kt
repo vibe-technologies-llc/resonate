@@ -102,7 +102,8 @@ class Served(
             }
     }
 
-    fun bind(native: MobilePlayer) = native.serveFrom(accounts.value)
+    suspend fun bind(native: MobilePlayer) =
+        withContext(Dispatchers.IO) { native.serveFrom(accounts.value) }
 
     fun cached(uri: String, edge: Int): Bitmap? = pictures.get(coverKey(uri, edge))
 

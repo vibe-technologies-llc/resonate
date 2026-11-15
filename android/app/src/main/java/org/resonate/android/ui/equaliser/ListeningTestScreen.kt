@@ -119,7 +119,7 @@ class ListeningTestViewModel(private val resonate: Resonate) : ViewModel() {
     fun hear(hear: TestHear) {
         val test = testing.value.run?.test ?: return
         resonate.attempt(viewModelScope) { native ->
-            native.hearInListeningTest(test, hear)
+            withContext(Dispatchers.Default) { native.hearInListeningTest(test, hear) }
             testing.update { it.stood(test.standing()) }
         }
     }

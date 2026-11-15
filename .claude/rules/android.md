@@ -1310,7 +1310,7 @@ failure stops that service until the next call; one service failing tells the ot
 **Find another version** is a row of the song sheet (`VersionsSheet`, `Sheets.versions`): it reads
 `version_searches` and `version_chosen`, offers each search (and *Play your own copy again* while a
 version is chosen, `forget_version_chosen`), runs `find_versions` on the IO dispatcher after binding
-the served accounts (`LibraryFeatures.served.bind`) and lists the versions under the boundary's
+the served accounts (`LibraryFeatures.served.bind`, which hands them over on the IO dispatcher, as every caller of `serve_from` does, since it takes the served lock readers on other threads hold) and lists the versions under the boundary's
 `said` and `trouble`; a version pressed is `choose_version` and then `Playback.play` of the song, so
 the controller's load queues the version (`mobile.md`'s *Another version of a song*).
 

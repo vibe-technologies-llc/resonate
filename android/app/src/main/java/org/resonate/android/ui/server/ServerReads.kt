@@ -15,8 +15,10 @@ import org.resonate.android.ui.library.Retry
 suspend fun <T> Resonate.asked(load: (MobilePlayer) -> T): Result<T> {
     val accounts = features.served.accounts.value
     return read { native ->
-        native.serveFrom(accounts)
-        withContext(Dispatchers.IO) { load(native) }
+        withContext(Dispatchers.IO) {
+            native.serveFrom(accounts)
+            load(native)
+        }
     }
 }
 

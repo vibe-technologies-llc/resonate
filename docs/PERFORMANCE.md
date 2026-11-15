@@ -6,11 +6,6 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Startup and idle
 
 ## Android
-- [S · 0.12.0] Some native calls still run on Android's main thread where iOS runs them aside:
-  `ListeningTestScreen`'s `hearInListeningTest` (iOS's `Work.aside`), and `serveFrom` through
-  `served.bind(native)` in `ServerReads.kt`, `Sheets.kt`, `VersionsSheet.kt` and `ServerActions.kt`,
-  each taking a Rust lock (the zones, the served `RwLock`) that readers on other threads hold; how
-  long they wait is unmeasured
 
 ## Performance and scale
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
