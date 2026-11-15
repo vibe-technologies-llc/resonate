@@ -100,6 +100,10 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.12.0] Two engine tests still fail under heavy load alone: `restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap`
+  (33 of 64 runs with 24 CPU-bound processes beside 64 test threads; its loudness figures drift when the
+  fake graph is pulled late) and `queue::tests::kin_landing_after_a_shuffle_spreads_the_artists_and_keeps_the_playing_row`
+  (once); neither has failed in CI, and each wants its timing made deterministic, not a longer wait
 - [M · 0.12.0] `resonate-analysis`'s run is bound by its `references::` cases: each encodes with an
   outside tool, decodes back and runs a whole study (about 3 s of grids whatever its length) to read
   one figure, 9 to 13 s alone and 30 to 70 s among the rest (the crate's run 87 s wall, 1 130 s
