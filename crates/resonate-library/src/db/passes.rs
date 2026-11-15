@@ -89,11 +89,27 @@ impl Library {
     }
 
     pub fn scan(&self, options: ScanOptions) -> Result<ScanHandle> {
-        scan::start(Arc::clone(&self.inner), options)
+        scan::start(
+            Arc::clone(&self.inner),
+            options,
+            self.shared().settle_after_a_scan(),
+        )
     }
 
     pub fn scan_what_is_held(&self, options: ScanOptions) -> Result<Option<ScanHandle>> {
-        scan::start_over_held(Arc::clone(&self.inner), options)
+        scan::start_over_held(
+            Arc::clone(&self.inner),
+            options,
+            self.shared().settle_after_a_scan(),
+        )
+    }
+
+    fn settle_after_a_scan(self) -> impl FnOnce() + Send + 'static {
+        move || {
+            if let Err(error) = self.settle_replacements() {
+                tracing::warn!(%error, "the replacements were not settled after the scan");
+            }
+        }
     }
 
     pub fn forget_the_gone(&self, gone: &[PathBuf]) -> Result<u64> {

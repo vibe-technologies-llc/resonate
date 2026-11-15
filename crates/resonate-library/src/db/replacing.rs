@@ -1,19 +1,19 @@
-use std::time::SystemTime;
+use std::{path::PathBuf, time::SystemTime};
 
 use ahash::AHashSet;
-use resonate_core::{PlaylistId, ReleaseTrackId, TrackId};
+use resonate_core::{MediaLocation, PlaylistId, ReleaseTrackId, TrackId};
 use rusqlite::{Connection, OptionalExtension as _, Transaction, params, types::Value};
 
-use super::{Library, rows::rows};
+use super::{Library, Walk, rows::rows};
 use crate::{
-    Error, Quality, Replaceable, Replacing, Result, SongHeard, StoreOp, TheSong, Track, TrackQuery,
-    Version, deleted::Why, elsewhere, replacing, store,
+    Deleted, Error, Quality, Replaceable, Replacing, Result, SongHeard, StoreOp, TheSong, Track,
+    TrackQuery, Version, deleted::Why, elsewhere, replacing, store,
 };
 
 const HELD_WEIGHED_AT_MOST: usize = 64;
 
 const THE_SAME_SONG_ELSEWHERE: &str = "SELECT other.id,
-            (lossy.mbid IS NOT NULL AND other.mbid = lossy.mbid)
+            (lossy.mbid IS NOT NULL AND other.mbid IS lossy.mbid)
        FROM tracks lossy
        JOIN tracks other ON other.id != lossy.id
         AND ((lossy.mbid IS NOT NULL AND other.mbid = lossy.mbid)
@@ -39,6 +39,44 @@ const HOW_A_WHOLE_FILE_STANDS: &str = concat!(
 const THE_RELEASE_ROW_IS_STILL_THE_TRACKS: &str =
     "SELECT EXISTS (SELECT 1 FROM release_tracks WHERE id = ?1 AND track_id = ?2)";
 
+const ANY_REPLACEMENT_WAITS: &str = "SELECT EXISTS (SELECT 1 FROM replacements)";
+
+const THE_REPLACEMENTS_REJOIN_THE_ROWS_THEIR_SONGS_HOLD: &str = "UPDATE replacements
+        SET release_track_id = (SELECT id FROM release_tracks
+                                 WHERE release_tracks.track_id = replacements.track_id)
+      WHERE release_track_id IS NULL
+  RETURNING release_track_id";
+
+const THE_REPLACEMENTS_WITH_NOTHING_TO_FETCH_ON_GO: &str =
+    "DELETE FROM replacements WHERE release_track_id IS NULL";
+
+const THE_REPLACEMENTS_WAITING: &str = "SELECT r.track_id, w.offered
+       FROM replacements r
+       LEFT JOIN wants w ON w.release_track_id = r.release_track_id
+      ORDER BY r.track_id";
+
+const THE_COPY_DELIVERED: &str = concat!(
+    "SELECT tracks.id FROM tracks",
+    " WHERE tracks.path = ?1 AND tracks.span_start = 0 AND tracks.span_frames IS NULL",
+    " AND tracks.id != ?2 AND (",
+    lossless_codecs!(),
+    ")"
+);
+
+const THE_COPIES_OF_THE_SAME_RECORDING: &str = concat!(
+    "SELECT tracks.id FROM replacements r",
+    " JOIN tracks lossy ON lossy.id = r.track_id",
+    " LEFT JOIN release_tracks rt ON rt.id = r.release_track_id",
+    " JOIN tracks ON tracks.mbid IN (lossy.mbid, rt.recording_mbid)",
+    " WHERE r.track_id = ?1 AND tracks.id != lossy.id",
+    " AND tracks.span_start = 0 AND tracks.span_frames IS NULL AND (",
+    lossless_codecs!(),
+    ") ORDER BY tracks.id"
+);
+
+const THE_REPLACEMENT_STILL_WAITS: &str =
+    "SELECT EXISTS (SELECT 1 FROM replacements WHERE track_id = ?1)";
+
 const A_LOSSY_SONG_WAITS: &str =
     "INSERT OR REPLACE INTO replacements (track_id, release_track_id, asked) VALUES (?1, ?2, ?3)";
 
@@ -52,6 +90,30 @@ enum Standing {
 struct Settled {
     replacing: Replacing,
     taken: Vec<TrackId>,
+}
+
+#[derive(Clone, Copy)]
+struct Evidenced {
+    taken: TrackId,
+    kept: TrackId,
+}
+
+struct WholeFile {
+    path: PathBuf,
+    lossless: bool,
+    vaulted: bool,
+}
+
+impl WholeFile {
+    fn standing(&self) -> Standing {
+        if !self.lossless {
+            Standing::Lossy
+        } else if self.vaulted || self.path.is_file() {
+            Standing::Lossless
+        } else {
+            Standing::Gone
+        }
+    }
 }
 
 impl Library {
@@ -70,6 +132,60 @@ impl Library {
             replacing.trashed = self.remove_tracks_under(&walk, &taken, Why::Folded)?;
         }
         Ok(replacing)
+    }
+
+    pub fn settle_replacements(&self) -> Result<Deleted> {
+        if !self.inner.read(any_replacement_waits)? {
+            return Ok(Deleted::default());
+        }
+        let walk = match self.walk_the_tree() {
+            Ok(walk) => walk,
+            Err(Error::AlreadyWalking) => {
+                tracing::debug!(
+                    "the replacements are settled after the pass walking the tree, or the next"
+                );
+                return Ok(Deleted::default());
+            }
+            Err(error) => return Err(error),
+        };
+        self.rejoin_the_replacements()?;
+        self.settled_under(&walk)
+    }
+
+    pub(crate) fn rejoin_the_replacements(&self) -> Result<u64> {
+        let now = SystemTime::now();
+        self.inner.write(|transaction| {
+            let rejoined = rows(
+                transaction,
+                THE_REPLACEMENTS_REJOIN_THE_ROWS_THEIR_SONGS_HOLD,
+                Vec::new(),
+                |row| row.get::<_, Option<i64>>(0).map(Ok),
+            )?;
+            transaction
+                .execute(THE_REPLACEMENTS_WITH_NOTHING_TO_FETCH_ON_GO, [])
+                .map_err(|source| Error::store(StoreOp::Delete, source))?;
+            let mut joined = 0;
+            for row in rejoined.into_iter().flatten() {
+                elsewhere::wanted(transaction, row, now)?;
+                joined += 1;
+            }
+            Ok(joined)
+        })
+    }
+
+    fn settled_under(&self, walk: &Walk) -> Result<Deleted> {
+        let evidenced = self.inner.read(evidenced)?;
+        if evidenced.is_empty() {
+            return Ok(Deleted::default());
+        }
+        let taken = self
+            .inner
+            .write(|transaction| folded_on(transaction, &evidenced))?;
+        if taken.is_empty() {
+            return Ok(Deleted::default());
+        }
+        self.inner.playlists_changed();
+        self.remove_tracks_under(walk, &taken, Why::Folded)
     }
 
     pub fn lossy_songs_of(&self, playlist: PlaylistId) -> Result<Vec<Replaceable>> {
@@ -249,27 +365,115 @@ fn standing(connection: &Connection, track: &Track) -> Result<Standing> {
     let Some(named) = track.location.as_path() else {
         return Ok(Standing::Gone);
     };
+    Ok(match whole_file(connection, track.id)? {
+        Some(file) if file.path == named => file.standing(),
+        Some(_) | None => Standing::Gone,
+    })
+}
+
+fn standing_of(connection: &Connection, track: TrackId) -> Result<Standing> {
+    Ok(whole_file(connection, track)?.map_or(Standing::Gone, |file| file.standing()))
+}
+
+fn whole_file(connection: &Connection, track: TrackId) -> Result<Option<WholeFile>> {
     let found: Option<(String, bool, bool)> = connection
         .query_row(
             HOW_A_WHOLE_FILE_STANDS,
-            params![track.id.get() as i64],
+            params![track.get() as i64],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()
         .map_err(|source| Error::store(StoreOp::Query, source))?;
-    let Some((path, lossless, vaulted)) = found else {
-        return Ok(Standing::Gone);
+    Ok(found.map(|(path, lossless, vaulted)| WholeFile {
+        path: store::path_of(&path),
+        lossless,
+        vaulted,
+    }))
+}
+
+fn any_replacement_waits(connection: &Connection) -> Result<bool> {
+    connection
+        .query_row(ANY_REPLACEMENT_WAITS, [], |row| row.get(0))
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+fn evidenced(connection: &Connection) -> Result<Vec<Evidenced>> {
+    let waiting = rows(connection, THE_REPLACEMENTS_WAITING, Vec::new(), |row| {
+        Ok(Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, Option<String>>(1)?,
+        )))
+    })?;
+    let mut found = Vec::new();
+    for (taken, offered) in waiting {
+        let taken = TrackId::new(taken.cast_unsigned())?;
+        if standing_of(connection, taken)? != Standing::Lossy {
+            continue;
+        }
+        let mut candidates = delivered_for(connection, taken, offered.as_deref())?;
+        candidates.extend(rows(
+            connection,
+            THE_COPIES_OF_THE_SAME_RECORDING,
+            vec![Value::Integer(taken.get() as i64)],
+            |row| row.get::<_, i64>(0).map(Ok),
+        )?);
+        for kept in candidates {
+            let kept = TrackId::new(kept.cast_unsigned())?;
+            if standing_of(connection, kept)? == Standing::Lossless {
+                found.push(Evidenced { taken, kept });
+                break;
+            }
+        }
+    }
+    Ok(found)
+}
+
+fn delivered_for(
+    connection: &Connection,
+    taken: TrackId,
+    offered: Option<&str>,
+) -> Result<Vec<i64>> {
+    let Some(path) = offered
+        .and_then(MediaLocation::from_uri)
+        .and_then(|location| {
+            location
+                .as_path()
+                .map(|path| store::path_text(path).into_owned())
+        })
+    else {
+        return Ok(Vec::new());
     };
-    let path = store::path_of(&path);
-    Ok(if path != named {
-        Standing::Gone
-    } else if !lossless {
-        Standing::Lossy
-    } else if vaulted || path.is_file() {
-        Standing::Lossless
-    } else {
-        Standing::Gone
-    })
+    connection
+        .query_row(
+            THE_COPY_DELIVERED,
+            params![path, taken.get() as i64],
+            |row| row.get(0),
+        )
+        .optional()
+        .map(|found| found.into_iter().collect())
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+fn folded_on(transaction: &Transaction<'_>, evidenced: &[Evidenced]) -> Result<Vec<TrackId>> {
+    let mut taken = Vec::with_capacity(evidenced.len());
+    for &Evidenced { taken: lossy, kept } in evidenced {
+        let still_waits: bool = transaction
+            .query_row(
+                THE_REPLACEMENT_STILL_WAITS,
+                params![lossy.get() as i64],
+                |row| row.get(0),
+            )
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+        if !still_waits
+            || standing_of(transaction, lossy)? != Standing::Lossy
+            || standing_of(transaction, kept)? != Standing::Lossless
+        {
+            continue;
+        }
+        replacing::folded(transaction, kept, lossy)?;
+        taken.push(lossy);
+    }
+    Ok(taken)
 }
 
 fn still_held_by(connection: &Connection, row: ReleaseTrackId, track: TrackId) -> Result<bool> {

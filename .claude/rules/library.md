@@ -611,8 +611,34 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   it holds none (a copy filed on another album keeps its own pairing) and deletes the replacement
   and its want. The taken track's `versions_chosen` rows go by their cascade when its row is
   forgotten. **Dismissing a replacement's want cancels it**: `unwant` deletes the `replacements`
-  rows naming the want's release row in the same write, and the lossy song stays
-  (`a_lossy_song_with_a_lossless_copy_held_is_replaced_at_once_and_its_history_goes_with_it`,
+  rows naming the want's release row in the same write, and the lossy song stays.
+  **A replacement settles once its lossless copy is held, on evidence alone**:
+  `Library::settle_replacements` reads, for each pending replacement in one read, the track at its
+  want's `offered` path and the tracks holding the recording MBID of the lossy track or of its
+  release row, and keeps the first (the delivered one first) that is a lossless whole file other
+  than the lossy one, its file there or its row vaulted; every pair is weighed afresh and folded in
+  one write (`replacing::folded`), then `remove_tracks_under` trashes the lossy files under the same
+  walk. Nobody is watching, so a copy only named alike (`TheSong`) is never taken, nor a lossy copy
+  offered. It runs once a scan's `Walk` guard has dropped, never under it nor inside a delivery's
+  `landed`: `scan::start` and `start_over_held` call the closure `Library::scan` and
+  `scan_what_is_held` hand them (`settle_after_a_scan`, a failure traced at warn) after `drop` of the
+  guard and only on an `Ok` outcome. With no replacement waiting it takes no walk; a walk refused
+  (`Error::AlreadyWalking`) is traced at debug, writes nothing and answers `Deleted::default()`,
+  leaving the replacement for the next scan's or poll's end. Under the walk it first calls
+  `rejoin_the_replacements`: a replacement whose release row was landed again or whose match was
+  forgotten (`land_release` and `forget_the_match` delete the rows, `ON DELETE SET NULL`) is
+  pointed at the row its track now holds and that row wanted (`elsewhere::wanted`, `ON CONFLICT DO
+  NOTHING`); one whose track holds no row is dropped, so the sheet never shows it waiting forever,
+  and the lossy song stays
+  (`a_lossless_copy_delivered_for_a_replacement_takes_the_lossy_songs_place`,
+  `a_lossless_copy_holding_the_same_recording_takes_the_lossy_songs_place`,
+  `a_lossless_copy_named_alike_alone_never_replaces_a_song_unattended`,
+  `a_lossy_copy_offered_for_a_replacement_is_never_taken_for_it`,
+  `a_settle_while_another_pass_walks_the_tree_leaves_the_replacement_for_the_next`,
+  `a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_holds`,
+  `a_replacement_whose_match_is_forgotten_is_dropped_and_the_lossy_song_kept`,
+  `a_lossless_copy_on_another_album_keeps_its_own_row_and_leaves_the_lossy_songs_row_unheld`,
+  `a_lossy_song_with_a_lossless_copy_held_is_replaced_at_once_and_its_history_goes_with_it`,
   `two_lossy_copies_of_one_song_are_both_replaced_by_the_one_lossless_copy`,
   `a_lossy_song_matched_on_musicbrainz_is_wanted_and_waits_while_one_with_neither_is_counted_unmatched`,
   `a_lossy_song_a_want_once_delivered_is_wanted_again_with_its_offer_forgotten_and_its_refusals_kept`,

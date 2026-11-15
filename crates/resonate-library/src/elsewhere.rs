@@ -815,7 +815,7 @@ pub(crate) fn rearmed(
     want_of(tx, row)
 }
 
-fn wanted(tx: &Transaction<'_>, row: i64, now: SystemTime) -> Result<()> {
+pub(crate) fn wanted(tx: &Transaction<'_>, row: i64, now: SystemTime) -> Result<()> {
     tx.execute(
         "INSERT INTO wants (release_track_id, wanted) VALUES (?1, ?2)
          ON CONFLICT(release_track_id) DO NOTHING",
