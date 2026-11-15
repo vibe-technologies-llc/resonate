@@ -423,7 +423,20 @@ nothing asked** (`no_account_asks_nothing_of_the_api_and_a_pasted_link_keeps_its
   account. A 401 or 403 to listens or loves (`TOKEN_REFUSED`) holds that token back until the file
   names another.
 
+- **A listener's history is read back, a thousand at a time** (`history.rs`, `ListenBrainzHistory`,
+  `LookupOp::History`): `GET /1/user/<user>/listens?count=1000`, then `max_ts` the earliest
+  `listened_at` of a full page, until a page is short. Each listen's recording MBID is
+  `additional_info.recording_mbid`, else `mbid_mapping.recording_mbid`, its length `duration_ms`; a
+  listen naming no title or artist is passed over. Public: no token is sent, the user being named
+  (`a_page_of_listenbrainz_listens_names_each_song_and_where_the_next_page_starts`).
+
 ## Last.fm
+
+- **A listener's history is read back, two hundred a page** (`LastfmHistory`):
+  `user.getrecenttracks` (unsigned, the application's key, `format=json`) by page number until
+  `@attr.totalPages`; the track playing now carries no `date` and is passed over, and an empty
+  `mbid` is none. An error in the answer is `Refused`
+  (`a_page_of_lastfm_scrobbles_leaves_out_the_song_playing_now_and_names_the_next_page`).
 
 - **What was heard is scrobbled under a session the listener signed in for, signed by an
   application the listener registered.** `LastFm` is the second `Scrobbler`

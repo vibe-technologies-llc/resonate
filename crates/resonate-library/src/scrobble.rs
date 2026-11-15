@@ -71,6 +71,8 @@ macro_rules! billed_columns {
     };
 }
 
+pub(crate) use billed_columns;
+
 const THE_LISTENS_AFTER: &str = concat!(
     "SELECT l.id, coalesce(l.began, l.at), ",
     billed_columns!(),
@@ -659,7 +661,7 @@ impl RawListen {
     }
 }
 
-struct RawBilled {
+pub(crate) struct RawBilled {
     title: String,
     artist: Option<String>,
     album: Option<String>,
@@ -674,7 +676,7 @@ struct RawBilled {
 }
 
 impl RawBilled {
-    fn read(row: &rusqlite::Row<'_>, from: usize) -> rusqlite::Result<Self> {
+    pub(crate) fn read(row: &rusqlite::Row<'_>, from: usize) -> rusqlite::Result<Self> {
         Ok(Self {
             title: row.get(from)?,
             artist: row.get(from + 1)?,
@@ -690,7 +692,7 @@ impl RawBilled {
         })
     }
 
-    fn billed(self) -> Option<Billed> {
+    pub(crate) fn billed(self) -> Option<Billed> {
         let length = self
             .frames
             .zip(u32::try_from(self.rate).ok().filter(|rate| *rate > 0))

@@ -139,17 +139,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [L · blocked: service] A lyric reaches only a row the catalog holds; no keyless service indexes
   lyric text (LRCLIB's text search finds none)
 
-## Listening history
-- [M · 0.12.0] A listener's history on ListenBrainz or Last.fm cannot be brought in: both are told
-  plays and loves and nothing is read back (`lastfm.rs` and ListenBrainz post only), so a listener
-  arriving with years of scrobbles starts with empty Statistics, Wrapped and lists read from
-  listening. The catalog already credits listens from elsewhere idempotently (`elsewhere`,
-  `origin_device`, `origin_id`) and keeps unmatched ones in `unheld_listens`, so an import is a reader
-  per service landing strict matches as `elsewhere` listens, never told back
-- [S · 0.12.0] The listening history cannot be taken out: `history-kept` ages listens away and no
-  command writes `listens` and `unheld_listens` to a file (ListenBrainz's JSON shape would also be
-  what the import reads)
-
 ## Identification
 - [M · blocked: encoders] The quantiser steps are weighed only on the encoders this machine has
   (ffmpeg's AAC and MP2, faac, LAME, libvorbis, ffmpeg's Vorbis, twolame and libopus; fdk AAC on an

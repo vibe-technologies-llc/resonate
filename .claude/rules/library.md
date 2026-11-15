@@ -114,6 +114,24 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   in `open_library_with`; the settings pane arms a shorter span on the first press
   (`Armed::AgeTheHistory`, lowered by `disarm`) and keeps it on the second; a longer span or
   *Forever* is kept at once.
+- **The history taken out and brought in** (`traded.rs`). `Library::history_from(HistoryFrom, most)`
+  reads `listens` in id order and then `unheld_listens`, a page at a time, each a `HeardOnce`: when it
+  began, time heard, `elsewhere`, the `Billed` names a held row carries and its location as a URI (a
+  row's path and span, or an unheld listen's path or the URI a song played in place was kept under);
+  `HistoryRead::next` names where the next page begins, none once both are read. `Library::bring_in`
+  lands a page a service read (`HeardElsewhere`: a moment and a `Recording`) in one write: each is
+  resolved strictly as a remote listen is (`synced::resolved`), and a song held is credited as an
+  `elsewhere` listen with the service's name as `origin_device` and the unix second as `origin_id`,
+  so bringing the same history in again counts nothing twice and no service is told it back. **A
+  listen already held at that moment is not counted** (`SAME_LISTEN_WITHIN`, 2 s, of any listen of
+  the track's `began`): what this player scrobbled itself comes back from the service and is
+  `held_already`. Its length is the recording's, else the track's. **A listen of a song not held is
+  counted, not kept** (`BroughtIn::unmatched`): an `unheld_listens` row needs a path and the service
+  names none, so it is brought in by a later import once the song is held. `History` is the seam a
+  service fills (`resonate-online`'s `ListenBrainzHistory` and `LastfmHistory`, `online.md`), paged
+  by an opaque `u64` it hands back
+  (`listens_brought_in_from_a_service_land_once_on_the_songs_held_and_one_already_heard_here_is_not_counted_again`,
+  `the_history_is_read_out_whole_the_songs_held_named_and_the_ones_not_held_by_where_they_were`).
 - **A service's told-ness is a mark in the history.** `submissions`: per `ListeningService`, id of
   the last `listens` row told. `Library::submit_listens` (`scrobble.rs`) reads listens past the mark
   in id order, `SUBMITTED_AT_ONCE` (100) a batch, each at `listens.began`, joined for the names and

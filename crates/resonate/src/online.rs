@@ -407,6 +407,74 @@ pub fn fingerprinters(
 }
 
 #[cfg(feature = "online")]
+pub fn history(
+    config: &Config,
+    service: resonate_library::ListeningService,
+    user: Option<&str>,
+) -> Result<Box<dyn resonate_library::History>> {
+    use resonate_library::ListeningService;
+
+    if !config.is_on(Switch::Online) {
+        return Err(Error::OnlineOff);
+    }
+    let named = user.map(str::trim).filter(|user| !user.is_empty());
+    match service {
+        ListeningService::ListenBrainz => {
+            let user = match (named, config.listenbrainz_token.clone()) {
+                (Some(user), _) => user.to_owned(),
+                (None, Some(token)) => signed_in(&*listenbrainz(config, token), service)?,
+                (None, None) => return Err(Error::NoHistoryUser { service }),
+            };
+            Ok(Box::new(resonate_online::ListenBrainzHistory::new(
+                client(config),
+                user,
+            )))
+        }
+        ListeningService::LastFm => {
+            let (Some(key), Some(secret)) =
+                (config.lastfm_key.clone(), config.lastfm_secret.clone())
+            else {
+                return Err(Error::NoLastfmApplication);
+            };
+            let application = Application { key, secret };
+            let user = match (named, config.lastfm_session.clone()) {
+                (Some(user), _) => user.to_owned(),
+                (None, Some(session)) => signed_in(
+                    &LastFm::new(client(config), application.clone(), session),
+                    service,
+                )?,
+                (None, None) => return Err(Error::NoHistoryUser { service }),
+            };
+            Ok(Box::new(resonate_online::LastfmHistory::new(
+                client(config),
+                application,
+                user,
+            )))
+        }
+    }
+}
+
+#[cfg(feature = "online")]
+fn signed_in(
+    scrobbler: &dyn Scrobbler,
+    service: resonate_library::ListeningService,
+) -> Result<String> {
+    match scrobbler.token_held()? {
+        resonate_library::TokenHeld::By(user) => Ok(user),
+        resonate_library::TokenHeld::Unknown => Err(Error::NoHistoryUser { service }),
+    }
+}
+
+#[cfg(not(feature = "online"))]
+pub fn history(
+    _config: &Config,
+    _service: resonate_library::ListeningService,
+    _user: Option<&str>,
+) -> Result<Box<dyn resonate_library::History>> {
+    Err(Error::NoReference)
+}
+
+#[cfg(feature = "online")]
 pub fn listenbrainz(config: &Config, token: String) -> Arc<dyn Scrobbler> {
     Arc::new(ListenBrainz::new(client(config), token))
 }

@@ -22,6 +22,7 @@ mod favourites;
 mod fixtures;
 mod followed;
 mod gaming;
+mod history;
 mod info;
 mod input;
 #[cfg(feature = "online")]
@@ -523,6 +524,9 @@ fn run() -> Result<()> {
         Some(Sub::Update) => updates::run(&config),
         #[cfg(not(feature = "online"))]
         Some(Sub::Update) => Err(Error::NoUpdates),
+        Some(Sub::History(asked)) => {
+            history::history(&open_library(&cli, &config)?, &config, asked)
+        }
         Some(Sub::Wrapped { year, summary }) => wrapped::print(
             &open_library(&cli, &config)?,
             *year,

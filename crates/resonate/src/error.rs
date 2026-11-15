@@ -622,6 +622,22 @@ pub enum Error {
     #[error(transparent)]
     Sweep(#[from] resonate_dsp::Error),
 
+    #[error("cannot write the listening history to {path}", path = path.display())]
+    WriteHistory {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[cfg(feature = "online")]
+    #[error(
+        "no {} account names whose history to bring in: sign in to it, or name one with --user",
+        service.name()
+    )]
+    NoHistoryUser {
+        service: resonate_library::ListeningService,
+    },
+
     #[error("cannot write the measurement to {path}", path = path.display())]
     WriteMeasurement {
         path: PathBuf,

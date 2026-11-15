@@ -39,6 +39,7 @@ asked-recognise = a recognition
 asked-submit = a submission of what was heard
 asked-love = a favourite told to a listening service
 asked-token = a check of a listening service's token
+asked-history = a page of what a listening service heard
 asked-stream-link = a look for where a track streams
 asked-follow-link = what a link names
 asked-share-file = a public file upload

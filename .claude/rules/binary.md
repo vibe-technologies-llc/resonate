@@ -120,6 +120,19 @@ paths:
   catalog are its own and cannot be swapped from outside, so handing files over while ignoring those
   flags would play them from a catalog the listener did not name.
 
+- **`history --export FILE` and `history --import listenbrainz|lastfm [--user NAME]` carry the
+  listening history out and in** (`history.rs`, `library.md`'s *The history taken out and brought
+  in*). The export pages `Library::history_from` to the end and writes one ListenBrainz listen a
+  line, by hand since the headless build has no `serde_json` (`line_of`): `listened_at` the second
+  it began, `track_metadata` the billed names and an `additional_info` of the MusicBrainz ids, ISRC,
+  track number, `duration_ms`, `listened_ms` (time heard), `heard_elsewhere`, `origin_url` (the
+  location, so a song no longer held is still named) and this build as `media_player` and
+  `submission_client`. The import builds the service's `History` through `online::history` (its
+  no-online twin is `Error::NoReference`; `online` off is `Error::OnlineOff`), whose user is
+  `--user` or the account the token or session is held by (`Scrobbler::token_held`; none is
+  `Error::NoHistoryUser`, Last.fm without `lastfm-key` and `lastfm-secret` `NoLastfmApplication`),
+  and lands each page through `Library::bring_in`, saying the running count after each.
+
 - **`wrapped [--year Y] [--summary]` prints Resonate Wrapped** (`wrapped.rs`): each `Slide` as text, its rankings as tables, or with `--summary` the few lines `YearReview::summary` writes. With nothing ever played it is `Error::NothingHeardYet`, exit 1; a year named with nothing in it says so and exits 0. A year that is over is the copy kept the first time it was shown, so the table, the window and the phones agree on it for good (`library.md`).
 
 - **`shared` is the terminal's way into shared playlists** (`together.rs`, `shared-playlists.md`): bare, a

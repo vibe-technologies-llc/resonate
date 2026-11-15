@@ -9,6 +9,7 @@ mod commons;
 mod coverart;
 mod deezer;
 mod error;
+mod history;
 mod lastfm;
 mod linked;
 mod listenbrainz;
@@ -49,6 +50,7 @@ pub use crate::{
     by_ear::ByEar,
     client::{Client, Identity, Introduction},
     error::{Error, Host, Result},
+    history::{LastfmHistory, ListenBrainzHistory},
     lastfm::{Application, LastFm, LastfmApproving, Session, approval_asked},
     listenbrainz::ListenBrainz,
     lyrics::{OnlineLyrics, source_of as lyric_source_of},

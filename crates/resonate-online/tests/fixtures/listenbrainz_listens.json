@@ -1,0 +1,51 @@
+{
+  "payload": {
+    "count": 2,
+    "latest_listen_ts": 1700001000,
+    "listens": [
+      {
+        "inserted_at": 1700001005,
+        "listened_at": 1700001000,
+        "recording_msid": "5b1c3c2a-0000-4000-8000-000000000001",
+        "track_metadata": {
+          "additional_info": {
+            "duration_ms": 1412000,
+            "media_player": "resonate",
+            "recording_mbid": "0a1b2c3d-1111-4222-8333-444455556666",
+            "recording_msid": "5b1c3c2a-0000-4000-8000-000000000001",
+            "submission_client": "resonate"
+          },
+          "artist_name": "Pink Floyd",
+          "mbid_mapping": null,
+          "release_name": "Meddle",
+          "track_name": "Echoes"
+        },
+        "user_name": "listener"
+      },
+      {
+        "inserted_at": 1700000004,
+        "listened_at": 1700000000,
+        "recording_msid": "5b1c3c2a-0000-4000-8000-000000000002",
+        "track_metadata": {
+          "additional_info": {
+            "recording_msid": "5b1c3c2a-0000-4000-8000-000000000002"
+          },
+          "artist_name": "Low",
+          "mbid_mapping": {
+            "artist_mbids": ["11111111-2222-4333-8444-555555555555"],
+            "caa_id": null,
+            "caa_release_mbid": null,
+            "recording_mbid": "9f8e7d6c-1111-4222-8333-444455556666",
+            "recording_name": "Words",
+            "release_mbid": "aaaaaaaa-2222-4333-8444-555555555555"
+          },
+          "release_name": null,
+          "track_name": "Words"
+        },
+        "user_name": "listener"
+      }
+    ],
+    "oldest_listen_ts": 1500000000,
+    "user_id": "listener"
+  }
+}

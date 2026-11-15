@@ -8,9 +8,10 @@ use rusqlite::{OptionalExtension as _, params};
 
 use super::{KeptSuggestions, Library, Visited, rows::RawTrack, statements::TRACK_COLUMNS};
 use crate::{
-    Aged, Billed, Counted, Day, Error, Habits, HistoryKept, Listen, ListeningService, LovesTold,
-    MostListened, Result, Scrobbler, Shared, Statistics, StoreOp, Submitted, Suggestion, Window,
-    history, scrobble, share, statistics, store, suggest, wrapped,
+    Aged, Billed, BroughtIn, Counted, Day, Error, Habits, HeardElsewhere, HistoryFrom, HistoryKept,
+    HistoryRead, Listen, ListeningService, LovesTold, MostListened, Result, Scrobbler, Shared,
+    Statistics, StoreOp, Submitted, Suggestion, Window, history, scrobble, share, statistics,
+    store, suggest, traded, wrapped,
 };
 
 impl Library {
@@ -124,6 +125,18 @@ impl Library {
             track: None,
             listen: Listen::Unheld(ListenId::new(unheld as u64)?),
         })
+    }
+
+    pub fn history_from(&self, from: HistoryFrom, most: usize) -> Result<HistoryRead> {
+        traded::history_from(&self.inner, from, most)
+    }
+
+    pub fn bring_in(
+        &self,
+        service: ListeningService,
+        heard: &[HeardElsewhere],
+    ) -> Result<BroughtIn> {
+        traded::bring_in(&self.inner, service, heard)
     }
 
     pub fn submit_listens(&self, scrobbler: &dyn Scrobbler) -> Result<Submitted> {

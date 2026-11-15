@@ -1,0 +1,43 @@
+{
+  "recenttracks": {
+    "track": [
+      {
+        "artist": { "mbid": "", "#text": "Low" },
+        "streamable": "0",
+        "image": [{ "size": "small", "#text": "" }],
+        "mbid": "",
+        "album": { "mbid": "", "#text": "Things We Lost in the Fire" },
+        "name": "Sunflower",
+        "@attr": { "nowplaying": "true" },
+        "url": "https://www.last.fm/music/Low/_/Sunflower"
+      },
+      {
+        "artist": { "mbid": "83d91898-7763-47d7-b03b-b92132375c47", "#text": "Pink Floyd" },
+        "streamable": "0",
+        "image": [{ "size": "small", "#text": "" }],
+        "mbid": "",
+        "album": { "mbid": "", "#text": "The Dark Side of the Moon" },
+        "name": "Time",
+        "url": "https://www.last.fm/music/Pink+Floyd/_/Time",
+        "date": { "uts": "1700000500", "#text": "14 Nov 2023, 22:21" }
+      },
+      {
+        "artist": { "mbid": "", "#text": "Pink Floyd" },
+        "streamable": "0",
+        "image": [{ "size": "small", "#text": "" }],
+        "mbid": "0a1b2c3d-1111-4222-8333-444455556666",
+        "album": { "mbid": "", "#text": "Meddle" },
+        "name": "Echoes",
+        "url": "https://www.last.fm/music/Pink+Floyd/_/Echoes",
+        "date": { "uts": "1699999000", "#text": "14 Nov 2023, 21:56" }
+      }
+    ],
+    "@attr": {
+      "user": "listener",
+      "totalPages": "3",
+      "page": "1",
+      "perPage": "200",
+      "total": "402"
+    }
+  }
+}

@@ -522,6 +522,40 @@ pub enum UpkeepArg {
     InStep,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum ListeningServiceArg {
+    Listenbrainz,
+    Lastfm,
+}
+
+#[derive(Debug, Args)]
+pub struct HistoryArgs {
+    #[arg(
+        long,
+        value_name = "FILE",
+        required_unless_present = "import",
+        conflicts_with_all = ["import", "user"],
+        help = words::grammar::history_args_export()
+    )]
+    pub export: Option<PathBuf>,
+
+    #[arg(
+        long,
+        value_enum,
+        value_name = "SERVICE",
+        help = words::grammar::history_args_import()
+    )]
+    pub import: Option<ListeningServiceArg>,
+
+    #[arg(
+        long,
+        value_name = "NAME",
+        requires = "import",
+        help = words::grammar::history_args_user()
+    )]
+    pub user: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum PlaylistOrderArg {
     #[default]
@@ -1669,6 +1703,9 @@ pub enum Sub {
         )]
         summary: bool,
     },
+
+    #[command(about = words::grammar::sub_history())]
+    History(HistoryArgs),
 
     #[command(about = words::grammar::sub_favourites())]
     Favourites(FavouritesArgs),

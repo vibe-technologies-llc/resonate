@@ -67,6 +67,7 @@ mod sung;
 mod supply;
 mod synced;
 mod take_in;
+mod traded;
 #[cfg(unix)]
 mod trash;
 mod undo;
@@ -231,6 +232,10 @@ pub use crate::{
     take_in::{
         Dropped, Landed, Looks, Passed as TakenPassed, Passing as TakenPassing, TakeInOptions,
         TakeInProgress, TakeInStats, TakeInSummary, take_in, weigh,
+    },
+    traded::{
+        BroughtIn, HeardElsewhere, HeardOnce, HeardPage, History, HistoryFrom, HistoryRead,
+        SAME_LISTEN_WITHIN,
     },
     undo::{Edit, Maker, Undoable},
     versions::{Quality, SongHeard, TheSong, VersionSought, better_held, rated_held, rating_of},

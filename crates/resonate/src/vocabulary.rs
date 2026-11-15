@@ -1,10 +1,19 @@
 use crate::cli::{
-    DitherArg, FilterPhaseArg, NoiseShapingArg, PlaylistOrderArg, QualityArg, RepeatArg,
-    RestorationArg, RowOrderArg, SortArg, UpkeepArg, WindowArg,
+    DitherArg, FilterPhaseArg, ListeningServiceArg, NoiseShapingArg, PlaylistOrderArg, QualityArg,
+    RepeatArg, RestorationArg, RowOrderArg, SortArg, UpkeepArg, WindowArg,
 };
 
 pub trait Meaning<Meant> {
     fn meaning(self) -> Meant;
+}
+
+impl Meaning<resonate_library::ListeningService> for ListeningServiceArg {
+    fn meaning(self) -> resonate_library::ListeningService {
+        match self {
+            Self::Listenbrainz => resonate_library::ListeningService::ListenBrainz,
+            Self::Lastfm => resonate_library::ListeningService::LastFm,
+        }
+    }
 }
 
 impl Meaning<resonate_engine::RepeatMode> for RepeatArg {

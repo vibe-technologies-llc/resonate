@@ -176,6 +176,7 @@ pub(crate) fn asked_for(op: LookupOp) -> &'static str {
         LookupOp::Submit => words::main::asked_submit(),
         LookupOp::Love => words::main::asked_love(),
         LookupOp::Token => words::main::asked_token(),
+        LookupOp::History => words::main::asked_history(),
         LookupOp::StreamLink => words::main::asked_stream_link(),
         LookupOp::FollowLink => words::main::asked_follow_link(),
         LookupOp::ShareFile => words::main::asked_share_file(),

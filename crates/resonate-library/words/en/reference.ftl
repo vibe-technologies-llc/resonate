@@ -20,6 +20,7 @@ recognise = a recognition
 submit = a submission of what was heard
 love = a favourite told to a listening service
 token = a check of a listening service's token
+history = a page of what a listening service heard
 stream-link = a look for where a track streams
 spotify-account = a sign-in to the Spotify account
 follow-link = what a link names

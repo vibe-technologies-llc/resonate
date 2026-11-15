@@ -8,16 +8,17 @@ use std::{
         Arc, OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use resonate_analysis::Watch;
 use resonate_core::{Answer, Answered, Chromaprint, Link, Mbid, MediaLocation, Recording};
 use resonate_library::{
     Agreement, Album, AlbumQuery, CoverArt, Credit, Cut, DeliveryFolder, Direction, HeardAs,
-    HeldTags, ImageFormat, ImportOptions, Layout, Library, LyricText, Medium, PlaylistLink,
-    Release, ReleaseTrack, Removal, Result, SavedQuery, ScanOptions, ScanStats, SongFiled,
-    SortOrder, Sources, SyncedQueryBody, TrackQuery, Trashes, Upkeep, Vault, WAITS,
+    HeardElsewhere, HeldTags, HistoryFrom, ImageFormat, ImportOptions, Layout, Library,
+    ListeningService, LyricText, Medium, PlaylistLink, Release, ReleaseTrack, Removal, Result,
+    SavedQuery, ScanOptions, ScanStats, SongFiled, SortOrder, Sources, SyncedQueryBody, TrackQuery,
+    Trashes, Upkeep, Vault, WAITS,
 };
 
 const RATE: u32 = 44_100;
@@ -471,6 +472,102 @@ fn favourites_and_listens_travel_as_recordings_and_one_from_elsewhere_is_never_s
         Duration::from_secs(60)
     )?);
     assert_eq!(library.track_at(&echoes, None)?.expect("held").plays, 3);
+    Ok(())
+}
+
+fn heard_elsewhere(recording: Recording, seconds: u64) -> HeardElsewhere {
+    HeardElsewhere {
+        at: UNIX_EPOCH + Duration::from_secs(seconds),
+        recording,
+    }
+}
+
+#[test]
+fn listens_brought_in_from_a_service_land_once_on_the_songs_held_and_one_already_heard_here_is_not_counted_again()
+-> Result<()> {
+    let tree = Tree::new();
+    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let library = Library::open_in_memory()?;
+    scan(&library, &tree.root)?;
+    let counted = library
+        .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
+        .expect("a counted play");
+    library.listened(counted.listen, Duration::from_secs(2))?;
+    let heard_here = library.history_from(HistoryFrom::START, 10)?.heard[0].began;
+    let here = heard_here
+        .duration_since(UNIX_EPOCH)
+        .expect("after the epoch")
+        .as_secs();
+    let mut named_by_the_service = song("ECHOES", "pink floyd", "");
+    named_by_the_service.length = None;
+    let heard = [
+        heard_elsewhere(song("Echoes", "Pink Floyd", "Meddle"), 1_000_000),
+        heard_elsewhere(named_by_the_service, 2_000_000),
+        heard_elsewhere(song("Gone", "Nobody", "Nothing"), 3_000_000),
+        heard_elsewhere(song("Echoes", "Pink Floyd", "Meddle"), here),
+    ];
+
+    let first = library.bring_in(ListeningService::ListenBrainz, &heard)?;
+    let again = library.bring_in(ListeningService::ListenBrainz, &heard)?;
+
+    assert_eq!(
+        (first.credited, first.held_already, first.unmatched),
+        (2, 1, 1)
+    );
+    assert_eq!(
+        (again.credited, again.held_already, again.unmatched),
+        (0, 3, 1)
+    );
+    assert_eq!(library.track_at(&echoes, None)?.expect("held").plays, 3);
+    library.settle_listens_after(Duration::ZERO);
+    assert_eq!(library.listens_to_sync(0, 10)?.len(), 1);
+    Ok(())
+}
+
+#[test]
+fn the_history_is_read_out_whole_the_songs_held_named_and_the_ones_not_held_by_where_they_were()
+-> Result<()> {
+    let tree = Tree::new();
+    let echoes = tree.song("echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let library = Library::open_in_memory()?;
+    scan(&library, &tree.root)?;
+    for _ in 0..3 {
+        library.track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(1))?;
+    }
+    let gone = tree.root.join("never-scanned.flac");
+    library.track_played(&MediaLocation::local(&gone), None, Duration::from_secs(1))?;
+    assert!(
+        library
+            .bring_in(
+                ListeningService::LastFm,
+                &[heard_elsewhere(
+                    song("Echoes", "Pink Floyd", "Meddle"),
+                    1_000
+                )],
+            )?
+            .credited
+            == 1
+    );
+
+    let mut read = Vec::new();
+    let mut from = Some(HistoryFrom::START);
+    while let Some(at) = from {
+        let page = library.history_from(at, 2)?;
+        read.extend(page.heard);
+        from = page.next;
+    }
+
+    assert_eq!(read.len(), 5);
+    assert_eq!(read.iter().filter(|heard| heard.elsewhere).count(), 1);
+    assert!(read[..4].iter().all(|heard| {
+        heard
+            .billed
+            .as_ref()
+            .is_some_and(|billed| billed.title == "Echoes")
+    }));
+    assert!(read[4].billed.is_none());
+    assert_eq!(read[4].location, MediaLocation::local(&gone).to_uri());
+    assert!(read.iter().all(|heard| heard.began <= SystemTime::now()));
     Ok(())
 }
 
