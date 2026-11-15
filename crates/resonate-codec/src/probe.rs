@@ -463,4 +463,24 @@ mod tests {
         assert_eq!(from_magic(b"RIFF\x00\x00\x00\x00WAVEfmt "), None);
         assert_eq!(from_magic(b"not a picture"), None);
     }
+
+    #[test]
+    fn a_picture_in_a_format_the_vocabulary_does_not_name_is_not_a_cover() {
+        let unnamed: [(&str, &[u8]); 6] = [
+            ("image/tiff", b"II*\x00\x08\x00\x00\x00"),
+            ("image/x-exr", b"\x76\x2f\x31\x01\x02\x00\x00\x00"),
+            ("image/qoi", b"qoif\x00\x00\x00\x01\x00\x00\x00\x01"),
+            ("image/avif", b"\x00\x00\x00\x1cftypavif\x00\x00\x00\x00"),
+            (
+                "image/vnd.microsoft.icon",
+                b"\x00\x00\x01\x00\x01\x00\x10\x10",
+            ),
+            ("image/vnd-ms.dds", b"DDS \x7c\x00\x00\x00"),
+        ];
+
+        for (media_type, data) in unnamed {
+            assert_eq!(from_media_type(media_type), None, "{media_type}");
+            assert_eq!(from_magic(data), None, "{media_type}");
+        }
+    }
 }

@@ -151,19 +151,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Dependencies
-- [S · 0.12.0] Two SIMD stacks are built under the engine: `imbl` 7.0.2 depends on `wide` 0.7 (and
-  `safe_arch` 0.7) unconditionally beside the workspace's `wide` 1.7.1, a duplicate
-  `dependencies.md`'s forced list does not name
-- [S · 0.12.0] A Mac build compiles two `objc2` majors: 0.5 (with `block2`, `objc2-foundation`,
-  `objc2-app-kit` 0.2) under gpui's `accesskit_macos` beside the 0.6 line `resonate-apple` takes,
-  which `dependencies.md` reads as no second copy; `thiserror` 1 beside 2 under glib, `jni` and `ndk`
-  is unnamed too (each wants `cargo tree -d` per target)
-- [S · 0.12.0] `image` resolves with `exr`, `qoi`, `ravif` (and so `rav1e`), `tiff` and `rayon` beside
-  the five formats `dependencies.md` names, unified in from gpui's tree; whether `Drawing` then
-  accepts a format the vocabulary does not is unchecked (`cargo tree -e features -i image`)
-- [S · 0.12.0] `same-file`, `wasapi` and `hdf5-writer` are the workspace's only dependencies written
-  without `default-features = false` and a feature list (`wasapi`'s defaults bring `log` and
-  `num-integer`)
 - [S · blocked: gpui] `cargo audit`'s other warnings are other crates' trees: `glib` 0.18.5 unsound
   (RUSTSEC-2024-0429) under `tao`, `webkit2gtk` and wry, for `resonate-signin`'s window alone; zbus
   5 under gpui's accesskit and ashpd, beside `resonate-mpris`'s zbus 6 (two built), with

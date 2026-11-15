@@ -672,6 +672,30 @@ mod tests {
     }
 
     #[test]
+    fn a_picture_in_a_format_the_vocabulary_does_not_name_is_never_drawn_as_one_it_does() {
+        const QOI_HEADER: &[u8] = b"qoif\x00\x00\x00\x01\x00\x00\x00\x01\x03\x00";
+        const QOI_ONE_RGB_PIXEL: &[u8] = &[0xfe, 0x10, 0x20, 0x30];
+        const QOI_END: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 1];
+        let qoi = [QOI_HEADER, QOI_ONE_RGB_PIXEL, QOI_END].concat();
+
+        for format in [
+            ImageFormat::Jpeg,
+            ImageFormat::Png,
+            ImageFormat::Webp,
+            ImageFormat::Gif,
+            ImageFormat::Bmp,
+        ] {
+            let art = CoverArt {
+                format,
+                bytes: qoi.clone(),
+            };
+
+            assert!(Drawing::of(&art).is_none(), "{format:?}");
+            assert!(art.shorter_side().is_none(), "{format:?}");
+        }
+    }
+
+    #[test]
     fn what_is_transparent_does_not_tint_what_is_shrunk_with_it() {
         let checker = RgbaImage::from_fn(8, 8, |x, y| {
             if (x + y) % 2 == 0 {

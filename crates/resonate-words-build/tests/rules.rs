@@ -48,10 +48,12 @@ const OTHER_PROGRAMS_AND_PROTOCOLS: &[&str] = &[
     "sun_path",
     "thread_loop",
     "web_music",
+    "with_guessed_format",
     "workflow_dispatch",
     "xkb_keysym_get_name",
 ];
 const CRATES_AND_THEIR_FEATURES: &[&str] = &[
+    "accesskit_macos",
     "coinit_apartmentthreaded",
     "const_generics",
     "gpui_apple",
@@ -63,6 +65,7 @@ const CRATES_AND_THEIR_FEATURES: &[&str] = &[
     "parking_lot_core",
     "rust_backend",
     "rwh_06",
+    "safe_arch",
     "v0_3_50",
 ];
 

@@ -40,8 +40,9 @@ remote commands, `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter`) `objc2-me
 (the info center, the commands, their events and the artwork alone), `objc2`, `objc2-foundation`
 (strings, numbers, data, the dictionary), `objc2-app-kit` (`NSImage` alone, the cover),
 `block2` (the command handlers and the artwork's request) and `dispatch2` (every call is posted to
-the main queue, never run synchronously), each at the version gpui's tree already holds, so no
-second copy is built; for `Notices` `objc2-user-notifications` 0.3.2 (the center, the content,
+the main queue, never run synchronously), each at the 0.6 line gpui's own platform crates hold, so
+they add no copy of their own (the older line a Mac builds beside it is named under *duplicates third
+parties force*); for `Notices` `objc2-user-notifications` 0.3.2 (the center, the content,
 request, category, action, attachment and response alone, with `block2`) and `objc2-foundation`'s
 `NSArray`, `NSBundle`, `NSError`, `NSSet` and `NSURL`; for `DesktopTap` `objc2-core-audio`'s
 `objc2` and `objc2-foundation` features (`CATapDescription`) and `objc2-foundation`'s `NSUUID`, the
@@ -216,8 +217,17 @@ here, add it there.
   JPEG-to-JXL transcode with its `jbrd` reconstruction data (`vault.md`). Pure Rust (`zenjpeg`,
   `brotli`, `archmage`); licensed AGPL-3.0-only OR commercial, taken under the AGPL, which this project
   is. `jxl-oxide` reads it back and reconstructs the JPEG, so no second JXL decoder joins.
-- **`image`**: exactly the five formats `CoverArt` names (`bmp`, `gif`, `jpeg`, `png`, `webp`).
-  `resonate-codec`, `-vault`, `-ui`; `-library` dev-only; `-analysis` never.
+- **`image`**: the workspace asks for exactly the five formats `CoverArt` names (`bmp`, `gif`, `jpeg`,
+  `png`, `webp`). `resonate-codec`, `-vault`, `-ui`; `-library` dev-only; `-analysis` never. The
+  build holds more: gpui's workspace turns on `dds`, `exr`, `ff`, `hdr`, `ico`, `pnm`, `qoi`, `tga`,
+  `tiff` and `rayon` for `image` (`cargo tree -e features -i image`), so `exr`, `qoi`, `tiff` and
+  `rayon` are compiled in wherever gpui is, and no manifest of ours can switch them off. They draw
+  nothing of ours: a picture is read with the format `ImageFormat` fixed from its media type or magic
+  bytes (`ImageReader::with_format` and `set_format`, `read_as`), never guessed (`with_guessed_format`,
+  `load_from_memory` stay in tests), and `ImageFormat` names five, so a cover in any other format is
+  none (`a_picture_in_a_format_the_vocabulary_does_not_name_is_not_a_cover`,
+  `a_picture_in_a_format_the_vocabulary_does_not_name_is_never_drawn_as_one_it_does`). The phones'
+  library does not link gpui and builds the five alone.
 - **`proptest`**: dev-dependency of `resonate-core`, `-library`, `-sync`, `-ui` alone; `std` only (defaults
   fork a child process per case).
 - **`notify`**: library's; defaults dropped, Linux inotify needs no feature. On macOS the crate
@@ -355,3 +365,24 @@ here, add it there.
 - **`md-5` 0.10** beside the workspace's 0.11: `ape-decoder`, `flacenc` and `oo7` take it; **`miniz_oxide`
   0.8** beside 0.9: `png` and `exr` (under `image`, and `gpui`'s) take it while `flate2` takes 0.9.
   None is ours to move; each goes when its dependent moves.
+- **`wide` 0.7 and `safe_arch` 0.7** beside the workspace's 1.7 (`resonate-dsp`'s sum, and `zenjpeg`'s
+  under `jxl-encoder`): `imbl` 7.0.2, the latest published, takes `wide` 0.7 unconditionally for its HAMT's
+  `u8x16` group, with no feature to drop it. It is in the engine's tree, so on every target the engine
+  is built for, the phones included; it goes when `imbl` moves to `wide` 1 or the queue leaves `imbl`.
+- **`objc2` 0.5** (with `objc2-foundation` and `objc2-app-kit` 0.2) beside the 0.6 line (`objc2`
+  0.6, `objc2-foundation` and `objc2-app-kit` 0.3) `resonate-apple` and gpui's platform crates take,
+  on macOS alone: gpui's `accesskit_macos` 0.26 is the only crate on the older line. `block2` has one
+  copy there, since `objc2-foundation` 0.2 does not turn its `block2` feature on. Windows, Linux and
+  the phones (iOS, Android) build one `objc2` line or none (`cargo tree -d -e normal --target
+  aarch64-apple-darwin -p resonate`).
+- **`thiserror` 1** beside the workspace's 2: `filedescriptor` (gpui's Linux platform) in the player's
+  Linux tree, and, in `resonate-signin`'s window program alone, the gtk-rs crates (`glib`, `cairo-rs`,
+  `gtk`) on Linux and `jni` and `ndk` (under `tao` and `wry`) on Android. The Windows and macOS
+  players and both phones' libraries (`-p resonate-mobile`) build one copy. A `--workspace` build
+  selects `resonate-signin`'s `window` feature, so its `cargo tree -d` lists the window's copies
+  (`heck`, `syn` 1, `proc-macro-crate`, `toml_edit` beside the newer ones); they are
+  not the player's.
+- **`same-file`, `wasapi` and `hdf5-writer`** are written with `default-features = false` and no
+  feature list because there is nothing to select: `same-file` and `hdf5-writer` have no features and
+  `wasapi`'s one, `device-tests`, is for its own tests, so its `log` and `num-integer` are plain
+  dependencies no setting drops. Every other dependency of the workspace names its features.

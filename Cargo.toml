@@ -92,7 +92,7 @@ bytemuck = { version = "1.25.2", default-features = false }
 crossbeam-channel = { version = "0.5.17", default-features = false, features = ["std"] }
 futures-channel = { version = "0.3.34", default-features = false, features = ["alloc"] }
 signal-hook = { version = "0.4.6", default-features = false, features = ["iterator"] }
-same-file = "1.0.6"
+same-file = { version = "1.0.6", default-features = false }
 keepawake = { version = "0.6.1", default-features = false }
 fs4 = { version = "1.1.0", default-features = false }
 interprocess = { version = "2.4.8", default-features = false }
@@ -183,7 +183,7 @@ rustix = {
     default-features = false,
     features = ["fs", "net", "process", "std", "termios"]
 }
-wasapi = "0.27.0"
+wasapi = { version = "0.27.0", default-features = false }
 windows = { version = "0.62.2", default-features = false }
 windows-core = { version = "0.62.2", default-features = false, features = ["std"] }
 rusqlite = {
@@ -223,7 +223,7 @@ ring = { version = "0.17.14", default-features = false }
 rustls-pki-types = { version = "1.16.0", default-features = false }
 flate2 = { version = "1.1.11", default-features = false, features = ["rust_backend"] }
 hdf5-reader = { version = "0.13.0", default-features = false }
-hdf5-writer = "0.13.0"
+hdf5-writer = { version = "0.13.0", default-features = false }
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
 serde-saphyr = { version = "2.1.1", default-features = false, features = ["deserialize"] }
