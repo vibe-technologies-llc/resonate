@@ -158,11 +158,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `ttf-parser` under gpui's `usvg`; and the build-time `paste` (lofty), `proc-macro-error` (glib)
   and `basic-toml` (uniffi's askama)
 
-## Docs
-- [S · 0.12.0] The step check (`every_step_the_rules_number_stands_where_the_chain_puts_it`) does not
-  ask that every step of `MIGRATIONS` be named somewhere in the rules, so a step a list passes over
-  goes unnoticed
-
 ## Later: Structure
 - [M] Seven places delete `tracks` rows (`deleted.rs` twice, `store.rs`'s `prune`,
   `superseded_in_the_vault` and `forget_paths`, `db/roots.rs`'s `forget_delivered`, `organise.rs`),

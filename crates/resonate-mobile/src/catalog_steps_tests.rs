@@ -82,16 +82,34 @@ fn wrong_citations(rule: &str, names: &[&str]) -> Vec<String> {
     wrong
 }
 
+fn unnamed_steps<'a>(rules: &str, names: &[&'a str]) -> Vec<&'a str> {
+    names
+        .iter()
+        .copied()
+        .filter(|name| !rules.contains(&format!("`{name}`")))
+        .collect()
+}
+
+fn rule_texts() -> Vec<(String, String)> {
+    let rules = Path::new(env!("CARGO_MANIFEST_DIR")).join(RULES_FOLDER);
+    fs::read_dir(rules)
+        .expect("the rules folder")
+        .flatten()
+        .map(|entry| {
+            let text = fs::read_to_string(entry.path()).expect("a readable rule");
+            (entry.file_name().display().to_string(), text)
+        })
+        .collect()
+}
+
 #[test]
 fn every_step_the_rules_number_stands_where_the_chain_puts_it() {
     let names = step_names();
-    let rules = Path::new(env!("CARGO_MANIFEST_DIR")).join(RULES_FOLDER);
 
     let mut wrong = Vec::new();
-    for entry in fs::read_dir(rules).expect("the rules folder").flatten() {
-        let text = fs::read_to_string(entry.path()).expect("a readable rule");
+    for (file, text) in rule_texts() {
         for citation in wrong_citations(&text, &names) {
-            wrong.push(format!("{}: {citation}", entry.file_name().display()));
+            wrong.push(format!("{file}: {citation}"));
         }
     }
 
@@ -99,6 +117,39 @@ fn every_step_the_rules_number_stands_where_the_chain_puts_it() {
         wrong.is_empty(),
         "steps cited out of place:\n{}",
         wrong.join("\n")
+    );
+}
+
+#[test]
+fn every_step_of_the_chain_is_named_in_the_rules() {
+    let names = step_names();
+    let every_rule = rule_texts()
+        .into_iter()
+        .map(|(_, text)| text)
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let unnamed = unnamed_steps(&every_rule, &names);
+
+    assert!(
+        unnamed.is_empty(),
+        "steps no rule names:\n{}",
+        unnamed.join("\n")
+    );
+}
+
+#[test]
+fn a_step_is_named_only_where_a_rule_backticks_it() {
+    let names = ["V1", "FIRST_KEPT", "SECOND_KEPT"];
+
+    assert!(unnamed_steps("`V1` then `FIRST_KEPT` and `SECOND_KEPT`", &names).is_empty());
+    assert_eq!(
+        unnamed_steps("`V1` and `FIRST_KEPT`", &names),
+        ["SECOND_KEPT"]
+    );
+    assert_eq!(
+        unnamed_steps("V1 and FIRST_KEPT_TWICE and `SECOND_KEPT_TOO`", &names),
+        ["V1", "FIRST_KEPT", "SECOND_KEPT"]
     );
 }
 

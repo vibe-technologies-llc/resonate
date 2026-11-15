@@ -57,4 +57,5 @@ program, a protocol or a crate's feature (`pw_stream_destroy`, `payload_utf8`, `
 test's two lists, and a listed name no rule uses fails too. The phones' step numbers are held by
 `every_step_the_rules_number_stands_where_the_chain_puts_it` (`resonate-mobile`'s
 `catalog_steps_tests.rs`): a rule citing ``Step N (`NAME`)`` or "the Nth step, `NAME`" must put `NAME`
-at the position `MIGRATIONS` gives it, `V1` being the first.
+at the position `MIGRATIONS` gives it, `V1` being the first; `every_step_of_the_chain_is_named_in_the_rules` asks
+also that every name of `MIGRATIONS` be backticked somewhere in the rules, so a step a list passes over fails.
