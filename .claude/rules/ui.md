@@ -166,9 +166,12 @@ so `editing` sees it.
   again (`app_menu::say_the_menus`; `language.md`).
 - **A group that says nothing on a system is not offered there.** `Group::is_offered` leaves it
   out of the pane and of the settings search: *Graph rate* and *Bluetooth* are PipeWire's alone
-  (hidden on Windows and macOS); *Notifications*, *Metered connections* and *Window buttons* are
-  hidden on macOS, where nothing notifies, no meter is read and the system draws the buttons
-  (`a_group_that_says_nothing_on_a_system_is_not_offered_there`). The sound system a sentence
+  (hidden on Windows and macOS); *Window buttons* is hidden on macOS, where the system draws the
+  traffic lights, while *Notifications* and *Metered connections* stay, a Mac telling a song change
+  through UserNotifications and reading its meter from the path monitor (`macos.md`)
+  (`a_group_that_says_nothing_on_a_system_is_not_offered_there`). A settings test pressing a control
+  of a group hidden somewhere asks `Group::is_offered` first and, where it is not, holds that the
+  control is not drawn (`the_window_page_writes_the_button_switch`). The sound system a sentence
   names is `system::sound_system!`: *PipeWire*, *Windows* or *Core Audio*.
 - **The sidebar scrolls its middle and keeps its foot.** `RootView::sidebar` holds the tabs in an
   `overflow_y_scroll` region tracked by `Scrolls::sidebar`, with a `Scrollbars` bar over its edge; the

@@ -548,7 +548,15 @@ impl Driven {
         self.cx.run_until_parked();
     }
 
-    pub(crate) fn until(&mut self, mut holds: impl FnMut(&RootView, &gpui::App) -> bool) {
+    pub(crate) fn until(&mut self, holds: impl FnMut(&RootView, &gpui::App) -> bool) {
+        self.until_ticking(Duration::ZERO, holds);
+    }
+
+    pub(crate) fn until_ticking(
+        &mut self,
+        beyond_a_frame: Duration,
+        mut holds: impl FnMut(&RootView, &gpui::App) -> bool,
+    ) {
         let began = Instant::now();
         loop {
             self.settle();
@@ -559,6 +567,7 @@ impl Driven {
                 began.elapsed() < PATIENCE,
                 "the window never came to the state asked for"
             );
+            self.cx.executor().advance_clock(beyond_a_frame);
             thread::sleep(FRAME);
         }
     }

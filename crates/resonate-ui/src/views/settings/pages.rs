@@ -76,6 +76,17 @@ impl Pane {
         reach(&mut self.driven, selector);
     }
 
+    fn not_drawn(&mut self, selector: &'static str) {
+        self.driven.scroll("settings", -SCROLLED_PAST);
+        for _ in 0..SCROLLS_AT_MOST {
+            assert!(
+                self.driven.cx.debug_bounds(selector).is_none(),
+                "{selector} is drawn where its group is not offered"
+            );
+            self.driven.scroll("settings", SCROLL_STEP);
+        }
+    }
+
     fn forgetting_what_was_written(&mut self) {
         self.driven.settle();
         self.written.lock().clear();
@@ -165,7 +176,7 @@ fn each_category_opens_onto_the_controls_it_holds(cx: &mut TestAppContext) {
         (Category::Sync, "sync-on-track"),
         (Category::Desktop, "notify-on-a-track-change-track"),
         (Category::Appearance, "text-size-0"),
-        (Category::Window, "show-the-minimise-button-track"),
+        (Category::Window, "wheel-the-volume-track"),
         (Category::About, "check-for-updates-track"),
     ];
     let mut pane = Pane::open(cx);
@@ -463,6 +474,10 @@ fn the_appearance_page_writes_the_text_size_chosen_and_stops_following_the_deskt
 fn the_window_page_writes_the_button_switch(cx: &mut TestAppContext) {
     let mut pane = Pane::open(cx);
     pane.category(Category::Window);
+    if !Group::WindowButtons.is_offered() {
+        pane.not_drawn("show-the-minimise-button-track");
+        return;
+    }
     let shown = pane.app(|app| app.window_buttons.minimise);
 
     let written = pane.pressing("show-the-minimise-button-track", 1);

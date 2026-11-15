@@ -244,6 +244,8 @@ mod tests {
         let (serving, arrived) = counting();
         let stop = Arc::new(AtomicBool::new(false));
         let (near, mut far) = UnixStream::pair().expect("a pair");
+        far.set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("a timeout");
         write_frame(&mut far, &[1]).expect("a frame sent");
         let mut offered = VecDeque::from([near]);
         let (asked_again, waiting) = mpsc::channel::<()>();
@@ -278,8 +280,6 @@ mod tests {
         asked_again.send(()).expect("the accept loop waits");
         accepted.join().expect("the accept loop ends");
 
-        far.set_read_timeout(Some(Duration::from_secs(5)))
-            .expect("a timeout");
         assert!(
             read_frame(&mut far)
                 .expect("the end of the stream")

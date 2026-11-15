@@ -1,7 +1,7 @@
 lookups-note = MusicBrainz for what a release and an artist are, the Cover Art Archive for a cover, Wikimedia Commons for a portrait, LRCLIB and Better Lyrics for lyrics. Nothing sent identifies you unless a contact is given below.
 mirror-note = MusicBrainz's own export, a 7.5 GB download read into a copy of about 10 GB kept here, compressed and indexed; the build wants some 50 GB of room for about an hour. A lookup is answered from it in milliseconds, before the network, and a synced device without a copy asks this one.
 mirror-absent = No copy is held yet. Building one fetches the export and reads it, which takes a while; lookups go on as before meanwhile.
-metered-note = A connection NetworkManager reports as metered, a phone's hotspot or a capped plan, is the one these switches are about; one it cannot tell is taken as not metered. A song played in place is neither skipped nor held.
+metered-note = A connection the system reports as metered, a phone's hotspot or a capped plan, is the one these switches are about; one it cannot tell is taken as not metered. A song played in place is neither skipped nor held.
 waiting-on-the-meter = The connection is metered: downloads wait for one that is not, and go on by themselves when it changes.
 next-start-note = Turned on for the next start; nothing is reached until then.
 key-note = Used from the next start by the lookup, which names by ear what nothing else could, and by the Analysis pane. Leave it empty to recognise nothing.

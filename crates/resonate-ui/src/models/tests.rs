@@ -17,8 +17,8 @@ use resonate_library::{
 use resonate_providers::{Identity, Obtained, Provider, Providers, WhyAway};
 
 use super::{
-    Beyond, Change, Favourited, Followed, KeepPass, LibraryModel, ListedRow, MissingRow, Notice,
-    POLLS_PER_REREAD_WHILE_ASKING, Pass, Planned, Wanted,
+    Beyond, Change, Favourited, Followed, KEEPS_LOOKED_AT_EVERY, KeepPass, LibraryModel, ListedRow,
+    MissingRow, Notice, POLLS_PER_REREAD_WHILE_ASKING, Pass, Planned, Wanted,
     arranged::{
         Arranging, Reaching, albums_kept_before_the_rest, arranged, beyond_the_listing,
         elsewhere_standing, headed_by_disc, held_at, held_in, kept_before_the_rest,
@@ -116,13 +116,15 @@ impl Keeping {
 
     fn until_asked(&mut self, songs: usize) {
         let asked = Arc::clone(&self.asked);
-        self.driven.until(|_, _| asked.lock().len() >= songs);
+        self.driven
+            .until_ticking(KEEPS_LOOKED_AT_EVERY, |_, _| asked.lock().len() >= songs);
     }
 
     fn until_the_pass_ends(&mut self) {
         let model = self.model.clone();
-        self.driven
-            .until(|_, cx| model.read(cx).keeps_left().is_none());
+        self.driven.until_ticking(KEEPS_LOOKED_AT_EVERY, |_, cx| {
+            model.read(cx).keeps_left().is_none()
+        });
     }
 
     fn queued(&mut self) -> u64 {

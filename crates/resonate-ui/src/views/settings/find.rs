@@ -414,12 +414,9 @@ impl Group {
 
     const fn is_offered_where(self, played_through_pipewire: bool, on_a_mac: bool) -> bool {
         let is_pipewires_own = matches!(self, Self::GraphRate | Self::Bluetooth);
-        let says_nothing_on_a_mac = matches!(
-            self,
-            Self::Notifications | Self::Metered | Self::WindowButtons
-        );
+        let drawn_by_a_mac_itself = matches!(self, Self::WindowButtons);
 
-        (played_through_pipewire || !is_pipewires_own) && !(on_a_mac && says_nothing_on_a_mac)
+        (played_through_pipewire || !is_pipewires_own) && !(on_a_mac && drawn_by_a_mac_itself)
     }
 
     pub(crate) const fn is_experimental(self) -> bool {
@@ -1347,12 +1344,16 @@ mod tests {
             assert!(!group.is_offered_where(false, false));
             assert!(!group.is_offered_where(false, true));
         }
-        for group in [Group::Notifications, Group::Metered, Group::WindowButtons] {
-            assert!(group.is_offered_where(true, false));
-            assert!(group.is_offered_where(false, false));
-            assert!(!group.is_offered_where(false, true));
-        }
-        for group in [Group::Device, Group::Colour, Group::Discord] {
+        assert!(Group::WindowButtons.is_offered_where(true, false));
+        assert!(Group::WindowButtons.is_offered_where(false, false));
+        assert!(!Group::WindowButtons.is_offered_where(false, true));
+        for group in [
+            Group::Device,
+            Group::Colour,
+            Group::Discord,
+            Group::Notifications,
+            Group::Metered,
+        ] {
             assert!(group.is_offered_where(false, true));
         }
     }
