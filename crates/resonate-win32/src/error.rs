@@ -32,6 +32,8 @@ pub enum Op {
     LeaveTheConsole,
     HearConsoleInterrupts,
     DisconnectPipe,
+    MakeIcon,
+    ListWindows,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

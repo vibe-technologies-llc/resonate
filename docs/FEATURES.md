@@ -36,13 +36,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `build-std`
 
 ## Windows parity
-- [S · 0.12.0] Windows' launcher icon does not follow the accent (`plain_launcher.rs` does nothing
-  there)
 - [M · blocked: hardware] Windows has played on a physical machine (a listener's, beside what
   `windows.md` records under QEMU/KVM); what a plain run there did not settle is still unseen:
   WASAPI exclusive playback at every rate and word on a real DAC, device hot-plug, the render cycle's timing, microphone and loopback capture (a loopback endpoint that
   stays silent while nothing plays, a microphone's autoconverted format), the window under
-  per-monitor DPI and IME, the recycle bin, the terminal keys, the window's named pipe (its
+  per-monitor DPI and IME, the window's icon in the accent (`WM_SETICON` on the taskbar button), the recycle bin, the terminal keys, the window's named pipe (its
   owner-only security descriptor against another account), the ARM64 files (cross-built on an x64
   runner, never started), the installer's Start menu shortcut, the default-app selection and the
   `resonate://` link handler (whether a browser's shared or party link starts or reaches the window),

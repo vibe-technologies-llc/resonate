@@ -50,7 +50,7 @@ pub use crate::{
     app::{Bus, Leaving, Lookups, PlayerModel, ResonateApp, run},
     equaliser::{Curve, EqualiserModel, Sounding},
     error::{Error, Result, WindowKind},
-    launcher::{AppIcon, Launcher},
+    launcher::{AppIcon, IconUndrawn, Launcher},
     listening::Listens,
     lyrics::{Look, LyricsModel},
     measure::{Measures, Unmeasured},

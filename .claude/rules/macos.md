@@ -182,7 +182,7 @@ name; a system without them is `Error::NoProcessTap`, which `resonate-listen` an
 
 Game Mode;
 the launcher's icon following the accent (`plain_launcher.rs`
-does nothing, as on Windows).
+does nothing; Windows wears it on its windows, `ui.md`).
 
 ## Release
 

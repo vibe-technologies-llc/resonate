@@ -1,4 +1,5 @@
 use resonate_core::Appearance;
+use resvg::{tiny_skia, usvg};
 
 use crate::theme;
 
@@ -9,6 +10,18 @@ const OPENS_RECOLOURED: &str = "<svg id=\"resonate-in-the-accent\" ";
 const OPENS_OVER_THE_PACKAGED: &str =
     "<svg id=\"resonate-in-the-accent\" data-written-over=\"the-packaged-icon\" ";
 const LIFTED_TOWARD_WHITE: f32 = 0.3;
+
+#[derive(Debug, thiserror::Error)]
+pub enum IconUndrawn {
+    #[error("the icon's drawing would not read")]
+    Unreadable(#[source] usvg::Error),
+
+    #[error("no canvas {side} pixels wide could be made for the icon")]
+    NoCanvas { side: u32 },
+
+    #[error("the icon would not encode as a picture")]
+    Unencoded,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppIcon(String);
@@ -37,6 +50,25 @@ impl AppIcon {
 
     pub fn is_the_packaged_copy(held: &[u8]) -> bool {
         held == PACKAGED.as_bytes()
+    }
+
+    pub fn png(&self, side: u32) -> Result<Vec<u8>, IconUndrawn> {
+        let tree = usvg::Tree::from_str(&self.0, &usvg::Options::default())
+            .map_err(IconUndrawn::Unreadable)?;
+        let mut canvas =
+            tiny_skia::Pixmap::new(side, side).ok_or(IconUndrawn::NoCanvas { side })?;
+        let drawn = tree.size();
+        let scale = side as f32 / drawn.width().max(drawn.height());
+
+        resvg::render(
+            &tree,
+            tiny_skia::Transform::from_scale(scale, scale),
+            &mut canvas.as_mut(),
+        );
+        canvas.encode_png().map_err(|error| {
+            tracing::debug!(%error, "the icon would not encode");
+            IconUndrawn::Unencoded
+        })
     }
 }
 
@@ -118,5 +150,20 @@ mod tests {
     fn the_packaged_icon_is_not_taken_for_one_drawn_here() {
         assert!(!AppIcon::drawn_here(PACKAGED.as_bytes()));
         assert!(!AppIcon::drawn_here(b""));
+    }
+
+    #[test]
+    fn the_icon_is_drawn_as_a_square_picture_of_the_side_asked_for() {
+        const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n'];
+        let icon = AppIcon::of(Appearance::DEFAULT);
+
+        for side in [16_u32, 32, 64] {
+            let picture = icon.png(side).expect("a picture");
+            let width = u32::from_be_bytes(picture[16..20].try_into().expect("a width"));
+            let height = u32::from_be_bytes(picture[20..24].try_into().expect("a height"));
+
+            assert_eq!(picture[..8], PNG_SIGNATURE);
+            assert_eq!((width, height), (side, side));
+        }
     }
 }

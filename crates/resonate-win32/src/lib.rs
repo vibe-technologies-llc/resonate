@@ -13,6 +13,8 @@ mod files;
 #[cfg(any(windows, test))]
 mod gaming;
 #[cfg(any(windows, test))]
+mod icons;
+#[cfg(any(windows, test))]
 mod identity;
 #[cfg(any(windows, test))]
 mod mmcss;
@@ -39,6 +41,7 @@ pub use crate::{
     error::{Error, HResult, Op, Result},
     files::{FileIdentity, file_identity},
     gaming::GameModeWatch,
+    icons::WindowIcons,
     identity::name_the_process,
     mmcss::ProAudioClass,
     pipes::disconnect_pipe,

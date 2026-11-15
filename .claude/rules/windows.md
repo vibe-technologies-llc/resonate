@@ -70,7 +70,7 @@ no workspace crate, and hands out a safe API over the `windows` crate:
 - **Each module's raw calls are a trait, so its sequencing runs on every host against a fake**, as
   `resonate-apple`'s `Toolbox` does (`macos.md`): `Scheduling` (MMCSS), `Counting`, `Naming`,
   `Attachment` (the console), `Identifying`, `PowerModes`, `Endpoints` (COM), `Securing`,
-  `Disconnecting`,
+  `Disconnecting`, `Iconing`,
   `Streaming` and, under `console`, `Terminal`. The unit struct `system::Windows` implements each
   in a `cfg(windows)` `mod real` at the foot of its module, and that is the only place the module's
   `unsafe` blocks and `windows` imports are; the module's generic type or function over the trait
@@ -107,7 +107,12 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   `IAudioEndpointVolume` by endpoint id through `IMMDeviceEnumerator::GetDevice`: the scalar
   level as a `Level` clamped to 0..=1, the mute, and `watched`, an `IAudioEndpointVolumeCallback`
   made with `#[implement]` that only calls the closure it is given, unregistered when its
-  `VolumeWatch` drops); `name_the_process` (`SetCurrentProcessExplicitAppUserModelID`); `disconnect_pipe` (`DisconnectNamedPipe` on a
+  `VolumeWatch` drops); `name_the_process` (`SetCurrentProcessExplicitAppUserModelID`); `WindowIcons` (each PNG made an icon by
+  `CreateIconFromResourceEx`, every top-level window `EnumWindows` lists whose owning process
+  `GetWindowThreadProcessId` names as this one sent `WM_SETICON` for both sizes through
+  `SendMessageTimeoutW`, so a hung window is not waited on, and the pair it replaces destroyed only
+  once the windows wear the new one; `every_window_of_this_process_wears_both_sizes_and_another_process_is_left_alone`);
+  `disconnect_pipe` (`DisconnectNamedPipe` on a
   borrowed handle, so the window's pipe severs a client from another thread, `mpris.md`);
   `leave_a_console_of_its_own` (`GetConsoleProcessList`, then `FreeConsole` only where this process
   is the console's one, answering a `Console`);
@@ -660,8 +665,10 @@ on without it as it does on a Linux machine with none (a running window is still
 pipe, the machine kept awake by `awake.rs`, the media transport, toasts and the metered connection
 above). What MPRIS's track list and playlists give another program on Linux, Windows gives through
 the terminal: `resonate queue --show` and `queue --activate PLAYLIST` (`binary.md`), `resonate
-players`, and `resonate mcp`'s `show_queue` and `play_playlist`, each over the pipe. The launcher's
-icon-follows-the-accent is a no-op, and is on the roadmap.
+players`, and `resonate mcp`'s `show_queue` and `play_playlist`, each over the pipe. The icon follows
+the accent on the windows alone (`ui.md`): the executable's resource and the Start menu shortcut
+keep the packaged colours, since a running program rewriting what the installer laid down would be
+undone by the next update.
 
 ## Release
 

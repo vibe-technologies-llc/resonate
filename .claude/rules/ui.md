@@ -823,7 +823,12 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `resonate-ui`); the binary's `launcher::Icons` waits `SETTLES_AFTER` of quiet, writes a staged copy
   over `$XDG_DATA_HOME/icons/hicolor/scalable/apps/resonate.svg`, and only where that moved anything
   flushes the caches (theme folder mtime, `kbuildsycoca6`, `resonate_mpris::tell_the_icons_changed`,
-  `gtk-update-icon-cache`). **The gradient is `userSpaceOnUse`**: under `objectBoundingBox` each
+  `gtk-update-icon-cache`). On Windows the binary's `launcher::Icons` (`window_launcher.rs`) waits
+  the same quiet, draws `AppIcon::png` at `BIG_SIDE` and `SMALL_SIDE` (resvg, the drawing scaled to
+  the square asked) and has `resonate_win32::WindowIcons` wear them on every top-level window of the
+  process (`windows.md`), so the taskbar button and the caption follow the accent; the installed
+  executable's own icon and the Start menu's shortcut keep the packaged colours. A Mac's is still
+  `plain_launcher.rs`, which does nothing (`macos.md`). **The gradient is `userSpaceOnUse`**: under `objectBoundingBox` each
   stroke is a zero-width box that paints nothing.
 - **The catalog is read while gpui starts, so the first frame holds it.** `run` starts `FirstRead`
   before `Application::new` (`Asked::at_first`, also what `LibraryModel::new` is built from) while gpui

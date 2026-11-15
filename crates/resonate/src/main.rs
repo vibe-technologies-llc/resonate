@@ -31,8 +31,11 @@ mod lastfm;
 mod lasting;
 #[cfg(all(feature = "ui", unix, not(target_os = "macos")))]
 mod launcher;
-#[cfg(all(feature = "ui", any(windows, target_os = "macos")))]
+#[cfg(all(feature = "ui", target_os = "macos"))]
 #[path = "plain_launcher.rs"]
+mod launcher;
+#[cfg(all(feature = "ui", windows))]
+#[path = "window_launcher.rs"]
 mod launcher;
 mod listen;
 mod mcp;
