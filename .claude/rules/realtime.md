@@ -100,7 +100,7 @@ rest on this discipline alone):
   the clip's shape (`coreaudio_conform`, a resampler) is the capture thread's, never the callback's.
 
 **Every callback stamps what it fills, from the device's own timestamp.**
-`AudioSource::fill_stamped(dst, Stamp)` (`resonate-audio`; `fill` is the default for a source that reads none) hands the source a `Moment` and the stream
+`AudioSource::fill_stamped(dst, Stamp)` (`resonate-audio`; `fill` is the default for a source that reads none; `frames_ready` is the test graph's, never a callback's) hands the source a `Moment` and the stream
 frames between it and the fill's first being heard (`Moment`: nanoseconds on one process-wide monotonic clock, `Moment::start_the_clock` called by
 `ring` so the clock's first read is never on the RT thread). **A callback runs some way into its cycle, so
 the moment it ran is not when its cycle began**: each backend hands `StreamClock::stamp_by` a

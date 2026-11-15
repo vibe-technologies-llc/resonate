@@ -942,6 +942,10 @@ impl AudioSource for RingConsumer {
     fn fill_stamped(&mut self, dst: &mut [u8], stamp: Stamp) -> usize {
         self.filled_from(dst, Some(stamp))
     }
+
+    fn frames_ready(&self) -> Option<Frames> {
+        Some(Frames(self.available_frames() as u64))
+    }
 }
 
 impl RingConsumer {

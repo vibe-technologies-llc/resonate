@@ -1042,7 +1042,10 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   `publish`, before `answer`, in order (a full channel still owes the rest in `events_owed`), so a
   reader woken by `TrackStarted` that reads `Player::state` reads the row it names: the window, the
   phones' `PlayerMoved` and the terminal's `billing` each read the state on an event
-  (`a_row_heard_on_without_a_gap_is_announced_as_the_graph_reaches_it_not_as_it_is_written`).
+  (`a_row_heard_on_without_a_gap_is_announced_as_the_graph_reaches_it_not_as_it_is_written`). The
+  run loop publishes and tells once more as it stops, so what the commands taken beside the last
+  one raised is not stranded
+  (`an_event_raised_by_the_last_command_before_the_player_stops_is_still_told`).
 - **The inspector never rereads the playing file.** The engine samples `Decoder::last_packet`
   through a `ProfileBuilder` and publishes a `StreamDigest`; `resonate-ui` renders it without
   `resonate-codec`. The box layout is read by the open's own prescan (`Prescan::buffered`, whole
@@ -1620,16 +1623,18 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   `equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_last`), or a row's
   announcement (`a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announced_as_the_graph_reaches_it`
   stops pulling at each boundary it has passed until that row is announced).
-- **A listening test's levels are measured on frames fixed in the music, not on a count of
-  pulls.** The audition's own rebind fades the old stream out and opens another after a gap the
-  engine's scheduling sets, so
-  `restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap` anchors its windows
-  where that stream opened (`pull_until_reopened`, read off `opened_after`), pulls to exact frames
-  (`pull_to`, never past by a block), begins the audition on a whole number of `BLOCK_FRAMES`
-  (`BUGS.md`: the extended arm's level follows the frame its chain began at), and asks for the
-  switch only once the engine has written `HELD_BEFORE_AN_ARM_IS_SWITCHED` ahead of the graph
-  (`wait_for_the_ring_to_hold`: `Tap::written` less what the graph pulled since the open), since
-  a starved engine's near-dry ring has no splice point and the switch rebinds instead.
+- **A listening test's switches are anchored on frames fixed in the music, not on a count of
+  pulls or a pause.** The audition's own rebind fades the old stream out and opens another after a
+  gap the engine's scheduling sets, so the restoration, resampler and dither tests
+  (`restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap`,
+  `switched_back_and_forth`) anchor where that stream opened (`pull_until_reopened`, read off
+  `opened_after`), pull to exact frames (`pull_to`, never past by a block), and ask for each switch
+  only once the graph's source holds `HELD_BEFORE_AN_ARM_IS_SWITCHED`
+  (`wait_for_the_ring_to_hold`, reading `AudioSource::frames_ready`, which the ring answers with
+  what it holds to be heard, stale frames excluded, and every other source leaves `None`), since a
+  starved engine's near-dry ring has no splice point and the switch rebinds instead. The
+  restoration test also begins its audition on a whole number of `BLOCK_FRAMES` (`BUGS.md`: the
+  extended arm's level follows the frame its chain began at).
 - **A queue test asserting how a smart shuffle spreads seeds its `Shuffler`**
   (`Shuffler::seeded`): the spread is a bound on most draws, not every one (about one clock seed
   in seventy put three or more alike neighbours into thirty rows of three artists), so

@@ -226,6 +226,13 @@ impl Graph {
         self.played.extend_from_slice(&block);
     }
 
+    fn frames_ready(&self) -> usize {
+        self.source
+            .as_ref()
+            .and_then(|source| source.frames_ready())
+            .map_or(0, |ready| ready.get() as usize)
+    }
+
     fn pull(&mut self, bytes: usize) -> usize {
         if !self.active {
             return 0;
@@ -10065,6 +10072,24 @@ fn faulted(player: &Player) -> Vec<String> {
 }
 
 #[test]
+fn an_event_raised_by_the_last_command_before_the_player_stops_is_still_told() -> Result<()> {
+    let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    let events = player.events().clone();
+
+    player.send(Command::Order(vec![0, 1]))?;
+    player.shutdown()?;
+
+    let refused = events
+        .try_iter()
+        .any(|event| matches!(event, Event::CommandFailed { .. }));
+    assert!(
+        refused,
+        "the refusal of a command sent as the player stopped was never told"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_settled_command_lands_with_its_state_published_and_a_refusal_is_still_announced() -> Result<()>
 {
     let tree = Tree::new();
@@ -12025,7 +12050,6 @@ fn a_seek_back_across_a_turn_reopens_the_output_for_the_format_it_lands_in() -> 
 const AUDITIONED_RING: Duration = Duration::from_millis(500);
 const AUDITIONS_PULLED_TIMES_REAL_TIME: u32 = 8;
 const AUDITIONED_SECONDS: usize = 6;
-const THE_RING_FILLS_WHILE_NOTHING_PULLS: Duration = Duration::from_millis(150);
 const A_PERIOD_HOLDS_ITS_PEAK_WITHIN: f64 = 0.03;
 const A_STEP_MAY_PASS_THE_SINE_BY: f64 = 1.05;
 const DITHER_STEPS_AT_MOST: f64 = 48.0;
@@ -12061,18 +12085,6 @@ fn auditioning(
     })?;
     wait_for(&player, playing, "the stream to open");
     Ok((player, graph))
-}
-
-fn pull_for(player: &Player, graph: &Arc<Mutex<Graph>>, stride: usize, frames: usize, what: &str) {
-    let until = graph.lock().played.len() / stride + frames;
-    play_paced_until(
-        player,
-        graph,
-        BLOCK_FRAMES * stride,
-        AUDITIONS_PULLED_TIMES_REAL_TIME,
-        |_, graph| graph.played.len() / stride >= until,
-        what,
-    );
 }
 
 fn pull_to(graph: &Arc<Mutex<Graph>>, stride: usize, frame: usize, what: &str) {
@@ -12112,21 +12124,10 @@ fn pull_until_reopened(graph: &Arc<Mutex<Graph>>, stride: usize, opens: usize) -
     );
 }
 
-fn wait_for_the_ring_to_hold(
-    player: &Player,
-    graph: &Arc<Mutex<Graph>>,
-    stride: usize,
-    opened_at: usize,
-    frames: usize,
-) {
-    let Tapped::Samples(tap) = player.tap() else {
-        panic!("an audition's stream is tapped");
-    };
-    let pulled = graph.lock().played.len() / stride - opened_at;
+fn wait_for_the_ring_to_hold(player: &Player, graph: &Arc<Mutex<Graph>>, frames: usize) {
     let deadline = Instant::now() + PATIENCE;
     while Instant::now() < deadline {
-        let held = (tap.written().get() as usize).saturating_sub(pulled);
-        if held >= frames {
+        if graph.lock().frames_ready() >= frames {
             return;
         }
         thread::sleep(SHORTEST_PAUSE_BETWEEN_PULLS);
@@ -12170,19 +12171,28 @@ fn switched_back_and_forth(
         .state()
         .output
         .map_or(RATE, |output| output.negotiated.rate.hz()) as usize;
-    pull_for(player, graph, stride, rate / 4, "the song to play");
+    let held_to_switch = (rate as f64 * HELD_BEFORE_AN_ARM_IS_SWITCHED.as_secs_f64()) as usize;
+
+    pull_to(graph, stride, rate / 4, "the song to play");
+    let opens = graph.lock().opens;
     answered(player, audition_of(contest, Arm::A, Lowered::NOTHING))?;
-    pull_for(player, graph, stride, rate, "arm A to be heard");
-    let from = graph.lock().played.len() / stride;
+    let from = pull_until_reopened(graph, stride, opens) + rate;
+    pull_to(graph, stride, from, "arm A to be heard");
     let opens = graph.lock().opens;
     spliced_since(player);
 
     let mut switches = Vec::new();
     for heard in [Arm::B, Arm::A, Arm::B] {
-        thread::sleep(THE_RING_FILLS_WHILE_NOTHING_PULLS);
-        switches.push(graph.lock().played.len() / stride);
+        wait_for_the_ring_to_hold(player, graph, held_to_switch);
+        let switched = graph.lock().played.len() / stride;
+        switches.push(switched);
         answered(player, audition_of(contest, heard, Lowered::NOTHING))?;
-        pull_for(player, graph, stride, rate / 2, "the other arm to be heard");
+        pull_to(
+            graph,
+            stride,
+            switched + rate / 2,
+            "the other arm to be heard",
+        );
     }
     Ok(Switched {
         from,
@@ -12427,7 +12437,7 @@ fn restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap() -
     pull_to(&graph, stride, switched_at, "arm A to be heard");
     let opens = graph.lock().opens;
     spliced_since(&player);
-    wait_for_the_ring_to_hold(&player, &graph, stride, began, held_to_switch);
+    wait_for_the_ring_to_hold(&player, &graph, held_to_switch);
     answered(&player, audition_of(contest, Arm::B, lowered))?;
     let b_from = switched_at + rate / 2;
     pull_to(&graph, stride, b_from + measured, "arm B to be heard");

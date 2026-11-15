@@ -758,6 +758,8 @@ impl Engine {
             }
         }
 
+        self.publish();
+        self.tell_what_was_published();
         if let Some(output) = self.output.as_mut() {
             output.close();
         }
