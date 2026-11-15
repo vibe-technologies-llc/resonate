@@ -52,6 +52,8 @@ pub struct EnrichmentOptions {
     pub at_most: Option<u32>,
     #[uniffi(default = "")]
     pub acoustid_key: String,
+    #[uniffi(default = false)]
+    pub hurried: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -143,6 +145,7 @@ enum Leaving {
 #[derive(Default)]
 struct Told {
     cancelled: Arc<AtomicBool>,
+    hurried: AtomicBool,
     finished_workers: AtomicU32,
     waking: Mutex<u64>,
     woken: Condvar,
@@ -161,6 +164,10 @@ impl Told {
 
     fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Acquire)
+    }
+
+    fn is_hurried(&self) -> bool {
+        self.hurried.load(Ordering::Acquire)
     }
 
     fn keeps_the_mark(&self) -> bool {
@@ -432,6 +439,7 @@ fn run(
         }
     };
     let at_most = options.at_most.map(|at_most| at_most as usize);
+    told.hurried.store(options.hurried, Ordering::Release);
 
     let workers_before = told.finished_workers.load(Ordering::Acquire);
     let lyrics = thread::Builder::new()
@@ -1231,7 +1239,7 @@ struct Hearing<'a>(&'a Told);
 
 impl Watching for Hearing<'_> {
     fn is_background(&self) -> bool {
-        true
+        !self.0.is_hurried()
     }
 
     fn stopped(&self) -> bool {
@@ -3417,6 +3425,13 @@ mod tests {
             harness
         }
 
+        fn hurried() -> EnrichmentOptions {
+            EnrichmentOptions {
+                hurried: true,
+                ..EnrichmentOptions::default()
+            }
+        }
+
         fn passed_by(
             harness: &Harness,
             asking: &Asking,
@@ -3442,12 +3457,7 @@ mod tests {
             let fake = Arc::new(Fake::default());
             let asking =
                 asking(&fake).hearing_through(Arc::clone(printer) as Arc<dyn Fingerprints>);
-            passed_by(
-                harness,
-                &asking,
-                &Arc::new(Told::default()),
-                EnrichmentOptions::default(),
-            )
+            passed_by(harness, &asking, &Arc::new(Told::default()), hurried())
         }
 
         fn misnamed(harness: &Harness) -> Vec<String> {
@@ -3553,7 +3563,7 @@ mod tests {
                 &Arc::new(Told::default()),
                 EnrichmentOptions {
                     refresh: true,
-                    ..EnrichmentOptions::default()
+                    ..hurried()
                 },
             );
 
@@ -3570,7 +3580,7 @@ mod tests {
                 &harness,
                 &asking(&fake),
                 &Arc::new(Told::default()),
-                EnrichmentOptions::default(),
+                hurried(),
             );
 
             assert_eq!(studies(&harness), 0);
@@ -3641,7 +3651,7 @@ mod tests {
                 &harness,
                 &asking(&fake),
                 &Arc::new(Told::default()),
-                EnrichmentOptions::default(),
+                hurried(),
             );
 
             assert_eq!(bands_of(&harness, 'a'), None);
@@ -3831,10 +3841,29 @@ mod tests {
             let asking =
                 asking(&fake).hearing_through(Arc::clone(&printer) as Arc<dyn Fingerprints>);
 
-            passed_by(&harness, &asking, &told, EnrichmentOptions::default());
+            passed_by(&harness, &asking, &told, hurried());
 
             assert_eq!(printer.calls(), 0);
             assert_eq!(studies(&harness), 0);
+        }
+
+        #[test]
+        fn a_pass_studies_in_the_background_unless_it_was_asked_to_hurry() {
+            let harness = Harness::new();
+            let fake = Arc::new(Fake::default());
+            let plain = Arc::new(Told::default());
+            let hurrying = Arc::new(Told::default());
+
+            passed_by(
+                &harness,
+                &asking(&fake),
+                &plain,
+                EnrichmentOptions::default(),
+            );
+            passed_by(&harness, &asking(&fake), &hurrying, hurried());
+
+            assert!(Hearing(&plain).is_background());
+            assert!(!Hearing(&hurrying).is_background());
         }
 
         fn broken_then_stamped(harness: &Harness) -> u64 {
@@ -3920,7 +3949,7 @@ mod tests {
                 &Arc::new(Told::default()),
                 EnrichmentOptions {
                     refresh: true,
-                    ..EnrichmentOptions::default()
+                    ..hurried()
                 },
             );
 

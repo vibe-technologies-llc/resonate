@@ -105,9 +105,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   one figure, 9 to 13 s alone and 30 to 70 s among the rest (the crate's run 87 s wall, 1 130 s
   summed); sharing an encode between the cases that make the same file, or a study that stops once
   the figure asked for is read, would shorten every run
-- [S · 0.12.0] The phones' `enrichment::tests::hearing::` tests take about 21 s each and the
-  library's study and gathering tests 15 to 43 s; whether they wait out a timer a test could shorten
-  is unread
 - [S · 0.12.0] CI builds and runs each test line in one job; `cargo nextest archive` and
   `--partition` would build once and spread the headless tests over runners, and a faster linker
   (`wild`, pure Rust, or `mold`) is untried beside the default `rust-lld`

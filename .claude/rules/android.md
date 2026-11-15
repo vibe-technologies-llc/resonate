@@ -1206,7 +1206,7 @@ keeps one) over `tracks_to_hear`: visible documents with no `studies.agreement`,
 `JUDGED_UNDER` keeping a print with no `recognised` (every visible one under
 `refresh`), cut to `at_most`, downloads first and then in id order. A song whose study keeps a print
 (`kept_print`, its own or one landed from another device) is not decoded again; any other is studied by `resonate_analysis::study` (one decode, the
-levels, verdict and print, stopped within a decode by `stop_enrichment` through `Hearing`), kept with its print through
+levels, verdict and print, stopped within a decode by `stop_enrichment` through `Hearing`, on the background crew unless `EnrichmentOptions::hurried` asks otherwise, `analysis.md`), kept with its print through
 `keep_studied`. The print is then asked of `AcoustId` over the pass's yielding client through
 `recognised_through`, the one reading `recognise_track` shares: matches weighed by `agreement`, kept as
 `studies.agreement` beside the top match heard and `recognised` (`keep_recognition`), so a song is asked once until its file changes (`documents_forget_what_was_heard`) or a

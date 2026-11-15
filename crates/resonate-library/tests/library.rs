@@ -43,15 +43,15 @@ use resonate_library::{
     KeepSummary, Kept, KeptList, KeptSong, Layout, Learning, Library, LifeSpan, Link, LinkNames,
     Linked, LinkedPlaylist, LinkedProfile, ListedSong, Listen, ListeningService, LookupOp, Love,
     Loved, LovedNames, LovesTold, LyricText, LyricsAhead, LyricsAsked, Maker, Mbid, Medium,
-    Missing, MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Performer, Picturing,
-    Played, Playing, PlaylistFormat, PlaylistLink, PlaylistOrder, PlaylistToKeep, PollHandle,
-    PollOptions, PollProgress, PollSummary, Popularity, ProfileLink, ProfilePlaylist, Pruned,
-    RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference,
-    Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
-    Removal, Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery,
-    ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit, SheetField,
-    SheetScope, Sidecar, SongLink, SongToKeep, SongsAsked, SortOrder, Sought, Sources, StreamAsked,
-    Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
+    Missing, MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Pace, Performer,
+    Picturing, Played, Playing, PlaylistFormat, PlaylistLink, PlaylistOrder, PlaylistToKeep,
+    PollHandle, PollOptions, PollProgress, PollSummary, Popularity, ProfileLink, ProfilePlaylist,
+    Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
+    Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+    ReleaseTrack, Removal, Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE,
+    SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit,
+    SheetField, SheetScope, Sidecar, SongLink, SongToKeep, SongsAsked, SortOrder, Sought, Sources,
+    StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
     TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Upkeep, Vault,
     VaultWeighingStats, Version, Waits, Window, Wording, Written,
 };
@@ -11535,6 +11535,7 @@ fn enrich(library: &Library, fake: &Arc<Fake>, refresh: bool) -> Result<EnrichSu
             Arc::new(Fingerprinters::none()),
             EnrichOptions {
                 refresh,
+                pace: Pace::Hurried,
                 ..EnrichOptions::default()
             },
         )?

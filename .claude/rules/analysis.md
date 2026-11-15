@@ -56,8 +56,13 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   so its studies take `AsTheMachineAllows` with no rest, and a pass begun hurried starts
   `hurried_workers` (a quarter of the cores, at least one) study workers; the next pass is paced again.
   Game Mode still holds it, and the reference's own request pacing is untouched
-  (`a_hurried_lookup_studies_in_the_foreground_on_more_workers_and_an_unhurried_one_does_not`). Each pool starts on first use and
-  sleeps after.
+  (`a_hurried_lookup_studies_in_the_foreground_on_more_workers_and_an_unhurried_one_does_not`).
+  The phones' pass is hurried the same way by `EnrichmentOptions::hurried` (its one study thread
+  kept; `a_pass_studies_in_the_background_unless_it_was_asked_to_hurry`), which no phone asks yet.
+  **A test that runs a pass to read what it studied hurries it** (`resonate-library`'s `enrich` and
+  `enriched` helpers, the phones' `hearing` tests): the rest is three times each slab's work, so a
+  paced pass over four short songs took 15 to 47 s where a hurried one takes a few. Each pool starts
+  on first use and sleeps after.
   **Measured before the background duty limit**, 5 minutes of stereo on a Ryzen 7 7700 (8 cores, 16 threads), a release-like build
   (`--profile profiling`), bit for bit the answers of the single thread it replaced on FLAC 16/44.1,
   FLAC 24/96, FLAC holding a decoded MP3, LAME 256, Opus 128 and ffmpeg's AAC 256 (`Debug` of the
