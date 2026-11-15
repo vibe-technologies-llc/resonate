@@ -446,7 +446,7 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   `Library::whole_files` by offset. An album's songs are counted and read the same way; a playlist's
   served rows are read whole once a revision (`LISTS_KEPT_AT_MOST`, 32) and paged in memory. A song
   is served only where its row is a local file whose extension names an `AudioKind`, and a file
-  gone is 404. `Offered` holds the running `MediaServer` (*binary.md*'s `share-catalog-on-network`).
+  gone is 404. `Offered` holds the running `MediaServer` for the window (*binary.md*'s `share-catalog-on-network`), and `resonate offer` runs one with no window until interrupted (`offer::offer`).
 - **Fuzzed** with the rest of the crate (`read_what_a_network_says`): an `M-SEARCH`, a request head
   through `routed`, a path, an object id read back as itself, a UDN, a `Range` span inside its
   length, and a SOAP request to either service answered against an empty catalog, the envelope and

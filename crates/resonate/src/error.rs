@@ -257,6 +257,12 @@ pub enum Error {
         source: Box<resonate_upnp::Error>,
     },
 
+    #[error("the catalog could not be offered on the network")]
+    CatalogNotOffered {
+        #[source]
+        source: Box<resonate_upnp::Error>,
+    },
+
     #[error("{address} is neither an IP address nor a host name a Cast receiver can be reached at")]
     CastAddress { address: String },
 

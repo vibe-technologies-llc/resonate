@@ -19,7 +19,9 @@ true) gates every request: `online::reference` is `None` when off, so `resonate 
 No AcoustID key: no fingerprint leaves. AudD: a clip only with a token. Shazam: no key, only a
 signature, when the listener asks to listen or `identify-by-sound` is on and a lookup has nothing
 else to name a track by. ListenBrainz and Last.fm alone send something about the listener (every
-counted play), only under a token or session the listener signed in for.
+counted play), only under a token or session the listener signed in for. `online` gates the internet
+and not the local network: the catalog offered as a MediaServer (`resonate offer`, the window's
+`share-catalog-on-network`) is served with it off.
 
 ## The client
 

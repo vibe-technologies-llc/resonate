@@ -217,6 +217,7 @@ sub-share = Print the link a track is shared as
 sub-share-file = The file to write a share for. With none, it is whatever the player already running is playing
 sub-mcp = Serve the catalog and the running player to a language model over the Model Context Protocol, as newline-delimited JSON-RPC on stdin and stdout
 sub-mcp-player = Reach this player, by the bus name `resonate players` prints or by the instance under it. With none it is the one answering to the plain name, or the lowest instance where another process holds that
+sub-offer = Offer the catalog on the local network as a UPnP media server, without the window, until interrupted, whatever share-catalog-on-network and online say
 sub-explain = Print the output plan for a file against the selected sink
 sub-info = Print everything known about a file: tags, ReplayGain, container layout, bitrate
 sub-info-graph = Draw the bitrate over time

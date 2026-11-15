@@ -217,8 +217,7 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   so one waiting on `SystemUpdateID` events sees a changed catalog only when it browses again
 - [M] A song cut from a cue sheet is not offered on the network: a span of a file is no byte range
   of it, and serving one would mean decoding it and sending it as WAVE
-- [S] The catalog is offered on the network only while the window is open: no subcommand serves it
-  headless, and the phones offer theirs not at all
+- [S] The phones do not offer their catalogs on the network, only the desktop does
 - [S] Every computer offering its catalog is named Resonate on the network, so two read alike in a
   control point; the name is the catalog's word, never the host's
 - [S] A renderer taking WAVE and not FLAC is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz,

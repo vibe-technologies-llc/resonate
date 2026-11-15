@@ -1743,6 +1743,9 @@ pub enum Sub {
         player: Option<String>,
     },
 
+    #[command(about = words::grammar::sub_offer())]
+    Offer,
+
     #[command(about = words::grammar::sub_explain())]
     Explain { path: PathBuf },
 

@@ -1,22 +1,27 @@
 use std::{
     collections::{BTreeMap, HashMap},
     fs::{self, File},
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
-    thread,
 };
+#[cfg(feature = "ui")]
+use std::{path::PathBuf, thread};
 
 use parking_lot::Mutex;
-use resonate_core::{AlbumId, PlaylistId, Switch, TrackId};
+#[cfg(feature = "ui")]
+use resonate_core::Switch;
+use resonate_core::{AlbumId, PlaylistId, TrackId};
 use resonate_library::{
     Album, AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Error as LibraryError, Library,
     PlaylistOrder, SortOrder, Track, TrackQuery,
 };
 use resonate_upnp::{
-    AudioKind, Catalog, Entry, Held, MediaServer, Offering, Opened, Page, Picture, Shelf, Shelved,
-    Song, Udn,
+    AudioKind, Catalog, Entry, Held, Opened, Page, Picture, Shelf, Shelved, Song, Udn,
 };
+#[cfg(feature = "ui")]
+use resonate_upnp::{MediaServer, Offering};
 
+#[cfg(feature = "ui")]
 use crate::config::{self, Config};
 
 const UDN_KEPT_IN: &str = "media-server-udn";
@@ -465,7 +470,7 @@ fn by_the_artist(id: resonate_core::ArtistId) -> AlbumQuery {
     }
 }
 
-fn kept_udn(folder: &Path) -> Udn {
+pub(crate) fn kept_udn(folder: &Path) -> Udn {
     let kept_in = folder.join(UDN_KEPT_IN);
     if let Some(kept) = fs::read_to_string(&kept_in)
         .ok()
@@ -480,12 +485,14 @@ fn kept_udn(folder: &Path) -> Udn {
     minted
 }
 
+#[cfg(feature = "ui")]
 pub(crate) struct Offered {
     library: Arc<Library>,
     kept_in: Option<PathBuf>,
     running: Mutex<Option<MediaServer<Shelves>>>,
 }
 
+#[cfg(feature = "ui")]
 impl Offered {
     pub(crate) fn for_the_window(config: &Config, library: &Arc<Library>) -> Arc<Self> {
         let kept_in = config::private_data_dir()
@@ -541,6 +548,7 @@ impl Offered {
     }
 }
 
+#[cfg(feature = "ui")]
 fn spawn_the_stop(stopping: MediaServer<Shelves>) {
     let spawned = thread::Builder::new()
         .name("resonate-offer-stop".to_owned())
@@ -550,6 +558,7 @@ fn spawn_the_stop(stopping: MediaServer<Shelves>) {
     }
 }
 
+#[cfg(feature = "ui")]
 impl resonate_ui::CatalogShared for Offered {
     fn shared(&self) -> bool {
         Self::shared(self)

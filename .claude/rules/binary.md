@@ -453,8 +453,17 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   catalog on the network* group (Output) is its switch, written as
   `Setting::Switched(Switch::ShareCatalogOnNetwork, _)` and applied at once through
   `resonate_ui::CatalogShared` (`Offered::share`, the stop off the window's thread so its farewell
-  does not hold a frame); `Offered::leave` stops it as the window closes. No subcommand serves it:
-  the window alone does.
+  does not hold a frame); `Offered::leave` stops it as the window closes. **`resonate offer` serves
+  it with no window** (`offer.rs`, a verb like `scan` and `sleep`; `serve` would read as `served`, which browses): it opens the library, keeps the same `media-server-udn`,
+  starts `MediaServer` and prints the port and the UDN and the counts of songs, albums, artists
+  and playlists the shelves hold (`Shelf::Songs` and the rest through `Page::counting`), then waits
+  under `signals::cancel_when_told`: the first signal ends the wait and the server drops, which
+  sends `ssdp:byebye` before the process says it stopped and exits 0, a second leaves at once. It
+  serves whatever `share-catalog-on-network` says, since running it is the listener's own ask,
+  and whatever `online` says, since this is the local network and no request leaves it. A failure to
+  start is `Error::CatalogNotOffered`. The window's server and this one keep one UDN, so the two
+  are not run together (`the_catalog_is_offered_until_told_to_stop_and_byebye_is_sent` drives
+  `offer` on loopback sockets, so nothing reaches the network).
 - `flac-above-96k-for` (empty unless set): array of renderer names (`upnp:` and the UDN, as
   `sinks --renderers` lists them; others and blanks ignored, a non-text entry costs the key alone)
   that are sent FLAC above 96 kHz though their protocol info states no rate

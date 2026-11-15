@@ -46,7 +46,7 @@ mod missing;
 mod mpris;
 #[cfg(feature = "online")]
 mod musicbrainz;
-#[cfg(feature = "ui")]
+mod offer;
 mod offering;
 mod online;
 mod organising;
@@ -545,6 +545,7 @@ fn run() -> Result<()> {
             file.as_deref().map(local_path).as_deref(),
         ),
         Some(Sub::Mcp { player }) => mcp::serve(&cli, &config, player.as_deref()),
+        Some(Sub::Offer) => offer::serve(&cli, &config),
         None => {
             let library = Arc::new(open_library(&cli, &config)?);
             launch(cli, config, library)
