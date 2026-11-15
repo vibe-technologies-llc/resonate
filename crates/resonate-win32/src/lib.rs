@@ -17,6 +17,8 @@ mod identity;
 #[cfg(any(windows, test))]
 mod mmcss;
 #[cfg(any(windows, test))]
+mod pipes;
+#[cfg(any(windows, test))]
 mod security;
 #[cfg(any(windows, test))]
 mod streams;
@@ -39,6 +41,7 @@ pub use crate::{
     gaming::GameModeWatch,
     identity::name_the_process,
     mmcss::ProAudioClass,
+    pipes::disconnect_pipe,
     security::carry_security,
     streams::carry_alternate_streams,
 };

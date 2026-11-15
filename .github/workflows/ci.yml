@@ -269,7 +269,7 @@ jobs:
           done
           for by in $(held_by --workspace -i resonate-win32 --target x86_64-pc-windows-msvc --depth 1 | grep '^resonate' | grep -vx resonate-win32 || true); do
             case "$by" in
-              resonate|resonate-wasapi|resonate-codec) ;;
+              resonate|resonate-wasapi|resonate-codec|resonate-mpris) ;;
               *) echo "::error::resonate-win32 is reached by $by"; failed=1 ;;
             esac
           done

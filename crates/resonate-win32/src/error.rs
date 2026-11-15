@@ -31,6 +31,7 @@ pub enum Op {
     ReadFileIdentity,
     LeaveTheConsole,
     HearConsoleInterrupts,
+    DisconnectPipe,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

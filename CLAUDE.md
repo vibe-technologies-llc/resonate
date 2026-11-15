@@ -118,7 +118,7 @@ resonate            bin: CLI, tracing, wiring
   ├── providers/subsonic  resonate-subsonic  [`online`]
   ├── providers/tidal     resonate-tidal, the listener's subscription  [`online`]
   ├── providers/ytmusic   resonate-ytmusic, songs kept from a YouTube Music account through yt-dlp  [`online`]
-  ├── resonate-win32      the Win32 and COM calls no safe crate wraps, safe API  (Windows; also under wasapi, codec)
+  ├── resonate-win32      the Win32 and COM calls no safe crate wraps, safe API  (Windows; also under wasapi, codec, mpris)
   ├── resonate-apple      the Core Audio, AudioToolbox, MediaPlayer, Network and `clonefile` calls no safe crate wraps, safe API  (macOS and iOS; under coreaudio, listen, mpris, codec, mobile)
   ├── resonate-core       domain vocabulary
   └── resonate-words      the word catalogs, the language spoken  (`resonate-words-build` writes each crate's functions from its `.ftl`)
@@ -141,8 +141,8 @@ alone on Linux (its own PipeWire client per recording) and core, `resonate-audio
 `resonate-driven` joins it to the engine and is reached by the binary and `resonate-mobile` alone;
 `resonate-signin` reaches core and `resonate-words` alone and is reached by the binary alone, never with its `window`
 feature, so `wry`, `tao` and WebKitGTK stay out of the binary's tree;
-`resonate-win32` reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec` and
-the binary alone; `resonate-apple` reaches none either and is reached by `resonate-coreaudio`, `resonate-listen`,
+`resonate-win32` reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec`,
+`resonate-mpris` and the binary alone; `resonate-apple` reaches none either and is reached by `resonate-coreaudio`, `resonate-listen`,
 `resonate-mpris` and `resonate-codec` on macOS and by `resonate-coreaudio` and `resonate-mobile` on iOS; those two and
 `resonate-mobile` are the only crates where `unsafe_code` is allowed.
 

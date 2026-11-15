@@ -1,5 +1,6 @@
 use std::{
-    io,
+    io::{self, Read, Write},
+    os::windows::io::AsHandle as _,
     path::Path,
     sync::{
         Arc,
@@ -23,7 +24,7 @@ use zbus::names::WellKnownName;
 use crate::{
     Error, PipeOp, Result,
     answering::Answering,
-    listening::{Serves, accepting},
+    listening::{Serves, Sever, accepting},
     peer::{Peer, PipePeer},
     registry::{self, Claim},
     remote::ANSWERS_WITHIN,
@@ -37,6 +38,37 @@ const ACCEPT_THREAD: &str = "resonate-mpris-pipe";
 
 type Stream = DuplexPipeStream<pipe_mode::Bytes>;
 type Listener = PipeListener<pipe_mode::Bytes, pipe_mode::Bytes>;
+
+struct Shared(Arc<Stream>);
+
+impl Read for Shared {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        (&*self.0).read(buffer)
+    }
+}
+
+impl Write for Shared {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        (&*self.0).write(buffer)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
+}
+
+fn accepted(listener: &Listener) -> io::Result<Shared> {
+    listener.accept().map(|stream| Shared(Arc::new(stream)))
+}
+
+fn severed(stream: &Shared) -> Option<Sever> {
+    let held = Arc::clone(&stream.0);
+    Some(Box::new(move || {
+        if let Err(error) = resonate_win32::disconnect_pipe(held.as_handle()) {
+            tracing::debug!(%error, "a client of the pipe could not be severed");
+        }
+    }))
+}
 
 fn pipe_path(player: &str) -> String {
     format!("{PIPE_FOLDER}{}", registry::pipe_name_of(player))
@@ -153,7 +185,7 @@ impl Serving {
             let answering = Arc::clone(&answering);
             thread::Builder::new()
                 .name(ACCEPT_THREAD.to_owned())
-                .spawn(move || accepting(|| listener.accept(), |_| None, &answering, &stop))
+                .spawn(move || accepting(|| accepted(&listener), severed, &answering, &stop))
                 .map_err(|source| Error::pipe(PipeOp::Spawn, source))?
         };
 
@@ -194,7 +226,55 @@ impl Drop for Serving {
 
 #[cfg(test)]
 mod tests {
+    use std::{process, sync::mpsc};
+
     use super::*;
+    use crate::wire::{read_frame, write_frame};
+
+    struct Echo;
+
+    impl Serves for Echo {
+        fn reply_to(&self, frame: &[u8]) -> Option<Vec<u8>> {
+            Some(frame.to_vec())
+        }
+
+        fn close(&self) {}
+    }
+
+    #[test]
+    fn a_client_still_connected_when_the_pipe_stops_serving_is_severed() {
+        let player = format!("org.mpris.MediaPlayer2.resonate.severed{}", process::id());
+        let listener = listen(&player).expect("a pipe");
+        let stop = Arc::new(AtomicBool::new(false));
+        let serving: Arc<dyn Serves> = Arc::new(Echo);
+
+        let accepting_thread = {
+            let stop = Arc::clone(&stop);
+            thread::spawn(move || accepting(|| accepted(&listener), severed, &serving, &stop))
+        };
+        let mut client = connect(&player).expect("connected");
+        write_frame(&mut client, &[1]).expect("a frame sent");
+        let echoed = read_frame(&mut client).expect("a reply");
+
+        assert_eq!(echoed, Some(vec![1]));
+
+        stop.store(true, Ordering::Release);
+        let _ = Stream::connect_by_path_with_wait_mode(
+            pipe_path(&player),
+            ConnectWaitMode::Timeout(WAKE_WITHIN),
+        );
+        accepting_thread.join().expect("the accept loop ends");
+        let (heard, ending) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = heard.send(read_frame(&mut client).map(|frame| frame.is_none()));
+        });
+        let ended = ending.recv_timeout(Duration::from_secs(5));
+
+        assert!(
+            matches!(ended, Ok(Ok(true) | Err(_))),
+            "the client's connection was left open"
+        );
+    }
 
     #[test]
     fn a_pipe_lies_in_the_pipe_folder_under_the_users_name() {

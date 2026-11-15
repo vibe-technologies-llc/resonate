@@ -389,11 +389,16 @@ registry's), sorted by name, so `found`, `listed`, `named` and `zoned` are the s
   (`a_client_still_connected_does_not_keep_a_player_that_stopped_serving_alive`). **A wire that can
   be severed from another thread is severed when the player stops serving**: `accepting` takes
   `severed_by`, which answers a `Sever` for each stream accepted (a socket's is a `try_clone` shut
-  down both ways, `socket::severed`), holds it while the client's thread runs, and runs every one
+  down both ways, `socket::severed`; a pipe's is the stream itself, shared through an `Arc` with the
+  client's thread and disconnected by `resonate_win32::disconnect_pipe`, `pipe::severed`), holds it
+  while the client's thread runs, and runs every one
   still held once the stop is seen, so a client's thread blocked in `read_frame` reads the end and
   goes (`a_client_still_connected_when_the_player_stops_serving_is_severed_and_its_thread_ends`).
-  A Windows named pipe answers none: its handle has no cross-thread wake, so the thread waits for the
-  client's next frame or its leaving (`docs/BUGS.md`).
+  A Windows pipe's handle is overlapped, its read an alertable wait on `ReadFileEx`, so
+  `DisconnectNamedPipe` from the accept thread completes the pending read as disconnected, which
+  `interprocess` reads as the end, and every later read the same, so a sever that lands between
+  two reads is not lost (`a_client_still_connected_when_the_pipe_stops_serving_is_severed`).
+  `PIPE_NOWAIT` would not do: `interprocess` reads its empty pipe (`ERROR_NO_DATA`) as the end too.
 - **`socket.rs` is a Mac's transport, over `std::os::unix::net` and no further dependency**
   (compiled for macOS and, for its tests, on every Unix). The registry's folder there is
   `~/Library/Caches/resonate/players` (`registry::players_folder_of_a_mac`; the temporary folder's

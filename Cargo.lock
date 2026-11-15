@@ -7423,6 +7423,7 @@ dependencies = [
  "resonate-codec",
  "resonate-core",
  "resonate-engine",
+ "resonate-win32",
  "resonate-words",
  "resonate-words-build",
  "rustix",

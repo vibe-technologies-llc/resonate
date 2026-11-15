@@ -27,6 +27,7 @@ resonate-apple.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 interprocess.workspace = true
+resonate-win32.workspace = true
 wasapi.workspace = true
 windows = {
     workspace = true,

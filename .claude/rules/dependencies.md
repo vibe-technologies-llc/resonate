@@ -60,7 +60,7 @@ clone, `library.md`) and, on iOS, `resonate-mobile` alone.
 `#[implement]` and `HSTRING`), at the `wasapi` crate's versions, so no second copy is built: `wasapi`,
 `windows` (no features) and `windows-core` are written once in `[workspace.dependencies]`, and each
 crate adds the features it calls, so a bump moves every user together. It
-reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec` and the binary
+reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec`, `resonate-mpris` and the binary
 alone (the binary's tests take `console`); the layering job holds both. Its sequencing is compiled
 for `test` on every host (`thiserror` and, for the tests, `parking_lot` are not Windows-only) and
 its `windows` and `windows-core` stay `cfg(windows)`: `HResult` stands for `windows_core::Error`

@@ -70,6 +70,7 @@ no workspace crate, and hands out a safe API over the `windows` crate:
 - **Each module's raw calls are a trait, so its sequencing runs on every host against a fake**, as
   `resonate-apple`'s `Toolbox` does (`macos.md`): `Scheduling` (MMCSS), `Counting`, `Naming`,
   `Attachment` (the console), `Identifying`, `PowerModes`, `Endpoints` (COM), `Securing`,
+  `Disconnecting`,
   `Streaming` and, under `console`, `Terminal`. The unit struct `system::Windows` implements each
   in a `cfg(windows)` `mod real` at the foot of its module, and that is the only place the module's
   `unsafe` blocks and `windows` imports are; the module's generic type or function over the trait
@@ -106,7 +107,8 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   `IAudioEndpointVolume` by endpoint id through `IMMDeviceEnumerator::GetDevice`: the scalar
   level as a `Level` clamped to 0..=1, the mute, and `watched`, an `IAudioEndpointVolumeCallback`
   made with `#[implement]` that only calls the closure it is given, unregistered when its
-  `VolumeWatch` drops); `name_the_process` (`SetCurrentProcessExplicitAppUserModelID`);
+  `VolumeWatch` drops); `name_the_process` (`SetCurrentProcessExplicitAppUserModelID`); `disconnect_pipe` (`DisconnectNamedPipe` on a
+  borrowed handle, so the window's pipe severs a client from another thread, `mpris.md`);
   `leave_a_console_of_its_own` (`GetConsoleProcessList`, then `FreeConsole` only where this process
   is the console's one, answering a `Console`);
   `carry_alternate_streams` and `carry_security` (below); and, under the `console` feature the
@@ -491,7 +493,9 @@ through the same `Running` calls as on Linux, and `Session::open` is `Ok` withou
   on a thread of its own up to `CONNECTIONS_AT_MOST` (32), more turned away. A pipe handle has no
   read timeout, so a client's `Link` runs the blocking I/O on a thread and waits `ANSWERS_WITHIN`
   (2 s) for each reply; a call that times out severs the link (a later reply could be read for
-  another call), and dropping the client ends its thread.
+  another call), and dropping the client ends its thread. When the player stops serving, every
+  client still connected is disconnected from the accept thread (`disconnect_pipe`), so its
+  serving thread ends rather than waiting for the client's next frame.
 
 ## Awake while playing
 
