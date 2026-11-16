@@ -61,6 +61,7 @@
 "collections.order.artist" = "Artist";
 "collections.order.name" = "Name";
 "collections.order.plays" = "Most played";
+"collections.order.songs" = "Most songs";
 "collections.order.year" = "Year";
 "common.add" = "Add";
 "common.cancel" = "Cancel";

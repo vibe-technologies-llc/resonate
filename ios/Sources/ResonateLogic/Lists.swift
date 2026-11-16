@@ -184,6 +184,50 @@ public struct SongOrdering: Equatable, Hashable, Sendable {
     }
 }
 
+extension TrackOrder {
+    public var symbol: String {
+        switch self {
+        case .title: "textformat"
+        case .album: "square.stack"
+        case .artist: "music.mic"
+        case .duration: "timer"
+        case .added: "clock"
+        case .plays: "chart.bar"
+        case .played: "clock.arrow.circlepath"
+        }
+    }
+}
+
+public enum PlaylistOrder: CaseIterable, Sendable {
+    case name
+    case added
+    case songs
+
+    public var title: String {
+        switch self {
+        case .name: said("collections.order.name")
+        case .added: said("collections.order.added")
+        case .songs: said("collections.order.songs")
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .name: "textformat"
+        case .added: "clock"
+        case .songs: "music.note.list"
+        }
+    }
+
+    public func sorted(_ playlists: [MusicPlaylist]) -> [MusicPlaylist] {
+        switch self {
+        case .name: playlists
+        case .added: playlists.sorted { $0.id > $1.id }
+        case .songs: playlists.enumerated().sorted { ($1.element.songs, $0.offset) < ($0.element.songs, $1.offset) }.map(\.element)
+        }
+    }
+}
+
 public enum SongBrowsing {
     public static var defaultFilter: TrackFilter {
         var filter = defaultTrackFilter()

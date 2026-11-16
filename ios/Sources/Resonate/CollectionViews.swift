@@ -67,11 +67,12 @@ struct LibraryView: View {
 
     var body: some View {
         @Bindable var shelfSearch = library.shelfSearch
+        @Bindable var library = library
         let asked = page == .playlists ? playlistSearch.trimmingCharacters(in: .whitespacesAndNewlines) : shelfSearch.query
         let folded = asked.searchFolded
         let answered = !asked.isEmpty && shelfSearch.hasAnswer
         let lighting = asked.isEmpty ? "" : shelfSearch.answered
-        let playlists = library.features.playlists.filter { folded.isEmpty || library.features.foldedName(of: $0).contains(folded) }
+        let playlists = library.playlistOrder.sorted(library.features.playlists.filter { folded.isEmpty || library.features.foldedName(of: $0).contains(folded) })
         let albumHits = asked.isEmpty ? library.albums : shelfSearch.found.albums
         let artistHits = asked.isEmpty ? library.artists : shelfSearch.found.artists
         let matchedNothing = page == .home && answered && playlists.isEmpty && albumHits.isEmpty && artistHits.isEmpty && !"favourites".contains(folded)
@@ -225,6 +226,11 @@ struct LibraryView: View {
                                 }
                             }
                         }
+                    }
+                }
+                if library.features.playlists.count > 1 {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        PlaylistOrderMenu(order: $library.playlistOrder)
                     }
                 }
                 ToolbarSpacer(.fixed, placement: .topBarTrailing)

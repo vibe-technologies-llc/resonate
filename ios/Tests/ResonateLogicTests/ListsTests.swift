@@ -433,3 +433,32 @@ import Testing
         #expect(NotInYourLibrary.line(release(kind: "", year: 1999)) == "1999")
     }
 }
+
+@Suite struct PlaylistOrderTests {
+    private func playlist(_ id: UInt64, _ name: String, songs: UInt64) -> MusicPlaylist {
+        MusicPlaylist(id: id, name: name, songs: songs, revision: 0)
+    }
+
+    private var playlists: [MusicPlaylist] {
+        [playlist(3, "Alpha", songs: 5), playlist(1, "Beta", songs: 20), playlist(2, "Gamma", songs: 5)]
+    }
+
+    @Test func byNameKeepsTheOrderTheCatalogGives() {
+        #expect(PlaylistOrder.name.sorted(playlists).map(\.name) == ["Alpha", "Beta", "Gamma"])
+    }
+
+    @Test func byAddedPutsTheNewestFirst() {
+        #expect(PlaylistOrder.added.sorted(playlists).map(\.name) == ["Alpha", "Gamma", "Beta"])
+    }
+
+    @Test func bySongsPutsTheLongestFirstAndKeepsTheOrderOfATie() {
+        #expect(PlaylistOrder.songs.sorted(playlists).map(\.name) == ["Beta", "Alpha", "Gamma"])
+    }
+
+    @Test func everyOrderNamesItselfAndPicksASymbol() {
+        for order in PlaylistOrder.allCases {
+            #expect(!order.title.isEmpty)
+            #expect(!order.symbol.isEmpty)
+        }
+    }
+}

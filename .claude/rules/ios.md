@@ -927,9 +927,15 @@ every route change (a pair of headphones at the same rate included), not from th
   `ArtistShelf`, twelve each) under a *See all* header (`SeeAllPageHeader`) that pushes the kind's
   own page, `Destination.playlists`, `.albums` or `.artists`, each `LibraryView(page:)` listing
   every one as rows with its own search; the Albums and Artists pages carry a *Sort by* menu in the
-  toolbar (`CollectionOrderMenu`) over the order the Songs page's picker sets
-  (`Library.collectionOrder`, which the home's shelves follow too). **Favourites sorts too**
-  (`SongOrderMenu`, the Songs page's orders and *Descending*): newest added first is
+  toolbar (`CollectionOrderMenu`, which the Songs page's Albums and Artists groupings also hold as a row)
+  over `Library.collectionOrder`, which the home's shelves follow too. **Every sort menu is a
+  `Button` per order** (`OrderOption`, a `Label` with the order's symbol and a checkmark in its place
+  on the chosen one, `isSelected` to VoiceOver), never a `Picker`, which doubled *Sort by* and drew
+  no icons; *Descending* is a `Toggle` in a `Section` of its own (`DescendingOption`). **Playlists
+  sorts too** (`PlaylistOrderMenu` over `Library.playlistOrder`, a `PlaylistOrder` read in Swift
+  since a `MusicPlaylist` carries no plays or added time): *Name* as the catalog gives it, *Recently
+  added* by id, newest first, and *Most songs*, the menu shown from two playlists. **Favourites sorts
+  too** (`SongOrderMenu`, the Songs page's orders and *Descending*): newest added first is
   `favouriteTracks` as kept, and any other `Library.favouritesOrder` (a `SongOrdering`, kept for the
   session) is read in Rust (`filtered_tracks` of the favourites alone, `SongOrdering.favourites`) on
   `Work.onScreen`, keyed by `favouriteEpoch` and the order, never sorted in Swift; its search

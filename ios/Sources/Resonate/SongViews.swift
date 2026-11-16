@@ -61,7 +61,6 @@ struct SongsView: View {
     }
 
     private func browsed(grouping: Grouping) -> some View {
-        @Bindable var library = library
         @Bindable var navigation = navigation
         return List {
             Section {
@@ -74,8 +73,7 @@ struct SongsView: View {
                 if grouping == .songs {
                     FilterChips()
                 } else {
-                    CollectionOrderPicker(order: $library.collectionOrder, grouping: grouping)
-                        .pickerStyle(.menu)
+                    CollectionOrderMenu(grouping: grouping, asRow: true)
                 }
             }
             .listRowSeparator(.hidden)
@@ -212,32 +210,85 @@ struct BrowsedArtists: View {
     }
 }
 
-struct CollectionOrderPicker: View {
-    @Binding var order: CollectionOrder
-    let grouping: Grouping
+struct OrderOption<Order: Hashable>: View {
+    @Binding var selection: Order
+    let order: Order
+    let title: String
+    let symbol: String
 
     var body: some View {
-        Picker("filter.sort-by", selection: $order) {
-            Text("collections.order.name").tag(CollectionOrder.alphabetical)
-            if grouping == .albums {
-                Text("collections.order.artist").tag(CollectionOrder.artist)
-                Text("collections.order.year").tag(CollectionOrder.year)
-            }
-            Text("collections.order.added").tag(CollectionOrder.added)
-            Text("collections.order.plays").tag(CollectionOrder.plays)
+        let chosen = selection == order
+        Button {
+            selection = order
+        } label: {
+            Label(title, systemImage: chosen ? "checkmark" : symbol)
         }
+        .accessibilityAddTraits(chosen ? .isSelected : [])
+    }
+}
+
+struct DescendingOption: View {
+    @Binding var descending: Bool
+
+    var body: some View {
+        Section {
+            Toggle("filter.descending", systemImage: "arrow.down", isOn: $descending)
+        }
+    }
+}
+
+extension CollectionOrder {
+    var symbol: String {
+        switch self {
+        case .alphabetical: "textformat"
+        case .artist: "music.mic"
+        case .year: "calendar"
+        case .added: "clock"
+        case .plays: "chart.bar"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .alphabetical: said("collections.order.name")
+        case .artist: said("collections.order.artist")
+        case .year: said("collections.order.year")
+        case .added: said("collections.order.added")
+        case .plays: said("collections.order.plays")
+        }
+    }
+
+    static func offered(for grouping: Grouping) -> [CollectionOrder] {
+        grouping == .albums ? [.alphabetical, .artist, .year, .added, .plays] : [.alphabetical, .added, .plays]
     }
 }
 
 struct CollectionOrderMenu: View {
     @Environment(Library.self) private var library
     let grouping: Grouping
+    var asRow = false
 
     var body: some View {
         @Bindable var library = library
-        Menu("filter.sort-by", systemImage: "arrow.up.arrow.down") {
-            CollectionOrderPicker(order: $library.collectionOrder, grouping: grouping)
-                .pickerStyle(.inline)
+        Menu {
+            ForEach(CollectionOrder.offered(for: grouping), id: \.self) { order in
+                OrderOption(selection: $library.collectionOrder, order: order, title: order.title, symbol: order.symbol)
+            }
+        } label: {
+            if asRow {
+                HStack {
+                    Text("filter.sort-by")
+                    Spacer()
+                    Text(library.collectionOrder.title).foregroundStyle(.secondary)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+                .contentShape(.rect)
+            } else {
+                Label("filter.sort-by", systemImage: "arrow.up.arrow.down")
+            }
         }
     }
 }
@@ -246,12 +297,27 @@ struct SongOrderMenu: View {
     @Binding var ordering: SongOrdering
 
     var body: some View {
-        Menu("filter.sort-by", systemImage: "arrow.up.arrow.down") {
-            Picker("filter.sort-by", selection: $ordering.order) {
-                ForEach(FilterChip.orderNames, id: \.1) { Text($0.1).tag($0.0) }
+        Menu {
+            ForEach(FilterChip.orderNames, id: \.1) { order, title in
+                OrderOption(selection: $ordering.order, order: order, title: title, symbol: order.symbol)
             }
-            .pickerStyle(.inline)
-            Toggle("filter.descending", isOn: $ordering.descending)
+            DescendingOption(descending: $ordering.descending)
+        } label: {
+            Label("filter.sort-by", systemImage: "arrow.up.arrow.down")
+        }
+    }
+}
+
+struct PlaylistOrderMenu: View {
+    @Binding var order: PlaylistOrder
+
+    var body: some View {
+        Menu {
+            ForEach(PlaylistOrder.allCases, id: \.self) { option in
+                OrderOption(selection: $order, order: option, title: option.title, symbol: option.symbol)
+            }
+        } label: {
+            Label("filter.sort-by", systemImage: "arrow.up.arrow.down")
         }
     }
 }

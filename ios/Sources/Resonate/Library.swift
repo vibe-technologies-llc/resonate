@@ -213,6 +213,7 @@ final class Library {
     private(set) var artistRuns: [LetterRun] = []
     private(set) var collectionGeneration = 0
     var favouritesOrder = SongOrdering.newestFirst
+    var playlistOrder = PlaylistOrder.name
     var collectionOrder = CollectionOrder.alphabetical {
         didSet { if collectionOrder != oldValue { reloadCollections() } }
     }
