@@ -632,7 +632,7 @@ impl RootView {
         more: Option<&'static str>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let Some(instead) = self.library.read(cx).instead().map(ToOwned::to_owned) else {
+        let Some(instead) = self.around_the_rows(cx).instead.clone() else {
             return match self.sung_offer(Tone::Outlined, cx) {
                 Some(offer) => kit::empty_offering(icon, message, more, offer),
                 None => empty(icon, message, more),
@@ -661,7 +661,7 @@ impl RootView {
     }
 
     pub(crate) fn sung_offer(&self, tone: Tone, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
-        let sung = self.library.read(cx).sung()?.clone();
+        let sung = self.around_the_rows(cx).sung.clone()?;
         let offered = sung.query;
 
         Some(self.in_the_pane_ring(
@@ -921,7 +921,7 @@ impl RootView {
         let records = match self.library.read(cx).selection() {
             Selection::Artist(artist) => {
                 let library = self.library.read(cx);
-                let held = library.artist_albums().len() + library.albums_not_held().len();
+                let held = self.around_the_rows(cx).records.len() + library.albums_not_held().len();
                 (self.shows.artist.within(held) == ArtistShows::Records)
                     .then(|| self.artist_records(artist, cx))
             }
@@ -2154,9 +2154,10 @@ impl RootView {
 
     fn artist_page_heading(&self, id: ArtistId, cx: &mut Context<Self>) -> Div {
         let library = self.library.read(cx);
-        let name = artist_named(library, id);
-        let under = held_by_the_artist(library.artist_totals(), self.drawn_at());
-        let detail = library.artist_detail();
+        let around = self.around_the_rows(cx);
+        let name = artist_named(library, around.artist.as_ref(), id);
+        let under = held_by_the_artist(around.totals, self.drawn_at());
+        let detail = around.artist.as_ref();
         let profile = detail.and_then(profile_line);
         let genres = detail
             .map(|detail| genre_names(&detail.genres))
@@ -2175,7 +2176,7 @@ impl RootView {
             .filter(|(unheld, _)| missing_shown && *unheld > 0);
         let reads_further = library.can_enrich();
         let favourite = library.favoured_artist(id);
-        let records = library.artist_albums().len();
+        let records = around.records.len();
         let any_records = records + library.albums_not_held().len();
         let tracks = library.listed().rows as usize;
         let shows = self.shows.artist.within(any_records);
@@ -2410,7 +2411,7 @@ impl RootView {
                         .and_then(|release| release.group.clone())
                         .filter(|_| library.can_enrich());
                     let current = release.and_then(|release| release.mbid.clone());
-                    let pressings = library.pressings_of(album).cloned();
+                    let pressings = self.pressings_of(album, cx).cloned();
                     let card = record_card(self, &record, cx);
                     let card = match (group, findable) {
                         (Some(group), _) => card.child(self.other_pressings(
@@ -2439,8 +2440,10 @@ impl RootView {
                     if library.selection() != Selection::Artist(artist) {
                         return None;
                     }
-                    let genres = library
-                        .artist_detail()
+                    let genres = self
+                        .around_the_rows(cx)
+                        .artist
+                        .as_ref()
                         .map(|detail| genre_names(&detail.genres))
                         .unwrap_or_default();
                     if genres.is_empty() {
@@ -2488,12 +2491,11 @@ impl RootView {
                     ),
                     move |this, _, cx| {
                         let asking = asking.clone();
-                        this.library.update(cx, |library, cx| match asking {
-                            Asking::Group(group) => {
-                                library.ask_for_pressings(album, group, cx);
-                            }
-                            Asking::Search => library.ask_for_releases(album, cx),
+                        let asked = this.library.update(cx, |library, cx| match asking {
+                            Asking::Group(group) => library.pressings_asked(group, cx),
+                            Asking::Search => library.releases_asked(album, cx),
                         });
+                        this.ask_for_pressings(album, asked, cx);
                     },
                     cx,
                 ));
@@ -2540,9 +2542,12 @@ impl RootView {
                     move |this, _, cx| {
                         this.record = None;
                         let taken = chosen.clone();
-                        this.library.update(cx, |library, cx| {
-                            library.take_pressing(album, taken, cx);
-                        });
+                        let took = this
+                            .library
+                            .update(cx, |library, cx| library.take_pressing(album, taken, cx));
+                        if took {
+                            this.let_go_of_the_pressings(cx);
+                        }
                         cx.notify();
                     },
                     cx,
@@ -2678,7 +2683,7 @@ impl RootView {
     }
 
     fn artist_records(&self, artist: ArtistId, cx: &mut Context<Self>) -> Stateful<Div> {
-        let albums = self.library.read(cx).artist_albums();
+        let albums = Arc::clone(&self.around_the_rows(cx).records);
         let not_held = self.library.read(cx).albums_not_held();
         let mut cells = Vec::new();
         for album in albums.iter() {
@@ -4155,9 +4160,8 @@ pub(crate) fn year_of(date: &str) -> &str {
     date.get(..4).unwrap_or(date)
 }
 
-fn artist_named(library: &LibraryModel, id: ArtistId) -> String {
-    library
-        .artist_detail()
+fn artist_named(library: &LibraryModel, opened: Option<&ArtistDetail>, id: ArtistId) -> String {
+    opened
         .map(|detail| detail.name.clone())
         .or_else(|| {
             library

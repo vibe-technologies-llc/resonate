@@ -115,6 +115,7 @@ impl RootView {
             ),
         };
         let missing = cx.new(|cx| MissingPane::new(&library, cx));
+        let browsing = cx.new(|cx| BrowsePanes::new(&library, cx));
         let statistics = cx.new(|cx| StatisticsPane::new(&library, cx));
         let suggestions = cx.new(|cx| SuggestionsPane::new(&library, Arc::clone(&catalog), cx));
         let lyrics = cx.new(|_| LyricsModel::new(lyricists));
@@ -248,8 +249,6 @@ impl RootView {
 
         let settings_pane = cx.new(|cx| SettingsPane::new(settings_category, cx));
         cx.observe(&settings_pane, |_, _, cx| cx.notify()).detach();
-
-        let browsing = cx.new(|_| BrowsePanes::new());
 
         let (typed_words, typed_isrc) = matching::matching_fields(window, cx);
 

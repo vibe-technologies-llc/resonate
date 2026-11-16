@@ -393,10 +393,6 @@ impl LibraryModel {
         cx.notify();
     }
 
-    pub fn instead(&self) -> Option<&str> {
-        self.instead.as_deref()
-    }
-
     pub fn query(&self) -> &str {
         &self.query
     }

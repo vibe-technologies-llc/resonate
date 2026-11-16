@@ -1,16 +1,22 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, mem};
 
 use ahash::{AHashMap, AHashSet};
-use gpui::{App, Pixels, Point, ScrollHandle, UniformListScrollHandle};
-use resonate_core::{PlaylistId, Span};
+use gpui::{
+    App, Context, Entity, Pixels, Point, ScrollHandle, Subscription, Task, UniformListScrollHandle,
+};
+use resonate_core::{AlbumId, PlaylistId, Span};
 use resonate_library::{Direction, Kept, RowOrder, SortOrder};
 
-use crate::views::{
-    RootView,
-    menu::AtTheReach,
-    reorder::{Chosen, Reach, Shift},
-    sorting::Ordered,
-    typing::TypeAhead,
+use crate::{
+    LibraryModel, Pressings,
+    models::AroundTheRows,
+    views::{
+        RootView,
+        menu::AtTheReach,
+        reorder::{Chosen, Reach, Shift},
+        sorting::Ordered,
+        typing::TypeAhead,
+    },
 };
 
 pub(crate) struct Scrolls {
@@ -39,15 +45,24 @@ pub(crate) struct Orders {
     pub(crate) ordering_typed: TypeAhead,
 }
 
+struct Pressed {
+    album: AlbumId,
+    pressings: Pressings,
+    _asking: Task<()>,
+}
+
 pub(crate) struct BrowsePanes {
     pub(crate) scrolls: Scrolls,
     pub(crate) orders: Orders,
     pub(crate) reach: Option<Reach>,
+    around: AroundTheRows,
+    pressed: Option<Pressed>,
+    _landing: Subscription,
 }
 
 impl BrowsePanes {
-    pub(crate) fn new() -> Self {
-        Self {
+    pub(crate) fn new(library: &Entity<LibraryModel>, cx: &mut Context<Self>) -> Self {
+        let mut panes = Self {
             scrolls: Scrolls {
                 artist_records: ScrollHandle::new(),
                 ordering: ScrollHandle::new(),
@@ -73,7 +88,68 @@ impl BrowsePanes {
                 ordering_typed: TypeAhead::default(),
             },
             reach: None,
-        }
+            around: AroundTheRows::default(),
+            pressed: None,
+            _landing: cx.observe(library, |panes, library, cx| {
+                panes.take_what_landed(&library, cx);
+            }),
+        };
+        panes.take_what_landed(library, cx);
+
+        panes
+    }
+
+    fn take_what_landed(&mut self, library: &Entity<LibraryModel>, cx: &mut Context<Self>) {
+        let Some(landed) =
+            library.update(cx, |library, _| library.take_what_goes_around_the_rows())
+        else {
+            return;
+        };
+        let records = match *self.around.records == *landed.records {
+            true => mem::take(&mut self.around.records),
+            false => landed.records,
+        };
+        self.around = AroundTheRows { records, ..landed };
+        cx.notify();
+    }
+
+    pub(crate) const fn around(&self) -> &AroundTheRows {
+        &self.around
+    }
+
+    pub(crate) fn pressings_of(&self, album: AlbumId) -> Option<&Pressings> {
+        self.pressed
+            .as_ref()
+            .filter(|pressed| pressed.album == album)
+            .map(|pressed| &pressed.pressings)
+    }
+
+    fn ask_for_pressings(
+        &mut self,
+        album: AlbumId,
+        asked: Task<Pressings>,
+        cx: &mut Context<Self>,
+    ) {
+        let asking = cx.spawn(async move |panes, cx| {
+            let answered = asked.await;
+            let landed = panes.update(cx, |panes, cx| {
+                if let Some(pressed) = panes
+                    .pressed
+                    .as_mut()
+                    .filter(|pressed| pressed.album == album)
+                {
+                    pressed.pressings = answered;
+                    cx.notify();
+                }
+            });
+            let _ = landed;
+        });
+        self.pressed = Some(Pressed {
+            album,
+            pressings: Pressings::Asking,
+            _asking: asking,
+        });
+        cx.notify();
     }
 
     pub(crate) fn shelf(&self, id: &'static str) -> ScrollHandle {
@@ -194,5 +270,34 @@ impl RootView {
     pub(crate) fn set_reach(&self, reach: Option<Reach>, cx: &mut App) {
         self.browsing
             .update(cx, |browsing, _| browsing.reach = reach);
+    }
+
+    pub(crate) fn around_the_rows<'a>(&self, cx: &'a App) -> &'a AroundTheRows {
+        self.browsing.read(cx).around()
+    }
+
+    pub(crate) fn pressings_of<'a>(&self, album: AlbumId, cx: &'a App) -> Option<&'a Pressings> {
+        self.browsing.read(cx).pressings_of(album)
+    }
+
+    pub(crate) fn ask_for_pressings(
+        &self,
+        album: AlbumId,
+        asked: Option<Task<Pressings>>,
+        cx: &mut App,
+    ) {
+        let Some(asked) = asked else {
+            return;
+        };
+        self.browsing.update(cx, |browsing, cx| {
+            browsing.ask_for_pressings(album, asked, cx)
+        });
+    }
+
+    pub(crate) fn let_go_of_the_pressings(&self, cx: &mut App) {
+        self.browsing.update(cx, |browsing, cx| {
+            browsing.pressed = None;
+            cx.notify();
+        });
     }
 }

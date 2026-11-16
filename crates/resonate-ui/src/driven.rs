@@ -5548,15 +5548,15 @@ mod tests {
     }
 
     fn artist_shelf_of(root: &RootView, cx: &gpui::App) -> Option<ArtistShelf> {
-        let library = root.library.read(cx);
-        let detail = library.artist_detail()?;
-        let mut records: Vec<String> = library
-            .artist_albums()
+        let around = root.around_the_rows(cx);
+        let detail = around.artist.as_ref()?;
+        let mut records: Vec<String> = around
+            .records
             .iter()
             .map(|album| album.title.clone())
             .collect();
         records.sort();
-        let totals = library.artist_totals();
+        let totals = around.totals;
 
         Some(ArtistShelf {
             name: detail.name.clone(),
@@ -5571,7 +5571,7 @@ mod tests {
     }
 
     fn instead_of(root: &RootView, cx: &gpui::App) -> Option<String> {
-        root.library.read(cx).instead().map(ToOwned::to_owned)
+        root.around_the_rows(cx).instead.clone()
     }
 
     fn spelled_instead(driven: &mut Driven) -> Option<String> {
@@ -5583,7 +5583,7 @@ mod tests {
         cx: &gpui::App,
         album: resonate_core::AlbumId,
     ) -> Option<crate::Pressings> {
-        root.library.read(cx).pressings_of(album).cloned()
+        root.pressings_of(album, cx).cloned()
     }
 
     fn pressings_of(

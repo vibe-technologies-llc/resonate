@@ -17,68 +17,38 @@ use super::{
 use crate::{toast, words};
 
 impl LibraryModel {
-    pub fn pressings_of(&self, album: AlbumId) -> Option<&Pressings> {
-        self.detail
-            .pressings
-            .as_ref()
-            .filter(|(held, _)| *held == album)
-            .map(|(_, pressings)| pressings)
-    }
+    pub fn pressings_asked(&self, group: Mbid, cx: &mut Context<Self>) -> Option<Task<Pressings>> {
+        let reference = self.reference.clone().filter(|_| self.choices.online)?;
 
-    pub fn ask_for_pressings(&mut self, album: AlbumId, group: Mbid, cx: &mut Context<Self>) {
-        let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
-            return;
-        };
-        self.detail.pressings = Some((album, Pressings::Asking));
-        cx.notify();
-
-        self.detail._pressings = cx.spawn(async move |this, cx| {
+        Some(cx.spawn(async move |_, cx| {
             let asked = cx
                 .background_executor()
                 .spawn(async move { reference.release_group(&group) })
                 .await;
-            let answered = match asked {
-                Ok(Some(group)) => Ok(Pressings::Listed(in_the_order_they_came_out(
-                    group.releases,
-                ))),
-                Ok(None) => Ok(Pressings::Unanswered),
+            match asked {
+                Ok(Some(group)) => Pressings::Listed(in_the_order_they_came_out(group.releases)),
+                Ok(None) => Pressings::Unanswered,
                 Err(error) => {
                     tracing::warn!(%error, "a release group's pressings could not be read");
-                    Err(error)
-                }
-            };
-            let landed = this.update(cx, |this, cx| {
-                let answered = match answered {
-                    Ok(answered) => answered,
-                    Err(error) => {
+                    cx.update(|cx| {
                         toast::tell(
                             toast::could_not(words::models::read_that_album_s_pressings(), &error),
                             cx,
                         );
-                        Pressings::Unanswered
-                    }
-                };
-                if this
-                    .detail
-                    .pressings
-                    .as_ref()
-                    .is_some_and(|(held, _)| *held == album)
-                {
-                    this.detail.pressings = Some((album, answered));
-                    cx.notify();
+                    });
+                    Pressings::Unanswered
                 }
-            });
-            let _ = landed;
-        });
+            }
+        }))
     }
 
-    pub fn ask_for_releases(&mut self, album: AlbumId, cx: &mut Context<Self>) {
-        let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
-            return;
-        };
-        let Some(held) = self.album_of(album) else {
-            return;
-        };
+    pub fn releases_asked(
+        &self,
+        album: AlbumId,
+        cx: &mut Context<Self>,
+    ) -> Option<Task<Pressings>> {
+        let reference = self.reference.clone().filter(|_| self.choices.online)?;
+        let held = self.album_of(album)?;
         let release = self.detail.release.as_ref();
         let asked = ReleaseAsked {
             title: held.title.clone(),
@@ -88,15 +58,9 @@ impl LibraryModel {
             catalog_number: release.and_then(|release| release.catalog_number.clone()),
             wording: Wording::Words,
         };
-        self.detail.pressings = Some((album, Pressings::Asking));
-        cx.notify();
 
-        self.detail._pressings = cx.spawn(async move |this, cx| {
-            let asked = cx
-                .background_executor()
-                .spawn(async move { reference.find_release(&asked) })
-                .await;
-            let answered = match asked {
+        Some(cx.background_executor().spawn(async move {
+            match reference.find_release(&asked) {
                 Ok(found) if !found.is_empty() => Pressings::Listed(Arc::from(
                     found
                         .into_iter()
@@ -115,27 +79,14 @@ impl LibraryModel {
                     tracing::warn!(%error, "the releases an album might be could not be found");
                     Pressings::Unanswered
                 }
-            };
-            let landed = this.update(cx, |this, cx| {
-                if this
-                    .detail
-                    .pressings
-                    .as_ref()
-                    .is_some_and(|(held, _)| *held == album)
-                {
-                    this.detail.pressings = Some((album, answered));
-                    cx.notify();
-                }
-            });
-            let _ = landed;
-        });
+            }
+        }))
     }
 
-    pub fn take_pressing(&mut self, album: AlbumId, release: Mbid, cx: &mut Context<Self>) {
+    pub fn take_pressing(&mut self, album: AlbumId, release: Mbid, cx: &mut Context<Self>) -> bool {
         let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
-            return;
+            return false;
         };
-        self.detail.pressings = None;
         self.edited(
             Wanted::Everything,
             Change::TakePressing,
@@ -146,6 +97,7 @@ impl LibraryModel {
             },
             cx,
         );
+        true
     }
 
     pub fn releases_it_could_sit_on(

@@ -10,8 +10,8 @@ use resonate_engine::QueueItem;
 use resonate_library::{Measured, Search, Track};
 
 use super::{
-    ALBUMS_HELD, Asked, Browsed, COVERS_WARMED, Forget, Grew, Grown, Held, LibraryModel, Loaded,
-    Paged, Reached, Selection, Shelves, ShortOf, Wanted, WantsRead,
+    ALBUMS_HELD, AroundTheRows, Asked, Browsed, COVERS_WARMED, Forget, Grew, Grown, Held,
+    LibraryModel, Loaded, Paged, Reached, Selection, Shelves, ShortOf, Wanted, WantsRead,
     arranged::{Named, queued_rows},
     pictures::{AtSide, Drawn, renewed},
     watched::{drawn_cover, grew, load, picture_or_trouble, rows_renewed},
@@ -369,7 +369,6 @@ impl LibraryModel {
                 self.hidden = Arc::new(standing.hidden);
             }
         }
-        self.browse.sung = browsed.sung;
         renewed(&mut self.unheld.kept_songs, browsed.kept_songs);
         renewed(&mut self.unheld.kept_albums, browsed.kept_albums);
         self.unheld.kept_for = browsed.kept_for;
@@ -381,11 +380,14 @@ impl LibraryModel {
         self.browse.scoped_measured = browsed.scoped_measured;
         renewed(&mut self.detail.release_tracks, browsed.release_tracks);
         self.detail.release = browsed.release;
-        self.detail.artist = browsed.artist;
-        renewed(&mut self.detail.artist_albums, browsed.artist_albums);
-        self.detail.artist_totals = browsed.artist_totals;
         self.detail.album = browsed.album;
-        self.instead = browsed.instead;
+        self.landed.around = Some(AroundTheRows {
+            artist: browsed.artist,
+            records: browsed.artist_albums.into(),
+            totals: browsed.artist_totals,
+            sung: browsed.sung,
+            instead: browsed.instead,
+        });
         self.index_the_favourites();
         self.restate_the_listing();
         self.ask_about_what_is_drawn();

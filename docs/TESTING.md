@@ -153,11 +153,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Later: Structure
 - [L] The party, inspector, services, queue, lyrics, analysis, missing, statistics, suggestions
   and settings panes (the settings' fields and its own state) and the browse panes' scrolls,
-  orders and reach (`BrowsePanes`) are entities owning their state and subscriptions (`ui.md`), but
-  `RootView` still has 73 fields (58 more in its groups), with `RootView::new` some 400 lines making
-  27 subscriptions, and `LibraryModel` (46) still holds the browse panes' catalog state (`Shelf`,
-  `Detail`, …). Each wants a driven test pinning it before it moves, as the panes moved so far got,
-  and a pane's drawing stays on the root while its controls live in the root's focus ring
+  orders, reach and what they draw around their rows and on the record card (`BrowsePanes`) are
+  entities owning their state and subscriptions (`ui.md`), but `RootView` still has 73 fields (58
+  more in its groups), with `RootView::new` some 400 lines making 27 subscriptions. Each wants a
+  driven test pinning it before it moves, as the panes moved so far got, and a pane's drawing stays
+  on the root while its controls live in the root's focus ring
 - [M · blocked: jxl-oxide reading jxl-encoder's ANS-coded output] The vault builds two JPEG XL
   encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder` for a JPEG's transcode. Measured on
   600 to 1400 px covers, `jxl-encoder` 0.3.4's lossless effort 7 is about half zune's size (0.6 to

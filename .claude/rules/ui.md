@@ -21,7 +21,8 @@ shown and whether what was heard is owed it), `Landed` (what a read brought for 
 held until that entity takes it), `Favours`, `Pictures` (the covers, portraits and the
 magnifier), `Shelf` (playlists), `Passes` (organise, import, retag and identical previews),
 `Enrichment`, `Outreach` (asking the providers), `Unheld` (what a search found beyond the library),
-`Detail` (the album, artist or release opened), `Wishes`, `Delivered` (downloads), `Naming`,
+`Detail` (the album or release opened, whose tracks the album's rows merge in, `played_from` plays and a
+want lists as downloads), `Wishes`, `Delivered` (downloads), `Naming`,
 `Browse` (the listings and how far they are read), `Choices` (the switches the settings hand it),
 `Watchers` (the background readers' tasks) and `Running` (the `Work` and what waits for it); a new
 field joins the group its subject belongs to.
@@ -91,16 +92,24 @@ the root's list:
   `is_armed`, `lower`, `disarm`), and the root's `arm`, `is_armed`, `lower` and `disarm` reach them;
   a handler that stores a setting, toasts or sends a command stays the root's and updates the pane
   for its part (`this.settings_pane.update(…)`), a task it spawns stored on the pane once spawned.
-- `BrowsePanes` (`views/browsing.rs`): what the browse panes hold between frames, in three parts:
+- `BrowsePanes` (`views/browsing.rs`): what the browse panes hold between frames, in five parts:
   `Scrolls` (the listings' and opened playlist's rows, an artist's records, the search page, the
   Sort pop-up's list, the shelves and strips by id, `BrowsePanes::shelf`, and each playlist's rows
   where it was left, `left_at`), `Orders` (an opened playlist's row order and whether it is kept, a
   saved search's order and cap, and the Sort pop-up: what it sorts, where it stands, what was typed
-  into it) and the reach (`Reach`, the rows the keys stand on in any listing, the queue's included).
-  Nothing feeds it of its own and it never notifies, so the root, which redraws itself after each
-  change it makes, does not observe it: the root reads it through
-  `RootView::scrolls`, `RootView::orders` and `RootView::reach` and writes through
-  `RootView::change_the_orders` and `RootView::set_reach`, and the reach's questions
+  into it), the reach (`Reach`, the rows the keys stand on in any listing, the queue's included),
+  what a read draws around the rows (`AroundTheRows`: the opened artist's `ArtistDetail`, the
+  records on its shelf and its totals, the sung offer and the spelling offered `instead`, taken from
+  `Landed`, below) and an album's other pressings (`Pressed`: the album, the `Pressings` and the
+  task asking). The root does not observe it: it reads it while drawing, so a notify from what lands
+  redraws the window, and every other change is the root's own, after which it redraws. The root
+  reads it through `RootView::scrolls`, `RootView::orders`, `RootView::reach`,
+  `RootView::around_the_rows` and `RootView::pressings_of` and writes through
+  `RootView::change_the_orders`, `RootView::set_reach`, `RootView::ask_for_pressings` and
+  `let_go_of_the_pressings`. Asking stays the library's, since the reference and the Online
+  switch are: `LibraryModel::pressings_asked` and `releases_asked` hand the pane a task answering
+  the `Pressings` (a release group's failure toasted there), and `take_pressing` is an edit that
+  says whether it was made, the root letting go of the pressings when it was. The reach's questions
   (`BrowsePanes::reaches`, `at_the_reach`, `reach_in`, `acting_on_chosen`, …) are the pane's, which
   the root's same-named methods ask with a `cx`. A step that changes more than one part goes through
   the pane (`open_the_rows_of`, `read_from_the_top`, `forget_playlists_gone`, `read_the_kept_order`,
@@ -111,13 +120,22 @@ the root's list:
 **A pane whose state the catalog reads takes it from `LibraryModel`'s `Landed`**: the read still
 lands in the library's one pass (`take_the_shelves`, `take_the_listing`), which leaves each pane's
 part in `Landed`; the pane observes the library and takes its part when it notifies
-(`take_what_is_short`, `take_the_counts`, `take_what_was_heard`, `take_the_offers`), and takes once
-more as it is made, since the first read may land inside `LibraryModel::new`. The three are made
-right after the library and before the root's own observation of it, so they hold the new read
-when the root lets go of a reach the rows left. The root does not observe them: it reads each while
+(`take_what_is_short`, `take_the_counts`, `take_what_was_heard`, `take_the_offers`,
+`take_what_goes_around_the_rows`), and takes once more as it is made, since the first read may land
+inside `LibraryModel::new`. The four (`MissingPane`, `StatisticsPane`, `SuggestionsPane`,
+`BrowsePanes`) are made right after the library and before the root's own observation of it, so
+they hold the new read when the root lets go of a reach the rows left. The root does not observe them: it reads each while
 drawing (the sidebar counts every frame), so gpui redraws the window when one notifies. What steers
 the read stays the library's: the statistics window (`read_over`) and whether the pane is shown
 (`statistics_shown`).
+
+**What the library reads itself stays the library's, though only the browse panes draw it.**
+`Shelf` (the opened playlist, its order and reading, carried in every `Asked`; the shelves the
+sidebar, the queue's menus and *Replace lossy songs* read), `Browse` (the listings and how far they
+are read, which `played_from`, a queue gesture, the lookup's `Sought` and the warmed covers read)
+and `Detail` (the album's rows and the wants listed as downloads) are inputs to the read or to what
+the library does, so a pane holding them would leave the library asking it for its own state. What
+is drawn alone, around the rows and on the record card, is `BrowsePanes`'.
 
 The root still draws them (`RootView::party_pane`, `RootView::inspector`, `RootView::server_pane`,
 `RootView::queue_pane`, `RootView::lyrics_pane`, `RootView::analysis_pane`,
@@ -851,7 +869,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   nothing offers the spelling the catalog holds, as a press**: `kit::empty_offering` adds a
   `Tone::Outlined` button *Did you mean Billie Eilish?* from `RootView::nothing_matched`, putting the
   text in the search field via `RootView::search_instead` (editable, not run behind the listener's
-  back). It draws `LibraryModel::instead`, filled by `browsed` only where albums, artists, tracks and
+  back). It draws the `instead` of `AroundTheRows` that `BrowsePanes` holds, filled by `browsed` only where albums, artists, tracks and
   sung matches all came back empty; with no spelling but sung words it offers *Sung in N tracks* via
   `sung_offer`. The albums and artists panes build it before the heading (the model's borrow must end
   before `cx.listener`).
@@ -1799,12 +1817,12 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   - The info mark at row end, where `record_of` has something to say, opens a card anchored at the
     press: Released, Format, Label, Catalogue number, Barcode, Country, Kind, every service link. With
     a release group and a reachable reference, *Other pressings* asks `Reference::release_group` on bg
-    (`ask_for_pressings`, `pressings`), first `PRESSINGS_SHOWN` (12), the one in use badged *IN USE*;
+    (`pressings_asked`, `ask_for_pressings`, `pressings`), first `PRESSINGS_SHOWN` (12), the one in use badged *IN USE*;
     pressing another = `take_pressing`. **A track is placed on a release from its own menu:** *Place on
     a release…* reads the recording via `releases_it_could_sit_on` (`RELEASES_OFFERED` 10), press =
     `place_on`. **An album nothing matched has the card too**: *Find the record* asks
     `Reference::find_release` by words and any barcode/catalogue number from tags
-    (`ask_for_releases`), press = `take_pressing`. Where matched, the card ends in *Not this record*:
+    (`releases_asked`), press = `take_pressing`. Where matched, the card ends in *Not this record*:
     two presses (arming held on `OpenedRecord::Album` so any way the card closes lowers it) =
     `forget_the_match`. Escape closes the card after a magnified cover, before a toast; leaving the
     album closes it; its scrim occludes.

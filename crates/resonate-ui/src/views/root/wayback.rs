@@ -16,7 +16,12 @@ impl RootView {
                 .iter()
                 .find(|artist| artist.id == id)
                 .map(|artist| artist.name.clone())
-                .or_else(|| library.artist_detail().map(|detail| detail.name.clone())),
+                .or_else(|| {
+                    self.around_the_rows(cx)
+                        .artist
+                        .as_ref()
+                        .map(|detail| detail.name.clone())
+                }),
             (pane, _) => Some(pane.label().to_owned()),
         };
 

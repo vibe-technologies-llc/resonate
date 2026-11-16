@@ -2,11 +2,9 @@ use std::sync::Arc;
 
 use gpui::SharedString;
 use resonate_core::{AlbumId, ReleaseTrackId, WantId};
-use resonate_library::{
-    Album, ArtistDetail, ArtistTotals, Found, HeldReleaseTrack, Mbid, ReleaseDetail,
-};
+use resonate_library::{Album, Found, HeldReleaseTrack, Mbid, ReleaseDetail};
 
-use super::{LibraryModel, ListedRow, ShortOf};
+use super::{AroundTheRows, LibraryModel, ListedRow, ShortOf};
 use crate::downloads::{self, Fetched, Fetching};
 
 impl LibraryModel {
@@ -20,18 +18,6 @@ impl LibraryModel {
 
     pub const fn release(&self) -> Option<&ReleaseDetail> {
         self.detail.release.as_ref()
-    }
-
-    pub const fn artist_detail(&self) -> Option<&ArtistDetail> {
-        self.detail.artist.as_ref()
-    }
-
-    pub fn artist_albums(&self) -> Arc<[Album]> {
-        Arc::clone(&self.detail.artist_albums)
-    }
-
-    pub const fn artist_totals(&self) -> ArtistTotals {
-        self.detail.artist_totals
     }
 
     pub fn scoped_album(&self, id: AlbumId) -> Option<&Album> {
@@ -85,5 +71,9 @@ impl LibraryModel {
 
     pub(crate) const fn take_what_is_short(&mut self) -> Option<ShortOf> {
         self.landed.short_of.take()
+    }
+
+    pub(crate) const fn take_what_goes_around_the_rows(&mut self) -> Option<AroundTheRows> {
+        self.landed.around.take()
     }
 }

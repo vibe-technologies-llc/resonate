@@ -2,7 +2,7 @@ use std::{borrow::Cow, sync::Arc, time::Duration};
 
 use gpui::{Context, Task};
 use resonate_library::{
-    AlbumFound, AlbumMatch, AlbumNotHeld, ArtistFound, Found, RecordingMatch, SongsAsked, Sung,
+    AlbumFound, AlbumMatch, AlbumNotHeld, ArtistFound, Found, RecordingMatch, SongsAsked,
     albums_still_answering, artists_still_answering, songs_asked, still_answering, weighed_for,
 };
 
@@ -177,10 +177,6 @@ impl LibraryModel {
             | ListedRow::Missing(_)
             | ListedRow::NotHeld(_) => None,
         }
-    }
-
-    pub const fn sung(&self) -> Option<&Sung> {
-        self.browse.sung.as_ref()
     }
 
     pub(super) fn ask_elsewhere_after(&mut self, settling: Duration, cx: &mut Context<Self>) {

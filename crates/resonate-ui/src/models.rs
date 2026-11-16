@@ -861,6 +861,16 @@ struct Landed {
     heard: Option<Heard>,
     short_of: Option<ShortOf>,
     offered: Option<Arc<[Suggestion]>>,
+    around: Option<AroundTheRows>,
+}
+
+#[derive(Default)]
+pub(crate) struct AroundTheRows {
+    pub(crate) artist: Option<ArtistDetail>,
+    pub(crate) records: Arc<[Album]>,
+    pub(crate) totals: ArtistTotals,
+    pub(crate) sung: Option<Sung>,
+    pub(crate) instead: Option<String>,
 }
 
 struct Favours {
@@ -961,12 +971,7 @@ struct Unheld {
 struct Detail {
     release_tracks: Arc<[HeldReleaseTrack]>,
     release: Option<ReleaseDetail>,
-    artist: Option<ArtistDetail>,
-    artist_albums: Arc<[Album]>,
-    artist_totals: ArtistTotals,
     album: Option<Album>,
-    pressings: Option<(AlbumId, Pressings)>,
-    _pressings: Task<()>,
 }
 
 struct Wishes {
@@ -1002,7 +1007,6 @@ struct Browse {
     tracks: Rows<Track>,
     scoped: Rows<Track>,
     rows: Arc<[ListedRow]>,
-    sung: Option<Sung>,
     albums_counted: u32,
     artists_counted: u32,
     tracks_measured: Measured,
@@ -1065,7 +1069,6 @@ pub struct LibraryModel {
     selection: Selection,
     query: String,
     search: Search,
-    instead: Option<String>,
     arrived: Option<TrackId>,
     sourcing: Sourcing,
     playing: bool,
@@ -1213,7 +1216,6 @@ impl LibraryModel {
             selection: Selection::Everything,
             query: String::new(),
             search: Search::default(),
-            instead: None,
             arrived: None,
             sourcing,
             playing: false,
@@ -1243,6 +1245,7 @@ impl LibraryModel {
                 heard: None,
                 short_of: None,
                 offered: None,
+                around: None,
             },
             favours: Favours {
                 albums: Arc::default(),
@@ -1335,12 +1338,7 @@ impl LibraryModel {
             detail: Detail {
                 release_tracks: Arc::default(),
                 release: None,
-                artist: None,
-                artist_albums: Arc::default(),
-                artist_totals: ArtistTotals::default(),
                 album: None,
-                pressings: None,
-                _pressings: Task::ready(()),
             },
             wishes: Wishes {
                 wanting: AHashMap::new(),
@@ -1371,7 +1369,6 @@ impl LibraryModel {
                 tracks: Rows::default(),
                 scoped: Rows::default(),
                 rows: Arc::default(),
-                sung: None,
                 albums_counted: 0,
                 artists_counted: 0,
                 tracks_measured: Measured::default(),
