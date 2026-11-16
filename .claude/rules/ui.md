@@ -1959,7 +1959,11 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   `lossy_songs_of` on the background executor, dropped where the window's `attention` moved or the
   sheet in front is another. Every row that can be ticked (a held lossless copy, or a release row to
   want) arrives ticked; a `kit::checkbox_when` row names the song (`spoken::song`), its
-  `kit::format_badge` and why it stands (*you hold it in FLAC*, *wanted through MusicBrainz*), and
+  `kit::format_badge` and why it stands (*you hold it in FLAC*, *wanted through MusicBrainz*), the
+  checkbox taking the row's spare width and its label ending in an ellipsis
+  (`kit::checkbox_when` wraps every label in `ends_in_an_ellipsis` under `min_w_0`), so a long title
+  never pushes the badge and the words past the row's clipped edge
+  (`a_long_title_in_the_lossy_songs_sheet_ends_in_an_ellipsis_before_why_it_stands`), and
   one not matched or already being replaced is `kit::Press::Greyed`. *Tick all* in the heading row
   ticks every tickable row or, all ticked, unticks them. A note in `muted` says each lossy copy goes
   to the trash once its lossless copy is held, in place of a confirmation, the trash being reversible.

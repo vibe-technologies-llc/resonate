@@ -1210,6 +1210,10 @@ mod driven {
     }
 
     fn encoded_as_echoes(folder: &Folder, name: &str, codec: &[&str]) -> Option<PathBuf> {
+        encoded_titled(folder, name, codec, "Echoes")
+    }
+
+    fn encoded_titled(folder: &Folder, name: &str, codec: &[&str], title: &str) -> Option<PathBuf> {
         let source = Folder::new();
         let tone = source.tone("tone.wav", 2);
         let target = folder.path().join(name);
@@ -1217,9 +1221,8 @@ mod driven {
             .args(["-y", "-v", "error", "-i"])
             .arg(&tone)
             .args(codec)
+            .args(["-metadata", &format!("title={title}")])
             .args([
-                "-metadata",
-                "title=Echoes",
                 "-metadata",
                 "artist=Pink Floyd",
                 "-metadata",
@@ -1447,6 +1450,50 @@ mod driven {
         });
         assert!(library.wants().expect("the wants read").is_empty());
         assert!(opus.exists(), "a cancelled replacement took the lossy copy");
+    }
+
+    #[gpui::test]
+    fn a_long_title_in_the_lossy_songs_sheet_ends_in_an_ellipsis_before_why_it_stands(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let long = "Echoes ".repeat(40);
+        let Some(opus) = encoded_titled(
+            &folder,
+            "A.opus",
+            &["-c:a", "libopus", "-b:a", "96k"],
+            long.trim(),
+        ) else {
+            return;
+        };
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let road_trip = library
+            .start_playlist(
+                "Road trip",
+                &[Cut::whole(resonate_core::MediaLocation::local(&opus))],
+            )
+            .expect("a playlist holding the lossy copy");
+        let track = library
+            .track_at(&opus, None)
+            .expect("the catalog read")
+            .expect("the song is catalogued")
+            .id;
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        driven.click("tab-playlists");
+        driven.until(|root, cx| root.library.read(cx).holds_lossy_songs(road_trip));
+
+        opened_the_sheet_for(&mut driven, road_trip);
+
+        let sheet = driven.bounds_of("replacing-sheet");
+        let standing = driven.bounds_of(Box::leak(
+            format!("replacing-standing-{track}").into_boxed_str(),
+        ));
+        assert!(
+            standing.right() <= sheet.right(),
+            "why the song stands was pushed past the sheet: {standing:?} beyond {sheet:?}"
+        );
+        assert!(standing.size.width > gpui::px(0.0));
     }
 
     #[gpui::test]
