@@ -105,9 +105,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   are fixed, and the callback is typed by them
 
 ## The window
-- [S · 0.12.0] A missing song on an album's track list is downloaded only by a left press on its
-  row (`unheld_row`): a right press opens no menu, where a song found on MusicBrainz offers
-  *Download and play*, *Download* and *Download from a release* (`found_menu`)
 
 ## Sync and together
 
