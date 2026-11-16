@@ -23,7 +23,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -60,7 +60,6 @@ import org.resonate.android.R
 import org.resonate.android.nativecore.AlbumHit
 import org.resonate.android.nativecore.LibraryStatistics
 import org.resonate.android.nativecore.SuggestedList
-import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.components.CollectionRow
 import org.resonate.android.ui.components.IconTile
 import org.resonate.android.ui.components.LocalSheets
@@ -86,7 +85,6 @@ import org.resonate.android.ui.library.Unreadable
 import org.resonate.android.ui.library.Welcome
 import org.resonate.android.ui.library.greeting
 import org.resonate.android.ui.library.listenedHours
-import org.resonate.android.ui.library.playShuffled
 import org.resonate.android.ui.library.screen
 import org.resonate.android.ui.library.shownName
 import org.resonate.android.ui.library.shownTitle
@@ -122,7 +120,6 @@ fun HomeScreen() {
 
 @Composable
 private fun HomeFeed(model: HomeViewModel, padding: PaddingValues) {
-    val resonate = LocalResonate.current
     val navigator = LocalNavigator.current
     val sheets = LocalSheets.current
     val songs by model.songs.collectAsStateWithLifecycle()
@@ -139,20 +136,20 @@ private fun HomeFeed(model: HomeViewModel, padding: PaddingValues) {
                 modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 8.dp),
                 first = { modifier ->
                     Shortcut(
+                        icon = Icons.Rounded.LibraryMusic,
+                        title = stringResource(R.string.shell_tab_library),
+                        detail = pluralStringResource(R.plurals.count_songs, songs.size, songs.size),
+                        onClick = { navigator.open(Screen.Library) },
+                        modifier = modifier.testTag("home-library"),
+                    )
+                },
+                second = { modifier ->
+                    Shortcut(
                         icon = Icons.Rounded.Favorite,
                         title = stringResource(R.string.library_favourites),
                         detail = pluralStringResource(R.plurals.count_songs, favourites.size, favourites.size),
                         onClick = { navigator.open(Screen.Favourites) },
                         modifier = modifier.testTag("home-favourites"),
-                    )
-                },
-                second = { modifier ->
-                    Shortcut(
-                        icon = Icons.Rounded.Shuffle,
-                        title = stringResource(R.string.home_shuffle_all),
-                        detail = pluralStringResource(R.plurals.count_songs, songs.size, songs.size),
-                        onClick = { resonate.playShuffled(songs) },
-                        modifier = modifier.testTag("home-shuffle"),
                     )
                 },
             )

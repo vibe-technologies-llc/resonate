@@ -29,11 +29,11 @@ struct HomeView: View {
             } else {
                 Section {
                     ShortcutCards {
+                        LibraryCard()
                         NavigationLink(value: Destination.favourites) {
                             FavouritesCard()
                         }
                         .buttonStyle(.plain)
-                        ShuffleAllCard()
                     }
                 }
                 HomeMixes()
@@ -138,21 +138,21 @@ private struct HomeDevices: View {
     }
 }
 
-private struct ShuffleAllCard: View {
+private struct LibraryCard: View {
     @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
 
     var body: some View {
         Button {
-            library.shuffle(library.allTracks)
+            navigation.tab = .library
         } label: {
             ShortcutCard(
-                title: said("home.shuffle-all"),
+                title: said("tabs.library"),
                 detail: said("counted.songs", library.catalogCount),
-                symbol: "shuffle"
+                symbol: "square.stack"
             )
         }
         .buttonStyle(.plain)
-        .disabled(library.catalogCount == 0)
     }
 }
 

@@ -898,7 +898,6 @@
     <string name="library_playlist_forget_link">Forget the link</string>
     <string name="library_playlist_delete">Delete playlist</string>
     <string name="library_playlist_nothing_to_undo">There is no playlist edit to undo</string>
-    <string name="home_shuffle_all">Shuffle all</string>
     <string name="home_your_listening">Your listening</string>
     <string name="home_statistics">Statistics</string>
     <plurals name="home_figure_plays">

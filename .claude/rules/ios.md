@@ -893,8 +893,8 @@ every route change (a pair of headphones at the same rate included), not from th
   it was reached through it. A failed read cuts nothing: a catalog read that fails resumes `wholeCatalog`'s waiters with nothing cut. Now Playing and the sheets are not kept.
 - **Home is the first tab and the one a launch opens** (`Root.home`, `HomeView` in `HomeViews.swift`), Android's
   Home: a title greeting by the hour (`HomeGreeting.of`, `ResonateLogic`, held by `HomeTests`, read again on
-  appearing and coming forward), then *Favourites* and *Shuffle all* as two shortcut cards (`ShuffleAllCard`, the whole catalog
-  shuffled), *Made for you* (`HomeMixes`: `OfferedMixes.home`, the two *Yours* mixes then up to twelve lists of the
+  appearing and coming forward), then *Library* and *Favourites* as two shortcut cards (`LibraryCard`, the song count, a tap
+  switching to the Library tab with `Navigation.tab`; Android's Home has the same pair), *Made for you* (`HomeMixes`: `OfferedMixes.home`, the two *Yours* mixes then up to twelve lists of the
   *Made for you*, *Rediscover* and *From your listening* shelves (`Suggestions.home`), as cards on a shelf, their covers from
   `OfferedMixes.covers`, which the Suggestions page shares; a card's cover and its words each open the mix, the words being the one button VoiceOver hears, and its play button stays apart; *See all* is `Destination.suggestions`),
   *Recently added* (`albums(order: .added)`), then *Your playlists* (a *New playlist* button
