@@ -9,6 +9,7 @@ import icons
 TRIPLE = "aarch64-apple-ios"
 DEPLOYMENT_TARGET = "26.0"
 LIBRARY = "libresonate_mobile.a"
+LINK_ARGUMENT_SEPARATOR = "\x1f"
 MODULE_MAP = """module ResonateNativeFFI {
     header "ResonateNativeFFI.h"
     link "resonate_mobile"
@@ -82,6 +83,10 @@ def swift_accents(accents):
     return SWIFT_ACCENTS.format(rows=rows)
 
 
+def linked_by_lld_against(sdk):
+    return [f"-Clink-arg={argument}" for argument in ("-fuse-ld=lld", "-isysroot", str(sdk))]
+
+
 def run(command, env):
     subprocess.run(command, cwd=repository, env=env, check=True)
 
@@ -90,7 +95,7 @@ sdk = iphone_sdk()
 environment = os.environ.copy()
 environment.update(
     CARGO_TARGET_DIR=str(target),
-    RUSTFLAGS="",
+    CARGO_ENCODED_RUSTFLAGS=LINK_ARGUMENT_SEPARATOR.join(linked_by_lld_against(sdk)),
     CARGO_PROFILE_DEV_DEBUG="0",
     CARGO_PROFILE_RELEASE_PANIC="unwind",
     SDKROOT=str(sdk),
@@ -98,6 +103,7 @@ environment.update(
 )
 key = TRIPLE.replace("-", "_")
 environment.update({
+    f"CARGO_TARGET_{key.upper()}_LINKER": shutil.which("clang") or "clang",
     f"CC_{key}": shutil.which("clang") or "clang",
     f"AR_{key}": shutil.which("llvm-ar") or "llvm-ar",
     f"CFLAGS_{key}": f"--target=arm64-apple-ios{DEPLOYMENT_TARGET} -isysroot {sdk}",

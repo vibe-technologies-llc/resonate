@@ -71,9 +71,12 @@ the source did not declare.
 ## The native library
 
 `ios/build-native.py [--profile debug|release]` builds `resonate-mobile` as a staticlib for
-`aarch64-apple-ios` into `ios/.cargo-target` (`RUSTFLAGS` reset, so no `target-cpu=native`;
-`IPHONEOS_DEPLOYMENT_TARGET` 26.0; C dependencies compiled by clang against the SDK's
-`iPhoneOS.sdk`), generates the Swift bindings with `resonate-bindgen` built in release in the same
+`aarch64-apple-ios` into `ios/.cargo-target` (`CARGO_ENCODED_RUSTFLAGS` replaces the
+configured flags, so no `target-cpu=native`; `IPHONEOS_DEPLOYMENT_TARGET` 26.0; C dependencies
+compiled by clang against the SDK's `iPhoneOS.sdk`), with clang as the target's linker driving
+`ld64.lld` against the same SDK (`linked_by_lld_against`): a dependency whose library is also a
+`cdylib` (`mibz2`, under `resonate-musicbrainz`) is linked for iOS even beside a staticlib, and the
+host's `cc` refuses Apple's `-target`, so `lld` is a requirement like clang. It generates the Swift bindings with `resonate-bindgen` built in release in the same
 target directory (whatever `--profile` the library takes), and lays out `ios/Generated/`: `ResonateNativeFFI` (the
 header and a module map that links `resonate_mobile`), `ResonateNative` (the bindings) and `lib/`.
 It also reads the Resonate palette's seven accents out of `resonate-ui`'s `theme.rs` (the `RESONATE`
