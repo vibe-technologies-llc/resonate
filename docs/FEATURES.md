@@ -222,8 +222,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [S] The phones do not offer their catalogs on the network, only the desktop does
 - [S] Every computer offering its catalog is named Resonate on the network, so two read alike in a
   control point; the name is the catalog's word, never the host's
-- [S] A renderer taking WAVE and not FLAC is sent uncompressed PCM, about 9 Mbit/s at 24-bit 192 kHz,
-  and handing the untouched file over does not fit the sink seam (`upnp.md`)
 - [S] A search from the network answers under the root and Songs alone: under an artist, an album
   or a playlist it is UPnP error 720, as the albums, playlists and songs below one would each have
   to be narrowed to it beside the search

@@ -89,6 +89,11 @@ engine is a dev-dependency, for the end-to-end test.
   The listener can state the rate for a renderer that does not (*A renderer vouched for*). `Renderer::carriage_for(spec)` is the first carriage
   carrying a stream's rate, word and layout, so FLAC wins wherever it can carry what WAVE would,
   and `SinkInfo::formats` is the carriages' formats united.
+- **A renderer taking WAVE and not FLAC is sent WAVE, and that is the design.** Its uncompressed
+  PCM is about 9 Mbit/s at 24-bit 192 kHz, which a home network carries, and the stream stays the
+  engine's: DSP, the equaliser, the gapless handover and the clock all hold. Handing such a
+  renderer the untouched file in its own format would be a second path beside the sink seam with
+  none of those, so it is not built.
 - **A renderer vouched for is offered FLAC at every rate it does not state.** The `flac-above-96k-for`
   setting (`binary.md`) names renderers (`upnp:` and the UDN, as `sinks --renderers` lists them);
   `Network::vouch(Vouched::flac_at_any_rate(..))` hands the crate their UDNs (`Udn::from_node`), and
