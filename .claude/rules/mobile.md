@@ -366,11 +366,17 @@ leak into the generated C header, which then fails to compile (hence `Documents:
 
 The boundary, not a front end, says where a copy of a waiting song may already be filed:
 `sync_standing_folders(id, layout)` renders the folders from the waiting file's tags through the
-phone's layout and `DEFAULT_LAYOUT`, and `sync_receive_standing(id, layout, standing)` renders them
-again and weighs only documents from the root (named alike) or from those folders (named alike or of
+phone's layout, every layout a paired device files by (`Sync::layouts`, the `Change::Layout` notes of
+`sync.md`, newest first, one that does not read as a `Layout` passed over) and `DEFAULT_LAYOUT`, and
+`sync_receive_standing(id, layout, standing)` renders them again and weighs only documents from the root (named alike) or from those folders (named alike or of
 the landing's extension, at most `FILED_COPIES_WEIGHED_AT_MOST`), whatever a front end hands it, so
 each phone lists a few folders and never decides which. The folders, the bound and the tests are
-`android.md`'s *Device sync*.
+`android.md`'s *Device sync*. **A phone tells its own layout as a desktop does**: the layout a
+landing or `plan_organise` is handed, where it reads, is kept in `Syncing` (`files_by`) and answered
+by `DocumentCatalog`'s `organise_layout`, so two phones look where the other files too; the platform
+calls are unchanged. A copy a desktop filed under a layout of its own is found once that desktop's
+note has arrived
+(`a_song_whose_audio_a_desk_filed_under_its_own_layout_is_taken_as_that_file_once_the_layout_arrives`).
 
 ## Granted documents
 

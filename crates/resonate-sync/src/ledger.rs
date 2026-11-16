@@ -10,9 +10,9 @@ use crate::{
         Resumed,
     },
     change::{
-        AnswerNote, Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen,
-        Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody, QueryFolded,
-        QueryNote, ShareNote, Stamp, wall_nanos,
+        AnswerNote, Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, LayoutNote,
+        Listen, Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody,
+        QueryFolded, QueryNote, ShareNote, Stamp, wall_nanos,
     },
     merge::{
         DIGEST_BYTES, Folds, Synced, absorbed, named_as_a_free_alias_of, names_alike,
@@ -188,12 +188,23 @@ CREATE TABLE shares (
 ) STRICT;
 ";
 
+const LAYOUTS_TRAVEL: &str = "
+CREATE TABLE layouts (
+    device BLOB PRIMARY KEY,
+    layout TEXT NOT NULL,
+    nanos INTEGER NOT NULL,
+    stamped_by BLOB NOT NULL,
+    owed INTEGER NOT NULL DEFAULT 0
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     ANSWERS_TRAVEL,
     SONGS_REFUSED_ARE_REMEMBERED,
     NAMESAKES_MADE_APART_BECOME_ONE,
     SHARED_PLAYLISTS_STAND_APART,
+    LAYOUTS_TRAVEL,
 ];
 
 const OWE_EVERYTHING: &str = "
@@ -203,6 +214,7 @@ UPDATE queries SET owed = 1;
 UPDATE favourites SET owed = 1;
 UPDATE listens SET owed = 1;
 UPDATE handoffs SET owed = 1;
+UPDATE layouts SET owed = 1;
 UPDATE answers SET owed = 1;
 UPDATE playlist_folds SET owed = 1;
 UPDATE query_folds SET owed = 1;
@@ -215,6 +227,7 @@ DELETE FROM queries;
 DELETE FROM favourites;
 DELETE FROM listens;
 DELETE FROM handoffs;
+DELETE FROM layouts;
 DELETE FROM answers;
 DELETE FROM playlist_folds;
 DELETE FROM query_folds;
@@ -547,6 +560,9 @@ impl Ledger {
             .execute("UPDATE shares SET owed = 1", [])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         self.connection
+            .execute("UPDATE layouts SET owed = 1", [])
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        self.connection
             .execute("UPDATE queries SET owed = 1", [])
             .map_err(|source| Error::store(StoreOp::Write, source))
     }
@@ -634,6 +650,7 @@ impl Ledger {
         self.look_at_favourites(catalog, Looking::Everything)?;
         self.look_at_listens(catalog)?;
         self.look_at_resumption(catalog)?;
+        self.look_at_layout(catalog)?;
         self.look_at_answers(catalog)?;
         self.keep_the_clock()?;
         self.age_listens()?;
@@ -1617,6 +1634,33 @@ impl Ledger {
             .map_err(|source| Error::store(StoreOp::Write, source))
     }
 
+    fn look_at_layout(&mut self, catalog: &dyn Catalog) -> Result<()> {
+        let Some(layout) = catalog.organise_layout() else {
+            return Ok(());
+        };
+        let held: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT layout FROM layouts WHERE device = ?1",
+                params![self.device.0.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        if held.as_deref() == Some(layout.as_str()) {
+            return Ok(());
+        }
+        let stamp = self.clock.now(self.device);
+        self.connection
+            .execute(
+                "INSERT INTO layouts (device, layout, nanos, stamped_by, owed) VALUES (?1, ?2, ?3, ?1, 1)
+                 ON CONFLICT (device) DO UPDATE SET layout = ?2, nanos = ?3, stamped_by = ?1, owed = 1",
+                params![self.device.0.as_slice(), layout, stamp.nanos],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
     fn look_at_answers(&mut self, catalog: &dyn Catalog) -> Result<()> {
         if !catalog.takes_answers() {
             return Ok(());
@@ -1711,6 +1755,7 @@ impl Ledger {
                       + (SELECT count(*) FROM queries WHERE owed = 1)
                       + (SELECT count(*) FROM favourites WHERE owed = 1) + (SELECT count(*) FROM listens WHERE owed = 1)
                       + (SELECT count(*) FROM handoffs WHERE owed = 1)
+                      + (SELECT count(*) FROM layouts WHERE owed = 1)
                       + (SELECT count(*) FROM answers WHERE owed = 1)
                       + (SELECT count(*) FROM playlist_folds WHERE owed = 1)
                       + (SELECT count(*) FROM query_folds WHERE owed = 1)",
@@ -1751,6 +1796,11 @@ impl Ledger {
                 .map(Change::Answer),
         );
         changes.extend(self.share_notes("owed = 1")?.into_iter().map(Change::Share));
+        changes.extend(
+            self.layouts_where("owed = 1")?
+                .into_iter()
+                .map(Change::Layout),
+        );
         Ok(bundled(changes))
     }
 
@@ -1768,6 +1818,7 @@ impl Ledger {
         changes.extend(self.listens_where("1")?.into_iter().map(Change::Listen));
         changes.extend(self.answer_notes("1")?.into_iter().map(Change::Answer));
         changes.extend(self.share_notes("1")?.into_iter().map(Change::Share));
+        changes.extend(self.layouts_where("1")?.into_iter().map(Change::Layout));
         Ok(bundled(changes))
     }
 
@@ -1818,6 +1869,10 @@ impl Ledger {
                 Change::Share(note) => transaction.execute(
                     "UPDATE shares SET owed = 0 WHERE code = ?1 AND nanos = ?2",
                     params![note.code, note.stamp.nanos],
+                ),
+                Change::Layout(note) => transaction.execute(
+                    "UPDATE layouts SET owed = 0 WHERE device = ?1 AND nanos = ?2",
+                    params![note.device.0.as_slice(), note.stamp.nanos],
                 ),
                 Change::Answer(note) => {
                     let slot = AnswerSlot::of(&note.recording, &note.answer);
@@ -1879,6 +1934,10 @@ impl Ledger {
                     self.share_arrived(catalog, note)?;
                     false
                 }
+                Change::Layout(note) => {
+                    self.layout_arrived(note)?;
+                    false
+                }
             };
             applied.changed_here += usize::from(changed);
         }
@@ -1934,6 +1993,12 @@ impl Ledger {
                     params![forgotten.device.0.as_slice()],
                 )
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
+            transaction
+                .execute(
+                    "DELETE FROM layouts WHERE device = ?1",
+                    params![forgotten.device.0.as_slice()],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
         }
         transaction
             .commit()
@@ -1970,6 +2035,12 @@ impl Ledger {
                     params![device.0.as_slice()],
                 )
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
+            transaction
+                .execute(
+                    "DELETE FROM layouts WHERE device = ?1",
+                    params![device.0.as_slice()],
+                )
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
         }
         transaction
             .commit()
@@ -1995,6 +2066,26 @@ impl Ledger {
                     handoff.playing,
                     handoff.stamp.nanos,
                     handoff.stamp.device.0.as_slice()
+                ],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
+    fn layout_arrived(&mut self, note: &LayoutNote) -> Result<()> {
+        if note.device == self.device {
+            return Ok(());
+        }
+        self.connection
+            .execute(
+                "INSERT INTO layouts (device, layout, nanos, stamped_by) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT (device) DO UPDATE SET layout = ?2, nanos = ?3, stamped_by = ?4
+                 WHERE (?3, ?4) > (layouts.nanos, layouts.stamped_by)",
+                params![
+                    note.device.0.as_slice(),
+                    note.layout,
+                    note.stamp.nanos,
+                    note.stamp.device.0.as_slice()
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -3472,6 +3563,43 @@ impl Ledger {
             .map_err(|source| Error::store(StoreOp::Read, source))
     }
 
+    pub fn layouts(&self) -> Result<Vec<LayoutNote>> {
+        self.layouts_where("device NOT IN (SELECT device FROM devices WHERE gone = 1)")
+    }
+
+    fn layouts_where(&self, condition: &str) -> Result<Vec<LayoutNote>> {
+        let mut query = self
+            .connection
+            .prepare(&format!(
+                "SELECT device, layout, nanos, stamped_by FROM layouts WHERE {condition} ORDER BY device"
+            ))
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let rows = query
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, Vec<u8>>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Vec<u8>>(3)?,
+                ))
+            })
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut layouts = Vec::new();
+        for row in rows {
+            let (device, layout, nanos, stamped_by) =
+                row.map_err(|source| Error::store(StoreOp::Read, source))?;
+            layouts.push(LayoutNote {
+                device: device_from(&device),
+                layout,
+                stamp: Stamp {
+                    nanos,
+                    device: device_from(&stamped_by),
+                },
+            });
+        }
+        Ok(layouts)
+    }
+
     fn handoffs_where(&self, condition: &str) -> Result<Vec<Handoff>> {
         let mut statement = self
             .connection
@@ -4064,6 +4192,51 @@ mod tests {
             .expect("the new table");
 
         assert_eq!((kept, released, shares), (1, 0, 0));
+    }
+
+    #[test]
+    fn a_ledger_of_before_layouts_travelled_keeps_its_handoffs_and_knows_no_layout() {
+        let connection = Connection::open_in_memory().expect("a connection");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == LAYOUTS_TRAVEL)
+            .expect("the step is in the chain");
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("the ledger of before");
+        }
+        connection
+            .execute(
+                "INSERT INTO state (id, device) VALUES (1, ?1)",
+                params![[3_u8; 16].as_slice()],
+            )
+            .expect("a state row");
+        connection
+            .execute(
+                "INSERT INTO handoffs (device, rows, at, position, playing, nanos, stamped_by)
+                 VALUES (X'04040404040404040404040404040404', X'00', 0, 0, 0, 1, X'04040404040404040404040404040404')",
+                [],
+            )
+            .expect("a handoff of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(before).expect("a count"),
+            )
+            .expect("stamped");
+
+        let mut ledger = Ledger::over(connection).expect("carried forward");
+        let handoffs = ledger.handoffs_where("1").expect("handoffs").len();
+        let layouts = ledger.layouts().expect("layouts");
+        ledger
+            .space_made_anew()
+            .expect("everything owed, the new table too");
+
+        assert_eq!(ledger.device(), DeviceId([3; 16]));
+        assert_eq!(handoffs, 1);
+        assert!(layouts.is_empty());
     }
 
     #[test]

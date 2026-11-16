@@ -807,6 +807,83 @@ fn device_names(device: &Device) -> Vec<String> {
         .collect()
 }
 
+fn layouts_known(device: &Device) -> Vec<String> {
+    device
+        .ledger
+        .layouts()
+        .expect("layouts")
+        .into_iter()
+        .map(|note| note.layout)
+        .collect()
+}
+
+fn files_as(device: &Device, layout: &str) {
+    device.shelf.inside.lock().layout = Some(layout.to_owned());
+    device.shelf.moved();
+}
+
+#[test]
+fn an_organise_layout_travels_as_its_devices_newest_word_and_is_not_sent_back() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    files_as(&desk, "{artist}/{year} {album}/{track} {title}");
+
+    sync(&mut desk, &mut phone);
+    let first = phone.ledger.layouts().expect("layouts");
+    let echoed = phone.send();
+    let unchanged = desk.send();
+
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].device, desk.ledger.device());
+    assert_eq!(first[0].layout, "{artist}/{year} {album}/{track} {title}");
+    assert!(
+        !echoed
+            .iter()
+            .any(|change| matches!(change, Change::Layout(_)))
+    );
+    assert!(
+        !unchanged
+            .iter()
+            .any(|change| matches!(change, Change::Layout(_)))
+    );
+
+    files_as(&desk, "{albumartist}/{album}/{title}");
+    sync(&mut desk, &mut phone);
+    phone.receive(&[Change::Layout(first[0].clone())]);
+
+    assert_eq!(layouts_known(&phone), ["{albumartist}/{album}/{title}"]);
+
+    let mut tablet = Device::new("Tablet", &["A"]);
+    let snapshot = phone.ledger.snapshot().expect("snapshot");
+    tablet.receive(&snapshot.into_iter().flatten().collect::<Vec<_>>());
+
+    assert_eq!(layouts_known(&tablet), ["{albumartist}/{album}/{title}"]);
+}
+
+#[test]
+fn a_device_names_no_layout_until_its_catalog_tells_one_and_forgetting_the_device_forgets_its_layout()
+ {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+
+    sync(&mut phone, &mut desk);
+
+    assert!(layouts_known(&desk).is_empty());
+
+    files_as(&phone, "{album}/{title}");
+    let told = phone.send();
+    desk.receive(&told);
+
+    assert_eq!(layouts_known(&desk), ["{album}/{title}"]);
+
+    desk.ledger
+        .forget_device(phone.ledger.device())
+        .expect("forgotten");
+    desk.receive(&told);
+
+    assert!(layouts_known(&desk).is_empty());
+}
+
 #[test]
 fn a_forgotten_device_leaves_every_list_and_its_old_note_does_not_bring_it_back() {
     let mut desk = Device::new("Desk", &["A"]);

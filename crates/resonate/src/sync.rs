@@ -4,6 +4,7 @@ use std::{
     collections::BTreeSet,
     fs::{self, File},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering as Atomically},
     thread,
     time::{Duration, Instant, SystemTime},
 };
@@ -86,6 +87,34 @@ struct Service {
     running: Mutex<Option<Arc<Running>>>,
     driven: Mutex<Option<Arc<dyn Controlled>>>,
     trust: Mutex<RemoteTrust>,
+    filed_as: Arc<FiledAs>,
+}
+
+#[cfg(feature = "sync")]
+#[derive(Default)]
+struct FiledAs {
+    layout: Mutex<Option<String>>,
+    changes: AtomicU64,
+}
+
+#[cfg(feature = "sync")]
+impl FiledAs {
+    fn told_by(&self, config: &Config) {
+        let layout = config.organise_as().to_string();
+        let mut held = self.layout.lock();
+        if held.as_deref() != Some(layout.as_str()) {
+            *held = Some(layout);
+            self.changes.fetch_add(1, Atomically::AcqRel);
+        }
+    }
+
+    fn layout(&self) -> Option<String> {
+        self.layout.lock().clone()
+    }
+
+    fn changes(&self) -> u64 {
+        self.changes.load(Atomically::Acquire)
+    }
 }
 
 #[cfg(feature = "sync")]
@@ -165,7 +194,15 @@ impl Service {
         }
 
         *self.trust.lock() = arrangement.trust;
-        match started(config, settings, library, follow_of(config.sync_songs)) {
+        self.filed_as.told_by(config);
+        let filed_as = Arc::clone(&self.filed_as);
+        match started(
+            config,
+            settings,
+            library,
+            follow_of(config.sync_songs),
+            filed_as,
+        ) {
             Ok(Some(running)) => {
                 let code = running.sync.code().to_owned();
                 if let Some(driven) = self.driven.lock().clone() {
@@ -237,6 +274,7 @@ fn watching(
     seen: Option<SystemTime>,
     arranged: Arrangement,
     every: Duration,
+    filed_as: Arc<FiledAs>,
     mut arrange: impl FnMut(&Config) -> Arrangement + Send + 'static,
 ) -> Option<Sender<()>> {
     let (stop, stopped) = bounded(1);
@@ -257,7 +295,7 @@ fn watching(
                     Ok(config) if Arrangement::of(&config) != arranged => {
                         arranged = arrange(&config);
                     }
-                    Ok(_) => {}
+                    Ok(config) => filed_as.told_by(&config),
                     Err(error) => tracing::warn!(
                         %error,
                         "the sync settings went unread, so the ones held are kept"
@@ -287,6 +325,7 @@ struct Running {
 #[cfg(feature = "sync")]
 struct Catalogued {
     library: Arc<Library>,
+    filed_as: Arc<FiledAs>,
 }
 
 impl Syncing {
@@ -329,6 +368,7 @@ pub(crate) fn start(config: &Config, settings: Option<&Path>, library: &Arc<Libr
         running: Mutex::new(None),
         driven: Mutex::new(None),
         trust: Mutex::new(RemoteTrust::default()),
+        filed_as: Arc::default(),
     });
     let arranged = service.arranged(config, settings, library);
     #[cfg(feature = "online")]
@@ -350,11 +390,13 @@ pub(crate) fn start(config: &Config, settings: Option<&Path>, library: &Arc<Libr
         let service = Arc::clone(&service);
         let library = Arc::clone(library);
         let own = settings.clone();
+        let filed_as = Arc::clone(&service.filed_as);
         watching(
             settings,
             seen,
             arranged,
             SETTINGS_LOOKED_AT_EVERY,
+            filed_as,
             move |config| service.arranged(config, Some(&own), &library),
         )
     });
@@ -393,6 +435,7 @@ fn started(
     settings: Option<&Path>,
     library: &Arc<Library>,
     follow: Follow,
+    filed_as: Arc<FiledAs>,
 ) -> Result<Option<Running>> {
     if !config.syncs() {
         return Ok(None);
@@ -425,6 +468,7 @@ fn started(
     };
     let catalog = Arc::new(Catalogued {
         library: Arc::clone(library),
+        filed_as,
     });
     let sync = Sync::start(settings, catalog).map_err(Error::Sync)?;
     #[cfg(feature = "online")]
@@ -909,8 +953,14 @@ impl Catalog for Catalogued {
         Ok(())
     }
 
+    fn organise_layout(&self) -> Option<String> {
+        self.filed_as.layout()
+    }
+
     fn revision(&self) -> u64 {
-        self.library.catalog_revision()
+        self.library
+            .catalog_revision()
+            .wrapping_add(self.filed_as.changes())
     }
 }
 
@@ -1206,7 +1256,9 @@ fn playback_word(playback: RemotePlayback) -> &'static str {
 
 #[cfg(feature = "sync")]
 fn running(config: &Config, settings: &Path, library: &Arc<Library>) -> Result<Running> {
-    started(config, Some(settings), library, Follow::default())?.ok_or(Error::SyncBusy)
+    let filed_as = Arc::new(FiledAs::default());
+    filed_as.told_by(config);
+    started(config, Some(settings), library, Follow::default(), filed_as)?.ok_or(Error::SyncBusy)
 }
 
 #[cfg(feature = "sync")]
@@ -1894,6 +1946,8 @@ mod tests {
 
     #[test]
     fn the_settings_are_followed_and_only_a_change_in_how_the_device_syncs_rearranges_it() {
+        const FILED_AS: &str = "{artist}/{year} {album}/{track} {title}";
+
         let folder = crate::fixtures::scratch("sync-watching");
         let settings = folder.join("config.toml");
         let held = key();
@@ -1902,12 +1956,14 @@ mod tests {
         let arranged = Arrangement::of(&syncing_with(&held));
         let rearranged = Arc::new(AtomicUsize::new(0));
         let counting = Arc::clone(&rearranged);
+        let filed_as = Arc::new(FiledAs::default());
 
         let stop = watching(
             settings.clone(),
             modified(&settings),
             arranged,
             Duration::from_millis(20),
+            Arc::clone(&filed_as),
             move |config| {
                 counting.fetch_add(1, Ordering::AcqRel);
                 Arrangement::of(config)
@@ -1921,6 +1977,22 @@ mod tests {
         );
         thread::sleep(Duration::from_millis(300));
         let unmoved = rearranged.load(Ordering::Acquire);
+        let changes_before = filed_as.changes();
+
+        written_whole(
+            &settings,
+            &format!(
+                "sync-key = \"{}\"\norganise-as = \"{FILED_AS}\"\n",
+                held.code()
+            ),
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while filed_as.layout().as_deref() != Some(FILED_AS) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        let filed = filed_as.layout();
+        let changes_after = filed_as.changes();
+        let unmoved_by_the_layout = rearranged.load(Ordering::Acquire);
 
         written_whole(&settings, &format!("sync-key = \"{}\"\n", joined.code()));
         let moved = wait_for(&rearranged, 1);
@@ -1932,6 +2004,9 @@ mod tests {
         let _ = stop.try_send(());
         let _ = fs::remove_dir_all(&folder);
         assert_eq!(unmoved, 0);
+        assert_eq!(filed.as_deref(), Some(FILED_AS));
+        assert_eq!(changes_after, changes_before + 1);
+        assert_eq!(unmoved_by_the_layout, 0);
         assert!(moved);
         assert_eq!(after_a_bad_file, 1);
     }
@@ -1992,6 +2067,62 @@ mod tests {
     }
 
     #[test]
+    fn the_layout_organise_files_by_is_told_by_a_look_and_a_new_one_moves_the_revision() {
+        use resonate_library::Layout;
+        use resonate_sync::{Change, Ledger, SpaceId};
+
+        let (folder, library) = held_song();
+        let filed_as = Arc::new(FiledAs::default());
+        let catalog = Catalogued {
+            library: Arc::new(library),
+            filed_as: Arc::clone(&filed_as),
+        };
+        let me = Me {
+            name: "Desk".into(),
+            platform: Platform::Linux,
+        };
+        let mut ledger = Ledger::in_memory().expect("a ledger");
+        ledger.enter_space(SpaceId([8; 16])).expect("a space");
+        let told = |ledger: &mut Ledger| {
+            ledger.look(&catalog, &me).expect("a look");
+            let owed = ledger.owed().expect("owed").into_iter().flatten();
+            let layouts = owed
+                .filter_map(|change| match change {
+                    Change::Layout(note) => Some(note.layout),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            ledger
+                .sent(&ledger.owed().expect("owed").concat())
+                .expect("sent");
+            layouts
+        };
+        let named = "{artist}/{year} {album}/{track} {title}";
+
+        let untold = told(&mut ledger);
+        filed_as.told_by(&Config::default());
+        let revision = catalog.revision();
+        filed_as.told_by(&Config::default());
+        let unmoved = catalog.revision();
+        let by_default = told(&mut ledger);
+        filed_as.told_by(&Config {
+            organise_as: Some(Layout::read(named).expect("a layout")),
+            ..Config::default()
+        });
+        let moved = catalog.revision();
+        let renamed = told(&mut ledger);
+        let again = told(&mut ledger);
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(untold.is_empty());
+        assert_eq!(unmoved, revision);
+        assert_eq!(by_default, [Layout::default().to_string()]);
+        assert_eq!(moved, revision + 1);
+        assert_eq!(renamed, [named]);
+        assert!(again.is_empty());
+    }
+
+    #[test]
     fn a_hidden_song_is_held_so_no_follow_fetches_it_again_and_one_deleted_by_hand_is_not() {
         let (folder, library) = held_song();
         let path = folder.join("held.wav");
@@ -2002,6 +2133,7 @@ mod tests {
         library.hide_track(track.id, true).expect("hidden");
         let catalog = Catalogued {
             library: Arc::new(library),
+            filed_as: Arc::default(),
         };
 
         let hidden = catalog.holds(&heard("Held")).expect("asked");
@@ -2025,6 +2157,7 @@ mod tests {
             .expect("catalogued");
         let catalog = Catalogued {
             library: Arc::new(library),
+            filed_as: Arc::default(),
         };
 
         let before = catalog.deleted_here(&heard("Held")).expect("asked");
@@ -2083,6 +2216,7 @@ mod tests {
             .expect("a playlist");
         let sender = Catalogued {
             library: Arc::new(there),
+            filed_as: Arc::default(),
         };
         let asked = sender.playlists().expect("the playlists")[0].entries[0]
             .clone()
@@ -2109,6 +2243,7 @@ mod tests {
             .expect("a song filed");
         let receiver = Catalogued {
             library: Arc::new(here),
+            filed_as: Arc::default(),
         };
         let me = |name: &str| Me {
             name: name.into(),
@@ -2196,6 +2331,7 @@ mod tests {
             .expect("a resumption kept");
         let catalogued = Catalogued {
             library: Arc::new(library),
+            filed_as: Arc::default(),
         };
 
         let resumed = catalogued
@@ -2236,6 +2372,7 @@ mod tests {
             .expect("a resumption kept");
         let catalogued = Catalogued {
             library: Arc::new(library),
+            filed_as: Arc::default(),
         };
 
         let resumed = catalogued

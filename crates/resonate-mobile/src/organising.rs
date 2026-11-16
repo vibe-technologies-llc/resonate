@@ -55,6 +55,7 @@ pub fn organise_layout_problem(layout: String) -> Option<String> {
 #[uniffi::export]
 impl MobilePlayer {
     pub fn plan_organise(&self, folder: String, layout: String) -> Result<OrganisePlan> {
+        self.syncing.files_by(&layout);
         let layout = Layout::read(&layout).map_err(|source| Error::LayoutUnreadable {
             source: Box::new(source),
         })?;

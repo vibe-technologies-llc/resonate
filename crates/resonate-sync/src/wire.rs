@@ -14,9 +14,9 @@ use crate::{
     DeviceId, Error, Malformed, Result, SpaceId, Token,
     catalog::{Held, SongTags},
     change::{
-        AnswerNote, Change, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen, Platform,
-        PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody, QueryFolded, QueryNote,
-        ShareNote, Stamp,
+        AnswerNote, Change, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, LayoutNote,
+        Listen, Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody,
+        QueryFolded, QueryNote, ShareNote, Stamp,
     },
     consulted::{ExportPart, KeptAnswer},
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
@@ -2190,6 +2190,12 @@ pub fn encoded_change(change: &Change) -> Vec<u8> {
             writer.flag(note.gone);
             writer.stamp(note.stamp);
         }
+        Change::Layout(note) => {
+            writer.byte(11);
+            writer.device(note.device);
+            writer.text(&note.layout);
+            writer.stamp(note.stamp);
+        }
     }
     writer.finish()
 }
@@ -2351,6 +2357,11 @@ fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
                 None
             },
             gone: reader.flag()?,
+            stamp: reader.stamp()?,
+        }),
+        11 => Change::Layout(LayoutNote {
+            device: reader.device()?,
+            layout: reader.text()?,
             stamp: reader.stamp()?,
         }),
         _ => return Ok(None),
@@ -3167,6 +3178,11 @@ mod tests {
             Change::QueryFolded(QueryFolded {
                 folded: PlaylistKey([9; 16]),
                 into: PlaylistKey([5; 16]),
+            }),
+            Change::Layout(LayoutNote {
+                device: DeviceId([1; DEVICE_BYTES]),
+                layout: "{albumartist}/{year} {album}/{track} {title}".into(),
+                stamp: stamp(),
             }),
         ];
 

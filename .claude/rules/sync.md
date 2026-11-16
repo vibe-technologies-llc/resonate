@@ -81,7 +81,11 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   namesakes made apart folding into one is a change of its own**: `Change::PlaylistFolded` (wire
   tag 8: the folded key, the key it went into, the folded playlist's entries) and
   `Change::QueryFolded` (tag 9: the two keys); a build without them skips them and still reads the
-  folded key's tombstone and the merged survivor beside them.
+  folded key's tombstone and the merged survivor beside them. **The layout a device files by is
+  `Change::Layout`** (wire tag 11: the device, the layout's text as the organise key spells it, the
+  stamp); a build without it skips it as any later tag
+  (`a_bundle_of_every_change_reads_back_and_an_unknown_change_is_skipped` holds the skip), and, like
+  a query, a snapshot an older build compacts lacks it, so `owe_queries` owes the layouts too.
 - **A server address of `ws://` or `wss://` runs the same frames over a WebSocket** (`web.rs`: TCP,
   TLS through `tokio-rustls` for `wss`, one binary message a frame, at most `LARGEST_FRAME`),
   for a server behind a proxy that carries no UDP (`server.md`). **A plain `ws://` goes only to this
@@ -138,7 +142,8 @@ and `the_seeds_of_a_print_asked_and_given_decode` holds them to the wire. **What
 recording key and when the catalog refused the song, *The service* below;
 `NAMESAKES_MADE_APART_BECOME_ONE`: `minted_here`, `gone_id` and `gone_created` on `playlists` and
 `queries`, a row this ledger stamped last taken as made here, and the `playlist_folds` and
-`query_folds` tables, below); `user_version` counts the steps laid, a change appends a
+`query_folds` tables, below; `SHARED_PLAYLISTS_STAND_APART`, `shared-playlists.md`; `LAYOUTS_TRAVEL`:
+the `layouts` table, a device's organise layout, below); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
 (`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`). All merging lives here, once for both
 platforms; the catalog seam stays thin.
@@ -323,6 +328,22 @@ platforms; the catalog seam stays thin.
   revision moved since the last try (`an_answer_for_a_song_not_held_yet_lands_once_the_song_arrives`).
   A catalog that `takes_answers` false (the default) neither looks nor takes, and passes
   every note on in its snapshot (`a_catalog_that_takes_no_answers_passes_them_on_untouched`).
+- **Each device tells the layout it files songs by, so a phone landing a song looks where a paired
+  device would have filed a copy.** `Catalog::organise_layout` (none by default, which tells
+  nothing and keeps what was told) is the desktop's `organise-as`, default included (`FiledAs`,
+  set from the settings when the service starts and on every settled read of the file by the
+  watcher, which never rearranges the service for it; a new layout moves `revision`, so a look
+  follows at once), and on a phone the layout its last landing or *Organise* plan was handed
+  (`mobile.md`). A look stamps and owes a `layouts` row for this device only where the text
+  differs from the row's, so an unchanged layout is never told again; an arrival is last writer
+  wins per device and a device's own note is passed over, as a handoff's. `Ledger::layouts` leaves
+  a forgotten device out and forgetting one deletes its row; `Sync::layouts` is every other
+  device's, newest first, which `resonate-mobile`'s landing renders folders from
+  (`an_organise_layout_travels_as_its_devices_newest_word_and_is_not_sent_back`,
+  `a_device_names_no_layout_until_its_catalog_tells_one_and_forgetting_the_device_forgets_its_layout`,
+  `the_layout_organise_files_by_is_told_by_a_look_and_a_new_one_moves_the_revision`,
+  `a_ledger_of_before_layouts_travelled_keeps_its_handoffs_and_knows_no_layout`). The desktop
+  tells its layout and reads no other device's.
 - **A snapshot is the merged state**, cut into bundles of at most `BUNDLE_BYTES`; a device compacts
   the server's log past `COMPACT_PAST_RECORDS` (512) or `COMPACT_PAST_BYTES` (4 MiB) since the last
   snapshot, and a `Compacted` from any device resets every device's count.

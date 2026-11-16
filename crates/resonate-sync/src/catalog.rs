@@ -271,6 +271,10 @@ pub trait Catalog: Send + Sync + 'static {
         Ok(())
     }
 
+    fn organise_layout(&self) -> Option<String> {
+        None
+    }
+
     fn revision(&self) -> u64;
 }
 

@@ -142,6 +142,13 @@ pub struct ShareNote {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LayoutNote {
+    pub device: DeviceId,
+    pub layout: String,
+    pub stamp: Stamp,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Change {
     Device(DeviceNote),
     Forgotten(DeviceForgotten),
@@ -154,6 +161,7 @@ pub enum Change {
     PlaylistFolded(PlaylistFolded),
     QueryFolded(QueryFolded),
     Share(ShareNote),
+    Layout(LayoutNote),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -230,6 +238,7 @@ impl Change {
             Self::Handoff(handoff) => Some(handoff.stamp),
             Self::Answer(note) => Some(note.stamp),
             Self::Share(note) => Some(note.stamp),
+            Self::Layout(note) => Some(note.stamp),
             Self::Listen(_) | Self::PlaylistFolded(_) | Self::QueryFolded(_) => None,
         }
     }

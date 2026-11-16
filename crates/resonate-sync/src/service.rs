@@ -31,7 +31,8 @@ use tokio::{
 };
 
 use crate::{
-    Catalog, Change, DeviceId, Error, Handoff, Ledger, LocalPlaylistId, Platform, Result, SyncKey,
+    Catalog, Change, DeviceId, Error, Handoff, LayoutNote, Ledger, LocalPlaylistId, Platform,
+    Result, SyncKey,
     consulted::{
         AskedForExport, AskedToConsult, Consultable, Consulting, ExportFetched, ExportHeld,
         ExportPart, ExportReceiving,
@@ -824,6 +825,13 @@ impl Sync {
         handoffs.retain(|handoff| handoff.device != self.device && !handoff.rows.is_empty());
         handoffs.sort_by_key(|handoff| Reverse(handoff.stamp));
         Ok(handoffs)
+    }
+
+    pub fn layouts(&self) -> Result<Vec<LayoutNote>> {
+        let mut layouts = self.ledger.lock().layouts()?;
+        layouts.retain(|note| note.device != self.device);
+        layouts.sort_by_key(|note| Reverse(note.stamp));
+        Ok(layouts)
     }
 
     pub fn control_with(&self, controlled: Arc<dyn Controlled>, trust: RemoteTrust) {

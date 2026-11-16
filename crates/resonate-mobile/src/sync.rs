@@ -19,6 +19,7 @@ use resonate_core::{
     naming::named_within, title_words,
 };
 use resonate_engine::Command;
+use resonate_library::Layout;
 use resonate_sync::{
     Catalog, Follow, Handoff, Held, HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId,
     LocalQuery, Me, Nearby, Opened, Platform, QueryBody, Refused, RemoteListen, Resumed, Server,
@@ -92,7 +93,10 @@ pub(crate) struct Syncing {
     unmetered: Arc<AtomicBool>,
     arrivals: Arc<AtomicU64>,
     copied: Arc<copied::Copied>,
+    filed_as: FiledAs,
 }
+
+type FiledAs = Arc<Mutex<Option<String>>>;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Reaching {
@@ -170,7 +174,14 @@ impl Syncing {
             unmetered: Arc::new(AtomicBool::new(false)),
             arrivals: Arc::new(AtomicU64::new(0)),
             copied: Arc::new(copied::Copied::under(folder.join(consulted::FOLDER))),
+            filed_as: FiledAs::default(),
             folder,
+        }
+    }
+
+    pub(crate) fn files_by(&self, layout: &str) {
+        if Layout::read(layout).is_ok() {
+            *self.filed_as.lock() = Some(layout.to_owned());
         }
     }
 }
@@ -185,6 +196,7 @@ struct DocumentCatalog {
     indexed: Mutex<Option<(u64, Arc<Indexed>)>>,
     sheets: Arc<KeptSheets>,
     shown: Arc<AtomicU32>,
+    filed_as: FiledAs,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -537,7 +549,13 @@ impl MobilePlayer {
 
     pub fn sync_standing_folders(&self, id: u64, layout: String) -> Result<Vec<Vec<String>>> {
         let waiting = self.waiting_song(id)?;
-        Ok(standing::folders_filed_in(&self.sources, &waiting, &layout))
+        self.syncing.files_by(&layout);
+        Ok(standing::folders_filed_in(
+            &self.sources,
+            &waiting,
+            &layout,
+            &self.layouts_synced(),
+        ))
     }
 
     pub fn sync_receive_standing(
@@ -547,7 +565,9 @@ impl MobilePlayer {
         standing: Vec<StandingDocument>,
     ) -> Result<Option<Track>> {
         let waiting = self.waiting_song(id)?;
-        let folders = standing::folders_filed_in(&self.sources, &waiting, &layout);
+        self.syncing.files_by(&layout);
+        let folders =
+            standing::folders_filed_in(&self.sources, &waiting, &layout, &self.layouts_synced());
         for document in standing::weighed(&waiting, &folders, &standing) {
             if !self.holds_the_same_bytes(&document.uri, &waiting.path)
                 && !self.holds_the_same_audio(&document.uri, waiting.file)
@@ -684,6 +704,20 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
+    fn layouts_synced(&self) -> Vec<String> {
+        let running = self.syncing.running.lock();
+        let Some(running) = running.as_ref() else {
+            return Vec::new();
+        };
+        match running.sync.layouts() {
+            Ok(layouts) => layouts.into_iter().map(|note| note.layout).collect(),
+            Err(error) => {
+                tracing::debug!(%error, "the layouts other devices file by went unread");
+                Vec::new()
+            }
+        }
+    }
+
     fn refused_to_land(&self, song: &SearchSong) {
         if let Some(running) = self.syncing.running.lock().as_ref() {
             running.sync.refused(&recording_of(song));
@@ -709,6 +743,7 @@ impl MobilePlayer {
             indexed: Mutex::new(None),
             sheets: Arc::clone(&self.services.lyrics),
             shown: self.playing.shown_zone_cell(),
+            filed_as: Arc::clone(&self.syncing.filed_as),
         });
         let settings = Settings {
             server: if config.nearby_only {
@@ -1745,6 +1780,10 @@ impl Catalog for DocumentCatalog {
         self.take_shared_print(file, print)
     }
 
+    fn organise_layout(&self) -> Option<String> {
+        self.filed_as.lock().clone()
+    }
+
     fn revision(&self) -> u64 {
         self.catalog.revision()
     }
@@ -2179,6 +2218,7 @@ mod tests {
             indexed: Mutex::new(None),
             sheets: Arc::clone(&player.services.lyrics),
             shown: player.playing.shown_zone_cell(),
+            filed_as: Arc::clone(&player.syncing.filed_as),
         }
     }
 
@@ -3195,6 +3235,198 @@ mod tests {
         assert!(held);
         assert_eq!(files, 0);
         assert_eq!(songs, vec![landed[0].uri.clone()]);
+    }
+
+    struct FilesAs(&'static str);
+
+    impl Catalog for FilesAs {
+        fn playlists(&self) -> Answered<Vec<LocalPlaylist>> {
+            driving::tests::NothingHeld.playlists()
+        }
+
+        fn write_playlist(
+            &self,
+            at: Option<LocalPlaylistId>,
+            name: &str,
+            entries: &[Recording],
+        ) -> Answered<LocalPlaylist> {
+            driving::tests::NothingHeld.write_playlist(at, name, entries)
+        }
+
+        fn remove_playlist(&self, at: LocalPlaylistId) -> Answered<()> {
+            driving::tests::NothingHeld.remove_playlist(at)
+        }
+
+        fn favourites(&self) -> Answered<Vec<Recording>> {
+            driving::tests::NothingHeld.favourites()
+        }
+
+        fn favour(&self, recording: &Recording, favoured: bool) -> Answered<bool> {
+            driving::tests::NothingHeld.favour(recording, favoured)
+        }
+
+        fn listens_after(&self, mark: u64, most: usize) -> Answered<Vec<LocalListen>> {
+            driving::tests::NothingHeld.listens_after(mark, most)
+        }
+
+        fn credit(&self, listen: &RemoteListen) -> Answered<bool> {
+            driving::tests::NothingHeld.credit(listen)
+        }
+
+        fn resumption(&self) -> Answered<Option<Resumed>> {
+            driving::tests::NothingHeld.resumption()
+        }
+
+        fn holds(&self, recording: &Recording) -> Answered<bool> {
+            driving::tests::NothingHeld.holds(recording)
+        }
+
+        fn holdings(&self) -> Answered<Vec<Held>> {
+            driving::tests::NothingHeld.holdings()
+        }
+
+        fn open(&self, recording: &Recording) -> Answered<Option<Opened>> {
+            driving::tests::NothingHeld.open(recording)
+        }
+
+        fn land(
+            &self,
+            recording: &Recording,
+            tags: &SongTags,
+            extension: &str,
+            staged: &Path,
+        ) -> Answered<bool> {
+            driving::tests::NothingHeld.land(recording, tags, extension, staged)
+        }
+
+        fn organise_layout(&self) -> Option<String> {
+            Some(self.0.to_owned())
+        }
+
+        fn revision(&self) -> u64 {
+            driving::tests::NothingHeld.revision()
+        }
+    }
+
+    fn wavs_in(folder: &Path) -> usize {
+        fs::read_dir(folder)
+            .expect("the music folder")
+            .flatten()
+            .filter(|entry| entry.path().extension() == Some(OsStr::new("wav")))
+            .count()
+    }
+
+    #[test]
+    fn a_song_whose_audio_a_desk_filed_under_its_own_layout_is_taken_as_that_file_once_the_layout_arrives()
+     {
+        use std::net::{Ipv4Addr, SocketAddr};
+
+        use resonate_sync::{Broadcast, Follow, Server, Settings};
+
+        use crate::sync::driving::{SyncControl, tests::eventually};
+
+        const DESK_FILES_AS: &str = "{artist} - {album}/{title}";
+
+        let folder = folder("standing-desk-filed");
+        let desk_folder = self::folder("standing-desk-ledger");
+        let (player, documents) = granted(&folder);
+        let hunter = two_seconds_of("Hunter");
+        landed_waiting(&documents, &folder, &hunter);
+        let filed = folder.join("Björk - Homogenic");
+        fs::create_dir_all(&filed).expect("the desk's album folder");
+        fs::write(
+            filed.join("Hunter.wav"),
+            retagged(crate::harness::silence()),
+        )
+        .expect("the same audio filed by the desk and retagged");
+        let received = player.sync_received().expect("the waiting songs");
+        let before = player
+            .sync_standing_folders(received[0].id, DEFAULT_LAYOUT.to_owned())
+            .expect("the folders a copy may be filed in");
+        let key = SyncKey::minted().expect("a key");
+
+        player
+            .sync_start(SyncConfig {
+                enabled: true,
+                nearby_only: true,
+                server: String::new(),
+                key: key.code().to_owned(),
+                device: "Phone".to_owned(),
+                favourites: false,
+                playlists: false,
+                everything: false,
+                metered_allowed: true,
+                control: SyncControl::Nothing,
+                stun: String::new(),
+                certificate: String::new(),
+                musicbrainz_copy: false,
+            })
+            .expect("sync started");
+        let told = player
+            .syncing
+            .running
+            .lock()
+            .as_ref()
+            .expect("running")
+            .sync
+            .nearby_port()
+            .map(|port| SocketAddr::from((Ipv4Addr::LOCALHOST, port)));
+        let desk = Sync::start(
+            Settings {
+                server: Server::Nowhere,
+                trusted: None,
+                stun: None,
+                key,
+                me: Me {
+                    name: "Desk".into(),
+                    platform: Platform::Linux,
+                },
+                follow: Follow::default(),
+                ledger: desk_folder.join("desk.sqlite"),
+                staging: desk_folder.join("desk-staging"),
+                transfers_allowed: true,
+                relay_only: false,
+                nearby: Some(Nearby {
+                    broadcast: Some(Broadcast {
+                        port: 0,
+                        told: told.into_iter().collect(),
+                    }),
+                    bonjour: false,
+                }),
+            },
+            Arc::new(FilesAs(DESK_FILES_AS)),
+        )
+        .expect("the desk started");
+        eventually("the desk's layout on the phone", || {
+            player.layouts_synced() == [DESK_FILES_AS]
+        });
+
+        let after = player
+            .sync_standing_folders(received[0].id, DEFAULT_LAYOUT.to_owned())
+            .expect("the folders a copy may be filed in");
+        let landed = landed_by_the_front_end(&player, &folder);
+        let held = documents.holds(&hunter).expect("an answer");
+        let wavs = wavs_in(&folder);
+        eventually("the phone's own layout on the desk", || {
+            desk.layouts()
+                .expect("layouts")
+                .into_iter()
+                .map(|note| note.layout)
+                .eq([DEFAULT_LAYOUT.to_owned()])
+        });
+
+        player.sync_stop();
+        drop(desk);
+        let _ = fs::remove_dir_all(&folder);
+        let _ = fs::remove_dir_all(&desk_folder);
+        let desk_album = vec!["Björk - Homogenic".to_owned()];
+        assert!(!before.contains(&desk_album));
+        assert!(after.contains(&desk_album));
+        assert!(after.contains(&vec!["Björk".to_owned(), "Homogenic".to_owned()]));
+        assert_eq!(landed.len(), 1);
+        assert_eq!(landed[0].uri, "content://test/Björk - Homogenic/Hunter.wav");
+        assert!(held);
+        assert_eq!(wavs, 0);
     }
 
     #[test]

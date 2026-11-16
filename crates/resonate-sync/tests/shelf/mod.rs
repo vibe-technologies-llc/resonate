@@ -82,6 +82,7 @@ pub struct Inside {
     pub shares: Option<Vec<HeldShare>>,
     pub shares_taken: Vec<HeldShare>,
     pub shares_dropped: Vec<String>,
+    pub layout: Option<String>,
     next_id: i64,
     next_answered: i64,
 }
@@ -780,6 +781,10 @@ impl Catalog for Shelf {
         }
         inside.prints.push((file, print.clone()));
         Ok(true)
+    }
+
+    fn organise_layout(&self) -> Option<String> {
+        self.inside.lock().layout.clone()
     }
 
     fn revision(&self) -> u64 {

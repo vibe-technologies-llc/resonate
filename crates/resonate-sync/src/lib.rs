@@ -33,9 +33,9 @@ pub use crate::{
         ReadSeek, Refused, RemoteListen, Resumed, SongTags,
     },
     change::{
-        AnswerNote, Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, Listen,
-        Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody, QueryFolded,
-        QueryNote, ShareNote, Stamp,
+        AnswerNote, Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, LayoutNote,
+        Listen, Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody,
+        QueryFolded, QueryNote, ShareNote, Stamp,
     },
     consulted::{
         AskedForExport, AskedToConsult, CONSULT_ANSWERED_WITHIN, Consultable, Consulting,

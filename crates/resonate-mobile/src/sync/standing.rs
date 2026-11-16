@@ -47,15 +47,23 @@ pub(super) fn folders_filed_in(
     sources: &Sources,
     waiting: &Waiting,
     layout: &str,
+    synced: &[String],
 ) -> Vec<Vec<String>> {
     let tags = probe(sources, &MediaLocation::local(waiting.path.clone()))
         .map(|info| info.tags)
         .unwrap_or_default();
-    let layouts = Layout::read(layout)
-        .ok()
-        .into_iter()
-        .chain([Layout::default()]);
     let spellings = spellings_of(tags, &waiting.received.song);
+    let mut layouts: Vec<Layout> = Vec::new();
+    for read in [layout]
+        .into_iter()
+        .chain(synced.iter().map(String::as_str))
+        .filter_map(|text| Layout::read(text).ok())
+        .chain([Layout::default()])
+    {
+        if !layouts.contains(&read) {
+            layouts.push(read);
+        }
+    }
 
     let mut folders: Vec<Vec<String>> = Vec::new();
     for layout in layouts {
