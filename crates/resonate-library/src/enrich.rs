@@ -23,7 +23,7 @@ use crate::{
     enriched::{folded_title, stripped_title},
     hearing::{RefusedBefore, Refusing, Reply, either_way},
     learning::{self, Learner},
-    model::CoverFrom,
+    model::{CoverFrom, CoverWanted},
     pass::{Cancelling, EnrichHandle, PassHandle, PassKind},
     reference::credited_as,
     studies::{self, Agreement, Claims, HEARD_AT_LEAST, HeardAs, Studies, ToStudy},
@@ -2100,7 +2100,7 @@ impl Pass<'_> {
     }
 
     fn wants_a_cover(&self, album: &AlbumToAsk) -> Result<bool> {
-        Ok(!album.has_cover || self.library.covered_by_a_thumbnail(album.id)?)
+        Ok(!album.has_cover || self.library.covered_by_a_small_cover(album.id)?)
     }
 
     fn want(&self, picture: Picture) {
@@ -2498,10 +2498,20 @@ impl Pass<'_> {
     }
 
     fn look_again_for_covers(&self) -> Result<()> {
-        for wanted in self.library.albums_wanting_a_cover()? {
+        if !self.want_covers(self.library.albums_wanting_a_cover()?) {
+            return Ok(());
+        }
+        if self.want_covers(self.library.albums_owed_a_larger_cover()?) {
+            self.library.larger_covers_asked()?;
+        }
+        Ok(())
+    }
+
+    fn want_covers(&self, wanting: Vec<CoverWanted>) -> bool {
+        for wanted in wanting {
             resonate_core::gaming::wait(&|| self.progress.is_cancelled());
             if self.progress.is_cancelled() {
-                return Ok(());
+                return false;
             }
             if self.covered.borrow().contains(&wanted.album) {
                 continue;
@@ -2518,7 +2528,7 @@ impl Pass<'_> {
                 },
             });
         }
-        Ok(())
+        true
     }
 
     fn look_again_for_portraits(&self) -> Result<()> {

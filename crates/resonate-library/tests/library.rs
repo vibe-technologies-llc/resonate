@@ -21337,6 +21337,81 @@ fn a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size() -> Result
 }
 
 #[test]
+fn a_cover_under_the_small_size_held_before_the_step_is_asked_once_for_a_larger_one() -> Result<()>
+{
+    let tree = Tree::new();
+    let held = drawn_png(500);
+    for (file, title, number) in [
+        ("1.wav", "One of These Days", "1"),
+        ("2.wav", "A Pillow of Winds", "2"),
+        ("3.wav", "Fearless!", "3"),
+    ] {
+        tree.write(
+            file,
+            &Wav::new()
+                .text(TITLE, title)
+                .text(ARTIST, "The Orbiters")
+                .text(ALBUM, "Orbits")
+                .text(TRACK, number)
+                .picture(&held)
+                .id3_in_a_chunk()
+                .build(),
+        );
+    }
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    let album = only_album(&library)?;
+    let answers = || Canned {
+        found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
+        releases: vec![orbits(orbits_rows(), Vec::new())],
+        ..Canned::default()
+    };
+    let larger = CoverArt {
+        format: ImageFormat::Png,
+        bytes: drawn_png(1200),
+    };
+
+    enrich(&library, &Arc::new(Fake::new(answers())), false)?;
+    beside(&database)
+        .execute_batch("CREATE TABLE larger_covers_wanted (since INTEGER) STRICT;")
+        .expect("the step owes the larger covers again");
+    let archive = Arc::new(Fake::new(Canned {
+        covers: vec![(mbid(RELEASE), larger)],
+        ..answers()
+    }));
+    enrich(&library, &archive, false)?;
+    let asked_once = archive.called(LookupOp::Cover);
+    enrich(&library, &archive, false)?;
+
+    assert_eq!(
+        asked_once, 1,
+        "the album owed a larger cover was not asked for one"
+    );
+    assert_eq!(
+        archive.called(LookupOp::Cover),
+        1,
+        "a cover the step owed was asked for again once the walk had passed"
+    );
+    assert_eq!(
+        library
+            .cover_art(album.id)?
+            .and_then(|art| art.shorter_side()),
+        Some(1200),
+        "the archive's larger cover did not take the small one's place"
+    );
+    let owed: bool = beside(&database)
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'larger_covers_wanted')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the schema reads back");
+    assert!(!owed, "the walk left the larger covers owed");
+    Ok(())
+}
+
+#[test]
 fn a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again() -> Result<()> {
     let tree = Tree::new();
     let file = tree.write(

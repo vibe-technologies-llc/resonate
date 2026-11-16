@@ -2067,14 +2067,14 @@ fn fill_declared(tx: &Transaction<'_>, album: i64, declared: &Declaration<'_>) -
     .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
-pub const A_THUMBNAIL_BELOW: u32 = 300;
+pub const A_SMALL_COVER_BELOW: u32 = 1000;
 const BETTERED_BY_AT_LEAST: u32 = 2;
 
 pub fn betters(candidate: &CoverArt, held: &CoverArt) -> bool {
     let (Some(held), Some(candidate)) = (held.shorter_side(), candidate.shorter_side()) else {
         return false;
     };
-    held < A_THUMBNAIL_BELOW && candidate >= held.saturating_mul(BETTERED_BY_AT_LEAST)
+    held < A_SMALL_COVER_BELOW && candidate >= held.saturating_mul(BETTERED_BY_AT_LEAST)
 }
 
 pub(crate) fn held_picture(

@@ -7367,6 +7367,7 @@ dependencies = [
  "crossbeam-channel",
  "fs4",
  "hdf5-writer",
+ "image",
  "oboe",
  "parking_lot 0.13.0",
  "resonate-analysis",

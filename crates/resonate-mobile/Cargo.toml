@@ -55,6 +55,7 @@ resonate-words-build.workspace = true
 
 [dev-dependencies]
 hdf5-writer.workspace = true
+image.workspace = true
 resonate-coreaudio.workspace = true
 resonate-words-build.workspace = true
 

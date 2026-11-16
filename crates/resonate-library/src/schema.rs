@@ -58,7 +58,14 @@ const MIGRATIONS: &[&str] = &[
     AN_UNHELD_LISTEN_NEVER_REUSES_ITS_ID,
     THE_PATHS_A_REMOVAL_OR_A_MOVE_LOOKS_UP_ARE_INDEXED,
     A_LOSSY_SONG_WAITS_TO_BE_REPLACED,
+    SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE,
 ];
+
+const SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE: &str = "
+CREATE TABLE larger_covers_wanted (
+    since INTEGER
+) STRICT;
+";
 
 const THE_PATHS_A_REMOVAL_OR_A_MOVE_LOOKS_UP_ARE_INDEXED: &str = "
 CREATE INDEX wants_by_offered ON wants(offered);
@@ -1628,6 +1635,48 @@ mod tests {
             )
             .expect("the schema reads back");
         assert!(owed, "the fold was not owed after the step");
+    }
+
+    #[test]
+    fn an_existing_catalog_owes_its_small_covers_a_larger_one_once_and_keeps_them_meanwhile() {
+        let connection = Connection::open_in_memory().expect("a catalog");
+        connection.execute_batch(V1).expect("the baseline");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE)
+            .expect("the larger covers migration");
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("an earlier migration");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO albums (id, title, mbid, cover_art, cover_format, cover_source)
+                 VALUES (1, 'Orbits', 'aadf62d6-d475-42e0-b622-e6da7a59fdf7',
+                         x'89504e47', 1, 1);",
+            )
+            .expect("an album holding the archive's cover");
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+
+        lay_out(&connection).expect("the larger covers migration");
+
+        let owed: bool = connection
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'larger_covers_wanted')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the schema reads back");
+        let kept: Vec<u8> = connection
+            .query_row("SELECT cover_art FROM albums WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .expect("the album's cover");
+        assert!(owed, "the larger covers were not owed after the step");
+        assert_eq!(kept, b"\x89PNG", "the step took a held cover away");
     }
 
     #[test]

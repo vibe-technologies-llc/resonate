@@ -362,6 +362,12 @@ CREATE TABLE queues_carried_over (
 ) STRICT;
 ";
 
+const FETCHED_COVERS_ARE_ASKED_FOR_A_LARGER_ONE: &str = "
+CREATE TABLE larger_covers_wanted (
+    since INTEGER
+) STRICT;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
@@ -399,6 +405,7 @@ const MIGRATIONS: &[&str] = &[
     A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT,
     RENDERERS_KEEP_WHAT_THEY_PLAYED,
     QUEUES_MAY_BE_LEFT_BEHIND_AT_OPENING,
+    FETCHED_COVERS_ARE_ASKED_FOR_A_LARGER_ONE,
 ];
 
 #[cfg(test)]

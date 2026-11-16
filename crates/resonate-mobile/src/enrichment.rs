@@ -16,13 +16,13 @@ use resonate_analysis::{Watching, band_figures};
 use resonate_codec::{CoverArt, ImageFormat, Sources, probe_scanned};
 use resonate_core::{AlbumId, Chromaprint, Isrc, Link, Mbid, SourceId, TrackId};
 use resonate_library::{
-    A_THUMBNAIL_BELOW, Agreement, AlbumToAsk, BETTERED_AFTER, COVERS_ASKED_AGAIN_AFTER, Certainty,
-    Fingerprints, Fruitless, Identified, KeptLyrics, Lifted, LookupOp, LyricText, LyricsAsked,
-    MISSED_AGAIN_AFTER, PERFORMERS_WEIGHED_AT_MOST, PORTRAITS_ASKED_AGAIN_AFTER, Queue,
-    RECOGNITIONS_REFUSED_BEFORE_GIVING_UP, REFUSALS_THAT_END_A_PASS, Readers, Reads, Recording,
-    Reference, RefusedBefore, Refusing, Release, ReleaseGroup, Reply, Seeks, Step, TrackToAsk,
-    WAITS, Walker, Wording, best_recording, best_release, betters, closest_release, due_again,
-    due_parameters, either_way, group_asked, needs_its_releases_told, recording_asked,
+    A_SMALL_COVER_BELOW, Agreement, AlbumToAsk, BETTERED_AFTER, COVERS_ASKED_AGAIN_AFTER,
+    Certainty, Fingerprints, Fruitless, Identified, KeptLyrics, Lifted, LookupOp, LyricText,
+    LyricsAsked, MISSED_AGAIN_AFTER, PERFORMERS_WEIGHED_AT_MOST, PORTRAITS_ASKED_AGAIN_AFTER,
+    Queue, RECOGNITIONS_REFUSED_BEFORE_GIVING_UP, REFUSALS_THAT_END_A_PASS, Readers, Reads,
+    Recording, Reference, RefusedBefore, Refusing, Release, ReleaseGroup, Reply, Seeks, Step,
+    TrackToAsk, WAITS, Walker, Wording, best_recording, best_release, betters, closest_release,
+    due_again, due_parameters, either_way, group_asked, needs_its_releases_told, recording_asked,
     release_asked, the_strict_recording, top_group, top_release, walk,
 };
 use resonate_online::{AcoustId, Client, Online};
@@ -1058,6 +1058,17 @@ impl<'a> Pass<'a> {
             }
             self.want(picture);
         }
+        for picture in self.catalog.albums_owed_a_larger_cover()? {
+            self.go_on()?;
+            let (Picture::Cover { album, .. } | Picture::GroupCover { album, .. }) = &picture
+            else {
+                continue;
+            };
+            if !self.covered.borrow().contains(album) {
+                self.want(picture);
+            }
+        }
+        self.catalog.larger_covers_asked()?;
         Ok(())
     }
 
@@ -2197,22 +2208,64 @@ impl Catalog {
         Ok(held.is_some_and(|bytes| {
             ImageFormat::sniff(&bytes)
                 .and_then(|format| CoverArt { format, bytes }.shorter_side())
-                .is_none_or(|side| side >= A_THUMBNAIL_BELOW)
+                .is_none_or(|side| side >= A_SMALL_COVER_BELOW)
         }))
     }
 
     fn covers_due(&self, now: SystemTime) -> Result<Vec<Picture>> {
-        let connection = self.0.lock();
-        let mut query = connection
-            .prepare(
-                "SELECT album_key, release, release_group FROM album_art
-                 WHERE picture IS NULL AND (release IS NOT NULL OR release_group IS NOT NULL)
-                   AND (cover_asked IS NULL OR cover_asked < ?1)
-                 ORDER BY album_key",
+        self.covers_asked_of(
+            "SELECT album_key, release, release_group FROM album_art
+             WHERE picture IS NULL AND (release IS NOT NULL OR release_group IS NOT NULL)
+               AND (cover_asked IS NULL OR cover_asked < ?1)
+             ORDER BY album_key",
+            [before(now, COVERS_ASKED_AGAIN_AFTER)],
+        )
+    }
+
+    fn albums_owed_a_larger_cover(&self) -> Result<Vec<Picture>> {
+        let owed: bool = self
+            .0
+            .lock()
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'larger_covers_wanted')",
+                [],
+                |row| row.get(0),
             )
             .map_err(read_error)?;
+        if !owed {
+            return Ok(Vec::new());
+        }
+        let fetched = self.covers_asked_of(
+            "SELECT album_key, release, release_group FROM album_art
+             WHERE picture IS NOT NULL AND (release IS NOT NULL OR release_group IS NOT NULL)
+             ORDER BY album_key",
+            [],
+        )?;
+        let mut small = Vec::new();
+        for picture in fetched {
+            let (Picture::Cover { album, .. } | Picture::GroupCover { album, .. }) = &picture
+            else {
+                continue;
+            };
+            if !self.covered_well(album)? {
+                small.push(picture);
+            }
+        }
+        Ok(small)
+    }
+
+    fn larger_covers_asked(&self) -> Result<()> {
+        self.0
+            .lock()
+            .execute_batch("DROP TABLE IF EXISTS larger_covers_wanted")
+            .map_err(write_error)
+    }
+
+    fn covers_asked_of(&self, sql: &str, bound: impl rusqlite::Params) -> Result<Vec<Picture>> {
+        let connection = self.0.lock();
+        let mut query = connection.prepare(sql).map_err(read_error)?;
         let due = query
-            .query_map([before(now, COVERS_ASKED_AGAIN_AFTER)], |row| {
+            .query_map(bound, |row| {
                 let named = |at| {
                     row.get::<_, Option<String>>(at)
                         .map(|id| id.and_then(|id| Mbid::new(&id).ok()))
@@ -2541,6 +2594,7 @@ mod tests {
     struct Fake {
         calls: AtomicUsize,
         covers: AtomicUsize,
+        covers_drawn_at: AtomicU32,
         each_takes: Duration,
         unreachable: bool,
         asked: Mutex<Vec<String>>,
@@ -2705,9 +2759,13 @@ mod tests {
             _group: Option<&Mbid>,
         ) -> resonate_library::Result<Option<CoverArt>> {
             self.covers.fetch_add(1, Ordering::SeqCst);
+            let bytes = match self.covers_drawn_at.load(Ordering::SeqCst) {
+                0 => COVER.to_vec(),
+                side => drawn_png(side),
+            };
             self.answered(Some(CoverArt {
                 format: ImageFormat::Png,
-                bytes: COVER.to_vec(),
+                bytes,
             }))
         }
 
@@ -3089,6 +3147,65 @@ mod tests {
         passed(&catalog, &fake);
 
         assert!(fake.calls.load(Ordering::SeqCst) > 0);
+    }
+
+    fn drawn_png(side: u32) -> Vec<u8> {
+        let mut written = std::io::Cursor::new(Vec::new());
+        image::RgbImage::from_pixel(side, side, image::Rgb([200, 40, 40]))
+            .write_to(&mut written, image::ImageFormat::Png)
+            .expect("a picture drawn in memory");
+        written.into_inner()
+    }
+
+    fn side_shown(catalog: &Catalog, track: u64) -> Option<u32> {
+        let bytes = catalog.pictured(track).expect("a picture")?;
+        CoverArt {
+            format: ImageFormat::sniff(&bytes)?,
+            bytes,
+        }
+        .shorter_side()
+    }
+
+    #[test]
+    fn a_cover_fetched_small_before_the_step_is_asked_once_for_a_larger_one() {
+        let catalog = Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog"));
+        let fake = Arc::new(Fake::default());
+        fake.covers_drawn_at.store(500, Ordering::SeqCst);
+        let tracks = songs(&catalog, "Album", 10);
+
+        passed(&catalog, &fake);
+        let fetched_small = side_shown(&catalog, tracks[0]);
+        catalog
+            .0
+            .lock()
+            .execute_batch("CREATE TABLE larger_covers_wanted (since INTEGER) STRICT;")
+            .expect("the step owes the larger covers again");
+        fake.covers_drawn_at.store(1200, Ordering::SeqCst);
+        passed(&catalog, &fake);
+        let asked_by_then = fake.covers.load(Ordering::SeqCst);
+        passed(&catalog, &fake);
+
+        assert_eq!(fetched_small, Some(500));
+        assert_eq!(
+            asked_by_then, 2,
+            "the album owed a larger cover was not asked for one"
+        );
+        assert_eq!(
+            fake.covers.load(Ordering::SeqCst),
+            2,
+            "a cover the step owed was asked for again once the walk had passed"
+        );
+        assert_eq!(side_shown(&catalog, tracks[0]), Some(1200));
+        let owed: bool = catalog
+            .0
+            .lock()
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'larger_covers_wanted')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the schema reads back");
+        assert!(!owed, "the walk left the larger covers owed");
     }
 
     #[test]

@@ -7,7 +7,7 @@ use rusqlite::{
 
 use crate::{
     Agreement, AlbumToAsk, ArtistProfile, ArtistRelease, ArtistToAsk, Certainty, CoverArt,
-    CoverSource, Credit, Error, Fruitless, HeardAs, Isrc, Link, Mbid, Medium,
+    CoverSource, Credit, Error, Fruitless, HeardAs, ImageFormat, Isrc, Link, Mbid, Medium,
     PERFORMERS_WEIGHED_AT_MOST, Recording, RecordingRelease, Release, ReleaseGroup, ReleaseTrack,
     Result, StoreOp, TrackToAsk, Unfinished, VaultKey, Waits,
     enrich::Pressing,
@@ -938,13 +938,13 @@ pub(crate) fn land_unheld_cover(
     .map_err(|source| Error::store(StoreOp::Insert, source))
 }
 
-pub(crate) fn covered_by_a_thumbnail(
+pub(crate) fn covered_by_a_small_cover(
     connection: &rusqlite::Connection,
     album: AlbumId,
 ) -> Result<bool> {
     Ok(store::held_picture(connection, album.get() as i64, None)?
         .and_then(|held| held.shorter_side())
-        .is_some_and(|side| side < store::A_THUMBNAIL_BELOW))
+        .is_some_and(|side| side < store::A_SMALL_COVER_BELOW))
 }
 
 pub(crate) fn note_cover_asked(tx: &Transaction<'_>, album: AlbumId, at: SystemTime) -> Result<()> {
@@ -1023,19 +1023,96 @@ pub(crate) fn albums_wanting_a_cover(
 
     let mut wanting = Vec::with_capacity(held.len());
     for (album, release, group, may_have_a_front) in held {
-        let group = store::mbid_in(group.as_deref());
-        let release = store::mbid_in(release.as_deref()).filter(|_| may_have_a_front);
-        let from = match (release, group) {
-            (Some(release), group) => CoverFrom::Release { release, group },
-            (None, Some(group)) => CoverFrom::Group(group),
-            (None, None) => continue,
-        };
-        wanting.push(CoverWanted {
-            album: AlbumId::new(album as u64)?,
-            from,
-        });
+        if let Some(wanted) = cover_wanted(album, release, group, may_have_a_front)? {
+            wanting.push(wanted);
+        }
     }
     Ok(wanting)
+}
+
+fn cover_wanted(
+    album: i64,
+    release: Option<String>,
+    group: Option<String>,
+    may_have_a_front: bool,
+) -> Result<Option<CoverWanted>> {
+    let group = store::mbid_in(group.as_deref());
+    let release = store::mbid_in(release.as_deref()).filter(|_| may_have_a_front);
+    let from = match (release, group) {
+        (Some(release), group) => CoverFrom::Release { release, group },
+        (None, Some(group)) => CoverFrom::Group(group),
+        (None, None) => return Ok(None),
+    };
+    Ok(Some(CoverWanted {
+        album: AlbumId::new(album as u64)?,
+        from,
+    }))
+}
+
+pub(crate) fn albums_owed_a_larger_cover(connection: &Connection) -> Result<Vec<CoverWanted>> {
+    if !larger_covers_owed(connection)? {
+        return Ok(Vec::new());
+    }
+
+    let mut statement = connection
+        .prepare(
+            "SELECT id, mbid, release_group, front_cover IS NOT 0, cover_art FROM albums
+              WHERE cover_art IS NOT NULL AND cover_path IS NULL
+                AND (mbid IS NOT NULL OR release_group IS NOT NULL)
+              ORDER BY id",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let mut rows = statement
+        .query([])
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+    let mut owed = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .map_err(|source| Error::store(StoreOp::Query, source))?
+    {
+        let (held, album, release, group, may_have_a_front) =
+            owed_row(row).map_err(|source| Error::store(StoreOp::Query, source))?;
+        if !is_a_small_cover(held) {
+            continue;
+        }
+        if let Some(wanted) = cover_wanted(album, release, group, may_have_a_front)? {
+            owed.push(wanted);
+        }
+    }
+    Ok(owed)
+}
+
+type OwedRow = (Vec<u8>, i64, Option<String>, Option<String>, bool);
+
+fn owed_row(row: &Row<'_>) -> rusqlite::Result<OwedRow> {
+    Ok((
+        row.get(4)?,
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+    ))
+}
+
+fn is_a_small_cover(bytes: Vec<u8>) -> bool {
+    ImageFormat::sniff(&bytes)
+        .and_then(|format| CoverArt { format, bytes }.shorter_side())
+        .is_some_and(|side| side < store::A_SMALL_COVER_BELOW)
+}
+
+fn larger_covers_owed(connection: &Connection) -> Result<bool> {
+    connection
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'larger_covers_wanted')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub(crate) fn larger_covers_asked(tx: &Transaction<'_>) -> Result<()> {
+    tx.execute_batch("DROP TABLE IF EXISTS larger_covers_wanted")
+        .map_err(|source| Error::store(StoreOp::Delete, source))
 }
 
 pub(crate) fn land_vault_cover(

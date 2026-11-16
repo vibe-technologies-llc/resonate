@@ -133,3 +133,63 @@ fn a_catalog_stamped_at_any_released_step_opens_and_is_carried_to_the_last() {
 
     let _ = fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn a_catalog_of_before_larger_covers_owes_its_fetched_covers_one_ask_and_keeps_them() {
+    let folder = env::temp_dir().join(format!("resonate-mobile-larger-{}", process::id()));
+    let _ = fs::remove_dir_all(&folder);
+    fs::create_dir_all(&folder).expect("a folder");
+    let path = folder.join("documents.sqlite");
+    let before = MIGRATIONS
+        .iter()
+        .position(|step| *step == super::FETCHED_COVERS_ARE_ASKED_FOR_A_LARGER_ONE)
+        .expect("the larger covers step");
+
+    let laid = Connection::open(&path).expect("a catalog");
+    laid.create_scalar_function(
+        "folded",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+    )
+    .expect("the fold");
+    for step in &MIGRATIONS[..before] {
+        laid.execute_batch(step).expect("an earlier step");
+    }
+    laid.execute_batch(
+        "INSERT INTO pictures (id, crc, bytes) VALUES (1, 0, x'89504e47');
+         INSERT INTO album_art (album_key, release, origin, picture)
+         VALUES ('album', 'f5093c06-23e3-404f-aeaa-40f72885ee3a', 'coverartarchive', 1);",
+    )
+    .expect("an album with a fetched cover");
+    laid.pragma_update(
+        None,
+        "user_version",
+        u32::try_from(before).expect("a count"),
+    )
+    .expect("the stamp");
+    drop(laid);
+
+    drop(Catalog::open(&path).expect("the catalog opens"));
+
+    let opened = Connection::open(&path).expect("the catalog again");
+    let owed: bool = opened
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'larger_covers_wanted')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the schema reads back");
+    let kept: i64 = opened
+        .query_row(
+            "SELECT picture FROM album_art WHERE album_key = 'album'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the album's cover");
+    drop(opened);
+    let _ = fs::remove_dir_all(&folder);
+
+    assert!(owed, "the larger covers were not owed after the step");
+    assert_eq!(kept, 1, "the step took a fetched cover away");
+}

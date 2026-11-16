@@ -23,6 +23,14 @@ impl Library {
             .read(|connection| enriched::albums_wanting_a_cover(connection, SystemTime::now()))
     }
 
+    pub(crate) fn albums_owed_a_larger_cover(&self) -> Result<Vec<CoverWanted>> {
+        self.inner.read(enriched::albums_owed_a_larger_cover)
+    }
+
+    pub(crate) fn larger_covers_asked(&self) -> Result<()> {
+        self.inner.write(enriched::larger_covers_asked)
+    }
+
     pub(crate) fn note_cover_asked(&self, album: AlbumId) -> Result<()> {
         self.inner
             .write(|transaction| enriched::note_cover_asked(transaction, album, SystemTime::now()))
