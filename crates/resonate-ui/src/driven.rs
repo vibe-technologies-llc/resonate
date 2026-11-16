@@ -5463,6 +5463,45 @@ mod tests {
         );
     }
 
+    #[gpui::test]
+    fn a_last_fm_sign_in_refused_is_told_and_can_be_asked_again_at_once(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(|global, _| {
+                global.scrobblers = Some(Arc::new(AllowedOnLastfm));
+                global.online.enabled = true;
+            });
+        });
+        let session =
+            |_: &RootView, cx: &gpui::App| cx.global::<ResonateApp>().online.lastfm_session.clone();
+        let told = |_: &RootView, cx: &gpui::App| crate::toast::showing_text(cx);
+        driven.click("tab-settings");
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
+        driven.cx.simulate_input("last.fm");
+        driven.settle();
+        type_into(&mut driven, 0, "a key");
+        driven.cx.simulate_keystrokes("enter");
+        type_into(&mut driven, 1, "a wrong secret");
+        driven.cx.simulate_keystrokes("enter");
+
+        driven.click("lastfm-sign-in");
+        driven.until(|root, cx| {
+            told(root, cx).is_some_and(|said| said.starts_with("Last.fm refused the sign-in"))
+        });
+
+        assert_eq!(driven.read(session), "");
+        assert!(driven.cx.debug_bounds("lastfm-stop").is_none());
+
+        driven.focus_on(|root, cx| root.settings_fields.read(cx).lastfm[1].clone());
+        driven.cx.simulate_keystrokes("secondary-a backspace");
+        type_into(&mut driven, 1, "a secret");
+        driven.cx.simulate_keystrokes("enter");
+        driven.click("lastfm-sign-in");
+        driven.until(|root, cx| !session(root, cx).is_empty());
+
+        assert!(driven.cx.debug_bounds("lastfm-sign-out").is_some());
+    }
+
     struct ApprovedAtOnce;
 
     impl resonate_library::SpotifyApproval for ApprovedAtOnce {

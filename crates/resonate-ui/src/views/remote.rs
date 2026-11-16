@@ -561,6 +561,49 @@ pub(crate) mod tests {
         .expect("a song in a mirrored window")
     }
 
+    fn playing_elsewhere(driven: &mut Driven, songs: Vec<RemoteSong>) {
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.remotely.songs = songs;
+            cx.notify();
+        });
+        driven.settle();
+    }
+
+    fn folded(driven: &mut Driven) -> bool {
+        driven.read(|root, _| root.remotely.collapsed)
+    }
+
+    #[gpui::test]
+    fn the_other_devices_card_stands_while_songs_play_elsewhere_and_stays_folded_as_they_change(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, Arc::new(Library::open_in_memory().expect("a catalog")));
+        driven.settle();
+
+        assert!(driven.cx.debug_bounds("toggle-other-devices").is_none());
+
+        playing_elsewhere(&mut driven, vec![song()]);
+
+        assert!(driven.cx.debug_bounds("remote-devices").is_some());
+        assert!(!folded(&mut driven));
+
+        driven.click("toggle-other-devices");
+        playing_elsewhere(&mut driven, vec![song(), song()]);
+
+        assert!(folded(&mut driven));
+        assert!(driven.cx.debug_bounds("remote-devices").is_none());
+
+        playing_elsewhere(&mut driven, Vec::new());
+
+        assert!(driven.cx.debug_bounds("toggle-other-devices").is_none());
+
+        playing_elsewhere(&mut driven, vec![song()]);
+        driven.click("toggle-other-devices");
+
+        assert!(!folded(&mut driven));
+        assert!(driven.cx.debug_bounds("remote-devices").is_some());
+    }
+
     #[gpui::test]
     fn other_devices_can_be_collapsed_and_expanded(cx: &mut gpui::TestAppContext) {
         let mut driven = Driven::open(cx, Arc::new(Library::open_in_memory().expect("a catalog")));

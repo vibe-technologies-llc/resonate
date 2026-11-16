@@ -134,6 +134,28 @@ impl Pane {
     fn app<R>(&mut self, read: impl FnOnce(&ResonateApp) -> R) -> R {
         self.driven.read(|_, cx| read(cx.global::<ResonateApp>()))
     }
+
+    fn place(&mut self) -> (Category, Option<Page>) {
+        self.driven
+            .read(|root, _| (root.settings_shown.category, root.settings_shown.page))
+    }
+
+    fn page(&mut self, page: Page) {
+        let root = self.driven.root.clone();
+        self.driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.open_the_settings_page(page, cx)));
+        self.driven.settle();
+    }
+
+    fn reset_everything_landed(&mut self) -> bool {
+        self.driven
+            .read(|root, _| root.settings_shown.reset_everything_landed)
+    }
+
+    fn armed(&mut self, armed: &Armed) -> bool {
+        self.driven.read(|root, _| root.is_armed(armed))
+    }
 }
 
 pub(super) fn reach(driven: &mut Driven, selector: &'static str) {
@@ -553,4 +575,59 @@ fn leaving_the_category_lowers_a_press_armed_in_it(cx: &mut TestAppContext) {
             .driven
             .read(|root, _| root.is_armed(&Armed::ResetEverything))
     );
+}
+
+#[gpui::test]
+fn the_place_shown_is_kept_while_another_pane_is_shown_and_drawn_again_on_return(
+    cx: &mut TestAppContext,
+) {
+    let mut pane = Pane::open(cx);
+    pane.page(Page::RoomCorrection);
+
+    pane.driven.click("tab-albums");
+    pane.driven.click("tab-settings");
+
+    assert_eq!(
+        pane.place(),
+        (Category::Equaliser, Some(Page::RoomCorrection))
+    );
+    pane.driven.bounds_of("settings-way-back");
+
+    pane.driven.click("settings-way-back");
+    pane.driven.click("tab-albums");
+    pane.driven.click("tab-settings");
+
+    assert_eq!(pane.place(), (Category::Equaliser, None));
+    pane.reach("equaliser-track");
+}
+
+#[gpui::test]
+fn reset_everything_asks_again_then_puts_every_group_back_and_says_so_until_pressed_anew(
+    cx: &mut TestAppContext,
+) {
+    let mut pane = Pane::open(cx);
+    pane.category(Category::About);
+
+    pane.reach("reset-everything");
+    pane.driven.click("reset-everything");
+
+    assert!(pane.armed(&Armed::ResetEverything));
+    assert!(!pane.reset_everything_landed());
+
+    let written = pane.pressing("reset-everything", 1);
+
+    assert!(!pane.armed(&Armed::ResetEverything));
+    assert!(pane.reset_everything_landed());
+    assert!(!written.is_empty());
+
+    pane.driven.click("reset-everything");
+
+    assert!(pane.armed(&Armed::ResetEverything));
+    assert!(!pane.reset_everything_landed());
+
+    pane.category(Category::Online);
+    pane.category(Category::About);
+
+    assert!(!pane.armed(&Armed::ResetEverything));
+    assert!(!pane.reset_everything_landed());
 }
