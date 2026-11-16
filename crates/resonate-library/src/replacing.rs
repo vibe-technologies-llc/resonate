@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use resonate_core::{ReleaseTrackId, TrackId};
+use resonate_core::{MediaLocation, ReleaseTrackId, TrackId};
 use rusqlite::{OptionalExtension as _, ToSql, Transaction, params};
 
 use crate::{
@@ -29,6 +29,19 @@ pub struct Replacing {
     pub wanted: u64,
     pub unmatched: u64,
     pub trashed: Deleted,
+    pub folds: Vec<Fold>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Fold {
+    pub taken: MediaLocation,
+    pub kept: MediaLocation,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Replaced {
+    pub trashed: Deleted,
+    pub folds: Vec<Fold>,
 }
 
 const THE_RELEASE_ROW_GOES_TO_THE_KEPT_COPY_WHERE_IT_HOLDS_NONE: &str = "UPDATE release_tracks
@@ -41,7 +54,7 @@ const THE_WANT_OF_THE_REPLACEMENT_GOES: &str = "DELETE FROM wants
 
 const THE_REPLACEMENT_GOES: &str = "DELETE FROM replacements WHERE track_id = ?1";
 
-pub(crate) fn folded(transaction: &Transaction<'_>, kept: TrackId, taken: TrackId) -> Result<()> {
+pub(crate) fn folded(transaction: &Transaction<'_>, kept: TrackId, taken: TrackId) -> Result<Fold> {
     let kept_path = path_of(transaction, kept)?;
     let taken_path = path_of(transaction, taken)?;
     copies::handed_over(
@@ -71,7 +84,11 @@ pub(crate) fn folded(transaction: &Transaction<'_>, kept: TrackId, taken: TrackI
         params![taken],
         StoreOp::Delete,
     )?;
-    changed(THE_REPLACEMENT_GOES, params![taken], StoreOp::Delete)
+    changed(THE_REPLACEMENT_GOES, params![taken], StoreOp::Delete)?;
+    Ok(Fold {
+        taken: MediaLocation::local(taken_path),
+        kept: MediaLocation::local(kept_path),
+    })
 }
 
 pub(crate) fn path_of(transaction: &Transaction<'_>, track: TrackId) -> Result<PathBuf> {

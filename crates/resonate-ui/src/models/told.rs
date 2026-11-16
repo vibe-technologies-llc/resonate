@@ -4,7 +4,7 @@ use ahash::AHashSet;
 use gpui::{AsyncApp, WeakEntity};
 use resonate_core::{AlbumId, MediaLocation};
 use resonate_library::{
-    Covering, Deleted, Edit, EnrichSummary, GroupRelease, ImportSummary, Library, Maker,
+    Covering, Deleted, Edit, EnrichSummary, Fold, GroupRelease, ImportSummary, Library, Maker,
     OrganiseSummary, PollSummary, Reference, ReleaseMatch, Replacing, RetagSummary, ScanSummary,
     Shared, Track, Undoable,
 };
@@ -130,6 +130,13 @@ pub(super) fn relocations(summary: &OrganiseSummary) -> Vec<(MediaLocation, Medi
         .collect()
 }
 
+pub(super) fn folds_moved(folds: &[Fold]) -> Vec<(MediaLocation, MediaLocation)> {
+    folds
+        .iter()
+        .map(|fold| (fold.taken.clone(), fold.kept.clone()))
+        .collect()
+}
+
 pub(super) fn filed(summary: &OrganiseSummary) -> Notice {
     let stats = summary.stats;
     let mut told = match stats.moved {
@@ -212,7 +219,7 @@ pub(super) fn folding_told(folded: resonate_library::Result<Deleted>) -> Notice 
 
 pub(super) fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice> {
     let stats = summary.stats;
-    let replaced = summary.replaced.tracks;
+    let replaced = summary.replaced.trashed.tracks;
     if stats.kept == 0 && replaced == 0 && prompted != Prompted::ByHand && !summary.cancelled {
         return None;
     }

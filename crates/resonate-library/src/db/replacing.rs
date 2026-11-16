@@ -10,8 +10,9 @@ use rusqlite::{Connection, OptionalExtension as _, Transaction, params, types::V
 
 use super::{Library, Walk, rows::rows};
 use crate::{
-    Deleted, Error, Quality, Replaceable, Replacing, Result, SongHeard, StoreOp, TheSong, Track,
-    TrackQuery, Version, deleted::Why, elsewhere, linked::LENGTHS_AGREE_WITHIN, replacing, store,
+    Error, Fold, Quality, Replaceable, Replaced, Replacing, Result, SongHeard, StoreOp, TheSong,
+    Track, TrackQuery, Version, deleted::Why, elsewhere, linked::LENGTHS_AGREE_WITHIN, replacing,
+    store,
 };
 
 const HELD_WEIGHED_AT_MOST: usize = 64;
@@ -163,9 +164,9 @@ impl Library {
         Ok(replacing)
     }
 
-    pub fn settle_replacements(&self) -> Result<Deleted> {
+    pub fn settle_replacements(&self) -> Result<Replaced> {
         if !self.inner.read(any_replacement_waits)? {
-            return Ok(Deleted::default());
+            return Ok(Replaced::default());
         }
         let walk = match self.walk_the_tree() {
             Ok(walk) => walk,
@@ -173,7 +174,7 @@ impl Library {
                 tracing::debug!(
                     "the replacements are settled after the pass walking the tree, or the next"
                 );
-                return Ok(Deleted::default());
+                return Ok(Replaced::default());
             }
             Err(error) => return Err(error),
         };
@@ -201,20 +202,23 @@ impl Library {
         })
     }
 
-    fn settled_under(&self, walk: &Walk) -> Result<Deleted> {
+    fn settled_under(&self, walk: &Walk) -> Result<Replaced> {
         let evidenced = self.evidenced()?;
         if evidenced.is_empty() {
-            return Ok(Deleted::default());
+            return Ok(Replaced::default());
         }
         let vault = self.inner.vault.as_deref();
-        let taken = self
+        let (taken, folds) = self
             .inner
             .write(|transaction| folded_on(transaction, vault, &evidenced))?;
         if taken.is_empty() {
-            return Ok(Deleted::default());
+            return Ok(Replaced::default());
         }
         self.inner.playlists_changed();
-        self.remove_tracks_under(walk, &taken, Why::Folded)
+        Ok(Replaced {
+            trashed: self.remove_tracks_under(walk, &taken, Why::Folded)?,
+            folds,
+        })
     }
 
     fn evidenced(&self) -> Result<Vec<Evidenced>> {
@@ -403,7 +407,8 @@ fn settled(
         };
 
         if let Some(kept) = held {
-            replacing::folded(transaction, kept, one.track.id)?;
+            let fold = replacing::folded(transaction, kept, one.track.id)?;
+            settled.replacing.folds.push(fold);
             settled.taken.push(one.track.id);
             settled.replacing.folded += 1;
         } else if let Some(row) = release_track {
@@ -601,16 +606,17 @@ fn folded_on(
     transaction: &Transaction<'_>,
     vault: Option<&Vault>,
     evidenced: &[Evidenced],
-) -> Result<Vec<TrackId>> {
+) -> Result<(Vec<TrackId>, Vec<Fold>)> {
     let mut taken = Vec::with_capacity(evidenced.len());
+    let mut folds = Vec::with_capacity(evidenced.len());
     for &Evidenced { taken: lossy, kept } in evidenced {
         if !may_fold(transaction, vault, lossy, kept)? {
             continue;
         }
-        replacing::folded(transaction, kept, lossy)?;
+        folds.push(replacing::folded(transaction, kept, lossy)?);
         taken.push(lossy);
     }
-    Ok(taken)
+    Ok((taken, folds))
 }
 
 fn still_held_by(connection: &Connection, row: ReleaseTrackId, track: TrackId) -> Result<bool> {

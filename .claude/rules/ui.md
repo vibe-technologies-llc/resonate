@@ -1967,7 +1967,13 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   (`keep_the_lossy_songs`); *Replace N songs* (greyed at none) closes the sheet and calls
   `LibraryModel::replace_lossy_songs`: `Library::replace` on the background executor, a toast from
   `replaced_now` (*1 song replaced, 2 songs wanted*), `fetch_or_say_nobody_can` where anything was
-  wanted, an `AlreadyWalking` said as another task running, then an `Everything` read. A want a
+  wanted, an `AlreadyWalking` said as another task running, then an `Everything` read. **A fold
+  moves the zones' queues as organise's moves do**: every `Fold` that `replace`, a scan the window
+  started or a poll it ran names (`Replacing::folds`, `ScanSummary::replaced`,
+  `PollSummary::replaced`) goes into the model's relocations through `folds_moved`, which the root
+  takes (`take_relocations`) and sends as `Command::Relocate`, so a queued lossy song plays from its
+  lossless copy rather than a trashed file
+  (`a_queued_lossy_song_plays_from_its_lossless_copy_once_replaced`). A want a
   replacement waits on stands in the Downloads panel like any other, marked *replacing a lossy copy*
   (`WantStanding::replacing`, `replaces_a_song`); its *Cancel* is `cancel_download`, whose `unwant`
   cancels the replacement and leaves the lossy copy

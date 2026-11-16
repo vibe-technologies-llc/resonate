@@ -25,7 +25,7 @@ use resonate_providers::{
 use resonate_vault::{Halt, Keeping, Taking};
 
 use crate::{
-    Deleted, Error, Library, Result, ScanOptions, Want,
+    Error, Library, Replaced, Result, ScanOptions, Want,
     filed::{self, Filed, Unfiled},
     linked::LENGTHS_AGREE_WITHIN,
     organise,
@@ -679,11 +679,11 @@ fn pump(reader: &mut dyn Read, into: &SyncSender<Pumping>) {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PollSummary {
     pub stats: PollStats,
     pub cancelled: bool,
-    pub replaced: Deleted,
+    pub replaced: Replaced,
 }
 
 pub(crate) fn start(
@@ -1414,7 +1414,7 @@ fn run(
     }
     scanned_and_paired(library, &lanes.filed.into_inner())?;
     let replaced = if progress.is_cancelled() {
-        Deleted::default()
+        Replaced::default()
     } else {
         settled(library)
     };
@@ -1445,10 +1445,10 @@ fn rejoined(library: &Library) {
     }
 }
 
-fn settled(library: &Library) -> Deleted {
+fn settled(library: &Library) -> Replaced {
     library.settle_replacements().unwrap_or_else(|error| {
         tracing::warn!(%error, "the replacements could not be settled as the poll ended");
-        Deleted::default()
+        Replaced::default()
     })
 }
 
