@@ -473,7 +473,7 @@ fn paging_by_the_last_key_reads_every_row_once_in_the_order_read_whole() -> Resu
 }
 
 #[test]
-fn whole_files_leave_out_a_sheets_spans_and_page_by_key_as_the_rows_read_whole() -> Result<()> {
+fn a_sheets_spans_are_counted_and_paged_by_key_beside_the_whole_files() -> Result<()> {
     let library = Library::open_in_memory()?;
     tied_and_unheld(&library);
     run(
@@ -482,19 +482,14 @@ fn whole_files_leave_out_a_sheets_spans_and_page_by_key_as_the_rows_read_whole()
          UPDATE tracks SET span_start = 0, span_frames = 4410 WHERE path = '/music/08';",
     );
     let query = TrackQuery::default();
-    let whole: Vec<TrackId> = library
-        .tracks(&query)?
-        .into_iter()
-        .filter(|track| track.span.is_none())
-        .map(|track| track.id)
-        .collect();
+    let every: Vec<TrackId> = ids(&library.tracks(&query)?);
 
-    let mut paged = ids(&library.whole_files(&TrackQuery {
+    let mut paged = ids(&library.tracks(&TrackQuery {
         limit: Some(PAGED_BY),
         ..query.clone()
     })?);
     while let Some(last) = paged.last().copied() {
-        let page = ids(&library.whole_files_from(
+        let page = ids(&library.tracks_from(
             &TrackQuery {
                 limit: Some(PAGED_BY + 1),
                 ..query.clone()
@@ -508,17 +503,16 @@ fn whole_files_leave_out_a_sheets_spans_and_page_by_key_as_the_rows_read_whole()
         paged.extend(page.into_iter().skip(1));
     }
 
-    assert_eq!(library.tracks(&query)?.len(), whole.len() + 2);
-    assert_eq!(paged, whole);
-    assert_eq!(library.whole_files_counted(&query)?, whole.len() as u32);
     assert_eq!(
-        ids(&library.whole_files(&TrackQuery {
-            offset: 2,
-            limit: Some(2),
-            ..query.clone()
-        })?),
-        whole[2..4]
+        library
+            .tracks(&query)?
+            .iter()
+            .filter(|track| track.span.is_some())
+            .count(),
+        2
     );
+    assert_eq!(paged, every);
+    assert_eq!(library.tracks_counted(&query)?, every.len() as u32);
     Ok(())
 }
 
@@ -528,13 +522,13 @@ fn sorted_titles(tracks: Vec<Track>) -> Vec<String> {
     titles
 }
 
-fn paged_whole_files(library: &Library, query: &TrackQuery) -> Result<Vec<TrackId>> {
-    let mut paged = ids(&library.whole_files(&TrackQuery {
+fn paged_tracks(library: &Library, query: &TrackQuery) -> Result<Vec<TrackId>> {
+    let mut paged = ids(&library.tracks(&TrackQuery {
         limit: Some(PAGED_BY),
         ..query.clone()
     })?);
     while let Some(last) = paged.last().copied() {
-        let page = ids(&library.whole_files_from(
+        let page = ids(&library.tracks_from(
             &TrackQuery {
                 limit: Some(PAGED_BY + 1),
                 ..query.clone()
@@ -597,10 +591,10 @@ fn a_track_query_narrows_to_rows_on_an_album_or_by_an_artist_and_pages_by_key_wi
         titles
     };
 
-    let albumed = library.whole_files(&on_an_album)?;
-    let paged = paged_whole_files(&library, &on_an_album)?;
-    let artisted = library.whole_files(&by_an_artist)?;
-    let paged_by_an_artist = paged_whole_files(&library, &by_an_artist)?;
+    let albumed = library.tracks(&on_an_album)?;
+    let paged = paged_tracks(&library, &on_an_album)?;
+    let artisted = library.tracks(&by_an_artist)?;
+    let paged_by_an_artist = paged_tracks(&library, &by_an_artist)?;
 
     assert_eq!(
         sorted_titles(albumed.clone()),
@@ -609,18 +603,18 @@ fn a_track_query_narrows_to_rows_on_an_album_or_by_an_artist_and_pages_by_key_wi
         ]
     );
     assert_eq!(paged, ids(&albumed));
-    assert_eq!(library.whole_files_counted(&on_an_album)?, 9);
+    assert_eq!(library.tracks_counted(&on_an_album)?, 9);
     assert_eq!(
         sorted_titles(artisted.clone()),
         ["Featured", "Other", "Other", "Song", "Song"]
     );
     assert_eq!(paged_by_an_artist, ids(&artisted));
-    assert_eq!(library.whole_files_counted(&by_an_artist)?, 5);
+    assert_eq!(library.tracks_counted(&by_an_artist)?, 5);
     assert_eq!(
-        sorted_titles(library.whole_files(&both)?),
+        sorted_titles(library.tracks(&both)?),
         ["Featured", "Other", "Song", "Song"]
     );
-    assert_eq!(library.whole_files_counted(&both)?, 4);
+    assert_eq!(library.tracks_counted(&both)?, 4);
     assert_eq!(albums(false), ["Credited", "One", "Two", "Unheld"]);
     assert_eq!(albums(true), ["Credited", "One", "Two"]);
     assert_eq!(

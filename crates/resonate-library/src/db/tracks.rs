@@ -6,7 +6,7 @@ use rusqlite::{OptionalExtension as _, params, params_from_iter};
 use super::{
     HiddenTracks, Library,
     rows::{RawTrack, favoured, unknown},
-    searched::{tracks, tracks_from, whole_files, whole_files_counted},
+    searched::{tracks, tracks_counted, tracks_from},
     statements::{IDS_READ_AT_ONCE, THE_FAVOURITES_SEARCH, TRACK_COLUMNS},
 };
 use crate::{Error, Favoured, Result, StoreOp, Track, TrackQuery, store};
@@ -104,16 +104,8 @@ impl Library {
         tracks_from(&self.inner, query, at)
     }
 
-    pub fn whole_files(&self, query: &TrackQuery) -> Result<Vec<Track>> {
-        whole_files(&self.inner, query, None)
-    }
-
-    pub fn whole_files_from(&self, query: &TrackQuery, at: TrackId) -> Result<Vec<Track>> {
-        whole_files(&self.inner, query, Some(at))
-    }
-
-    pub fn whole_files_counted(&self, query: &TrackQuery) -> Result<u32> {
-        whole_files_counted(&self.inner, query)
+    pub fn tracks_counted(&self, query: &TrackQuery) -> Result<u32> {
+        tracks_counted(&self.inner, query)
     }
 
     pub fn favourite_tracks(&self, query: &TrackQuery) -> Result<Vec<Track>> {

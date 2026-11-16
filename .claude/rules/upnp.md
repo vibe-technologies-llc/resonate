@@ -376,12 +376,13 @@ as what drives them.
 
 A UPnP AV MediaServer:1 with ContentDirectory:1 and ConnectionManager:1, so a control point on the
 local network (a streamer's app, BubbleUPnP, Kodi, VLC) browses the catalog and plays each song's
-file as it is: the renderer decodes it, nothing is transcoded, and the engine plays no part.
+file as it is: the renderer decodes it, nothing is transcoded, and the engine plays no part. A song
+cut from a cue sheet is the one exception (*A cut served as WAVE*).
 
 - **The catalog is a seam, `Catalog`** (`catalog.rs`), since the crate may not see
   `resonate-library`: `shelved` (a `Shelf`'s children in a `Page`, and their `total`), `shelf` (one
-  artist, album or playlist), `song`, `bytes_of` (an `Opened`: a `Read + Seek` of the file and its
-  `AudioKind`), `cover`, `searched` (one `Kind`'s rows a typed `Query` holds `Within` a scope, in a
+  artist, album or playlist), `song`, `bytes_of` (an `Opened`: a `Read + Seek` of known length,
+  the file or a cut's decode, and its `AudioKind`), `cover`, `searched` (one `Kind`'s rows a typed `Query` holds `Within` a scope, in a
   `Page`, or `Searched::Unanswered`) and `revision`, each answering `None` for a row it does not hold and its own
   `Failure` (logged, a SOAP `501`) where it cannot read. The binary's `offering::Shelves` fills it
   over `Library`. The crate owns the tree: the root (`0`) holds `Shelf::TOP`, Artists (an artist,
@@ -400,7 +401,8 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   container carries `childCount`, its class (storage folder, music artist, music album, playlist),
   the album artist and an `albumArtURI` where the album holds a cover; a song is a `musicTrack` with
   creator, artist, album, genre, track number, cover and one `res`: `http-get:*:<mime>:` the DLNA
-  flags (`DLNA_FEATURES`), size, duration, rate, channels and, for a lossless codec, bits. `Song`'s
+  flags (`features_of` the song's `Content`: `DLNA.ORG_CI=0` for a file served `Untouched`, `1` for
+  one `Converted`, a cut's WAVE), size, duration, rate, channels and, for a lossless codec, bits. `Song`'s
   `size` is an `Option`: a size the catalog does not know leaves the attribute out (DIDL-Lite's
   `size` is optional), never a `0` a control point would read as an empty file. Every
   text is escaped and a control character a tag may hold is dropped, so the document always reads.
@@ -416,7 +418,8 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   `bytes_of`, with `Content-Type` the `AudioKind`'s (`AudioKind::of_extension` covers every
   `AUDIO_EXTENSIONS` entry), `Accept-Ranges`, one `Range` span (`wanted`: `a-b`, `a-`, `-n`; a list
   or an unreadable one is the whole, past the end 416) as a `206` with `Content-Range`, and
-  `contentFeatures.dlna.org` and `transferMode.dlna.org: Streaming`, which some renderers will not
+  `contentFeatures.dlna.org` (the same flags, from `Opened`'s `Content`) and
+  `transferMode.dlna.org: Streaming`, which some renderers will not
   play without. A write may wait `A_LISTENER_WAITS_AT_MOST` (120 s), since a paused renderer stops
   reading. The description (`/description.xml`) and both services' descriptions are
   `presented.rs`'s. The device's `friendlyName` is the name the listener typed (`Offering::name`, a
@@ -525,20 +528,20 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   where it is missing or does not read (`Udn::read`).
 - **In the binary** (`offering.rs`): `Shelves` lists artists by name with their album count, albums
   by title (an artist's by year), an album's songs in album order, Songs by title and a playlist's
-  entries in its order, reading only whole files: a row cut from a cue sheet is a span of a file and
-  no byte range of it, so it is left out of every shelf and count, and a hidden row too. Songs, a
-  500 000-row shelf, pages by key: `Library::whole_files_counted` (kept per catalog revision) is its
-  total, and the row after each page served is remembered (`CURSORS_AT_MOST`, 256, a revision) so
-  the next page in order is `Library::whole_files_from` that row, an index seek, and a jump is
-  `Library::whole_files` by offset. An album's songs are counted and read the same way; a playlist's
-  served rows are read whole once a revision (`LISTS_KEPT_AT_MOST`, 32) and paged in memory. A song
-  is served only where its row is a local file whose extension names an `AudioKind`, and a file
-  gone is 404. A search is the library's own (`searched_as`): a query becomes a typed `Search` in
+  entries in its order, every row shown, cuts of a cue sheet among them; a hidden row is left out of
+  every shelf and count. Songs, a 500 000-row shelf, pages by key: `Library::tracks_counted` (kept
+  per catalog revision) is its total, and the row after each page served is remembered
+  (`CURSORS_AT_MOST`, 256, a revision) so the next page in order is `Library::tracks_from` that
+  row, an index seek, and a jump is `Library::tracks` by offset. An album's songs are counted and
+  read the same way; a playlist's served rows are read whole once a revision (`LISTS_KEPT_AT_MOST`,
+  32) and paged in memory. A whole file is served only where its row is a local file whose
+  extension names an `AudioKind`, and a file gone is 404; a cut only where its row is a local file
+  with a known length (*A cut served as WAVE*). A search is the library's own (`searched_as`): a query becomes a typed `Search` in
   conjunctive form (at most `CLAUSES_AT_MOST`, 32, clauses of `ALTERNATIVES_AT_MOST`, 16, else
   unanswered) written as its text, so it is folded as the search box folds it and an artist is one
   artist however spelled: `=` is a whole name (`artist:="…"`, the artist by id), `contains` each
   word beginning a word of the column, `!=` and `doesNotContain` their denials; a text with no
-  letter or digit, or `Present`, is unanswered. Songs read `whole_files` by it, albums `albums` by
+  letter or digit, or `Present`, is unanswered. Songs read `tracks` by it, albums `albums` by
   its `album:` and `artist:` words, artists `artists` by `artist:`, both refusing a denial (a
   denied word over the grouped rows is not the container's own), and playlists answer `contains`
   on their name alone (`playlists_named`). A scope narrows the same queries the shelves browse
@@ -550,8 +553,34 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   (`a_search_under_artists_or_albums_finds_what_is_nested_below_and_nothing_loose`), each with the
   search's text beside the narrowing; under a playlist the
   songs are its entries narrowed by the text (`Library::playlist_entries` with it, so a saved query's
-  playlist narrows its own query) in the playlist's order, whole files alone, paged in memory
+  playlist narrows its own query) in the playlist's order, hidden rows left out, paged in memory
   (`played_from_matching`), and with no text the kept list `played_from` pages. `Offered` holds the running `MediaServer` for the window (*binary.md*'s `share-catalog-on-network` and `offer-name`), and `resonate offer` runs one with no window until interrupted (`offer::offer`).
+- **A cut served as WAVE.** A song cut from a cue sheet is a span of a file and no byte range of
+  it, so it is decoded and sent as WAVE, and the crate stays blind to decoding: the seam's `Pcm`
+  (`decoded.rs`, `seek` to a frame of the cut and `next_block`, each with its own `Failure`) is what
+  a catalog decodes through, and `AsWave::over(pcm, spec, frames)` is the `Read + Seek` it answers
+  in `Opened`, so `poured` serves it as it serves a file, ranges and all. Its length is fixed when
+  it opens, `wave_bytes(spec, frames)`: the header (`wave::header_holding` with the data's length,
+  44 bytes, or 68 as `WAVE_FORMAT_EXTENSIBLE` above two channels as the renderer side writes it;
+  `F32` is IEEE float) and every frame in the spec's word, S24 packed in three bytes, nothing
+  resampled or dithered. A byte maps to a frame exactly, so a read wanting a frame other than the
+  next asks `seek` and passes over the part of the frame before the byte; a decode that ends early
+  is carried on as silence and one that runs past is cut, so the length named always holds
+  (`a_range_into_the_middle_of_a_frame_seeks_to_that_frame_and_reads_on_in_order`,
+  `a_decode_ending_early_is_carried_on_as_silence_to_the_length_named`). The binary's
+  `Decoding` is `Decoder::open_span` over `Library::sources` with its own output format, reopened
+  for a source that cannot seek. **The size announced is the body's**: `waved` (the row's spec and
+  duration) is the one source of both, `song_of` describing a cut as `AudioKind::Wave` (`audio/wav`,
+  the path `song-N.wav`, `Content::Converted`) with `size` from `wave_bytes` over it and the body
+  opened as `AsWave::over` that same spec; where the decoder's output would write another header
+  (`waves_alike`, a file rewritten since its scan at another rate, word or channel count) the cut
+  is not served, 404, rather than sent under a header contradicting the length named, and nothing
+  is converted to fit. A cut with no known duration is not offered
+  (`a_cut_is_served_as_a_wave_of_its_decode_and_a_range_answers_its_frames`,
+  `a_cut_that_decodes_otherwise_than_its_row_says_is_not_served`). A search under Artists or
+  Albums finds a sheet's cuts on their album and by their performer as it finds files
+  (`a_search_under_artists_or_albums_finds_a_sheets_cuts_on_their_album_and_by_their_band`). The phones hold no
+  cue sheets, so their catalog serves files alone.
 - **Fuzzed** with the rest of the crate (`read_what_a_network_says`): an `M-SEARCH`, a request head
   through `routed`, a GENA head (a callback taken only at the sender, a timeout inside its bounds), a
   path, an object id read back as itself, a UDN, a `Range` span inside its length, a

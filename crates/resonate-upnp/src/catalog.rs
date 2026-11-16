@@ -164,6 +164,7 @@ pub struct Song {
     pub track_number: Option<u32>,
     pub duration: Option<Duration>,
     pub kind: AudioKind,
+    pub content: Content,
     pub size: Option<u64>,
     pub rate: u32,
     pub channels: u16,
@@ -189,6 +190,13 @@ impl<T: Read + Seek + Send> Bytes for T {}
 pub struct Opened {
     pub bytes: Box<dyn Bytes>,
     pub kind: AudioKind,
+    pub content: Content,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Content {
+    Untouched,
+    Converted,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -8,17 +8,21 @@ use std::{
 use std::{path::PathBuf, thread};
 
 use parking_lot::Mutex;
+use resonate_codec::{DecodeStatus, Decoder, Error as CodecError, Sources};
 #[cfg(feature = "ui")]
 use resonate_core::Switch;
-use resonate_core::{AlbumId, ArtistId, PlaylistId, TrackId, is_lettered};
+use resonate_core::{
+    AlbumId, ArtistId, AudioBuffer, FrameSpan, Frames, MediaLocation, PlaylistId, StreamSpec,
+    TrackId, is_lettered,
+};
 use resonate_library::{
     Album, AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Asked, Clause, Column, Condition,
     Error as LibraryError, Library, PlaylistOrder, Reach, Search, SortOrder, Track, TrackQuery,
     Word,
 };
 use resonate_upnp::{
-    AudioKind, Catalog, Entry, Field, Held, Kind, Opened, Page, Picture, Query, Searched, Shelf,
-    Shelved, Song, Test, Udn, Within,
+    AsWave, AudioKind, Catalog, Content, Entry, Field, Held, Kind, Opened, Page, Pcm, Picture,
+    Query, Searched, Shelf, Shelved, Song, Test, Udn, Within, wave_bytes, waves_alike,
 };
 #[cfg(feature = "ui")]
 use resonate_upnp::{MediaServer, Offering, ServerName};
@@ -92,7 +96,7 @@ impl Shelves {
         let total = match counted {
             Some(total) => total,
             None => {
-                let total = self.library.whole_files_counted(&query(0, 0))?;
+                let total = self.library.tracks_counted(&query(0, 0))?;
                 let mut cursors = self.cursors.lock();
                 if cursors.revision == revision {
                     cursors.total = Some(total);
@@ -109,8 +113,8 @@ impl Shelves {
 
         let read_one_past = query(page.from, page.most.saturating_add(1));
         let mut rows = match at {
-            Some(at) => self.library.whole_files_from(&read_one_past, at)?,
-            None => self.library.whole_files(&read_one_past)?,
+            Some(at) => self.library.tracks_from(&read_one_past, at)?,
+            None => self.library.tracks(&read_one_past)?,
         };
         if rows.len() > page.most as usize {
             let next = rows.split_off(page.most as usize);
@@ -168,15 +172,15 @@ impl Shelves {
         Ok(Shelved { held, total })
     }
 
-    fn whole_files_in(&self, query: TrackQuery, page: Page) -> Result<Shelved, LibraryError> {
-        let total = self.library.whole_files_counted(&query)?;
+    fn songs_in(&self, query: TrackQuery, page: Page) -> Result<Shelved, LibraryError> {
+        let total = self.library.tracks_counted(&query)?;
         if page.most == 0 || page.from >= total {
             return Ok(Shelved {
                 held: Vec::new(),
                 total,
             });
         }
-        let rows = self.library.whole_files(&TrackQuery {
+        let rows = self.library.tracks(&TrackQuery {
             offset: page.from as usize,
             limit: Some(page.most as usize),
             ..query
@@ -234,7 +238,7 @@ impl Shelves {
             Within::Album(id) => on_the_album(id),
             Within::Playlist(id) => return self.played_from_matching(id, text.as_deref(), page),
         };
-        self.whole_files_in(TrackQuery { text, ..query }, page)
+        self.songs_in(TrackQuery { text, ..query }, page)
     }
 
     fn played_from_matching(
@@ -273,7 +277,7 @@ impl Shelves {
             shelf: Shelf::Album(album.id),
             title: album.title.clone(),
             artist: album.artist.clone(),
-            children: self.library.whole_files_counted(&on_the_album(album.id))?,
+            children: self.library.tracks_counted(&on_the_album(album.id))?,
             cover: album.has_cover_art.then_some(album.id),
         })
     }
@@ -367,6 +371,57 @@ fn songs_in_order() -> TrackQuery {
     }
 }
 
+struct Decoding {
+    sources: Arc<Sources>,
+    location: MediaLocation,
+    span: FrameSpan,
+    decoder: Decoder,
+    block: AudioBuffer,
+    spec: StreamSpec,
+}
+
+impl Decoding {
+    fn open(
+        sources: Arc<Sources>,
+        location: MediaLocation,
+        span: FrameSpan,
+    ) -> Result<Self, CodecError> {
+        let (mut decoder, info) = Decoder::open_span(&sources, &location, span)?;
+        decoder.set_output_format(info.spec.format);
+        let spec = StreamSpec {
+            format: info.spec.format,
+            ..decoder.sounding()
+        };
+        Ok(Self {
+            sources,
+            location,
+            span,
+            decoder,
+            block: AudioBuffer::empty(spec),
+            spec,
+        })
+    }
+}
+
+impl Pcm for Decoding {
+    type Failure = CodecError;
+
+    fn seek(&mut self, to: Frames) -> Result<Frames, CodecError> {
+        if self.decoder.info().is_seekable {
+            return self.decoder.seek(to);
+        }
+        *self = Self::open(Arc::clone(&self.sources), self.location.clone(), self.span)?;
+        Ok(Frames::ZERO)
+    }
+
+    fn next_block(&mut self) -> Result<Option<&AudioBuffer>, CodecError> {
+        Ok(match self.decoder.next_block(&mut self.block)? {
+            DecodeStatus::Decoded => Some(&self.block),
+            DecodeStatus::EndOfStream | DecodeStatus::Reformatted(_) => None,
+        })
+    }
+}
+
 fn on_the_album(album: AlbumId) -> TrackQuery {
     TrackQuery {
         album: Some(album),
@@ -386,7 +441,7 @@ fn played_by(artist: ArtistId) -> TrackQuery {
 }
 
 fn is_served(track: &Track) -> bool {
-    track.span.is_none() && !track.hidden
+    !track.hidden
 }
 
 fn kind_of(path: &Path) -> Option<AudioKind> {
@@ -404,9 +459,24 @@ fn local_file(track: &Track) -> Option<&Path> {
         .flatten()
 }
 
+fn waved(track: &Track) -> Option<(StreamSpec, Frames)> {
+    Some((track.spec, track.duration?))
+}
+
 fn song_of(track: &Track, album: Option<&str>) -> Option<Song> {
-    let kind = kind_of(local_file(track)?)?;
+    let file = local_file(track)?;
     let spec = track.spec;
+    let (kind, content, size) = match track.span {
+        None => (kind_of(file)?, Content::Untouched, track.file_size),
+        Some(_) => {
+            let (spec, frames) = waved(track)?;
+            (
+                AudioKind::Wave,
+                Content::Converted,
+                wave_bytes(spec, frames),
+            )
+        }
+    };
     Some(Song {
         id: track.id,
         title: track.title.clone(),
@@ -417,7 +487,8 @@ fn song_of(track: &Track, album: Option<&str>) -> Option<Song> {
         track_number: track.track_number,
         duration: track.duration.map(|frames| frames.to_duration(spec.rate)),
         kind,
-        size: Some(track.file_size),
+        content,
+        size: Some(size),
         rate: spec.rate.hz(),
         channels: u16::from(spec.channels.count().get()),
         bits: track
@@ -425,6 +496,31 @@ fn song_of(track: &Track, album: Option<&str>) -> Option<Song> {
             .is_lossless()
             .then(|| u16::from(spec.format.valid_bits())),
     })
+}
+
+impl Shelves {
+    fn cut_opened(&self, track: &Track, span: FrameSpan) -> Option<Opened> {
+        let (announced, frames) = waved(track)?;
+        match Decoding::open(
+            Arc::new(self.library.sources()),
+            track.location.clone(),
+            span,
+        ) {
+            Ok(cut) if waves_alike(cut.spec, announced) => Some(Opened {
+                bytes: Box::new(AsWave::over(cut, announced, frames)),
+                kind: AudioKind::Wave,
+                content: Content::Converted,
+            }),
+            Ok(cut) => {
+                tracing::debug!(decoded = ?cut.spec, announced = ?announced, location = %track.location, "a cut decodes otherwise than its row says, so it is not served");
+                None
+            }
+            Err(error) => {
+                tracing::debug!(%error, location = %track.location, "a cut asked for on the network would not decode");
+                None
+            }
+        }
+    }
 }
 
 impl Catalog for Shelves {
@@ -498,11 +594,11 @@ impl Catalog for Shelves {
                     return Ok(None);
                 };
                 let query = on_the_album(id);
-                let total = library.whole_files_counted(&query)?;
+                let total = library.tracks_counted(&query)?;
                 let rows = if page.most == 0 {
                     Vec::new()
                 } else {
-                    library.whole_files(&TrackQuery {
+                    library.tracks(&TrackQuery {
                         offset: page.from as usize,
                         limit: Some(page.most as usize),
                         ..query
@@ -577,6 +673,9 @@ impl Catalog for Shelves {
         let Some(path) = local_file(&track) else {
             return Ok(None);
         };
+        if let Some(span) = track.span {
+            return Ok(self.cut_opened(&track, span));
+        }
         let Some(kind) = kind_of(path) else {
             return Ok(None);
         };
@@ -584,6 +683,7 @@ impl Catalog for Shelves {
             Ok(file) => Ok(Some(Opened {
                 bytes: Box::new(file),
                 kind,
+                content: Content::Untouched,
             })),
             Err(error) => {
                 tracing::debug!(%error, path = %path.display(), "a song asked for on the network is not there");
@@ -1022,13 +1122,20 @@ impl resonate_ui::CatalogShared for Offered {
 mod tests {
     use std::{
         collections::BTreeSet,
-        io::{self, Read as _},
+        io::{self, Read as _, Write as _},
+        net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, UdpSocket},
+        time::Duration,
     };
 
     use resonate_library::Cut;
+    use resonate_upnp::{MediaServer, Offering};
 
     use super::*;
-    use crate::fixtures::{ALBUM, ARTIST, TITLE, scanned, scratch, silent_wave, tagged_wave};
+    use crate::fixtures::{
+        ALBUM, ARTIST, TITLE, scanned, scratch, silent_wave, sounding_wave, tagged_wave,
+    };
+
+    const LOOPBACK: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
     const CUT: &str = "FILE \"whole.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"Cut one\"\n    \
                        INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Cut two\"\n    INDEX 01 \
@@ -1056,7 +1163,7 @@ mod tests {
     }
 
     #[test]
-    fn the_shelves_page_whole_files_by_key_and_leave_a_sheets_cuts_out() {
+    fn the_shelves_page_every_song_by_key_and_a_sheets_cuts_among_them() {
         let root = scratch("offered");
         for (file, title) in [("c.wav", "Charlie"), ("a.wav", "Alpha"), ("b.wav", "Bravo")] {
             fs::write(
@@ -1068,21 +1175,17 @@ mod tests {
         fs::write(root.join("whole.wav"), silent_wave(20)).expect("a sheet's file");
         fs::write(root.join("whole.cue"), CUT).expect("a sheet");
         let library = Arc::new(scanned(&root));
-        let cuts = library
-            .tracks(&TrackQuery::default())
-            .expect("the rows")
-            .into_iter()
-            .filter(|track| track.span.is_some())
-            .collect::<Vec<_>>();
+        let rows = library.tracks(&TrackQuery::default()).expect("the rows");
         let shelves = Shelves::over(Arc::clone(&library));
 
         let (by_ones, total) = shelved_songs(&shelves, 1);
         let (by_twos, _) = shelved_songs(&shelves, 2);
-        let cut = cuts.first().expect("a sheet's cut");
-        let first = library
-            .whole_files(&TrackQuery::default())
-            .expect("the rows")
-            .into_iter()
+        let cut = rows
+            .iter()
+            .find(|track| track.span.is_some())
+            .expect("a sheet's cut");
+        let first = rows
+            .iter()
             .find(|track| track.title == "Alpha")
             .expect("a song");
         let mut bytes = Vec::new();
@@ -1095,12 +1198,23 @@ mod tests {
             .expect("the file");
         let _ = fs::remove_dir_all(&root);
 
-        assert_eq!(cuts.len(), 2);
-        assert_eq!(total, 3);
-        assert_eq!(by_ones, ["Alpha", "Bravo", "Charlie"]);
+        assert_eq!(total, 5);
+        assert_eq!(by_ones, ["Alpha", "Bravo", "Charlie", "Cut one", "Cut two"]);
         assert_eq!(by_twos, by_ones);
-        assert!(shelves.song(cut.id).expect("read").is_none());
-        assert!(shelves.bytes_of(cut.id).expect("read").is_none());
+        assert_eq!(
+            shelves
+                .song(cut.id)
+                .expect("read")
+                .map(|song| (song.kind, song.content)),
+            Some((AudioKind::Wave, Content::Converted))
+        );
+        assert_eq!(
+            shelves
+                .song(first.id)
+                .expect("read")
+                .map(|song| (song.kind, song.content)),
+            Some((AudioKind::Wave, Content::Untouched))
+        );
         assert_eq!(
             bytes,
             tagged_wave(&[(TITLE, "Alpha"), (ARTIST, "Band"), (ALBUM, "Record")])
@@ -1109,6 +1223,307 @@ mod tests {
             shelves.song(first.id).expect("read").map(|song| song.album),
             Some(Some("Record".to_owned()))
         );
+    }
+
+    const SHEET_RATE: u32 = 44_100;
+
+    const SHEET_FRAMES: u64 = 88_200;
+
+    const SECOND_CUT_FROM: u64 = 23_520;
+
+    const WAVE_HEADER_BYTES: usize = 44;
+
+    const STEREO_S16_FRAME_BYTES: usize = 4;
+
+    const ASKED_WITHIN: Duration = Duration::from_secs(5);
+
+    const DIRECTORY: &str = "urn:schemas-upnp-org:service:ContentDirectory:1";
+
+    fn asked(port: u16, request: &str) -> (String, Vec<u8>) {
+        let mut stream = TcpStream::connect(SocketAddr::new(LOOPBACK, port)).expect("connects");
+        stream
+            .set_read_timeout(Some(ASKED_WITHIN))
+            .expect("a read timeout");
+        stream.write_all(request.as_bytes()).expect("asks");
+        let mut answer = Vec::new();
+        stream.read_to_end(&mut answer).expect("an answer");
+        let ends = answer
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .expect("a head")
+            + 4;
+        (
+            String::from_utf8_lossy(&answer[..ends]).into_owned(),
+            answer[ends..].to_vec(),
+        )
+    }
+
+    fn got(port: u16, path: &str, range: Option<&str>) -> (String, Vec<u8>) {
+        let range = range.map_or_else(String::new, |range| format!("Range: bytes={range}\r\n"));
+        asked(
+            port,
+            &format!(
+                "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{range}Connection: close\r\n\r\n"
+            ),
+        )
+    }
+
+    fn described(port: u16, song: TrackId) -> String {
+        let body = format!(
+            "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:Browse xmlns:u=\"{DIRECTORY}\"><ObjectID>song-{song}</ObjectID><BrowseFlag>BrowseMetadata</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>0</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"
+        );
+        let (head, answer) = asked(
+            port,
+            &format!(
+                "POST /control/ContentDirectory HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: text/xml; charset=\"utf-8\"\r\nSOAPAction: \"{DIRECTORY}#Browse\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            ),
+        );
+        assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+        String::from_utf8(answer).expect("text")
+    }
+
+    fn decoded(library: &Library, cut: &Track) -> Vec<u8> {
+        let (mut decoder, info) =
+            Decoder::open_span(&library.sources(), &cut.location, cut.span.expect("a cut"))
+                .expect("the cut decodes");
+        let mut block = AudioBuffer::empty(info.spec);
+        let mut bytes = Vec::new();
+        while decoder.next_block(&mut block).expect("a block") == DecodeStatus::Decoded {
+            bytes.extend_from_slice(block.as_bytes());
+        }
+        bytes
+    }
+
+    fn header_word(bytes: &[u8], at: usize) -> u32 {
+        u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]])
+    }
+
+    fn header_half(bytes: &[u8], at: usize) -> u16 {
+        u16::from_le_bytes([bytes[at], bytes[at + 1]])
+    }
+
+    #[test]
+    fn a_cut_is_served_as_a_wave_of_its_decode_and_a_range_answers_its_frames() {
+        let root = scratch("offered-cut");
+        let sheet_file = sounding_wave(20);
+        fs::write(root.join("whole.wav"), &sheet_file).expect("a sheet's file");
+        fs::write(root.join("whole.cue"), CUT).expect("a sheet");
+        let library = Arc::new(scanned(&root));
+        let mut cuts: Vec<Track> = library
+            .tracks(&TrackQuery::default())
+            .expect("the rows")
+            .into_iter()
+            .filter(|track| track.span.is_some())
+            .collect();
+        cuts.sort_by_key(|track| track.span.map(FrameSpan::start));
+        let told = UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of it");
+        let server = MediaServer::start(
+            Arc::new(Shelves::over(Arc::clone(&library))),
+            Udn::minted(),
+            Offering {
+                heard_on: SocketAddr::new(LOOPBACK, 0),
+                told: told.local_addr().expect("an address"),
+                every: Duration::from_secs(60),
+                serving_on: LOOPBACK,
+                name: None,
+            },
+        )
+        .expect("the server");
+        let port = server.port();
+        let source = &sheet_file[WAVE_HEADER_BYTES..];
+
+        let mut served = Vec::new();
+        for cut in &cuts {
+            let decode = decoded(&library, cut);
+            let path = format!("/resonate/song-{}.wav", cut.id);
+            let (head, body) = got(port, &path, None);
+            let wanted_from = WAVE_HEADER_BYTES + 1_000 * STEREO_S16_FRAME_BYTES;
+            let wanted_to = WAVE_HEADER_BYTES + 1_100 * STEREO_S16_FRAME_BYTES - 1;
+            let (part_head, part) = got(port, &path, Some(&format!("{wanted_from}-{wanted_to}")));
+            let (mid_frame_head, mid_frame) = got(
+                port,
+                &path,
+                Some(&format!(
+                    "{}-",
+                    WAVE_HEADER_BYTES + 3 * STEREO_S16_FRAME_BYTES + 1
+                )),
+            );
+            served.push((
+                cut.span.map(FrameSpan::start),
+                decode,
+                head,
+                body,
+                part_head,
+                part,
+                mid_frame_head,
+                mid_frame,
+                described(port, cut.id),
+            ));
+        }
+        drop(server);
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(served.len(), 2);
+        for (start, decode, head, body, part_head, part, mid_frame_head, mid_frame, didl) in served
+        {
+            let start = start.expect("a cut").get();
+            let frames = if start == 0 {
+                SECOND_CUT_FROM
+            } else {
+                SHEET_FRAMES - SECOND_CUT_FROM
+            };
+            let data_bytes = frames as usize * STEREO_S16_FRAME_BYTES;
+            let length = WAVE_HEADER_BYTES + data_bytes;
+            let from = start as usize * STEREO_S16_FRAME_BYTES;
+            let millis = frames * 1_000 / u64::from(SHEET_RATE);
+
+            assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+            assert!(head.contains("Content-Type: audio/wav\r\n"), "{head}");
+            assert!(
+                head.contains(&format!("Content-Length: {length}\r\n")),
+                "{head}"
+            );
+            assert!(head.contains("Accept-Ranges: bytes\r\n"), "{head}");
+            assert!(
+                head.contains("contentFeatures.dlna.org: DLNA.ORG_OP=01;DLNA.ORG_CI=1;"),
+                "{head}"
+            );
+            assert_eq!(body.len(), length);
+            assert_eq!(&body[..4], b"RIFF");
+            assert_eq!(header_word(&body, 4) as usize, length - 8);
+            assert_eq!(&body[8..16], b"WAVEfmt ");
+            assert_eq!(header_half(&body, 20), 1);
+            assert_eq!(header_half(&body, 22), 2);
+            assert_eq!(header_word(&body, 24), SHEET_RATE);
+            assert_eq!(header_half(&body, 32), STEREO_S16_FRAME_BYTES as u16);
+            assert_eq!(header_half(&body, 34), 16);
+            assert_eq!(&body[36..40], b"data");
+            assert_eq!(header_word(&body, 40) as usize, data_bytes);
+            assert_eq!(body[WAVE_HEADER_BYTES..], decode[..]);
+            assert_eq!(body[WAVE_HEADER_BYTES..], source[from..from + data_bytes]);
+
+            assert!(part_head.starts_with("HTTP/1.1 206"), "{part_head}");
+            assert!(
+                part_head.contains(&format!(
+                    "Content-Range: bytes {}-{}/{length}\r\n",
+                    WAVE_HEADER_BYTES + 1_000 * STEREO_S16_FRAME_BYTES,
+                    WAVE_HEADER_BYTES + 1_100 * STEREO_S16_FRAME_BYTES - 1
+                )),
+                "{part_head}"
+            );
+            assert_eq!(
+                part,
+                decode[1_000 * STEREO_S16_FRAME_BYTES..1_100 * STEREO_S16_FRAME_BYTES]
+            );
+            assert!(
+                mid_frame_head.starts_with("HTTP/1.1 206"),
+                "{mid_frame_head}"
+            );
+            assert_eq!(mid_frame, decode[3 * STEREO_S16_FRAME_BYTES + 1..]);
+
+            assert!(
+                didl.contains(
+                    "protocolInfo=&quot;http-get:*:audio/wav:DLNA.ORG_OP=01;DLNA.ORG_CI=1;"
+                ),
+                "{didl}"
+            );
+            assert!(
+                didl.contains(&format!("size=&quot;{length}&quot;")),
+                "{didl}"
+            );
+            assert!(
+                didl.contains(&format!(
+                    "duration=&quot;0:00:0{}.{:03}&quot;",
+                    millis / 1_000,
+                    millis % 1_000
+                )),
+                "{didl}"
+            );
+            assert!(didl.contains("bitsPerSample=&quot;16&quot;"), "{didl}");
+            assert!(didl.contains(".wav&lt;/res&gt;"), "{didl}");
+        }
+    }
+
+    const RATE_FIELD: usize = 24;
+
+    const BYTE_RATE_FIELD: usize = 28;
+
+    const ANOTHER_RATE: u32 = 48_000;
+
+    #[test]
+    fn a_cut_that_decodes_otherwise_than_its_row_says_is_not_served() {
+        let root = scratch("offered-reformatted");
+        fs::write(root.join("whole.wav"), sounding_wave(20)).expect("a sheet's file");
+        fs::write(root.join("whole.cue"), CUT).expect("a sheet");
+        let library = Arc::new(scanned(&root));
+        let cut = library
+            .tracks(&TrackQuery::default())
+            .expect("the rows")
+            .into_iter()
+            .find(|track| track.span.is_some())
+            .expect("a cut");
+        let shelves = Shelves::over(Arc::clone(&library));
+
+        let served_as_scanned = shelves.bytes_of(cut.id).expect("read").is_some();
+        let mut retold = sounding_wave(20);
+        retold[RATE_FIELD..RATE_FIELD + 4].copy_from_slice(&ANOTHER_RATE.to_le_bytes());
+        retold[BYTE_RATE_FIELD..BYTE_RATE_FIELD + 4]
+            .copy_from_slice(&(ANOTHER_RATE * STEREO_S16_FRAME_BYTES as u32).to_le_bytes());
+        fs::write(root.join("whole.wav"), retold).expect("the file rewritten");
+        let decoded = Decoding::open(
+            Arc::new(library.sources()),
+            cut.location.clone(),
+            cut.span.expect("a span"),
+        )
+        .map(|decoding| decoding.spec.rate.hz());
+        let served_once_rewritten = shelves.bytes_of(cut.id).expect("read").is_some();
+        let announced = shelves
+            .song(cut.id)
+            .expect("read")
+            .map(|song| (song.rate, song.size));
+        let _ = fs::remove_dir_all(&root);
+
+        assert!(served_as_scanned);
+        assert_eq!(decoded.ok(), Some(ANOTHER_RATE));
+        assert!(!served_once_rewritten);
+        assert_eq!(
+            announced,
+            Some((
+                SHEET_RATE,
+                Some(
+                    (WAVE_HEADER_BYTES + SECOND_CUT_FROM as usize * STEREO_S16_FRAME_BYTES) as u64
+                )
+            ))
+        );
+    }
+
+    const SHEET_BY_A_BAND: &str = "PERFORMER \"Sheet Band\"\nTITLE \"Sheet Album\"\nFILE \"whole.wav\" \
+                                   WAVE\n  TRACK 01 AUDIO\n    TITLE \"Cut one\"\n    INDEX 01 \
+                                   00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Cut two\"\n    INDEX 01 \
+                                   00:00:40\n";
+
+    #[test]
+    fn a_search_under_artists_or_albums_finds_a_sheets_cuts_on_their_album_and_by_their_band() {
+        let root = scratch("offered-nested-cuts");
+        fs::write(root.join("whole.wav"), sounding_wave(20)).expect("a sheet's file");
+        fs::write(root.join("whole.cue"), SHEET_BY_A_BAND).expect("a sheet");
+        fs::write(root.join("loose.wav"), tagged_wave(&[(TITLE, "Loose")])).expect("a song");
+        let shelves = Shelves::over(Arc::new(scanned(&root)));
+        let _ = fs::remove_dir_all(&root);
+        let every = Page::first(10);
+        let everything = Query::Everything;
+
+        let under_the_albums = found(&shelves, Kind::Song, Within::Albums, &everything, every);
+        let under_the_artists = found(&shelves, Kind::Song, Within::Artists, &everything, every);
+        let albums = found(&shelves, Kind::Album, Within::Albums, &everything, every);
+
+        assert_eq!(
+            under_the_albums,
+            (vec!["Cut one".to_owned(), "Cut two".to_owned()], 2)
+        );
+        assert_eq!(under_the_artists, under_the_albums);
+        assert_eq!(albums, (vec!["Sheet Album".to_owned()], 1));
     }
 
     const GENRE: &[u8; 4] = b"TCON";
@@ -1278,9 +1693,7 @@ mod tests {
         let library = Arc::new(scanned(&root));
         let shelves = Shelves::over(Arc::clone(&library));
 
-        let rows = library
-            .whole_files(&TrackQuery::default())
-            .expect("the rows");
+        let rows = library.tracks(&TrackQuery::default()).expect("the rows");
         let row = |title: &str| {
             rows.iter()
                 .find(|track| track.title == title)

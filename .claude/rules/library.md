@@ -265,10 +265,9 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `every_seek_past_a_key_is_read_off_the_orders_index_either_way_round`, where a seek of `IS NULL`
   on a `NOT NULL` column is passed over: SQLite answers it before reading). No index was added for
   it: the order indexes serve every seek.
-  **`Library::whole_files`, `whole_files_from` and `whole_files_counted`** are `tracks`,
-  `tracks_from` and a count with every row cut from a cue sheet left out (`span_start = 0` and no
-  `span_frames`), paged by the same keys, for what serves files as they are (`upnp.md`'s media
-  server; `whole_files_leave_out_a_sheets_spans_and_page_by_key_as_the_rows_read_whole`).
+  **`Library::tracks_counted`** counts what `tracks` lists for a query, cuts of a cue sheet among
+  them, so a shelf paged by key knows its total (`upnp.md`'s media server;
+  `a_sheets_spans_are_counted_and_paged_by_key_beside_the_whole_files`).
   **A `TrackQuery` narrows to rows on some album or by some artist** beside one album or artist:
   `on_an_album` keeps a row whose `album_id` is set, `by_an_artist` one with an `artist_id` or a
   credit (as `artist` takes one artist's own or credited rows), and an `AlbumQuery`'s

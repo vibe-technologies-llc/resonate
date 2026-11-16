@@ -93,39 +93,9 @@ pub(crate) fn tracks_from(inner: &Inner, query: &TrackQuery, at: TrackId) -> Res
     read_from(inner, query, &matching, at)
 }
 
-const A_WHOLE_FILE: &str = "tracks.span_start = 0 AND tracks.span_frames IS NULL";
-
-fn whole_files_matching(inner: &Inner, query: &TrackQuery) -> Option<Matching> {
+pub(crate) fn tracks_counted(inner: &Inner, query: &TrackQuery) -> Result<u32> {
     let filters = *inner.music_filters.lock();
-    let mut matching = matching_tracks(query, None, filters)?;
-    matching.filters.push(A_WHOLE_FILE.to_owned());
-    Some(matching)
-}
-
-pub(crate) fn whole_files(
-    inner: &Inner,
-    query: &TrackQuery,
-    at: Option<TrackId>,
-) -> Result<Vec<Track>> {
-    let Some(matching) = whole_files_matching(inner, query) else {
-        return Ok(Vec::new());
-    };
-    if let Some(at) = at
-        && is_read_by_key(query, &matching)
-    {
-        return read_from(inner, query, &matching, at);
-    }
-    let sql = format!(
-        "SELECT {TRACK_COLUMNS} FROM tracks{}{} ORDER BY {} LIMIT ? OFFSET ?",
-        matching.join,
-        clause(&matching.filters),
-        order_by(query.sort, query.reading, matching.ranked)
-    );
-    collect(inner, &sql, paged(matching.binds, query))
-}
-
-pub(crate) fn whole_files_counted(inner: &Inner, query: &TrackQuery) -> Result<u32> {
-    let Some(matching) = whole_files_matching(inner, query) else {
+    let Some(matching) = matching_tracks(query, None, filters) else {
         return Ok(0);
     };
     let sql = format!(

@@ -11,8 +11,8 @@ use std::{
 use parking_lot::Mutex;
 use resonate_core::{AlbumId, ArtistId, PlaylistId, TrackId};
 use resonate_upnp::{
-    AudioKind, Catalog, Entry, Field, Held, Kind, MediaServer, Offering, Opened, Page, Picture,
-    Query, Searched, ServerName, Shelf, Shelved, Song, Test, Udn, Within,
+    AudioKind, Catalog, Content, Entry, Field, Held, Kind, MediaServer, Offering, Opened, Page,
+    Picture, Query, Searched, ServerName, Shelf, Shelved, Song, Test, Udn, Within,
 };
 use roxmltree::Document;
 
@@ -68,6 +68,7 @@ impl Shelves {
             track_number: Some(raw as u32),
             duration: Some(Duration::from_secs(180)),
             kind: AudioKind::Flac,
+            content: Content::Untouched,
             size: Some(1000),
             rate: 44_100,
             channels: 2,
@@ -407,6 +408,7 @@ impl Catalog for Shelves {
         Ok(self.song(id)?.map(|song| Opened {
             bytes: Box::new(Cursor::new(bytes_of(song.id))),
             kind: song.kind,
+            content: song.content,
         }))
     }
 

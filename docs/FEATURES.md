@@ -215,8 +215,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   complex`)
 
 ## Later: Network output
-- [M] A song cut from a cue sheet is not offered on the network: a span of a file is no byte range
-  of it, and serving one would mean decoding it and sending it as WAVE
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio
   are Apple's own, with no published specification to build against
 

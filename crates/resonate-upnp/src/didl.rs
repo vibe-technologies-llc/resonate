@@ -2,10 +2,20 @@ use std::{fmt::Write as _, time::Duration};
 
 use resonate_core::AlbumId;
 
-use crate::catalog::{AudioKind, Held, Object, Shelf, Song};
+use crate::catalog::{AudioKind, Content, Held, Object, Shelf, Song};
 
-pub(crate) const DLNA_FEATURES: &str =
+const UNTOUCHED_FEATURES: &str =
     "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000";
+
+const CONVERTED_FEATURES: &str =
+    "DLNA.ORG_OP=01;DLNA.ORG_CI=1;DLNA.ORG_FLAGS=01700000000000000000000000000000";
+
+pub(crate) const fn features_of(content: Content) -> &'static str {
+    match content {
+        Content::Untouched => UNTOUCHED_FEATURES,
+        Content::Converted => CONVERTED_FEATURES,
+    }
+}
 
 const OPENS: &str = concat!(
     "<DIDL-Lite xmlns=\"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/\" ",
@@ -66,8 +76,8 @@ pub(crate) fn cover_path(album: AlbumId) -> String {
     format!("{COVERS_UNDER}{}", Object::Shelf(Shelf::Album(album)))
 }
 
-pub(crate) fn protocol_of(kind: AudioKind) -> String {
-    format!("http-get:*:{}:{DLNA_FEATURES}", kind.mime())
+pub(crate) fn protocol_of(kind: AudioKind, content: Content) -> String {
+    format!("http-get:*:{}:{}", kind.mime(), features_of(content))
 }
 
 struct Container<'a> {
@@ -178,7 +188,7 @@ impl<'a> Didl<'a> {
         let _ = write!(
             self.written,
             "<res protocolInfo=\"{}\"",
-            protocol_of(song.kind)
+            protocol_of(song.kind, song.content)
         );
         if let Some(size) = song.size {
             let _ = write!(self.written, " size=\"{size}\"");
@@ -254,6 +264,7 @@ mod tests {
             track_number: Some(3),
             duration: Some(Duration::from_millis(3_723_045)),
             kind: AudioKind::Flac,
+            content: Content::Untouched,
             size: Some(1234),
             rate: 96_000,
             channels: 2,
@@ -310,5 +321,33 @@ mod tests {
 
         assert_eq!(res.attribute("size"), None);
         assert_eq!(res.attribute("sampleFrequency"), Some("96000"));
+    }
+
+    #[test]
+    fn a_converted_song_says_so_in_its_flags_and_an_untouched_one_does_not() {
+        let protocol = |song: &Song| {
+            let mut didl = Didl::new("http://10.0.0.2:8200");
+            didl.song(song, Object::Shelf(Shelf::Songs));
+            let written = didl.finished();
+            let read = document(&written, crate::Asked::Description).expect("a document");
+            read.descendants()
+                .find(|node| node.tag_name().name() == "res")
+                .and_then(|res| res.attribute("protocolInfo"))
+                .map(str::to_owned)
+                .expect("a protocol")
+        };
+
+        let untouched = protocol(&song());
+        let converted = protocol(&Song {
+            kind: AudioKind::Wave,
+            content: Content::Converted,
+            ..song()
+        });
+
+        assert!(untouched.contains(";DLNA.ORG_CI=0;"), "{untouched}");
+        assert!(
+            converted.starts_with("http-get:*:audio/wav:DLNA.ORG_OP=01;DLNA.ORG_CI=1;"),
+            "{converted}"
+        );
     }
 }

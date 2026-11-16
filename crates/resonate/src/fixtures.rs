@@ -18,6 +18,7 @@ const UTF8: u8 = 3;
 const MP3_HEADER: [u8; 4] = [0xff, 0xfb, 0x90, 0x00];
 const MP3_FRAME_LENGTH: usize = 417;
 const MP3_FRAMES: usize = 40;
+const SOUNDING_STEP: u32 = 7;
 
 static SCRATCH_FOLDERS: AtomicU64 = AtomicU64::new(0);
 
@@ -31,6 +32,14 @@ pub fn silent_wave(seconds_tenths: u32) -> Vec<u8> {
 
 pub fn tagged_wave(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
     wave_after(id3_tag(tags), 1)
+}
+
+pub fn sounding_wave(seconds_tenths: u32) -> Vec<u8> {
+    let frames = RATE / 10 * seconds_tenths;
+    let data = (0..frames * u32::from(CHANNELS))
+        .flat_map(|sample| (sample.wrapping_mul(SOUNDING_STEP) as i16).to_le_bytes())
+        .collect();
+    wave_holding(Vec::new(), data)
 }
 
 pub fn tagged_mp3(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
@@ -68,10 +77,14 @@ fn synchsafe(value: u32) -> [u8; 4] {
     ]
 }
 
-fn wave_after(mut file: Vec<u8>, seconds_tenths: u32) -> Vec<u8> {
-    let block_align = CHANNELS * BITS / 8;
+fn wave_after(file: Vec<u8>, seconds_tenths: u32) -> Vec<u8> {
     let frames = RATE / 10 * seconds_tenths;
-    let data = vec![0_u8; frames as usize * usize::from(block_align)];
+    let data = vec![0_u8; frames as usize * usize::from(CHANNELS * BITS / 8)];
+    wave_holding(file, data)
+}
+
+fn wave_holding(mut file: Vec<u8>, data: Vec<u8>) -> Vec<u8> {
+    let block_align = CHANNELS * BITS / 8;
     let mut format = Vec::new();
     format.extend_from_slice(&1_u16.to_le_bytes());
     format.extend_from_slice(&CHANNELS.to_le_bytes());

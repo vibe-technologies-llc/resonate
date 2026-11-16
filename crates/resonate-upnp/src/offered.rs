@@ -19,7 +19,7 @@ use crate::{
     Error, Result, ServeOp, Udn,
     announce::{Announcer, Announcing},
     catalog::{Catalog, Object, Shelf},
-    didl::{COVERS_UNDER, DLNA_FEATURES, SONGS_UNDER},
+    didl::{COVERS_UNDER, SONGS_UNDER, features_of},
     directory::{self, Answered, Asking, Service},
     door::{BUSY, Door, Doorway, Judged, Limits},
     events::{self, Kept, Subscribers, Subscribing},
@@ -438,6 +438,7 @@ impl<C: Catalog> Door for Hall<C> {
                         stream,
                         opened.bytes,
                         opened.kind.mime(),
+                        features_of(opened.content),
                         range.as_deref(),
                         head_only,
                         &shared.stopped,
@@ -664,6 +665,7 @@ fn poured(
     mut stream: TcpStream,
     mut bytes: Box<dyn crate::catalog::Bytes>,
     kind: &str,
+    features: &str,
     range: Option<&str>,
     head_only: bool,
     stopped: &AtomicBool,
@@ -684,7 +686,7 @@ fn poured(
 
     let mut head = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {carried}\r\n\
-         Accept-Ranges: bytes\r\ncontentFeatures.dlna.org: {DLNA_FEATURES}\r\n\
+         Accept-Ranges: bytes\r\ncontentFeatures.dlna.org: {features}\r\n\
          transferMode.dlna.org: Streaming\r\nServer: {SERVED_AS}\r\nConnection: close\r\n"
     );
     if let (Wanted::Part { .. }, Some(to)) = (wanted(range, length), to) {

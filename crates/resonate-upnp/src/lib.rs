@@ -3,6 +3,7 @@ mod beside;
 mod carriage;
 mod catalog;
 mod criteria;
+mod decoded;
 mod description;
 mod didl;
 mod directory;
@@ -44,9 +45,10 @@ pub use crate::{
     beside::{Beside, Neighbours},
     carriage::{Carriage, Wrapping},
     catalog::{
-        AudioKind, Bytes, Catalog, Entry, Field, Held, Kind, Object, Opened, Page, Picture, Query,
-        Searched, Shelf, Shelved, Song, Test, Within,
+        AudioKind, Bytes, Catalog, Content, Entry, Field, Held, Kind, Object, Opened, Page,
+        Picture, Query, Searched, Shelf, Shelved, Song, Test, Within,
     },
+    decoded::{AsWave, Pcm, wave_bytes, waves_alike},
     error::{Action, Asked, Error, FlacOp, Result, SearchOp, ServeOp},
     feed::Feed,
     learning::{

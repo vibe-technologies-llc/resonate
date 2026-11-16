@@ -2,11 +2,15 @@ use resonate_core::{ChannelLayout, ChannelPosition, SampleFormat, StreamSpec};
 
 use crate::Wrapping;
 
-pub(crate) const HEADER_BYTES: usize = 44;
+const HEADER_BYTES: usize = 44;
 
-pub(crate) const EXTENSIBLE_HEADER_BYTES: usize = 68;
+const EXTENSIBLE_HEADER_BYTES: usize = 68;
+
+const RIFF_PREAMBLE_BYTES: u32 = 8;
 
 const PCM: u16 = 1;
+
+const IEEE_FLOAT: u16 = 3;
 
 const EXTENSIBLE: u16 = 0xFFFE;
 
@@ -18,6 +22,10 @@ const EXTENSION_BYTES: u16 = 22;
 
 const PCM_SUBFORMAT: [u8; 16] = [
     0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71,
+];
+
+const FLOAT_SUBFORMAT: [u8; 16] = [
+    0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71,
 ];
 
 const LENGTH_UNKNOWN: u32 = u32::MAX;
@@ -58,32 +66,60 @@ pub(crate) fn speaker_mask(layout: ChannelLayout) -> u32 {
         .fold(0, |mask, position| mask | speaker_bit(*position))
 }
 
+const fn is_extensible(spec: StreamSpec) -> bool {
+    spec.channel_count().get() as u16 > PLAIN_CHANNELS_AT_MOST
+}
+
+pub(crate) const fn header_bytes(spec: StreamSpec) -> usize {
+    if is_extensible(spec) {
+        EXTENSIBLE_HEADER_BYTES
+    } else {
+        HEADER_BYTES
+    }
+}
+
+pub(crate) const fn block_bytes(spec: StreamSpec) -> usize {
+    spec.channel_count().get() as usize * wire_bytes(spec.format)
+}
+
 pub(crate) fn header(spec: StreamSpec) -> Vec<u8> {
+    header_holding(spec, None)
+}
+
+pub(crate) fn header_holding(spec: StreamSpec, data: Option<u64>) -> Vec<u8> {
     let channels = u16::from(spec.channel_count().get());
     let sample_bytes = wire_bytes(spec.format) as u16;
     let block = channels.saturating_mul(sample_bytes);
     let per_second = spec.rate.hz().saturating_mul(u32::from(block));
-    let valid_bits = u16::from(spec.format.valid_bits());
     let container_bits = sample_bytes * 8;
-    let extensible = channels > PLAIN_CHANNELS_AT_MOST;
-    let data_bytes = LENGTH_UNKNOWN
-        - if extensible {
-            EXTENSIBLE_HEADER_BYTES
-        } else {
-            HEADER_BYTES
-        } as u32
-        + 8;
+    let (tag, subformat, valid_bits) = match spec.format {
+        SampleFormat::F32 => (IEEE_FLOAT, FLOAT_SUBFORMAT, container_bits),
+        SampleFormat::S16 | SampleFormat::S24 | SampleFormat::S32 => {
+            (PCM, PCM_SUBFORMAT, u16::from(spec.format.valid_bits()))
+        }
+    };
+    let extensible = is_extensible(spec);
+    let after_preamble = header_bytes(spec) as u32 - RIFF_PREAMBLE_BYTES;
+    let (riff_bytes, data_bytes) = match data {
+        None => (LENGTH_UNKNOWN, LENGTH_UNKNOWN - after_preamble),
+        Some(data) => {
+            let data = u32::try_from(data)
+                .unwrap_or(u32::MAX)
+                .min(LENGTH_UNKNOWN - after_preamble);
+            (data + after_preamble, data)
+        }
+    };
 
     let mut header = Vec::with_capacity(EXTENSIBLE_HEADER_BYTES);
     header.extend_from_slice(b"RIFF");
-    header.extend_from_slice(&LENGTH_UNKNOWN.to_le_bytes());
+    header.extend_from_slice(&riff_bytes.to_le_bytes());
     header.extend_from_slice(b"WAVEfmt ");
     if extensible {
         header.extend_from_slice(&FMT_EXTENSIBLE_BYTES.to_le_bytes());
         header.extend_from_slice(&EXTENSIBLE.to_le_bytes());
     } else {
         header.extend_from_slice(&FMT_BYTES.to_le_bytes());
-        header.extend_from_slice(&PCM.to_le_bytes());
+        header.extend_from_slice(&tag.to_le_bytes());
     }
     header.extend_from_slice(&channels.to_le_bytes());
     header.extend_from_slice(&spec.rate.hz().to_le_bytes());
@@ -94,9 +130,9 @@ pub(crate) fn header(spec: StreamSpec) -> Vec<u8> {
         header.extend_from_slice(&EXTENSION_BYTES.to_le_bytes());
         header.extend_from_slice(&valid_bits.to_le_bytes());
         header.extend_from_slice(&speaker_mask(spec.channels).to_le_bytes());
-        header.extend_from_slice(&PCM_SUBFORMAT);
+        header.extend_from_slice(&subformat);
     } else {
-        header.extend_from_slice(&valid_bits.to_le_bytes());
+        header.extend_from_slice(&container_bits.to_le_bytes());
     }
     header.extend_from_slice(b"data");
     header.extend_from_slice(&data_bytes.to_le_bytes());

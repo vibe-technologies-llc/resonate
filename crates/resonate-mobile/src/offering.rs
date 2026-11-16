@@ -12,8 +12,8 @@ use parking_lot::Mutex;
 use resonate_codec::{ImageFormat, Sources};
 use resonate_core::{AlbumId, ArtistId, PlaylistId, TrackId, folded_letters, is_lettered};
 use resonate_upnp::{
-    AudioKind, Entry, Field, Held, Kind, MediaServer, Offering, Opened, Page, Picture, Query,
-    Searched, ServerName, Shelf, Shelved, Song, Test, Udn, Within,
+    AudioKind, Content, Entry, Field, Held, Kind, MediaServer, Offering, Opened, Page, Picture,
+    Query, Searched, ServerName, Shelf, Shelved, Song, Test, Udn, Within,
 };
 use rusqlite::OptionalExtension as _;
 
@@ -462,6 +462,7 @@ impl View {
             track_number: track.track_number,
             duration: (track.duration_ms > 0).then(|| Duration::from_millis(track.duration_ms)),
             kind: kind_of(track)?,
+            content: Content::Untouched,
             size: self.sizes.get(&track.id).copied(),
             rate: track.rate,
             channels: u16::try_from(track.channels).unwrap_or(u16::MAX),
@@ -675,6 +676,7 @@ impl resonate_upnp::Catalog for Shelves {
             Ok(media) => Ok(Some(Opened {
                 bytes: Box::new(media.stream),
                 kind,
+                content: Content::Untouched,
             })),
             Err(error) => {
                 tracing::debug!(%error, "a song asked for on the network could not be opened");
