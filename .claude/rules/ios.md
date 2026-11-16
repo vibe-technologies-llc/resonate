@@ -923,7 +923,7 @@ every route change (a pair of headphones at the same rate included), not from th
   cover wears) stays the Favourites row's and page's cover, the page's at the album header's 20 pt corner.
 - **The Library tab has no selector**: it is a home page (`LibraryView(page: .home)`) of one
   section of shortcuts (Favourites and All songs, the second hidden while searching; Suggestions and
-  Statistics are Home's), *Saved for later* while not searching, then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,
+  Statistics are Home's), then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,
   `ArtistShelf`, twelve each) under a *See all* header (`SeeAllPageHeader`) that pushes the kind's
   own page, `Destination.playlists`, `.albums` or `.artists`, each `LibraryView(page:)` listing
   every one as rows with its own search; the Albums and Artists pages carry a *Sort by* menu in the

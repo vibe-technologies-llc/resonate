@@ -106,11 +106,6 @@ struct LibraryView: View {
                     }
                 }
             }
-            if page == .home, folded.isEmpty {
-                NavigationLink(value: Destination.wanted) {
-                    ToolRow(title: said("tools.saved-for-later"), detail: said("tools.saved-for-later.detail"), symbol: "bookmark")
-                }
-            }
             if page == .home, folded.isEmpty || !playlists.isEmpty {
                 Section {
                     if playlists.isEmpty {
