@@ -1164,6 +1164,7 @@ pub enum MirrorTold {
         bytes: u64,
         amended_at: Option<u64>,
     },
+    Stopped,
     Failed(String),
 }
 
@@ -1171,6 +1172,8 @@ pub trait Mirroring: Send + Sync {
     fn told(&self) -> MirrorTold;
 
     fn build(&self);
+
+    fn cancel(&self);
 
     fn remove(&self);
 }

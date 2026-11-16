@@ -616,7 +616,8 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   holds the `Config` it last read and keeps it where the file will not read, never the defaults, as
   `musicbrainz::current` does: `a_file_that_will_not_read_again_leaves_the_last_read_standing_rather_than_the_defaults`), and under it what is held, the build's step and
   a row and bar for each step (`MirrorStep`; read through the `resonate_ui::Mirroring` seam, redrawn every second while building),
-  *Build it now* and *Remove the copy*. `resonate musicbrainz` is the terminal's way in:
+  *Build it now*, *Stop building* while a build runs (`Mirroring::cancel`: that build alone, told as
+  stopped and not begun again by itself for the same export, `musicbrainz.md`) and *Remove the copy*. `resonate musicbrainz` is the terminal's way in:
   - bare, it prints what is held and how many answers are kept;
   - `--build [--from FOLDER]` builds in the foreground, a build in another process being
     `AlreadyBuilding`;

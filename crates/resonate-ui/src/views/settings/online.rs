@@ -111,6 +111,7 @@ fn mirror_said(told: &MirrorTold) -> String {
             resonate_words::decimal(*bytes as f64 / BYTES_IN_A_GIGABYTE, 1),
             resonate_core::elapsed::since(UNIX_EPOCH + Duration::from_secs(*at), SystemTime::now()),
         ),
+        MirrorTold::Stopped => words::settings_online::mirror_stopped().to_owned(),
         MirrorTold::Failed(why) => words::settings_online::mirror_failed(why.to_string()),
     }
 }
@@ -271,6 +272,24 @@ impl RootView {
                                 self,
                                 cx,
                             ))
+                            .when(building, |row| {
+                                row.child(action(
+                                    "musicbrainz-mirror-stop",
+                                    words::settings_online::stop_building(),
+                                    Icon::Stop,
+                                    false,
+                                    |_, _, cx| {
+                                        if let Some(mirroring) =
+                                            cx.global::<ResonateApp>().mirroring.clone()
+                                        {
+                                            mirroring.cancel();
+                                        }
+                                        cx.notify();
+                                    },
+                                    self,
+                                    cx,
+                                ))
+                            })
                             .when(held, |row| {
                                 row.child(action(
                                     "musicbrainz-mirror-remove",

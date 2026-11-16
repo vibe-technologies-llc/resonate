@@ -253,6 +253,23 @@ build is looked at again before it starts once `LATEST` is answered. `online::re
 `follow(false)` cancel the build running (`stop_building`); a cancelled build is no failure the pane
 reports.
 
+**The listener's Stop stops that build alone, until asked or until the next export.** The settings
+pane's *Stop building* (`Mirroring::cancel`, the binary's `stop_this_build`) cancels the build
+running and nothing else: `musicbrainz-mirror` stays on and the hourly follower keeps following. The
+build's end (`ended`) writes the export it was fetching to `stopped` in the folder
+(`remember_stopped`); a cancel by the switches writes nothing, so a build they cut short begins again
+at the next start as before. `keep_fresh` then asks `LATEST` even with no copy held, and builds only
+for an export the copy held and the one stopped are not (`worth_building`): a stopped build is
+never retried by itself for the same export, since the listener stopped it for a reason (room, the
+connection, the hour) that a restart does not change, while a newer export is a new build the
+listener has not refused. *Build it now*, turning the switch on and any build that lands forget it
+(`forget_stopped`). The pane tells `MirrorTold::Stopped` where no copy is held (a held copy is told
+as held, since the stop left it as it was), never `Failed`; the `.part` downloads stay for the next
+build to resume
+(`a_stop_asked_through_the_pane_cancels_the_build_and_is_told_as_stopped_not_failed`,
+`a_build_cancelled_by_a_switch_is_not_remembered_as_stopped`,
+`a_stopped_build_is_begun_again_by_itself_only_for_a_newer_export`).
+
 **`resonate musicbrainz`** prints what is held and how many answers are kept.
 
 - `--build [--from FOLDER]` builds in the foreground, logging the phase every few seconds; the

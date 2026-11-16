@@ -1,11 +1,14 @@
-#[cfg(feature = "ui")]
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::{
     fs,
     path::{Path, PathBuf},
     sync::{Arc, OnceLock},
     thread,
     time::{Duration, Instant},
+};
+#[cfg(feature = "ui")]
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(feature = "ui")]
@@ -28,6 +31,7 @@ use crate::{Error, Result, config, config::Config, metered, words};
 
 const FOLDER: &str = "musicbrainz";
 const GIVEN_DUMP: &str = "given";
+const STOPPED_FILE: &str = "stopped";
 #[cfg(feature = "ui")]
 pub const LOOKED_AT_AGAIN_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const TOLD_EVERY: Duration = Duration::from_secs(5);
@@ -47,6 +51,8 @@ static BUILDING: Mutex<Option<Arc<Building>>> = Mutex::new(None);
 static FAILED: Mutex<Option<String>> = Mutex::new(None);
 #[cfg(feature = "ui")]
 static FOLLOWING: Mutex<Option<Arc<Building>>> = Mutex::new(None);
+#[cfg(feature = "ui")]
+static STOP_ASKED: AtomicBool = AtomicBool::new(false);
 
 fn failed(error: resonate_musicbrainz::Error) -> Error {
     Error::Musicbrainz(Box::new(error))
@@ -117,6 +123,9 @@ pub fn follow(config: &Config, on: bool) {
         if mirrored.held().is_none() {
             mirrored.hold(held_mirror());
         }
+        if let Ok(folder) = folder() {
+            forget_stopped(&folder);
+        }
         keep_fresh(config);
     } else {
         stop_building();
@@ -131,6 +140,41 @@ pub fn stop_building() {
     }
     if let Some(following) = FOLLOWING.lock().as_ref() {
         following.cancel();
+    }
+}
+
+#[cfg(feature = "ui")]
+pub fn stop_this_build() -> bool {
+    let running = BUILDING.lock();
+    let Some(building) = running.as_ref() else {
+        return false;
+    };
+    STOP_ASKED.store(true, Ordering::Relaxed);
+    building.cancel();
+    true
+}
+
+#[cfg(feature = "ui")]
+fn stopped_in(folder: &Path) -> Option<String> {
+    let said = fs::read_to_string(folder.join(STOPPED_FILE)).ok()?;
+    let dump = said.trim();
+    download::is_a_dump_name(dump).then(|| dump.to_owned())
+}
+
+#[cfg(feature = "ui")]
+fn remember_stopped(folder: &Path, dump: &str) {
+    let path = folder.join(STOPPED_FILE);
+    let written = fs::create_dir_all(folder).and_then(|()| fs::write(&path, dump));
+    if let Err(error) = written {
+        tracing::warn!(%error, path = %path.display(), "the stopped build could not be remembered");
+    }
+}
+
+fn forget_stopped(folder: &Path) {
+    match fs::remove_file(folder.join(STOPPED_FILE)) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => tracing::warn!(%error, "the stopped build could not be forgotten"),
     }
 }
 
@@ -192,6 +236,15 @@ fn keeping(config: &Config) -> Keeping {
 }
 
 pub fn build(config: &Config, from: Option<&Path>, building: &Building) -> Result<PathBuf> {
+    build_naming(config, from, building, &mut None)
+}
+
+fn build_naming(
+    config: &Config,
+    from: Option<&Path>,
+    building: &Building,
+    dump: &mut Option<String>,
+) -> Result<PathBuf> {
     if from.is_none() && !current(config).is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
@@ -203,6 +256,7 @@ pub fn build(config: &Config, from: Option<&Path>, building: &Building) -> Resul
         None => {
             let agent = download::agent();
             let latest = download::latest(&agent).map_err(failed)?;
+            *dump = Some(latest.clone());
             let gate = metered::for_downloads(config);
             download::fetched(&agent, &latest, &folder, &gate, building, &held).map_err(failed)?
         }
@@ -214,6 +268,7 @@ pub fn build(config: &Config, from: Option<&Path>, building: &Building) -> Resul
     if from.is_none() {
         download::forget_downloads(&folder);
     }
+    forget_stopped(&folder);
     landed(config, &mirrored, held_mirror);
     Ok(path)
 }
@@ -317,22 +372,14 @@ pub fn build_in_the_background(config: &Config) -> bool {
     let building = Arc::new(Building::default());
     *current = Some(Arc::clone(&building));
     *FAILED.lock() = None;
+    STOP_ASKED.store(false, Ordering::Relaxed);
     let config = config.clone();
     let spawned = thread::Builder::new()
         .name("resonate-musicbrainz".to_owned())
         .spawn(move || {
-            match build(&config, None, &building) {
-                Ok(path) => {
-                    tracing::info!(path = %path.display(), "the copy of MusicBrainz is built")
-                }
-                Err(error) if was_cancelled(&error) => {
-                    tracing::info!("building the copy of MusicBrainz was stopped");
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "the copy of MusicBrainz could not be built");
-                    *FAILED.lock() = Some(said_of(&error));
-                }
-            }
+            let mut dump = None;
+            let built = build_naming(&config, None, &building, &mut dump);
+            ended(built, dump.as_deref(), folder().ok().as_deref());
             *BUILDING.lock() = None;
         });
     if let Err(error) = spawned {
@@ -341,6 +388,43 @@ pub fn build_in_the_background(config: &Config) -> bool {
         return false;
     }
     true
+}
+
+#[cfg(feature = "ui")]
+fn ended(built: Result<PathBuf>, dump: Option<&str>, folder: Option<&Path>) {
+    match built {
+        Ok(path) => {
+            STOP_ASKED.store(false, Ordering::Relaxed);
+            tracing::info!(path = %path.display(), "the copy of MusicBrainz is built");
+        }
+        Err(error) if was_cancelled(&error) => {
+            if STOP_ASKED.load(Ordering::Relaxed)
+                && let (Some(dump), Some(folder)) = (dump, folder)
+            {
+                remember_stopped(folder, dump);
+            }
+            tracing::info!(dump, "building the copy of MusicBrainz was stopped");
+        }
+        Err(error) => {
+            STOP_ASKED.store(false, Ordering::Relaxed);
+            tracing::warn!(%error, "the copy of MusicBrainz could not be built");
+            *FAILED.lock() = Some(said_of(&error));
+        }
+    }
+}
+
+#[cfg(feature = "ui")]
+fn stopped_here() -> bool {
+    STOP_ASKED.load(Ordering::Relaxed) || folder().is_ok_and(|folder| stopped_in(&folder).is_some())
+}
+
+#[cfg(feature = "ui")]
+fn worth_building(
+    latest: &str,
+    held: Option<&resonate_musicbrainz::Made>,
+    stopped: Option<&str>,
+) -> bool {
+    held.is_none_or(|made| made.dump != latest) && stopped != Some(latest)
 }
 
 #[cfg(feature = "ui")]
@@ -390,16 +474,19 @@ pub fn keep_fresh(config: &Config) {
     if !due_for_a_look(config, &lookups, built.as_ref(), now()) {
         return;
     }
+    let stopped = folder().ok().and_then(|folder| stopped_in(&folder));
     let config = config.clone();
     let spawned = thread::Builder::new()
         .name("resonate-musicbrainz-look".to_owned())
         .spawn(move || {
-            if let Some(made) = built {
+            if built.is_some() || stopped.is_some() {
                 if lookups.is_shut() || !wanted(&config) {
                     return;
                 }
                 match download::latest(&download::agent()) {
-                    Ok(latest) if latest == made.dump => return,
+                    Ok(latest) if !worth_building(&latest, built.as_ref(), stopped.as_deref()) => {
+                        return;
+                    }
                     Ok(_) => {}
                     Err(error) => {
                         tracing::debug!(%error, "the newest MusicBrainz export could not be asked for");
@@ -632,30 +719,54 @@ const fn step_of(phase: Phase) -> resonate_ui::MirrorStep {
 }
 
 #[cfg(feature = "ui")]
+fn told_of(
+    building: Option<&Building>,
+    failed: Option<String>,
+    held: impl FnOnce() -> Option<Arc<Mirror>>,
+    stopped: impl FnOnce() -> bool,
+) -> resonate_ui::MirrorTold {
+    if let Some(building) = building {
+        let (read, of) = building.bytes();
+        return resonate_ui::MirrorTold::Building {
+            step: step_of(building.phase()),
+            done: (of > 0).then_some((read, of)),
+        };
+    }
+    if let Some(why) = failed {
+        return resonate_ui::MirrorTold::Failed(why);
+    }
+    match held() {
+        Some(mirror) => resonate_ui::MirrorTold::Held {
+            dump: mirror.made().dump.clone(),
+            bytes: bytes_of(mirror.path()),
+            amended_at: mirror.amended_to().map(|amended| amended.at),
+        },
+        None if stopped() => resonate_ui::MirrorTold::Stopped,
+        None => resonate_ui::MirrorTold::Absent,
+    }
+}
+
+#[cfg(feature = "ui")]
 impl resonate_ui::Mirroring for Mirroring {
     fn told(&self) -> resonate_ui::MirrorTold {
-        if let Some(building) = BUILDING.lock().clone() {
-            let (read, of) = building.bytes();
-            return resonate_ui::MirrorTold::Building {
-                step: step_of(building.phase()),
-                done: (of > 0).then_some((read, of)),
-            };
-        }
-        if let Some(why) = FAILED.lock().clone() {
-            return resonate_ui::MirrorTold::Failed(why);
-        }
-        match mirrored(&self.config).held().or_else(held_mirror) {
-            Some(mirror) => resonate_ui::MirrorTold::Held {
-                dump: mirror.made().dump.clone(),
-                bytes: bytes_of(mirror.path()),
-                amended_at: mirror.amended_to().map(|amended| amended.at),
-            },
-            None => resonate_ui::MirrorTold::Absent,
-        }
+        let building = BUILDING.lock().clone();
+        told_of(
+            building.as_deref(),
+            FAILED.lock().clone(),
+            || mirrored(&self.config).held().or_else(held_mirror),
+            stopped_here,
+        )
     }
 
     fn build(&self) {
+        if let Ok(folder) = folder() {
+            forget_stopped(&folder);
+        }
         build_in_the_background(&self.config);
+    }
+
+    fn cancel(&self) {
+        stop_this_build();
     }
 
     fn remove(&self) {
@@ -913,6 +1024,102 @@ mod tests {
         assert!(after);
         assert!(followed);
         assert!(untouched);
+    }
+
+    #[cfg(feature = "ui")]
+    fn a_folder(named: &str) -> PathBuf {
+        let folder = std::env::temp_dir().join(format!(
+            "resonate-musicbrainz-{named}-{}-{}",
+            process::id(),
+            SERIAL.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&folder).expect("a folder");
+        folder
+    }
+
+    #[cfg(feature = "ui")]
+    fn cancelled() -> Result<PathBuf> {
+        Err(failed(resonate_musicbrainz::Error::Cancelled))
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_stop_asked_through_the_pane_cancels_the_build_and_is_told_as_stopped_not_failed() {
+        let dump = "20261111-002335";
+        let folder = a_folder("stopped");
+        let running = Arc::new(Building::default());
+        let mirroring = Mirroring {
+            config: Config::default(),
+        };
+        *BUILDING.lock() = Some(Arc::clone(&running));
+
+        resonate_ui::Mirroring::cancel(&mirroring);
+        let cancelled_by_the_pane = running.is_cancelled();
+        ended(cancelled(), Some(dump), Some(&folder));
+        *BUILDING.lock() = None;
+        let told = told_of(None, FAILED.lock().clone(), || None, stopped_here);
+        let remembered = stopped_in(&folder);
+        forget_stopped(&folder);
+        let forgotten = stopped_in(&folder);
+        let _ = fs::remove_dir_all(&folder);
+
+        assert!(cancelled_by_the_pane);
+        assert_eq!(told, resonate_ui::MirrorTold::Stopped);
+        assert_eq!(remembered.as_deref(), Some(dump));
+        assert_eq!(forgotten, None);
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_build_cancelled_by_a_switch_is_not_remembered_as_stopped() {
+        let folder = a_folder("switched");
+        let running = Arc::new(Building::default());
+        *BUILDING.lock() = Some(Arc::clone(&running));
+
+        stop_building();
+        ended(cancelled(), Some("20261111-002335"), Some(&folder));
+        *BUILDING.lock() = None;
+        let remembered = stopped_in(&folder);
+        let failed = FAILED.lock().clone();
+        let _ = fs::remove_dir_all(&folder);
+
+        assert!(running.is_cancelled());
+        assert_eq!(remembered, None);
+        assert_eq!(failed, None);
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn nothing_to_stop_is_no_stop_asked() {
+        *BUILDING.lock() = None;
+
+        let stopped = stop_this_build();
+
+        assert!(!stopped);
+        assert!(!STOP_ASKED.load(Ordering::Relaxed));
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_stopped_build_is_begun_again_by_itself_only_for_a_newer_export() {
+        let stopped = "20261111-002335";
+        let newer = "20261114-001836";
+        let held = resonate_musicbrainz::Made {
+            dump: "20261028-002217".to_owned(),
+            built: 0,
+        };
+
+        let same_again = worth_building(stopped, None, Some(stopped));
+        let next_export = worth_building(newer, None, Some(stopped));
+        let held_and_stopped = worth_building(stopped, Some(&held), Some(stopped));
+        let held_and_newer = worth_building(newer, Some(&held), Some(stopped));
+        let only_held = worth_building(&held.dump, Some(&held), None);
+
+        assert!(!same_again);
+        assert!(next_export);
+        assert!(!held_and_stopped);
+        assert!(held_and_newer);
+        assert!(!only_held);
     }
 
     #[cfg(feature = "ui")]
