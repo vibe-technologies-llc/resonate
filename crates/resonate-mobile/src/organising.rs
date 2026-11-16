@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     num::NonZeroU32,
-    path::Component,
+    path::{Component, Path},
 };
 
 use resonate_engine::{Command, PlaybackState, Player};
@@ -234,7 +234,10 @@ fn destination(layout: &Layout, track: &Track, discs: u32) -> Option<Vec<String>
             .rsplit_once(EXTENSION_STARTS)
             .map(|(_, extension)| extension),
     };
-    let path = layout.render(&named, Naming::Anything)?;
+    components_of(&layout.render(&named, Naming::Anything)?)
+}
+
+pub(crate) fn components_of(path: &Path) -> Option<Vec<String>> {
     path.components()
         .map(|component| match component {
             Component::Normal(part) => part.to_str().map(str::to_owned),
@@ -243,12 +246,12 @@ fn destination(layout: &Layout, track: &Track, discs: u32) -> Option<Vec<String>
         .collect()
 }
 
-fn given(text: &str) -> Option<&str> {
+pub(crate) fn given(text: &str) -> Option<&str> {
     let text = text.trim();
     (!text.is_empty()).then_some(text)
 }
 
-fn year_of(date: &str) -> Option<i32> {
+pub(crate) fn year_of(date: &str) -> Option<i32> {
     date.get(..YEAR_DIGITS)?.parse().ok()
 }
 

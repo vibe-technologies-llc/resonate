@@ -362,6 +362,16 @@ nothing and offers nothing); `output_route_changed(rate, latency_ms, rebind)` fe
 exported name is a Swift or Kotlin keyword: UniFFI backtick-escapes one in Swift and the backticks
 leak into the generated C header, which then fails to compile (hence `Documents::open_document`).
 
+## A song landed where a copy may stand
+
+The boundary, not a front end, says where a copy of a waiting song may already be filed:
+`sync_standing_folders(id, layout)` renders the folders from the waiting file's tags through the
+phone's layout and `DEFAULT_LAYOUT`, and `sync_receive_standing(id, layout, standing)` renders them
+again and weighs only documents from the root (named alike) or from those folders (named alike or of
+the landing's extension, at most `FILED_COPIES_WEIGHED_AT_MOST`), whatever a front end hands it, so
+each phone lists a few folders and never decides which. The folders, the bound and the tests are
+`android.md`'s *Device sync*.
+
 ## Granted documents
 
 A document is a URI the front end resolves to a descriptor through the `Documents` callback.

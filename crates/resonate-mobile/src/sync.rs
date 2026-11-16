@@ -49,6 +49,7 @@ mod copied;
 pub(crate) use self::consulted::Layers;
 mod driving;
 mod shared;
+mod standing;
 
 use answers::the_same_file;
 
@@ -278,6 +279,7 @@ pub struct ReceivedSong {
 pub struct StandingDocument {
     pub uri: String,
     pub name: String,
+    pub folder: Vec<String>,
 }
 
 struct Waiting {
@@ -533,16 +535,20 @@ impl MobilePlayer {
         Ok(track)
     }
 
+    pub fn sync_standing_folders(&self, id: u64, layout: String) -> Result<Vec<Vec<String>>> {
+        let waiting = self.waiting_song(id)?;
+        Ok(standing::folders_filed_in(&self.sources, &waiting, &layout))
+    }
+
     pub fn sync_receive_standing(
         &self,
         id: u64,
+        layout: String,
         standing: Vec<StandingDocument>,
     ) -> Result<Option<Track>> {
         let waiting = self.waiting_song(id)?;
-        for document in standing
-            .iter()
-            .filter(|document| named_alike(&waiting.received.name, &document.name))
-        {
+        let folders = standing::folders_filed_in(&self.sources, &waiting, &layout);
+        for document in standing::weighed(&waiting, &folders, &standing) {
             if !self.holds_the_same_bytes(&document.uri, &waiting.path)
                 && !self.holds_the_same_audio(&document.uri, waiting.file)
             {
@@ -2134,7 +2140,7 @@ fn read_error(source: rusqlite::Error) -> Error {
 mod tests {
     use std::{env, path::Path};
 
-    use resonate_library::{Direction, SortOrder};
+    use resonate_library::{DEFAULT_LAYOUT, Direction, SortOrder};
     use resonate_sync::DeviceId;
 
     use super::*;
@@ -2948,16 +2954,25 @@ mod tests {
                 .map(|name| StandingDocument {
                     uri: format!("content://test/{name}"),
                     name: (*name).to_owned(),
+                    folder: Vec::new(),
                 })
                 .collect::<Vec<_>>()
         };
 
         let unlike = player
-            .sync_receive_standing(waiting[0].id, standing(&[&name, "Elsewhere.wav"]))
+            .sync_receive_standing(
+                waiting[0].id,
+                DEFAULT_LAYOUT.to_owned(),
+                standing(&[&name, "Elsewhere.wav"]),
+            )
             .expect("compared");
         let still = player.sync_received().expect("the waiting songs");
         let taken = player
-            .sync_receive_standing(waiting[0].id, standing(&[&name, &numbered]))
+            .sync_receive_standing(
+                waiting[0].id,
+                DEFAULT_LAYOUT.to_owned(),
+                standing(&[&name, &numbered]),
+            )
             .expect("compared")
             .expect("the standing file");
         let held = documents.holds(&hunter).expect("held once taken");
@@ -2972,22 +2987,30 @@ mod tests {
     }
 
     fn landed_by_the_front_end(player: &MobilePlayer, folder: &Path) -> Vec<Track> {
+        landed_looking_in(player, folder, |received| {
+            let mut folders = player
+                .sync_standing_folders(received.id, DEFAULT_LAYOUT.to_owned())
+                .expect("the folders a copy may be filed in");
+            folders.insert(0, Vec::new());
+            folders
+        })
+    }
+
+    fn landed_looking_in(
+        player: &MobilePlayer,
+        folder: &Path,
+        looked_in: impl Fn(&ReceivedSong) -> Vec<Vec<String>>,
+    ) -> Vec<Track> {
         use std::os::fd::IntoRawFd;
 
         let mut landed = Vec::new();
         for received in player.sync_received().expect("the waiting songs") {
-            let standing = fs::read_dir(folder)
-                .expect("the music folder")
-                .flatten()
-                .filter(|entry| entry.path().is_file())
-                .filter_map(|entry| entry.file_name().into_string().ok())
-                .map(|name| StandingDocument {
-                    uri: format!("content://test/{name}"),
-                    name,
-                })
+            let standing = looked_in(&received)
+                .into_iter()
+                .flat_map(|within| documents_in(folder, within))
                 .collect();
             if let Some(track) = player
-                .sync_receive_standing(received.id, standing)
+                .sync_receive_standing(received.id, DEFAULT_LAYOUT.to_owned(), standing)
                 .expect("compared")
             {
                 landed.push(track);
@@ -3004,6 +3027,53 @@ mod tests {
             );
         }
         landed
+    }
+
+    fn documents_in(root: &Path, within: Vec<String>) -> Vec<StandingDocument> {
+        let Ok(listed) = fs::read_dir(
+            within
+                .iter()
+                .fold(root.to_path_buf(), |at, part| at.join(part)),
+        ) else {
+            return Vec::new();
+        };
+        listed
+            .flatten()
+            .filter(|entry| entry.path().is_file())
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .map(|name| StandingDocument {
+                uri: format!(
+                    "content://test/{}",
+                    within
+                        .iter()
+                        .chain([&name])
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join("/")
+                ),
+                name,
+                folder: within.clone(),
+            })
+            .collect()
+    }
+
+    fn every_folder_under(root: &Path) -> Vec<Vec<String>> {
+        let mut found = vec![Vec::new()];
+        let mut at = 0;
+        while let Some(within) = found.get(at).cloned() {
+            at += 1;
+            let path = within
+                .iter()
+                .fold(root.to_path_buf(), |at, part| at.join(part));
+            for entry in fs::read_dir(path).expect("a folder").flatten() {
+                if entry.path().is_dir()
+                    && let Ok(name) = entry.file_name().into_string()
+                {
+                    found.push(within.iter().cloned().chain([name]).collect());
+                }
+            }
+        }
+        found
     }
 
     fn free_name_in(folder: &Path, name: &str) -> String {
@@ -3091,6 +3161,70 @@ mod tests {
         assert_eq!(landed.len(), 1);
         assert_eq!(landed[0].uri, format!("content://test/{name}"));
         assert!(held);
+        assert_eq!(files, 1);
+    }
+
+    #[test]
+    fn a_song_whose_audio_stands_filed_under_its_album_in_other_bytes_and_another_name_is_taken_as_that_file()
+     {
+        let folder = folder("standing-filed");
+        let (player, documents) = granted(&folder);
+        let hunter = two_seconds_of("Hunter");
+        landed_waiting(&documents, &folder, &hunter);
+        let filed = folder.join("Björk").join("Homogenic");
+        fs::create_dir_all(&filed).expect("an album folder");
+        fs::write(
+            filed.join("02 Hunter.wav"),
+            retagged(crate::harness::silence()),
+        )
+        .expect("the same audio filed and retagged");
+        fs::write(filed.join("01 Jóga.wav"), b"RIFF of another song").expect("another song");
+
+        let landed = landed_by_the_front_end(&player, &folder);
+        let held = documents.holds(&hunter).expect("an answer");
+        let files = files_in(&folder);
+        let songs = player.song_uris().expect("the songs");
+
+        let _ = fs::remove_dir_all(&folder);
+        assert_eq!(landed.len(), 1);
+        assert_eq!(
+            landed[0].uri,
+            "content://test/Björk/Homogenic/02 Hunter.wav"
+        );
+        assert_eq!(landed[0].name, "02 Hunter.wav");
+        assert!(held);
+        assert_eq!(files, 0);
+        assert_eq!(songs, vec![landed[0].uri.clone()]);
+    }
+
+    #[test]
+    fn a_copy_in_a_folder_the_song_would_not_be_filed_under_is_not_looked_at() {
+        let folder = folder("standing-elsewhere");
+        let (player, documents) = granted(&folder);
+        let hunter = two_seconds_of("Hunter");
+        landed_waiting(&documents, &folder, &hunter);
+        let received = player.sync_received().expect("the waiting songs");
+        let elsewhere = folder.join("Björk").join("Debut");
+        fs::create_dir_all(&elsewhere).expect("another album's folder");
+        fs::write(elsewhere.join("Hunter.wav"), crate::harness::silence())
+            .expect("the same bytes in another album's folder");
+
+        let folders = player
+            .sync_standing_folders(received[0].id, DEFAULT_LAYOUT.to_owned())
+            .expect("the folders a copy may be filed in");
+        let landed = landed_looking_in(&player, &folder, |_| every_folder_under(&folder));
+        let files = files_in(&folder);
+
+        let _ = fs::remove_dir_all(&folder);
+        assert!(folders.contains(&vec!["Björk".to_owned(), "Homogenic".to_owned()]));
+        assert!(folders.contains(&vec!["Homogenic".to_owned()]));
+        assert!(!folders.contains(&vec!["Björk".to_owned(), "Debut".to_owned()]));
+        assert!(folders.iter().all(|filed| !filed.is_empty()));
+        assert_eq!(landed.len(), 1);
+        assert_eq!(
+            landed[0].uri,
+            format!("content://test/{}", received[0].name)
+        );
         assert_eq!(files, 1);
     }
 

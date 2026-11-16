@@ -275,3 +275,56 @@ final class Scratch {
         #expect(released.times == 2)
     }
 }
+
+@Suite struct StandingCopiesTests {
+    let homogenic = ["Björk", "Homogenic"]
+
+    func standing(in scratch: Scratch, filed: [[String]]) -> Set<String> {
+        Set(
+            StandingCopies.standing(named: "Björk - Hunter.flac", filed: filed, in: "abc", at: scratch.url)
+                .map { "\($0.folder.joined(separator: "/"))|\($0.name)|\($0.uri)" }
+        )
+    }
+
+    @Test func theRootHandsOnlyNamesOnTheStemAndAFiledFolderHandsEveryFile() {
+        let scratch = Scratch()
+        scratch.write("Björk - Hunter.flac")
+        scratch.write("Björk - Hunter (1).flac")
+        scratch.write("Björk - Jóga.flac")
+        scratch.write("Björk/Homogenic/02 Hunter.flac")
+        scratch.write("Björk/Homogenic/cover.jpg")
+
+        let found = standing(in: scratch, filed: [homogenic])
+        let made = { (relative: String) in FolderURI.make(root: "abc", relative: relative) }
+
+        #expect(
+            found == [
+                "|Björk - Hunter.flac|\(made("Björk - Hunter.flac"))",
+                "|Björk - Hunter (1).flac|\(made("Björk - Hunter (1).flac"))",
+                "Björk/Homogenic|02 Hunter.flac|\(made("Björk/Homogenic/02 Hunter.flac"))",
+                "Björk/Homogenic|cover.jpg|\(made("Björk/Homogenic/cover.jpg"))",
+            ]
+        )
+    }
+
+    @Test func aFolderNotNamedIsNeverWalked() {
+        let scratch = Scratch()
+        scratch.write("Björk/Debut/Hunter.flac")
+        scratch.write("Björk/Hunter.flac")
+        scratch.write("Other/Hunter.flac")
+
+        #expect(standing(in: scratch, filed: [homogenic]).isEmpty)
+        #expect(standing(in: scratch, filed: []).isEmpty)
+    }
+
+    @Test func aFolderLeavingTheRootIsRefusedBeforeAnythingIsListed() {
+        let scratch = Scratch()
+        scratch.write("inside/Hunter.flac")
+        let inside = scratch.url.appendingPathComponent("inside")
+
+        let found = StandingCopies.standing(named: "Hunter.flac", filed: [[".."], [""], []], in: "abc", at: inside)
+
+        #expect(found.map(\.name) == ["Hunter.flac"])
+        #expect(found.allSatisfy { $0.folder.isEmpty })
+    }
+}

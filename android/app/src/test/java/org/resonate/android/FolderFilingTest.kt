@@ -8,7 +8,7 @@ import org.junit.Test
 import org.resonate.android.nativecore.FiledSong
 import org.resonate.android.nativecore.MovedDocument
 
-private class FakeTree(override val rootId: String = ROOT) : DocumentTree {
+internal class FakeTree(override val rootId: String = ROOT) : DocumentTree {
     val files = LinkedHashSet<String>()
     val directories = linkedSetOf(rootId)
     val removed = ArrayList<String>()

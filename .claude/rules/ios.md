@@ -385,10 +385,14 @@ sync seals its records and talks QUIC (TLS) of its own.
   reinstalled phone keeps its name, and a transfer's row by the sending device, artist and title
   (`SyncTransfers.keyed`, a repeat numbered), so one landing never re-binds the rows below it to other songs.
   The Inspector's artist portrait is decoded once off the main thread, at the 768 px page bucket, when it arrives. Landing a received song backs off per song
-  (`landingRefused`), never pausing the rest (`android.md`). Each landing first hands
-  `sync_receive_standing` the files of the folder's root whose names begin with the song's stem
-  (`Folders.standing`), so a file of the same bytes or the same audio standing at the name is taken rather than a
-  `name (n)` made beside it; the folder is `LandingDestination.of` (`ResonateLogic`, the chosen
+  (`landingRefused`), never pausing the rest (`android.md`). Each landing first asks
+  `sync_standing_folders` with the layout *Organise* keeps (`OrganiseLayout.kept`), then hands
+  `sync_receive_standing` the files of the folder's root whose names begin with the song's stem and
+  every file of each folder it named (`Folders.standing`, through `StandingCopies` in `ResonateLogic`,
+  which reaches a folder by `FolderURI.reached` and lists none with an unnameable piece,
+  `StandingCopiesTests`), so a file of the same bytes or the same audio standing at the name or filed
+  under its artist and album is taken rather than a `name (n)` made beside it (the folders and the
+  bound are `android.md`'s *Device sync*); the folder is `LandingDestination.of` (`ResonateLogic`, the chosen
   writable folder, else the first writable one), and one that is not readable holds the songs back
   with a notice rather than sending them to another folder (`LandingDestinationTests`).
 - **An online device on the sync page opens `DrivenDeviceView`** (`Destination.syncDevice(id)`, through `DrivenDevicePage`), which drives its zones: transport, volume, seek, and jump, move and remove by row. Its read every 500 ms (`sync_watch`) answers the position played on to the moment asked, so it never equals the last: `DrivenRead` sets the positions apart into `DrivenPlaces` (an observable read only by `DrivenPlaceLine` and `DrivenSeek`) and the rest is assigned only where it moved, so a playing device redraws its place line and slider, not every zone and queue row. The party page keeps its round trip and its clock's gap from the host's apart the same way (`TogetherState.partyRoundTripMs` and `partyApart`, read by `PartyRoundTrip` alone; `party` holds neither). **This iPhone is driven by another** as far as *Options*' `SyncControlPage` lets it (`sync-control`, `SyncControls`), and a sound begun from elsewhere activates the session (`SessionAsked`, `NowPlaying.update`) (`sync.md`'s *One device drives another's zones*).

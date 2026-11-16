@@ -987,9 +987,15 @@ final class Features {
             let name = received.name
             var created: String?
             do {
-                let standing = try await Work.aside { folders.standing(in: folder.id, named: name) }
+                let layout = OrganiseLayout.kept
+                let standing = try await Work.aside {
+                    let filed = try native.syncStandingFolders(id: received.id, layout: layout)
+                    return folders.standing(in: folder.id, named: name, filed: filed)
+                }
                 if !standing.isEmpty,
-                    try await Work.aside({ try native.syncReceiveStanding(id: received.id, standing: standing) }) != nil
+                    try await Work.aside({
+                        try native.syncReceiveStanding(id: received.id, layout: layout, standing: standing)
+                    }) != nil
                 {
                     landed += 1
                     landingBackoff.landed(received.id)

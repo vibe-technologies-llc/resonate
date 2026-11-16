@@ -8,11 +8,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Security
 
 ## Sync and together
-- [M · 0.12.0] A phone landing a song looks for a copy already standing in the destination's root
-  alone (`Folders.standing`, `MusicDocuments.standing`): a copy of the same audio in other bytes
-  filed under an artist or album folder and not indexed yet is not seen, so a second file lands
-  beside the root; once both are indexed they are two songs that *Identical songs* never offers,
-  since their bytes differ. Rows naming one file are already one song (`android.md`).
+- [S · 0.12.0] A phone landing a song sees a copy filed under the folders its own *Organise* layout
+  or the default layout would give (`sync_standing_folders`), never one a desktop filed under a
+  layout of its own: such a copy in other bytes and not indexed yet still has a second file landed
+  beside the root, and once both are indexed *Identical songs* never offers them, since their bytes
+  differ. The desktop's layout would have to reach the phone (a synced setting) to be looked in.
 
 ## Playback and output
 

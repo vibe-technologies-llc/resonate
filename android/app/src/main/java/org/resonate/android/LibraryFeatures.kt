@@ -1125,10 +1125,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
             syncKeeping.value = due.size - place
             var created: Uri? = null
             try {
-                val standing = MusicDocuments.standing(context, folder.uri, received.name)
+                val layout = organising.layout()
+                val filed = native.syncStandingFolders(received.id, layout)
+                val standing = MusicDocuments.standing(context, folder.uri, received.name, filed)
                 if (
                     standing.isNotEmpty() &&
-                        native.syncReceiveStanding(received.id, standing) != null
+                        native.syncReceiveStanding(received.id, layout, standing) != null
                 ) {
                     landingRefused.remove(received.id)
                     landed++

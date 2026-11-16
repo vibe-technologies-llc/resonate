@@ -34,7 +34,18 @@ object MusicDocuments {
             )
             .toString()
 
-    fun downloadedAudio(context: Context): List<ScannedAudio> {
+    fun downloadedAudio(context: Context): List<ScannedAudio> =
+        downloadedAudioAt(
+            context,
+            "${MediaStore.MediaColumns.RELATIVE_PATH} $LIKE ?",
+            "${Environment.DIRECTORY_DOWNLOADS}/%",
+        )
+
+    private fun downloadedAudioAt(
+        context: Context,
+        within: String,
+        path: String,
+    ): List<ScannedAudio> {
         val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val columns =
             arrayOf(
@@ -46,16 +57,13 @@ object MusicDocuments {
         val selection =
             listOf(
                     "${MediaStore.Files.FileColumns.MEDIA_TYPE} = ?",
-                    "${MediaStore.MediaColumns.RELATIVE_PATH} $LIKE ?",
+                    within,
                     "${MediaStore.MediaColumns.IS_PENDING} = 0",
                     "${MediaStore.MediaColumns.IS_TRASHED} = 0",
                 )
                 .joinToString(" $AND ")
         val arguments =
-            arrayOf(
-                MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO.toString(),
-                "${Environment.DIRECTORY_DOWNLOADS}/%",
-            )
+            arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_AUDIO.toString(), path)
         return buildList {
             context.contentResolver.query(collection, columns, selection, arguments, null)?.use {
                 cursor ->
@@ -110,35 +118,27 @@ object MusicDocuments {
         }
     }
 
-    fun standing(context: Context, folder: Uri, name: String): List<StandingDocument> {
-        val stem = name.substringBeforeLast('.')
-        if (folder == downloads) {
-            return downloadedAudio(context)
-                .filter { it.name.startsWith(stem) }
-                .map { StandingDocument(it.uri.toString(), it.name) }
-        }
-        val children =
-            DocumentsContract.buildChildDocumentsUriUsingTree(
-                folder,
-                DocumentsContract.getTreeDocumentId(folder),
-            )
-        val columns =
-            arrayOf(
-                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                DocumentsContract.Document.COLUMN_MIME_TYPE,
-            )
-        return buildList {
-            context.contentResolver.query(children, columns, null, null, null)?.use { cursor ->
-                while (cursor.moveToNext()) {
-                    val child = cursor.getString(1) ?: continue
-                    if (cursor.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) continue
-                    if (!child.startsWith(stem)) continue
-                    val uri = DocumentsContract.buildDocumentUriUsingTree(folder, cursor.getString(0))
-                    add(StandingDocument(uri.toString(), child))
-                }
+    fun standing(
+        context: Context,
+        folder: Uri,
+        name: String,
+        filed: List<List<String>>,
+    ): List<StandingDocument> {
+        if (folder != downloads) return StandingCopies(SafTree(context, folder)).standing(name, filed)
+        val stem = StandingCopies.composed(name.substringBeforeLast('.'))
+        val atTheRoot =
+            downloadedAudio(context)
+                .filter { StandingCopies.composed(it.name).startsWith(stem) }
+                .map { StandingDocument(it.uri.toString(), it.name, emptyList()) }
+        return atTheRoot +
+            filed.flatMap { within ->
+                downloadedAudioAt(
+                        context,
+                        "${MediaStore.MediaColumns.RELATIVE_PATH} = ?",
+                        StandingCopies.relativePath(Environment.DIRECTORY_DOWNLOADS, within),
+                    )
+                    .map { StandingDocument(it.uri.toString(), it.name, within) }
             }
-        }
     }
 
     fun create(context: Context, folder: Uri, offered: String, name: String): Uri {

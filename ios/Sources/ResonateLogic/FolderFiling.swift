@@ -51,8 +51,49 @@ public enum FolderURI {
         return path.allSatisfy(isOneStepDown) ? path : nil
     }
 
-    private static func isOneStepDown(_ piece: String) -> Bool {
+    static func isOneStepDown(_ piece: String) -> Bool {
         !piece.isEmpty && piece != "." && piece != ".." && !piece.contains("/") && !piece.contains("\0")
+    }
+}
+
+public enum StandingCopies {
+    public static func standing(named name: String, filed: [[String]], in id: String, at root: URL) -> [StandingDocument] {
+        let stem = (name as NSString).deletingPathExtension.precomposedStringWithCanonicalMapping
+        let atTheRoot = filesIn(root)
+            .filter { $0.precomposedStringWithCanonicalMapping.hasPrefix(stem) }
+            .map { document(in: id, folder: [], named: $0) }
+        let filedCopies = filed
+            .filter { !$0.isEmpty && $0.allSatisfy(FolderURI.isOneStepDown) }
+            .flatMap { folder in
+                filesIn(reachedFolder(folder, under: root)).map { document(in: id, folder: folder, named: $0) }
+            }
+        return atTheRoot + filedCopies
+    }
+
+    private static func reachedFolder(_ folder: [String], under root: URL) -> URL? {
+        let reached = FolderURI.reached(folder, under: root)
+        var directory: ObjCBool = false
+        let stands = FileManager.default.fileExists(atPath: reached.path, isDirectory: &directory)
+        return stands && directory.boolValue ? reached : nil
+    }
+
+    private static func filesIn(_ folder: URL?) -> [String] {
+        guard let folder else { return [] }
+        let files = FileManager.default
+        let listed = (try? files.contentsOfDirectory(atPath: folder.path)) ?? []
+        return listed.filter { name in
+            var directory: ObjCBool = false
+            let stands = files.fileExists(atPath: folder.appendingPathComponent(name).path, isDirectory: &directory)
+            return stands && !directory.boolValue
+        }
+    }
+
+    private static func document(in id: String, folder: [String], named name: String) -> StandingDocument {
+        StandingDocument(
+            uri: FolderURI.make(root: id, relative: (folder + [name]).joined(separator: "/")),
+            name: name.precomposedStringWithCanonicalMapping,
+            folder: folder
+        )
     }
 }
 

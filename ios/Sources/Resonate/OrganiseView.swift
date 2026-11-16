@@ -2,15 +2,29 @@ import ResonateLogic
 import ResonateNative
 import SwiftUI
 
+enum OrganiseLayout {
+    private static let key = "organise-layout"
+
+    private static var settings: UserDefaults {
+        UserDefaults(suiteName: "library-features") ?? .standard
+    }
+
+    static var kept: String {
+        settings.string(forKey: key) ?? defaultOrganiseLayout()
+    }
+
+    static func keep(_ layout: String) {
+        settings.set(layout, forKey: key)
+    }
+}
+
 struct OrganiseSheet: View {
-    private static let layoutKey = "organise-layout"
     private static let listedAtMost = 50
-    private static let settings = UserDefaults(suiteName: "library-features") ?? .standard
 
     @Environment(Library.self) private var library
     @Environment(\.dismiss) private var dismiss
     let folder: MusicFolder
-    @State private var layout = OrganiseSheet.settings.string(forKey: OrganiseSheet.layoutKey) ?? defaultOrganiseLayout()
+    @State private var layout = OrganiseLayout.kept
     @State private var plan: OrganisePlan?
     @State private var plannedFor: String?
     @State private var failedFor: String?
@@ -93,7 +107,7 @@ struct OrganiseSheet: View {
             ) {
                 Button("organise.title") {
                     guard let plan = current else { return }
-                    Self.settings.set(layout, forKey: Self.layoutKey)
+                    OrganiseLayout.keep(layout)
                     library.features.organise(folder, plan.moves)
                     dismiss()
                 }
