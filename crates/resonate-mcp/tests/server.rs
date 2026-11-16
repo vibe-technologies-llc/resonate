@@ -17,7 +17,7 @@ use resonate_core::{FrameSpan, MediaLocation, PlaylistId, SourceId, TrackId, Vol
 use resonate_engine::{Asleep, Placement, Until};
 use resonate_library::{
     AlbumLink, AlbumMatch, AlbumNames, AlbumQuery, ArtistLink, ArtistMatch, ArtistPressings,
-    ArtistProfile, Barcode, BarcodeMatch, CoverArt, Discography, GroupAsked, GroupMatch, Isrc,
+    ArtistProfile, Barcode, BarcodeMatch, CoverArt, Cut, Discography, GroupAsked, GroupMatch, Isrc,
     Library, Link, LinkNames, LinkedPlaylist, LinkedProfile, LyricText, LyricsAsked, Mbid, Medium,
     PlaylistLink, ProfileLink, Recording, RecordingAsked, RecordingMatch, Reference, Release,
     ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, ScanOptions, SongLink, SongsAsked,
@@ -32,6 +32,9 @@ const CHANNELS: u16 = 2;
 const BITS: u16 = 16;
 const FRAMES: u32 = 4_410;
 const PLAYER: &str = "org.mpris.MediaPlayer2.resonate";
+const MP3_HEADER: [u8; 4] = [0xff, 0xfb, 0x90, 0x00];
+const MP3_FRAME_LENGTH: usize = 417;
+const MP3_FRAMES: usize = 40;
 
 struct Tree {
     root: PathBuf,
@@ -53,7 +56,15 @@ impl Tree {
 
     fn wav(&self, name: &str, title: &str, album: &str, number: &str) -> PathBuf {
         let path = self.root.join(name);
+        fs::create_dir_all(path.parent().expect("a folder to hold it")).expect("a folder");
         fs::write(&path, wav(title, album, number)).expect("a writable temporary file");
+        path
+    }
+
+    fn mp3(&self, name: &str, title: &str, album: &str) -> PathBuf {
+        let path = self.root.join(name);
+        fs::create_dir_all(path.parent().expect("a folder to hold it")).expect("a folder");
+        fs::write(&path, mp3(title, album)).expect("a writable temporary file");
         path
     }
 }
@@ -107,6 +118,40 @@ fn wav(title: &str, album: &str, number: &str) -> Vec<u8> {
     let mut file = b"RIFF".to_vec();
     file.extend_from_slice(&(body.len() as u32).to_le_bytes());
     file.extend_from_slice(&body);
+    file
+}
+
+fn synchsafe(value: usize) -> [u8; 4] {
+    [
+        (value >> 21) as u8 & 0x7f,
+        (value >> 14) as u8 & 0x7f,
+        (value >> 7) as u8 & 0x7f,
+        value as u8 & 0x7f,
+    ]
+}
+
+fn mp3(title: &str, album: &str) -> Vec<u8> {
+    let mut frames = Vec::new();
+    for (id, value) in [
+        (b"TIT2", title),
+        (b"TPE1", "The Orbiters"),
+        (b"TALB", album),
+    ] {
+        let mut body = vec![3];
+        body.extend_from_slice(value.as_bytes());
+        frames.extend_from_slice(id);
+        frames.extend_from_slice(&synchsafe(body.len()));
+        frames.extend_from_slice(&[0, 0]);
+        frames.extend_from_slice(&body);
+    }
+
+    let mut file = b"ID3\x04\x00\x00".to_vec();
+    file.extend_from_slice(&synchsafe(frames.len()));
+    file.extend_from_slice(&frames);
+    for _ in 0..MP3_FRAMES {
+        file.extend_from_slice(&MP3_HEADER);
+        file.resize(file.len() + MP3_FRAME_LENGTH - MP3_HEADER.len(), 0);
+    }
     file
 }
 
@@ -3336,4 +3381,209 @@ fn a_song_with_a_version_chosen_is_queued_as_that_version_and_kept_as_itself_in_
         )]
     );
     assert_eq!(listed["tracks"][0]["track_id"], song_id.get());
+}
+
+fn landed_release_of(library: &Library, song: &str, title: &str) {
+    let album = library
+        .albums(&AlbumQuery::default())
+        .expect("the catalog to be read")
+        .into_iter()
+        .find(|album| album.title == title)
+        .expect("the album to be held");
+    library
+        .land_release(
+            album.id,
+            &Release {
+                id: Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid"),
+                group: None,
+                title: title.to_owned(),
+                credit: Vec::new(),
+                date: None,
+                country: None,
+                label: None,
+                catalog_number: None,
+                barcode: None,
+                kind: None,
+                disambiguation: None,
+                has_front_cover: false,
+                links: Vec::new(),
+                media: vec![Medium {
+                    position: 1,
+                    format: None,
+                    title: None,
+                    tracks: vec![ReleaseTrack {
+                        position: 1,
+                        number: "1".to_owned(),
+                        title: song.to_owned(),
+                        artist: None,
+                        recording: None,
+                        track: None,
+                        length: None,
+                        isrcs: Vec::new(),
+                        links: Vec::new(),
+                    }],
+                }],
+            },
+        )
+        .expect("the release to land");
+    library.rematch(album.id).expect("the rows to be matched");
+}
+
+fn listed_lossy(server: &Server, playlist: &str) -> Value {
+    called(
+        server,
+        "playlist_lossy_songs",
+        json!({ "playlist": playlist }),
+    )
+}
+
+#[test]
+fn a_playlists_lossy_songs_are_listed_with_what_replacing_would_do_to_each() {
+    let tree = Tree::new();
+    tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
+    tree.wav("lossless/a.wav", "Night Signal", "Hours", "1");
+    tree.mp3("lossy/b.mp3", "Elsewhere", "Days");
+    tree.wav("lossless/c.wav", "Afterglow", "Dusk", "1");
+    let library = scanned(&tree);
+    library
+        .start_playlist(
+            "Late",
+            &[
+                Cut::whole(MediaLocation::local(tree.root.join("lossy/a.mp3"))),
+                Cut::whole(MediaLocation::local(tree.root.join("lossy/b.mp3"))),
+                Cut::whole(MediaLocation::local(tree.root.join("lossless/c.wav"))),
+            ],
+        )
+        .expect("a playlist");
+    library
+        .create_playlist("Empty")
+        .expect("a playlist to be made");
+    let server = server(library, Fake::default());
+
+    let listed = listed_lossy(&server, "Late");
+
+    assert_eq!(listed["playlist"]["name"], "Late");
+    assert_eq!(listed["matched"], 2);
+    assert_eq!(listed["replaceable"], 1);
+    let songs = listed["songs"].as_array().expect("a list of songs");
+    assert_eq!(songs[0]["title"], "Night Signal");
+    assert_eq!(songs[0]["codec"], "MP3");
+    assert_eq!(songs[0]["standing"], "held");
+    assert_eq!(songs[0]["lossless_copy"]["codec"], "PCM");
+    assert_eq!(songs[1]["title"], "Elsewhere");
+    assert_eq!(songs[1]["standing"], "unmatched");
+    assert!(songs[1].get("lossless_copy").is_none());
+    assert_eq!(
+        called(
+            &server,
+            "playlist_lossy_songs",
+            json!({ "playlist": "Late", "limit": 1 })
+        )["songs"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(listed_lossy(&server, "Empty")["matched"], 0);
+    assert!(
+        !failed(
+            &server,
+            "playlist_lossy_songs",
+            json!({ "playlist": "Nowhere" })
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn a_lossy_song_with_a_lossless_copy_held_is_folded_in_and_one_with_none_is_never_trashed() {
+    let tree = Tree::new();
+    let trash = Tree::new();
+    let night = tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
+    let lossless = tree.wav("lossless/a.wav", "Night Signal", "Hours", "1");
+    let elsewhere = tree.mp3("lossy/b.mp3", "Elsewhere", "Days");
+    let library = scanned(&tree);
+    library.trash_into(Some(trash.root.clone()));
+    library
+        .start_playlist(
+            "Late",
+            &[
+                Cut::whole(MediaLocation::local(&night)),
+                Cut::whole(MediaLocation::local(&elsewhere)),
+            ],
+        )
+        .expect("a playlist");
+    let server = server(library, Fake::default());
+
+    let replaced = called(
+        &server,
+        "replace_lossy_songs",
+        json!({ "playlist": "Late" }),
+    );
+
+    assert_eq!(replaced["lossy"], 2);
+    assert_eq!(replaced["replaced"], 1);
+    assert_eq!(replaced["trashed"], 1);
+    assert_eq!(replaced["wanted"], 0);
+    assert_eq!(replaced["left"], 1);
+    assert!(!night.exists());
+    assert!(lossless.exists());
+    assert!(elsewhere.exists(), "a song with no copy held was trashed");
+    let rows = called(&server, "playlist_tracks", json!({ "playlist": "Late" }));
+    assert_eq!(
+        rows["tracks"][0]["uri"],
+        MediaLocation::local(&lossless).to_uri()
+    );
+    let listed = listed_lossy(&server, "Late");
+    assert_eq!(listed["matched"], 1);
+    assert_eq!(listed["songs"][0]["standing"], "unmatched");
+    assert!(
+        !failed(
+            &server,
+            "replace_lossy_songs",
+            json!({ "playlist": "Nowhere" })
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn a_lossy_song_with_a_release_and_no_copy_is_wanted_and_kept_until_one_is_held() {
+    let tree = Tree::new();
+    let trash = Tree::new();
+    let night = tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
+    let library = scanned(&tree);
+    library.trash_into(Some(trash.root.clone()));
+    landed_release_of(&library, "Night Signal", "Hours");
+    library
+        .start_playlist("Late", &[Cut::whole(MediaLocation::local(&night))])
+        .expect("a playlist");
+    let server = server(library, Fake::default());
+    assert_eq!(
+        listed_lossy(&server, "Late")["songs"][0]["standing"],
+        "wanted"
+    );
+
+    let replaced = called(
+        &server,
+        "replace_lossy_songs",
+        json!({ "playlist": "Late" }),
+    );
+
+    assert_eq!(replaced["replaced"], 0);
+    assert_eq!(replaced["trashed"], 0);
+    assert_eq!(replaced["wanted"], 1);
+    assert_eq!(replaced["left"], 0);
+    assert!(night.exists(), "the lossy song went before its copy came");
+    assert_eq!(
+        listed_lossy(&server, "Late")["songs"][0]["standing"],
+        "waiting"
+    );
+    let again = called(
+        &server,
+        "replace_lossy_songs",
+        json!({ "playlist": "Late" }),
+    );
+    assert_eq!(again["wanted"], 0);
+    assert_eq!(again["already_waiting"], 1);
+    assert!(night.exists());
 }

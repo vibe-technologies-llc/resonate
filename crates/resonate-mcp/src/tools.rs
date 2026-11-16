@@ -15,6 +15,7 @@ use crate::{
     error::Field,
     linked,
     passes::{Pass, Passes, ScanAsked},
+    replacing,
     transport::{self, Action, Adding},
 };
 
@@ -41,6 +42,7 @@ pub enum Tool {
     Search,
     Playlists,
     PlaylistTracks,
+    PlaylistLossySongs,
     Favourites,
     Statistics,
     Suggestions,
@@ -49,6 +51,7 @@ pub enum Tool {
     CreatePlaylist,
     AddToPlaylist,
     RemoveFromPlaylist,
+    ReplaceLossySongs,
     RenamePlaylist,
     DiscardPlaylist,
     ImportPlaylistLink,
@@ -78,10 +81,11 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Self; 37] = [
+    pub const ALL: [Self; 39] = [
         Self::Search,
         Self::Playlists,
         Self::PlaylistTracks,
+        Self::PlaylistLossySongs,
         Self::Favourites,
         Self::Statistics,
         Self::Suggestions,
@@ -90,6 +94,7 @@ impl Tool {
         Self::CreatePlaylist,
         Self::AddToPlaylist,
         Self::RemoveFromPlaylist,
+        Self::ReplaceLossySongs,
         Self::RenamePlaylist,
         Self::DiscardPlaylist,
         Self::ImportPlaylistLink,
@@ -123,6 +128,7 @@ impl Tool {
             Self::Search => "search_library",
             Self::Playlists => "list_playlists",
             Self::PlaylistTracks => "playlist_tracks",
+            Self::PlaylistLossySongs => "playlist_lossy_songs",
             Self::Favourites => "favourites",
             Self::Statistics => "listening_statistics",
             Self::Suggestions => "suggested_playlists",
@@ -131,6 +137,7 @@ impl Tool {
             Self::CreatePlaylist => "create_playlist",
             Self::AddToPlaylist => "add_to_playlist",
             Self::RemoveFromPlaylist => "remove_from_playlist",
+            Self::ReplaceLossySongs => "replace_lossy_songs",
             Self::RenamePlaylist => "rename_playlist",
             Self::DiscardPlaylist => "discard_playlist",
             Self::ImportPlaylistLink => "import_playlist_link",
@@ -170,6 +177,7 @@ impl Tool {
             Self::Search
                 | Self::Playlists
                 | Self::PlaylistTracks
+                | Self::PlaylistLossySongs
                 | Self::Favourites
                 | Self::Statistics
                 | Self::Suggestions
@@ -185,6 +193,7 @@ impl Tool {
         matches!(
             self,
             Self::RemoveFromPlaylist
+                | Self::ReplaceLossySongs
                 | Self::DiscardPlaylist
                 | Self::RefreshPlaylist
                 | Self::UndoEdit
@@ -221,6 +230,16 @@ impl Tool {
             Self::PlaylistTracks => "List the tracks of one playlist, named as list_playlists \
                                      names it. Needs no player."
                 .to_owned(),
+            Self::PlaylistLossySongs => format!(
+                "List the lossy songs of one playlist, named as list_playlists names it, each \
+                 once, in the playlist's order, with its standing: held, a lossless copy the \
+                 library holds (lossless_copy) takes its place at once; wanted, the song's \
+                 release row (release_track_id) is wanted so the providers fetch a lossless \
+                 copy; waiting, that is already so; unmatched, there is neither, and replace_lossy_songs \
+                 leaves it. replaceable counts the songs replace_lossy_songs would act on, \
+                 matched all the lossy songs, {LISTED_BY_DEFAULT} listed at a time. Needs no \
+                 player."
+            ),
             Self::Favourites => {
                 "List the tracks, albums and artists marked as favourites, most recently marked \
                  first. Needs no player."
@@ -254,6 +273,17 @@ impl Tool {
             Self::RemoveFromPlaylist => "Take rows out of a playlist: a row, or a run from row \
                                          to through_row, as playlist_tracks numbers them, or \
                                          every row a search matches. Needs no player."
+                .to_owned(),
+            Self::ReplaceLossySongs => "Replace the lossy songs of one playlist, as \
+                                        playlist_lossy_songs lists them. A song whose lossless \
+                                        copy the library holds is folded into that copy at once: \
+                                        its plays, favourite and every playlist's row go with \
+                                        it, and the lossy file is moved to the trash. A song with \
+                                        none is wanted, so start_poll fetches a lossless copy, and \
+                                        the lossy file stays until one is held. A song with \
+                                        neither is left, and one already waiting is passed over. \
+                                        Refused while a scan is walking the library. Needs no \
+                                        player."
                 .to_owned(),
             Self::RenamePlaylist => "Give a playlist another name. Needs no player.".to_owned(),
             Self::DiscardPlaylist => "Take a playlist and its rows away for good, or the search \
@@ -415,6 +445,13 @@ impl Tool {
                     "description": "Only the rows this search matches, in the library's grammar.",
                 },
                 "limit": limit(LISTED_BY_DEFAULT, "The most rows to answer with."),
+            }),
+            Self::PlaylistLossySongs => json!({
+                "playlist": { "type": "string", "description": "The playlist's name." },
+                "limit": limit(LISTED_BY_DEFAULT, "The most songs to answer with."),
+            }),
+            Self::ReplaceLossySongs => json!({
+                "playlist": { "type": "string", "description": "The playlist's name." },
             }),
             Self::Favourites => json!({
                 "limit": limit(LISTED_BY_DEFAULT, "The most of each kind to answer with."),
@@ -683,6 +720,8 @@ impl Tool {
         match self {
             Self::Search => &["query"],
             Self::PlaylistTracks
+            | Self::PlaylistLossySongs
+            | Self::ReplaceLossySongs
             | Self::PlayPlaylist
             | Self::DiscardPlaylist
             | Self::AddToPlaylist
@@ -766,6 +805,18 @@ impl Tool {
                     asked.matching.as_deref(),
                     rows(asked.limit, LISTED_BY_DEFAULT),
                 )
+            }
+            Self::PlaylistLossySongs => {
+                let asked: Listing = self.taken(arguments)?;
+                replacing::lossy_songs(
+                    library,
+                    &asked.playlist,
+                    rows(asked.limit, LISTED_BY_DEFAULT),
+                )
+            }
+            Self::ReplaceLossySongs => {
+                let asked: Choosing = self.taken(arguments)?;
+                replacing::replace_lossy_songs(library, &asked.playlist)
             }
             Self::Favourites => {
                 let asked: Limited = self.taken(arguments)?;

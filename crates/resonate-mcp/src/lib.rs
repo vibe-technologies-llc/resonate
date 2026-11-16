@@ -7,6 +7,7 @@ mod linked;
 mod outputs;
 mod passes;
 mod prompts;
+mod replacing;
 mod resources;
 mod server;
 mod tools;

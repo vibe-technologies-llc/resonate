@@ -142,10 +142,22 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
   a link, the account `online.md` names: signed out it is `Error::NotSignedInToSpotify`, and no tool
   signs in, since a sign-in is the listener's in a browser
   (`a_spotify_account_is_followed_or_moved_where_it_is_signed_in_and_says_so_where_it_is_not`).
+- **A playlist's lossy songs are listed, then replaced, by name** (`replacing.rs`):
+  `playlist_lossy_songs` (read-only, `limit` as `playlist_tracks`) is `Library::lossy_songs_of`, each
+  song a catalog track with its `codec`, a `standing` (`held`: a lossless copy the library holds
+  takes its place, `lossless_copy` naming it; `wanted`: its `release_track_id` is wanted; `waiting`:
+  already so; `unmatched`: neither), `matched` counting every lossy song and `replaceable` the ones
+  `replace_lossy_songs` acts on. `replace_lossy_songs` is `Library::replace` over the songs that
+  `Replaceable::can_be_ticked`, as the window ticks them, and is `destructiveHint`: a held copy folds
+  in at once and the lossy file goes to the trash, so it answers `replaced`, `trashed`,
+  `not_trashed`, `wanted` (fetched by the next `start_poll`, which this starts nothing of),
+  `already_waiting` and `left`. A song with no held copy is never trashed, and a playlist with no
+  lossy song answers zeros; a scan walking the library is the library's `AlreadyWalking`, a failed call
+  (`a_lossy_song_with_a_lossless_copy_held_is_folded_in_and_one_with_none_is_never_trashed`).
 - **A missing track is named by `release_track_id`.** `want_tracks` is `Library::want_release_tracks`
   in one transaction: one unknown row wants none.
 - **`Tool::destroys` is `destructiveHint`**: the removals, `forget_folder`, `undo_edit`,
-  `play_playlist`, `move_playback`, `refresh_playlist`. **`Tool::reaches_the_network` is `openWorldHint`**: `start_lookup`,
+  `play_playlist`, `move_playback`, `refresh_playlist`, `replace_lossy_songs`. **`Tool::reaches_the_network` is `openWorldHint`**: `start_lookup`,
   `start_poll`, `import_playlist_link`, `refresh_playlist`, `follow_profile`.
 - **A session undoes only its own edits.** `undo_edit` is `Library::undo` (`Library::redo` with
   `redo`) over this process's stack; a playlist since changed by anything else (a window that took

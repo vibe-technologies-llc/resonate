@@ -105,6 +105,23 @@ fn playlist() -> Value {
     )
 }
 
+fn lossy_song() -> Value {
+    let mut properties = track_properties();
+    properties.extend([
+        ("codec", text()),
+        ("standing", text()),
+        (
+            "lossless_copy",
+            object(
+                vec![("track_id", whole()), ("codec", text()), ("uri", text())],
+                &["track_id", "codec"],
+            ),
+        ),
+        ("release_track_id", whole()),
+    ]);
+    object(properties, &["codec", "standing"])
+}
+
 fn linked_playlist() -> Value {
     object(
         vec![
@@ -261,6 +278,37 @@ impl Tool {
                     ("tracks", list(playlist_row())),
                 ],
                 &["playlist", "matched", "tracks"],
+            ),
+            Self::PlaylistLossySongs => object(
+                vec![
+                    ("playlist", playlist()),
+                    ("matched", whole()),
+                    ("replaceable", whole()),
+                    ("songs", list(lossy_song())),
+                ],
+                &["playlist", "matched", "replaceable", "songs"],
+            ),
+            Self::ReplaceLossySongs => object(
+                vec![
+                    ("playlist", playlist()),
+                    ("lossy", whole()),
+                    ("replaced", whole()),
+                    ("trashed", whole()),
+                    ("not_trashed", whole()),
+                    ("wanted", whole()),
+                    ("already_waiting", whole()),
+                    ("left", whole()),
+                ],
+                &[
+                    "playlist",
+                    "lossy",
+                    "replaced",
+                    "trashed",
+                    "not_trashed",
+                    "wanted",
+                    "already_waiting",
+                    "left",
+                ],
             ),
             Self::Favourites => object(
                 vec![
