@@ -60,7 +60,7 @@ pub(crate) fn wants(library: &Library) -> Result<()> {
 }
 
 pub(crate) fn standing_of(want: &Want, now: SystemTime) -> String {
-    if want.held.is_some() {
+    if want.is_answered() {
         return words::main::held().to_owned();
     }
     if want.gave_up() {
@@ -354,6 +354,29 @@ mod tests {
                 &Want {
                     held: Some(resonate_core::TrackId::new(3).expect("an id")),
                     ..wanted_at(tried, 0)
+                },
+                now
+            ),
+            "held"
+        );
+    }
+
+    #[test]
+    fn a_want_replacing_a_held_lossy_song_says_it_is_wanted_until_its_copy_is_offered() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let lossy = resonate_core::TrackId::new(3).expect("an id");
+        let replacing = Want {
+            held: Some(lossy),
+            replacing: Some(lossy),
+            ..wanted_at(None, 0)
+        };
+
+        assert_eq!(standing_of(&replacing, now), "due");
+        assert_eq!(
+            standing_of(
+                &Want {
+                    offered: Some("file:///music/a.flac".to_owned()),
+                    ..replacing
                 },
                 now
             ),
