@@ -969,11 +969,16 @@ impl<'a> Lanes<'a> {
         let now = SystemTime::now();
         queue.forgotten = Arc::new(self.library.forgotten_deliveries()?);
         queue.read = true;
+        let kept = self.library.kept_where();
         queue.pending = self
             .library
             .wants_unheld()?
             .into_iter()
-            .filter(|want| !queue.claimed.contains(&want.id) && due(want, self.options, now))
+            .filter(|want| {
+                !queue.claimed.contains(&want.id)
+                    && kept.can_keep(want)
+                    && due(want, self.options, now)
+            })
             .collect();
         Ok(())
     }
@@ -1460,18 +1465,29 @@ fn tried(library: &Library, want: WantId, offered: Option<&MediaLocation>) -> Re
 impl Library {
     pub fn is_a_want_due(&self, options: PollOptions) -> Result<bool> {
         let now = SystemTime::now();
+        let kept = self.kept_where();
         Ok(self
             .wants_as_they_stand()?
             .iter()
-            .any(|want| due(want, options, now)))
+            .any(|want| kept.can_keep(want) && due(want, options, now)))
     }
 
     pub fn next_want_due(&self) -> Result<Option<SystemTime>> {
+        let kept = self.kept_where();
         Ok(self
             .wants_as_they_stand()?
             .iter()
+            .filter(|want| kept.can_keep(want))
             .filter_map(Want::due_at)
             .min())
+    }
+
+    fn kept_where(&self) -> KeptWhere {
+        if self.vault().is_some() || self.delivering_into().is_some() {
+            KeptWhere::EveryWant
+        } else {
+            KeptWhere::NoReplacement
+        }
     }
 
     pub(crate) fn forgotten_deliveries(&self) -> Result<AHashMap<WantId, Vec<ForgottenDelivery>>> {
@@ -1489,6 +1505,18 @@ impl Library {
             .filter(|want| !want.is_answered())
             .filter_map(|want| want.tried)
             .max())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KeptWhere {
+    EveryWant,
+    NoReplacement,
+}
+
+impl KeptWhere {
+    const fn can_keep(self, want: &Want) -> bool {
+        matches!(self, Self::EveryWant) || want.replacing.is_none()
     }
 }
 
