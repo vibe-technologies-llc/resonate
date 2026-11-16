@@ -204,13 +204,19 @@ pin each byte.
 
 ## Covers and portraits
 
-**The front is asked at the size the window draws, then as uploaded.** `coverart::front` asks
-`/<kind>/<mbid>/front-500` and, where that is a 404, `/<kind>/<mbid>/front` (`fronts_of`), first
-for the release and then for its group (the archive redirects to the image: no index first). The
+**The front is asked at the largest thumbnail, then as uploaded, then under the cap.**
+`coverart::front` asks `/<kind>/<mbid>/front-1200`, where that is a 404 `/<kind>/<mbid>/front`, and
+only where the original is `Error::TooLarge` (past `LARGEST_PICTURE`, 8 MiB) `/<kind>/<mbid>/front-500`
+(`fronts_of`, walked by `front_among`), first for the release and then for its group (the archive
+redirects to the image: no index first). 1200 px is asked because the phones draw a cover across a
+whole screen and a high-density desktop at twice its points, where 500 px was visibly soft; the
+original is not asked first because it is often several megabytes and sometimes past the cap. The
 Internet Archive derives the 250, 500 and 1200 thumbnails hours after an upload, and until then
 only the original is served; a 404 is a settled miss that `land_cover` stamps for
-`COVERS_ASKED_AGAIN_AFTER`, so a new cover asked for at 500 alone would stay missing for a month.
-The original is one request more on a miss alone, under `LARGEST_PICTURE` like any picture. Bytes
+`COVERS_ASKED_AGAIN_AFTER`, so a new cover asked for at 1200 alone would stay missing for a month.
+A 404 as uploaded means no front at all, so a release without one still costs two requests, never
+three (`a_release_with_no_front_costs_two_requests_and_never_a_third`); a thumbnail past the cap is
+passed over like a miss, any other failure ends the walk. Bytes
 sniffed by `ImageFormat::sniff`: no picture = `Error::Unreadable`. Paced at
 `COVER_ARCHIVE_INTERVAL` (100 ms).
 
