@@ -638,7 +638,7 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   (`a_cancelled_scan_settles_no_replacement`). The poll's own scans (`pair_what_was_filed`,
   `scanned_and_paired`) start through `scan_leaving_the_replacements_unsettled`, so nothing is
   settled while other lanes run. With no replacement waiting it takes no walk; a walk refused
-  (`Error::AlreadyWalking`) is traced at debug, writes nothing and answers `Deleted::default()`,
+  (`Error::AlreadyWalking`) is traced at debug, writes nothing and answers `Replaced::default()`,
   leaving the replacement for the next scan's or poll's end. Under the walk it first calls
   `rejoin_the_replacements`: a replacement whose release row was landed again or whose match was
   forgotten (`land_release` and `forget_the_match` delete the rows, `ON DELETE SET NULL`), or whose

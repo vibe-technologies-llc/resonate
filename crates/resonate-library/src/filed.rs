@@ -113,7 +113,9 @@ pub(crate) fn filed_for(
     if want.replacing.is_some()
         && let Err(unfiled) = lossless(&filed.path)
     {
-        let _ = fs::remove_file(&filed.path);
+        if let Err(error) = fs::remove_file(&filed.path) {
+            tracing::warn!(%error, path = %filed.path.display(), "a lossy file filed for a replacement could not be taken away");
+        }
         return Err(unfiled);
     }
 

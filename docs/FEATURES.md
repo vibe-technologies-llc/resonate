@@ -152,6 +152,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] Right-to-left languages: Fluent's isolation marks are off, and the window's layout is never mirrored.
 
 ## Later: Sources and providers
+- [M] Replacing a playlist's lossy songs with lossless copies is offered from the window's
+  playlist menu alone: the phones, the terminal's `playlist` command and MCP have no way to start it
 - [M · blocked: service] A Spotify playlist the account only follows is read off its public page,
   at most a hundred songs with no ISRC and nothing where it is private: Spotify's development mode
   answers `403` on `/playlists/<id>/items` unless the account owns or collaborates on it, and extended
@@ -167,7 +169,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · blocked: servers] Subsonic matches a recording id or ISRC but not the release-track id the
   inbox accepts: the API's `musicBrainzId` names the recording; nothing in a song names the release
   track
-- [M] Replacing a playlist's lossy songs with lossless copies is offered from the window's playlist menu alone: the phones, the terminal's `playlist` command and MCP have no way to start it
 
 ## Later: The vault
 - [L · blocked: flacenc] `flacenc` 0.5.1, the latest, caps the Rice parameter at 14, the rate at 96

@@ -55,8 +55,7 @@ impl LibraryModel {
                     (replaced, wanted)
                 })
                 .await;
-            let landed = this.update(cx, |this, cx| this.replaced(replaced, &wanted, cx));
-            let _ = landed;
+            let _ = this.update(cx, |this, cx| this.replaced(replaced, &wanted, cx));
         });
         replacing.detach();
     }
