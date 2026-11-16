@@ -835,6 +835,7 @@ impl Offered {
                 told: loopback,
                 every: Duration::from_secs(3_600),
                 serving_on: loopback.ip(),
+                name: None,
             },
         )
     }
@@ -849,11 +850,14 @@ impl Offered {
         if running.is_some() {
             return Ok(());
         }
-        let server =
-            MediaServer::start(Arc::new(shelves()), kept_udn(&self.kept_in), self.offering)
-                .map_err(|source| Error::CatalogNotOffered {
-                    source: Box::new(source),
-                })?;
+        let server = MediaServer::start(
+            Arc::new(shelves()),
+            kept_udn(&self.kept_in),
+            self.offering.clone(),
+        )
+        .map_err(|source| Error::CatalogNotOffered {
+            source: Box::new(source),
+        })?;
         tracing::info!(
             port = server.port(),
             "the catalog is offered on the network"

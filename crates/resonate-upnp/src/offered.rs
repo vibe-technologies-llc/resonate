@@ -31,6 +31,8 @@ use crate::{
 
 const SSDP_PORT: u16 = 1900;
 
+const NAME_CHARS_AT_MOST: usize = 63;
+
 const TOLD_AGAIN_EVERY: Duration = Duration::from_secs(600);
 
 const ANSWERS_AT_MOST: usize = 16;
@@ -85,12 +87,33 @@ const SHIPPED: Limits = Limits {
     head_ends_within: HEAD_ENDS_WITHIN,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ServerName(String);
+
+impl ServerName {
+    pub fn new(typed: &str) -> Option<Self> {
+        let printable: String = typed
+            .chars()
+            .filter(|letter| letter.is_whitespace() || !letter.is_control())
+            .collect();
+        let spaced = printable.split_whitespace().collect::<Vec<_>>().join(" ");
+        let cut: String = spaced.chars().take(NAME_CHARS_AT_MOST).collect();
+        let kept = cut.trim_end();
+        (!kept.is_empty()).then(|| Self(kept.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Offering {
     pub heard_on: SocketAddr,
     pub told: SocketAddr,
     pub every: Duration,
     pub serving_on: IpAddr,
+    pub name: Option<ServerName>,
 }
 
 impl Offering {
@@ -100,7 +123,12 @@ impl Offering {
             told: SSDP,
             every: TOLD_AGAIN_EVERY,
             serving_on: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            name: None,
         }
+    }
+
+    pub fn named(self, name: Option<ServerName>) -> Self {
+        Self { name, ..self }
     }
 }
 
@@ -152,6 +180,7 @@ impl<C: Catalog> MediaServer<C> {
         let shared = Arc::new(Shared {
             catalog,
             udn: udn.clone(),
+            name: offering.name,
             stopped: AtomicBool::new(false),
             subscribers: Subscribers::default(),
             told,
@@ -206,6 +235,7 @@ impl<C: Catalog> Drop for MediaServer<C> {
 struct Shared<C> {
     catalog: Arc<C>,
     udn: Udn,
+    name: Option<ServerName>,
     stopped: AtomicBool,
     subscribers: Subscribers,
     told: Sender<()>,
@@ -373,7 +403,11 @@ impl<C: Catalog> Door for Hall<C> {
         stream.set_write_timeout(Some(WRITTEN_WITHIN))?;
         match task.route {
             Route::Description => {
-                let described = presented::device(&shared.udn, naming::server_name());
+                let name = match &shared.name {
+                    Some(typed) => typed.as_str(),
+                    None => naming::server_name(),
+                };
+                let described = presented::device(&shared.udn, name);
                 said(&mut stream, "200 OK", XML, described.as_bytes(), head_only)
             }
             Route::Scpd(service) => {
@@ -667,6 +701,40 @@ fn poured(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_name_typed_is_trimmed_and_an_empty_one_is_none() {
+        assert_eq!(
+            ServerName::new("  Study  ")
+                .as_ref()
+                .map(ServerName::as_str),
+            Some("Study")
+        );
+        assert_eq!(ServerName::new(""), None);
+        assert_eq!(ServerName::new("   \t\n "), None);
+    }
+
+    #[test]
+    fn a_name_has_its_whitespace_folded_and_its_control_characters_dropped() {
+        let named = ServerName::new("\u{7} Living\n room\u{7}  Two").expect("a name");
+
+        assert_eq!(named.as_str(), "Living room Two");
+        assert_eq!(ServerName::new("\u{7}\u{1b}"), None);
+    }
+
+    #[test]
+    fn a_long_name_is_cut_on_a_letter_to_fewer_than_sixty_four() {
+        let long = "é".repeat(100);
+        let cut = ServerName::new(&long).expect("a name");
+
+        assert_eq!(cut.as_str().chars().count(), NAME_CHARS_AT_MOST);
+        assert!(cut.as_str().len() > NAME_CHARS_AT_MOST);
+
+        let spaced = format!("{} {}", "a".repeat(NAME_CHARS_AT_MOST - 1), "b".repeat(10));
+        let ends_on_a_space = ServerName::new(&spaced).expect("a name");
+
+        assert_eq!(ends_on_a_space.as_str(), "a".repeat(NAME_CHARS_AT_MOST - 1));
+    }
 
     #[test]
     fn a_minted_udn_reads_back_and_a_malformed_one_does_not() {

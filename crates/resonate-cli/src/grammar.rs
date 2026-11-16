@@ -1766,7 +1766,14 @@ pub enum Sub {
     },
 
     #[command(about = words::grammar::sub_offer())]
-    Offer,
+    Offer {
+        #[arg(
+            long,
+            value_name = "NAME",
+            help = words::grammar::sub_offer_name()
+        )]
+        name: Option<String>,
+    },
 
     #[command(about = words::grammar::sub_explain())]
     Explain { path: PathBuf },

@@ -288,6 +288,7 @@ pub enum Setting {
     SyncKey(String),
     SyncDevice(String),
     SharedName(String),
+    OfferName(String),
     SyncSongs(SyncedSongs),
     SyncControl(RemoteTrust),
 }
@@ -407,6 +408,7 @@ impl Setting {
             Self::SyncKey(_) => ConfigKey::SyncKey,
             Self::SyncDevice(_) => ConfigKey::SyncDevice,
             Self::SharedName(_) => ConfigKey::SharedName,
+            Self::OfferName(_) => ConfigKey::OfferName,
             Self::SyncSongs(_) => ConfigKey::SyncSongs,
             Self::SyncControl(_) => ConfigKey::SyncControl,
         }
@@ -971,6 +973,8 @@ pub trait Present: Send + Sync {
 pub trait CatalogShared: Send + Sync {
     fn shared(&self) -> bool;
     fn share(&self, on: bool);
+    fn name(&self) -> String;
+    fn rename(&self, typed: &str);
 }
 
 pub trait Renderers: Send + Sync {

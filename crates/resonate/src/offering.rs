@@ -21,7 +21,7 @@ use resonate_upnp::{
     Shelved, Song, Test, Udn, Within,
 };
 #[cfg(feature = "ui")]
-use resonate_upnp::{MediaServer, Offering};
+use resonate_upnp::{MediaServer, Offering, ServerName};
 
 #[cfg(feature = "ui")]
 use crate::config::{self, Config};
@@ -844,7 +844,16 @@ pub(crate) fn kept_udn(folder: &Path) -> Udn {
 pub(crate) struct Offered {
     library: Arc<Library>,
     kept_in: Option<PathBuf>,
-    running: Mutex<Option<MediaServer<Shelves>>>,
+    state: Arc<Mutex<Offer>>,
+}
+
+#[cfg(feature = "ui")]
+#[derive(Default)]
+struct Offer {
+    server: Option<MediaServer<Shelves>>,
+    wanted: bool,
+    restarting: bool,
+    name: Option<ServerName>,
 }
 
 #[cfg(feature = "ui")]
@@ -858,7 +867,10 @@ impl Offered {
         let offered = Arc::new(Self {
             library: Arc::clone(library),
             kept_in,
-            running: Mutex::new(None),
+            state: Arc::new(Mutex::new(Offer {
+                name: config.offer_name().cloned(),
+                ..Offer::default()
+            })),
         });
         if config.is_on(Switch::ShareCatalogOnNetwork) {
             offered.share(true);
@@ -867,39 +879,97 @@ impl Offered {
     }
 
     pub(crate) fn share(&self, on: bool) {
-        let mut running = self.running.lock();
+        let mut state = self.state.lock();
+        state.wanted = on;
         if !on {
-            if let Some(stopping) = running.take() {
+            if let Some(stopping) = state.server.take() {
                 spawn_the_stop(stopping);
             }
             return;
         }
-        if running.is_some() {
+        if state.server.is_some() || state.restarting {
             return;
         }
-        let udn = self.kept_in.as_deref().map_or_else(Udn::minted, kept_udn);
-        match MediaServer::start(
-            Arc::new(Shelves::over(Arc::clone(&self.library))),
-            udn,
-            Offering::on_the_network(),
-        ) {
-            Ok(server) => {
-                tracing::info!(
-                    port = server.port(),
-                    "the catalog is offered on the network"
-                );
-                *running = Some(server);
-            }
-            Err(error) => tracing::warn!(%error, "the catalog could not be offered on the network"),
-        }
+        state.server = started(&self.library, self.kept_in.as_deref(), state.name.clone());
     }
 
     pub(crate) fn shared(&self) -> bool {
-        self.running.lock().is_some()
+        let state = self.state.lock();
+        state.wanted && (state.server.is_some() || state.restarting)
+    }
+
+    pub(crate) fn named(&self) -> String {
+        self.state
+            .lock()
+            .name
+            .as_ref()
+            .map_or_else(String::new, |name| name.as_str().to_owned())
+    }
+
+    pub(crate) fn rename(&self, typed: &str) {
+        let name = ServerName::new(typed);
+        let mut state = self.state.lock();
+        if state.name == name {
+            return;
+        }
+        state.name = name;
+        if state.restarting {
+            return;
+        }
+        let Some(stopping) = state.server.take() else {
+            return;
+        };
+        state.restarting = true;
+
+        let held = Arc::clone(&self.state);
+        let library = Arc::clone(&self.library);
+        let kept_in = self.kept_in.clone();
+        let spawned = thread::Builder::new()
+            .name("resonate-offer-rename".to_owned())
+            .spawn(move || {
+                drop(stopping);
+                let mut state = held.lock();
+                state.restarting = false;
+                if state.wanted {
+                    state.server = started(&library, kept_in.as_deref(), state.name.clone());
+                }
+            });
+        if let Err(error) = spawned {
+            state.restarting = false;
+            tracing::warn!(%error, "the media server could not be started again under its new name");
+        }
     }
 
     pub(crate) fn leave(&self) {
-        drop(self.running.lock().take());
+        let mut state = self.state.lock();
+        state.wanted = false;
+        drop(state.server.take());
+    }
+}
+
+#[cfg(feature = "ui")]
+fn started(
+    library: &Arc<Library>,
+    kept_in: Option<&Path>,
+    name: Option<ServerName>,
+) -> Option<MediaServer<Shelves>> {
+    let udn = kept_in.map_or_else(Udn::minted, kept_udn);
+    match MediaServer::start(
+        Arc::new(Shelves::over(Arc::clone(library))),
+        udn,
+        Offering::on_the_network().named(name),
+    ) {
+        Ok(server) => {
+            tracing::info!(
+                port = server.port(),
+                "the catalog is offered on the network"
+            );
+            Some(server)
+        }
+        Err(error) => {
+            tracing::warn!(%error, "the catalog could not be offered on the network");
+            None
+        }
     }
 }
 
@@ -921,6 +991,14 @@ impl resonate_ui::CatalogShared for Offered {
 
     fn share(&self, on: bool) {
         Self::share(self, on);
+    }
+
+    fn name(&self) -> String {
+        self.named()
+    }
+
+    fn rename(&self, typed: &str) {
+        Self::rename(self, typed);
     }
 }
 

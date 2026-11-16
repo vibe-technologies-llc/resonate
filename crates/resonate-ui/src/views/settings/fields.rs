@@ -26,6 +26,7 @@ pub(crate) enum Entered {
     SyncServer,
     SyncDevice,
     SharedName,
+    OfferName,
     SyncCode,
     MinimumLength,
     Layout,
@@ -64,6 +65,7 @@ pub(crate) struct SettingsFields {
     pub(crate) sync_server: Entity<Field>,
     pub(crate) sync_device: Entity<Field>,
     pub(crate) shared_name: Entity<Field>,
+    pub(crate) offer_name: Entity<Field>,
     pub(crate) sync_code: Entity<Field>,
     pub(crate) organising: Entity<Field>,
     pub(crate) minimum_length: Entity<Field>,
@@ -115,6 +117,11 @@ impl SettingsFields {
         let presence = global.presence.clone();
         let synchronised = global.synchronised.clone();
         let organise_as = global.organise_as.clone();
+        let offer_name = global
+            .catalog_shared
+            .as_ref()
+            .map(|shared| shared.name())
+            .unwrap_or_default();
         let minimum_length = global
             .library
             .music_filters()
@@ -193,6 +200,12 @@ impl SettingsFields {
                 window,
                 cx,
             ),
+            offer_name: holding(
+                words::settings_output::offer_name_placeholder,
+                offer_name,
+                window,
+                cx,
+            ),
             sync_code: empty(words::settings_sync::sync_code_placeholder, window, cx),
             organising: holding(words::root::organising_placeholder, organise_as, window, cx),
             minimum_length: holding(
@@ -219,6 +232,7 @@ impl SettingsFields {
             (&fields.sync_server, Entered::SyncServer),
             (&fields.sync_device, Entered::SyncDevice),
             (&fields.shared_name, Entered::SharedName),
+            (&fields.offer_name, Entered::OfferName),
             (&fields.sync_code, Entered::SyncCode),
             (&fields.minimum_length, Entered::MinimumLength),
             (&fields.organising, Entered::Layout),
@@ -267,6 +281,7 @@ impl SettingsFields {
             &self.sync_server,
             &self.sync_device,
             &self.shared_name,
+            &self.offer_name,
             &self.sync_code,
             &self.organising,
             &self.minimum_length,

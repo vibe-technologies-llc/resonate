@@ -300,6 +300,7 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::SyncKey(given) => given_or_cleared(given),
         Setting::SyncDevice(given) => given_or_cleared(given),
         Setting::SharedName(given) => given_or_cleared(given),
+        Setting::OfferName(given) => given_or_cleared(given),
         Setting::SyncSongs(songs) => {
             Some(Value::Array(songs.named().into_iter().collect::<Array>()))
         }
@@ -1022,6 +1023,27 @@ mod tests {
         assert_eq!(read, named);
         assert_eq!(cleared.discord_app, None);
         assert!(!cleared.presence().active());
+    }
+
+    #[test]
+    fn the_name_the_catalog_is_offered_under_is_written_and_read_back_and_cleared_when_blank() {
+        let folder = env::temp_dir().join(format!("resonate-settings-offer-{}", process::id()));
+        let path = folder.join("config.toml");
+        let file = File::at(path.clone(), Config::default());
+
+        file.apply(&[SettingChange::Store(Setting::OfferName("Study".to_owned()))])
+            .expect("a writable temporary directory");
+        let named = config::load(Some(&path)).expect("the file reads back");
+        file.apply(&[SettingChange::Store(Setting::OfferName(String::new()))])
+            .expect("a writable temporary directory");
+        let cleared = config::load(Some(&path)).expect("the file reads back");
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(
+            named.offer_name().map(resonate_upnp::ServerName::as_str),
+            Some("Study")
+        );
+        assert_eq!(cleared.offer_name(), None);
     }
 
     #[test]

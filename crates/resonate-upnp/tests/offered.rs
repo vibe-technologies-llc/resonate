@@ -11,7 +11,7 @@ use std::{
 use resonate_core::{AlbumId, ArtistId, PlaylistId, TrackId};
 use resonate_upnp::{
     AudioKind, Catalog, Entry, Field, Held, Kind, MediaServer, Offering, Opened, Page, Picture,
-    Query, Searched, Shelf, Shelved, Song, Test, Udn, Within,
+    Query, Searched, ServerName, Shelf, Shelved, Song, Test, Udn, Within,
 };
 use roxmltree::Document;
 
@@ -383,6 +383,10 @@ struct Started {
 }
 
 fn started() -> Started {
+    started_as(None)
+}
+
+fn started_as(name: Option<ServerName>) -> Started {
     let told = UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of the server");
     told.set_read_timeout(Some(HEARD_WITHIN))
         .expect("a read timeout");
@@ -395,6 +399,7 @@ fn started() -> Started {
             told: told.local_addr().expect("an address"),
             every: Duration::from_secs(60),
             serving_on: LOOPBACK,
+            name,
         },
     )
     .expect("the server starts");
@@ -664,6 +669,41 @@ fn a_control_point_finds_the_server_browses_its_shelves_page_by_page_and_fetches
     drop(server);
     let gone = heard(&told, |told| told.contains("NTS: ssdp:byebye"));
     assert!(gone.contains("USN: uuid:4c1b3a27-0000-4000-8000-000000000001"));
+}
+
+fn friendly_name_of(name: Option<ServerName>) -> String {
+    let Started { server, .. } = started_as(name);
+    let described = fetched(discovered(&server), "/description.xml", None);
+    let description = String::from_utf8(described.body).expect("text");
+    let document = Document::parse(&description).expect("the description reads as XML");
+
+    document
+        .descendants()
+        .find(|node| node.tag_name().name() == "friendlyName")
+        .and_then(|node| node.text())
+        .expect("a friendly name")
+        .to_owned()
+}
+
+#[test]
+fn the_description_carries_the_name_typed_and_the_catalogs_word_where_none_was() {
+    assert_eq!(friendly_name_of(None), "Resonate");
+    assert_eq!(friendly_name_of(ServerName::new("   ")), "Resonate");
+    assert_eq!(friendly_name_of(ServerName::new("  Study ")), "Study");
+}
+
+#[test]
+fn a_name_typed_is_escaped_in_the_description_and_cut_to_the_length_a_control_point_reads() {
+    assert_eq!(
+        friendly_name_of(ServerName::new("Kitchen <&> \"Two\"")),
+        "Kitchen <&> \"Two\""
+    );
+
+    let long = "é".repeat(100);
+    let cut = friendly_name_of(ServerName::new(&long));
+
+    assert_eq!(cut.chars().count(), 63);
+    assert!(cut.chars().all(|letter| letter == 'é'));
 }
 
 #[test]

@@ -29,7 +29,7 @@ use resonate_engine::{
 use resonate_eq::{Binding, ProfileName};
 use resonate_library::{HistoryKept, Layout, MinimumLength, MusicExtensions, MusicFilters};
 use resonate_listen::Listening;
-use resonate_upnp::{Located, Udn, Vouched};
+use resonate_upnp::{Located, ServerName, Udn, Vouched};
 use resonate_words::{Language, LanguageChoice, RegionChoice};
 use toml_edit::{DocumentMut, Item, Table};
 
@@ -292,6 +292,7 @@ pub struct Config {
     pub formats_learnt_for: Learnt,
     pub renderers_at: BTreeSet<Located>,
     pub cast_at: BTreeSet<Given>,
+    pub offer_name: Option<ServerName>,
     pub history_kept: Option<HistoryKept>,
     pub organise_as: Option<Layout>,
     pub update_dismissed: Option<String>,
@@ -425,6 +426,7 @@ impl fmt::Debug for Config {
             formats_learnt_for,
             renderers_at,
             cast_at,
+            offer_name,
             history_kept,
             organise_as,
             update_dismissed,
@@ -547,6 +549,8 @@ impl fmt::Debug for Config {
             .field("formats_learnt_for", formats_learnt_for)
             .field("renderers_at", renderers_at)
             .field("cast_at", cast_at)
+            .field("offer_name", offer_name)
+            .field("offer_name", offer_name)
             .field("history_kept", history_kept)
             .field("organise_as", organise_as)
             .field("update_dismissed", update_dismissed)
@@ -790,6 +794,10 @@ impl Config {
 
     pub const fn cast_at(&self) -> &BTreeSet<Given> {
         &self.cast_at
+    }
+
+    pub const fn offer_name(&self) -> Option<&ServerName> {
+        self.offer_name.as_ref()
     }
 
     pub fn holds_receiver_addresses(&self) -> bool {
@@ -1270,6 +1278,7 @@ impl Config {
             Valued::FormatsLearntFor => config.formats_learnt_for = learnt(at, value)?,
             Valued::RenderersAt => config.renderers_at = renderer_addresses(at, value)?,
             Valued::CastAt => config.cast_at = cast_addresses(at, value)?,
+            Valued::OfferName => config.offer_name = ServerName::new(at.string(value)?),
             Valued::HistoryKept => {
                 config.history_kept = Some(match value.as_integer() {
                     Some(days) => HistoryKept::for_days(days).ok_or_else(|| at.rejected())?,
@@ -3070,6 +3079,35 @@ mod tests {
                 key: ConfigKey::CastAt,
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn the_name_the_catalog_is_offered_under_is_what_was_typed_and_none_when_blank() {
+        let named = read("offer-name = \"  Study  \"").expect("a well formed document");
+
+        assert_eq!(named.offer_name().map(ServerName::as_str), Some("Study"));
+        assert_eq!(Config::default().offer_name(), None);
+        assert_eq!(
+            read("offer-name = \"   \"")
+                .expect("a blank name")
+                .offer_name(),
+            None
+        );
+
+        let long = format!("offer-name = \"{}\"", "é".repeat(100));
+        let cut = read(&long).expect("a long name");
+
+        assert_eq!(
+            cut.offer_name().map(|name| name.as_str().chars().count()),
+            Some(63)
+        );
+        assert!(matches!(
+            read("offer-name = 7"),
+            Err(Error::ConfigType {
+                key: ConfigKey::OfferName,
+                ..
+            })
         ));
     }
 

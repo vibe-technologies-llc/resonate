@@ -28,6 +28,7 @@ impl RootView {
             Entered::SyncServer => self.sync_server_given(window, cx),
             Entered::SyncDevice => self.sync_device_given(window, cx),
             Entered::SharedName => self.shared_name_given(window, cx),
+            Entered::OfferName => self.offer_name_given(window, cx),
             Entered::SyncCode => self.sync_code_given(window, cx),
             Entered::MinimumLength => self.minimum_length_given(window, cx),
             Entered::Layout => self.layout_given(window, cx),

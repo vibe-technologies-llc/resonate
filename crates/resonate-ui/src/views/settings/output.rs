@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, time::Duration};
 
-use gpui::{ClickEvent, Context, Div, SharedString, Stateful, div, prelude::*, px};
+use gpui::{ClickEvent, Context, Div, SharedString, Stateful, Window, div, prelude::*, px};
 use resonate_core::{SampleFormat, SampleRate, StreamSpec, Switch};
 use resonate_engine::{
     BluetoothWake, Command, HardwareVolume, Learning, Learnt, NodeName, Plays, Plugged, SinkId,
@@ -26,6 +26,8 @@ use crate::{
 const SECONDS_A_MINUTE: u64 = 60;
 
 const SHARED_CATALOG_ID: &str = "shared-catalog";
+
+const OFFER_NAME_ID: &str = "offer-name";
 
 const OR: &str = ", ";
 
@@ -555,7 +557,64 @@ impl RootView {
                 move |this, _, cx| this.share_the_catalog(!shared, cx),
                 cx,
             ))
+            .child(kit::field(
+                words::settings_output::name_on_the_network(),
+                self.text_field(
+                    OFFER_NAME_ID,
+                    &self.settings_fields.read(cx).offer_name.clone(),
+                    |this, window, cx| this.leave_offer_name(window, cx),
+                    cx,
+                ),
+            ))
             .note(words::settings_output::shared_catalog_note())
+    }
+
+    pub(crate) fn offer_name_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let typed = self
+            .settings_fields
+            .read(cx)
+            .offer_name
+            .read(cx)
+            .text()
+            .trim()
+            .to_owned();
+        self.name_the_offer(typed, cx);
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn leave_offer_name(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let field = self.settings_fields.read(cx).offer_name.clone();
+        if !field.read(cx).is_focused(window) {
+            return;
+        }
+        let held = cx
+            .global::<ResonateApp>()
+            .catalog_shared
+            .as_ref()
+            .map(|shared| shared.name())
+            .unwrap_or_default();
+        if field.read(cx).text().trim() != held {
+            self.offer_name_given(window, cx);
+            return;
+        }
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    pub(super) fn name_the_offer(&mut self, typed: String, cx: &mut Context<Self>) {
+        let Some(shared) = cx.global::<ResonateApp>().catalog_shared.clone() else {
+            return;
+        };
+        shared.rename(&typed);
+
+        let kept = shared.name();
+        self.settings_fields
+            .read(cx)
+            .offer_name
+            .clone()
+            .update(cx, |field, cx| field.hold(kept.clone(), cx));
+        self.store(&Setting::OfferName(kept), cx);
     }
 
     pub(super) fn share_the_catalog(&mut self, on: bool, cx: &mut Context<Self>) {

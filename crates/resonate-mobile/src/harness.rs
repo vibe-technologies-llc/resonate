@@ -256,6 +256,7 @@ impl Harness {
             told: told.local_addr().expect("the told address"),
             every: Duration::from_secs(3_600),
             serving_on: LOOPBACK,
+            name: None,
         };
 
         let kinds = rendering.kinds();

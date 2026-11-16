@@ -1444,6 +1444,80 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct Offering {
+        name: parking_lot::Mutex<String>,
+    }
+
+    impl crate::CatalogShared for Offering {
+        fn shared(&self) -> bool {
+            true
+        }
+
+        fn share(&self, _on: bool) {}
+
+        fn name(&self) -> String {
+            self.name.lock().clone()
+        }
+
+        fn rename(&self, typed: &str) {
+            *self.name.lock() = typed.trim().chars().take(5).collect();
+        }
+    }
+
+    #[gpui::test]
+    fn a_name_typed_for_the_offered_catalog_is_given_to_the_server_kept_in_the_file_and_taken_back_with_the_group(
+        cx: &mut TestAppContext,
+    ) {
+        let mut driven = Driven::open(cx, catalog());
+        let recorded = recording_what_is_stored(&mut driven);
+        let offering = Arc::new(Offering::default());
+        driven.cx.update(|_, cx| {
+            cx.global_mut::<ResonateApp>().catalog_shared =
+                Some(Arc::clone(&offering) as Arc<dyn crate::CatalogShared>);
+        });
+        let root = driven.root.clone();
+        let field = |driven: &mut Driven| {
+            driven.read(|root, cx| {
+                root.settings_fields
+                    .read(cx)
+                    .offer_name
+                    .read(cx)
+                    .text()
+                    .to_owned()
+            })
+        };
+        driven.cx.update(|_, cx| {
+            let typed = root.read(cx).settings_fields.read(cx).offer_name.clone();
+            typed.update(cx, |field, cx| field.hold("  Studio room  ".to_owned(), cx));
+        });
+
+        driven.cx.update(|window, cx| {
+            root.update(cx, |root, cx| root.offer_name_given(window, cx));
+        });
+        stored_through_the_writer(&mut driven, &recorded);
+
+        assert_eq!(crate::CatalogShared::name(&*offering), "Studi");
+        assert_eq!(field(&mut driven), "Studi");
+        assert!(
+            recorded
+                .lock()
+                .contains(&crate::settings::SettingChange::Store(
+                    crate::settings::Setting::OfferName("Studi".to_owned())
+                ))
+        );
+
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.put_back(crate::views::settings::Group::SharedCatalog, cx);
+            });
+        });
+        driven.settle();
+
+        assert_eq!(crate::CatalogShared::name(&*offering), "");
+        assert_eq!(field(&mut driven), "");
+    }
+
     #[gpui::test]
     fn a_volume_changed_in_one_zone_is_kept_when_another_zone_is_shown_before_it_settles(
         cx: &mut TestAppContext,

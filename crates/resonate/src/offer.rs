@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, bounded};
-use resonate_upnp::{Catalog, MediaServer, Offering, Page, Shelf, Udn};
+use resonate_upnp::{Catalog, MediaServer, Offering, Page, ServerName, Shelf, Udn};
 
 use crate::{
     Error, Result,
@@ -18,7 +18,7 @@ struct Counts {
     playlists: u32,
 }
 
-pub(crate) fn serve(cli: &Cli, config: &Config) -> Result<()> {
+pub(crate) fn serve(cli: &Cli, config: &Config, name: Option<&str>) -> Result<()> {
     let library = Arc::new(crate::open_library(cli, config)?);
     let shelves = Arc::new(Shelves::over(library));
 
@@ -31,9 +31,16 @@ pub(crate) fn serve(cli: &Cli, config: &Config) -> Result<()> {
     offer(
         &shelves,
         named_on_the_network(),
-        Offering::on_the_network(),
+        Offering::on_the_network().named(shown_as(config, name)),
         &stopped,
     )
+}
+
+fn shown_as(config: &Config, typed: Option<&str>) -> Option<ServerName> {
+    match typed {
+        Some(typed) => ServerName::new(typed),
+        None => config.offer_name().cloned(),
+    }
 }
 
 fn named_on_the_network() -> Udn {
@@ -157,7 +164,36 @@ mod tests {
     fn the_subcommand_is_read_from_the_grammar() {
         assert!(matches!(
             parsed(&["resonate", "offer"]).command,
-            Some(Sub::Offer)
+            Some(Sub::Offer { name: None })
+        ));
+    }
+
+    #[test]
+    fn the_name_a_flag_gives_outranks_the_file_and_a_blank_one_means_the_catalogs_word() {
+        let filed = Config {
+            offer_name: ServerName::new("Study"),
+            ..Config::default()
+        };
+
+        assert_eq!(
+            shown_as(&filed, None).as_ref().map(ServerName::as_str),
+            Some("Study")
+        );
+        assert_eq!(
+            shown_as(&filed, Some(" Kitchen "))
+                .as_ref()
+                .map(ServerName::as_str),
+            Some("Kitchen")
+        );
+        assert_eq!(shown_as(&filed, Some("  ")), None);
+        assert_eq!(shown_as(&Config::default(), None), None);
+    }
+
+    #[test]
+    fn the_name_flag_is_read_from_the_grammar() {
+        assert!(matches!(
+            parsed(&["resonate", "offer", "--name", "Study"]).command,
+            Some(Sub::Offer { name: Some(name) }) if name == "Study"
         ));
     }
 
@@ -182,6 +218,7 @@ mod tests {
             told: told.local_addr().expect("an address"),
             every: Duration::from_secs(60),
             serving_on: LOOPBACK,
+            name: ServerName::new("Study"),
         };
         let udn = Udn::minted();
         let (stop, stopped) = bounded(1);
@@ -196,6 +233,7 @@ mod tests {
         let description = fetched(at, "/description.xml");
         assert!(description.starts_with("HTTP/1.1 200"));
         assert!(description.contains(udn.as_str()));
+        assert!(description.contains("<friendlyName>Study</friendlyName>"));
 
         assert!(!offering_thread.is_finished());
         stop.send(()).expect("the offer is listening");

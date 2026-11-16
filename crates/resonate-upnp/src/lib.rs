@@ -54,7 +54,7 @@ pub use crate::{
     },
     located::Located,
     network::{FirstSearch, Network, Searching},
-    offered::{MediaServer, Offering},
+    offered::{MediaServer, Offering, ServerName},
     renderer::{Renderer, Udn, Vouched},
     serve::{Server, Token},
     ssdp::{RENDERER_TYPE, SSDP},

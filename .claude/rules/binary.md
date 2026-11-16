@@ -473,9 +473,22 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   sends `ssdp:byebye` before the process says it stopped and exits 0, a second leaves at once. It
   serves whatever `share-catalog-on-network` says, since running it is the listener's own ask,
   and whatever `online` says, since this is the local network and no request leaves it. A failure to
-  start is `Error::CatalogNotOffered`. The window's server and this one keep one UDN, so the two
+  start is `Error::CatalogNotOffered`. `--name NAME` names it for the run and outranks the
+  `offer-name` key (`shown_as`; a blank one is the catalog's word). The window's server and this one keep one UDN, so the two
   are not run together (`the_catalog_is_offered_until_told_to_stop_and_byebye_is_sent` drives
   `offer` on loopback sockets, so nothing reaches the network).
+- `offer-name` (empty unless set): the name the offered catalog is shown under in a control point,
+  the description's `friendlyName` (`Config::offer_name`, a `resonate_upnp::ServerName`: trimmed,
+  whitespace folded, control characters dropped, cut at 63 letters, a blank one `None`; a
+  non-text value costs the key alone). Empty is the catalog word, *Resonate*, as before: the
+  host's name and the listener's are never read, a name going out only where it is typed into a
+  setting. The settings pane's *The catalog on the network* group carries its field
+  (`Setting::OfferName`, `CatalogShared::name` and `rename`): Enter or a click outside keeps the
+  name as the server cut it, and the group's reset takes it out. `Offered::rename` stops a running
+  server and starts it again under the new name on a thread of its own, the stop's farewell before
+  the new announcement so a control point never reads a goodbye after the hello
+  (`Offer::restarting`, which `shared()` counts as still offering and `share(true)` leaves to that
+  thread); a server that is off simply holds the name for the next start.
 - `flac-above-96k-for` (empty unless set): array of renderer names (`upnp:` and the UDN, as
   `sinks --renderers` lists them; others and blanks ignored, a non-text entry costs the key alone)
   that are sent FLAC above 96 kHz though their protocol info states no rate

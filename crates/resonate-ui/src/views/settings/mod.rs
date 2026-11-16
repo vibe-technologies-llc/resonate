@@ -760,6 +760,7 @@ impl RootView {
             }
             Group::DiscordShows => self.put_discord_shows_back(cx),
             Group::Contact => self.clear_contact(cx),
+            Group::SharedCatalog => self.name_the_offer(String::new(), cx),
             Group::Measurers => self.wear_the_measurers(Measurers::default(), cx),
             Group::Recognition => {
                 self.clear_acoustid_key(cx);
@@ -825,6 +826,11 @@ impl RootView {
         let presence = cx.global::<ResonateApp>().presence.clone();
         let synchronised = cx.global::<ResonateApp>().synchronised.clone();
         let measurer_given = !cx.global::<ResonateApp>().measurers.is_empty();
+        let offer_name_given = cx
+            .global::<ResonateApp>()
+            .catalog_shared
+            .as_ref()
+            .is_some_and(|shared| !shared.name().is_empty());
         let contact_given = !self
             .settings_fields
             .read(cx)
@@ -947,6 +953,7 @@ impl RootView {
             flac_renderers_named,
             formats_learnt,
             contact_given,
+            offer_name_given,
             measurer_given,
             key_given,
             token_given,

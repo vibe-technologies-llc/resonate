@@ -39,6 +39,7 @@ pub(crate) struct Standing {
     pub(crate) flac_renderers_named: bool,
     pub(crate) formats_learnt: bool,
     pub(crate) contact_given: bool,
+    pub(crate) offer_name_given: bool,
     pub(crate) measurer_given: bool,
     pub(crate) key_given: bool,
     pub(crate) token_given: bool,
@@ -82,6 +83,7 @@ impl Standing {
             flac_renderers_named: false,
             formats_learnt: false,
             contact_given: false,
+            offer_name_given: false,
             measurer_given: false,
             key_given: false,
             token_given: false,
@@ -183,6 +185,7 @@ fn differs_but_for_its_switches(group: Group, standing: &Standing) -> bool {
         Group::SyncedSongs => standing.synchronised.songs != AS_BUILT.synchronised.songs,
         Group::SyncControl => standing.synchronised.control != AS_BUILT.synchronised.control,
         Group::Contact => standing.contact_given,
+        Group::SharedCatalog => standing.offer_name_given,
         Group::Measurers => standing.measurer_given,
         Group::Recognition => standing.key_given || standing.token_given,
         Group::Submitting => standing.submitting_given,
@@ -218,7 +221,6 @@ fn differs_but_for_its_switches(group: Group, standing: &Standing) -> bool {
         Group::LiveSpectrum => standing.spectral != SPECTRAL,
         Group::Tabs => standing.tabs != TABS,
         Group::Equalising
-        | Group::SharedCatalog
         | Group::Syncing
         | Group::Lookups
         | Group::AfterScan

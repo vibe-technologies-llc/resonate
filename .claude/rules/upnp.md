@@ -416,9 +416,17 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   or an unreadable one is the whole, past the end 416) as a `206` with `Content-Range`, and
   `contentFeatures.dlna.org` and `transferMode.dlna.org: Streaming`, which some renderers will not
   play without. A write may wait `A_LISTENER_WAITS_AT_MOST` (120 s), since a paused renderer stops
-  reading. The description (`/description.xml`, the device's `friendlyName` the catalog word
-  `server-name`, *Resonate*, never the host's or the listener's name) and both services'
-  descriptions are `presented.rs`'s. Every answer's `Server` is `SERVED_AS`: `resonate/<version>
+  reading. The description (`/description.xml`) and both services' descriptions are
+  `presented.rs`'s. The device's `friendlyName` is the name the listener typed (`Offering::name`, a
+  `ServerName`, the `offer-name` key of *binary.md*) and else the catalog word `server-name`,
+  *Resonate*: a computer that offers its catalog is told apart from another only by what its
+  listener typed, so the host's name and the listener's are never read. `ServerName::new` folds
+  whitespace to one space, drops control characters, cuts at `NAME_CHARS_AT_MOST` (63 letters, UPnP
+  asking for fewer than 64) and answers `None` for what is then empty, so a blank name is the
+  default; the text is escaped as every XML text is. The name is the description's alone: the
+  announcements carry the UDN and a control point reads the name when it fetches the description,
+  so a name changed under a running server is told by announcing the server again
+  (`Offered::rename`). The root container's title stays the catalog word. Every answer's `Server` is `SERVED_AS`: `resonate/<version>
   UPnP/1.0 DLNADOC/1.50`.
 - **Search reads `SearchCriteria` by hand and asks the catalog a typed query** (`criteria.rs`).
   `GetSearchCapabilities` answers `SEARCH_CAPABILITIES`: `dc:title`, `dc:creator`, `upnp:artist`,
@@ -515,7 +523,7 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   `on_the_album`'s songs, each with the search's text beside the narrowing; under a playlist the
   songs are its entries narrowed by the text (`Library::playlist_entries` with it, so a saved query's
   playlist narrows its own query) in the playlist's order, whole files alone, paged in memory
-  (`played_from_matching`), and with no text the kept list `played_from` pages. `Offered` holds the running `MediaServer` for the window (*binary.md*'s `share-catalog-on-network`), and `resonate offer` runs one with no window until interrupted (`offer::offer`).
+  (`played_from_matching`), and with no text the kept list `played_from` pages. `Offered` holds the running `MediaServer` for the window (*binary.md*'s `share-catalog-on-network` and `offer-name`), and `resonate offer` runs one with no window until interrupted (`offer::offer`).
 - **Fuzzed** with the rest of the crate (`read_what_a_network_says`): an `M-SEARCH`, a request head
   through `routed`, a GENA head (a callback taken only at the sender, a timeout inside its bounds), a
   path, an object id read back as itself, a UDN, a `Range` span inside its length, a

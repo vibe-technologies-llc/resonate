@@ -140,6 +140,7 @@ keys! {
     RenderersAt = "renderers-at";
     CastAt = "cast-at";
     ShareCatalogOnNetwork = "share-catalog-on-network", off;
+    OfferName = "offer-name";
     HistoryKept = "history-kept";
     SkipRepeatsQueue = "skip-repeats-queue";
     PreviousRestarts = "previous-restarts";

@@ -537,7 +537,7 @@ impl Group {
                 title: words::settings_find::the_catalog_on_the_network(),
                 hint: words::settings_find::shared_catalog_hint(),
                 also_called: words::settings_find::upnp_dlna_media_server_share_browse_kodi_vlc(),
-                keys: &[ConfigKey::ShareCatalogOnNetwork],
+                keys: &[ConfigKey::ShareCatalogOnNetwork, ConfigKey::OfferName],
             },
             Self::Resampler => Described {
                 category: Category::Processing,
