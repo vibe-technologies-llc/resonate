@@ -23,7 +23,6 @@ use resonate_library::{
 };
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
-use self::amended::{Amended, Amendment};
 pub use self::{
     amended::{AMENDED_FILE, AmendedTo},
     import::{
@@ -33,12 +32,16 @@ pub use self::{
     offered::{CopyPart, Offered, OfferedFile, received_amendments, received_copy, removed_copy},
     tables::{KeptTables, TABLES_FILE},
 };
+use self::{
+    amended::{Amended, Amendment},
+    looked_up::store_read,
+};
 use crate::{
     Answer, Asked, Entity, Error, PackOp, Result, Store, StoreOp,
     wire::{Reader, Writer, mbid_bytes},
 };
 
-pub const FORMAT: u32 = 1;
+pub const FORMAT: u32 = 2;
 pub const MIRROR_FILE: &str = "musicbrainz.sqlite";
 pub const PRESSINGS_READ: usize = 25;
 pub const ARTIST_PRESSINGS_PAGE: usize = 100;
@@ -48,6 +51,7 @@ pub const OFFICIAL: &str = "Official";
 const BLOCKS_KEPT_UNPACKED: usize = 64;
 const ARTISTS_KEPT_LISTED: usize = 4;
 const MOST_UNPACKED_BLOCK: usize = 16 * 1024 * 1024;
+const MIRROR_CACHE_KIB: i64 = 64 * 1024;
 
 pub(crate) const SCHEMA: &str = "
 CREATE TABLE made (format INTEGER NOT NULL, dump TEXT NOT NULL, built INTEGER NOT NULL);
@@ -181,10 +185,14 @@ struct Listed {
     credited: Arc<[Mbid]>,
 }
 
+type Unpacker = Mutex<zstd::bulk::Decompressor<'static>>;
+
 pub struct Mirror {
     path: PathBuf,
     connection: Mutex<Connection>,
     dictionaries: Vec<(Entity, Vec<u8>)>,
+    unpackers: Vec<(Entity, Unpacker)>,
+    plain: Unpacker,
     unpacked: Mutex<VecDeque<Unpacked>>,
     listed: Mutex<VecDeque<Listed>>,
     amended: Option<Mutex<Amended>>,
@@ -220,6 +228,9 @@ impl Mirror {
         connection
             .busy_timeout(Duration::from_secs(5))
             .map_err(Error::store(Store::Mirror, StoreOp::Configure))?;
+        connection
+            .execute_batch(&format!("PRAGMA cache_size = -{MIRROR_CACHE_KIB};"))
+            .map_err(Error::store(Store::Mirror, StoreOp::Configure))?;
         let (format, dump, built): (u32, String, i64) = connection
             .query_row("SELECT format, dump, built FROM made", [], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
@@ -231,7 +242,7 @@ impl Mirror {
                 reads: FORMAT,
             });
         }
-        let dictionaries = {
+        let dictionaries: Vec<(Entity, Vec<u8>)> = {
             let mut statement = connection
                 .prepare("SELECT kind, bytes FROM dictionaries")
                 .map_err(Error::store(Store::Mirror, StoreOp::Read))?;
@@ -246,6 +257,16 @@ impl Mirror {
                 .filter_map(|(kind, bytes)| Entity::coded(kind).map(|kind| (kind, bytes)))
                 .collect()
         };
+        let unpack = |source| Error::Pack {
+            op: PackOp::Unpack,
+            source,
+        };
+        let mut unpackers = Vec::with_capacity(dictionaries.len());
+        for (kind, dictionary) in &dictionaries {
+            let unpacker = zstd::bulk::Decompressor::with_dictionary(dictionary).map_err(unpack)?;
+            unpackers.push((*kind, Mutex::new(unpacker)));
+        }
+        let plain = Mutex::new(zstd::bulk::Decompressor::new().map_err(unpack)?);
         let amended = match path.parent() {
             Some(folder) => Amended::open(&folder.join(AMENDED_FILE), &dump).unwrap_or_else(|error| {
                 tracing::warn!(%error, "the changes kept beside the copy of MusicBrainz could not be opened");
@@ -257,7 +278,9 @@ impl Mirror {
             path: path.to_path_buf(),
             connection: Mutex::new(connection),
             dictionaries,
-            unpacked: Mutex::new(VecDeque::new()),
+            unpackers,
+            plain,
+            unpacked: Mutex::new(VecDeque::with_capacity(BLOCKS_KEPT_UNPACKED)),
             listed: Mutex::new(VecDeque::new()),
             amended_to: amended.as_ref().map(|amended| amended.to.clone()),
             amended: amended.map(Mutex::new),
@@ -653,33 +676,34 @@ impl Mirror {
     }
 
     fn block(&self, kind: Entity, at: i64) -> Result<Option<Arc<[u8]>>> {
-        let held: Option<(i64, i64, Vec<u8>)> = {
-            let connection = self.connection.lock();
-            connection
-                .prepare_cached(
-                    "SELECT first, unpacked, packed FROM blocks \
-                     WHERE kind = ?1 AND first <= ?2 ORDER BY first DESC LIMIT 1",
-                )
-                .and_then(|mut statement| {
-                    statement
-                        .query_row(params![kind.code(), at], |row| {
-                            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-                        })
-                        .optional()
-                })
-                .map_err(Error::store(Store::Mirror, StoreOp::Read))?
-        };
-        let Some((first, unpacked, packed)) = held else {
+        let failed = store_read(Store::Mirror);
+        let connection = self.connection.lock();
+        let placed: Option<(i64, i64)> = connection
+            .prepare_cached(
+                "SELECT id, first FROM blocks \
+                 WHERE kind = ?1 AND first <= ?2 ORDER BY first DESC LIMIT 1",
+            )
+            .and_then(|mut statement| {
+                statement
+                    .query_row(params![kind.code(), at], |row| {
+                        Ok((row.get(0)?, row.get(1)?))
+                    })
+                    .optional()
+            })
+            .map_err(&failed)?;
+        let Some((block, first)) = placed else {
             return Ok(None);
         };
-        if let Some(cached) = self
-            .unpacked
-            .lock()
-            .iter()
-            .find(|cached| cached.kind == kind && cached.first == first)
-        {
-            return Ok(Some(Arc::clone(&cached.bytes)));
+        if let Some(cached) = self.cached(kind, first) {
+            return Ok(Some(cached));
         }
+        let (unpacked, packed): (i64, Vec<u8>) = connection
+            .prepare_cached("SELECT unpacked, packed FROM blocks WHERE id = ?1")
+            .and_then(|mut statement| {
+                statement.query_row([block], |row| Ok((row.get(0)?, row.get(1)?)))
+            })
+            .map_err(&failed)?;
+        drop(connection);
         let capacity = usize::try_from(unpacked)
             .unwrap_or(usize::MAX)
             .min(MOST_UNPACKED_BLOCK);
@@ -696,18 +720,25 @@ impl Mirror {
         Ok(Some(bytes))
     }
 
+    fn cached(&self, kind: Entity, first: i64) -> Option<Arc<[u8]>> {
+        let mut cache = self.unpacked.lock();
+        let at = cache
+            .iter()
+            .position(|cached| cached.kind == kind && cached.first == first)?;
+        let hit = cache.remove(at)?;
+        let bytes = Arc::clone(&hit.bytes);
+        cache.push_back(hit);
+        Some(bytes)
+    }
+
     fn unpack(&self, kind: Entity, packed: &[u8], capacity: usize) -> Result<Vec<u8>> {
-        let unpack = |source| Error::Pack {
-            op: PackOp::Unpack,
-            source,
-        };
-        let mut decompressor = match self.dictionaries.iter().find(|(held, _)| *held == kind) {
-            Some((_, dictionary)) => {
-                zstd::bulk::Decompressor::with_dictionary(dictionary).map_err(unpack)?
-            }
-            None => zstd::bulk::Decompressor::new().map_err(unpack)?,
-        };
-        decompressor
+        let unpacker = self
+            .unpackers
+            .iter()
+            .find(|(held, _)| *held == kind)
+            .map_or(&self.plain, |(_, unpacker)| unpacker);
+        unpacker
+            .lock()
             .decompress(packed, capacity)
             .map_err(|source| Error::Pack {
                 op: PackOp::Unpack,

@@ -2,7 +2,7 @@ use std::{path::Path, time::Duration};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params_from_iter, types::Value};
 
-use super::copy::Table;
+use super::{copy::Table, import::ROWS_WEIGHED_BY_ANALYZE};
 use crate::{Error, Result, Store, StoreOp};
 
 pub const TABLES_FILE: &str = "musicbrainz.tables.sqlite";
@@ -84,7 +84,10 @@ pub(crate) fn kept_beside_the_build(
         )
         .map_err(written)?;
     staging
-        .execute_batch("ANALYZE; PRAGMA locking_mode = NORMAL; PRAGMA journal_mode = DELETE;")
+        .execute_batch(&format!(
+            "PRAGMA analysis_limit = {ROWS_WEIGHED_BY_ANALYZE}; ANALYZE; \
+             PRAGMA locking_mode = NORMAL; PRAGMA journal_mode = DELETE;"
+        ))
         .map_err(Error::store(Store::Tables, StoreOp::Configure))
 }
 

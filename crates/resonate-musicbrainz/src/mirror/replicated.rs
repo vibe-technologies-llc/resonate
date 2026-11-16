@@ -9,7 +9,7 @@ use rusqlite::{Connection, types::Value};
 
 use super::{
     Mirror,
-    amended::{AMENDED_FILE, Amending, made_at},
+    amended::{AMENDED_FILE, Amending, made_at, prepared_for_amending},
     copy::{Table, fields, table_called, unescaped},
     documents::{Builders, rows_of},
     import::Building,
@@ -730,9 +730,10 @@ pub fn replicated(
             [amended_path.to_string_lossy().into_owned()],
         )
         .map_err(Error::store(Store::Amended, StoreOp::Open))?;
+    let dictionaries = prepared_for_amending(mirror.dictionaries());
     let amending = Amending {
         connection: &tables,
-        dictionaries: mirror.dictionaries(),
+        dictionaries: &dictionaries,
     };
     let mut done = Replicated {
         from: kept.sequence,

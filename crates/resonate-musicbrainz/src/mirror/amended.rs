@@ -2,6 +2,7 @@ use std::{path::Path, time::Duration};
 
 use resonate_core::Mbid;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use zstd::dict::EncoderDictionary;
 
 use super::documents::{Document, words_of};
 use crate::{
@@ -110,7 +111,21 @@ pub(crate) fn amended_to_in(connection: &Connection, prefix: &str) -> Result<Opt
 
 pub(crate) struct Amending<'a> {
     pub connection: &'a Connection,
-    pub dictionaries: &'a [(Entity, Vec<u8>)],
+    pub dictionaries: &'a [(Entity, EncoderDictionary<'static>)],
+}
+
+pub(crate) fn prepared_for_amending(
+    dictionaries: &[(Entity, Vec<u8>)],
+) -> Vec<(Entity, EncoderDictionary<'static>)> {
+    dictionaries
+        .iter()
+        .map(|(kind, dictionary)| {
+            (
+                *kind,
+                EncoderDictionary::copy(dictionary, AMENDED_PACKED_AT),
+            )
+        })
+        .collect()
 }
 
 impl Amending<'_> {
@@ -121,8 +136,7 @@ impl Amending<'_> {
         };
         let mut compressor = match self.dictionaries.iter().find(|(held, _)| *held == kind) {
             Some((_, dictionary)) => {
-                zstd::bulk::Compressor::with_dictionary(AMENDED_PACKED_AT, dictionary)
-                    .map_err(pack)?
+                zstd::bulk::Compressor::with_prepared_dictionary(dictionary).map_err(pack)?
             }
             None => zstd::bulk::Compressor::new(AMENDED_PACKED_AT).map_err(pack)?,
         };

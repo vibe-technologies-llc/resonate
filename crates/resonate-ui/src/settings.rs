@@ -1113,11 +1113,46 @@ pub trait Updates: Send + Sync {
     fn newer(&self, reaching: bool) -> Option<Newer>;
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MirrorStep {
+    Waiting,
+    Downloading,
+    Verifying,
+    Reading,
+    Indexing,
+    Placing,
+    Writing,
+    Settling,
+}
+
+impl MirrorStep {
+    pub const TAKEN: [Self; 7] = [
+        Self::Downloading,
+        Self::Verifying,
+        Self::Reading,
+        Self::Indexing,
+        Self::Placing,
+        Self::Writing,
+        Self::Settling,
+    ];
+
+    pub const fn counts_bytes(self) -> bool {
+        matches!(self, Self::Downloading | Self::Verifying | Self::Reading)
+    }
+
+    pub fn place(self) -> usize {
+        Self::TAKEN
+            .iter()
+            .position(|taken| *taken == self)
+            .unwrap_or(0)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MirrorTold {
     Absent,
     Building {
-        doing: &'static str,
+        step: MirrorStep,
         done: Option<(u64, u64)>,
     },
     Held {

@@ -618,12 +618,26 @@ impl Mirroring {
 }
 
 #[cfg(feature = "ui")]
+const fn step_of(phase: Phase) -> resonate_ui::MirrorStep {
+    match phase {
+        Phase::Waiting => resonate_ui::MirrorStep::Waiting,
+        Phase::Downloading => resonate_ui::MirrorStep::Downloading,
+        Phase::Verifying => resonate_ui::MirrorStep::Verifying,
+        Phase::Importing => resonate_ui::MirrorStep::Reading,
+        Phase::Indexing => resonate_ui::MirrorStep::Indexing,
+        Phase::Placing => resonate_ui::MirrorStep::Placing,
+        Phase::Writing => resonate_ui::MirrorStep::Writing,
+        Phase::Settling | Phase::Done => resonate_ui::MirrorStep::Settling,
+    }
+}
+
+#[cfg(feature = "ui")]
 impl resonate_ui::Mirroring for Mirroring {
     fn told(&self) -> resonate_ui::MirrorTold {
         if let Some(building) = BUILDING.lock().clone() {
             let (read, of) = building.bytes();
             return resonate_ui::MirrorTold::Building {
-                doing: building.phase().label(),
+                step: step_of(building.phase()),
                 done: (of > 0).then_some((read, of)),
             };
         }

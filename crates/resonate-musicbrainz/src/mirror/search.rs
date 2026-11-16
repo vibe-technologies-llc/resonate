@@ -24,9 +24,28 @@ const RECORDING_WORDS: &str = "recording_words";
 const RELEASE_WORDS: &str = "release_words";
 const GROUP_WORDS: &str = "group_words";
 const ARTIST_WORDS: &str = "artist_words";
+const TITLE_TOKEN_LEADS_WITH: &str = "qt";
+const FINGERPRINT_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const FINGERPRINT_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 fn folded(text: &str) -> String {
     folded_letters(text.trim())
+}
+
+fn fingerprint(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(FINGERPRINT_OFFSET, |held, byte| {
+        (held ^ u64::from(*byte)).wrapping_mul(FINGERPRINT_PRIME)
+    })
+}
+
+fn bare_title_token(title: &str) -> Option<String> {
+    let bare = folded(titles::bare(title));
+    (!bare.is_empty()).then(|| {
+        format!(
+            "{TITLE_TOKEN_LEADS_WITH}{:016x}",
+            fingerprint(bare.as_bytes())
+        )
+    })
 }
 
 fn words_shared(asked: &[String], found: &[String]) -> f64 {
@@ -97,6 +116,7 @@ fn words_of_credit(credit: &[Credit]) -> Vec<String> {
 pub(crate) fn words_of_a_credited(title: &str, credit: &[Credit]) -> String {
     let mut words = words_of_a_name(title);
     words.extend(words_of_credit(credit));
+    words.extend(bare_title_token(title));
     words.join(" ")
 }
 
@@ -117,16 +137,30 @@ fn asked_queries(title: &str, artist: Option<&str>, wording: Wording) -> Vec<Str
     let Some(title_alone) = all_of(&titled) else {
         return Vec::new();
     };
+    let narrowed =
+        |query: &str| bare_title_token(title).map(|token| format!("\"{token}\" {query}"));
     match (wording, any_of(&credited)) {
         (Wording::Phrase, _) => {
             let mut every = titled;
             every.extend(credited);
-            all_of(&every).into_iter().collect()
+            let Some(every) = all_of(&every) else {
+                return Vec::new();
+            };
+            narrowed(&every).into_iter().chain([every]).collect()
         }
         (Wording::Words, Some(any_artist)) => {
-            vec![format!("{title_alone} AND {any_artist}"), title_alone]
+            let with_artist = format!("{title_alone} AND {any_artist}");
+            narrowed(&with_artist)
+                .into_iter()
+                .chain([with_artist])
+                .chain(narrowed(&title_alone))
+                .chain([title_alone])
+                .collect()
         }
-        (Wording::Words, None) => vec![title_alone],
+        (Wording::Words, None) => narrowed(&title_alone)
+            .into_iter()
+            .chain([title_alone])
+            .collect(),
     }
 }
 

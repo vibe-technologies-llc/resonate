@@ -132,12 +132,23 @@ backslash escapes are read, octal and hex included (`\x` with no hex digit is an
 - **Blocks.** Documents are packed into blocks of about `BLOCK_BYTES` (64 KiB), each addressed by
   the ordinal of its first document. Each kind has its own zstd dictionary, trained on the first
   `SAMPLED_BYTES` of that kind.
-- **Packing.** Blocks are packed at `BLOCKS_PACKED_AT` on every core but one.
+- **Packing.** Blocks are packed at `BLOCKS_PACKED_AT` on every core but one. A kind's dictionary
+  is digested once, as an `EncoderDictionary` every worker shares, never once a block: digesting a
+  112 KiB dictionary at that level costs about what packing the block does. Replication's
+  amendments do the same (`prepared_for_amending`, once a replication).
 - **Indexes.** An MBID (`entities`), an ISRC (`isrcs`) or a barcode (`barcodes`) leads to an
   ordinal. The ordinal is the rowid of the contentless, `detail=none` FTS5 tables of folded words
-  (`recording_words`, `release_words`, `group_words`, `artist_words`).
-- **Reading.** A lookup by id is one index probe and one block unpacked; the last
-  `BLOCKS_KEPT_UNPACKED` blocks are kept.
+  (`recording_words`, `release_words`, `group_words`, `artist_words`). A release's, recording's
+  and group's words also carry one token for its folded bare title (`bare_title_token`: `qt` and
+  the FNV-1a of `titles::bare` folded), so a search can ask for the titles that can agree before
+  bm25 weighs anything (*Search*). Each table holds `WORDS_HELD_BEFORE_A_FLUSH` (64 MiB) of terms
+  before writing a segment (FTS5's `hashsize`, 1 MiB by default), so 54 million rows leave a few
+  hundred segments to merge rather than tens of thousands.
+- **Reading.** A lookup by id is one index probe and one block unpacked. The block's place is read
+  off `blocks_by_first` alone and its packed bytes only on a miss of the last `BLOCKS_KEPT_UNPACKED`
+  blocks, kept most recently used last. Each kind's dictionary is digested once as the copy opens
+  (`unpackers`, a decompressor a kind), and the connection keeps `MIRROR_CACHE_KIB` (64 MiB) of
+  pages, so the upper levels of every index stay in memory.
 - **An artist's pressings are listed once.** `releases_of_artist` flattens the artist's groups into
   one list of release ids and pages that; the list of the last `ARTISTS_KEPT_LISTED` artists is kept,
   so a page after the first unpacks only the releases it returns.
@@ -146,6 +157,11 @@ backslash escapes are read, octal and hex included (`\x` with no hex digit is an
 
 - **Candidates.** Up to `CANDIDATES_WEIGHED` are taken by bm25. `Phrase` requires every title word
   and, where an artist is asked, every artist word. `Words` requires the title's alone.
+- **Narrowed first.** Each query of `asked_queries` is first asked with the bare title's token
+  added, so only titles alike once bare are weighed (a few rows where the words alone match
+  hundreds of thousands, each costing bm25 a read of its size); the query without it is asked only
+  where that finds nothing. Only titles alike once bare score 96 or more, so the strict rules take
+  what they took before, from every candidate rather than bm25's first 64.
 - **The score** is `agreement` of title times `credit_agreement`, out of 100:
   - Folded titles alike are whole.
   - Titles alike once `titles::bare` strips a qualifier are 0.96.
@@ -170,15 +186,24 @@ changes*).
   one. The staging and placement files are removed whatever happened.
 - **Cancelling.** `Building` carries the phase, the bytes and rows read, the documents written, and
   a cancel. `gaming::wait` holds it between batches.
+- **Every step is measured.** `Building::bytes` is the step's progress and its whole: the bytes of
+  the download, the checksum and the archive read; the indexes made of `copy::TABLES`' `indexed`
+  (and `ANALYZE`, capped at `ROWS_WEIGHED_BY_ANALYZE` rows an index, since a whole one reads the
+  41 GB staging again); the tracks placed (`Phase::Placing`, of the track rows the read counted);
+  the documents written, of the release, recording, group and artist rows read; and the
+  `SETTLING_STEPS` of the settling. The settings pane draws a row and a bar for every step
+  (`MirrorStep`, mapped from `Phase` by the binary's `step_of`): done, under way with its share
+  (gigabytes for the byte steps, a percentage for the rest), or to come.
 
-**What the build costs, measured on the export of 2026-11-04** (sixteen cores, 30 GB of memory
+**What the build cost before `FORMAT` 2 (the prepared dictionaries, the larger FTS5 flush, the capped
+`ANALYZE`, the title tokens), measured on the export of 2026-11-04** (sixteen cores, 30 GB of memory
 under other work): 274 million rows read in 16 minutes (the export is one bzip2 stream, so the read
 is one core's), 54 million documents written in 40 (releases about 6 000 a second, recordings 60 000),
 71 minutes in all. The staging peaks at 41 GB beside the 7.5 GB download; the copy kept is 10.3 GB.
 A lookup by id answers in under 3 ms, a strict search with its artist in about 10 to 70 ms. A bare
-common title asked in words alone is the slow case (*love* about 2.5 s), so a loose search with an
-artist first requires one of the artist's words (`asked_queries`) and asks the title alone only where
-that finds nothing.
+common title asked in words alone was the slow case (*love* about 2.5 s, bm25 reading the size of
+every row holding the word), which the bare title's token narrows first (*Narrowed first*); a loose
+search with an artist still requires one of the artist's words before asking the title alone.
 
 **A mirror is a cache rebuilt from the dump, not stored data.** A file of another `FORMAT` is
 `MirrorFormat`, left serving nothing until the next build replaces it. No migration is owed, since

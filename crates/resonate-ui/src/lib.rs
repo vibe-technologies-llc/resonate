@@ -62,11 +62,11 @@ pub use crate::{
     settings::{
         Asking, Bindings, CaretBlink, CatalogShared, ChecksYoutubeMusic, Continuing, Ephemeral,
         Followed, HandedOff, JellyfinBegun, JellyfinSession, JellyfinSignIn, ListOffered,
-        Measurers, MirrorTold, Mirroring, Newer, Online, Places, Present, Registering, RemoteKey,
-        RemoteRowShown, RemoteShown, RemoteZoneShown, Renderers, Setting, SettingChange, Settings,
-        SettingsCategory, SignsInToJellyfin, SignsInToYoutubeMusic, Sourcing, SpotifySignIn,
-        Stored, Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform, Synchronised,
-        Syncing, Tabs, TidalSignIn, Unkept, Updates, WindowButtons, WindowSize,
+        Measurers, MirrorStep, MirrorTold, Mirroring, Newer, Online, Places, Present, Registering,
+        RemoteKey, RemoteRowShown, RemoteShown, RemoteZoneShown, Renderers, Setting, SettingChange,
+        Settings, SettingsCategory, SignsInToJellyfin, SignsInToYoutubeMusic, Sourcing,
+        SpotifySignIn, Stored, Supplying, SyncShown, SyncStanding, SyncedDevice, SyncedPlatform,
+        Synchronised, Syncing, Tabs, TidalSignIn, Unkept, Updates, WindowButtons, WindowSize,
         YoutubeMusicConnection, YoutubeMusicSignIn,
     },
     together::{

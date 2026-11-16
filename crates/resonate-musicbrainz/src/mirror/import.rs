@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::{self, BufRead, BufReader, Read},
     path::{Path, PathBuf},
@@ -13,6 +13,7 @@ use std::{
 
 use resonate_core::{gaming, writer::Held};
 use rusqlite::{Connection, params};
+use zstd::dict::EncoderDictionary;
 
 use super::{
     AMENDED_FILE, BLOCKS_INDEXED, FORMAT, MIRROR_FILE, SCHEMA,
@@ -35,9 +36,16 @@ const BUILDING_FILE: &str = "musicbrainz.sqlite.building";
 const TABLES_BUILDING_FILE: &str = "musicbrainz.tables.sqlite.building";
 const BUILDING_LOCK: &str = "musicbrainz.building";
 const STAGING_CACHE_KIB: i64 = 1024 * 1024;
+const WORDS_HELD_BEFORE_A_FLUSH: i64 = 64 * 1024 * 1024;
+pub(crate) const ROWS_WEIGHED_BY_ANALYZE: i64 = 4096;
 const REPLICATION_SEQUENCE: &str = "REPLICATION_SEQUENCE";
 const SCHEMA_SEQUENCE: &str = "SCHEMA_SEQUENCE";
 const LONGEST_SEQUENCE_FILE: u64 = 64;
+const TRACKS_READ_FROM: &str = "track";
+const DOCUMENTS_READ_FROM: [&str; 4] = ["release", "recording", "release_group", "artist"];
+const SETTLING_STEPS: u64 = 9;
+
+type Tally = BTreeMap<&'static str, u64>;
 
 #[derive(Clone, Debug)]
 pub struct Archives {
@@ -53,18 +61,20 @@ pub enum Phase {
     Verifying,
     Importing,
     Indexing,
+    Placing,
     Writing,
     Settling,
     Done,
 }
 
 impl Phase {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::Waiting,
         Self::Downloading,
         Self::Verifying,
         Self::Importing,
         Self::Indexing,
+        Self::Placing,
         Self::Writing,
         Self::Settling,
         Self::Done,
@@ -77,6 +87,7 @@ impl Phase {
             Self::Verifying => "checking the download",
             Self::Importing => "reading the dump",
             Self::Indexing => "indexing what was read",
+            Self::Placing => "placing the tracks with their recordings",
             Self::Writing => "writing the compressed mirror",
             Self::Settling => "settling the index",
             Self::Done => "done",
@@ -192,13 +203,32 @@ pub fn built_from(
 
     let outcome = (|| {
         let staging = staged(&staging_path)?;
+        let mut tally = Tally::new();
         building.enter(Phase::Importing);
-        let sequenced = imported(&archives.core, Archive::Core, &staging, building)?;
-        imported(&archives.derived, Archive::Derived, &staging, building)?;
+        let sequenced = imported(
+            &archives.core,
+            Archive::Core,
+            &staging,
+            building,
+            &mut tally,
+        )?;
+        imported(
+            &archives.derived,
+            Archive::Derived,
+            &staging,
+            building,
+            &mut tally,
+        )?;
         building.enter(Phase::Indexing);
         indexed(&staging, building)?;
+        building.enter(Phase::Placing);
+        building.of(tally.get(TRACKS_READ_FROM).copied().unwrap_or(0));
         placed_with_their_recordings(&staging, building)?;
         building.enter(Phase::Writing);
+        building.of(DOCUMENTS_READ_FROM
+            .iter()
+            .filter_map(|table| tally.get(table))
+            .sum());
         let looked_up = LookedUp::read(&staging, building)?;
         written(
             &staging,
@@ -327,6 +357,7 @@ fn imported(
     from: Archive,
     staging: &Connection,
     building: &Building,
+    tally: &mut Tally,
 ) -> Result<Option<Sequenced>> {
     let file = File::open(path).map_err(Error::archive(path, ArchiveOp::Open))?;
     let total = file.metadata().map(|meta| meta.len()).unwrap_or(0);
@@ -365,7 +396,7 @@ fn imported(
             continue;
         };
         tracing::info!(table = table.name, "reading a table of the dump");
-        loaded(
+        let counted = loaded(
             table,
             BufReader::with_capacity(READ_AT_ONCE, entry),
             path,
@@ -373,6 +404,7 @@ fn imported(
             building,
             &progress,
         )?;
+        tally.insert(table.name, counted);
         seen.insert(table.name);
     }
     for table in TABLES.iter().filter(|table| table.from == from) {
@@ -395,9 +427,10 @@ fn loaded(
     staging: &Connection,
     building: &Building,
     progress: &AtomicU64,
-) -> Result<()> {
+) -> Result<u64> {
     let wanted = table.columns.iter().max().map_or(0, |last| last + 1);
     let placeholders = vec!["?"; table.columns.len()].join(", ");
+    let mut counted = 0_u64;
     staging
         .execute_batch("BEGIN")
         .map_err(Error::store(Store::Staging, StoreOp::Write))?;
@@ -410,7 +443,6 @@ fn loaded(
             .map_err(Error::store(Store::Staging, StoreOp::Write))?;
         let mut line = Vec::new();
         let mut values: Vec<Option<String>> = Vec::with_capacity(table.columns.len());
-        let mut counted = 0_u64;
         loop {
             line.clear();
             let read = rows
@@ -453,10 +485,13 @@ fn loaded(
     staging
         .execute_batch("COMMIT")
         .map_err(Error::store(Store::Staging, StoreOp::Write))?;
-    Ok(())
+    Ok(counted)
 }
 
 fn indexed(staging: &Connection, building: &Building) -> Result<()> {
+    let indexes: usize = TABLES.iter().map(|table| table.indexed.len()).sum();
+    building.of(indexes as u64 + 1);
+    let mut made = 0_u64;
     for table in TABLES {
         for (at, columns) in table.indexed.iter().enumerate() {
             building.looked_at()?;
@@ -466,10 +501,14 @@ fn indexed(staging: &Connection, building: &Building) -> Result<()> {
                     name = table.name
                 ))
                 .map_err(Error::store(Store::Staging, StoreOp::LayOut))?;
+            made += 1;
+            building.reached(made);
         }
     }
     staging
-        .execute_batch("ANALYZE;")
+        .execute_batch(&format!(
+            "PRAGMA analysis_limit = {ROWS_WEIGHED_BY_ANALYZE}; ANALYZE;"
+        ))
         .map_err(Error::store(Store::Staging, StoreOp::LayOut))
 }
 
@@ -614,6 +653,7 @@ fn placed_with_their_recordings(staging: &Connection, building: &Building) -> Re
                 building
                     .rows
                     .fetch_add(ROWS_BETWEEN_LOOKS, Ordering::Relaxed);
+                building.reached(counted);
                 building.looked_at()?;
             }
         }
@@ -630,11 +670,13 @@ struct Packed {
     packed: Vec<u8>,
 }
 
+type Prepared = Arc<EncoderDictionary<'static>>;
+
 struct Job {
     kind: Entity,
     first: i64,
     bytes: Vec<u8>,
-    dictionary: Option<Arc<Vec<u8>>>,
+    dictionary: Option<Prepared>,
 }
 
 struct Packer<'a> {
@@ -646,7 +688,7 @@ struct Packer<'a> {
     samples: Option<Vec<Vec<u8>>>,
     sampled: usize,
     waiting: Vec<(i64, Vec<u8>)>,
-    dictionary: Option<Arc<Vec<u8>>>,
+    dictionary: Option<Prepared>,
     jobs: &'a mpsc::SyncSender<Job>,
     mirror: &'a Connection,
 }
@@ -726,7 +768,10 @@ impl<'a> Packer<'a> {
                         params![self.kind.code(), dictionary],
                     )
                     .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
-                Some(Arc::new(dictionary))
+                Some(Arc::new(EncoderDictionary::copy(
+                    &dictionary,
+                    BLOCKS_PACKED_AT,
+                )))
             }
             Err(error) => {
                 tracing::debug!(%error, kind = ?self.kind, "no dictionary was trained; blocks go without one");
@@ -753,9 +798,7 @@ impl<'a> Packer<'a> {
 fn packed_by_a_worker(job: &Job) -> io::Result<Vec<u8>> {
     match &job.dictionary {
         Some(dictionary) => {
-            let mut compressor =
-                zstd::bulk::Compressor::with_dictionary(BLOCKS_PACKED_AT, dictionary)?;
-            compressor.compress(&job.bytes)
+            zstd::bulk::Compressor::with_prepared_dictionary(dictionary)?.compress(&job.bytes)
         }
         None => zstd::bulk::compress(&job.bytes, BLOCKS_PACKED_AT),
     }
@@ -781,6 +824,14 @@ fn written(
     mirror
         .execute_batch(SCHEMA)
         .map_err(Error::store(Store::Mirror, StoreOp::LayOut))?;
+    for kind in Entity::ALL {
+        let table = words_of(kind);
+        mirror
+            .execute_batch(&format!(
+                "INSERT INTO {table}({table}, rank) VALUES ('hashsize', {WORDS_HELD_BEFORE_A_FLUSH});"
+            ))
+            .map_err(Error::store(Store::Mirror, StoreOp::LayOut))?;
+    }
     let placed = scratch(placed_path, Store::Staging)?;
     placed
         .execute_batch(
@@ -852,6 +903,13 @@ fn written(
     outcome?;
 
     building.enter(Phase::Settling);
+    building.of(SETTLING_STEPS);
+    let mut settled = 0_u64;
+    let mut stepped = || {
+        settled += 1;
+        building.reached(settled);
+        building.looked_at()
+    };
     placed
         .execute_batch("COMMIT")
         .map_err(Error::store(Store::Staging, StoreOp::Write))?;
@@ -860,28 +918,28 @@ fn written(
     mirror
         .execute("ATTACH DATABASE ?1 AS placed", [placed_text])
         .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
-    mirror
-        .execute_batch(
-            "INSERT OR IGNORE INTO entities SELECT mbid, kind, ordinal FROM placed.placed ORDER BY mbid;
-             INSERT OR IGNORE INTO isrcs SELECT isrc, ordinal FROM placed.placed_isrcs ORDER BY isrc, ordinal;
-             INSERT OR IGNORE INTO barcodes SELECT barcode, ordinal FROM placed.placed_barcodes ORDER BY barcode, ordinal;",
-        )
-        .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
+    for settling in [
+        "INSERT OR IGNORE INTO entities SELECT mbid, kind, ordinal FROM placed.placed ORDER BY mbid;",
+        "INSERT OR IGNORE INTO isrcs SELECT isrc, ordinal FROM placed.placed_isrcs ORDER BY isrc, ordinal;",
+        "INSERT OR IGNORE INTO barcodes SELECT barcode, ordinal FROM placed.placed_barcodes ORDER BY barcode, ordinal;",
+    ] {
+        mirror
+            .execute_batch(settling)
+            .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
+        stepped()?;
+    }
     mirror
         .execute_batch(BLOCKS_INDEXED)
         .map_err(Error::store(Store::Mirror, StoreOp::LayOut))?;
-    for table in [
-        "recording_words",
-        "release_words",
-        "group_words",
-        "artist_words",
-    ] {
-        building.looked_at()?;
+    stepped()?;
+    for kind in Entity::ALL {
+        let table = words_of(kind);
         mirror
             .execute_batch(&format!(
                 "INSERT INTO {table}({table}) VALUES ('optimize');"
             ))
             .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
+        stepped()?;
     }
     mirror
         .execute(
@@ -892,10 +950,20 @@ fn written(
     mirror
         .execute_batch("COMMIT")
         .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
+    stepped()?;
     mirror
         .execute_batch("DETACH DATABASE placed; PRAGMA journal_mode = DELETE;")
         .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
     Ok(())
+}
+
+const fn words_inserted(kind: Entity) -> &'static str {
+    match kind {
+        Entity::Release => "INSERT INTO release_words (rowid, words) VALUES (?1, ?2)",
+        Entity::Recording => "INSERT INTO recording_words (rowid, words) VALUES (?1, ?2)",
+        Entity::Group => "INSERT INTO group_words (rowid, words) VALUES (?1, ?2)",
+        Entity::Artist => "INSERT INTO artist_words (rowid, words) VALUES (?1, ?2)",
+    }
 }
 
 fn block_kept(mirror: &Connection, block: io::Result<Packed>) -> Result<()> {
@@ -943,10 +1011,7 @@ impl Writing<'_> {
             })
             .map_err(write())?;
         self.mirror
-            .prepare_cached(&format!(
-                "INSERT INTO {} (rowid, words) VALUES (?1, ?2)",
-                words_of(kind)
-            ))
+            .prepare_cached(words_inserted(kind))
             .and_then(|mut statement| statement.execute(params![ordinal, built.words]))
             .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
         let coded = match kind {
@@ -966,6 +1031,7 @@ impl Writing<'_> {
         }
         let documents = self.building.documents.fetch_add(1, Ordering::Relaxed) + 1;
         if documents.is_multiple_of(ROWS_BETWEEN_LOOKS) {
+            self.building.reached(documents);
             self.drained(packed)?;
             self.building.looked_at()?;
         }
@@ -1011,7 +1077,7 @@ mod tests {
         staging
     }
 
-    fn read(rows: &[u8], staging: &Connection) -> Result<()> {
+    fn read(rows: &[u8], staging: &Connection) -> Result<u64> {
         loaded(
             area(),
             Cursor::new(rows.to_vec()),

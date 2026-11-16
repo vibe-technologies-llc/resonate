@@ -8,12 +8,12 @@ use resonate_core::Switch;
 use resonate_listen::Listening;
 
 use crate::{
-    MirrorTold, ResonateApp, Setting,
+    MirrorStep, MirrorTold, ResonateApp, Setting,
     icons::Icon,
     views::{
         kit,
         root::RootView,
-        settings::{Armed, Choice, Rows, action, note, switch_row},
+        settings::{Armed, Choice, Rows, action, note, progress, reading, switch_row},
     },
     words,
 };
@@ -21,20 +21,78 @@ use crate::{
 const MIRROR_REDRAWN_EVERY: Duration = Duration::from_secs(1);
 
 const BYTES_IN_A_GIGABYTE: f64 = 1_000_000_000.0;
+const WHOLE_PERCENT: f64 = 100.0;
+
+fn step_said(step: MirrorStep) -> &'static str {
+    match step {
+        MirrorStep::Waiting => words::settings_online::mirror_step_waiting(),
+        MirrorStep::Downloading => words::settings_online::mirror_step_downloading(),
+        MirrorStep::Verifying => words::settings_online::mirror_step_verifying(),
+        MirrorStep::Reading => words::settings_online::mirror_step_reading(),
+        MirrorStep::Indexing => words::settings_online::mirror_step_indexing(),
+        MirrorStep::Placing => words::settings_online::mirror_step_placing(),
+        MirrorStep::Writing => words::settings_online::mirror_step_writing(),
+        MirrorStep::Settling => words::settings_online::mirror_step_settling(),
+    }
+}
+
+fn gigabytes(bytes: u64) -> String {
+    resonate_words::decimal(bytes as f64 / BYTES_IN_A_GIGABYTE, 1)
+}
+
+fn step_standing(taken: MirrorStep, step: MirrorStep, done: Option<(u64, u64)>) -> (String, f32) {
+    let (place, at) = (taken.place(), step.place());
+    if place < at {
+        return (words::settings_online::mirror_step_done().to_owned(), 1.0);
+    }
+    if place > at {
+        return (
+            words::settings_online::mirror_step_to_come().to_owned(),
+            0.0,
+        );
+    }
+    if step == MirrorStep::Waiting {
+        return (words::settings_online::mirror_step_waits().to_owned(), 0.0);
+    }
+    match done {
+        Some((read, of)) if of > 0 => {
+            let read = read.min(of);
+            let share = read as f64 / of as f64;
+            let said = if taken.counts_bytes() {
+                words::settings_online::mirror_step_bytes(gigabytes(of), gigabytes(read))
+            } else {
+                words::settings_online::mirror_step_share((share * WHOLE_PERCENT).floor() as u64)
+            };
+            (said, share as f32)
+        }
+        _ => (
+            words::settings_online::mirror_step_under_way().to_owned(),
+            0.0,
+        ),
+    }
+}
+
+fn mirror_steps(step: MirrorStep, done: Option<(u64, u64)>) -> gpui::Div {
+    MirrorStep::TAKEN
+        .into_iter()
+        .fold(div().flex().flex_col().gap_2(), |steps, taken| {
+            let (said, share) = step_standing(taken, step, done);
+            steps.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(reading(step_said(taken), said))
+                    .child(progress(share)),
+            )
+        })
+}
 
 fn mirror_said(told: &MirrorTold) -> String {
     match told {
         MirrorTold::Absent => words::settings_online::mirror_absent().to_owned(),
-        MirrorTold::Building {
-            doing,
-            done: Some((read, of)),
-        } if *of > 0 => words::settings_online::mirror_building_so_far(
-            doing.to_string(),
-            resonate_words::decimal(*of as f64 / BYTES_IN_A_GIGABYTE, 1),
-            resonate_words::decimal(*read as f64 / BYTES_IN_A_GIGABYTE, 1),
-        ),
-        MirrorTold::Building { doing, .. } => {
-            words::settings_online::mirror_building(doing.to_string())
+        MirrorTold::Building { step, .. } => {
+            words::settings_online::mirror_building(step_said(*step))
         }
         MirrorTold::Held {
             dump,
@@ -184,6 +242,13 @@ impl RootView {
                     .flex_col()
                     .gap_2()
                     .child(note(mirror_said(&told)))
+                    .when_some(
+                        match told {
+                            MirrorTold::Building { step, done } => Some((step, done)),
+                            _ => None,
+                        },
+                        |body, (step, done)| body.child(mirror_steps(step, done)),
+                    )
                     .child(
                         kit::action_row()
                             .child(action(
