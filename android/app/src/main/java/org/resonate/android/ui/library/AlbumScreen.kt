@@ -199,7 +199,7 @@ fun AlbumScreen(screen: Screen.Album) {
                                     onClick = { resonate.playback.play(tracks, row.index) },
                                     playing = track.id == playing,
                                     number = trackNumber(track, row.index),
-                                    supporting = albumRowLine(words(), track, owner, various),
+                                    supporting = track.shownArtist(words()),
                                     note = clock(track.durationMs),
                                     onMore = { sheets.song(track) },
                                     selection = selection.row(track.id),
@@ -242,8 +242,5 @@ fun AlbumScreen(screen: Screen.Album) {
     }
     choosing?.let { songs -> DownloadChooser(songs, model.downloads) { choosing = null } }
 }
-
-private fun albumRowLine(words: Words, track: Track, owner: String, various: Boolean): String =
-    if (various || !track.artist.equals(owner, ignoreCase = true)) track.shownArtist(words) else ""
 
 private const val SEED_EDGE = 96

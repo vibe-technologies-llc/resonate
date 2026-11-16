@@ -47,6 +47,7 @@ fun standingWords(words: Words, standing: DownloadState?): String? =
 fun notHeldLine(words: Words, song: SearchSong, standing: DownloadState?, withAlbum: Boolean): String =
     standingWords(words, standing)
         ?: listOfNotNull(
+                song.artist.takeIf { it.isNotBlank() },
                 song.album.takeIf { withAlbum && it.isNotBlank() },
                 song.durationMs?.let { clock(it) },
             )

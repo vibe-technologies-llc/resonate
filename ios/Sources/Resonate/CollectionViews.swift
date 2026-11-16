@@ -803,7 +803,6 @@ struct AlbumView: View {
     var body: some View {
         let shownTitle = album?.shownTitle ?? ""
         let artist = album?.artist ?? ""
-        let credit = AlbumCredit(artist)
         let discs = AlbumDisc.of(tracks, notHeld: notHeld)
         List {
             CollectionHeader(
@@ -824,7 +823,7 @@ struct AlbumView: View {
                     ForEach(disc.rows) { row in
                         switch row {
                         case .held(let track):
-                            TrackRow(track: track, numbered: track.trackNumber, albumArtist: credit) {
+                            TrackRow(track: track, numbered: track.trackNumber, timed: true) {
                                 library.play(tracks, selected: track)
                             }
                             .listRowBackground(Color.clear)
@@ -916,6 +915,12 @@ struct NotHeldSongRow: View {
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .titleLines()
+                    if !song.artist.isEmpty {
+                        Text(song.artist)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .titleLines()
+                    }
                     if showsAlbum, !song.album.isEmpty {
                         Text(song.album)
                             .font(.caption)

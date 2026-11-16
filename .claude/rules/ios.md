@@ -814,7 +814,7 @@ every route change (a pair of headphones at the same rate included), not from th
   button style, so `.glassProminent` drew Play's triangle blue on its blue fill: the capsule draws
   its symbol and title as separate views, each given its colour, never a `Label`. The artwork's shadow is `HeaderShadow`, a shadow-only `Canvas` drawn once at scale 1 in the cover's outline and asynchronously, as `CoverShadow` is, never `.shadow`, which was blurred again on every scrolled frame; a playlist's mosaic picks are kept per playlist and revision (`PlaylistCovers`). An album lists its tracks by disc,
   a *Disc N* header only where there is more than one, each row numbered with its length at the
-  trailing edge and a second line only for a track artist other than the album's. **The songs of its
+  trailing edge and the track's artist as its second line, every row, the greyed ones too (`TrackRow`'s `timed`). **The songs of its
   release the album lacks stand greyed at their places** (`mobile.md`'s *The songs an album lacks*):
   `AlbumView` reads `album_songs_not_held` with its songs, and once per opened key asks
   `learn_album_songs`, reading them again where songs landed. `AlbumDisc.of(tracks, notHeld:)`
@@ -837,7 +837,7 @@ every route change (a pair of headphones at the same rate included), not from th
   of the playlist through `Library.everyPage`, as its page reads them). Lists, search results, shelves and the artist page's albums all carry it.
 - **One row per kind**: a collection is a `CollectionRow` (lit title, optional chevron) and a song a
   `TrackRow` (lit by `query` in search results, `showsAlbum` on an artist page) wherever listed, so a
-  search result swipes, marks the playing song and is felt as a list row is; only its `PlayableTrack` (the title's weight and colour, the playing mark) reads `currentId`, so a song change redraws that part of each row and not its lit subtitle; an album page folds its artist once (`AlbumCredit`); every artwork edge is a
+  search result swipes, marks the playing song and is felt as a list row is; only its `PlayableTrack` (the title's weight and colour, the playing mark) reads `currentId`, so a song change redraws that part of each row and not its lit subtitle; every artwork edge is a
   `@ScaledMetric`.
 - **Find another version** is in `SongPages` beside *Share link* (`Navigation.findVersions`,
   presented by the root as `VersionsSheet` and held until Now Playing closes, as the tag editor is):

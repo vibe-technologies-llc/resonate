@@ -405,27 +405,13 @@ struct CollectionRow: View {
     }
 }
 
-struct AlbumCredit {
-    let name: String
-    let folded: String
-
-    init(_ artist: String) {
-        name = artist.trimmingCharacters(in: .whitespaces)
-        folded = name.searchFolded
-    }
-
-    func names(_ credited: String) -> Bool {
-        credited == name || credited.searchFolded == folded
-    }
-}
-
 struct TrackRow: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     let track: Track
     var current: Bool?
     var numbered: UInt32?
-    var albumArtist: AlbumCredit?
+    var timed = false
     var showsAlbum = false
     var query: String?
     var ownsMenus = true
@@ -439,7 +425,7 @@ struct TrackRow: View {
                 detail: detail,
                 current: current,
                 numbered: numbered,
-                timed: albumArtist != nil,
+                timed: timed,
                 play: play
             )
             FavouriteButton(track: track)
@@ -476,10 +462,8 @@ struct TrackRow: View {
         if showsAlbum {
             return AttributedString(track.album.isEmpty ? clock(track.durationMs) : "\(track.album) · \(clock(track.durationMs))")
         }
-        guard let albumArtist else { return AttributedString("\(track.shownArtist) · \(clock(track.durationMs))") }
-        let credited = track.artist.trimmingCharacters(in: .whitespaces)
-        guard !credited.isEmpty, !albumArtist.names(credited) else { return nil }
-        return AttributedString(credited)
+        guard timed else { return AttributedString("\(track.shownArtist) · \(clock(track.durationMs))") }
+        return AttributedString(track.shownArtist)
     }
 }
 

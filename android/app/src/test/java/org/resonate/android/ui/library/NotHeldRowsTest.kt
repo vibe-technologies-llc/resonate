@@ -19,14 +19,18 @@ class NotHeldRowsTest {
         )
 
     @Test
-    fun aSongNotHeldSaysItsLengthAndAnAlbumOnlyWhereAsked() {
-        assertEquals("3:45", notHeldLine(English, song, null, withAlbum = false))
-        assertEquals("Album · 3:45", notHeldLine(English, song, null, withAlbum = true))
+    fun aSongNotHeldSaysItsArtistAndLengthAndAnAlbumOnlyWhereAsked() {
+        assertEquals("Artist · 3:45", notHeldLine(English, song, null, withAlbum = false))
+        assertEquals("Artist · Album · 3:45", notHeldLine(English, song, null, withAlbum = true))
     }
 
     @Test
-    fun aSongWithNoLengthSaysNothingOfIt() {
-        assertEquals("", notHeldLine(English, song.copy(durationMs = null), null, withAlbum = false))
+    fun aSongWithNoLengthOrArtistSaysNothingOfIt() {
+        assertEquals("Artist", notHeldLine(English, song.copy(durationMs = null), null, withAlbum = false))
+        assertEquals(
+            "",
+            notHeldLine(English, song.copy(artist = "", durationMs = null), null, withAlbum = false),
+        )
     }
 
     @Test
