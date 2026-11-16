@@ -74,7 +74,7 @@ pub(crate) fn folded(transaction: &Transaction<'_>, kept: TrackId, taken: TrackI
     changed(THE_REPLACEMENT_GOES, params![taken], StoreOp::Delete)
 }
 
-fn path_of(transaction: &Transaction<'_>, track: TrackId) -> Result<PathBuf> {
+pub(crate) fn path_of(transaction: &Transaction<'_>, track: TrackId) -> Result<PathBuf> {
     transaction
         .query_row(
             "SELECT path FROM tracks WHERE id = ?1",
