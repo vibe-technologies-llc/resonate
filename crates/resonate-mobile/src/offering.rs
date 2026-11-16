@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     num::NonZeroU64,
     path::{Path, PathBuf},
@@ -13,7 +13,7 @@ use resonate_codec::{ImageFormat, Sources};
 use resonate_core::{AlbumId, ArtistId, PlaylistId, TrackId, folded_letters, is_lettered};
 use resonate_upnp::{
     AudioKind, Entry, Field, Held, Kind, MediaServer, Offering, Opened, Page, Picture, Query,
-    Searched, Shelf, Shelved, Song, Test, Udn,
+    Searched, Shelf, Shelved, Song, Test, Udn, Within,
 };
 use rusqlite::OptionalExtension as _;
 
@@ -221,6 +221,28 @@ impl Shelves {
         Ok(rows)
     }
 
+    fn songs_within(&self, view: &View, within: Within) -> Result<Arc<Vec<usize>>> {
+        Ok(match within {
+            Within::Catalog => Arc::new(view.songs.clone()),
+            Within::Artist(id) => Arc::new(
+                view.artist_at
+                    .get(&id)
+                    .map(|at| view.songs_by(*at))
+                    .unwrap_or_default(),
+            ),
+            Within::Album(id) => Arc::new(
+                view.album_at
+                    .get(&id)
+                    .map(|at| view.albums[*at].songs.clone())
+                    .unwrap_or_default(),
+            ),
+            Within::Playlist(id) => match self.playlist(id)? {
+                Some(_) => self.listed(view, id)?,
+                None => Arc::new(Vec::new()),
+            },
+        })
+    }
+
     fn playlist_held(&self, view: &View, playlist: Playlist) -> Result<Held> {
         Ok(Held {
             shelf: Shelf::Playlist(playlist.id),
@@ -339,6 +361,29 @@ impl View {
         }
     }
 
+    fn songs_by(&self, at: usize) -> Vec<usize> {
+        let artist = &self.artists[at];
+        let theirs: HashSet<usize> = self.index.artists[artist.group]
+            .rows
+            .iter()
+            .copied()
+            .collect();
+        let mut songs: Vec<usize> = artist
+            .albums
+            .iter()
+            .flat_map(|album| self.albums[*album].songs.iter().copied())
+            .filter(|row| theirs.contains(row))
+            .collect();
+        let on_their_albums: HashSet<usize> = songs.iter().copied().collect();
+        songs.extend(
+            self.songs
+                .iter()
+                .copied()
+                .filter(|row| theirs.contains(row) && !on_their_albums.contains(row)),
+        );
+        songs
+    }
+
     fn album_held(&self, at: usize) -> Held {
         let album = &self.albums[at];
         let group = &self.index.albums[album.group];
@@ -437,24 +482,35 @@ impl View {
 impl resonate_upnp::Catalog for Shelves {
     type Failure = Error;
 
-    fn searched(&self, kind: Kind, query: &Query, page: Page) -> Result<Searched> {
+    fn searched(&self, kind: Kind, within: Within, query: &Query, page: Page) -> Result<Searched> {
         let Some(wanted) = Wanted::of(query) else {
             return Ok(Searched::Unanswered);
         };
         let view = self.view()?;
 
-        let shelved = match kind {
-            Kind::Song => {
-                let found: Vec<usize> = view
-                    .songs
+        let shelved = match (kind, within) {
+            (Kind::Song, _) => {
+                let found: Vec<usize> = self
+                    .songs_within(&view, within)?
                     .iter()
                     .copied()
                     .filter(|at| wanted.holds(&|field| view.song_values(*at, field)))
                     .collect();
                 view.songs_paged(&found, page)
             }
-            Kind::Album => {
-                let found: Vec<usize> = (0..view.albums.len())
+            (Kind::Album, Within::Catalog | Within::Artist(_)) => {
+                let albums: Vec<usize> = match within {
+                    Within::Artist(id) => view
+                        .artist_at
+                        .get(&id)
+                        .map(|at| view.artists[*at].albums.clone())
+                        .unwrap_or_default(),
+                    Within::Catalog | Within::Album(_) | Within::Playlist(_) => {
+                        (0..view.albums.len()).collect()
+                    }
+                };
+                let found: Vec<usize> = albums
+                    .into_iter()
                     .filter(|at| wanted.holds(&|field| view.album_values(*at, field)))
                     .collect();
                 Shelved {
@@ -465,7 +521,7 @@ impl resonate_upnp::Catalog for Shelves {
                     total: counted(found.len()),
                 }
             }
-            Kind::Artist => {
+            (Kind::Artist, Within::Catalog) => {
                 let found: Vec<usize> = (0..view.artists.len())
                     .filter(|at| wanted.holds(&|field| view.artist_values(*at, field)))
                     .collect();
@@ -477,7 +533,7 @@ impl resonate_upnp::Catalog for Shelves {
                     total: counted(found.len()),
                 }
             }
-            Kind::Playlist => {
+            (Kind::Playlist, Within::Catalog) => {
                 let found = self
                     .playlists()?
                     .into_iter()
@@ -491,6 +547,10 @@ impl resonate_upnp::Catalog for Shelves {
                     .collect();
                 self.playlists_held(&view, found, page)?
             }
+            (Kind::Album | Kind::Artist | Kind::Playlist, _) => Shelved {
+                held: Vec::new(),
+                total: 0,
+            },
         };
         Ok(Searched::Found(shelved))
     }
@@ -990,8 +1050,19 @@ mod tests {
     }
 
     fn found(shelves: &Shelves, kind: Kind, query: &Query, from: u32, most: u32) -> Shelved {
+        found_within(shelves, kind, Within::Catalog, query, from, most)
+    }
+
+    fn found_within(
+        shelves: &Shelves,
+        kind: Kind,
+        within: Within,
+        query: &Query,
+        from: u32,
+        most: u32,
+    ) -> Shelved {
         match shelves
-            .searched(kind, query, Page { from, most })
+            .searched(kind, within, query, Page { from, most })
             .expect("searched")
         {
             Searched::Found(shelved) => shelved,
@@ -1201,6 +1272,7 @@ mod tests {
         let unreadable = shelves
             .searched(
                 Kind::Song,
+                Within::Catalog,
                 &text(Field::Title, Test::Contains, "!!"),
                 Page::first(10),
             )
@@ -1215,6 +1287,155 @@ mod tests {
         assert_eq!(titled(&artists), ["Miles Davis (1)"]);
         assert_eq!(titled(&playlists), ["Coltrane (2)"]);
         assert_eq!(unreadable, Searched::Unanswered);
+    }
+
+    #[test]
+    fn a_search_under_an_artist_an_album_or_a_playlist_answers_what_each_holds_in_its_order() {
+        let harness = Harness::new();
+        let ids = filed(&harness);
+        let evening = PlaylistId::new(
+            harness
+                .player
+                .make_playlist(
+                    "Evening".to_owned(),
+                    vec![ids["So What"], ids["Liner Notes"], ids["Blue Train"]],
+                )
+                .expect("a playlist"),
+        )
+        .expect("an id");
+        let shelves = shelves(&harness);
+
+        let artists = shelved(&shelves, Shelf::Artists, 0, 10);
+        let Shelf::Artist(coltrane) = first_shelf(&artists) else {
+            panic!("not an artist");
+        };
+        let Shelf::Artist(miles) = first_shelf(&shelved(&shelves, Shelf::Artists, 1, 1)) else {
+            panic!("not an artist");
+        };
+        let Shelf::Album(kind_of_blue) = first_shelf(&shelved(&shelves, Shelf::Albums, 1, 1))
+        else {
+            panic!("not an album");
+        };
+        let everything = Query::Everything;
+
+        let his_albums = found_within(
+            &shelves,
+            Kind::Album,
+            Within::Artist(miles),
+            &everything,
+            0,
+            10,
+        );
+        let his_songs = found_within(
+            &shelves,
+            Kind::Song,
+            Within::Artist(miles),
+            &everything,
+            0,
+            10,
+        );
+        let his_second = found_within(
+            &shelves,
+            Kind::Song,
+            Within::Artist(miles),
+            &everything,
+            1,
+            1,
+        );
+        let his_freddie = found_within(
+            &shelves,
+            Kind::Song,
+            Within::Artist(miles),
+            &text(Field::Title, Test::Contains, "fred"),
+            0,
+            10,
+        );
+        let not_coltranes = found_within(
+            &shelves,
+            Kind::Song,
+            Within::Artist(coltrane),
+            &text(Field::Title, Test::Contains, "what"),
+            0,
+            10,
+        );
+        let on_the_album = found_within(
+            &shelves,
+            Kind::Song,
+            Within::Album(kind_of_blue),
+            &everything,
+            0,
+            10,
+        );
+        let what_on_the_album = found_within(
+            &shelves,
+            Kind::Song,
+            Within::Album(kind_of_blue),
+            &text(Field::Title, Test::Contains, "what"),
+            0,
+            10,
+        );
+        let in_the_evening = found_within(
+            &shelves,
+            Kind::Song,
+            Within::Playlist(evening),
+            &everything,
+            0,
+            10,
+        );
+        let coltrane_in_the_evening = found_within(
+            &shelves,
+            Kind::Song,
+            Within::Playlist(evening),
+            &text(Field::Artist, Test::Contains, "colt"),
+            0,
+            10,
+        );
+        let no_artist_on_the_album = found_within(
+            &shelves,
+            Kind::Artist,
+            Within::Album(kind_of_blue),
+            &everything,
+            0,
+            10,
+        );
+        let no_album_in_the_evening = found_within(
+            &shelves,
+            Kind::Album,
+            Within::Playlist(evening),
+            &everything,
+            0,
+            10,
+        );
+        let unheld = found_within(
+            &shelves,
+            Kind::Song,
+            Within::Artist(ArtistId::new(1).expect("an id")),
+            &everything,
+            0,
+            10,
+        );
+
+        assert_eq!(titled(&his_albums), ["Kind of Blue (2)"]);
+        assert_eq!(titled(&his_songs), ["So What", "Freddie Freeloader"]);
+        assert_eq!(his_songs.total, 2);
+        assert_eq!(titled(&his_second), ["Freddie Freeloader"]);
+        assert_eq!(his_second.total, 2);
+        assert_eq!(titled(&his_freddie), ["Freddie Freeloader"]);
+        assert_eq!(his_freddie.total, 1);
+        assert_eq!(
+            (titled(&not_coltranes), not_coltranes.total),
+            (Vec::<String>::new(), 0)
+        );
+        assert_eq!(titled(&on_the_album), ["So What", "Freddie Freeloader"]);
+        assert_eq!(titled(&what_on_the_album), ["So What"]);
+        assert_eq!(titled(&in_the_evening), ["So What", "Blue Train"]);
+        assert_eq!(in_the_evening.total, 2);
+        assert_eq!(titled(&coltrane_in_the_evening), ["Blue Train"]);
+        assert_eq!(coltrane_in_the_evening.total, 1);
+        for nothing in [no_artist_on_the_album, no_album_in_the_evening, unheld] {
+            assert!(nothing.held.is_empty());
+            assert_eq!(nothing.total, 0);
+        }
     }
 
     fn fetched(port: u16, request: &str, body: &str) -> (String, Vec<u8>) {

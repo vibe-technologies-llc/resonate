@@ -596,7 +596,12 @@ as one sink and refuses it to a second while the first holds it bit-perfect (`au
   (`Wanted`): `=` a whole folded name, `contains` each word beginning a word of the field, `!=` and
   `doesNotContain` their denials (an album's and an artist's read against their own title and
   artist, so a denial is answered there too), `exists` whether the field holds anything; a song's
-  artist is its artist or its album artist; a text with no letter or digit is unanswered.
+  artist is its artist or its album artist; a text with no letter or digit is unanswered. A search
+  under a container narrows it to what that container's shelf holds before the text is weighed
+  (`songs_within`): under an artist the albums their shelf lists and their songs (`songs_by`, the
+  rows of their artist group on those albums in that order, then the rest of theirs by title),
+  under an album or a playlist its songs in its own order; an id no group or row holds finds
+  nothing.
   `share_catalog_on_network(on)` starts or stops it (`CatalogNotOffered` where the server cannot
   start; asking for what already holds does nothing) and `catalog_shared_on_network` answers
   whether it runs; `Offered` keeps the UDN in the player's folder as `media-server-udn`
