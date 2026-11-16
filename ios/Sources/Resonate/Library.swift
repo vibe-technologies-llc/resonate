@@ -297,6 +297,7 @@ final class Library {
     private(set) var zones: [PlayerZone] = []
     private(set) var renderers: [NetworkRenderer] = []
     private(set) var lookingForRenderers = false
+    private(set) var catalogShared = false
     private(set) var rendererAddresses: [String] = []
     private(set) var receiverAddresses: [String] = []
     private(set) var renderersLearnt: [RendererLearnt] = []
@@ -395,6 +396,7 @@ final class Library {
                 volume = try await Work.inOrder { opened.zones().first { $0.shown }?.volume ?? 1 }
                 native = opened
                 restoreRenderers()
+                restoreCatalogShared()
                 opened.watchPlayer(watch: PlayerWake(self))
                 Task.detached(priority: .utility) { [support] in Backup.leaveOutDerived(in: support) }
                 waiting.forEach { $0.resume(returning: opened) }
@@ -578,6 +580,28 @@ final class Library {
         }
     }
 
+    private func restoreCatalogShared() {
+        let shares = Self.rendererSettings.bool(forKey: Self.sharesCatalogKey)
+        catalogShared = shares
+
+        reachRenderers({ native in
+            if shares { try? native.shareCatalogOnNetwork(on: true) }
+            return native.catalogSharedOnNetwork()
+        }) { [self] shared in
+            catalogShared = shared
+        }
+    }
+
+    func shareCatalog(_ on: Bool) {
+        reachRenderers({ native in
+            try native.shareCatalogOnNetwork(on: on)
+            return native.catalogSharedOnNetwork()
+        }) { [self] shared in
+            Self.rendererSettings.set(on, forKey: Self.sharesCatalogKey)
+            catalogShared = shared
+        }
+    }
+
     func lookForRenderers(_ on: Bool) {
         reachRenderers({ native in
             try native.lookForRenderers(on: on)
@@ -711,6 +735,7 @@ final class Library {
     }
 
     static let looksForRenderersKey = "renderers"
+    static let sharesCatalogKey = "share-catalog-on-network"
     static let rendererAddressesKey = "renderer-addresses"
     static let receiverAddressesKey = "receiver-addresses"
     static let rendererSettings = UserDefaults(suiteName: "library-features") ?? .standard

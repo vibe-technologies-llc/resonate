@@ -297,6 +297,10 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
                 said("settings.output.inner.dsd-loudness"),
                 said("settings.output.inner.latency"),
                 said("settings.output.inner.underruns"),
+                said("output.catalog.share"),
+                said("settings.output.inner.media-server"),
+                "UPnP",
+                "DLNA",
             ]
         case .sleepTimer:
             [

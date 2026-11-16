@@ -732,6 +732,9 @@
 "other-outputs.title" = "Curves for other outputs";
 "output.buffer" = "Playback buffer";
 "output.buffer.value" = "Playback buffer: %lld ms";
+"output.catalog" = "The catalog on the network";
+"output.catalog.footer" = "On, this iPhone's catalog is a UPnP and DLNA media server named Resonate: a streamer's app, BubbleUPnP, Kodi or VLC on this Wi-Fi can browse its artists, albums, songs and playlists and play the files as they are, while Resonate runs. Only devices on the local network are answered and nothing can be changed from them. An iPhone signed without Apple's multicast permission cannot announce itself or answer a search, so most apps will not find it. Off, nothing is announced or served.";
+"output.catalog.share" = "Offer the catalog on the network";
 "output.clamped" = "Clamped samples";
 "output.current-stream" = "Current stream";
 "output.current-stream.footer" = "iOS owns the physical route; the system mixer and the chosen device determine the output format.";
@@ -1255,6 +1258,7 @@
 "settings.output.inner.dsd-loudness" = "DSD loudness";
 "settings.output.inner.latency" = "Latency";
 "settings.output.inner.match-the-song-s-sample-rate" = "Match the song's sample rate";
+"settings.output.inner.media-server" = "Media server";
 "settings.output.inner.playback-buffer" = "Playback buffer";
 "settings.output.inner.route" = "Route";
 "settings.output.inner.underruns" = "Underruns";

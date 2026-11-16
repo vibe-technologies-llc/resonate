@@ -529,6 +529,13 @@ struct OutputView: View {
             } footer: {
                 Text("output.follow-song-rate.footer")
             }
+            Section {
+                Toggle("output.catalog.share", isOn: Binding(get: { library.catalogShared }, set: { library.shareCatalog($0) }))
+            } header: {
+                Text("output.catalog")
+            } footer: {
+                Text("output.catalog.footer")
+            }
             if let settings = library.preferences {
                 Section {
                     Text(said("output.buffer.value", Int(buffer ?? Double(settings.bufferMs))))

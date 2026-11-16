@@ -1797,6 +1797,16 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   *AutoEq* opens Headphone correction, *room* Room correction, *ABX* the listening test,
   *microphone* the measurement. The Server and *Curves for other outputs* are hidden while they
   would show nothing.
+- **The *Audio output* page offers the catalog on the network** (`OutputView`'s *The catalog on the
+  network* section; `upnp.md`'s *On the phones*): a toggle (`Library.shareCatalog`, kept as
+  `share-catalog-on-network` in the `library-features` defaults beside `renderers`, off by default and
+  applied on the renderers' lane once the player is open, `restoreCatalogShared`, reading back
+  `catalogSharedOnNetwork`). **It is offered though a free signing cannot be found**: the media
+  server's SSDP group and announcements are multicast from the library's own socket, which needs the
+  `com.apple.developer.networking.multicast` entitlement a free signing cannot carry, so such an
+  iPhone serves whoever is given its address and is found by no control point. The switch stays, as
+  *Find renderers* does, and its footer says so; a team signing with the entitlement is found as
+  Android is. `NSLocalNetworkUsageDescription` names the catalog offered beside sync and the renderers.
 - **Every settings page is a `Destination`** (`ResonateLogic/Destinations.swift`, beside `Root` and
   `KeptNavigation`), the sync page's *Options* (`syncSongs`, `syncConnection`, `syncControl`) and a
   device driven from it or from Home (`syncDevice(id)`, `DrivenDevicePage` finding it in the sync
