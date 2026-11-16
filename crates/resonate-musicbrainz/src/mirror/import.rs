@@ -27,7 +27,7 @@ use super::{
 use crate::{ArchiveOp, Entity, Error, PackOp, Result, Store, StoreOp, kept::now, wire::Writer};
 
 pub const BLOCK_BYTES: usize = 64 * 1024;
-pub const BLOCKS_PACKED_AT: i32 = 15;
+pub const BLOCKS_PACKED_AT: i32 = 9;
 pub const DICTIONARY_BYTES: usize = 112 * 1024;
 pub const SAMPLED_BYTES: usize = 16 * 1024 * 1024;
 const ROWS_BETWEEN_LOOKS: u64 = 65_536;

@@ -11,7 +11,7 @@ use crate::{
 };
 
 pub const AMENDED_FILE: &str = "musicbrainz.amended.sqlite";
-pub const AMENDED_PACKED_AT: i32 = 15;
+pub const AMENDED_PACKED_AT: i32 = 9;
 pub(crate) const WAITED_FOR_A_WRITER: Duration = Duration::from_secs(5);
 
 pub(crate) const AMENDED_SCHEMA: &str = "
