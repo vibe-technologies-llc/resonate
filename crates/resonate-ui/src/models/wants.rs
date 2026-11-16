@@ -9,6 +9,20 @@ use crate::toast;
 
 impl LibraryModel {
     pub fn want(&mut self, release_track: ReleaseTrackId, cx: &mut Context<Self>) {
+        self.want_awaiting(release_track, None, cx);
+    }
+
+    pub fn want_and_play(&mut self, release_track: ReleaseTrackId, cx: &mut Context<Self>) {
+        let recording = self.recording_of(release_track);
+        self.want_awaiting(release_track, recording, cx);
+    }
+
+    fn want_awaiting(
+        &mut self,
+        release_track: ReleaseTrackId,
+        awaited: Option<Mbid>,
+        cx: &mut Context<Self>,
+    ) {
         let library = Arc::clone(&self.library);
         let wanting = cx.spawn(async move |this, cx| {
             let wanted = cx
@@ -18,6 +32,9 @@ impl LibraryModel {
 
             let landed = this.update(cx, |this, cx| {
                 this.wants_landed(wanted, Change::Want.doing(), Wanted::ThePlaylists, cx);
+                if let Some(recording) = awaited {
+                    this.play_if_landing(recording);
+                }
             });
             let _ = landed;
         });

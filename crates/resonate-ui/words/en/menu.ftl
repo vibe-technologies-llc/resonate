@@ -4,6 +4,7 @@ play-next = Play next
 download-and-play = Download and play
 download = Download
 download-from-a-release = Download from a release
+stop-wanting = Stop wanting this track
 add-to-queue = Add to queue
 add-to-playlist = Add to playlist…
 go-to = Go to

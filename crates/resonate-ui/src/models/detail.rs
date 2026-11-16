@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use gpui::SharedString;
 use resonate_core::{AlbumId, ReleaseTrackId, WantId};
-use resonate_library::{Album, ArtistDetail, ArtistTotals, Found, HeldReleaseTrack, ReleaseDetail};
+use resonate_library::{
+    Album, ArtistDetail, ArtistTotals, Found, HeldReleaseTrack, Mbid, ReleaseDetail,
+};
 
 use super::{LibraryModel, ListedRow, ShortOf};
 use crate::downloads::{self, Fetched, Fetching};
@@ -38,6 +40,14 @@ impl LibraryModel {
 
     pub fn wanted(&self, release_track: ReleaseTrackId) -> Option<WantId> {
         self.wishes.wanted.get(&release_track).copied()
+    }
+
+    pub fn recording_of(&self, release_track: ReleaseTrackId) -> Option<Mbid> {
+        self.detail
+            .release_tracks
+            .iter()
+            .find(|row| row.id == release_track)
+            .and_then(|row| row.recording.clone())
     }
 
     pub(crate) fn told_want(&self, release_track: ReleaseTrackId) -> Option<SharedString> {

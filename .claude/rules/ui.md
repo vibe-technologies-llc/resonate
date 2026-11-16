@@ -1760,7 +1760,15 @@ while shown, reading in-memory state only (the party pane's, the driven device's
     `Fetching` (*Queued*, *Downloading*, *Retrying*, *Gave up*, *Downloaded*), drawn in
     `fetching_colour` in the format cell. No provider set up: toast *No provider is set up*
     (`has_a_source`). A grid caption and scoped heading do not count what an album is short of: Missing
-    pane, inline `unheld_row`s, sidebar figure and the artist heading each say it once.
+    pane, inline `unheld_row`s, sidebar figure and the artist heading each say it once. **A right press
+    on the row offers the same without the left press** (`MissingOnAnAlbum::menu`): *Download and
+    play* (`want_and_play`, which awaits the row's recording once the want is listed as a download, as
+    `fetch_and_play` does, so it is offered only where `recording_of` has one) and *Download* (`want`
+    alone, nothing awaited); a row already wanted offers *Stop wanting this track* (`unwant`) alone.
+    No *Download from a release*: the row sits on one
+    (`a_right_press_on_a_missing_song_of_an_album_downloads_it_without_waiting_to_play_it`,
+    `a_right_press_on_a_missing_song_of_an_album_can_download_it_and_play_it_once_it_lands`,
+    `a_right_press_on_a_missing_song_already_wanted_offers_to_stop_wanting_it`).
   - The info mark at row end, where `record_of` has something to say, opens a card anchored at the
     press: Released, Format, Label, Catalogue number, Barcode, Country, Kind, every service link. With
     a release group and a reachable reference, *Other pressings* asks `Reference::release_group` on bg

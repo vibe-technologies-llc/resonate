@@ -12,7 +12,7 @@ use gpui::{
     ObjectFit, Pixels, Point, Role, SharedString, Stateful, Window, anchored, deferred, div, img,
     prelude::*, px, rgb, uniform_list,
 };
-use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, Span, TrackId};
+use resonate_core::{AlbumId, ArtistId, ArtistsDrawn, ReleaseTrackId, Span, TrackId, WantId};
 use resonate_engine::Placement;
 use resonate_library::{
     Album, AlbumFound, AlbumNotHeld, Artist, ArtistDetail, ArtistFound, ArtistTotals, Column, Cut,
@@ -1422,6 +1422,17 @@ impl RootView {
             ) if fetching.is_underway() => Some(listing::keyed_by("fetching", &found.recording)),
             _ => None,
         };
+        let missing = match (&beside, &asks) {
+            (Beside::AnAlbum, Asks::Row(release_track)) => {
+                let library = self.library.read(cx);
+                Some(MissingOnAnAlbum {
+                    release_track: *release_track,
+                    want: library.wanted(*release_track),
+                    recording: library.recording_of(*release_track),
+                })
+            }
+            _ => None,
+        };
         let mark = self.want_mark(asks, cx);
         let fitted = self.rooms.columns_fit.shown();
         let (title, lit_title, lit_artist) = match &beside {
@@ -1542,8 +1553,13 @@ impl RootView {
                     .child(mark),
             );
 
-        row.id(id)
-            .when_some(said, |row, said| row.listed_as(|| said))
+        let row = row.id(id);
+        let row = match missing {
+            Some(missing) => menu::opens_a_menu(row, move |_, at, _| missing.menu(at), cx),
+            None => row,
+        };
+
+        row.when_some(said, |row, said| row.listed_as(|| said))
             .when_some(download, |row, release_track| {
                 row.cursor_pointer()
                     .hover(|row| row.bg(rgb(theme::hover())))
@@ -3629,6 +3645,46 @@ fn pressings(media: &[HeldMedium]) -> Option<String> {
     })
 }
 
+#[derive(Clone)]
+struct MissingOnAnAlbum {
+    release_track: ReleaseTrackId,
+    want: Option<WantId>,
+    recording: Option<Mbid>,
+}
+
+impl MissingOnAnAlbum {
+    fn menu(&self, at: Point<Pixels>) -> Menu {
+        let release_track = self.release_track;
+        let download = move |this: &mut RootView, _: &mut Window, cx: &mut Context<RootView>| {
+            this.library
+                .update(cx, |library, cx| library.want(release_track, cx));
+        };
+
+        match (self.want, &self.recording) {
+            (Some(want), _) => Menu::at(at).does(
+                Icon::Wanted,
+                words::menu::stop_wanting(),
+                move |this, _, cx| {
+                    this.library
+                        .update(cx, |library, cx| library.unwant(want, cx));
+                },
+            ),
+            (None, Some(_)) => Menu::at(at)
+                .does(
+                    Icon::Play,
+                    words::menu::download_and_play(),
+                    move |this, _, cx| {
+                        this.library
+                            .update(cx, |library, cx| library.want_and_play(release_track, cx));
+                    },
+                )
+                .apart()
+                .does(Icon::Download, words::menu::download(), download),
+            (None, None) => Menu::at(at).does(Icon::Download, words::menu::download(), download),
+        }
+    }
+}
+
 fn found_menu(at: Point<Pixels>, found: &Found) -> Menu {
     let played = found.clone();
     let downloaded = found.clone();
@@ -4595,9 +4651,10 @@ mod tests {
             ArtistProfile, Barcode, BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions,
             Fingerprinters, GroupAsked, GroupMatch, Issued, Library, Link, LinkNames,
             LinkedPlaylist, LinkedProfile, ListedSong, LookupOp, LyricText, LyricsAsked, Mbid,
-            Medium, PlaylistLink, ProfileLink, Recording, RecordingAsked, RecordingMatch,
-            RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-            ReleaseTrack, Result, SongLink, SongsAsked, StreamAsked, Track, TrackQuery,
+            Medium, MissingTrack, PlaylistLink, ProfileLink, Recording, RecordingAsked,
+            RecordingMatch, RecordingRelease, Reference, Release, ReleaseAsked, ReleaseGroup,
+            ReleaseMatch, ReleaseTrack, Result, SongLink, SongsAsked, StreamAsked, Track,
+            TrackQuery,
         };
         use resonate_providers::{Identity, Obtained, Provider, Providers};
 
@@ -5624,6 +5681,168 @@ mod tests {
                 [("Heroes Tonight".to_owned(), "Janji & Johnning".to_owned())]
             );
             assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+        }
+
+        fn an_album_short_of_a_song(
+            cx: &mut TestAppContext,
+            asked: &Arc<Mutex<Vec<Asked>>>,
+            folder: &Folder,
+        ) -> (Driven, Arc<Library>, MissingTrack, &'static str) {
+            folder.tagged(
+                "other.wav",
+                1,
+                &[
+                    (b"IART", "Janji & Johnning"),
+                    (b"INAM", "Another Song"),
+                    (b"IPRD", "Heroes Tonight"),
+                ],
+            );
+            let told = Arc::clone(asked);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(move |_: &Supplying<'_>| {
+                    Providers::none().and(Arc::new(Shop {
+                        source: SourceId::new("shop").expect("a source name"),
+                        asked: Arc::clone(&told),
+                    }))
+                }),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, folder);
+            library
+                .enrich(
+                    Arc::new(MusicBrainz::new()),
+                    Arc::new(Fingerprinters::none()),
+                    EnrichOptions::default(),
+                )
+                .expect("the enrichment starts")
+                .join()
+                .expect("the enrichment finishes");
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), folder, reaching);
+
+            let missing = library
+                .missing_tracks(None, None)
+                .expect("the missing tracks read")
+                .remove(0);
+            let model = driven.read(|root, _| root.library.clone());
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| {
+                    library.select(Selection::Album(missing.album), cx);
+                });
+            });
+            driven.until(|root, cx| !root.library.read(cx).release_tracks().is_empty());
+
+            let at = driven.read(|root, cx| {
+                root.library
+                    .read(cx)
+                    .release_tracks()
+                    .iter()
+                    .position(|row| row.id == missing.release_track)
+                    .expect("the missing row is on the album")
+            });
+            let title: &'static str = Box::leak(format!("unheld-title-{at}").into_boxed_str());
+
+            (driven, library, missing, title)
+        }
+
+        #[gpui::test]
+        fn a_right_press_on_a_missing_song_of_an_album_downloads_it_without_waiting_to_play_it(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let (mut driven, library, _, title) = an_album_short_of_a_song(cx, &asked, &folder);
+            let recording = mbid(HEROES_TONIGHT);
+
+            driven.right_click(title);
+            assert!(
+                driven.read(|root, _| root.menu.is_some()),
+                "a right press on a missing song opened no menu"
+            );
+            assert_eq!(
+                driven.read(|root, _| root.menu.as_ref().map(Menu::labels)),
+                Some(vec![
+                    "Download and play".to_owned(),
+                    String::new(),
+                    "Download".to_owned()
+                ])
+            );
+            driven.click("menu-entry-2");
+            driven.until(|_, _| !asked.lock().is_empty());
+
+            assert!(driven.read(|root, _| root.menu.is_none()));
+            assert!(
+                driven.read(|root, cx| !root.library.read(cx).is_awaited(&recording)),
+                "the song pressed to download was waited on to play"
+            );
+            assert!(
+                driven.read(|root, cx| {
+                    root.library
+                        .read(cx)
+                        .downloads()
+                        .iter()
+                        .any(|download| download.found.recording == recording)
+                }),
+                "the song pressed to download was not listed as a download"
+            );
+            assert_eq!(library.wants().expect("the wants read").len(), 1);
+        }
+
+        #[gpui::test]
+        fn a_right_press_on_a_missing_song_of_an_album_can_download_it_and_play_it_once_it_lands(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let (mut driven, library, _, title) = an_album_short_of_a_song(cx, &asked, &folder);
+            let recording = mbid(HEROES_TONIGHT);
+
+            driven.right_click(title);
+            driven.click("menu-entry-0");
+            driven.until(|_, _| !asked.lock().is_empty());
+
+            assert!(
+                driven.read(|root, cx| root.library.read(cx).is_awaited(&recording)),
+                "the song pressed to download and play was not waited on"
+            );
+            assert_eq!(library.wants().expect("the wants read").len(), 1);
+        }
+
+        #[gpui::test]
+        fn a_right_press_on_a_missing_song_already_wanted_offers_to_stop_wanting_it(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let asked = Arc::new(Mutex::new(Vec::new()));
+            let (mut driven, library, missing, title) =
+                an_album_short_of_a_song(cx, &asked, &folder);
+
+            let model = driven.read(|root, _| root.library.clone());
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| library.want(missing.release_track, cx));
+            });
+            driven.until(|root, cx| {
+                root.library
+                    .read(cx)
+                    .wanted(missing.release_track)
+                    .is_some()
+            });
+
+            driven.right_click(title);
+            assert_eq!(
+                driven.read(|root, _| root.menu.as_ref().map(Menu::labels)),
+                Some(vec!["Stop wanting this track".to_owned()]),
+                "a want already asked for offered more than to stop it"
+            );
+            driven.click("menu-entry-0");
+            driven.until(|root, cx| {
+                root.library
+                    .read(cx)
+                    .wanted(missing.release_track)
+                    .is_none()
+            });
+
+            assert!(library.wants().expect("the wants read").is_empty());
         }
 
         fn shop_reaching(asked: &Arc<Mutex<Vec<Asked>>>, open: &Arc<AtomicBool>) -> Reaching {

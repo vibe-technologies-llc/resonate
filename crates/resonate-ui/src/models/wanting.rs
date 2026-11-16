@@ -102,6 +102,10 @@ impl LibraryModel {
     pub fn fetch_and_play(&mut self, found: Found, cx: &mut Context<Self>) {
         let recording = found.recording.clone();
         self.want_found(found, cx);
+        self.play_if_landing(recording);
+    }
+
+    pub(super) fn play_if_landing(&mut self, recording: Mbid) {
         let landing = self
             .delivered
             .downloads
