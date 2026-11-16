@@ -74,11 +74,9 @@ impl Shelves {
 
     fn songs(&self, page: Page) -> Result<Shelved, LibraryError> {
         let query = |offset: u32, limit: u32| TrackQuery {
-            sort: SONGS_IN,
-            reading: SONGS_IN.reads(),
             offset: offset as usize,
             limit: Some(limit as usize),
-            ..TrackQuery::default()
+            ..songs_in_order()
         };
         let revision = self.library.catalog_revision();
         let (counted, at) = {
@@ -223,10 +221,14 @@ impl Shelves {
         page: Page,
     ) -> Result<Shelved, LibraryError> {
         let query = match within {
-            Within::Catalog => TrackQuery {
-                sort: SONGS_IN,
-                reading: SONGS_IN.reads(),
-                ..TrackQuery::default()
+            Within::Catalog => songs_in_order(),
+            Within::Artists => TrackQuery {
+                by_an_artist: true,
+                ..songs_in_order()
+            },
+            Within::Albums => TrackQuery {
+                on_an_album: true,
+                ..songs_in_order()
             },
             Within::Artist(id) => played_by(id),
             Within::Album(id) => on_the_album(id),
@@ -357,6 +359,14 @@ impl Shelves {
     }
 }
 
+fn songs_in_order() -> TrackQuery {
+    TrackQuery {
+        sort: SONGS_IN,
+        reading: SONGS_IN.reads(),
+        ..TrackQuery::default()
+    }
+}
+
 fn on_the_album(album: AlbumId) -> TrackQuery {
     TrackQuery {
         album: Some(album),
@@ -430,12 +440,16 @@ impl Catalog for Shelves {
         let found = match (kind, within) {
             (Kind::Song, _) => searched_as(query, song_column, Denials::Read)
                 .map(|text| self.songs_found(within, text, page)),
-            (Kind::Album, Within::Catalog) => searched_as(query, album_column, Denials::Refused)
+            (Kind::Album, Within::Catalog | Within::Albums) => {
+                searched_as(query, album_column, Denials::Refused)
+                    .map(|text| self.albums(albums_named(text), page))
+            }
+            (Kind::Album, Within::Artists) => searched_as(query, album_column, Denials::Refused)
                 .map(|text| {
                     self.albums(
                         AlbumQuery {
-                            text,
-                            ..albums_named(None)
+                            by_an_artist: true,
+                            ..albums_named(text)
                         },
                         page,
                     )
@@ -450,8 +464,10 @@ impl Catalog for Shelves {
                         page,
                     )
                 }),
-            (Kind::Artist, Within::Catalog) => searched_as(query, artist_column, Denials::Refused)
-                .map(|text| self.artists(artists_named(text), page)),
+            (Kind::Artist, Within::Catalog | Within::Artists) => {
+                searched_as(query, artist_column, Denials::Refused)
+                    .map(|text| self.artists(artists_named(text), page))
+            }
             (Kind::Playlist, Within::Catalog) => {
                 playlists_named(query).map(|named| self.playlists(named.as_deref(), page))
             }
@@ -1430,6 +1446,113 @@ mod tests {
         assert_eq!(counted_in_the_mix, (Vec::new(), 2));
         assert_eq!(no_artist_on_debut, (Vec::new(), 0));
         assert_eq!(no_album_in_the_mix, (Vec::new(), 0));
+    }
+
+    #[test]
+    fn a_search_under_artists_or_albums_finds_what_is_nested_below_and_nothing_loose() {
+        let root = scratch("offered-nested");
+        for (file, tags) in [
+            (
+                "a.wav",
+                &[
+                    (TITLE, "Human Behaviour"),
+                    (ARTIST, "Björk"),
+                    (ALBUM, "Debut"),
+                ][..],
+            ),
+            (
+                "b.wav",
+                &[(TITLE, "Army of Me"), (ARTIST, "Björk"), (ALBUM, "Post")][..],
+            ),
+            ("c.wav", &[(TITLE, "Demo"), (ARTIST, "Björk")][..]),
+            ("d.wav", &[(TITLE, "Stray"), (ALBUM, "Loose Ends")][..]),
+            ("e.wav", &[(TITLE, "Nobody")][..]),
+        ] {
+            fs::write(root.join(file), tagged_wave(tags)).expect("a song");
+        }
+        let library = Arc::new(scanned(&root));
+        let shelves = Shelves::over(Arc::clone(&library));
+        let every = Page::first(10);
+        let everything = Query::Everything;
+        let army = text(Field::Title, Test::Contains, "army");
+
+        let artists = found(&shelves, Kind::Artist, Within::Artists, &everything, every);
+        let albums_under_the_artists =
+            found(&shelves, Kind::Album, Within::Artists, &everything, every);
+        let songs_under_the_artists =
+            found(&shelves, Kind::Song, Within::Artists, &everything, every);
+        let albums = found(&shelves, Kind::Album, Within::Albums, &everything, every);
+        let songs_under_the_albums =
+            found(&shelves, Kind::Song, Within::Albums, &everything, every);
+        let second_song_under_the_albums = found(
+            &shelves,
+            Kind::Song,
+            Within::Albums,
+            &everything,
+            Page { from: 1, most: 1 },
+        );
+        let army_under_the_albums = found(&shelves, Kind::Song, Within::Albums, &army, every);
+        let counted_under_the_artists = found(
+            &shelves,
+            Kind::Song,
+            Within::Artists,
+            &everything,
+            Page::counting(),
+        );
+        let no_playlist_under_the_albums =
+            found(&shelves, Kind::Playlist, Within::Albums, &everything, every);
+        let no_artist_under_the_albums =
+            found(&shelves, Kind::Artist, Within::Albums, &everything, every);
+        let every_song = found(&shelves, Kind::Song, Within::Catalog, &everything, every);
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(artists, (vec!["Björk".to_owned()], 1));
+        assert_eq!(
+            albums_under_the_artists,
+            (vec!["Debut".to_owned(), "Post".to_owned()], 2)
+        );
+        assert_eq!(
+            songs_under_the_artists,
+            (
+                vec![
+                    "Army of Me".to_owned(),
+                    "Demo".to_owned(),
+                    "Human Behaviour".to_owned()
+                ],
+                3
+            )
+        );
+        assert_eq!(
+            albums,
+            (
+                vec![
+                    "Debut".to_owned(),
+                    "Loose Ends".to_owned(),
+                    "Post".to_owned()
+                ],
+                3
+            )
+        );
+        assert_eq!(
+            songs_under_the_albums,
+            (
+                vec![
+                    "Army of Me".to_owned(),
+                    "Human Behaviour".to_owned(),
+                    "Stray".to_owned()
+                ],
+                3
+            )
+        );
+        assert_eq!(
+            second_song_under_the_albums,
+            (vec!["Human Behaviour".to_owned()], 3)
+        );
+        assert_eq!(army_under_the_albums, (vec!["Army of Me".to_owned()], 1));
+        assert_eq!(counted_under_the_artists, (Vec::new(), 3));
+        assert_eq!(no_playlist_under_the_albums, (Vec::new(), 0));
+        assert_eq!(no_artist_under_the_albums, (Vec::new(), 0));
+        assert_eq!(every_song.1, 5);
     }
 
     #[test]

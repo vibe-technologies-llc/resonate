@@ -167,6 +167,8 @@ impl From<&SavedQuery> for TrackQuery {
         Self {
             album: None,
             artist: None,
+            on_an_album: false,
+            by_an_artist: false,
             text: saved.text.clone(),
             sort: saved.sort,
             reading: saved.reading,
@@ -274,6 +276,8 @@ impl Direction {
 pub struct TrackQuery {
     pub album: Option<AlbumId>,
     pub artist: Option<ArtistId>,
+    pub on_an_album: bool,
+    pub by_an_artist: bool,
     pub text: Option<String>,
     pub sort: SortOrder,
     pub reading: Direction,
@@ -288,6 +292,8 @@ impl Default for TrackQuery {
         Self {
             album: None,
             artist: None,
+            on_an_album: false,
+            by_an_artist: false,
             text: None,
             sort,
             reading: sort.reads(),
@@ -323,6 +329,7 @@ impl Default for ArtistQuery {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlbumQuery {
     pub artist: Option<ArtistId>,
+    pub by_an_artist: bool,
     pub text: Option<String>,
     pub sort: AlbumOrder,
     pub reading: Direction,
@@ -336,6 +343,7 @@ impl Default for AlbumQuery {
 
         Self {
             artist: None,
+            by_an_artist: false,
             text: None,
             sort,
             reading: sort.reads(),

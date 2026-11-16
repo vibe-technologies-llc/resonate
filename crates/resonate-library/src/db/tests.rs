@@ -522,6 +522,117 @@ fn whole_files_leave_out_a_sheets_spans_and_page_by_key_as_the_rows_read_whole()
     Ok(())
 }
 
+fn sorted_titles(tracks: Vec<Track>) -> Vec<String> {
+    let mut titles: Vec<String> = tracks.into_iter().map(|track| track.title).collect();
+    titles.sort_unstable();
+    titles
+}
+
+fn paged_whole_files(library: &Library, query: &TrackQuery) -> Result<Vec<TrackId>> {
+    let mut paged = ids(&library.whole_files(&TrackQuery {
+        limit: Some(PAGED_BY),
+        ..query.clone()
+    })?);
+    while let Some(last) = paged.last().copied() {
+        let page = ids(&library.whole_files_from(
+            &TrackQuery {
+                limit: Some(PAGED_BY + 1),
+                ..query.clone()
+            },
+            last,
+        )?);
+        if page.len() <= 1 {
+            break;
+        }
+        paged.extend(page.into_iter().skip(1));
+    }
+    Ok(paged)
+}
+
+#[test]
+fn a_track_query_narrows_to_rows_on_an_album_or_by_an_artist_and_pages_by_key_within_it()
+-> Result<()> {
+    let library = Library::open_in_memory()?;
+    tied_and_unheld(&library);
+    run(
+        &library,
+        "INSERT INTO artists (id, key, name) VALUES (1, 'band', 'Band'), (2, 'guest', 'Guest');
+         INSERT INTO albums (id, title) VALUES (3, 'Unheld'), (4, 'Credited');
+         UPDATE albums SET artist_id = 1 WHERE id = 1;
+         UPDATE tracks SET artist_id = 1 WHERE artist = 'Band';
+         INSERT INTO tracks (root_id, path, title, album_id, duration, sample_rate, channels,
+                             sample_format, codec, file_size, modified, added, seen)
+         VALUES (1, '/music/12', 'Nobody', 3, 100, 44100, 2, 1, 1, 0, 0, 5, 0),
+                (1, '/music/13', 'Featured', 4, 100, 44100, 2, 1, 1, 0, 0, 5, 0);
+         INSERT INTO track_credits (track_id, artist_id)
+             SELECT id, 2 FROM tracks WHERE path = '/music/13';",
+    );
+    let every = TrackQuery {
+        sort: SortOrder::Title,
+        reading: SortOrder::Title.reads(),
+        ..TrackQuery::default()
+    };
+    let on_an_album = TrackQuery {
+        on_an_album: true,
+        ..every.clone()
+    };
+    let by_an_artist = TrackQuery {
+        by_an_artist: true,
+        ..every.clone()
+    };
+    let both = TrackQuery {
+        on_an_album: true,
+        by_an_artist: true,
+        ..every.clone()
+    };
+    let albums = |by_an_artist: bool| {
+        let mut titles = titles_of_albums(
+            &library,
+            &AlbumQuery {
+                by_an_artist,
+                ..AlbumQuery::default()
+            },
+        );
+        titles.sort_unstable();
+        titles
+    };
+
+    let albumed = library.whole_files(&on_an_album)?;
+    let paged = paged_whole_files(&library, &on_an_album)?;
+    let artisted = library.whole_files(&by_an_artist)?;
+    let paged_by_an_artist = paged_whole_files(&library, &by_an_artist)?;
+
+    assert_eq!(
+        sorted_titles(albumed.clone()),
+        [
+            "Featured", "Late", "Nobody", "Other", "Song", "Song", "Song", "late", "song"
+        ]
+    );
+    assert_eq!(paged, ids(&albumed));
+    assert_eq!(library.whole_files_counted(&on_an_album)?, 9);
+    assert_eq!(
+        sorted_titles(artisted.clone()),
+        ["Featured", "Other", "Other", "Song", "Song"]
+    );
+    assert_eq!(paged_by_an_artist, ids(&artisted));
+    assert_eq!(library.whole_files_counted(&by_an_artist)?, 5);
+    assert_eq!(
+        sorted_titles(library.whole_files(&both)?),
+        ["Featured", "Other", "Song", "Song"]
+    );
+    assert_eq!(library.whole_files_counted(&both)?, 4);
+    assert_eq!(albums(false), ["Credited", "One", "Two", "Unheld"]);
+    assert_eq!(albums(true), ["Credited", "One", "Two"]);
+    assert_eq!(
+        library.albums_counted(&AlbumQuery {
+            by_an_artist: true,
+            ..AlbumQuery::default()
+        })?,
+        3
+    );
+    Ok(())
+}
+
 #[test]
 fn a_page_from_a_row_the_catalog_no_longer_holds_is_empty() -> Result<()> {
     let library = Library::open_in_memory()?;

@@ -449,18 +449,19 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   `Always`/`Never`; a kind settled `Never` is not asked. **Every container answers a search for what
   it holds** (`searched_under`), so every container carries `searchable="1"`: the root holds the
   four top shelves (their titles weighed in the crate, folded: `text_holds`), then artists, albums,
-  playlists and songs, all `Within::Catalog`; Artists, Albums, Songs and Playlists hold their own
-  kind alone, `Within::Catalog`; an artist holds their albums, then their songs,
-  `Within::Artist`; an album and a playlist hold their songs, `Within::Album` and
+  playlists and songs, all `Within::Catalog`; Artists holds the artists, then the albums by or
+  holding any of them, then the songs any of them plays, `Within::Artists`; Albums holds the
+  albums, then the songs on any album (never a song on none), `Within::Albums`; Songs and
+  Playlists hold their own kind alone, `Within::Catalog`; an artist holds their albums, then their
+  songs, `Within::Artist`; an album and a playlist hold their songs, `Within::Album` and
   `Within::Playlist`. The `Page` runs through the kinds in that order with `TotalMatches` their
-  sum, each kind in the catalog's own order. A top shelf answers its own kind alone, not the rows
-  nested further down (no songs under Albums): Songs and the root already search every song, and a
-  control point searching a shelf asks for what it lists. A song is 710, an id no row holds 701 (an artist, album or playlist is asked of `shelf` before it is
+  sum, each kind in the catalog's own order. A song is 710, an id no row holds 701 (an artist, album or playlist is asked of `shelf` before it is
   searched). A row found is written with the parent `BrowseMetadata` gives it, whatever container
   was searched: a song Songs, an album Albums, an artist Artists, a playlist Playlists. `Within`
   is the seam's only word for a scope: the crate asks only the kinds a scope holds (`Within::Album`
-  and `Within::Playlist` songs alone, `Within::Artist` albums and songs), and a catalog answers any
-  other pairing with nothing found.
+  and `Within::Playlist` songs alone, `Within::Artist` and `Within::Albums` albums and songs,
+  `Within::Artists` artists, albums and songs), and a catalog answers any other pairing with
+  nothing found.
 - **Eventing is GENA on `/event/<service>`** (`events.rs`): `SUBSCRIBE` with `NT: upnp:event` and a
   `CALLBACK` subscribes, with a `SID` and neither renews, `UNSUBSCRIBE` with a `SID` ends
   (`subscribing`); a `SID` beside `NT` or `CALLBACK` is 400, a `SID` the service does not hold or a
@@ -543,7 +544,11 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   on their name alone (`playlists_named`). A scope narrows the same queries the shelves browse
   (`songs_found`): under an artist the albums are `by_the_artist`'s (by or holding them, by year)
   and the songs `played_by` them (their own or credited, album then track), under an album
-  `on_the_album`'s songs, each with the search's text beside the narrowing; under a playlist the
+  `on_the_album`'s songs, under Artists every artist by name, the albums by or holding any artist
+  and the songs by any (the library's `by_an_artist`), under Albums every album and the songs
+  `on_an_album`, albums and songs by title
+  (`a_search_under_artists_or_albums_finds_what_is_nested_below_and_nothing_loose`), each with the
+  search's text beside the narrowing; under a playlist the
   songs are its entries narrowed by the text (`Library::playlist_entries` with it, so a saved query's
   playlist narrows its own query) in the playlist's order, whole files alone, paged in memory
   (`played_from_matching`), and with no text the kept list `played_from` pages. `Offered` holds the running `MediaServer` for the window (*binary.md*'s `share-catalog-on-network` and `offer-name`), and `resonate offer` runs one with no window until interrupted (`offer::offer`).
@@ -631,8 +636,10 @@ as one sink and refuses it to a second while the first holds it bit-perfect (`au
   under a container narrows it to what that container's shelf holds before the text is weighed
   (`songs_within`): under an artist the albums their shelf lists and their songs (`songs_by`, the
   rows of their artist group on those albums in that order, then the rest of theirs by title),
-  under an album or a playlist its songs in its own order; an id no group or row holds finds
-  nothing.
+  under an album or a playlist its songs in its own order, under Artists every artist, the albums
+  any artist's shelf lists and the songs of any artist offered, under Albums every album and the
+  songs on one, each by title (`View`'s `songs_by_an_artist`, `songs_on_an_album` and
+  `albums_by_an_artist`, made once a view); an id no group or row holds finds nothing.
   `share_catalog_on_network(on)` starts or stops it (`CatalogNotOffered` where the server cannot
   start; asking for what already holds does nothing) and `catalog_shared_on_network` answers
   whether it runs; `name_catalog_on_network(name)` is the phones' `offer-name`: it keeps the name

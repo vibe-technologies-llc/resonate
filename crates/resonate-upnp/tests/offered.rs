@@ -81,6 +81,17 @@ impl Shelves {
                 song(4, "Four", 2, "The Band"),
                 song(5, "Five", 2, "The Band"),
                 song(6, "Only One", 3, "Soloist"),
+                Song {
+                    album: None,
+                    cover: None,
+                    ..song(7, "Demo", 3, "Soloist")
+                },
+                Song {
+                    artist: None,
+                    album: None,
+                    cover: None,
+                    ..song(8, "Stray", 3, "")
+                },
             ]),
             albums: vec![
                 (album(1), "Album 1", artist(1)),
@@ -127,6 +138,20 @@ impl Shelves {
     fn songs_within(&self, within: Within) -> Vec<Song> {
         match within {
             Within::Catalog => self.songs(),
+            Within::Artists => self
+                .songs()
+                .into_iter()
+                .filter(|song| {
+                    self.artists
+                        .iter()
+                        .any(|(_, name)| song.artist.as_deref() == Some(*name))
+                })
+                .collect(),
+            Within::Albums => self
+                .songs()
+                .into_iter()
+                .filter(|song| song.cover.is_some())
+                .collect(),
             Within::Artist(artist) => self
                 .songs()
                 .into_iter()
@@ -239,7 +264,10 @@ impl Catalog for Shelves {
                     )
                 })
                 .collect(),
-            (Kind::Album, Within::Catalog | Within::Artist(_)) => self
+            (
+                Kind::Album,
+                Within::Catalog | Within::Artists | Within::Albums | Within::Artist(_),
+            ) => self
                 .albums
                 .iter()
                 .filter(|(_, _, by)| match within {
@@ -257,7 +285,7 @@ impl Catalog for Shelves {
                     ))
                 })
                 .collect(),
-            (Kind::Artist, Within::Catalog) => self
+            (Kind::Artist, Within::Catalog | Within::Artists) => self
                 .artists
                 .iter()
                 .filter_map(|(id, name)| {
@@ -634,18 +662,20 @@ fn a_control_point_finds_the_server_browses_its_shelves_page_by_page_and_fetches
     let mut from = 0;
     loop {
         let page = children(at, "songs", from, 2);
-        assert_eq!(page.counted("TotalMatches"), 6);
+        assert_eq!(page.counted("TotalMatches"), 8);
         let returned = page.counted("NumberReturned");
         assert!(returned <= 2);
         paged.extend(page.ids("item"));
         from += returned;
-        if returned == 0 || from >= 6 {
+        if returned == 0 || from >= 8 {
             break;
         }
     }
     assert_eq!(
         paged,
-        ["song-1", "song-2", "song-3", "song-4", "song-5", "song-6"]
+        [
+            "song-1", "song-2", "song-3", "song-4", "song-5", "song-6", "song-7", "song-8"
+        ]
     );
 
     let itself = browsed(at, "album-2", "BrowseMetadata", 0, 0);
@@ -923,7 +953,7 @@ fn a_control_point_searches_the_catalog_by_artist_and_by_title_page_by_page() {
     assert_eq!(named_album.every_id(), ["albums", "album-1", "album-2"]);
     assert_eq!(named_album.counted("TotalMatches"), 3);
     assert_eq!(among_the_songs.counted("TotalMatches"), 0);
-    assert_eq!(everything.1, 16);
+    assert_eq!(everything.1, 18);
     assert_eq!(
         everything.0,
         [
@@ -942,7 +972,9 @@ fn a_control_point_searches_the_catalog_by_artist_and_by_title_page_by_page() {
             "song-3",
             "song-4",
             "song-5",
-            "song-6"
+            "song-6",
+            "song-7",
+            "song-8"
         ]
     );
     assert!(root.didl().contains("searchable=\"1\""));
@@ -1027,9 +1059,19 @@ fn a_search_under_an_artist_an_album_a_playlist_or_a_shelf_answers_what_it_holds
     let in_the_playlist = searched_within_page_by_page(at, "playlist-1", "*", 2);
     let named_in_the_playlist = searched(at, "playlist-1", "dc:title contains \"one\"", 0, 0);
     let among_the_artists = searched(at, "artists", "dc:title contains \"solo\"", 0, 0);
+    let under_the_artists = searched_within_page_by_page(at, "artists", "*", 5);
+    let across_the_kinds_under_the_artists = searched(at, "artists", "*", 1, 3);
+    let songs_under_the_artists = searched(
+        at,
+        "artists",
+        "upnp:class derivedfrom \"object.item\"",
+        0,
+        0,
+    );
     let among_the_albums = searched_within_page_by_page(at, "albums", "*", 2);
-    let no_song_among_the_albums =
+    let songs_among_the_albums =
         searched(at, "albums", "upnp:class derivedfrom \"object.item\"", 0, 0);
+    let named_among_the_albums = searched(at, "albums", "dc:title contains \"o\"", 0, 0);
     let among_the_playlists = searched(at, "playlists", "dc:title contains \"mix\"", 0, 0);
     let among_the_songs = searched(at, "songs", "dc:title contains \"one\"", 0, 0);
     let an_artist = browsed(at, "artist-1", "BrowseMetadata", 0, 0);
@@ -1049,7 +1091,7 @@ fn a_search_under_an_artist_an_album_a_playlist_or_a_shelf_answers_what_it_holds
         ["song-1", "song-2", "song-4"]
     );
     assert_eq!(the_bands_with_an_o.counted("TotalMatches"), 3);
-    assert_eq!(the_soloist, (owned(&["album-3", "song-6"]), 2));
+    assert_eq!(the_soloist, (owned(&["album-3", "song-6", "song-7"]), 3));
     assert_eq!(the_bands_songs.counted("TotalMatches"), 5);
     assert_eq!(on_the_album, (owned(&["song-2", "song-3"]), 2));
     assert_eq!(second_on_the_album.every_id(), ["song-3"]);
@@ -1057,12 +1099,56 @@ fn a_search_under_an_artist_an_album_a_playlist_or_a_shelf_answers_what_it_holds
     assert_eq!(no_album_on_the_album.counted("TotalMatches"), 0);
     assert_eq!(in_the_playlist, (owned(&["song-3", "song-6", "song-1"]), 3));
     assert_eq!(named_in_the_playlist.every_id(), ["song-6", "song-1"]);
-    assert_eq!(among_the_artists.every_id(), ["artist-2"]);
+    assert_eq!(among_the_artists.every_id(), ["artist-2", "album-3"]);
+    assert_eq!(among_the_artists.counted("TotalMatches"), 2);
+    assert_eq!(
+        under_the_artists,
+        (
+            owned(&[
+                "artist-1", "artist-2", "album-1", "album-2", "album-3", "song-1", "song-2",
+                "song-3", "song-4", "song-5", "song-6", "song-7"
+            ]),
+            12
+        )
+    );
+    assert_eq!(
+        across_the_kinds_under_the_artists.every_id(),
+        ["artist-2", "album-1", "album-2"]
+    );
+    assert_eq!(
+        across_the_kinds_under_the_artists.counted("TotalMatches"),
+        12
+    );
+    assert_eq!(songs_under_the_artists.counted("TotalMatches"), 7);
+    assert!(
+        !songs_under_the_artists
+            .every_id()
+            .contains(&"song-8".to_owned())
+    );
     assert_eq!(
         among_the_albums,
-        (owned(&["album-1", "album-2", "album-3"]), 3)
+        (
+            owned(&[
+                "album-1", "album-2", "album-3", "song-1", "song-2", "song-3", "song-4", "song-5",
+                "song-6"
+            ]),
+            9
+        )
     );
-    assert_eq!(no_song_among_the_albums.counted("TotalMatches"), 0);
+    assert_eq!(
+        songs_among_the_albums.every_id(),
+        ["song-1", "song-2", "song-3", "song-4", "song-5", "song-6"]
+    );
+    assert_eq!(songs_among_the_albums.counted("TotalMatches"), 6);
+    assert_eq!(
+        named_among_the_albums.every_id(),
+        ["album-3", "song-1", "song-2", "song-4", "song-6"]
+    );
+    assert!(
+        songs_among_the_albums
+            .didl()
+            .contains("id=\"song-1\" parentID=\"songs\"")
+    );
     assert_eq!(among_the_playlists.every_id(), ["playlist-1"]);
     assert_eq!(among_the_songs.every_id(), ["song-1", "song-6"]);
     assert!(the_bands_songs.didl().contains("parentID=\"songs\""));

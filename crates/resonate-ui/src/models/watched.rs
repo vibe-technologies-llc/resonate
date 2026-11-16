@@ -339,6 +339,8 @@ impl Asked {
         TrackQuery {
             album,
             artist,
+            on_an_album: false,
+            by_an_artist: false,
             text: self.searched(),
             sort: self.sorting.tracks,
             reading: self.sorting.tracks_read,
@@ -354,6 +356,7 @@ impl Asked {
     pub(super) fn albums(&self) -> AlbumQuery {
         AlbumQuery {
             artist: None,
+            by_an_artist: false,
             text: self.searched(),
             sort: self.sorting.albums,
             reading: self.sorting.albums_read,
@@ -667,6 +670,7 @@ pub(super) fn browsed(
         artist_albums: match artist {
             Some(artist) => library.albums(&AlbumQuery {
                 artist: Some(artist),
+                by_an_artist: false,
                 text: None,
                 sort: AlbumOrder::Year,
                 reading: AlbumOrder::Year.reads(),

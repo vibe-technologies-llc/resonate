@@ -55,6 +55,8 @@ impl LibraryModel {
             TrackQuery {
                 album,
                 artist,
+                on_an_album: false,
+                by_an_artist: false,
                 text: (!self.query.is_empty()).then(|| self.query.clone()),
                 sort: self.sorting.tracks,
                 reading: self.sorting.tracks_read,
@@ -70,6 +72,8 @@ impl LibraryModel {
             TrackQuery {
                 album: None,
                 artist: None,
+                on_an_album: false,
+                by_an_artist: false,
                 text: None,
                 sort: self.sorting.tracks,
                 reading: self.sorting.tracks_read,

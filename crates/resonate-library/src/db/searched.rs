@@ -517,6 +517,9 @@ pub(super) fn scoped_albums(
         scoped.binds.push(Value::Integer(owned_or_played_on));
         scoped.binds.push(Value::Integer(owned_or_played_on));
     }
+    if query.by_an_artist {
+        conditions.push(BY_OR_HOLDING_AN_ARTIST.to_owned());
+    }
     conditions.extend(only.map(str::to_owned));
     scoped.from.push_str(&clause(&conditions));
 
@@ -527,6 +530,16 @@ pub(super) const BY_OR_HOLDING_THE_ARTIST: &str = "(a.artist_id = ?
       OR EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = a.id AND t.artist_id = ?)
       OR EXISTS (SELECT 1 FROM tracks t JOIN track_credits c ON c.track_id = t.id
                   WHERE t.album_id = a.id AND c.artist_id = ?))";
+
+const BY_OR_HOLDING_AN_ARTIST: &str = "(a.artist_id IS NOT NULL
+      OR EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = a.id AND t.artist_id IS NOT NULL)
+      OR EXISTS (SELECT 1 FROM tracks t JOIN track_credits c ON c.track_id = t.id
+                  WHERE t.album_id = a.id))";
+
+const ON_AN_ALBUM: &str = "tracks.album_id IS NOT NULL";
+
+const BY_AN_ARTIST: &str = "(tracks.artist_id IS NOT NULL
+      OR tracks.id IN (SELECT track_id FROM track_credits))";
 
 pub(super) fn scoped_artists(
     query: &ArtistQuery,
@@ -613,6 +626,12 @@ pub(super) fn matching_tracks(
         );
         matching.binds.push(Value::Integer(artist.get() as i64));
         matching.binds.push(Value::Integer(artist.get() as i64));
+    }
+    if query.on_an_album {
+        matching.filters.push(ON_AN_ALBUM.to_owned());
+    }
+    if query.by_an_artist {
+        matching.filters.push(BY_AN_ARTIST.to_owned());
     }
 
     Some(matching)

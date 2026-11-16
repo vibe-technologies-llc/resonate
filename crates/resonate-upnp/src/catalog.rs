@@ -262,6 +262,8 @@ pub enum Query {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Within {
     Catalog,
+    Artists,
+    Albums,
     Artist(ArtistId),
     Album(AlbumId),
     Playlist(PlaylistId),
@@ -273,7 +275,9 @@ impl Within {
             Shelf::Artist(id) => Self::Artist(id),
             Shelf::Album(id) => Self::Album(id),
             Shelf::Playlist(id) => Self::Playlist(id),
-            Shelf::Artists | Shelf::Albums | Shelf::Songs | Shelf::Playlists => Self::Catalog,
+            Shelf::Artists => Self::Artists,
+            Shelf::Albums => Self::Albums,
+            Shelf::Songs | Shelf::Playlists => Self::Catalog,
         }
     }
 }

@@ -414,8 +414,12 @@ const SEARCHED_UNDER_THE_ROOT: [Sought; 8] = [
 
 const fn searched_under(shelf: Shelf) -> &'static [Sought] {
     match shelf {
-        Shelf::Artists => &[Sought::Of(Kind::Artist)],
-        Shelf::Albums => &[Sought::Of(Kind::Album)],
+        Shelf::Artists => &[
+            Sought::Of(Kind::Artist),
+            Sought::Of(Kind::Album),
+            Sought::Of(Kind::Song),
+        ],
+        Shelf::Albums => &[Sought::Of(Kind::Album), Sought::Of(Kind::Song)],
         Shelf::Playlists => &[Sought::Of(Kind::Playlist)],
         Shelf::Artist(_) => &[Sought::Of(Kind::Album), Sought::Of(Kind::Song)],
         Shelf::Songs | Shelf::Album(_) | Shelf::Playlist(_) => &[Sought::Of(Kind::Song)],

@@ -14,7 +14,7 @@ use super::{
 use crate::{
     ALBUMS_FOUND_ELSEWHERE_AT_MOST, ARTISTS_FOUND_ELSEWHERE_AT_MOST, AlbumFound, AlbumMatch,
     ArtistDetail, ArtistFound, ArtistRelease, Error, Found, Genre, MissingTrack, RecordingMatch,
-    Reference, Result, Search, SortOrder, StoreOp, Sung, TrackQuery, elsewhere, enrich, store,
+    Reference, Result, Search, StoreOp, Sung, TrackQuery, elsewhere, enrich, store,
 };
 
 impl Library {
@@ -113,13 +113,8 @@ impl Library {
         };
         let query = sung.to_string();
         let measured = self.measured(&TrackQuery {
-            album: None,
-            artist: None,
             text: Some(query.clone()),
-            sort: SortOrder::default(),
-            reading: SortOrder::default().reads(),
-            limit: None,
-            offset: 0,
+            ..TrackQuery::default()
         })?;
 
         Ok((measured.rows > 0).then_some(Sung {

@@ -53,8 +53,11 @@ pub(crate) struct Shelves {
 struct View {
     index: Arc<Index>,
     songs: Vec<usize>,
+    songs_by_an_artist: Vec<usize>,
+    songs_on_an_album: Vec<usize>,
     song_at: HashMap<u64, usize>,
     albums: Vec<Album>,
+    albums_by_an_artist: Vec<usize>,
     album_at: HashMap<AlbumId, usize>,
     album_of_group: HashMap<usize, usize>,
     artists: Vec<Artist>,
@@ -224,6 +227,8 @@ impl Shelves {
     fn songs_within(&self, view: &View, within: Within) -> Result<Arc<Vec<usize>>> {
         Ok(match within {
             Within::Catalog => Arc::new(view.songs.clone()),
+            Within::Artists => Arc::new(view.songs_by_an_artist.clone()),
+            Within::Albums => Arc::new(view.songs_on_an_album.clone()),
             Within::Artist(id) => Arc::new(
                 view.artist_at
                     .get(&id)
@@ -347,11 +352,40 @@ impl View {
             });
         }
 
+        let theirs: HashSet<usize> = artists
+            .iter()
+            .flat_map(|artist| index.artists[artist.group].rows.iter().copied())
+            .collect();
+        let songs_by_an_artist = songs
+            .iter()
+            .copied()
+            .filter(|at| theirs.contains(at))
+            .collect();
+        let songs_on_an_album = songs
+            .iter()
+            .copied()
+            .filter(|at| {
+                rows[*at]
+                    .album_group
+                    .is_some_and(|group| album_of_group.contains_key(&group))
+            })
+            .collect();
+        let held_by_an_artist: HashSet<usize> = artists
+            .iter()
+            .flat_map(|artist| artist.albums.iter().copied())
+            .collect();
+        let albums_by_an_artist = (0..albums.len())
+            .filter(|at| held_by_an_artist.contains(at))
+            .collect();
+
         Self {
             index,
             songs,
+            songs_by_an_artist,
+            songs_on_an_album,
             song_at,
             albums,
+            albums_by_an_artist,
             album_at,
             album_of_group,
             artists,
@@ -498,14 +532,18 @@ impl resonate_upnp::Catalog for Shelves {
                     .collect();
                 view.songs_paged(&found, page)
             }
-            (Kind::Album, Within::Catalog | Within::Artist(_)) => {
+            (
+                Kind::Album,
+                Within::Catalog | Within::Artists | Within::Albums | Within::Artist(_),
+            ) => {
                 let albums: Vec<usize> = match within {
                     Within::Artist(id) => view
                         .artist_at
                         .get(&id)
                         .map(|at| view.artists[*at].albums.clone())
                         .unwrap_or_default(),
-                    Within::Catalog | Within::Album(_) | Within::Playlist(_) => {
+                    Within::Artists => view.albums_by_an_artist.clone(),
+                    Within::Catalog | Within::Albums | Within::Album(_) | Within::Playlist(_) => {
                         (0..view.albums.len()).collect()
                     }
                 };
@@ -521,7 +559,7 @@ impl resonate_upnp::Catalog for Shelves {
                     total: counted(found.len()),
                 }
             }
-            (Kind::Artist, Within::Catalog) => {
+            (Kind::Artist, Within::Catalog | Within::Artists) => {
                 let found: Vec<usize> = (0..view.artists.len())
                     .filter(|at| wanted.holds(&|field| view.artist_values(*at, field)))
                     .collect();
@@ -1021,32 +1059,35 @@ mod tests {
         name.bytes().cycle().take(4_096).collect()
     }
 
+    fn file(harness: &Harness, song: &Filed) -> u64 {
+        let written = written_for(song.name);
+        fs::write(harness.folder.join(song.name), &written).expect("a song");
+        let connection = harness.player.catalog.0.lock();
+        connection
+            .execute(
+                "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec, genre, track_number, channels, bits, size)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 300000, 44100, ?6, ?7, ?8, 2, 16, ?9)",
+                params![
+                    format!("{}{}", crate::harness::FOLDER, song.name),
+                    song.name,
+                    song.title,
+                    song.artist,
+                    song.album,
+                    song.codec,
+                    song.genre,
+                    song.track,
+                    written.len() as i64,
+                ],
+            )
+            .expect("a song filed");
+        connection.last_insert_rowid() as u64
+    }
+
     fn filed(harness: &Harness) -> HashMap<&'static str, u64> {
-        let mut ids = HashMap::new();
-        for song in FILED {
-            let written = written_for(song.name);
-            fs::write(harness.folder.join(song.name), &written).expect("a song");
-            let connection = harness.player.catalog.0.lock();
-            connection
-                .execute(
-                    "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec, genre, track_number, channels, bits, size)
-                     VALUES (?1, ?2, ?3, ?4, ?5, 300000, 44100, ?6, ?7, ?8, 2, 16, ?9)",
-                    params![
-                        format!("{}{}", crate::harness::FOLDER, song.name),
-                        song.name,
-                        song.title,
-                        song.artist,
-                        song.album,
-                        song.codec,
-                        song.genre,
-                        song.track,
-                        written.len() as i64,
-                    ],
-                )
-                .expect("a song filed");
-            ids.insert(song.title, connection.last_insert_rowid() as u64);
-        }
-        ids
+        FILED
+            .iter()
+            .map(|song| (song.title, file(harness, song)))
+            .collect()
     }
 
     fn shelves(harness: &Harness) -> Shelves {
@@ -1489,6 +1530,112 @@ mod tests {
         assert_eq!(titled(&coltrane_in_the_evening), ["Blue Train"]);
         assert_eq!(coltrane_in_the_evening.total, 1);
         for nothing in [no_artist_on_the_album, no_album_in_the_evening, unheld] {
+            assert!(nothing.held.is_empty());
+            assert_eq!(nothing.total, 0);
+        }
+    }
+
+    #[test]
+    fn a_search_under_artists_or_albums_finds_what_is_nested_below_and_nothing_loose() {
+        let harness = Harness::new();
+        filed(&harness);
+        for loose in [
+            Filed {
+                name: "demo.flac",
+                title: "Demo",
+                artist: "Miles Davis",
+                album: "",
+                track: 1,
+                genre: "",
+                codec: "FLAC",
+            },
+            Filed {
+                name: "stray.flac",
+                title: "Stray",
+                artist: "",
+                album: "Loose Ends",
+                track: 1,
+                genre: "",
+                codec: "FLAC",
+            },
+        ] {
+            file(&harness, &loose);
+        }
+        let shelves = shelves(&harness);
+        let everything = Query::Everything;
+        let blue = text(Field::Title, Test::Contains, "blue");
+
+        let artists = found_within(&shelves, Kind::Artist, Within::Artists, &everything, 0, 10);
+        let albums_under_the_artists =
+            found_within(&shelves, Kind::Album, Within::Artists, &everything, 0, 10);
+        let songs_under_the_artists =
+            found_within(&shelves, Kind::Song, Within::Artists, &everything, 0, 10);
+        let second_song_under_the_artists =
+            found_within(&shelves, Kind::Song, Within::Artists, &everything, 1, 1);
+        let albums = found_within(&shelves, Kind::Album, Within::Albums, &everything, 0, 10);
+        let songs_under_the_albums =
+            found_within(&shelves, Kind::Song, Within::Albums, &everything, 0, 10);
+        let blue_under_the_albums =
+            found_within(&shelves, Kind::Album, Within::Albums, &blue, 0, 10);
+        let blue_songs_under_the_albums =
+            found_within(&shelves, Kind::Song, Within::Albums, &blue, 0, 10);
+        let no_playlist_under_the_artists = found_within(
+            &shelves,
+            Kind::Playlist,
+            Within::Artists,
+            &everything,
+            0,
+            10,
+        );
+        let no_artist_under_the_albums =
+            found_within(&shelves, Kind::Artist, Within::Albums, &everything, 0, 10);
+        let every_song = found(&shelves, Kind::Song, &everything, 0, 10);
+
+        assert_eq!(titled(&artists), ["John Coltrane (1)", "Miles Davis (1)"]);
+        assert_eq!(
+            titled(&albums_under_the_artists),
+            ["Blue Train (2)", "Kind of Blue (2)"]
+        );
+        assert_eq!(
+            titled(&songs_under_the_artists),
+            [
+                "Blue Train",
+                "Demo",
+                "Freddie Freeloader",
+                "Moment's Notice",
+                "So What"
+            ]
+        );
+        assert_eq!(songs_under_the_artists.total, 5);
+        assert_eq!(titled(&second_song_under_the_artists), ["Demo"]);
+        assert_eq!(second_song_under_the_artists.total, 5);
+        assert_eq!(
+            titled(&albums),
+            ["Blue Train (2)", "Kind of Blue (2)", "Loose Ends (1)"]
+        );
+        assert_eq!(
+            titled(&songs_under_the_albums),
+            [
+                "Blue Train",
+                "Freddie Freeloader",
+                "Moment's Notice",
+                "So What",
+                "Stray"
+            ]
+        );
+        assert_eq!(songs_under_the_albums.total, 5);
+        assert_eq!(
+            titled(&blue_under_the_albums),
+            ["Blue Train (2)", "Kind of Blue (2)"]
+        );
+        assert_eq!(titled(&blue_songs_under_the_albums), ["Blue Train"]);
+        assert_eq!(every_song.total, 10);
+        assert!(
+            ["Demo", "Stray", "a"]
+                .iter()
+                .all(|title| titled(&every_song).contains(&(*title).to_owned()))
+        );
+        for nothing in [no_playlist_under_the_artists, no_artist_under_the_albums] {
             assert!(nothing.held.is_empty());
             assert_eq!(nothing.total, 0);
         }

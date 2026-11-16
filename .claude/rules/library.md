@@ -269,6 +269,13 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `tracks_from` and a count with every row cut from a cue sheet left out (`span_start = 0` and no
   `span_frames`), paged by the same keys, for what serves files as they are (`upnp.md`'s media
   server; `whole_files_leave_out_a_sheets_spans_and_page_by_key_as_the_rows_read_whole`).
+  **A `TrackQuery` narrows to rows on some album or by some artist** beside one album or artist:
+  `on_an_album` keeps a row whose `album_id` is set, `by_an_artist` one with an `artist_id` or a
+  credit (as `artist` takes one artist's own or credited rows), and an `AlbumQuery`'s
+  `by_an_artist` keeps an album by or holding any artist (`BY_OR_HOLDING_AN_ARTIST`, as `artist`
+  is one's), each paged by the same keys, so the media server's search under Artists or Albums
+  answers exactly what those shelves hold below
+  (`a_track_query_narrows_to_rows_on_an_album_or_by_an_artist_and_pages_by_key_within_it`).
 - **Albums and artists panes have orders too, deliberately unindexed.** `AlbumOrder` and
   `ArtistOrder` read those tables, which hold thousands of rows against `tracks`' hundreds of
   thousands, so a temp B-tree beats an index. **An artist files under the name its files sort it
