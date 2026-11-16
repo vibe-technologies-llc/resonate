@@ -14,9 +14,22 @@ public enum FolderURI {
 
     public static func make(root: String, relative: String) -> String {
         let escaped = relative.split(separator: "/").map {
-            String($0).addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(["/", "%", "?", "#"])) ?? String($0)
+            let composed = String($0).precomposedStringWithCanonicalMapping
+            return composed.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(["/", "%", "?", "#"])) ?? composed
         }
         return "\(scheme)://\(root)/\(escaped.joined(separator: "/"))"
+    }
+
+    public static func reached(_ path: [String], under root: URL) -> URL {
+        let files = FileManager.default
+        let named = path.reduce(root) { $0.appendingPathComponent($1) }
+        guard !files.fileExists(atPath: named.path) else { return named }
+        return path.reduce(root) { folder, piece in
+            let listed = (try? files.contentsOfDirectory(atPath: folder.path)) ?? []
+            let spelled = listed.first { $0.unicodeScalars.elementsEqual(piece.unicodeScalars) }
+            let alike = listed.first { $0 == piece }
+            return folder.appendingPathComponent(spelled ?? alike ?? piece)
+        }
     }
 
     public static func root(of uri: String) -> String? {

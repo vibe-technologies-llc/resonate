@@ -1968,7 +1968,7 @@ final class Library {
             return nil
         }
         if changed.leftTheQueue > 0 { await rereadQueue() }
-        guard changed.hidden > 0 || changed.restored > 0 else { return changed }
+        guard changed.hidden > 0 || changed.restored > 0 || changed.folded > 0 else { return changed }
         await refresh()
         await features.reloadOpenPlaylist()
         if changed.hidden > 0 {

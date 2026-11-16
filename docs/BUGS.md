@@ -8,6 +8,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Security
 
 ## Sync and together
+- [M · 0.12.0] A phone landing a song looks for a copy already standing in the destination's root
+  alone (`Folders.standing`, `MusicDocuments.standing`): a copy of the same audio in other bytes
+  filed under an artist or album folder and not indexed yet is not seen, so a second file lands
+  beside the root; once both are indexed they are two songs that *Identical songs* never offers,
+  since their bytes differ. Rows naming one file are already one song (`android.md`).
 
 ## Playback and output
 

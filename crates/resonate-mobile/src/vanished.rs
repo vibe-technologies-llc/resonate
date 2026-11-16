@@ -41,6 +41,7 @@ pub struct MissingSongs {
     pub hidden: u32,
     pub restored: u32,
     pub left_the_queue: u32,
+    pub folded: u32,
 }
 
 #[uniffi::export]
@@ -76,11 +77,16 @@ impl MobilePlayer {
             }
         }
         self.catalog.mark_missing(&hide, &restore)?;
+        let folded = self.fold_rows_naming_one_file().unwrap_or_else(|error| {
+            tracing::warn!(%error, "the rows naming one file could not be folded");
+            0
+        });
 
         Ok(MissingSongs {
             hidden: counted(hide.len()),
             restored: counted(restore.len()),
             left_the_queue: counted(self.drop_missing_from_queue()),
+            folded: counted(folded),
         })
     }
 
@@ -97,6 +103,7 @@ impl MobilePlayer {
             hidden: counted(hide.len()),
             restored: 0,
             left_the_queue: counted(self.drop_missing_from_queue()),
+            folded: 0,
         })
     }
 }

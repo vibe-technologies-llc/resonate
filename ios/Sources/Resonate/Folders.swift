@@ -276,7 +276,7 @@ final class Folders: Documents, @unchecked Sendable {
             }
             let cover = Self.coverNames.lazy.compactMap { covers[$0] }.first
             for (file, path, stamp) in audio.sorted(by: { $0.1 < $1.1 }) where !stop.isStopped {
-                let name = file.lastPathComponent
+                let name = file.lastPathComponent.precomposedStringWithCanonicalMapping
                 let stem = (name as NSString).deletingPathExtension.lowercased()
                 try found(
                     FoundDocument(
@@ -338,10 +338,11 @@ final class Folders: Documents, @unchecked Sendable {
         let listed = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
         return listed
             .filter { $0.hasPrefix(stem) }
-            .map { StandingDocument(uri: uri(root: id, relative: $0), name: $0) }
+            .map { StandingDocument(uri: uri(root: id, relative: $0), name: $0.precomposedStringWithCanonicalMapping) }
     }
 
-    func fresh(in id: String, named name: String) throws -> (uri: String, descriptor: Int32) {
+    func fresh(in id: String, named asked: String) throws -> (uri: String, descriptor: Int32) {
+        let name = asked.precomposedStringWithCanonicalMapping
         let (root, scoped) = try root(id)
         defer { if scoped { root.stopAccessingSecurityScopedResource() } }
         let stem = (name as NSString).deletingPathExtension
@@ -514,7 +515,7 @@ final class Folders: Documents, @unchecked Sendable {
             document.close()
             throw FolderFailure.notAFolderUri(uri)
         }
-        return ScopedDocument(url: path.reduce(root) { $0.appendingPathComponent($1) }, root: root, scoped: scoped)
+        return ScopedDocument(url: FolderURI.reached(path, under: root), root: root, scoped: scoped)
     }
 
     private func persist() throws {

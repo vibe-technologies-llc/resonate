@@ -1345,7 +1345,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     private suspend fun afterHiding(native: MobilePlayer, changed: MissingSongs) {
-        if (changed.hidden == 0u && changed.restored == 0u) return
+        if (changed.hidden == 0u && changed.restored == 0u && changed.folded == 0u) return
         library.refresh()
         openPlaylist.value?.let { id ->
             if (playlists.value.any { it.id == id }) reloadPlaylist(native, id)

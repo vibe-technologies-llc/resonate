@@ -34,9 +34,10 @@ fn write_error(source: rusqlite::Error) -> Error {
 pub(crate) struct Files(OnceLock<Arc<dyn Documents>>);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct FileIdentity {
+pub(crate) struct FileIdentity {
     device: u64,
     inode: u64,
+    length: u64,
 }
 
 impl Files {
@@ -46,7 +47,7 @@ impl Files {
         }
     }
 
-    fn identity_of(&self, uri: &str) -> Option<FileIdentity> {
+    pub(crate) fn identity_of(&self, uri: &str) -> Option<FileIdentity> {
         let documents = self.0.get()?;
         let descriptor = answered(Callback::OpenDocument, || {
             documents.open_document(uri.to_owned())
@@ -56,6 +57,7 @@ impl Files {
         metadata.is_file().then(|| FileIdentity {
             device: metadata.dev(),
             inode: metadata.ino(),
+            length: metadata.len(),
         })
     }
 }
@@ -176,14 +178,14 @@ impl MobilePlayer {
             .collect()
     }
 
-    fn forget_analyses<'a>(&self, ids: impl Iterator<Item = &'a u64>) {
+    pub(crate) fn forget_analyses<'a>(&self, ids: impl Iterator<Item = &'a u64>) {
         let mut analyses = self.services.analyses.lock();
         for id in ids {
             analyses.remove(id);
         }
     }
 
-    fn playing_uri(&self) -> Option<String> {
+    pub(crate) fn playing_uri(&self) -> Option<String> {
         let player = self.playing.player().ok()?;
         let state = player.state();
         let queued = player.queued();
@@ -282,7 +284,7 @@ impl Catalog {
         Ok(forgotten)
     }
 
-    fn fold_into(&self, kept: u64, copies: &[u64]) -> Result<usize> {
+    pub(crate) fn fold_into(&self, kept: u64, copies: &[u64]) -> Result<usize> {
         if copies.is_empty() {
             return Ok(0);
         }

@@ -1913,7 +1913,8 @@ fn extension_of(name: &str) -> String {
 }
 
 fn file_name_for(song: &SearchSong, extension: &str) -> String {
-    named_within("", OsStr::new(&file_stem_of(song)), format!(".{extension}"))
+    let composed = file_stem_of(song).nfc().collect::<String>();
+    named_within("", OsStr::new(&composed), format!(".{extension}"))
         .to_string_lossy()
         .into_owned()
 }
@@ -1994,10 +1995,12 @@ fn file_of(sources: &Sources, path: &Path) -> Option<WholeFile> {
 }
 
 fn named_alike(name: &str, candidate: &str) -> bool {
+    let name = name.nfc().collect::<String>();
+    let candidate = candidate.nfc().collect::<String>();
     if candidate == name {
         return true;
     }
-    let path = Path::new(name);
+    let path = Path::new(&name);
     let Some(stem) = path.file_stem().and_then(OsStr::to_str) else {
         return false;
     };
@@ -2005,7 +2008,7 @@ fn named_alike(name: &str, candidate: &str) -> bool {
         Some(extension) => candidate
             .strip_suffix(extension)
             .and_then(|rest| rest.strip_suffix('.')),
-        None => Some(candidate),
+        None => Some(candidate.as_str()),
     };
     numbered
         .and_then(|rest| rest.strip_prefix(stem))
@@ -3264,6 +3267,80 @@ mod tests {
             (rescanned.title.as_str(), rescanned.artist.as_str()),
             ("Enes", "Carry Potter")
         );
+    }
+
+    #[test]
+    fn a_landed_song_indexed_again_under_another_spelling_of_its_file_stays_one_row() {
+        let folder = folder("respelled");
+        let (player, _) = granted(&folder);
+        player
+            .services
+            .files
+            .reach_through(Arc::new(Here(folder.clone())));
+        tagged_silence(&folder.join("landed/hunter.wav"));
+        let asked = SearchSong {
+            title: "Hunter".into(),
+            artist: "Björk".into(),
+            duration_ms: Some(2_000),
+            ..SearchSong::default()
+        };
+        let rows = |player: &MobilePlayer| -> i64 {
+            player
+                .catalog
+                .0
+                .lock()
+                .query_row("SELECT count(*) FROM documents", [], |row| row.get(0))
+                .expect("a count")
+        };
+
+        let landed = player
+            .indexed_download(
+                "content://test/landed/hunter.wav".into(),
+                "hunter.wav".into(),
+                &asked,
+            )
+            .expect("a landing");
+        let landed_again = player
+            .indexed_download(
+                "content://test/./landed/hunter.wav".into(),
+                "hunter.wav".into(),
+                &asked,
+            )
+            .expect("a landing on the standing file");
+        let after_landing = rows(&player);
+        let scanned = player
+            .scan_document(
+                "content://test/landed/./hunter.wav".into(),
+                "hunter.wav".into(),
+                0,
+                0,
+            )
+            .expect("a scan");
+        let after_scan = rows(&player);
+
+        let _ = fs::remove_dir_all(&folder);
+        assert_eq!(landed_again.id, landed.id);
+        assert_eq!(landed_again.uri, "content://test/landed/hunter.wav");
+        assert_eq!(after_landing, 1);
+        assert_eq!(scanned.id, landed.id);
+        assert_eq!(scanned.uri, "content://test/landed/./hunter.wav");
+        assert_eq!(after_scan, 1);
+    }
+
+    #[test]
+    fn a_standing_name_spelled_decomposed_is_the_composed_name_a_landing_gives() {
+        let composed = "Björk - Jóga.flac";
+        let decomposed = composed.nfd().collect::<String>();
+        let song = SearchSong {
+            title: "Jóga".nfd().collect(),
+            artist: "Björk".into(),
+            ..SearchSong::default()
+        };
+
+        assert_ne!(decomposed, composed);
+        assert!(named_alike(composed, &decomposed));
+        assert!(named_alike(&decomposed, "Björk - Jóga (2).flac"));
+        assert_eq!(file_name_for(&song, "flac"), composed);
     }
 
     #[test]

@@ -399,6 +399,99 @@ mod tests {
     }
 
     #[test]
+    fn rows_naming_one_file_are_folded_into_the_first_and_the_file_and_its_true_copies_stay() {
+        let harness = Harness::new();
+        let song = harness.song('a').clone();
+        let alias = harness
+            .player
+            .index_document(format!("{FOLDER}./a.wav"), "a.wav".into())
+            .expect("a second row naming the same file");
+        harness
+            .player
+            .favourite(alias.id, true)
+            .expect("the second row favoured");
+        let playlist = harness
+            .player
+            .create_playlist("Kept".into())
+            .expect("a playlist");
+        harness
+            .player
+            .add_to_playlist(playlist, vec![alias.id])
+            .expect("the second row listed");
+
+        let changed = harness
+            .player
+            .hide_missing_songs(vec![FOLDER.into()])
+            .expect("the missing songs weighed");
+        let listed = harness
+            .player
+            .playlist_tracks(playlist, 0, 10)
+            .expect("the playlist");
+        let deleted: i64 = harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .query_row("SELECT count(*) FROM songs_deleted", [], |row| row.get(0))
+            .expect("a count");
+        let found = harness
+            .player
+            .identical_songs()
+            .expect("the identical songs");
+
+        assert_eq!(changed.folded, 1);
+        assert_eq!(changed.hidden, 0);
+        assert!(harness.player.catalog.track(alias.id).is_err());
+        assert!(harness.folder.join("a.wav").exists());
+        assert!(
+            harness
+                .player
+                .catalog
+                .track(song.id)
+                .expect("the song kept")
+                .favourite
+        );
+        assert_eq!(
+            listed.iter().map(|track| track.id).collect::<Vec<_>>(),
+            vec![song.id]
+        );
+        assert_eq!(deleted, 0);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].kept.id, song.id);
+        assert_eq!(
+            found[0]
+                .copies
+                .iter()
+                .map(|copy| copy.id)
+                .collect::<Vec<_>>(),
+            harness.ids("bcd")
+        );
+    }
+
+    #[test]
+    fn of_rows_naming_one_file_the_one_queued_is_kept() {
+        let harness = Harness::new();
+        let alias = harness
+            .player
+            .index_document(format!("{FOLDER}./a.wav"), "a.wav".into())
+            .expect("a second row naming the same file");
+        harness
+            .player
+            .load(vec![alias.id, harness.song('b').id], 1, false)
+            .expect("a queue holding the second row");
+
+        let changed = harness
+            .player
+            .hide_missing_songs(vec![FOLDER.into()])
+            .expect("the missing songs weighed");
+
+        assert_eq!(changed.folded, 1);
+        assert!(harness.player.catalog.track(alias.id).is_ok());
+        assert!(harness.player.catalog.track(harness.song('a').id).is_err());
+        assert!(harness.folder.join("a.wav").exists());
+    }
+
+    #[test]
     fn the_copy_playing_is_the_one_kept() {
         let harness = Harness::new();
         harness.resumed("ab", 1, 0);

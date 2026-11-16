@@ -379,7 +379,10 @@ document: Android's `FileNotFoundException`, iOS's unresolvable bookmark or `ENO
 `NotFound` as not held, the same rule (`android.md`'s *Device sync*). `hide_unlisted_songs(prefixes, listed)` is
 the same pass given the URIs the front end saw listed: those are taken to exist and never opened
 (`a_document_the_listing_shows_is_not_opened_and_the_rest_are`); `hide_missing_songs` is it with
-none listed.
+none listed. Both then fold, in the catalog alone, the visible rows that open one file
+(`fold_rows_naming_one_file`, `MissingSongs::folded`; `android.md`'s *Documents and catalog*), and
+an index of a URI no row holds takes the row already opening its file rather than adding a second
+(`spelled_as_held`), whatever spelling, root or provider made the two URIs.
 
 ## A day is the phone's zone's
 

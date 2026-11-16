@@ -27,6 +27,7 @@ mod lyrics;
 mod measurement;
 mod mixes;
 mod offering;
+mod one_file;
 mod online_tools;
 mod organising;
 mod output;
@@ -84,6 +85,7 @@ use crate::{
     arranged::{Arranged, Laid},
     catalog::Catalog,
     documents::{GRANTED_SCHEMES, GrantedFiles, document_uri, location},
+    one_file::{Probed, Spelled},
     stamp::DocumentStamp,
     vanished::Absorbing,
 };
@@ -394,7 +396,7 @@ impl MobilePlayer {
     }
 
     pub fn index_document(&self, uri: String, name: String) -> Result<Track> {
-        self.indexed(uri, name, None, Absorbing::EveryHidden)
+        self.indexed(uri, name, None, Spelled::Anew)
     }
 
     pub fn scan_document(
@@ -410,7 +412,7 @@ impl MobilePlayer {
         {
             return Ok(known);
         }
-        self.indexed(uri, name, stamp, Absorbing::EveryHidden)
+        self.indexed(uri, name, stamp, Spelled::AsListed)
     }
 }
 
@@ -420,9 +422,9 @@ impl MobilePlayer {
         uri: String,
         name: String,
         stamp: Option<DocumentStamp>,
-        absorbing: Absorbing,
+        spelled: Spelled,
     ) -> Result<Track> {
-        self.indexed_and_named(uri, name, stamp, absorbing)
+        self.indexed_and_named(uri, name, stamp, Absorbing::EveryHidden, spelled)
             .map(|(track, _)| track)
     }
 
@@ -432,6 +434,7 @@ impl MobilePlayer {
         name: String,
         stamp: Option<DocumentStamp>,
         absorbing: Absorbing,
+        spelled: Spelled,
     ) -> Result<(Track, NamedByTheFile)> {
         let (info, picture) = probe_pictured(&self.sources, &location(&uri)?, Picturing::Copied)?;
         let mut named = info.tags.clone();
@@ -442,6 +445,11 @@ impl MobilePlayer {
                 .as_millis()
                 .min(u128::from(u64::MAX)) as u64
         });
+        let probed = Probed {
+            rate: info.spec.rate.hz(),
+            duration_ms,
+        };
+        let uri = self.spelled_as_held(uri, &name, spelled, &probed)?;
         let track = self.catalog.upsert_named(
             Track {
                 id: 0,

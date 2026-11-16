@@ -77,6 +77,36 @@ final class Scratch {
         #expect(FolderURI.components(of: relative) == nil)
     }
 
+    @Test func aNameSpelledDecomposedMakesTheUriOfItsComposedSpelling() {
+        let composed = "Björk/Jóga.flac"
+        let decomposed = composed.decomposedStringWithCanonicalMapping
+
+        let made = FolderURI.make(root: "abc", relative: decomposed)
+
+        #expect(!decomposed.unicodeScalars.elementsEqual(composed.unicodeScalars))
+        #expect(made == FolderURI.make(root: "abc", relative: composed))
+        #expect(made == "resonate-folder://abc/Bj%C3%B6rk/J%C3%B3ga.flac")
+    }
+
+    @Test func aComposedPathReachesAFileNamedDecomposedWhereTheFolderTellsTheTwoApart() {
+        let scratch = Scratch()
+        let decomposed = "Björk/Jóga.flac".decomposedStringWithCanonicalMapping
+        scratch.write(decomposed)
+
+        let reached = FolderURI.reached(["Björk", "Jóga.flac"], under: scratch.url)
+
+        #expect(FileManager.default.fileExists(atPath: reached.path))
+        #expect(reached.lastPathComponent.unicodeScalars.elementsEqual("Jóga.flac".decomposedStringWithCanonicalMapping.unicodeScalars))
+    }
+
+    @Test func aPathNamingNoFileIsReachedAsSpelled() {
+        let scratch = Scratch()
+
+        let reached = FolderURI.reached(["Björk", "Jóga.flac"], under: scratch.url)
+
+        #expect(reached == scratch.url.appendingPathComponent("Björk").appendingPathComponent("Jóga.flac"))
+    }
+
     @Test func aDotsNameThatIsNotAClimbIsAllowed() {
         #expect(FolderURI.components(of: "a../b..c/..d.flac") == ["a..", "b..c", "..d.flac"])
     }
