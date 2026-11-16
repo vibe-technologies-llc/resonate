@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use resonate_core::Mbid;
 use resonate_library::Credit;
@@ -57,14 +57,22 @@ struct Held {
     releases: Vec<Option<ReleaseInfo>>,
 }
 
+type Named = HashMap<(&'static str, u32), Box<str>>;
+
 enum Rest<'a> {
-    Held(Held),
+    Held(Arc<Held>),
     Asked(&'a Connection),
 }
 
 pub(crate) struct LookedUp<'a> {
-    pub named: HashMap<(&'static str, u32), Box<str>>,
+    pub named: Arc<Named>,
     rest: Rest<'a>,
+}
+
+#[derive(Clone)]
+pub(crate) struct Shared {
+    named: Arc<Named>,
+    held: Arc<Held>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -154,7 +162,7 @@ fn earliest(events: &mut HashMap<u32, Event>, row: &rusqlite::Row<'_>) -> rusqli
     Ok(())
 }
 
-fn named_in(staging: &Connection) -> Result<HashMap<(&'static str, u32), Box<str>>> {
+fn named_in(staging: &Connection) -> Result<Named> {
     let failed = store_read(Store::Staging);
     let mut named = HashMap::new();
     for table in NAMED_TABLES {
@@ -203,7 +211,14 @@ fn sorted(mut kinds: Vec<u32>) -> Box<[u32]> {
     kinds.into_boxed_slice()
 }
 
-impl LookedUp<'static> {
+impl Shared {
+    pub(crate) fn looked_up(&self) -> LookedUp<'static> {
+        LookedUp {
+            named: Arc::clone(&self.named),
+            rest: Rest::Held(Arc::clone(&self.held)),
+        }
+    }
+
     pub(crate) fn read(staging: &Connection, building: &Building) -> Result<Self> {
         let failed = store_read(Store::Staging);
         let named = named_in(staging)?;
@@ -387,8 +402,8 @@ impl LookedUp<'static> {
         building.looked_at()?;
 
         Ok(Self {
-            named,
-            rest: Rest::Held(Held {
+            named: Arc::new(named),
+            held: Arc::new(Held {
                 artists,
                 credits,
                 groups,
@@ -401,7 +416,7 @@ impl LookedUp<'static> {
 impl<'a> LookedUp<'a> {
     pub(crate) fn asking(tables: &'a Connection) -> Result<Self> {
         Ok(Self {
-            named: named_in(tables)?,
+            named: Arc::new(named_in(tables)?),
             rest: Rest::Asked(tables),
         })
     }

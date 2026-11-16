@@ -41,6 +41,15 @@ pub(crate) const fn rows_of(kind: Entity) -> &'static str {
     }
 }
 
+pub(crate) const fn table_of(kind: Entity) -> &'static str {
+    match kind {
+        Entity::Release => "release",
+        Entity::Recording => "recording",
+        Entity::Group => "release_group",
+        Entity::Artist => "artist",
+    }
+}
+
 pub(crate) const fn words_of(kind: Entity) -> &'static str {
     match kind {
         Entity::Release => "release_words",

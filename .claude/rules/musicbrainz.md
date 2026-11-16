@@ -89,7 +89,8 @@ decodes both and requires a decoded value to read back as itself.
 ## The mirror
 
 **What it holds is the full export.** `mirror::import` streams `mbdump.tar.bz2` and
-`mbdump-derived.tar.bz2` (`bzip2`'s pure-Rust backend, `MultiBzDecoder`, `tar`) and reads each
+`mbdump-derived.tar.bz2` (`mibz2::BzReader::parallel` on every core but `THREADS_THE_READ_KEEPS`,
+the one parsing and inserting and the decoder's own reader, then `tar`) and reads each
 table `copy::TABLES` names as PostgreSQL COPY text. A field is tab-separated, `\N` is null, and
 backslash escapes are read, octal and hex included (`\x` with no hex digit is an `x`, as PostgreSQL reads it). A row that is short of the projected columns is `Error::Columns`, and a final row with no line end is `Error::CutRow`, since PostgreSQL ends every row with one: a cut table is refused, never half kept. Only the projected columns go into
 `musicbrainz.staging.sqlite`.
@@ -113,6 +114,14 @@ backslash escapes are read, octal and hex included (`\x` with no hex digit is an
     recording order, into `placed_tracks` (`WITHOUT ROWID`, keyed by medium and position, inserted
     sorted). A release then reads its media's tracks almost in order, since media are numbered as
     releases are.
+- **Documents are built on every core but one, and kept in id order.** For each kind,
+  `built_by_a_builder` threads, each with a read-only connection of its own to the staging
+  (`reader_of`, `BUILDER_CACHE_KIB` of pages; the staging's own connection drops its exclusive lock
+  first), build the documents of `IDS_A_CHUNK` ids at a time from the shared `Shared` lookups. The
+  writing thread hands out at most `CHUNKS_AHEAD_A_BUILDER` chunks a builder ahead of the one it
+  awaits and takes them back in order, so ordinals, blocks and dictionaries are exactly the serial
+  build's. A builder that fails, or panics in a build that unwinds, answers its chunk with the
+  error; builders all gone is `BuildersStopped`.
 - **One document per entity:**
   - A release (`ReleaseDoc`: the `Release` the online client answers, with its status).
   - A recording (`Recording`, with at most `RELEASES_OF_A_RECORDING_KEPT` releases, earliest
@@ -196,9 +205,9 @@ changes*).
   (gigabytes for the byte steps, a percentage for the rest), or to come.
 
 **What the build cost before `FORMAT` 2 (the prepared dictionaries, the larger FTS5 flush, the capped
-`ANALYZE`, the title tokens), measured on the export of 2026-11-04** (sixteen cores, 30 GB of memory
-under other work): 274 million rows read in 16 minutes (the export is one bzip2 stream, so the read
-is one core's), 54 million documents written in 40 (releases about 6 000 a second, recordings 60 000),
+`ANALYZE`, the title tokens) and before the decode and the documents were spread over the cores, measured on the export of 2026-11-04** (sixteen cores, 30 GB of memory
+under other work): 274 million rows read in 16 minutes (one core's bzip2 then, the decode being
+block-parallel since), 54 million documents written in 40 (releases about 6 000 a second, recordings 60 000),
 71 minutes in all. The staging peaks at 41 GB beside the 7.5 GB download; the copy kept is 10.3 GB.
 A lookup by id answers in under 3 ms, a strict search with its artist in about 10 to 70 ms. A bare
 common title asked in words alone was the slow case (*love* about 2.5 s, bm25 reading the size of

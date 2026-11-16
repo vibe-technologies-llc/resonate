@@ -162,9 +162,10 @@ here, add it there.
 - `resonate-musicbrainz`: core and `resonate-library` among workspace crates, with `resonate-fetch`
   and `ureq` only under its `download` feature (the binary's `online` turns it on, the phones
   leave it off); no gpui, engine, `resonate-online`, `resonate-sync`, serde, quinn or tokio;
-  reached by the binary and `resonate-mobile` alone. **`bzip2`** keeps its default features,
-  which are its pure-Rust `libbz2-rs-sys` backend (the C `bzip2-sys` is the other, off); **`tar`**
-  has no default features (`xattr` is not read). Both read the MusicBrainz export alone.
+  reached by the binary and `resonate-mobile` alone. **`mibz2`** decodes bzip2 (std alone, every
+  block's and stream's CRC checked, block-parallel through `BzReader::parallel`); **`tar`** has no
+  default features (`xattr` is not read). Both read the MusicBrainz export and its packets alone.
+  `bzip2` (its pure-Rust `libbz2-rs-sys` backend) is a dev-dependency, writing the tests' archives.
 - `resonate-cli`: `resonate-words` alone among workspace crates, with `clap`; reached by the binary
   alone, as a dependency and as its build script's, so the grammar the man pages are written from is
   the one parsed.

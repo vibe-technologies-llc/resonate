@@ -317,7 +317,7 @@ fn pending_in(rows: impl BufRead, sequence: u64) -> Result<Vec<Change>> {
 }
 
 pub fn packet_read(packed: impl Read, asked: u64) -> Result<Packet> {
-    let decoded = bzip2::read::MultiBzDecoder::new(packed);
+    let decoded = mibz2::BzReader::new(packed);
     let mut archive = tar::Archive::new(decoded);
     let entries = archive.entries().map_err(|_| Error::PacketPart {
         sequence: asked,

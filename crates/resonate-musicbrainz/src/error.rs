@@ -121,6 +121,9 @@ pub enum Error {
     #[error("the build was cancelled")]
     Cancelled,
 
+    #[error("the threads building the mirror's documents stopped")]
+    BuildersStopped,
+
     #[error("another run is building the mirror")]
     AlreadyBuilding,
 

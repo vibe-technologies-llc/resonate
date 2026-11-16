@@ -4902,6 +4902,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "mibz2"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "006ddaf4e5af2c994e9530578884fd5548f621d6abd04d3174f8b1564584c9f5"
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7439,6 +7445,7 @@ name = "resonate-musicbrainz"
 version = "0.12.0"
 dependencies = [
  "bzip2",
+ "mibz2",
  "parking_lot 0.13.0",
  "resonate-core",
  "resonate-fetch",

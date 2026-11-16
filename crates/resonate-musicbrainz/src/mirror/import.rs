@@ -2,6 +2,8 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::{self, BufRead, BufReader, Read},
+    num::NonZero,
+    panic::{self, AssertUnwindSafe},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -12,14 +14,14 @@ use std::{
 };
 
 use resonate_core::{gaming, writer::Held};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OpenFlags, Statement, params};
 use zstd::dict::EncoderDictionary;
 
 use super::{
     AMENDED_FILE, BLOCKS_INDEXED, FORMAT, MIRROR_FILE, SCHEMA,
     copy::{Archive, TABLES, Table, fields, table_named, unescaped},
-    documents::{Builders, CODES_JOINED_BY, Document, rows_of, words_of},
-    looked_up::{LookedUp, store_read},
+    documents::{Builders, CODES_JOINED_BY, Document, rows_of, table_of, words_of},
+    looked_up::{LookedUp, Shared, store_read},
     tables::{Sequenced, TABLES_FILE, kept_beside_the_build},
 };
 use crate::{ArchiveOp, Entity, Error, PackOp, Result, Store, StoreOp, kept::now, wire::Writer};
@@ -45,7 +47,20 @@ const TRACKS_READ_FROM: &str = "track";
 const DOCUMENTS_READ_FROM: [&str; 4] = ["release", "recording", "release_group", "artist"];
 const SETTLING_STEPS: u64 = 9;
 
+const THREADS_THE_READ_KEEPS: usize = 2;
+const IDS_A_CHUNK: i64 = 2048;
+const CHUNKS_AHEAD_A_BUILDER: usize = 4;
+const BUILDER_CACHE_KIB: i64 = 32 * 1024;
+
 type Tally = BTreeMap<&'static str, u64>;
+
+fn cores() -> usize {
+    thread::available_parallelism().map_or(1, NonZero::get)
+}
+
+fn all_cores_but(kept: usize) -> usize {
+    cores().saturating_sub(kept).max(1)
+}
 
 #[derive(Clone, Debug)]
 pub struct Archives {
@@ -229,9 +244,12 @@ pub fn built_from(
             .iter()
             .filter_map(|table| tally.get(table))
             .sum());
-        let looked_up = LookedUp::read(&staging, building)?;
+        staging
+            .execute_batch("PRAGMA locking_mode = NORMAL;")
+            .map_err(Error::store(Store::Staging, StoreOp::Configure))?;
+        let looked_up = Shared::read(&staging, building)?;
         written(
-            &staging,
+            &staging_path,
             &looked_up,
             &building_path,
             &placed_path,
@@ -369,7 +387,7 @@ fn imported(
         read: 0,
         building: Arc::clone(&progress),
     };
-    let decoded = bzip2::read::MultiBzDecoder::new(counted);
+    let decoded = mibz2::BzReader::parallel(counted, all_cores_but(THREADS_THE_READ_KEEPS));
     let mut archive = tar::Archive::new(decoded);
     let entries = archive
         .entries()
@@ -805,16 +823,16 @@ fn packed_by_a_worker(job: &Job) -> io::Result<Vec<u8>> {
 }
 
 struct Writing<'a> {
-    staging: &'a Connection,
-    looked_up: &'a LookedUp<'a>,
+    staging: &'a Path,
+    looked_up: &'a Shared,
     mirror: &'a Connection,
     placed: &'a Connection,
     building: &'a Building,
 }
 
 fn written(
-    staging: &Connection,
-    looked_up: &LookedUp<'_>,
+    staging: &Path,
+    looked_up: &Shared,
     building_path: &Path,
     placed_path: &Path,
     dump: &str,
@@ -846,9 +864,7 @@ fn written(
             .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
     }
 
-    let workers = thread::available_parallelism()
-        .map_or(1, |count| count.get().saturating_sub(1))
-        .max(1);
+    let workers = all_cores_but(1);
     let (jobs, taken) = mpsc::sync_channel::<Job>(workers * 2);
     let (done, packed) = mpsc::channel::<io::Result<Packed>>();
     let taken = Arc::new(parking_lot::Mutex::new(taken));
@@ -883,10 +899,9 @@ fn written(
             building,
         };
         let wrote = (|| {
-            let mut builders = Builders::prepared(staging)?;
             for kind in Entity::ALL {
                 let mut packer = Packer::new(kind, &jobs, &mirror);
-                writing.every(&mut builders, &mut packer, &packed)?;
+                writing.every(&mut packer, &packed)?;
                 packer.finish()?;
             }
             Ok::<_, Error>(())
@@ -1040,25 +1055,159 @@ impl Writing<'_> {
 
     fn every(
         &self,
-        builders: &mut Builders<'_>,
         packer: &mut Packer<'_>,
         packed: &mpsc::Receiver<io::Result<Packed>>,
     ) -> Result<()> {
-        let failed = store_read(Store::Staging);
         let kind = packer.kind;
-        let mut rows_of = self
-            .staging
-            .prepare(&format!("{} ORDER BY id", rows_of(kind)))
-            .map_err(&failed)?;
-        let mut rows = rows_of.query([]).map_err(&failed)?;
-        while let Some(row) = rows.next().map_err(&failed)? {
-            if let Some(built) = builders.built(kind, self.looked_up, row)? {
-                self.documented(packer, packed, built)?;
+        let builders = all_cores_but(1);
+        let readers = (0..builders)
+            .map(|_| reader_of(self.staging))
+            .collect::<Result<Vec<_>>>()?;
+        let Some(first) = readers.first() else {
+            return Ok(());
+        };
+        let Some((lowest, highest)) = id_span(first, kind)? else {
+            return Ok(());
+        };
+        let count = usize::try_from((highest - lowest) / IDS_A_CHUNK + 1).unwrap_or(0);
+        let chunk = |at: usize| {
+            let from = i64::try_from(at)
+                .unwrap_or(i64::MAX)
+                .saturating_mul(IDS_A_CHUNK)
+                .saturating_add(lowest);
+            Chunk {
+                at,
+                from,
+                to: from.saturating_add(IDS_A_CHUNK),
             }
-        }
-        Ok(())
+        };
+        let (ask, asked) = mpsc::channel::<Chunk>();
+        let asked = parking_lot::Mutex::new(asked);
+        let (told, heard) = mpsc::channel::<(usize, Result<Vec<Document>>)>();
+        thread::scope(|scope| {
+            let ask = ask;
+            for reader in readers {
+                let told = told.clone();
+                let shared = self.looked_up.clone();
+                let asked = &asked;
+                scope.spawn(move || built_by_a_builder(&reader, kind, &shared, asked, &told));
+            }
+            drop(told);
+            let ahead = builders * CHUNKS_AHEAD_A_BUILDER;
+            let mut sent = 0;
+            let mut waiting = BTreeMap::new();
+            for next in 0..count {
+                while sent < count && sent < next + ahead {
+                    ask.send(chunk(sent)).map_err(|_| Error::BuildersStopped)?;
+                    sent += 1;
+                }
+                let built = loop {
+                    if let Some(built) = waiting.remove(&next) {
+                        break built;
+                    }
+                    let (at, built) = heard.recv().map_err(|_| Error::BuildersStopped)?;
+                    waiting.insert(at, built);
+                };
+                for document in built? {
+                    self.documented(packer, packed, document)?;
+                }
+            }
+            Ok(())
+        })
     }
 }
+
+struct Chunk {
+    at: usize,
+    from: i64,
+    to: i64,
+}
+
+fn reader_of(staging: &Path) -> Result<Connection> {
+    let reader = Connection::open_with_flags(
+        staging,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(Error::store(Store::Staging, StoreOp::Open))?;
+    reader
+        .execute_batch(&format!(
+            "PRAGMA cache_size = -{BUILDER_CACHE_KIB}; PRAGMA temp_store = MEMORY;"
+        ))
+        .map_err(Error::store(Store::Staging, StoreOp::Configure))?;
+    Ok(reader)
+}
+
+fn id_span(reader: &Connection, kind: Entity) -> Result<Option<(i64, i64)>> {
+    let span: (Option<i64>, Option<i64>) = reader
+        .query_row(
+            &format!("SELECT min(id), max(id) FROM {}", table_of(kind)),
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(store_read(Store::Staging))?;
+    Ok(span.0.zip(span.1))
+}
+
+fn built_between(
+    builders: &mut Builders<'_>,
+    rows_of: &mut Statement<'_>,
+    kind: Entity,
+    looked_up: &LookedUp<'_>,
+    chunk: &Chunk,
+) -> Result<Vec<Document>> {
+    let failed = store_read(Store::Staging);
+    let mut rows = rows_of
+        .query(params![chunk.from, chunk.to])
+        .map_err(&failed)?;
+    let mut built = Vec::new();
+    while let Some(row) = rows.next().map_err(&failed)? {
+        if let Some(document) = builders.built(kind, looked_up, row)? {
+            built.push(document);
+        }
+    }
+    Ok(built)
+}
+
+fn built_by_a_builder(
+    reader: &Connection,
+    kind: Entity,
+    shared: &Shared,
+    asked: &parking_lot::Mutex<mpsc::Receiver<Chunk>>,
+    told: &mpsc::Sender<(usize, Result<Vec<Document>>)>,
+) {
+    let looked_up = shared.looked_up();
+    let prepared = Builders::prepared(reader).and_then(|builders| {
+        reader
+            .prepare(&format!(
+                "{} WHERE id >= ?1 AND id < ?2 ORDER BY id",
+                rows_of(kind)
+            ))
+            .map(|rows_of| (builders, rows_of))
+            .map_err(store_read(Store::Staging))
+    });
+    let (mut builders, mut rows_of) = match prepared {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            if let Ok(chunk) = asked.lock().recv() {
+                told.send((chunk.at, Err(error))).ok();
+            }
+            return;
+        }
+    };
+    loop {
+        let Ok(chunk) = asked.lock().recv() else {
+            return;
+        };
+        let built = panic::catch_unwind(AssertUnwindSafe(|| {
+            built_between(&mut builders, &mut rows_of, kind, &looked_up, &chunk)
+        }))
+        .unwrap_or(Err(Error::BuildersStopped));
+        if told.send((chunk.at, built)).is_err() {
+            return;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
