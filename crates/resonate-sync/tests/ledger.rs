@@ -1796,3 +1796,79 @@ fn a_share_is_told_once_and_a_compaction_elsewhere_owes_it_again() {
         "a build without shares compacted them away and they were not told again"
     );
 }
+
+fn shares_told(changes: &[Change]) -> usize {
+    changes
+        .iter()
+        .filter(|change| matches!(change, Change::Share(_)))
+        .count()
+}
+
+#[test]
+fn a_share_is_told_again_in_another_space_and_reaches_a_device_met_there() {
+    let mut desk = Device::new("Desk", &[]);
+    desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);
+    desk.send();
+
+    let mut phone = Device::new("Phone", &[]);
+    let elsewhere = SpaceId([6; 16]);
+    phone.ledger.enter_space(elsewhere).expect("entered");
+
+    desk.ledger.enter_space(elsewhere).expect("entered");
+    let told = desk.send();
+    phone.receive(&told);
+
+    assert_eq!(shares_told(&told), 1);
+    assert_eq!(
+        phone
+            .shelf
+            .inside
+            .lock()
+            .shares_taken
+            .iter()
+            .map(|share| share.code.as_str())
+            .collect::<Vec<_>>(),
+        ["E-CODE"]
+    );
+}
+
+#[test]
+fn a_share_is_owed_again_when_the_space_is_made_anew_and_reaches_a_device_joining_it() {
+    let mut desk = Device::new("Desk", &[]);
+    desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);
+    desk.send();
+
+    desk.ledger.space_made_anew().expect("made anew");
+    let told = desk.send();
+    let mut phone = Device::new("Phone", &[]);
+    phone.receive(&told);
+
+    assert_eq!(shares_told(&told), 1);
+    assert_eq!(phone.shelf.inside.lock().shares_taken.len(), 1);
+}
+
+#[test]
+fn a_share_told_without_a_server_is_owed_again_once_there_is_one() {
+    let mut desk = Device::new("Desk", &[]);
+    desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);
+    desk.ledger.through_a_server(false).expect("serverless");
+    desk.send();
+
+    desk.ledger.through_a_server(true).expect("a server");
+    let told = desk.send();
+
+    assert_eq!(shares_told(&told), 1);
+}
+
+#[test]
+fn an_owed_share_is_counted_among_what_is_owed() {
+    let mut desk = Device::new("Desk", &[]);
+    desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);
+
+    desk.look();
+    let counted = desk.ledger.owed_count().expect("owed");
+    let owed = desk.ledger.owed().expect("owed").concat();
+
+    assert_eq!(shares_told(&owed), 1);
+    assert_eq!(counted, owed.len());
+}

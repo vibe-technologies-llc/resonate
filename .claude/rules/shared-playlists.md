@@ -119,7 +119,14 @@ a listener's devices are one `Member`, each list keeping its own (`store::Me` pe
 released key, so a current device takes its own copy over, and an older build keeps its copy untouched
 and skips the tag. `Catalog::shares_here` answers `None` where the service is not running, which says
 nothing; only an empty list says everything was left. An older build compacting the tag away owes it
-again (`owe_queries`).
+again (`owe_queries`). A share takes every catch-up path the ledger's other tables take: it is owed
+again with everything (`through_a_server`, `space_made_anew`), counted in `owed_count`, and forgotten
+with the space (`enter_space`), so the next look writes each list held here anew and owes it to the
+devices met there
+(`a_share_is_told_again_in_another_space_and_reaches_a_device_met_there`,
+`a_share_is_owed_again_when_the_space_is_made_anew_and_reaches_a_device_joining_it`,
+`a_share_told_without_a_server_is_owed_again_once_there_is_one`,
+`an_owed_share_is_counted_among_what_is_owed`).
 
 ## Removing someone
 

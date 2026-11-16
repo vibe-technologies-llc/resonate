@@ -215,6 +215,7 @@ UPDATE favourites SET owed = 1;
 UPDATE listens SET owed = 1;
 UPDATE handoffs SET owed = 1;
 UPDATE layouts SET owed = 1;
+UPDATE shares SET owed = 1;
 UPDATE answers SET owed = 1;
 UPDATE playlist_folds SET owed = 1;
 UPDATE query_folds SET owed = 1;
@@ -228,6 +229,7 @@ DELETE FROM favourites;
 DELETE FROM listens;
 DELETE FROM handoffs;
 DELETE FROM layouts;
+DELETE FROM shares;
 DELETE FROM answers;
 DELETE FROM playlist_folds;
 DELETE FROM query_folds;
@@ -1756,6 +1758,7 @@ impl Ledger {
                       + (SELECT count(*) FROM favourites WHERE owed = 1) + (SELECT count(*) FROM listens WHERE owed = 1)
                       + (SELECT count(*) FROM handoffs WHERE owed = 1)
                       + (SELECT count(*) FROM layouts WHERE owed = 1)
+                      + (SELECT count(*) FROM shares WHERE owed = 1)
                       + (SELECT count(*) FROM answers WHERE owed = 1)
                       + (SELECT count(*) FROM playlist_folds WHERE owed = 1)
                       + (SELECT count(*) FROM query_folds WHERE owed = 1)",
