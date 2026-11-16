@@ -16,6 +16,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.BluetoothAudio
 import androidx.compose.material.icons.rounded.ContentCut
+import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Hearing
@@ -73,6 +74,7 @@ class OutputViewModel(resonate: Resonate) : ViewModel() {
     val actual = features.actualOutput
     val stream = features.outputStream
     val followsSongRate = library.followsSongRate
+    val catalogShared = features.catalogOffering.shared
 
     val clamped: StateFlow<ULong> =
         library.snapshot
@@ -85,6 +87,8 @@ class OutputViewModel(resonate: Resonate) : ViewModel() {
     fun select(id: Int) = features.selectOutput(id)
 
     fun followSongRate(follows: Boolean) = library.followSongRate(follows)
+
+    fun shareCatalog(on: Boolean) = features.catalogOffering.share(on)
 }
 
 private fun iconFor(output: AudioOutput): ImageVector =
@@ -136,6 +140,7 @@ fun OutputScreen() {
     val clamped by model.clamped.collectAsStateWithLifecycle()
     val stream by model.stream.collectAsStateWithLifecycle()
     val followsSongRate by model.followsSongRate.collectAsStateWithLifecycle()
+    val catalogShared by model.catalogShared.collectAsStateWithLifecycle()
     FollowDevices(model::refresh)
     val words = words()
     val choices = offeredOutputs(outputs)
@@ -224,6 +229,19 @@ fun OutputScreen() {
             }
             item(key = "note") {
                 Footnote(stringResource(R.string.output_note))
+            }
+            item(key = "catalog") {
+                SectionHeader(stringResource(R.string.output_catalog_on_the_network))
+            }
+            item(key = "share-catalog") {
+                SwitchRow(
+                    title = stringResource(R.string.output_share_catalog),
+                    icon = Icons.Rounded.Dns,
+                    checked = catalogShared,
+                    onCheckedChange = model::shareCatalog,
+                    supporting = stringResource(R.string.output_share_catalog_note),
+                    modifier = Modifier.testTag("share-catalog"),
+                )
             }
         }
     }

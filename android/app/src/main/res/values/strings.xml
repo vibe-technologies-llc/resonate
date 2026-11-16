@@ -1269,6 +1269,7 @@
     <string name="settings_inner_speaker">Speaker</string>
     <string name="settings_inner_headphones">Headphones</string>
     <string name="settings_inner_usb_dac">USB DAC</string>
+    <string name="settings_inner_media_server">Media server</string>
     <string name="settings_inner_route">Route</string>
     <string name="settings_folders_detail">Where your music comes from</string>
     <string name="settings_inner_add_a_folder">Add a folder</string>
@@ -1515,6 +1516,9 @@
     <string name="output_clamped">Clamped samples</string>
     <string name="output_clamped_note">Samples past full scale, held at it since this stream opened</string>
     <string name="output_play_through">Play through</string>
+    <string name="output_catalog_on_the_network">The catalog on the network</string>
+    <string name="output_share_catalog">Offer the catalog on the network</string>
+    <string name="output_share_catalog_note">On, this phone\'s catalog is a UPnP and DLNA media server named Resonate: a streamer\'s app, BubbleUPnP, Kodi or VLC on this Wi-Fi can browse its artists, albums, songs and playlists and play the files as they are. Only devices on the local network are answered, nothing can be changed from them, and the phone keeps listening while the player runs. Off, nothing is announced or served.</string>
     <string name="output_note">Android owns the physical route: choosing an output asks for it, and Android may still send sound elsewhere. Unless the current stream says it is exclusive or bit-perfect, Android\'s mixer may still convert what Resonate hands it.</string>
     <string name="output_playing_through">Playing through</string>
     <string name="output_pending">Asked for %1$s; Android has not moved the sound there yet</string>

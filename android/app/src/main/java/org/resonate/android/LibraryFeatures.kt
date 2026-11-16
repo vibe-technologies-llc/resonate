@@ -182,6 +182,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         )
     val zones = PlayerZones(library)
     val renderers = NetworkRenderers(context, library, settings, scope)
+    val catalogOffering = CatalogOffering(context, library, settings)
     val outputStream = MutableStateFlow<OutputStream?>(null)
     val outputs = MutableStateFlow<List<AudioOutput>>(emptyList())
     val selectedOutput = MutableStateFlow(0)
@@ -338,6 +339,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         room.restore(native)
         zones.bindRoutes(native, outputsNow())
         renderers.begin(native)
+        catalogOffering.begin(native)
         routes.start()
         tags.initialize(native)
         providerAccounts.value =
@@ -2223,6 +2225,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         network = null
         hearBeacons(false)
         renderers.stop()
+        catalogOffering.stop()
         unmetered = false
         connection = ConnectionMeter.UNKNOWN
         downloadsWaitOnTheMeter.value = false
