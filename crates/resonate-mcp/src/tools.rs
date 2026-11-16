@@ -235,8 +235,9 @@ impl Tool {
                  once, in the playlist's order, with its standing: held, a lossless copy the \
                  library holds (lossless_copy) takes its place at once; wanted, the song's \
                  release row (release_track_id) is wanted so the providers fetch a lossless \
-                 copy; waiting, that is already so; unmatched, there is neither, and replace_lossy_songs \
-                 leaves it. replaceable counts the songs replace_lossy_songs would act on, \
+                 copy; offered, matched nowhere but a service the window asked holds it \
+                 lossless (offered_by), so it is downloaded from there; waiting, that is already \
+                 so; unmatched, there is none of these, and replace_lossy_songs leaves it. replaceable counts the songs replace_lossy_songs would act on, \
                  matched all the lossy songs, {LISTED_BY_DEFAULT} listed at a time. Needs no \
                  player."
             ),
@@ -280,8 +281,12 @@ impl Tool {
                                         its plays, favourite and every playlist's row go with \
                                         it, and the lossy file is moved to the trash. A song with \
                                         none is wanted, so start_poll fetches a lossless copy, and \
-                                        the lossy file stays until one is held. A song with \
-                                        neither is left, and one already waiting is passed over. \
+                                        the lossy file stays until one is held. A song a \
+                                        service was found to hold lossless is queued to download \
+                                        from it (downloading), which the window does once it \
+                                        opens, unless no music folder is set \
+                                        (need_a_music_folder). A song with none of these is \
+                                        left, and one already waiting is passed over. \
                                         With track_ids, only those songs, a track_id that is no \
                                         lossy song of the playlist failing the call; without, \
                                         every lossy song. \

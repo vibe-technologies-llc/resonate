@@ -118,6 +118,7 @@ fn lossy_song() -> Value {
             ),
         ),
         ("release_track_id", whole()),
+        ("offered_by", text()),
     ]);
     object(properties, &["codec", "standing"])
 }
@@ -296,6 +297,8 @@ impl Tool {
                     ("trashed", whole()),
                     ("not_trashed", whole()),
                     ("wanted", whole()),
+                    ("downloading", whole()),
+                    ("need_a_music_folder", whole()),
                     ("already_waiting", whole()),
                     ("left", whole()),
                 ],
@@ -306,6 +309,8 @@ impl Tool {
                     "trashed",
                     "not_trashed",
                     "wanted",
+                    "downloading",
+                    "need_a_music_folder",
                     "already_waiting",
                     "left",
                 ],

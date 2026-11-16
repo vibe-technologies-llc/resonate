@@ -17,14 +17,15 @@ use resonate_core::{FrameSpan, MediaLocation, PlaylistId, SourceId, TrackId, Vol
 use resonate_engine::{Asleep, Placement, Until};
 use resonate_library::{
     AlbumLink, AlbumMatch, AlbumNames, AlbumQuery, ArtistLink, ArtistMatch, ArtistPressings,
-    ArtistProfile, Barcode, BarcodeMatch, CoverArt, Cut, Discography, GroupAsked, GroupMatch, Isrc,
-    Library, Link, LinkNames, LinkedPlaylist, LinkedProfile, LyricText, LyricsAsked, Mbid, Medium,
-    PlaylistLink, ProfileLink, Recording, RecordingAsked, RecordingMatch, Reference, Release,
-    ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, ScanOptions, SongLink, SongsAsked,
-    StreamAsked,
+    ArtistProfile, Barcode, BarcodeMatch, CoverArt, Cut, DeliveryFolder, Discography, GroupAsked,
+    GroupMatch, Isrc, Layout, Library, Link, LinkNames, LinkedPlaylist, LinkedProfile, LookingFor,
+    LyricText, LyricsAsked, Mbid, Medium, PlaylistLink, ProfileLink, Recording, RecordingAsked,
+    RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
+    ScanOptions, SongLink, SongsAsked, StreamAsked,
 };
 use resonate_mcp::{Controlling, Error, Lookups, Reach, Resource, Row, Server, Tool};
 use resonate_mpris::{Described, PlaybackStatus, PlaylistInfo, Queueing, Seeking, ZoneAsked};
+use resonate_providers::{Delivery, Extension, Identity, Obtained, Opening, Provider, Providers};
 use serde_json::{Value, json};
 
 const RATE: u32 = 44_100;
@@ -3547,6 +3548,69 @@ fn a_lossy_song_with_a_lossless_copy_held_is_folded_in_and_one_with_none_is_neve
             json!({ "playlist": "Nowhere" })
         )
         .is_empty()
+    );
+}
+
+struct HoldingItLossless(SourceId);
+
+impl Provider for HoldingItLossless {
+    fn source(&self) -> &SourceId {
+        &self.0
+    }
+
+    fn find(&self, _: &Identity) -> resonate_providers::Result<Obtained> {
+        Ok(Obtained::Found(Delivery::Stream {
+            key: "track/9".into(),
+            extension: Extension::new("flac")?,
+            opening: Opening::ready(io::empty()),
+        }))
+    }
+}
+
+#[test]
+fn a_song_matched_nowhere_a_service_holds_lossless_is_listed_as_offered_and_queued_to_download() {
+    let tree = Tree::new();
+    let night = tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
+    let library = scanned(&tree);
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.root.clone(),
+        layout: Layout::default(),
+    }));
+    let playlist = library
+        .start_playlist("Late", &[Cut::whole(MediaLocation::local(&night))])
+        .expect("a playlist");
+    let shop = Providers::none().and(Arc::new(HoldingItLossless(
+        SourceId::new("shop").expect("a source name"),
+    )));
+    library
+        .look_for_replacements(
+            &shop,
+            &library.lossy_songs_of(playlist).expect("a read"),
+            &LookingFor {
+                cancelled: &|| false,
+                told: &|_, _| {},
+            },
+        )
+        .expect("the service is asked");
+    let server = server(library, Fake::default());
+
+    let listed = listed_lossy(&server, "Late");
+    let replaced = called(
+        &server,
+        "replace_lossy_songs",
+        json!({ "playlist": "Late" }),
+    );
+
+    assert_eq!(listed["replaceable"], 1);
+    assert_eq!(listed["songs"][0]["standing"], "offered");
+    assert_eq!(listed["songs"][0]["offered_by"], "shop");
+    assert_eq!(replaced["downloading"], 1);
+    assert_eq!(replaced["need_a_music_folder"], 0);
+    assert_eq!(replaced["left"], 0);
+    assert!(night.exists(), "a song queued to download was trashed");
+    assert_eq!(
+        listed_lossy(&server, "Late")["songs"][0]["standing"],
+        "waiting"
     );
 }
 

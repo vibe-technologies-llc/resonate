@@ -14,20 +14,23 @@ pub(crate) enum Standing {
     Waiting,
     Held,
     Wanted,
+    Offered,
     Unmatched,
 }
 
 impl Standing {
-    const fn of(song: &Replaceable) -> Self {
+    fn of(song: &Replaceable) -> Self {
         match (
             song.pending,
             song.held.is_some(),
             song.release_track.is_some(),
+            song.offer().is_some(),
         ) {
-            (true, _, _) => Self::Waiting,
-            (false, true, _) => Self::Held,
-            (false, false, true) => Self::Wanted,
-            (false, false, false) => Self::Unmatched,
+            (true, _, _, _) => Self::Waiting,
+            (false, true, _, _) => Self::Held,
+            (false, false, true, _) => Self::Wanted,
+            (false, false, false, true) => Self::Offered,
+            (false, false, false, false) => Self::Unmatched,
         }
     }
 
@@ -36,6 +39,7 @@ impl Standing {
             Self::Waiting => "waiting",
             Self::Held => "held",
             Self::Wanted => "wanted",
+            Self::Offered => "offered",
             Self::Unmatched => "unmatched",
         }
     }
@@ -79,6 +83,9 @@ fn lossy_song(titles: &mut AlbumTitles<'_>, song: &Replaceable) -> Result<Value>
         }
         if let Some(row) = song.release_track {
             fields.insert("release_track_id".to_owned(), Value::from(row.get()));
+        }
+        if let Some((by, _)) = song.offer() {
+            fields.insert("offered_by".to_owned(), Value::from(by.as_str()));
         }
     }
     Ok(written)
@@ -133,6 +140,8 @@ pub(crate) fn replace_lossy_songs(
         "trashed": replacing.trashed.files,
         "not_trashed": replacing.trashed.kept,
         "wanted": replacing.wanted,
+        "downloading": replacing.kept,
+        "need_a_music_folder": replacing.unfiled,
         "already_waiting": waiting,
         "left": left as u64 + replacing.unmatched,
     }))

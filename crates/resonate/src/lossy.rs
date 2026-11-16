@@ -14,29 +14,33 @@ enum Fate {
     Waiting,
     Held,
     Wanted,
+    Offered,
     Unmatched,
 }
 
 impl Fate {
-    const fn of(song: &Replaceable) -> Self {
+    fn of(song: &Replaceable) -> Self {
         match (
             song.pending,
             song.held.is_some(),
             song.release_track.is_some(),
+            song.offer().is_some(),
         ) {
-            (true, _, _) => Self::Waiting,
-            (false, true, _) => Self::Held,
-            (false, false, true) => Self::Wanted,
-            (false, false, false) => Self::Unmatched,
+            (true, _, _, _) => Self::Waiting,
+            (false, true, _, _) => Self::Held,
+            (false, false, true, _) => Self::Wanted,
+            (false, false, false, true) => Self::Offered,
+            (false, false, false, false) => Self::Unmatched,
         }
     }
 
     fn said(self, song: &Replaceable) -> String {
-        match (self, song.held.as_ref()) {
-            (Self::Held, Some(held)) => words::lossy::held_copy(held.codec.as_str()),
-            (Self::Held | Self::Wanted, _) => words::lossy::wanted().to_owned(),
-            (Self::Waiting, _) => words::lossy::already_waiting().to_owned(),
-            (Self::Unmatched, _) => words::lossy::no_release().to_owned(),
+        match (self, song.held.as_ref(), song.offer()) {
+            (Self::Held, Some(held), _) => words::lossy::held_copy(held.codec.as_str()),
+            (Self::Offered, _, Some((by, _))) => words::lossy::offered(by.as_str()),
+            (Self::Held | Self::Wanted | Self::Offered, _, _) => words::lossy::wanted().to_owned(),
+            (Self::Waiting, _, _) => words::lossy::already_waiting().to_owned(),
+            (Self::Unmatched, _, _) => words::lossy::no_release().to_owned(),
         }
     }
 }
@@ -157,6 +161,8 @@ fn told(name: &str, settled: &Settled) -> String {
         (replacing.trashed.files > 0).then(|| words::lossy::trashed(replacing.trashed.files)),
         (replacing.trashed.kept > 0).then(|| words::lossy::not_trashed(replacing.trashed.kept)),
         (replacing.wanted > 0).then(|| words::lossy::now_wanted(replacing.wanted)),
+        (replacing.kept > 0).then(|| words::lossy::now_kept(replacing.kept)),
+        (replacing.unfiled > 0).then(|| words::lossy::unfiled(replacing.unfiled)),
         (*waiting > 0).then(|| words::lossy::waiting(*waiting)),
         (left > 0).then(|| words::lossy::left(left)),
     ]
@@ -172,10 +178,15 @@ fn told(name: &str, settled: &Settled) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, sync::Arc};
 
-    use resonate_core::MediaLocation;
-    use resonate_library::{Cut, Mbid, Medium, Release, ReleaseTrack};
+    use resonate_core::{MediaLocation, SourceId};
+    use resonate_library::{
+        Cut, DeliveryFolder, Layout, LookingFor, Mbid, Medium, Release, ReleaseTrack,
+    };
+    use resonate_providers::{
+        Delivery, Extension, Identity, Obtained, Opening, Provider, Providers,
+    };
 
     use super::*;
     use crate::fixtures::{ALBUM, ARTIST, TITLE, scanned, scratch, tagged_mp3, tagged_wave};
@@ -338,6 +349,76 @@ mod tests {
             told("Dark", &settled),
             "Dark: left 1 with no lossless copy held and no release to want"
         );
+    }
+
+    struct HoldingItLossless(SourceId);
+
+    impl Provider for HoldingItLossless {
+        fn source(&self) -> &SourceId {
+            &self.0
+        }
+
+        fn find(&self, _: &Identity) -> resonate_providers::Result<Obtained> {
+            Ok(Obtained::Found(Delivery::Stream {
+                key: "track/9".into(),
+                extension: Extension::new("flac")?,
+                opening: Opening::ready(std::io::empty()),
+            }))
+        }
+    }
+
+    #[test]
+    fn a_song_matched_nowhere_a_service_holds_lossless_is_queued_where_a_music_folder_is_set() {
+        let held = collection(&[("lossy/echoes.mp3", tagged_mp3(&TAGS))]);
+        let playlist = playlist_of(&held, "Dark", &["lossy/echoes.mp3"]);
+        let shop = Providers::none().and(Arc::new(HoldingItLossless(
+            SourceId::new("shop").expect("a source name"),
+        )));
+        let unasked = held.library.lossy_songs_of(playlist.id).expect("a read");
+        held.library
+            .look_for_replacements(
+                &shop,
+                &unasked,
+                &LookingFor {
+                    cancelled: &|| false,
+                    told: &|_, _| {},
+                },
+            )
+            .expect("the service is asked");
+        let songs = held.library.lossy_songs_of(playlist.id).expect("a read");
+
+        assert_eq!(Fate::of(&unasked[0]), Fate::Unmatched);
+        assert_eq!(Fate::of(&songs[0]), Fate::Offered);
+        let said = listed("Dark", &songs);
+        assert!(said.contains("found lossless on shop"), "{said}");
+        assert!(
+            said.ends_with("1 of 1 lossy song can be replaced now\n"),
+            "{said}"
+        );
+
+        let unfiled = settle(&held.library, &songs).expect("settled");
+
+        assert_eq!(unfiled.replacing.unfiled, 1, "{unfiled:?}");
+        assert_eq!(
+            told("Dark", &unfiled),
+            "Dark: 1 song found lossless on a service needs a music folder to download into"
+        );
+
+        held.library.deliver_into(Some(DeliveryFolder {
+            path: held.folder.clone(),
+            layout: Layout::default(),
+        }));
+        let kept = settle(&held.library, &songs).expect("settled");
+
+        assert_eq!(kept.replacing.kept, 1, "{kept:?}");
+        assert!(
+            told("Dark", &kept).starts_with("Dark: queued 1 song to download"),
+            "{}",
+            told("Dark", &kept)
+        );
+        let again = held.library.lossy_songs_of(playlist.id).expect("a read");
+        assert_eq!(Fate::of(&again[0]), Fate::Waiting);
+        assert!(held.folder.join("lossy/echoes.mp3").exists());
     }
 
     #[test]

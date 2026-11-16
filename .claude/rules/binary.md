@@ -68,8 +68,9 @@ paths:
 - **A playlist's lossy songs are listed and replaced from the terminal** (`lossy.rs`, the window's
   *Replace lossy songs* sheet without its ticks, `library.md`'s *Replacing a lossy song*).
   `playlist NAME --lossy` lists `Library::lossy_songs_of` as #, TITLE, ARTIST, FORMAT and STATUS
-  (replaced by the held copy's codec, wanted, no lossless copy held and no release to want, already
-  waiting) and says how many can be replaced now; `--replace-lossy` hands `Library::replace` every
+  (replaced by the held copy's codec, wanted, found lossless on the service the window's *Check
+  availability* heard from, no lossless copy held and no release to want, already waiting) and says
+  how many can be replaced now; `--replace-lossy` hands `Library::replace` every
   song `Replaceable::can_be_ticked` (the window's default ticks), or only the listing's numbers `--only`
   names (repeatable and comma separated, `1,3`: the listing's own numbers are what a listener
   already reads, so no title is typed or matched; `requires` `--replace-lossy` and conflicts with
@@ -78,7 +79,10 @@ paths:
   `the_numbers_chosen_are_the_only_songs_replaced`, `no_number_chosen_replaces_every_song_that_can_be`),
   and says what it did in one line, over the songs chosen:
   songs folded into a held copy, files moved to the trash (and any the trash would not take), songs
-  wanted, songs already waiting and songs left. **Songs wanted are fetched by the next `resonate
+  wanted, songs queued to download from the service holding them lossless (`Replacing::kept`, which
+  the window's keep pass downloads, since the terminal's keeps ask YouTube Music alone) and songs
+  needing a music folder for that (`Replacing::unfiled`), songs already waiting and songs left
+  (`a_song_matched_nowhere_a_service_holds_lossless_is_queued_where_a_music_folder_is_set`). **Songs wanted are fetched by the next `resonate
   poll`**, as `import` and `playlist --refresh` leave theirs: the command starts no fetch. Neither
   flag takes another mode flag or the transport's (`conflicts_with_all`), a playlist holding no lossy
   song says so, and a name no playlist answers to is `NoSuchPlaylist` as everywhere. Nothing is

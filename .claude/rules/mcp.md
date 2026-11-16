@@ -145,8 +145,10 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
 - **A playlist's lossy songs are listed, then replaced, by name** (`replacing.rs`):
   `playlist_lossy_songs` (read-only, `limit` as `playlist_tracks`) is `Library::lossy_songs_of`, each
   song a catalog track with its `codec`, a `standing` (`held`: a lossless copy the library holds
-  takes its place, `lossless_copy` naming it; `wanted`: its `release_track_id` is wanted; `waiting`:
-  already so; `unmatched`: neither), `matched` counting every lossy song and `replaceable` the ones
+  takes its place, `lossless_copy` naming it; `wanted`: its `release_track_id` is wanted; `offered`:
+  matched nowhere, but a service the window asked holds it lossless (`offered_by`, `Replaceable::offer`),
+  so it is kept from there; `waiting`: already so; `unmatched`: none of these), `matched` counting
+  every lossy song and `replaceable` the ones
   `replace_lossy_songs` acts on. `replace_lossy_songs` is `Library::replace` over the songs that
   `Replaceable::can_be_ticked`, as the window ticks them, or only the `track_ids` given (the
   `track_id` the listing gives each song, as every other tool names a track; a duplicate counts
@@ -155,9 +157,11 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
   `only_the_lossy_songs_chosen_are_replaced_and_an_unknown_one_is_refused`), and is `destructiveHint`: a held copy folds
   in at once and the lossy file goes to the trash, so it answers `replaced`, `trashed`,
   `not_trashed`, `wanted` (fetched by the next `start_poll`, which this starts nothing of),
-  `already_waiting` and `left`. A song with no held copy is never trashed, and a playlist with no
+  `downloading` (`Replacing::kept`, queued for the window's keep pass, which this starts nothing of),
+  `need_a_music_folder` (`Replacing::unfiled`), `already_waiting` and `left`. A song with no held copy is never trashed, and a playlist with no
   lossy song answers zeros; a scan walking the library is the library's `AlreadyWalking`, a failed call
-  (`a_lossy_song_with_a_lossless_copy_held_is_folded_in_and_one_with_none_is_never_trashed`).
+  (`a_lossy_song_with_a_lossless_copy_held_is_folded_in_and_one_with_none_is_never_trashed`,
+  `a_song_matched_nowhere_a_service_holds_lossless_is_listed_as_offered_and_queued_to_download`).
 - **A missing track is named by `release_track_id`.** `want_tracks` is `Library::want_release_tracks`
   in one transaction: one unknown row wants none.
 - **`Tool::destroys` is `destructiveHint`**: the removals, `forget_folder`, `undo_edit`,
