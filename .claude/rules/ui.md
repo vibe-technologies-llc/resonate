@@ -1997,7 +1997,10 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   `playlists_with_lossy_songs` at each reload, so the menu reads nothing on the window's thread.
   `open_replacing` closes the menu, stands the sheet at *Reading the playlist…* and reads
   `lossy_songs_of` on the background executor, dropped where the window's `attention` moved or the
-  sheet in front is another. Every row that can be ticked (a held lossless copy, or a release row to
+  sheet in front is another. Its heading names the playlist as the shelves hold it, or, where they
+  miss it, as the same background read finds it (`name_held_for`), *Replace lossy songs* alone
+  until then
+  (`the_lossy_songs_sheet_of_a_playlist_the_shelves_miss_is_headed_by_its_name`). Every row that can be ticked (a held lossless copy, or a release row to
   want) arrives ticked; a `kit::checkbox_when` row names the song (`spoken::song`), its
   `kit::format_badge` and why it stands (*you hold it in FLAC*, *wanted through MusicBrainz*), the
   checkbox taking the row's spare width and its label ending in an ellipsis

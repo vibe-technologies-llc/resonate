@@ -84,6 +84,16 @@ impl ReplacingSheet {
     }
 }
 
+fn name_held_for(catalog: &resonate_library::Library, playlist: PlaylistId) -> Option<String> {
+    match catalog.playlist(playlist) {
+        Ok(held) => held.map(|held| held.name),
+        Err(error) => {
+            tracing::warn!(%error, "the name of a playlist could not be read");
+            None
+        }
+    }
+}
+
 fn standing_of(row: &Replaceable) -> String {
     if row.pending {
         return words::replacing::pending().to_owned();
@@ -100,18 +110,25 @@ impl RootView {
         self.close_the_menu(cx);
         let pressed = self.press_a_lookup();
         let model = self.library.read(cx);
-        let name = model.playlist_name(playlist).unwrap_or_default();
+        let shelved = model.playlist_name(playlist);
+        let unshelved = shelved.is_none();
         let catalog = model.catalog();
-        self.replacing = Some(ReplacingSheet::asking(playlist, name));
+        self.replacing = Some(ReplacingSheet::asking(
+            playlist,
+            shelved.unwrap_or_default(),
+        ));
         cx.notify();
 
-        let reading = cx
-            .background_executor()
-            .spawn(async move { catalog.lossy_songs_of(playlist) });
+        let reading = cx.background_executor().spawn(async move {
+            let named = unshelved
+                .then(|| name_held_for(&catalog, playlist))
+                .flatten();
+            (catalog.lossy_songs_of(playlist), named)
+        });
         cx.spawn(async move |this, cx| {
-            let read = reading.await;
+            let (read, named) = reading.await;
             let _ = this.update(cx, |this, cx| {
-                this.the_lossy_songs_read(playlist, pressed, read, cx);
+                this.the_lossy_songs_read(playlist, pressed, read, named, cx);
             });
         })
         .detach();
@@ -122,6 +139,7 @@ impl RootView {
         playlist: PlaylistId,
         pressed: crate::serial::Serial,
         read: resonate_library::Result<Vec<Replaceable>>,
+        named: Option<String>,
         cx: &mut Context<Self>,
     ) {
         let still_asked = self.attention == pressed
@@ -136,6 +154,9 @@ impl RootView {
             Ok(rows) => {
                 if let Some(sheet) = self.replacing.as_mut() {
                     sheet.arrived(rows);
+                    if let Some(name) = named {
+                        sheet.name = name;
+                    }
                 }
             }
             Err(error) => {
@@ -183,7 +204,10 @@ impl RootView {
         let Some(sheet) = self.replacing.as_ref() else {
             return div();
         };
-        let heading = words::replacing::heading(sheet.name.as_str());
+        let heading = match sheet.name.as_str() {
+            "" => words::replacing::heading_unnamed().to_owned(),
+            name => words::replacing::heading(name),
+        };
 
         let card = kit::sheet()
             .id("replacing-sheet")
