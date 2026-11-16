@@ -1538,6 +1538,22 @@ class LibraryFeatures(private val context: Context, private val library: Library
             library.notice(DeletionSentences.folded(library.words, deleted.folded))
     }
 
+    suspend fun replaceLossySongs(ids: List<ULong>, consent: suspend (List<Uri>) -> Boolean) {
+        val replacing = library.holding { native -> withContext(Dispatchers.IO) { native.replaceLossySongs(ids) } }
+        val deleted = SongDeletion(context, library, consent).replaceLossy(replacing.held)
+        if (deleted.folded > 0) songsLeft()
+        if (replacing.wanted > 0u) {
+            library.holding { native -> withContext(Dispatchers.IO) { refreshWanted(native) } }
+            downloads.wantsChanged()
+        }
+        val told =
+            LossySongs.told(
+                library.words,
+                LossyReplaced(deleted.folded, replacing.wanted.toInt(), replacing.unmatched.toInt(), deleted.kept),
+            )
+        if (deleted.kept > 0) library.report(IllegalStateException(told)) else library.notice(told)
+    }
+
     private fun tellDeleted(deleted: Deleted) {
         if (deleted.kept > 0)
             library.report(

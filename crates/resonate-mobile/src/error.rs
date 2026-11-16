@@ -217,6 +217,8 @@ pub enum Error {
     InvalidDescriptor,
     #[error("{}", words::errors::wrong_song())]
     WrongSong,
+    #[error("{}", words::errors::lossy_for_a_replacement())]
+    LossyForAReplacement,
     #[error("{}", crate::failure::of_a_lookup(*op, source))]
     Reference {
         op: resonate_library::LookupOp,

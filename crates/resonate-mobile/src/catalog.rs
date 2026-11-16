@@ -368,7 +368,16 @@ CREATE TABLE larger_covers_wanted (
 ) STRICT;
 ";
 
-const MIGRATIONS: &[&str] = &[
+pub(crate) const LOSSY_SONGS_WAIT_TO_BE_REPLACED: &str = "
+CREATE TABLE replacements (
+    track INTEGER PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+    want  INTEGER NOT NULL REFERENCES wanted(id) ON DELETE CASCADE,
+    asked INTEGER NOT NULL
+) STRICT;
+CREATE INDEX replacements_by_want ON replacements(want);
+";
+
+pub(crate) const MIGRATIONS: &[&str] = &[
     V1,
     LISTENS_NAME_THEIR_ORIGIN,
     LISTENS_NEVER_REUSE_AN_ID,
@@ -406,6 +415,7 @@ const MIGRATIONS: &[&str] = &[
     RENDERERS_KEEP_WHAT_THEY_PLAYED,
     QUEUES_MAY_BE_LEFT_BEHIND_AT_OPENING,
     FETCHED_COVERS_ARE_ASKED_FOR_A_LARGER_ONE,
+    LOSSY_SONGS_WAIT_TO_BE_REPLACED,
 ];
 
 #[cfg(test)]

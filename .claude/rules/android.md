@@ -1076,6 +1076,18 @@ forgotten or folded; a file the app does not own in MediaStore (a `SecurityExcep
 asked of the listener once with `MediaStore.createDeleteRequest` (`Host.confirmDelete`), and one that
 stays is told as *N files could not be deleted* (`DeletionSentences`, `SongDeletionTest`).
 
+**Replace lossy songs** is an entry of a plain playlist's menu (not a saved search's, nor where the
+playlist may not be edited) opening `LossySongsSheet`, the desktop sheet's counterpart
+(`mobile.md`'s *Replacing a playlist's lossy songs*): each lossy song with what replacing it does
+(`LossySongs.line`: a lossless copy held, downloaded first, waiting on its download, or not matched),
+the ones that can be replaced ticked at first (`LossySongs.ticked`; one waiting or unmatched cannot be
+ticked), and *Replace N songs*, confirmed where it deletes a file (`LossySongs.deletes`). It calls
+`Resonate.replaceLossySongs`: `replace_lossy_songs`, then `SongDeletion.replaceLossy` removes the lossy
+files with the same consent as any deletion and folds those that went (`fold_lossy_songs`), the wants
+are read again and the download queue told (`wantsChanged`), and one notice counts what was replaced,
+wanted, unmatched and kept (`LossySongs.told`, `LossySongsTest`). The sheet reads the list again after
+each replacement.
+
 **A folder is organised by the desktop's layout, its files moved by the front end** (`organising.rs`).
 `plan_organise(folder, layout)` reads the layout through `resonate_library::Layout` (refused as
 `LayoutUnreadable`; `organise_layout_problem` says why before asking, `default_organise_layout` is

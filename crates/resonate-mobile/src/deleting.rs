@@ -336,7 +336,7 @@ fn deletion_noted(transaction: &Transaction<'_>, id: i64, now: i64) -> rusqlite:
     Ok(())
 }
 
-fn picture_of(transaction: &Transaction<'_>, id: i64) -> rusqlite::Result<Option<i64>> {
+pub(crate) fn picture_of(transaction: &Transaction<'_>, id: i64) -> rusqlite::Result<Option<i64>> {
     transaction
         .query_row(
             "SELECT picture FROM artwork WHERE track = ?1",

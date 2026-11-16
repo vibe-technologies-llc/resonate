@@ -155,9 +155,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] Right-to-left languages: Fluent's isolation marks are off, and the window's layout is never mirrored.
 
 ## Later: Sources and providers
-- [M] Replacing a playlist's lossy songs with lossless copies is offered on the desktop alone (the
-  window's playlist menu, `resonate playlist NAME --replace-lossy`, MCP's `replace_lossy_songs`):
-  the phones have no way to start it, and their own catalog keeps no replacements
 - [M · blocked: service] A Spotify playlist the account only follows is read off its public page,
   at most a hundred songs with no ISRC and nothing where it is private: Spotify's development mode
   answers `403` on `/playlists/<id>/items` unless the account owns or collaborates on it, and extended

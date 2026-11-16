@@ -672,6 +672,8 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `dismissing_a_replacements_want_cancels_it_and_leaves_the_lossy_song`,
   `a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held`,
   `a_catalog_from_before_lossy_songs_were_replaced_keeps_its_rows_and_gains_the_table`).
+  The phones' half, which settles a replacement only where the listener ticks it again, is
+  `mobile.md`'s *Replacing a playlist's lossy songs*.
 - **Music filters narrow listings, keep the catalog whole.** `MusicFilters` = supported extension
   selection + `MinimumLength` bounded to ten minutes. `Library::filter_music` sets it for this
   opened catalog (the binary fills it from config before any listing) and drops the suggestion

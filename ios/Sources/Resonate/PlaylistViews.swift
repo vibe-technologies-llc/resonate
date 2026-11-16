@@ -83,6 +83,7 @@ struct PlaylistView: View {
     @State private var exporting = false
     @State private var entries = PlaylistEntries()
     @State private var sharingList = false
+    @State private var replacingLossy = false
 
     var body: some View {
         let features = library.features
@@ -134,6 +135,7 @@ struct PlaylistView: View {
                         revising: $revising,
                         deleting: $deleting,
                         sharing: $sharingList,
+                        replacingLossy: $replacingLossy,
                         export: export
                     )
                 }
@@ -179,6 +181,7 @@ struct PlaylistView: View {
         }
         .sheet(isPresented: $adding) { AddSongsSheet(id: id).sheetSized(.long) }
         .sheet(isPresented: $sharingList) { SharedPlaylistSheet(id: id, name: name).sheetSized(.long) }
+        .sheet(isPresented: $replacingLossy) { LossySongsSheet(id: id, name: name).sheetSized(.long) }
         .fileExporter(
             isPresented: $exporting,
             document: exported,
@@ -276,6 +279,7 @@ struct PlaylistOptions: View {
     @Binding var revising: Bool
     @Binding var deleting: Bool
     @Binding var sharing: Bool
+    @Binding var replacingLossy: Bool
     let export: (PlaylistFileFormat) -> Void
 
     var body: some View {
@@ -291,6 +295,9 @@ struct PlaylistOptions: View {
             if mayEdit {
                 Button("playlist.rename", systemImage: "pencil") { renaming = true }
                 Button("playlists.undo", systemImage: "arrow.uturn.backward") { features.undoPlaylistEdit() }
+                if !fills {
+                    Button("playlist.replace-lossy", systemImage: "waveform") { replacingLossy = true }
+                }
             }
             if !fills {
                 Button("playlist.share", systemImage: "person.2") { sharing = true }

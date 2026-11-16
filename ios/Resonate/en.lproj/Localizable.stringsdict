@@ -1714,5 +1714,101 @@
 			<string>%lld recordings</string>
 		</dict>
 	</dict>
+	<key>lossy.replace</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Replace %lld song</string>
+			<key>other</key>
+			<string>Replace %lld songs</string>
+		</dict>
+	</dict>
+	<key>lossy.delete.title</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Delete %lld lossy file?</string>
+			<key>other</key>
+			<string>Delete %lld lossy files?</string>
+		</dict>
+	</dict>
+	<key>lossy.told.replaced</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Replaced %lld song with its lossless copy</string>
+			<key>other</key>
+			<string>Replaced %lld songs with their lossless copies</string>
+		</dict>
+	</dict>
+	<key>lossy.told.wanted</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld lossless copy wanted</string>
+			<key>other</key>
+			<string>%lld lossless copies wanted</string>
+		</dict>
+	</dict>
+	<key>lossy.told.unmatched</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld song not matched, so nothing could be asked for</string>
+			<key>other</key>
+			<string>%lld songs not matched, so nothing could be asked for</string>
+		</dict>
+	</dict>
+	<key>lossy.told.kept</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld file could not be deleted; its folder would not let go of it</string>
+			<key>other</key>
+			<string>%lld files could not be deleted; their folders would not let go of them</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

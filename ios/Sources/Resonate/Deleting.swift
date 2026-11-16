@@ -81,6 +81,45 @@ extension Library {
         }
     }
 
+    func replaceLossySongs(_ ids: [UInt64]) async {
+        guard let native = try? await player() else { return }
+        let replacing: LossyReplacing
+        do {
+            replacing = try await Work.aside { try native.replaceLossySongs(ids: ids) }
+        } catch {
+            report(error)
+            return
+        }
+        let folders = folders
+        let doomed = replacing.held.map { DoomedFile(id: $0.lossy.id, uri: $0.lossy.uri) }
+        let gone = Set((try? await Work.aside { doomed.filter { folders.deleteSong($0.uri) }.map(\.id) }) ?? [])
+        let folding = replacing.held.filter { gone.contains($0.lossy.id) }
+        var told = SongsForgotten(forgotten: 0, leftTheQueue: 0)
+        var unfolded: (any Swift.Error)?
+        if !folding.isEmpty {
+            do {
+                told = try await Work.aside { try native.foldLossySongs(replaced: folding) }
+            } catch {
+                unfolded = error
+            }
+        }
+        await songsLeft(told)
+        if replacing.wanted > 0 { await features.rereadWanted() }
+        let done = LossyReplaced(
+            replaced: Int(told.forgotten),
+            wanted: Int(replacing.wanted),
+            unmatched: Int(replacing.unmatched),
+            kept: doomed.count - gone.count
+        )
+        if let unfolded {
+            report(unfolded, after: LossySongs.told(done))
+        } else if done.kept > 0 {
+            fail(LossySongs.told(done))
+        } else {
+            notice(LossySongs.told(done))
+        }
+    }
+
     private func songsLeft(_ told: SongsForgotten) async {
         if told.leftTheQueue > 0 { await rereadQueue() }
         guard told.forgotten > 0 else { return }

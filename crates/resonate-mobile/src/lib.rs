@@ -39,6 +39,7 @@ mod playlists;
 mod profile_links;
 mod queue_edit;
 mod rendering;
+mod replacing;
 #[cfg(test)]
 mod resuming_tests;
 mod rewriting;

@@ -1101,6 +1101,13 @@ every route change (a pair of headphones at the same rate included), not from th
   set, never one `Folders.holdOneFile` finds to be the kept song's own file (device and inode), and folds those that went into the kept one (`Library.deleteIdenticalCopies`, then the
   page asks again). Both refresh the catalog, the open playlist and the playlists, and read the
   queue again where rows left it.
+- **Replace lossy songs** is in a plain playlist's options where it may be edited
+  (`PlaylistOptions`, `LossySongsSheet.swift`), the Android sheet's counterpart (`mobile.md`'s
+  *Replacing a playlist's lossy songs*): each lossy song with `LossySongs.line`, the replaceable ones
+  ticked at first, and *Replace N songs* in the toolbar, confirmed where it deletes a file.
+  `Library.replaceLossySongs` asks `replace_lossy_songs`, deletes the lossy files with
+  `Folders.deleteSong`, folds those that went (`fold_lossy_songs`), reads the wants again and tells
+  one notice (`LossySongs.told`, `LossySongsTests`).
 - **A writable folder is organised from its row in Music folders** (`OrganiseView.swift`): a layout
   field (`organise-layout` in `library-features`, the desktop's `DEFAULT_LAYOUT` until changed)
   checked by `organise_layout_problem`, a preview 300 ms after the last keystroke (`plan_organise`

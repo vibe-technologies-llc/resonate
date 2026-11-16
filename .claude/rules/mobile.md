@@ -1060,6 +1060,45 @@ another version*), choosing and then playing the song, which the swap turns into
 (`a_version_chosen_is_queued_in_place_of_its_song_and_forgotten_with_it`,
 `a_catalog_of_before_versions_were_chosen_keeps_its_songs_and_gains_the_table`).
 
+## Replacing a playlist's lossy songs
+
+`replacing.rs` is the phones' half of `library.md`'s *Replacing a lossy song*, over the document
+catalog, and nothing is deleted from a phone unasked: a phone's files are the listener's own and a
+deletion there is final, so a replacement waiting on a download is settled where the listener ticks
+it again, never by the download landing. The `LOSSY_SONGS_WAIT_TO_BE_REPLACED` step made
+`replacements` (`track` the lossy document, primary, `ON DELETE CASCADE`; `want` the `wanted` row
+fetching its copy, `ON DELETE CASCADE`, so dismissing the want cancels the replacement and the lossy
+song stays; `asked` in Unix seconds). `lossy_songs_of(playlist)` lists a playlist's visible documents
+that are not lossless (`Codec::is_lossless` of `search::codec_named`, as the desktop's `!is_lossless`)
+once each, in its order, as `LossySong`s: the best held lossless copy (the documents of its recording
+MBID that are lossless, and those the search index ranks for its title and artist that
+`TheSong::is_bettered_by`, best first by `Quality`, the version chosen first where it is among them),
+`wantable` (the song carries a recording MBID, the desktop's MusicBrainz match) and `pending` (a
+replacement waits). `replace_lossy_songs(ids)` weighs each afresh: a lossless copy held is answered
+in `LossyReplacing.held` for the front end to delete the lossy file; else a song with a recording is
+wanted (`wanted_in_place_of`: the want saved under its `recording:` identity, `ON CONFLICT DO
+NOTHING`, then re-armed, `tried`, `misses` and `offered_at` cleared and its refused offers kept, and
+the replacement written, `ON CONFLICT` on `track` overwriting); else it is `unmatched`. The front end
+removes the lossy files as it removes any song (`android.md`'s *A song is deleted by the front end*)
+and hands the pairs whose files went to `fold_lossy_songs`, which drops them from every zone's queue,
+weighs each again (the taken still lossy, the kept still lossless), deletes the replacement and its
+want once no other replacement names it, and folds the lossy document into the copy (`handed_over`,
+as `fold_identical_songs` does), answering `SongsForgotten`. **A replacement's want is held only
+losslessly**: `held_as_wanted` reads a want a replacement names as held only where a visible
+lossless document carries its recording (`held_losslessly`), so the lossy song itself never answers
+it and `poll_wanted_due` keeps asking; and `index_download` refuses a lossy delivery for such a want
+before indexing it (`refuse_a_lossy_delivery`, `Error::LossyForAReplacement`), remembering the offer
+as refused as a wrong song's is, so the next try asks elsewhere and the front end deletes the file
+(`a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held`,
+`the_songs_chosen_are_folded_into_the_copy_held_or_wanted_and_the_rest_are_left`,
+`a_wanted_replacement_is_held_only_once_a_lossless_copy_lands_and_goes_once_folded`,
+`dismissing_a_replacements_want_cancels_it_and_leaves_the_lossy_song`,
+`a_fold_is_refused_where_the_kept_copy_is_lossy_or_the_taken_one_lossless`,
+`a_lossy_delivery_is_refused_only_where_it_answers_a_replacement`,
+`a_replacement_waiting_is_kept_across_a_reopen`,
+`a_catalog_of_before_lossy_songs_were_replaced_keeps_its_wants_and_gains_the_table`). Both phones
+draw it (`android.md`'s and `ios.md`'s *Replace lossy songs*).
+
 ## Reaching a private server
 
 `SyncConfig.stun` (a `host` or `host:port`, blank asks none) and `SyncConfig.certificate` (the name of the

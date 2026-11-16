@@ -2205,4 +2205,37 @@
     <string name="provider_jellyfin_sign_in">Sign in with Quick Connect</string>
     <string name="provider_jellyfin_approve_code">Approve this code in a Jellyfin app you are signed in to (Settings, Quick Connect). This page carries on once you do.</string>
     <string name="provider_jellyfin_cancel">Cancel</string>
+    <string name="lossy_replace_menu">Replace lossy songs</string>
+    <string name="lossy_title">Lossy songs in %1$s</string>
+    <string name="lossy_detail">Tick the songs to replace with lossless copies. A copy you hold takes the song’s place now; any other is downloaded first and takes its place once you replace it here.</string>
+    <string name="lossy_held">%1$s; a lossless %2$s copy is held</string>
+    <string name="lossy_wantable">%1$s; a lossless copy is downloaded first</string>
+    <string name="lossy_waiting">%1$s; waiting for a lossless copy to download</string>
+    <string name="lossy_unmatched">%1$s; not matched on MusicBrainz, so no lossless copy can be asked for</string>
+    <string name="lossy_failed">The lossy songs could not be read</string>
+    <string name="lossy_none">No lossy songs</string>
+    <string name="lossy_none_detail">Every song in this playlist is lossless</string>
+    <string name="lossy_replace">Replace</string>
+    <plurals name="lossy_replace_count">
+        <item quantity="one">Replace %1$d song</item>
+        <item quantity="other">Replace %1$d songs</item>
+    </plurals>
+    <plurals name="lossy_delete_title">
+        <item quantity="one">Delete %1$d lossy file?</item>
+        <item quantity="other">Delete %1$d lossy files?</item>
+    </plurals>
+    <string name="lossy_delete_text">Each lossy file with a lossless copy held is deleted from your phone, and its plays, favourites and playlist places move to the lossless copy. The other songs are downloaded first.</string>
+    <plurals name="lossy_told_replaced">
+        <item quantity="one">Replaced %1$d song with its lossless copy</item>
+        <item quantity="other">Replaced %1$d songs with their lossless copies</item>
+    </plurals>
+    <plurals name="lossy_told_wanted">
+        <item quantity="one">%1$d lossless copy wanted</item>
+        <item quantity="other">%1$d lossless copies wanted</item>
+    </plurals>
+    <plurals name="lossy_told_unmatched">
+        <item quantity="one">%1$d song not matched, so nothing could be asked for</item>
+        <item quantity="other">%1$d songs not matched, so nothing could be asked for</item>
+    </plurals>
+    <string name="lossy_told_nothing">Nothing was replaced</string>
 </resources>

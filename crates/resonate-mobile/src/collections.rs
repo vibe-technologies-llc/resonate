@@ -17,6 +17,7 @@ use crate::{
     features::{Listing, SearchSong, distinct_takes, search_song},
     one_file::Spelled,
     online_tools::{SearchArtist, SearchRelease},
+    replacing::{held_losslessly, replaces},
     vanished::Absorbing,
 };
 
@@ -160,8 +161,10 @@ impl MobilePlayer {
     pub fn index_download(&self, job: u64, uri: String, name: String) -> Result<crate::Track> {
         let job = self.downloads.job(job)?;
         job.moved_to(DownloadPhase::Validating)?;
-        let indexed = self.indexed_download(uri, name, &job.song);
-        if matches!(indexed, Err(Error::WrongSong))
+        let indexed = self
+            .refuse_a_lossy_delivery(&uri, &job.song)
+            .and_then(|()| self.indexed_download(uri, name, &job.song));
+        if matches!(indexed, Err(Error::WrongSong | Error::LossyForAReplacement))
             && let Some(taken_from) = job.taken_from()
             && let Err(error) = self.catalog.note_refused_offer(&job.song, &taken_from)
         {
@@ -340,8 +343,15 @@ fn wanted_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WantedRow> {
     })
 }
 
+fn held_as_wanted(connection: &Connection, row: &WantedRow) -> Result<bool> {
+    match replaces(connection, row.id)? {
+        true => held_losslessly(connection, &row.song.recording),
+        false => Ok(local_match(connection, &row.song)?.is_some()),
+    }
+}
+
 fn wanted_song(connection: &Connection, row: WantedRow) -> Result<WantedSong> {
-    let held = local_match(connection, &row.song)?.is_some();
+    let held = held_as_wanted(connection, &row)?;
     Ok(WantedSong {
         id: row.id,
         song: SearchSong { held, ..row.song },
@@ -417,7 +427,7 @@ impl Catalog {
             if next.is_some_and(|next| next <= due) {
                 continue;
             }
-            if local_match(&connection, &row.song)?.is_none() {
+            if !held_as_wanted(&connection, &row)? {
                 next = Some(due);
             }
         }

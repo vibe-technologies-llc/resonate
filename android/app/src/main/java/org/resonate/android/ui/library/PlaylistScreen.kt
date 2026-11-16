@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.DownloadForOffline
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.LinkOff
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
@@ -108,6 +109,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
     var adding by rememberSaveable { mutableStateOf(false) }
     var deleting by rememberSaveable { mutableStateOf(false) }
     var sharing by rememberSaveable { mutableStateOf(false) }
+    var replacingLossy by rememberSaveable { mutableStateOf(false) }
     val shared by model.shared.collectAsStateWithLifecycle()
     val followed = playlist?.followed == true
     val mayEdit = TogetherWords.mayEdit(shared, followed)
@@ -183,6 +185,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                                 }
                             },
                         onUndo = model::undo,
+                        onReplaceLossy = { replacingLossy = true },
                         onKeep = model::keep,
                         onFetch = model::fetch,
                         link = link,
@@ -299,6 +302,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
             }
         }
     }
+    if (replacingLossy) LossySongsSheet(screen.id, name) { replacingLossy = false }
     if (sharing) SharingSheet(screen.id, name, sharedHere = playlist?.shared == true) { sharing = false }
     if (adding) {
         AddSongsSheet(
@@ -420,6 +424,7 @@ private fun playlistMenu(
     onRename: () -> Unit,
     onEditSearch: (() -> Unit)?,
     onUndo: () -> Unit,
+    onReplaceLossy: () -> Unit,
     onKeep: (Boolean) -> Unit,
     onFetch: (org.resonate.android.nativecore.SyncedDevice) -> Unit,
     link: PlaylistLinkInfo?,
@@ -466,6 +471,13 @@ private fun playlistMenu(
                     Icons.AutoMirrored.Rounded.Undo,
                     run = onUndo,
                 ),
+                if (fills) null
+                else
+                    MenuEntry.Action(
+                        words.string(R.string.lossy_replace_menu),
+                        Icons.Rounded.HighQuality,
+                        run = onReplaceLossy,
+                    ),
             ),
         if (sync == null) emptyList()
         else

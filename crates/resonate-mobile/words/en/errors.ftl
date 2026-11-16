@@ -143,3 +143,4 @@ impulse-found = found
 impulse-removed = removed
 quick-connect-off = This server has Quick Connect off, so sign in with the password
 sign-in-cancelled = The sign-in was cancelled
+lossy-for-a-replacement = The downloaded file is lossy, and a lossless copy was asked for to replace a lossy song

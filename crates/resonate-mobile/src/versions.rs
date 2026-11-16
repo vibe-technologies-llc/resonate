@@ -113,11 +113,11 @@ fn rating_of(track: &Track) -> Rating {
     Rating::of(Rating::flagged(None), &track.title, None)
 }
 
-fn artist_of(track: &Track) -> Option<&str> {
+pub(crate) fn artist_of(track: &Track) -> Option<&str> {
     Some(track.artist.as_str()).filter(|artist| !artist.trim().is_empty())
 }
 
-fn heard_of(track: &Track) -> SongHeard<'_> {
+pub(crate) fn heard_of(track: &Track) -> SongHeard<'_> {
     SongHeard {
         title: &track.title,
         artist: artist_of(track),
@@ -127,7 +127,7 @@ fn heard_of(track: &Track) -> SongHeard<'_> {
     }
 }
 
-fn quality_of(track: &Track) -> Quality {
+pub(crate) fn quality_of(track: &Track) -> Quality {
     let bits = track.bits.map_or(BITS_WHERE_NONE_ARE_KNOWN, |bits| {
         u8::try_from(bits).unwrap_or(u8::MAX)
     });
