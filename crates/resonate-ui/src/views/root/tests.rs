@@ -1292,7 +1292,7 @@ mod driven {
             .start_playlist("Road trip", &[Cut::whole(lossy.clone())])
             .expect("a playlist holding the lossy copy");
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
-        driven.play(&[opus.clone()]);
+        driven.play(std::slice::from_ref(&opus));
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
         assert_eq!(queued_at(&mut driven), [lossy]);
 
