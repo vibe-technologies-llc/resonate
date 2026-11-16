@@ -32,13 +32,15 @@ use resonate_core::{
     SampleFormat, SampleRate, SourceId, Span, StreamSpec, TrackId, Volume, WantId, ZoneId,
     ZoneName, path_text, writer,
 };
+#[cfg(unix)]
+use resonate_library::Fold;
 use resonate_library::{
     Aged, Album, AlbumLink, AlbumMatch, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistFound,
     ArtistLink, ArtistMatch, ArtistOrder, ArtistPressings, ArtistProfile, ArtistQuery,
     ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, ChosenVersion, Codec,
     Compacted, CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography,
-    Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Fold,
-    Form, Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HiddenTracks, HistoryKept,
+    Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form,
+    Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HiddenTracks, HistoryKept,
     ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, KEPT_IN_STEP_EVERY, KeepStopped,
     KeepSummary, Kept, KeptList, KeptSong, Layout, Learning, Library, LifeSpan, Link, LinkNames,
     Linked, LinkedPlaylist, LinkedProfile, ListedSong, Listen, ListeningService, Looked,
@@ -4406,6 +4408,7 @@ fn played_through(library: &Library, path: &Path, times: usize) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn listens_of(database: &Path, track: TrackId) -> i64 {
     beside(database)
         .query_row(
@@ -4437,6 +4440,7 @@ fn paired_on_a_release(library: &Library, songs: &[&Track]) -> Result<Vec<Releas
         .collect())
 }
 
+#[cfg(unix)]
 fn trashed(data: &Tree, name: &str) -> bool {
     data.path().join("Trash/files").join(name).is_file()
 }
@@ -5631,8 +5635,10 @@ fn a_lossless_copy_on_another_album_keeps_its_own_row_and_leaves_the_lossy_songs
     Ok(())
 }
 
+#[cfg(unix)]
 const EIGHT_SECONDS_OF_FRAMES: usize = 352_800;
 
+#[cfg(unix)]
 fn live_at_pompeii(recording: &str) -> [String; 4] {
     [
         "title=Echoes".to_owned(),
@@ -5642,6 +5648,7 @@ fn live_at_pompeii(recording: &str) -> [String; 4] {
     ]
 }
 
+#[cfg(unix)]
 fn wanted_with_no_copy_held(library: &Library, opus: &Path) -> Result<Waiting> {
     let lossy = the_row_at(library, opus)?;
     let row = paired_as_the_recording(library, &lossy, Some(RECORDING), RELEASE)?;
@@ -30603,6 +30610,7 @@ fn files_named(folder: &Path, extension: &str) -> Vec<PathBuf> {
         .collect()
 }
 
+#[cfg(unix)]
 fn named_only_by_the_playlist(library: &Library, waiting: &Waiting, file: &Path) -> Result<()> {
     let cuts = library.playlist_cuts(waiting.playlist)?;
     assert_eq!(cuts.len(), 2);
