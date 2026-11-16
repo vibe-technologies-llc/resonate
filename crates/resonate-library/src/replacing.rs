@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use resonate_core::{MediaLocation, ReleaseTrackId, TrackId, WantId};
+use resonate_core::{MediaLocation, ReleaseTrackId, SourceId, TrackId, WantId};
 use rusqlite::{OptionalExtension as _, ToSql, Transaction, params};
 
 use crate::{
@@ -15,18 +15,49 @@ pub struct Replaceable {
     pub held: Option<Track>,
     pub release_track: Option<ReleaseTrackId>,
     pub pending: bool,
+    pub looked: Option<Looked>,
 }
 
 impl Replaceable {
-    pub const fn can_be_ticked(&self) -> bool {
-        !self.pending && (self.held.is_some() || self.release_track.is_some())
+    pub fn can_be_ticked(&self) -> bool {
+        !self.pending
+            && (self.held.is_some() || self.release_track.is_some() || self.offer().is_some())
     }
+
+    pub const fn can_be_looked_for(&self) -> bool {
+        !self.pending && self.held.is_none()
+    }
+
+    pub fn is_offered_nowhere(&self) -> bool {
+        self.looked == Some(Looked::Unoffered)
+    }
+
+    pub fn offer(&self) -> Option<(&SourceId, &MediaLocation)> {
+        match &self.looked {
+            Some(Looked::Offered { by, at }) => Some((by, at)),
+            Some(Looked::Unoffered | Looked::Unheard) | None => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Looked {
+    Offered { by: SourceId, at: MediaLocation },
+    Unoffered,
+    Unheard,
+}
+
+pub struct LookingFor<'a> {
+    pub cancelled: &'a (dyn Fn() -> bool + Sync),
+    pub told: &'a (dyn Fn(TrackId, Looked) + Sync),
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Replacing {
     pub folded: u64,
     pub wanted: u64,
+    pub kept: u64,
+    pub unfiled: u64,
     pub unmatched: u64,
     pub trashed: Deleted,
     pub folds: Vec<Fold>,

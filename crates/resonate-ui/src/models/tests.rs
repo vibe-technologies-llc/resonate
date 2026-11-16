@@ -465,6 +465,7 @@ fn a_stop_is_not_undone_by_a_pass_that_gave_way_or_was_turned_away(cx: &mut Test
         library.keeps.pass = Some(KeepPass {
             stop: Arc::new(AtomicBool::new(true)),
             left: 0,
+            began_with_youtube_music: true,
         });
         library.keep_pass_ended(Ok(ended), cx);
         library.keeps.owed

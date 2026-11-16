@@ -1334,6 +1334,35 @@ mod driven {
         }
     }
 
+    struct OfferingLossless(resonate_core::SourceId);
+
+    impl resonate_providers::Provider for OfferingLossless {
+        fn source(&self) -> &resonate_core::SourceId {
+            &self.0
+        }
+
+        fn find(
+            &self,
+            _: &resonate_providers::Identity,
+        ) -> resonate_providers::Result<resonate_providers::Obtained> {
+            Ok(resonate_providers::Obtained::Found(
+                resonate_providers::Delivery::Stream {
+                    key: "track/1".into(),
+                    extension: resonate_providers::Extension::new("flac")?,
+                    opening: resonate_providers::Opening::ready(std::io::empty()),
+                },
+            ))
+        }
+    }
+
+    fn a_shop_offering_it_lossless() -> crate::Registering {
+        Arc::new(|_: &crate::Supplying<'_>| {
+            resonate_providers::Providers::none().and(Arc::new(OfferingLossless(
+                resonate_core::SourceId::new("shop").expect("a source name"),
+            )))
+        })
+    }
+
     fn a_shop_answering_nothing() -> crate::Registering {
         Arc::new(|_: &crate::Supplying<'_>| {
             resonate_providers::Providers::none().and(Arc::new(Unanswering(
@@ -1533,6 +1562,199 @@ mod driven {
         assert_eq!(
             driven.read(|root, _| root.replacing.as_ref().map(|sheet| sheet.name.clone())),
             Some("Road trip".to_owned())
+        );
+    }
+
+    #[gpui::test]
+    fn the_services_are_asked_which_lossy_songs_they_hold_and_one_none_holds_stays_unticked(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let Some(opus) = encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"])
+        else {
+            return;
+        };
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        matched_on_musicbrainz(&library, &opus);
+        let road_trip = library
+            .start_playlist(
+                "Road trip",
+                &[Cut::whole(resonate_core::MediaLocation::local(&opus))],
+            )
+            .expect("a playlist holding the lossy copy");
+        let mut driven = Driven::provided_by(
+            cx,
+            Arc::clone(&library),
+            &folder,
+            a_shop_answering_nothing(),
+        );
+        driven.click("tab-playlists");
+        driven.until(|root, cx| root.library.read(cx).holds_lossy_songs(road_trip));
+        opened_the_sheet_for(&mut driven, road_trip);
+        let ticked_before = driven.read(|root, _| {
+            root.replacing
+                .as_ref()
+                .map_or(0, |sheet| sheet.ticked.len())
+        });
+        assert_eq!(ticked_before, 1, "the matched song starts ticked");
+
+        driven.click("look-for-lossless-copies");
+        driven.until(|root, _| {
+            root.replacing.as_ref().is_some_and(|sheet| {
+                !sheet.is_looking()
+                    && sheet
+                        .rows
+                        .iter()
+                        .flatten()
+                        .all(resonate_library::Replaceable::is_offered_nowhere)
+            })
+        });
+
+        assert!(
+            driven.read(|root, _| root
+                .replacing
+                .as_ref()
+                .is_some_and(|sheet| sheet.ticked.is_empty())),
+            "a song no service holds stayed ticked"
+        );
+        assert!(
+            library.wants().expect("the wants read").is_empty(),
+            "checking wanted the song"
+        );
+
+        driven.cx.simulate_keystrokes("escape");
+        driven.settle();
+        opened_the_sheet_for(&mut driven, road_trip);
+        assert!(
+            driven.read(|root, _| root.replacing.as_ref().is_some_and(|sheet| {
+                sheet.ticked.is_empty()
+                    && sheet
+                        .rows
+                        .iter()
+                        .flatten()
+                        .all(resonate_library::Replaceable::is_offered_nowhere)
+            })),
+            "what the services answered was not kept"
+        );
+    }
+
+    #[gpui::test]
+    fn a_song_matched_nowhere_is_found_by_its_tags_and_ticked_to_be_downloaded_and_swapped(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let Some(opus) = encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"])
+        else {
+            return;
+        };
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let road_trip = library
+            .start_playlist(
+                "Road trip",
+                &[Cut::whole(resonate_core::MediaLocation::local(&opus))],
+            )
+            .expect("a playlist holding the lossy copy");
+        let mut driven = Driven::provided_by(
+            cx,
+            Arc::clone(&library),
+            &folder,
+            a_shop_offering_it_lossless(),
+        );
+        driven.click("tab-playlists");
+        driven.until(|root, cx| root.library.read(cx).holds_lossy_songs(road_trip));
+        opened_the_sheet_for(&mut driven, road_trip);
+        assert!(
+            driven.read(|root, _| root
+                .replacing
+                .as_ref()
+                .is_some_and(|sheet| sheet.ticked.is_empty())),
+            "a song matched nowhere started ticked before anything was found"
+        );
+
+        driven.click("look-for-lossless-copies");
+        driven.until(|root, _| {
+            root.replacing.as_ref().is_some_and(|sheet| {
+                !sheet.is_looking() && sheet.rows.iter().flatten().all(|row| row.offer().is_some())
+            })
+        });
+
+        assert_eq!(
+            driven.read(|root, _| root.replacing.as_ref().map(|sheet| sheet.ticked.len())),
+            Some(1),
+            "the song found lossless was not ticked"
+        );
+    }
+
+    #[gpui::test]
+    fn a_long_playlists_lossy_songs_are_drawn_where_the_sheet_shows_them(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let mut songs = Vec::new();
+        for at in 0..40 {
+            let Some(song) = encoded_titled(
+                &folder,
+                &format!("{at}.opus"),
+                &["-c:a", "libopus", "-b:a", "96k"],
+                &format!("Song {at}"),
+            ) else {
+                return;
+            };
+            songs.push(song);
+        }
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let cuts: Vec<Cut> = songs
+            .iter()
+            .map(|song| Cut::whole(resonate_core::MediaLocation::local(song)))
+            .collect();
+        let road_trip = library
+            .start_playlist("Road trip", &cuts)
+            .expect("a playlist holding the lossy copies");
+        let mut driven = Driven::provided_by(
+            cx,
+            Arc::clone(&library),
+            &folder,
+            a_shop_offering_it_lossless(),
+        );
+        driven.click("tab-playlists");
+        driven.until(|root, cx| root.library.read(cx).holds_lossy_songs(road_trip));
+        opened_the_sheet_for(&mut driven, road_trip);
+        let first = driven.read(|root, _| {
+            root.replacing
+                .as_ref()
+                .and_then(|sheet| sheet.rows.as_ref())
+                .and_then(|rows| rows.first())
+                .map(|row| row.track.id)
+                .expect("the first row")
+        });
+        let standing = format!("replacing-standing-{first}");
+        let sheet = driven.bounds_of("replacing-sheet");
+        let drawn = driven.bounds_of(Box::leak(standing.clone().into_boxed_str()));
+        assert!(
+            drawn.top() >= sheet.top() && drawn.bottom() <= sheet.bottom(),
+            "the first row is drawn outside the sheet before checking: {drawn:?} in {sheet:?}"
+        );
+        let line = driven.bounds_of(Box::leak(
+            format!("replacing-line-{first}").into_boxed_str(),
+        ));
+        assert!(
+            line.size.height >= drawn.size.height,
+            "the rows were squeezed to fit the list rather than scrolled: {line:?} holding {drawn:?}"
+        );
+
+        driven.click("look-for-lossless-copies");
+        driven.until(|root, _| {
+            root.replacing
+                .as_ref()
+                .is_some_and(|sheet| !sheet.is_looking())
+        });
+
+        let sheet = driven.bounds_of("replacing-sheet");
+        let drawn = driven.bounds_of(Box::leak(standing.into_boxed_str()));
+        assert!(
+            drawn.top() >= sheet.top() && drawn.bottom() <= sheet.bottom(),
+            "the first row is drawn outside the sheet after checking: {drawn:?} in {sheet:?}"
         );
     }
 

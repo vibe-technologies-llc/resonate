@@ -7,6 +7,16 @@ held = you hold it in { $codec }
 wanted = wanted through MusicBrainz
 not-matched = not matched on MusicBrainz
 pending = already being replaced
+look = Check availability
+look-hint = Ask the services you have set up which songs they hold lossless
+look-unasked = No service is set up to ask
+stop-looking = Stop checking
+stop-looking-hint = Stop asking the services
+looking = checking…
+offered-by = found lossless on { $provider }
+offered-nowhere = no lossless copy found
+unheard = not every service answered
+ask-the-services = ask the services which songs they hold lossless
 reading = Reading the playlist…
 nothing-lossy = Every song here is lossless
 trash-note = Each lossy copy goes to the trash once its lossless copy is in your library.
@@ -24,6 +34,14 @@ folded = { $count ->
 wanted-count = { $count ->
     [one] 1 song wanted
    *[other] { $count } songs wanted
+}
+kept-count = { $count ->
+    [one] 1 song downloading
+   *[other] { $count } songs downloading
+}
+unfiled-count = { $count ->
+    [one] 1 song needs a music folder to download into
+   *[other] { $count } songs need a music folder to download into
 }
 unmatched-count = { $count ->
     [one] 1 song not matched

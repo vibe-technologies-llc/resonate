@@ -108,7 +108,7 @@ pub(crate) struct ForgottenDelivery {
 }
 
 impl ForgottenDelivery {
-    fn declines(&self, delivered: &Delivered) -> bool {
+    pub(crate) fn declines(&self, delivered: &Delivered) -> bool {
         if delivered.taken_from().to_uri() != self.taken_from {
             return false;
         }

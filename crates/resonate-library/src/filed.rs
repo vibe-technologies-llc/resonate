@@ -247,7 +247,7 @@ fn weighed(path: &Path, listed: Option<Duration>) -> std::result::Result<(), Unf
     }
 }
 
-fn lossless(path: &Path) -> std::result::Result<(), Unfiled> {
+pub(crate) fn lossless(path: &Path) -> std::result::Result<(), Unfiled> {
     let info = resonate_codec::probe(&Sources::local(), &MediaLocation::local(path))
         .map_err(|_| Unfiled::Undecodable)?;
     if Codec::from_id(info.codec).is_lossless() {

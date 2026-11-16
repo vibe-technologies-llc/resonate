@@ -248,9 +248,11 @@ pub(super) fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice
 }
 
 pub(super) fn replaced_now(replacing: &Replacing) -> Notice {
-    let counted: [(_, fn(_) -> String); 3] = [
+    let counted: [(_, fn(_) -> String); 5] = [
         (replacing.folded, words::replacing::folded),
         (replacing.wanted, words::replacing::wanted_count),
+        (replacing.kept, words::replacing::kept_count),
+        (replacing.unfiled, words::replacing::unfiled_count),
         (replacing.unmatched, words::replacing::unmatched_count),
     ];
     let mut parts: Vec<String> = counted
@@ -261,9 +263,10 @@ pub(super) fn replaced_now(replacing: &Replacing) -> Notice {
     if parts.is_empty() {
         parts.push(words::replacing::folded(0));
     }
-    match replacing.trashed.kept {
-        0 => Notice::Done(parts.join(", ")),
-        refused => {
+    match (replacing.trashed.kept, replacing.unfiled) {
+        (0, 0) => Notice::Done(parts.join(", ")),
+        (0, _) => Notice::Trouble(parts.join(", ")),
+        (refused, _) => {
             parts.push(words::replacing::trash_refused(refused));
             Notice::Trouble(parts.join(", "))
         }

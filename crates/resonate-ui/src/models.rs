@@ -821,6 +821,7 @@ impl Work {
 struct KeepPass {
     stop: Arc<AtomicBool>,
     left: u64,
+    began_with_youtube_music: bool,
 }
 
 #[derive(Clone)]

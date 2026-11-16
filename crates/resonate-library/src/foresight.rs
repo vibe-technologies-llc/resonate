@@ -64,7 +64,7 @@ impl Foresight {
         Some(Searching(&self.searching))
     }
 
-    fn keep(
+    pub(crate) fn keep(
         &self,
         recording: Mbid,
         heard: Vec<SourceId>,

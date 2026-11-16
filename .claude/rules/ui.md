@@ -2063,6 +2063,24 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   one not matched or already being replaced is `kit::Press::Greyed`. *Tick all* in the heading row
   ticks every tickable row or, all ticked, unticks them. A note in `muted` says each lossy copy goes
   to the trash once its lossless copy is held, in place of a confirmation, the trash being reversible.
+  *Check availability* (`look-for-lossless-copies`, `RootView::look_for_lossless_copies`) runs
+  `Library::look_for_replacements` on the background executor over
+  `LibraryModel::providers_to_look_through` (greyed with no service to ask or no row to ask about),
+  each answer arriving over a channel: a row asked about says *checking…*, then *found lossless on
+  {provider}*, which ticks it (a song matched nowhere included, which only an offer makes
+  tickable), *no lossless copy found*, which unticks it, or *not every service answered*. The
+  button reads *Stop checking* meanwhile, and closing the sheet, replacing or opening it again
+  stops the pass (`ReplacingSheet::stop_looking`). A row kept as offered nowhere arrives unticked.
+  `replace_lossy_songs` hands the library the music folder first and, where `Replacing::kept`, begins
+  the keep pass (`keep_what_is_queued`); the toast adds *N songs downloading* and, as a trouble,
+  *N songs need a music folder to download into*
+  (`a_row_says_what_the_services_answered_and_one_offered_nowhere_is_left_unticked`,
+  `a_song_matched_nowhere_is_asked_about_and_ticked_once_a_service_offers_it`,
+  `the_services_are_asked_which_lossy_songs_they_hold_and_one_none_holds_stays_unticked`,
+  `a_song_matched_nowhere_is_found_by_its_tags_and_ticked_to_be_downloaded_and_swapped`). **A row
+  never shrinks to fit the list**: each is `flex_none` in the capped, scrolled column, else a long
+  playlist squeezed every row flat and the list drew blank
+  (`a_long_playlists_lossy_songs_are_drawn_where_the_sheet_shows_them`).
   *Cancel* (`KEEP_THE_LOSSY_SONGS`, the welcome), escape and a press outside keep the songs
   (`keep_the_lossy_songs`); *Replace N songs* (greyed at none) closes the sheet and calls
   `LibraryModel::replace_lossy_songs`: `Library::replace` on the background executor, a toast from

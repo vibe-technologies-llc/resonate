@@ -1,12 +1,13 @@
 use std::{sync::Arc, time::SystemTime};
 
 use ahash::AHashSet;
-use gpui::Context;
+use gpui::{App, Context};
 use resonate_core::{PlaylistId, WantId};
 use resonate_library::{Replaceable, Replacing, Want};
+use resonate_providers::Providers;
 
 use super::{
-    LibraryModel, Notice, Wanted,
+    LibraryModel, Notice, Wanted, delivery_folder,
     told::{self, folds_moved},
 };
 use crate::{downloads, toast, words};
@@ -14,6 +15,12 @@ use crate::{downloads, toast, words};
 impl LibraryModel {
     pub fn holds_lossy_songs(&self, playlist: PlaylistId) -> bool {
         self.shelf.lossy.contains(&playlist)
+    }
+
+    pub fn providers_to_look_through(&self, cx: &App) -> Option<Arc<Providers>> {
+        Some(self.providers(cx).without_last_resorts())
+            .filter(Providers::has_a_source)
+            .map(Arc::new)
     }
 
     pub fn playlist_name(&self, playlist: PlaylistId) -> Option<String> {
@@ -37,6 +44,7 @@ impl LibraryModel {
         if chosen.is_empty() {
             return;
         }
+        self.library.deliver_into(delivery_folder(cx));
         let library = Arc::clone(&self.library);
         let replacing = cx.spawn(async move |this, cx| {
             let (replaced, wanted) = cx
@@ -73,6 +81,9 @@ impl LibraryModel {
                 toast::tell(told::replaced_now(&replacing), cx);
                 if replacing.wanted > 0 {
                     self.fetch_or_say_nobody_can(cx);
+                }
+                if replacing.kept > 0 {
+                    self.keep_what_is_queued(cx);
                 }
             }
             Err(resonate_library::Error::AlreadyWalking) => {

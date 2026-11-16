@@ -1123,12 +1123,14 @@ service offers it.
   song up; a press during a poll waits for the poll, and a pass another process refused is tried again
   `OWED_ASKED_AGAIN_AFTER` later. A poll asked for meanwhile is owed and goes first, a
   pass that gave way following it. A pass runs at open only where `keeps_pending` (rows queued and landed files a root owes a read) is above zero and
-  `youtube-music` is on; the window's once-a-second look at a running pass counts `keeps_queued` alone (one query), since the pass reads what landed at its head. **A service that keeps songs reads its first page only once the server pane is
+  `youtube-music` is on, or, with it off, where a keep replacing a lossy song waits (`keeps_replacing_queued`: such a
+  keep is asked of TIDAL, Subsonic or whichever service offered the lossless copy, `library.md`'s *Replacing a lossy
+  song*); the window's once-a-second look at a running pass counts `keeps_queued` alone (one query), since the pass reads what landed at its head. **A service that keeps songs reads its first page only once the server pane is
   shown** (`ServerModel::shown`), since that page is `yt-dlp` on the account's cookies and a Chromium-family
   browser may raise a keyring prompt, and a window opening touches nothing unasked
   (`a_service_that_keeps_songs_is_asked_for_its_first_page_only_once_the_pane_is_shown`). *Stop* in the *Downloads* panel cancels it, the rest queued for the next open,
-  and so does turning `youtube-music` or `online` off, heard within a second
-  (`keep_only_while_turned_on`); neither is undone by a yield or a refusal. What a pass that gave way
+  and so does turning `online` off, or `youtube-music` off where the pass began with it on, heard within a second
+  (`keep_only_while_turned_on`, `KeepPass::began_with_youtube_music`); neither is undone by a yield or a refusal. What a pass that gave way
   did is added to `Keeps::tally` and told in one toast when a pass ends without yielding
   (`a_song_pressed_while_a_pass_runs_waits_for_it_and_is_asked_by_the_next_pass`,
   `a_poll_asked_for_during_a_pass_goes_first_and_the_pass_is_begun_again_after_it`,

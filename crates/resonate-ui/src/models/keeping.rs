@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use gpui::Context;
+use gpui::{App, Context};
 use resonate_library::{KeepSummary, KeptSong, Library, PlaylistToKeep, PollOptions};
 
 use super::{
@@ -92,17 +92,20 @@ impl LibraryModel {
     }
 
     pub(super) fn keep_what_was_left_queued(&mut self, cx: &mut Context<Self>) {
-        let turned_on = cx
-            .try_global::<ResonateApp>()
-            .is_some_and(|app| app.online.enabled && app.online.youtube_music);
-        if !turned_on {
+        let (online, youtube_music) = turned_on(cx);
+        if !online {
             return;
         }
         let library = Arc::clone(&self.library);
         self.keeps._running = cx.spawn(async move |this, cx| {
             let queued = cx
                 .background_executor()
-                .spawn(async move { library.keeps_pending() })
+                .spawn(async move {
+                    match youtube_music {
+                        true => library.keeps_pending(),
+                        false => library.keeps_replacing_queued(),
+                    }
+                })
                 .await;
             match queued {
                 Ok(0) => {}
@@ -147,7 +150,11 @@ impl LibraryModel {
                 return;
             }
         };
-        self.keeps.pass = Some(KeepPass { stop, left: 0 });
+        self.keeps.pass = Some(KeepPass {
+            stop,
+            left: 0,
+            began_with_youtube_music: turned_on(cx).1,
+        });
         cx.notify();
         self.follow_the_keep(handle, cx);
     }
@@ -182,10 +189,13 @@ impl LibraryModel {
     }
 
     fn keep_only_while_turned_on(&mut self, cx: &mut Context<Self>) {
-        let turned_on = cx
-            .try_global::<ResonateApp>()
-            .is_some_and(|app| app.online.enabled && app.online.youtube_music);
-        if !turned_on {
+        let (online, youtube_music) = turned_on(cx);
+        let began_with_it = self
+            .keeps
+            .pass
+            .as_ref()
+            .is_some_and(|pass| pass.began_with_youtube_music);
+        if !online || (began_with_it && !youtube_music) {
             self.stop_keeping(cx);
         }
     }
@@ -314,4 +324,14 @@ impl LibraryModel {
             });
         });
     }
+}
+
+fn turned_on(cx: &App) -> (bool, bool) {
+    cx.try_global::<ResonateApp>()
+        .map_or((false, false), |app| {
+            (
+                app.online.enabled,
+                app.online.enabled && app.online.youtube_music,
+            )
+        })
 }

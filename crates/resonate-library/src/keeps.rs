@@ -7,9 +7,10 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::{
-    CoverArt, FileTags, ImageFormat, Picturing, Sources, TagSink as _, TagSource as _, Writing,
+    CoverArt, FileTags, ImageFormat, Pictured, Picturing, Sources, TagSink as _, TagSource as _,
+    Writing,
 };
-use resonate_core::{Gate, Link, Locator, MediaLocation, SourceId, TrackId};
+use resonate_core::{AlbumId, Gate, Link, Locator, MediaLocation, SourceId, TrackId};
 use resonate_providers::{
     ANSWERED_ALONE_WITHIN, Answer, Asking, Away, Delivered, Delivery, Identity, Providers,
     TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER, WhyAway,
@@ -37,7 +38,9 @@ const A_SONG_IS_KEYED: &str = "track/";
 
 const KEEP_TRIES_AT_MOST: i64 = 5;
 
-const KEEPS_QUEUED: &str = "SELECT id, source, video, title, artist, album, length, playlist, cover
+const KEEPS_QUEUED: &str =
+    "SELECT id, source, video, title, artist, album, length, playlist, cover,
+            EXISTS (SELECT 1 FROM replacements_kept rk WHERE rk.kept_id = kept_songs.id)
        FROM kept_songs WHERE landed IS NULL AND gone = 0 ORDER BY tried, asked, id";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -180,6 +183,19 @@ struct Queued {
     id: i64,
     song: SongToKeep,
     playlist: Option<String>,
+    replaces: bool,
+}
+
+impl Queued {
+    fn identity(&self) -> Identity {
+        match self.replaces {
+            true => Identity {
+                links: Vec::new(),
+                ..self.song.identity()
+            },
+            false => self.song.identity(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -341,6 +357,21 @@ impl Library {
             connection
                 .query_row(
                     "SELECT count(*) FROM kept_songs WHERE landed IS NULL AND gone = 0",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map(i64::cast_unsigned)
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })
+    }
+
+    pub fn keeps_replacing_queued(&self) -> Result<u64> {
+        self.inner().read(|connection| {
+            connection
+                .query_row(
+                    "SELECT count(*) FROM kept_songs k
+                      WHERE k.landed IS NULL AND k.gone = 0
+                        AND EXISTS (SELECT 1 FROM replacements_kept rk WHERE rk.kept_id = k.id)",
                     [],
                     |row| row.get::<_, i64>(0),
                 )
@@ -570,13 +601,15 @@ impl Library {
             );
             return Ok(Turn::Unkept);
         }
-        if let Some(copy) = self.copy_of(&row.song)? {
+        if !row.replaces
+            && let Some(copy) = self.copy_of(&row.song)?
+        {
             walking.unread.extend(self.root_of_an_unread_copy(&copy)?);
             return self.settled_turn(row, &copy.cut);
         }
 
         let progress = walking.progress;
-        let answer = asked(&row.song, walking.providers, progress, &mut walking.away);
+        let answer = asked(row, walking.providers, progress, &mut walking.away);
         if answer.cancelled {
             return Ok(Turn::Over);
         }
@@ -594,7 +627,10 @@ impl Library {
             return Ok(Turn::Yielded);
         }
         let album = row.song.album();
-        let picture = pictured(&row.song, walking.providers);
+        let picture = match row.replaces {
+            true => self.picture_it_replaces(row),
+            false => pictured(&row.song, walking.providers),
+        };
         let song = row.song.to_file(album.as_ref(), picture.as_ref());
         let drawn = supply::drawn(
             delivered.delivery,
@@ -609,6 +645,14 @@ impl Library {
 
         let video = &row.song.video;
         match drawn {
+            Drawn::Read(Ok(filed)) if row.replaces && filed::lossless(&filed.path).is_err() => {
+                tracing::warn!(video, "a song kept to replace a lossy one arrived lossy");
+                if let Err(error) = std::fs::remove_file(&filed.path) {
+                    tracing::warn!(%error, path = %filed.path.display(), "a lossy file kept for a replacement could not be taken away");
+                }
+                self.given_up(row)?;
+                Ok(Turn::Unkept)
+            }
             Drawn::Read(Ok(filed)) => {
                 let cut = Cut::whole(MediaLocation::local(&filed.path));
                 let settled = self.settled_turn(row, &cut);
@@ -664,6 +708,47 @@ impl Library {
                 Ok(Turn::Failed)
             }
         }
+    }
+
+    fn picture_it_replaces(&self, row: &Queued) -> Option<CoverArt> {
+        let replaced = self.inner().read(|connection| {
+            connection
+                .query_row(
+                    "SELECT t.path, t.album_id FROM replacements_kept rk
+                       JOIN tracks t ON t.id = rk.track_id
+                      WHERE rk.kept_id = ?1
+                      ORDER BY t.id LIMIT 1",
+                    params![row.id],
+                    |found| Ok((found.get::<_, String>(0)?, found.get::<_, Option<i64>>(1)?)),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        });
+        let (path, album) = match replaced {
+            Ok(Some(replaced)) => replaced,
+            Ok(None) => return None,
+            Err(error) => {
+                tracing::warn!(%error, "the song a keep replaces could not be read for its picture");
+                return None;
+            }
+        };
+        let carried = FileTags::over(Sources::local())
+            .read(
+                &MediaLocation::local(store::path_of(&path)),
+                Picturing::Copied,
+            )
+            .ok()
+            .and_then(|tagged| match tagged.picture {
+                Pictured::Copied(picture) => Some(picture),
+                Pictured::StoodIn | Pictured::Bare | Pictured::Carried => None,
+            });
+        carried.or_else(|| {
+            let album = AlbumId::new(album?.cast_unsigned()).ok()?;
+            self.cover_art(album).unwrap_or_else(|error| {
+                tracing::warn!(%error, "the cover of the album a keep replaces could not be read");
+                None
+            })
+        })
     }
 
     fn unanswered(&self, row: &Queued, answer: &Answer, away: &Away) -> Result<Turn> {
@@ -945,15 +1030,10 @@ fn heeding(cancelled: &(dyn Fn() -> bool + Sync), progress: &PollProgress, over:
     }
 }
 
-fn asked(
-    song: &SongToKeep,
-    providers: &Providers,
-    progress: &PollProgress,
-    away: &mut Away,
-) -> Answer {
+fn asked(row: &Queued, providers: &Providers, progress: &PollProgress, away: &mut Away) -> Answer {
     let cancelled = || progress.is_cancelled();
-    providers.only(&song.source).first(
-        &song.identity(),
+    providers.only(&row.song.source).first(
+        &row.identity(),
         &Asking {
             within: ANSWERED_ALONE_WITHIN,
             cancelled: &cancelled,
@@ -1229,6 +1309,7 @@ fn queued_at(row: &SqlRow<'_>) -> rusqlite::Result<Option<Queued>> {
             cover: row.get(8)?,
         },
         playlist: row.get(7)?,
+        replaces: row.get(9)?,
     }))
 }
 
