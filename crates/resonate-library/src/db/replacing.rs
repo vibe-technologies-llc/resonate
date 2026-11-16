@@ -12,8 +12,7 @@ use resonate_core::{
     Locator, MediaLocation, PlaylistId, ReleaseTrackId, SourceId, TrackId, WantId,
 };
 use resonate_providers::{
-    Asking, Away, Delivered, Delivery, Identity, Providers, TURNED_TO_APART,
-    WAITED_ON_AFTER_AN_OFFER,
+    Asking, Away, Delivered, Identity, Providers, TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
 };
 use resonate_vault::Vault;
 use rusqlite::{Connection, OptionalExtension as _, Transaction, params, types::Value};
@@ -28,6 +27,7 @@ use crate::{
     deleted::Why,
     elsewhere,
     foresight::Unheard,
+    keeps,
     linked::LENGTHS_AGREE_WITHIN,
     replacing, store,
     supply::{ANSWERS_WITHIN, ForgottenDelivery, WANTS_ASKED_AT_ONCE},
@@ -174,12 +174,6 @@ const THE_COPY_KEPT_FOR_IT: &str = concat!(
     lossless_codecs!(),
     ") ORDER BY tracks.id"
 );
-
-const A_SONG_IS_KEYED: &str = "track/";
-
-const NAMED_ONLY_FOR_LOSSY_SOUND: [&str; 12] = [
-    "aac", "ac3", "eac3", "m4b", "mp2", "mp3", "mpc", "ogg", "opus", "spx", "webm", "wma",
-];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Standing {
@@ -443,7 +437,7 @@ impl Library {
             .and_then(|want| forgotten.get(&want))
             .map_or(&[][..], Vec::as_slice);
         let declined = |delivered: &Delivered| {
-            offered_for_lossy_sound(delivered)
+            replacing::offered_for_lossy_sound(delivered)
                 || forgotten_for_it
                     .iter()
                     .any(|forgotten| forgotten.declines(delivered))
@@ -667,7 +661,10 @@ fn kept_for(
     now: SystemTime,
 ) -> Result<()> {
     let key = match at.locator() {
-        Locator::Key(key) => key.strip_prefix(A_SONG_IS_KEYED).unwrap_or(key).to_owned(),
+        Locator::Key(key) => key
+            .strip_prefix(keeps::A_SONG_IS_KEYED)
+            .unwrap_or(key)
+            .to_owned(),
         Locator::Path(path) => store::path_text(path).into_owned(),
     };
     let length = lossy
@@ -784,19 +781,6 @@ fn row_asked(
         },
         want,
     }))
-}
-
-fn offered_for_lossy_sound(delivered: &Delivered) -> bool {
-    let extension = match &delivered.delivery {
-        Delivery::File(path) => path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .unwrap_or_default(),
-        Delivery::Stream { extension, .. } => extension.as_str(),
-    };
-    NAMED_ONLY_FOR_LOSSY_SOUND
-        .iter()
-        .any(|lossy| lossy.eq_ignore_ascii_case(extension))
 }
 
 fn settled(

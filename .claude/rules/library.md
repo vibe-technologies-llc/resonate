@@ -646,9 +646,9 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `Replacing::kept`; with no music folder to keep into it is `Replacing::unfiled` and nothing is
   written. The row is `pending` while that keep waits (`A_KEEP_WAITS_FOR_THE_SONG`). The keep pass
   (`providers.md`) takes such a row (`Queued::replaces`) without asking `copy_of`, since the lossy
-  song itself is held named alike, asks its provider alone with no YouTube link, and refuses a
-  lossy file (`filed::lossless`), giving the row up and leaving the song; the file is filed with
-  the lossy song's own picture, else its album's cover (`picture_it_replaces`), since a service's
+  song itself is held named alike, asks its provider alone with no YouTube link, declines an offer
+  named only for lossy sound as the look does, and refuses a lossy file (`filed::lossless`),
+  giving the row up and leaving the song; the file is filed with the lossy song's own picture, else its album's cover (`picture_it_replaces`), since a service's
   lossless file carries none; once filed and scanned,
   `settle_replacements` finds the landed track (`THE_COPY_KEPT_FOR_IT`) ahead of the recording's
   copies and folds as for a want
@@ -657,6 +657,8 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `a_look_a_provider_could_not_answer_keeps_nothing`,
   `a_song_matched_nowhere_is_found_by_its_tags_kept_from_the_service_and_takes_the_lossy_songs_place`,
   `a_song_kept_to_replace_a_lossy_one_that_arrives_lossy_is_refused_and_the_lossy_song_stays`,
+  `a_song_kept_to_replace_a_lossy_one_is_never_downloaded_from_an_offer_named_for_lossy_sound`,
+  `a_last_resort_is_never_asked_whether_a_lossy_song_is_held_lossless`,
   `a_catalog_from_before_lossless_copies_were_looked_for_keeps_its_waits_and_gains_tables`).
   **A replacement settles once its lossless copy is held, on evidence alone**:
   `Library::settle_replacements` reads, for each pending replacement, the track at its want's

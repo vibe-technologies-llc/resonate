@@ -4901,6 +4901,91 @@ fn a_song_kept_to_replace_a_lossy_one_that_arrives_lossy_is_refused_and_the_loss
     Ok(())
 }
 
+#[test]
+fn a_song_kept_to_replace_a_lossy_one_is_never_downloaded_from_an_offer_named_for_lossy_sound()
+-> Result<()> {
+    let tree = Tree::new();
+    let shop = Tree::new();
+    let (Some(opus), Some(mp3)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&shop, "A.mp3", "Echoes"),
+    ) else {
+        return Ok(());
+    };
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
+    filing_into(&library, &tree);
+    let by = SourceId::new("store").expect("a nameable source");
+    let mut rows = library.lossy_songs_of(playlist)?;
+    rows[0].looked = Some(Looked::Offered {
+        at: MediaLocation::new(by.clone(), "track/77"),
+        by,
+    });
+    assert_eq!(library.replace(&rows)?.kept, 1);
+    let store = Arc::new(Offering::new(
+        "store",
+        Delivering::Bytes {
+            key: "track/77",
+            extension: "mp3",
+            bytes: fs::read(&mp3).expect("the lossy copy reads"),
+        },
+    ));
+
+    let summary = library.keep_pending(&store.registered(), &|| false)?;
+
+    assert_eq!(summary.landed, 0, "{summary:?}");
+    assert_eq!(store.asked().len(), 1);
+    assert_eq!(
+        store.opened(),
+        0,
+        "an offer named for lossy sound was opened"
+    );
+    assert!(opus.exists());
+    assert!(files_named(tree.path(), "mp3").is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_last_resort_is_never_asked_whether_a_lossy_song_is_held_lossless() -> Result<()> {
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let lossy = the_row_at(&library, &opus)?;
+    let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
+    let tube = offering_as("tube", "flac");
+    let shop = offering_as("shop", "flac");
+    let providers = Providers::none()
+        .and(Arc::new(LastResort(Arc::clone(&tube))) as Arc<dyn Provider>)
+        .and(Arc::clone(&shop) as Arc<dyn Provider>);
+
+    let told = looked_for(&library, &providers, &library.lossy_songs_of(playlist)?)?;
+    let alone = looked_for(
+        &library,
+        &Providers::none().and(Arc::new(LastResort(Arc::clone(&tube))) as Arc<dyn Provider>),
+        &library.lossy_songs_of(playlist)?,
+    )?;
+
+    let by = SourceId::new("shop").expect("a nameable source");
+    assert_eq!(
+        told,
+        [(
+            lossy.id,
+            Looked::Offered {
+                at: MediaLocation::new(by.clone(), "track/1"),
+                by,
+            }
+        )]
+    );
+    assert!(alone.is_empty(), "{alone:?}");
+    assert!(tube.asked().is_empty(), "a last resort was asked");
+    assert_eq!(shop.asked().len(), 1);
+    Ok(())
+}
+
 struct HeldOpenByTheDesktop {
     reached: Mutex<Option<Sender<()>>>,
     lifted: Mutex<Receiver<()>>,

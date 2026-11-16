@@ -23,7 +23,7 @@ use crate::{
     filed::{self, AlbumToFile, ToFile, Unfiled},
     organise,
     pass::PassKind,
-    playlist,
+    playlist, replacing,
     store::{self, HeldAlike},
     supply::{self, Drawing, Drawn, HEEDED_EVERY, Unopened},
     synced::{self, HeldRow},
@@ -34,7 +34,7 @@ const WATCHED_AT: &str = "https://music.youtube.com/watch?v=";
 
 const HEARD_THERE: &str = "streaming";
 
-const A_SONG_IS_KEYED: &str = "track/";
+pub(crate) const A_SONG_IS_KEYED: &str = "track/";
 
 const KEEP_TRIES_AT_MOST: i64 = 5;
 
@@ -1038,7 +1038,7 @@ fn asked(row: &Queued, providers: &Providers, progress: &PollProgress, away: &mu
             within: ANSWERED_ALONE_WITHIN,
             cancelled: &cancelled,
             turning_to: &|_| {},
-            declined: &|_| false,
+            declined: &|delivered| row.replaces && replacing::offered_for_lossy_sound(delivered),
             passing: &[],
             apart: TURNED_TO_APART,
             grace: WAITED_ON_AFTER_AN_OFFER,

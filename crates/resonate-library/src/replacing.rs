@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use resonate_core::{MediaLocation, ReleaseTrackId, SourceId, TrackId, WantId};
+use resonate_providers::{Delivered, Delivery};
 use rusqlite::{OptionalExtension as _, ToSql, Transaction, params};
 
 use crate::{
@@ -38,6 +39,23 @@ impl Replaceable {
             Some(Looked::Unoffered | Looked::Unheard) | None => None,
         }
     }
+}
+
+const NAMED_ONLY_FOR_LOSSY_SOUND: [&str; 12] = [
+    "aac", "ac3", "eac3", "m4b", "mp2", "mp3", "mpc", "ogg", "opus", "spx", "webm", "wma",
+];
+
+pub(crate) fn offered_for_lossy_sound(delivered: &Delivered) -> bool {
+    let extension = match &delivered.delivery {
+        Delivery::File(path) => path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .unwrap_or_default(),
+        Delivery::Stream { extension, .. } => extension.as_str(),
+    };
+    NAMED_ONLY_FOR_LOSSY_SOUND
+        .iter()
+        .any(|lossy| lossy.eq_ignore_ascii_case(extension))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
