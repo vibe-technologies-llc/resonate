@@ -5539,6 +5539,327 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).selection() == crate::Selection::Everything);
     }
 
+    #[derive(Debug, PartialEq, Eq)]
+    struct ArtistShelf {
+        name: String,
+        records: Vec<String>,
+        albums: u32,
+        tracks: u32,
+    }
+
+    fn artist_shelf_of(root: &RootView, cx: &gpui::App) -> Option<ArtistShelf> {
+        let library = root.library.read(cx);
+        let detail = library.artist_detail()?;
+        let mut records: Vec<String> = library
+            .artist_albums()
+            .iter()
+            .map(|album| album.title.clone())
+            .collect();
+        records.sort();
+        let totals = library.artist_totals();
+
+        Some(ArtistShelf {
+            name: detail.name.clone(),
+            records,
+            albums: totals.albums,
+            tracks: totals.tracks,
+        })
+    }
+
+    fn artist_shelf(driven: &mut Driven) -> Option<ArtistShelf> {
+        driven.read(artist_shelf_of)
+    }
+
+    fn instead_of(root: &RootView, cx: &gpui::App) -> Option<String> {
+        root.library.read(cx).instead().map(ToOwned::to_owned)
+    }
+
+    fn spelled_instead(driven: &mut Driven) -> Option<String> {
+        driven.read(instead_of)
+    }
+
+    fn pressings_held(
+        root: &RootView,
+        cx: &gpui::App,
+        album: resonate_core::AlbumId,
+    ) -> Option<crate::Pressings> {
+        root.library.read(cx).pressings_of(album).cloned()
+    }
+
+    fn pressings_of(
+        driven: &mut Driven,
+        album: resonate_core::AlbumId,
+    ) -> Option<crate::Pressings> {
+        driven.read(|root, cx| pressings_held(root, cx, album))
+    }
+
+    fn air_and_beck(folder: &Folder) {
+        for (file, title, artist, album) in [
+            ("one.wav", "La Femme d'Argent", "Air", "Moon Safari"),
+            ("two.wav", "Kelly Watch the Stars", "Air", "Moon Safari"),
+            ("three.wav", "Loser", "Beck", "Mellow Gold"),
+        ] {
+            folder.tagged(
+                file,
+                1,
+                &[(b"INAM", title), (b"IART", artist), (b"IPRD", album)],
+            );
+        }
+    }
+
+    fn the_artist_named(library: &Library, name: &str) -> resonate_core::ArtistId {
+        library
+            .artists(&resonate_library::ArtistQuery::default())
+            .expect("the scanned artists")
+            .into_iter()
+            .find(|artist| artist.name == name)
+            .expect("an artist the tags named")
+            .id
+    }
+
+    fn open_the_artist(driven: &mut Driven, artist: resonate_core::ArtistId) {
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.opened(Selection::Artist(artist), cx);
+        });
+        driven.until(|root, cx| {
+            root.library.read(cx).selection() == Selection::Artist(artist)
+                && artist_shelf_of(root, cx).is_some()
+        });
+        driven.settle();
+    }
+
+    #[gpui::test]
+    fn an_artist_opened_is_headed_by_its_name_and_shelves_each_record_it_holds(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        air_and_beck(&folder);
+        folder.tagged(
+            "four.wav",
+            1,
+            &[
+                (b"INAM", "Venus"),
+                (b"IART", "Air"),
+                (b"IPRD", "Talkie Walkie"),
+            ],
+        );
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let air = the_artist_named(&library, "Air");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+
+        assert_eq!(artist_shelf(&mut driven), None);
+
+        open_the_artist(&mut driven, air);
+
+        assert_eq!(
+            artist_shelf(&mut driven),
+            Some(ArtistShelf {
+                name: "Air".to_owned(),
+                records: vec!["Moon Safari".to_owned(), "Talkie Walkie".to_owned()],
+                albums: 2,
+                tracks: 3,
+            })
+        );
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.opened(Selection::Everything, cx);
+        });
+        driven.until(|root, cx| root.library.read(cx).selection() == Selection::Everything);
+        driven.settle();
+
+        assert_eq!(artist_shelf(&mut driven), None);
+    }
+
+    #[gpui::test]
+    fn an_artist_opened_is_drawn_again_with_its_shelf_after_other_panes_were_shown(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        air_and_beck(&folder);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let air = the_artist_named(&library, "Air");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        open_the_artist(&mut driven, air);
+        let opened = artist_shelf(&mut driven);
+
+        driven.click("tab-albums");
+        driven.click("tab-statistics");
+        driven.settle();
+        driven.click("tab-artists");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| (root.pane, root.library.read(cx).selection())),
+            (Pane::Tracks, Selection::Artist(air))
+        );
+        assert_eq!(artist_shelf(&mut driven), opened);
+        assert!(opened.is_some());
+    }
+
+    #[gpui::test]
+    fn a_record_scanned_under_an_open_artist_joins_its_shelf_once_the_catalog_reloads(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        air_and_beck(&folder);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let air = the_artist_named(&library, "Air");
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        open_the_artist(&mut driven, air);
+
+        assert_eq!(
+            artist_shelf(&mut driven).map(|shelf| (shelf.records, shelf.albums, shelf.tracks)),
+            Some((vec!["Moon Safari".to_owned()], 1, 2))
+        );
+
+        folder.tagged(
+            "four.wav",
+            1,
+            &[
+                (b"INAM", "Venus"),
+                (b"IART", "Air"),
+                (b"IPRD", "Talkie Walkie"),
+            ],
+        );
+        Driven::scanned(&library, &folder);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.library.update(cx, |model, cx| model.reload(cx));
+        });
+        driven.until(|root, cx| {
+            artist_shelf_of(root, cx).is_some_and(|shelf| shelf.records.len() == 2)
+        });
+        driven.settle();
+
+        assert_eq!(
+            artist_shelf(&mut driven),
+            Some(ArtistShelf {
+                name: "Air".to_owned(),
+                records: vec!["Moon Safari".to_owned(), "Talkie Walkie".to_owned()],
+                albums: 2,
+                tracks: 3,
+            })
+        );
+    }
+
+    #[gpui::test]
+    fn a_search_finding_nothing_offers_the_spelling_the_catalog_holds_until_one_finds_something(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        folder.tagged(
+            "echoes.wav",
+            1,
+            &[
+                (b"INAM", "Echoes"),
+                (b"IART", "Pink Floyd"),
+                (b"IPRD", "Meddle"),
+            ],
+        );
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let model = driven.read(|root, _| root.library.clone());
+        let search = |driven: &mut Driven, typed: &str| {
+            let typed = typed.to_owned();
+            driven.cx.update(|_, cx| {
+                model.update(cx, |library, cx| library.set_query(typed, cx));
+            });
+            driven.cx.executor().advance_clock(Duration::from_secs(1));
+            driven.settle();
+        };
+        driven.click("tab-tracks");
+
+        search(&mut driven, "floid");
+        driven.until(|root, cx| instead_of(root, cx).is_some());
+
+        assert_eq!(spelled_instead(&mut driven), Some("Floyd".to_owned()));
+        driven.until_drawn("search-instead");
+
+        driven.click("tab-statistics");
+        driven.settle();
+
+        assert_eq!(spelled_instead(&mut driven), Some("Floyd".to_owned()));
+
+        search(&mut driven, "floyd");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
+
+        assert_eq!(spelled_instead(&mut driven), None);
+    }
+
+    #[gpui::test]
+    fn an_albums_record_asks_for_the_releases_it_might_be_and_says_when_none_answered(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        folder.tagged(
+            "echoes.wav",
+            1,
+            &[
+                (b"INAM", "Echoes"),
+                (b"IART", "Pink Floyd"),
+                (b"IPRD", "Meddle"),
+            ],
+        );
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let album = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")[0]
+            .album_id
+            .expect("an album the tags named");
+        let mut driven = Driven::reaching(
+            cx,
+            Arc::clone(&library),
+            &folder,
+            Reaching {
+                reference: Arc::new(AccountOfOnePlaylist {
+                    source: resonate_core::SourceId::new("metadata").expect("a source name"),
+                    recordings: None,
+                }),
+                register: Arc::new(|_: &Supplying<'_>| Providers::none()),
+            },
+        );
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.opened(Selection::Album(album), cx);
+        });
+        driven.until(|root, cx| root.library.read(cx).selection() == Selection::Album(album));
+        driven.settle();
+
+        assert_eq!(pressings_of(&mut driven, album), None);
+
+        driven.click("album-record");
+        driven.click("other-pressings");
+        driven.until(|root, cx| {
+            pressings_held(root, cx, album) == Some(crate::Pressings::Unanswered)
+        });
+
+        assert_eq!(
+            pressings_of(&mut driven, album),
+            Some(crate::Pressings::Unanswered)
+        );
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.record = None;
+            cx.notify();
+        });
+        driven.settle();
+        driven.click("tab-statistics");
+        driven.click("tab-albums");
+        driven.settle();
+
+        assert_eq!(
+            driven.read(|root, cx| root.library.read(cx).selection()),
+            Selection::Album(album)
+        );
+        assert_eq!(
+            pressings_of(&mut driven, album),
+            Some(crate::Pressings::Unanswered)
+        );
+    }
+
     struct Measuring {
         source: resonate_core::SourceId,
     }
