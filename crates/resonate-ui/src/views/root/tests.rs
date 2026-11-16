@@ -1313,6 +1313,142 @@ mod driven {
         assert_eq!(queued_at(&mut driven), [lossless]);
     }
 
+    const ECHOES_RECORDING: &str = "b1a9c0de-1111-4222-8333-444455556666";
+    const MEDDLE_RELEASE: &str = "1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f";
+
+    struct Unanswering(resonate_core::SourceId);
+
+    impl resonate_providers::Provider for Unanswering {
+        fn source(&self) -> &resonate_core::SourceId {
+            &self.0
+        }
+
+        fn find(
+            &self,
+            _: &resonate_providers::Identity,
+        ) -> resonate_providers::Result<resonate_providers::Obtained> {
+            Ok(resonate_providers::Obtained::Nothing)
+        }
+    }
+
+    fn a_shop_answering_nothing() -> crate::Registering {
+        Arc::new(|_: &crate::Supplying<'_>| {
+            resonate_providers::Providers::none().and(Arc::new(Unanswering(
+                resonate_core::SourceId::new("shop").expect("a source name"),
+            )))
+        })
+    }
+
+    fn matched_on_musicbrainz(library: &Library, song: &std::path::Path) {
+        let mbid = |id: &str| resonate_library::Mbid::new(id).expect("an mbid");
+        let track = library
+            .track_at(song, None)
+            .expect("the catalog read")
+            .expect("the song is catalogued");
+        let album = track.album_id.expect("the song files under an album");
+        library
+            .land_release(
+                album,
+                &resonate_library::Release {
+                    id: mbid(MEDDLE_RELEASE),
+                    group: None,
+                    title: "Meddle".to_owned(),
+                    credit: Vec::new(),
+                    date: None,
+                    country: None,
+                    label: None,
+                    catalog_number: None,
+                    barcode: None,
+                    kind: None,
+                    disambiguation: None,
+                    has_front_cover: false,
+                    links: Vec::new(),
+                    media: vec![resonate_library::Medium {
+                        position: 1,
+                        format: None,
+                        title: None,
+                        tracks: vec![resonate_library::ReleaseTrack {
+                            position: 1,
+                            number: "1".to_owned(),
+                            title: "Echoes".to_owned(),
+                            artist: None,
+                            recording: Some(mbid(ECHOES_RECORDING)),
+                            track: None,
+                            length: Some(Duration::from_secs(2)),
+                            isrcs: Vec::new(),
+                            links: Vec::new(),
+                        }],
+                    }],
+                },
+            )
+            .expect("the release lands");
+        library.rematch(album).expect("the release pairs");
+    }
+
+    #[gpui::test]
+    fn a_lossy_song_wanted_again_stands_in_the_downloads_and_its_cancel_keeps_the_song(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let Some(opus) = encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"])
+        else {
+            return;
+        };
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        matched_on_musicbrainz(&library, &opus);
+        let road_trip = library
+            .start_playlist(
+                "Road trip",
+                &[Cut::whole(resonate_core::MediaLocation::local(&opus))],
+            )
+            .expect("a playlist holding the lossy copy");
+        let rows = library
+            .lossy_songs_of(road_trip)
+            .expect("the playlist read");
+        assert!(
+            rows.iter().all(|row| row.release_track.is_some()),
+            "{rows:?}"
+        );
+        let mut driven = Driven::provided_by(
+            cx,
+            Arc::clone(&library),
+            &folder,
+            a_shop_answering_nothing(),
+        );
+
+        let model = driven.read(|root, _| root.library.clone());
+        driven.cx.update(|_, cx| {
+            model.update(cx, |library, cx| library.replace_lossy_songs(rows, cx));
+        });
+        driven.until(|root, cx| {
+            let library = root.library.read(cx);
+            library.downloads().first().is_some_and(|download| {
+                library.replaces_a_song(download) && library.fetching(download).can_be_cancelled()
+            })
+        });
+        assert!(
+            library
+                .lossy_songs_of(road_trip)
+                .expect("the playlist read")
+                .iter()
+                .all(|row| row.pending)
+        );
+        driven.click("downloads");
+        driven.bounds_of("download-0");
+
+        driven.click("cancel-download-0");
+
+        driven.until(|root, cx| root.library.read(cx).downloads().is_empty());
+        driven.until(|_, _| {
+            library
+                .lossy_songs_of(road_trip)
+                .is_ok_and(|rows| rows.len() == 1 && rows.iter().all(|row| !row.pending))
+        });
+        assert!(library.wants().expect("the wants read").is_empty());
+        assert!(opus.exists(), "a cancelled replacement took the lossy copy");
+    }
+
     #[gpui::test]
     fn a_playlists_lossy_songs_are_replaced_from_its_menu_and_the_sheet_closes_with_a_toast(
         cx: &mut TestAppContext,

@@ -431,32 +431,35 @@ pub(crate) struct Unfinished {
 
 impl Unfinished {
     pub(crate) fn of(want: &Want) -> Option<Self> {
-        let recording = want.recording.clone()?;
-        let release = want.release.clone().map(|id| RecordingRelease {
-            id,
-            title: want.album_title.clone(),
-            date: None,
-            disc: Some(want.disc),
-            position: Some(want.position),
-            issued: Issued::default(),
-        });
-
         Some(Self {
-            found: Found {
-                recording,
-                title: want.title.clone(),
-                artist: want.artist.clone().unwrap_or_default(),
-                length: want.length,
-                release,
-                releases: Vec::new(),
-                performer: None,
-                isrcs: Vec::new(),
-            },
+            found: found_of(want)?,
             want: want.id,
             queued: want.wanted,
             fetching: WantStanding::of(want).fetching(),
         })
     }
+}
+
+pub(crate) fn found_of(want: &Want) -> Option<Found> {
+    let recording = want.recording.clone()?;
+    let release = want.release.clone().map(|id| RecordingRelease {
+        id,
+        title: want.album_title.clone(),
+        date: None,
+        disc: Some(want.disc),
+        position: Some(want.position),
+        issued: Issued::default(),
+    });
+    Some(Found {
+        recording,
+        title: want.title.clone(),
+        artist: want.artist.clone().unwrap_or_default(),
+        length: want.length,
+        release,
+        releases: Vec::new(),
+        performer: None,
+        isrcs: Vec::new(),
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
