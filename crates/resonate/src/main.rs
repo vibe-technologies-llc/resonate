@@ -39,6 +39,7 @@ mod launcher;
 #[path = "window_launcher.rs"]
 mod launcher;
 mod listen;
+mod lossy;
 mod mcp;
 mod measuring;
 mod metered;

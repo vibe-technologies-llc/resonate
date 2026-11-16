@@ -65,6 +65,18 @@ paths:
   --refresh` follows every followed profile, then reads every playlist kept in step now; `playlist NAME --refresh`,
   `--upkeep once|in-step` and `--forget-link` act on one; the listing's FROM column says the service
   and how it follows.
+- **A playlist's lossy songs are listed and replaced from the terminal** (`lossy.rs`, the window's
+  *Replace lossy songs* sheet without its ticks, `library.md`'s *Replacing a lossy song*).
+  `playlist NAME --lossy` lists `Library::lossy_songs_of` as TITLE, ARTIST, FORMAT and STATUS
+  (replaced by the held copy's codec, wanted, no lossless copy held and no release to want, already
+  waiting) and says how many can be replaced now; `--replace-lossy` hands `Library::replace` every
+  song `Replaceable::can_be_ticked` (the window's default ticks), and says what it did in one line:
+  songs folded into a held copy, files moved to the trash (and any the trash would not take), songs
+  wanted, songs already waiting and songs left. **Songs wanted are fetched by the next `resonate
+  poll`**, as `import` and `playlist --refresh` leave theirs: the command starts no fetch. Neither
+  flag takes another mode flag or the transport's (`conflicts_with_all`), a playlist holding no lossy
+  song says so, and a name no playlist answers to is `NoSuchPlaylist` as everywhere. Nothing is
+  trashed unless a lossless copy is held (`a_lossy_song_with_neither_is_left_and_nothing_is_trashed`).
 - **`spotify` signs in to an app the listener registered and reads that account** (`spotify.rs`):
   bare, it prints the address to approve and waits (`online::signed_in_to_spotify`,
   `NoSpotifyClient` before anything is asked, the first interrupt `SpotifySignInCancelled`), keeping

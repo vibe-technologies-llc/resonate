@@ -575,7 +575,8 @@ pub enum PlaylistOrderArg {
         .multiple(true)
         .conflicts_with_all([
             "add", "export", "tidy", "fold", "drop", "into", "order", "by_hand", "query",
-            "rename", "discard", "pin", "unpin", "refresh", "upkeep", "forget_link"
+            "rename", "discard", "pin", "unpin", "refresh", "upkeep", "forget_link", "lossy",
+            "replace_lossy"
         ])
 ))]
 pub struct PlaylistArgs {
@@ -764,6 +765,27 @@ pub struct PlaylistArgs {
         help = words::grammar::playlist_args_forget_link()
     )]
     pub forget_link: bool,
+
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "add", "export", "tidy", "fold", "query", "order", "by_hand", "into", "matching",
+            "rename", "discard", "pin", "unpin", "refresh", "upkeep", "forget_link",
+            "replace_lossy"
+        ],
+        help = words::grammar::playlist_args_lossy()
+    )]
+    pub lossy: bool,
+
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "add", "export", "tidy", "fold", "query", "order", "by_hand", "into", "matching",
+            "rename", "discard", "pin", "unpin", "refresh", "upkeep", "forget_link", "lossy"
+        ],
+        help = words::grammar::playlist_args_replace_lossy()
+    )]
+    pub replace_lossy: bool,
 
     #[command(flatten)]
     pub transport: TransportArgs,

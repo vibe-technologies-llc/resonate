@@ -16,7 +16,7 @@ use crate::{
     cli::{Cli, PlaylistArgs, PlaylistOrderArg},
     config::Config,
     error::{Error, Result},
-    followed, open_library,
+    followed, lossy, open_library,
     playing::{Opening, play_queue},
     playlists,
     table::Table,
@@ -142,6 +142,12 @@ pub(crate) fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Res
     }
     if wanted.forget_link {
         return followed::forget_link(&library, &found);
+    }
+    if wanted.lossy {
+        return lossy::list(&library, &found);
+    }
+    if wanted.replace_lossy {
+        return lossy::replace(&library, &found);
     }
     if wanted.pin || wanted.unpin {
         library.pin_playlist(found.id, wanted.pin)?;
@@ -584,6 +590,36 @@ mod tests {
 
         drop(library);
         fs::remove_dir_all(&folder).expect("the scratch folder goes");
+    }
+
+    #[test]
+    fn the_lossy_flags_stand_alone_and_refuse_every_other_mode() {
+        let taken = |arguments: &[&str]| Cli::try_parse_from(arguments.iter().copied()).is_ok();
+
+        assert!(taken(&["resonate", "playlist", "Road", "--lossy"]));
+        assert!(taken(&["resonate", "playlist", "Road", "--replace-lossy"]));
+        assert!(!taken(&[
+            "resonate",
+            "playlist",
+            "Road",
+            "--lossy",
+            "--replace-lossy"
+        ]));
+        for other in [
+            &["--pin"][..],
+            &["--refresh"],
+            &["--tidy"],
+            &["--matching", "floyd"],
+            &["--shuffle"],
+            &["--volume", "25"],
+        ] {
+            for flag in ["--lossy", "--replace-lossy"] {
+                let mut arguments = vec!["resonate", "playlist", "Road", flag];
+                arguments.extend_from_slice(other);
+
+                assert!(!taken(&arguments), "{arguments:?} was taken");
+            }
+        }
     }
 
     fn playlist_transport_of(arguments: &[&str]) -> TransportArgs {

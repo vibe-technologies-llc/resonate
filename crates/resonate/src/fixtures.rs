@@ -15,6 +15,9 @@ const CHANNELS: u16 = 2;
 const BITS: u16 = 16;
 const RATE: u32 = 44_100;
 const UTF8: u8 = 3;
+const MP3_HEADER: [u8; 4] = [0xff, 0xfb, 0x90, 0x00];
+const MP3_FRAME_LENGTH: usize = 417;
+const MP3_FRAMES: usize = 40;
 
 static SCRATCH_FOLDERS: AtomicU64 = AtomicU64::new(0);
 
@@ -27,6 +30,19 @@ pub fn silent_wave(seconds_tenths: u32) -> Vec<u8> {
 }
 
 pub fn tagged_wave(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
+    wave_after(id3_tag(tags), 1)
+}
+
+pub fn tagged_mp3(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
+    let mut file = id3_tag(tags);
+    for _ in 0..MP3_FRAMES {
+        file.extend_from_slice(&MP3_HEADER);
+        file.resize(file.len() + MP3_FRAME_LENGTH - MP3_HEADER.len(), 0);
+    }
+    file
+}
+
+fn id3_tag(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
     let mut frames = Vec::new();
     for (id, value) in tags {
         let mut body = vec![UTF8];
@@ -40,7 +56,7 @@ pub fn tagged_wave(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
     let mut tag = b"ID3\x04\x00\x00".to_vec();
     tag.extend_from_slice(&synchsafe(frames.len() as u32));
     tag.extend_from_slice(&frames);
-    wave_after(tag, 1)
+    tag
 }
 
 fn synchsafe(value: u32) -> [u8; 4] {
