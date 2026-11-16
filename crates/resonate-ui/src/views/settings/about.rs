@@ -11,7 +11,7 @@ use crate::{
     views::{
         kit,
         root::RootView,
-        settings::{Armed, Group, Rows, action, reading, switch_row},
+        settings::{Armed, Group, Rows, SettingsPane, action, reading, switch_row},
     },
     words,
 };
@@ -65,7 +65,7 @@ impl RootView {
             move |this, _, cx| this.check_for_updates(!checks, cx),
             cx,
         ));
-        if let Some(newer) = self.settings_shown.newer.clone() {
+        if let Some(newer) = self.settings_pane.read(cx).shown.newer.clone() {
             let page = newer.page.clone();
             let version = newer.version.clone();
             rows = rows.child(kit::row(
@@ -104,12 +104,14 @@ impl RootView {
     pub(crate) fn check_for_updates(&mut self, checks: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.check_for_updates = checks);
         self.store(&Setting::Switched(Switch::CheckForUpdates, checks), cx);
-        if checks {
-            self.look_for_a_newer_release(cx);
-        } else {
-            self.settings_shown.looking_for_updates = Task::ready(());
-            self.settings_shown.newer = None;
-        }
+        self.settings_pane.update(cx, |pane, cx| {
+            if checks {
+                pane.look_for_a_newer_release(cx);
+            } else {
+                pane.shown.looking_for_updates = Task::ready(());
+                pane.shown.newer = None;
+            }
+        });
         cx.notify();
     }
 
@@ -122,53 +124,8 @@ impl RootView {
             global.update_dismissed = Some(version.to_owned());
         });
         self.store(&Setting::UpdateDismissed(version.to_owned()), cx);
-        self.settings_shown.newer = None;
-        cx.notify();
-    }
-
-    pub(crate) fn look_for_a_newer_release(&mut self, cx: &mut Context<Self>) {
-        let app = cx.global::<ResonateApp>();
-        let Some(updates) = app.updates.clone().filter(|_| app.check_for_updates) else {
-            self.settings_shown.looking_for_updates = Task::ready(());
-            return;
-        };
-
-        self.settings_shown.looking_for_updates = cx.spawn(async move |this, cx| {
-            loop {
-                let reaching = cx.update(|cx| cx.global::<ResonateApp>().online.enabled);
-                let asking = Arc::clone(&updates);
-                let newer = cx
-                    .background_executor()
-                    .spawn(async move { asking.newer(reaching) })
-                    .await;
-                if this
-                    .update(cx, |this, cx| this.heard_of_a_release(newer, cx))
-                    .is_err()
-                {
-                    return;
-                }
-                cx.background_executor().timer(LOOKED_AT_AGAIN_EVERY).await;
-            }
-        });
-    }
-
-    pub(crate) fn heard_of_a_release(&mut self, newer: Option<Newer>, cx: &mut Context<Self>) {
-        let app = cx.global::<ResonateApp>();
-        let dismissed = app.update_dismissed.clone();
-        let newer = newer
-            .filter(|_| app.check_for_updates)
-            .filter(|newer| dismissed.as_deref() != Some(newer.version.as_str()));
-        let told_already = newer == self.settings_shown.newer;
-        self.settings_shown.newer = newer;
-
-        if let Some(newer) = self.settings_shown.newer.as_ref().filter(|_| !told_already) {
-            toast::tell(
-                Notice::Noted(words::settings_about::newer_is_out_toast(
-                    newer.version.to_string(),
-                )),
-                cx,
-            );
-        }
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.newer = None);
         cx.notify();
     }
 
@@ -188,13 +145,13 @@ impl RootView {
     }
 
     pub(super) fn everything_group(&mut self, cx: &mut Context<Self>) -> Rows {
-        let armed = self.is_armed(&Armed::ResetEverything);
+        let armed = self.is_armed(&Armed::ResetEverything, cx);
 
         kit::rows().child(kit::row(
             words::settings_about::every_setting(),
             if armed {
                 words::settings_about::ask_again()
-            } else if self.settings_shown.reset_everything_landed {
+            } else if self.settings_pane.read(cx).shown.reset_everything_landed {
                 words::settings_about::put_back()
             } else {
                 words::settings_about::start_again()
@@ -222,8 +179,9 @@ impl RootView {
     }
 
     fn arm_the_reset(&mut self, cx: &mut Context<Self>) {
-        self.arm(Armed::ResetEverything);
-        self.settings_shown.reset_everything_landed = false;
+        self.arm(Armed::ResetEverything, cx);
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.reset_everything_landed = false);
         cx.notify();
     }
 
@@ -231,8 +189,57 @@ impl RootView {
         for group in Group::ALL {
             self.put_back(group, cx);
         }
-        self.lower(&Armed::ResetEverything);
-        self.settings_shown.reset_everything_landed = true;
+        self.lower(&Armed::ResetEverything, cx);
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.reset_everything_landed = true);
+        cx.notify();
+    }
+}
+
+impl SettingsPane {
+    pub(crate) fn look_for_a_newer_release(&mut self, cx: &mut Context<Self>) {
+        let app = cx.global::<ResonateApp>();
+        let Some(updates) = app.updates.clone().filter(|_| app.check_for_updates) else {
+            self.shown.looking_for_updates = Task::ready(());
+            return;
+        };
+
+        self.shown.looking_for_updates = cx.spawn(async move |this, cx| {
+            loop {
+                let reaching = cx.update(|cx| cx.global::<ResonateApp>().online.enabled);
+                let asking = Arc::clone(&updates);
+                let newer = cx
+                    .background_executor()
+                    .spawn(async move { asking.newer(reaching) })
+                    .await;
+                if this
+                    .update(cx, |this, cx| this.heard_of_a_release(newer, cx))
+                    .is_err()
+                {
+                    return;
+                }
+                cx.background_executor().timer(LOOKED_AT_AGAIN_EVERY).await;
+            }
+        });
+    }
+
+    fn heard_of_a_release(&mut self, newer: Option<Newer>, cx: &mut Context<Self>) {
+        let app = cx.global::<ResonateApp>();
+        let dismissed = app.update_dismissed.clone();
+        let newer = newer
+            .filter(|_| app.check_for_updates)
+            .filter(|newer| dismissed.as_deref() != Some(newer.version.as_str()));
+        let told_already = newer == self.shown.newer;
+        self.shown.newer = newer;
+
+        if let Some(newer) = self.shown.newer.as_ref().filter(|_| !told_already) {
+            toast::tell(
+                Notice::Noted(words::settings_about::newer_is_out_toast(
+                    newer.version.to_string(),
+                )),
+                cx,
+            );
+        }
         cx.notify();
     }
 }
@@ -279,9 +286,12 @@ mod tests {
 
     fn look(driven: &mut Driven) {
         let root = driven.root.clone();
-        driven
-            .cx
-            .update(|_, cx| root.update(cx, |root, cx| root.look_for_a_newer_release(cx)));
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.settings_pane
+                    .update(cx, |pane, cx| pane.look_for_a_newer_release(cx));
+            });
+        });
     }
 
     #[gpui::test]
@@ -292,7 +302,7 @@ mod tests {
         let mut driven = opened_with(cx, &released);
 
         look(&mut driven);
-        driven.until(|root, _| root.settings_shown.newer.is_some());
+        driven.until(|root, cx| root.settings_pane.read(cx).shown.newer.is_some());
         let told = driven.read(|_, cx| toast::showing_text(cx));
         assert_eq!(
             told.as_deref(),
@@ -307,7 +317,7 @@ mod tests {
         driven.click("dismiss-the-release");
         driven.settle();
 
-        assert!(driven.read(|root, _| root.settings_shown.newer.is_none()));
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).shown.newer.is_none()));
         assert_eq!(
             driven.read(|_, cx| cx.global::<ResonateApp>().update_dismissed.clone()),
             Some("99.0.0".to_owned())
@@ -315,7 +325,7 @@ mod tests {
         look(&mut driven);
         driven.until(|_, _| released.asked.load(Ordering::Relaxed) == 2);
         driven.settle();
-        assert!(driven.read(|root, _| root.settings_shown.newer.is_none()));
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).shown.newer.is_none()));
     }
 
     #[gpui::test]
@@ -324,7 +334,7 @@ mod tests {
         let mut driven = opened_with(cx, &released);
 
         look(&mut driven);
-        driven.until(|root, _| root.settings_shown.newer.is_some());
+        driven.until(|root, cx| root.settings_pane.read(cx).shown.newer.is_some());
         let root = driven.root.clone();
         driven
             .cx
@@ -332,7 +342,7 @@ mod tests {
         look(&mut driven);
         driven.settle();
 
-        assert!(driven.read(|root, _| root.settings_shown.newer.is_none()));
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).shown.newer.is_none()));
         assert!(!driven.read(|_, cx| cx.global::<ResonateApp>().check_for_updates));
         assert_eq!(released.asked.load(Ordering::Relaxed), 1);
     }

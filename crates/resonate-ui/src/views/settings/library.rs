@@ -161,34 +161,36 @@ impl RootView {
         let folder = spelt_out_from_home(&typed);
         let looked = folder.clone();
 
-        self.settings_shown.looking_at_the_typed_root =
-            cx.spawn_in(window, async move |this, cx| {
-                let there = cx
-                    .background_executor()
-                    .spawn(async move { looked.is_dir() })
-                    .await;
+        let looking_at_the_typed_root = cx.spawn_in(window, async move |this, cx| {
+            let there = cx
+                .background_executor()
+                .spawn(async move { looked.is_dir() })
+                .await;
 
-                let _ = this.update_in(cx, |this, window, cx| {
-                    if !there {
-                        this.report(
-                            Notice::Trouble(words::settings_library::folder_is_not_a_folder(
-                                resonate_core::path_text::shown(&folder),
-                            )),
-                            cx,
-                        );
-                        return;
-                    }
-                    this.settings_fields
-                        .read(cx)
-                        .root
-                        .clone()
-                        .update(cx, |typed, cx| typed.hold(String::new(), cx));
-                    this.library
-                        .update(cx, |library, cx| library.add_roots(vec![folder], cx));
-                    this.leave_typed_root(window, cx);
-                    cx.notify();
-                });
+            let _ = this.update_in(cx, |this, window, cx| {
+                if !there {
+                    this.report(
+                        Notice::Trouble(words::settings_library::folder_is_not_a_folder(
+                            resonate_core::path_text::shown(&folder),
+                        )),
+                        cx,
+                    );
+                    return;
+                }
+                this.settings_fields
+                    .read(cx)
+                    .root
+                    .clone()
+                    .update(cx, |typed, cx| typed.hold(String::new(), cx));
+                this.library
+                    .update(cx, |library, cx| library.add_roots(vec![folder], cx));
+                this.leave_typed_root(window, cx);
+                cx.notify();
             });
+        });
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.looking_at_the_typed_root = looking_at_the_typed_root;
+        });
     }
 
     fn folder(&self, root: &Path, primary: Option<&Path>, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -291,7 +293,7 @@ impl RootView {
     fn forget_root(&self, root: PathBuf, cx: &mut Context<Self>) -> Div {
         let id = (ElementId::Path(Arc::from(root.as_path())), "forget");
         let named = format!("forget-{}", resonate_core::path_text::shown(&root));
-        let asked = self.folder_armed() == Some(&root);
+        let asked = self.folder_armed(cx) == Some(&root);
 
         div()
             .flex()
@@ -325,8 +327,9 @@ impl RootView {
     }
 
     pub(crate) fn ask_to_forget_the_folder(&mut self, root: PathBuf, cx: &mut Context<Self>) {
-        if self.folder_armed() == Some(&root) {
-            self.settings_shown.armed = None;
+        if self.folder_armed(cx) == Some(&root) {
+            self.settings_pane
+                .update(cx, |pane, _| pane.shown.armed = None);
             let held = cx.global::<ResonateApp>().music_folder.clone();
             if held.is_some_and(|primary| primary.starts_with(&root)) {
                 self.forget_the_music_folder(cx);
@@ -334,8 +337,8 @@ impl RootView {
             self.library
                 .update(cx, |library, cx| library.forget_root(root, cx));
         } else {
-            self.lower_every_armed_press();
-            self.arm(Armed::ForgetTheFolder(root));
+            self.lower_every_armed_press(cx);
+            self.arm(Armed::ForgetTheFolder(root), cx);
         }
         cx.notify();
     }
@@ -750,7 +753,7 @@ impl RootView {
 
     pub(super) fn history_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let kept = cx.global::<ResonateApp>().history_kept;
-        let armed = self.history_armed();
+        let armed = self.history_armed(cx);
 
         kit::rows()
             .child(kit::field(
@@ -768,13 +771,14 @@ impl RootView {
 
     fn ask_to_keep_the_history(&mut self, kept: HistoryKept, cx: &mut Context<Self>) {
         let now = cx.global::<ResonateApp>().history_kept;
-        if forgets_listens(now, kept) && self.history_armed() != Some(kept) {
-            self.lower_every_armed_press();
-            self.arm(Armed::AgeTheHistory(kept));
+        if forgets_listens(now, kept) && self.history_armed(cx) != Some(kept) {
+            self.lower_every_armed_press(cx);
+            self.arm(Armed::AgeTheHistory(kept), cx);
             cx.notify();
             return;
         }
-        self.settings_shown.armed = None;
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.armed = None);
         self.keep_the_history(kept, cx);
         cx.notify();
     }
@@ -961,9 +965,9 @@ impl RootView {
         let moving = library.is_moving();
         let planned = library.previewed();
         let previewed = planned.is_shown();
-        let armed = self.is_armed(&Armed::MoveTheFiles) && previewed;
+        let armed = self.is_armed(&Armed::MoveTheFiles, cx) && previewed;
         let walks_back = library.walks_back();
-        let walking_back = self.is_armed(&Armed::WalkTheFilingBack) && walks_back;
+        let walking_back = self.is_armed(&Armed::WalkTheFilingBack, cx) && walks_back;
         let stopping = library.is_stopping_organise();
         let stats = library.organise_stats();
         let told = library
@@ -1106,11 +1110,11 @@ impl RootView {
             held_back,
             move |this, _, cx| {
                 if armed {
-                    this.lower(&Armed::WalkTheFilingBack);
+                    this.lower(&Armed::WalkTheFilingBack, cx);
                     this.library
                         .update(cx, |library, cx| library.walk_the_filing_back(cx));
                 } else {
-                    this.arm(Armed::WalkTheFilingBack);
+                    this.arm(Armed::WalkTheFilingBack, cx);
                 }
                 cx.notify();
             },
@@ -1120,12 +1124,12 @@ impl RootView {
     }
 
     fn arm_the_move(&mut self, cx: &mut Context<Self>) {
-        self.arm(Armed::MoveTheFiles);
+        self.arm(Armed::MoveTheFiles, cx);
         cx.notify();
     }
 
     fn file_them(&mut self, pass: Pass, cx: &mut Context<Self>) {
-        self.lower(&Armed::MoveTheFiles);
+        self.lower(&Armed::MoveTheFiles, cx);
         let typed = self
             .settings_fields
             .read(cx)
@@ -1214,9 +1218,9 @@ impl RootView {
         let writing = library.is_writing_tags();
         let planned = library.previewed_tags();
         let previewed = planned.is_shown();
-        let armed = self.is_armed(&Armed::WriteTheTags) && previewed;
+        let armed = self.is_armed(&Armed::WriteTheTags, cx) && previewed;
         let walks_back = library.tags_walk_back();
-        let walking_back = self.is_armed(&Armed::WalkTheTagsBack) && walks_back;
+        let walking_back = self.is_armed(&Armed::WalkTheTagsBack, cx) && walks_back;
         let stopping = library.is_stopping_retag();
         let stats = library.retag_stats();
         let told = library
@@ -1275,11 +1279,11 @@ impl RootView {
             held_back,
             move |this, _, cx| {
                 if armed {
-                    this.lower(&Armed::WalkTheTagsBack);
+                    this.lower(&Armed::WalkTheTagsBack, cx);
                     this.library
                         .update(cx, |library, cx| library.walk_the_tags_back(cx));
                 } else {
-                    this.arm(Armed::WalkTheTagsBack);
+                    this.arm(Armed::WalkTheTagsBack, cx);
                 }
                 cx.notify();
             },
@@ -1359,12 +1363,12 @@ impl RootView {
     }
 
     fn arm_the_write(&mut self, cx: &mut Context<Self>) {
-        self.arm(Armed::WriteTheTags);
+        self.arm(Armed::WriteTheTags, cx);
         cx.notify();
     }
 
     fn tag_them(&mut self, pass: Pass, cx: &mut Context<Self>) {
-        self.lower(&Armed::WriteTheTags);
+        self.lower(&Armed::WriteTheTags, cx);
         self.library
             .update(cx, |library, cx| library.retag(pass, cx));
         cx.notify();
@@ -1513,7 +1517,7 @@ impl RootView {
         let keeping = library.is_keeping();
         let planned = library.previewed_import();
         let previewed = planned.is_shown();
-        let armed = self.is_armed(&Armed::KeepTheTracks) && previewed;
+        let armed = self.is_armed(&Armed::KeepTheTracks, cx) && previewed;
         let stopping = library.is_stopping_import();
         let stats = library.import_stats();
         let told = library
@@ -1553,7 +1557,7 @@ impl RootView {
     }
 
     fn naming_a_vault(&self, cx: &mut Context<Self>) -> Rows {
-        let named = self.settings_shown.vault_named.clone();
+        let named = self.settings_pane.read(cx).shown.vault_named.clone();
 
         kit::rows()
             .child(match &named {
@@ -1588,12 +1592,13 @@ impl RootView {
         let made = cx
             .background_executor()
             .spawn(async move { Vault::make(&making).map(drop) });
-        self.settings_shown.making_the_vault = cx.spawn(async move |this, cx| {
+        let making_the_vault = cx.spawn(async move |this, cx| {
             let made = made.await;
             let _ = this.update(cx, |this, cx| match made {
                 Ok(()) => {
                     this.store(&Setting::Vault(folder.clone()), cx);
-                    this.settings_shown.vault_named = Some(folder);
+                    this.settings_pane
+                        .update(cx, |pane, _| pane.shown.vault_named = Some(folder));
                     cx.notify();
                 }
                 Err(error) => {
@@ -1605,6 +1610,8 @@ impl RootView {
                 }
             });
         });
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.making_the_vault = making_the_vault);
     }
 
     fn preview_the_import(
@@ -1678,12 +1685,12 @@ impl RootView {
     }
 
     fn arm_the_keep(&mut self, cx: &mut Context<Self>) {
-        self.arm(Armed::KeepTheTracks);
+        self.arm(Armed::KeepTheTracks, cx);
         cx.notify();
     }
 
     fn keep_them(&mut self, pass: Pass, cx: &mut Context<Self>) {
-        self.lower(&Armed::KeepTheTracks);
+        self.lower(&Armed::KeepTheTracks, cx);
         self.library
             .update(cx, |library, cx| library.import(pass, cx));
         cx.notify();

@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use gpui::{
-    Canvas, Context, Div, FontWeight, MouseButton, MouseDownEvent, Pixels, Role, SharedString,
+    App, Canvas, Context, Div, FontWeight, MouseButton, MouseDownEvent, Pixels, Role, SharedString,
     Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
 };
 use resonate_core::{Recording, elapsed};
@@ -16,6 +16,7 @@ use crate::{
         listing::Pictured,
         root::{RootView, framed_cover},
         scrollbar::Scrollbars,
+        settings::SettingsPane,
         spoken::Spoken,
     },
     words,
@@ -72,7 +73,7 @@ impl RemoteSong {
     }
 }
 
-impl RootView {
+impl SettingsPane {
     pub(super) fn watch_remote_playback(cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let mut watched: Vec<String> = Vec::new();
@@ -161,13 +162,18 @@ impl RootView {
         })
         .detach();
     }
+}
 
+impl RootView {
     pub(super) fn remote_playback(&self, window: &Window, cx: &mut Context<Self>) -> Option<Div> {
-        self.remotely.controls.opening();
-        if self.remotely.songs.is_empty() {
+        let remotely = &self.settings_pane.read(cx).remotely;
+        remotely.controls.opening();
+        if remotely.songs.is_empty() {
             return None;
         }
-        let floating = self.remote_floats(window);
+        let songs = remotely.songs.clone();
+        let collapsed = remotely.collapsed;
+        let floating = self.remote_floats(window, cx);
         let room = (window.viewport_size().height
             - px(theme::header_height() + theme::transport_height()))
             * 0.45;
@@ -180,7 +186,6 @@ impl RootView {
         } else {
             room
         };
-        let collapsed = self.remotely.collapsed;
         let label = if collapsed {
             words::remote::expand()
         } else {
@@ -202,24 +207,27 @@ impl RootView {
         .when(super::spoken::listening(), |heading| {
             heading.aria_expanded(!collapsed)
         });
-        self.remotely
-            .controls
-            .captioned_by_its_name("toggle-other-devices", &mut heading);
-        let handle = self.remotely.controls.at("toggle-other-devices", cx);
+        let controls = &self.settings_pane.read(cx).remotely.controls;
+        controls.captioned_by_its_name("toggle-other-devices", &mut heading);
+        let handle = controls.at("toggle-other-devices", cx);
         let heading = Self::ringed(
             &handle,
             heading,
             |this, _, cx| {
-                this.remotely.collapsed = !this.remotely.collapsed;
-                this.remotely.expanded_by_hand = !this.remotely.collapsed;
+                this.settings_pane.update(cx, |pane, _| {
+                    pane.remotely.collapsed = !pane.remotely.collapsed;
+                    pane.remotely.expanded_by_hand = !pane.remotely.collapsed;
+                });
                 cx.notify();
             },
             cx,
         )
         .on_mouse_down(
             MouseButton::Left,
-            cx.listener(|this, press: &MouseDownEvent, _, _| {
-                this.remotely.heading_pressed_at = Some(press.position);
+            cx.listener(|this, press: &MouseDownEvent, _, cx| {
+                this.settings_pane.update(cx, |pane, _| {
+                    pane.remotely.heading_pressed_at = Some(press.position);
+                });
             }),
         );
         Some(
@@ -231,9 +239,7 @@ impl RootView {
                 .py_1()
                 .child(heading)
                 .when(!collapsed, |panel| {
-                    let cards: Vec<_> = self
-                        .remotely
-                        .songs
+                    let cards: Vec<_> = songs
                         .iter()
                         .map(|song| self.remote_card(song, cx))
                         .collect();
@@ -282,10 +288,14 @@ impl RootView {
             .on_mouse_down_out(cx.listener(|_, press: &MouseDownEvent, window, cx| {
                 let at = press.position;
                 cx.defer_in(window, move |this, _, cx| {
-                    let on_the_heading = this.remotely.heading_pressed_at.take() == Some(at);
+                    let on_the_heading = this.settings_pane.update(cx, |pane, _| {
+                        pane.remotely.heading_pressed_at.take() == Some(at)
+                    });
                     if !on_the_heading {
-                        this.remotely.collapsed = true;
-                        this.remotely.expanded_by_hand = false;
+                        this.settings_pane.update(cx, |pane, _| {
+                            pane.remotely.collapsed = true;
+                            pane.remotely.expanded_by_hand = false;
+                        });
                         cx.notify();
                     }
                 });
@@ -293,8 +303,10 @@ impl RootView {
             .child(list)
     }
 
-    pub(super) fn remote_floats(&self, window: &Window) -> bool {
-        self.remotely
+    pub(super) fn remote_floats(&self, window: &Window, cx: &App) -> bool {
+        self.settings_pane
+            .read(cx)
+            .remotely
             .fits_from
             .is_some_and(|tall| window.viewport_size().height < tall)
     }
@@ -304,10 +316,10 @@ impl RootView {
         window: &Window,
         cx: &Context<Self>,
     ) -> Canvas<()> {
-        let open_in_flow = !self.remotely.collapsed
-            && !self.remotely.songs.is_empty()
-            && !self.remote_floats(window);
-        let by_hand = self.remotely.expanded_by_hand;
+        let remotely = &self.settings_pane.read(cx).remotely;
+        let open_in_flow =
+            !remotely.collapsed && !remotely.songs.is_empty() && !self.remote_floats(window, cx);
+        let by_hand = remotely.expanded_by_hand;
         let scroll = self.scrolls.sidebar.clone();
         let this = cx.entity().downgrade();
         canvas(
@@ -321,15 +333,20 @@ impl RootView {
                     let fits_from = window.viewport_size().height + overflow;
                     cx.defer(move |cx| {
                         let _ = this.update(cx, |this, cx| {
-                            this.remotely.fits_from = Some(fits_from);
-                            this.remotely.collapsed = !this.remotely.expanded_by_hand;
-                            this.remotely.expanded_by_hand = false;
+                            this.settings_pane.update(cx, |pane, _| {
+                                pane.remotely.fits_from = Some(fits_from);
+                                pane.remotely.collapsed = !pane.remotely.expanded_by_hand;
+                                pane.remotely.expanded_by_hand = false;
+                            });
                             cx.notify();
                         });
                     });
                 } else if by_hand {
                     cx.defer(move |cx| {
-                        let _ = this.update(cx, |this, _| this.remotely.expanded_by_hand = false);
+                        let _ = this.update(cx, |this, cx| {
+                            this.settings_pane
+                                .update(cx, |pane, _| pane.remotely.expanded_by_hand = false);
+                        });
                     });
                 }
             },
@@ -439,9 +456,11 @@ impl RootView {
             } else {
                 kit::icon_button(SharedString::from(named.clone()), icon, saying)
             };
-            let handle = self.remotely.controls.at(&named, cx);
+            let handle = self.settings_pane.read(cx).remotely.controls.at(&named, cx);
             let mut button = button;
-            self.remotely
+            self.settings_pane
+                .read(cx)
+                .remotely
                 .controls
                 .captioned_by_its_name(&named, &mut button);
             let device = device.id.clone();
@@ -563,14 +582,15 @@ pub(crate) mod tests {
 
     fn playing_elsewhere(driven: &mut Driven, songs: Vec<RemoteSong>) {
         driven.root.update(&mut driven.cx, |root, cx| {
-            root.remotely.songs = songs;
+            root.settings_pane
+                .update(cx, |pane, _| pane.remotely.songs = songs);
             cx.notify();
         });
         driven.settle();
     }
 
     fn folded(driven: &mut Driven) -> bool {
-        driven.read(|root, _| root.remotely.collapsed)
+        driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed)
     }
 
     #[gpui::test]
@@ -608,21 +628,28 @@ pub(crate) mod tests {
     fn other_devices_can_be_collapsed_and_expanded(cx: &mut gpui::TestAppContext) {
         let mut driven = Driven::open(cx, Arc::new(Library::open_in_memory().expect("a catalog")));
         driven.root.update(&mut driven.cx, |root, cx| {
-            root.remotely.songs = vec![song()];
+            root.settings_pane
+                .update(cx, |pane, _| pane.remotely.songs = vec![song()]);
             cx.notify();
         });
         driven.settle();
         assert!(driven.cx.debug_bounds("remote-devices").is_some());
 
         driven.click("toggle-other-devices");
-        assert!(driven.read(|root, _| root.remotely.collapsed));
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         assert!(driven.cx.debug_bounds("remote-devices").is_none());
 
-        let handle = driven.read(|root, cx| root.remotely.controls.at("toggle-other-devices", cx));
+        let handle = driven.read(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .remotely
+                .controls
+                .at("toggle-other-devices", cx)
+        });
         driven.cx.update(|window, cx| handle.focus(window, cx));
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
-        assert!(!driven.read(|root, _| root.remotely.collapsed));
+        assert!(!driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         assert!(driven.cx.debug_bounds("remote-devices").is_some());
     }
 
@@ -632,11 +659,12 @@ pub(crate) mod tests {
     ) {
         let mut driven = Driven::open(cx, Arc::new(Library::open_in_memory().expect("a catalog")));
         driven.root.update(&mut driven.cx, |root, cx| {
-            root.remotely.songs = vec![song()];
+            root.settings_pane
+                .update(cx, |pane, _| pane.remotely.songs = vec![song()]);
             cx.notify();
         });
         driven.settle();
-        assert!(!driven.read(|root, _| root.remotely.collapsed));
+        assert!(!driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         let available = driven.read(|root, _| root.scrolls.sidebar.bounds().size.height);
         driven.click("toggle-other-devices");
         let categories = driven.read(|root, _| root.scrolls.sidebar.bounds().size.height);
@@ -657,7 +685,7 @@ pub(crate) mod tests {
             .simulate_resize(gpui::size(px(crate::driven::WIDE), px(height)));
         driven.settle();
 
-        assert!(driven.read(|root, _| root.remotely.collapsed));
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         assert!(driven.cx.debug_bounds("remote-devices").is_none());
         assert_eq!(
             driven.read(|root, _| root.scrolls.sidebar.max_offset().y),
@@ -669,7 +697,7 @@ pub(crate) mod tests {
         driven.settle();
         driven.settle();
 
-        assert!(!driven.read(|root, _| root.remotely.collapsed));
+        assert!(!driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         assert!(driven.cx.debug_bounds("remote-devices-floating").is_some());
         assert!(
             driven.bounds_of("remote-devices-floating").bottom()
@@ -683,15 +711,15 @@ pub(crate) mod tests {
         driven.click("tab-settings");
         driven.settle();
 
-        assert!(driven.read(|root, _| root.remotely.collapsed));
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         assert!(driven.cx.debug_bounds("remote-devices").is_none());
 
         driven.click("toggle-other-devices");
         driven.settle();
-        assert!(!driven.read(|root, _| root.remotely.collapsed));
+        assert!(!driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         driven.click("toggle-other-devices");
         driven.settle();
-        assert!(driven.read(|root, _| root.remotely.collapsed));
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
 
         driven
             .cx
@@ -701,7 +729,7 @@ pub(crate) mod tests {
         driven.settle();
         driven.settle();
 
-        assert!(!driven.read(|root, _| root.remotely.collapsed));
+        assert!(!driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         assert!(driven.cx.debug_bounds("remote-devices").is_some());
         assert!(driven.cx.debug_bounds("remote-devices-floating").is_none());
     }

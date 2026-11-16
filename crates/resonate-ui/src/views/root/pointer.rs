@@ -25,10 +25,18 @@ use crate::{
 
 impl RootView {
     pub(super) fn let_the_control_go(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.disarm();
-        let let_go = self.controls.lets_go(window, cx)
-            | self.standing_controls.lets_go(window, cx)
-            | self.remotely.controls.lets_go(window, cx);
+        self.disarm(cx);
+        let let_go = self.controls.lets_go(window, cx) | self.standing_controls.lets_go(window, cx);
+        let remotely_held = self
+            .settings_pane
+            .read(cx)
+            .remotely
+            .controls
+            .holds_the_caret(window);
+        if remotely_held {
+            window.blur(cx);
+        }
+        let let_go = let_go | remotely_held;
         if let_go {
             cx.notify();
         }
@@ -36,10 +44,11 @@ impl RootView {
 
     pub(super) fn laid_out(&self, cx: &App) -> u64 {
         let library = self.library.read(cx);
+        let shown = &self.settings_pane.read(cx).shown;
         let mut stamp = AHasher::default();
         self.pane.hash(&mut stamp);
-        self.settings_shown.category.hash(&mut stamp);
-        self.settings_shown.page.hash(&mut stamp);
+        shown.category.hash(&mut stamp);
+        shown.page.hash(&mut stamp);
         self.player.read(cx).queued().revision.hash(&mut stamp);
         library.albums().identity().hash(&mut stamp);
         library.artists().identity().hash(&mut stamp);
@@ -67,7 +76,7 @@ impl RootView {
         moved
     }
 
-    pub(crate) fn focused_control_named(&self, window: &Window) -> Option<SharedString> {
+    pub(crate) fn focused_control_named(&self, window: &Window, cx: &App) -> Option<SharedString> {
         if !window.last_input_was_keyboard() {
             return None;
         }
@@ -75,7 +84,13 @@ impl RootView {
         self.controls
             .caption_of_the_focused(window)
             .or_else(|| self.standing_controls.caption_of_the_focused(window))
-            .or_else(|| self.remotely.controls.caption_of_the_focused(window))
+            .or_else(|| {
+                self.settings_pane
+                    .read(cx)
+                    .remotely
+                    .controls
+                    .caption_of_the_focused(window)
+            })
     }
 
     pub(super) fn hints_are_wanted(&self, cx: &App) -> bool {

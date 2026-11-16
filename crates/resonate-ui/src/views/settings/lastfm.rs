@@ -239,16 +239,18 @@ impl RootView {
             );
             return;
         };
-        if self.accounts.lastfm.asking {
+        if self.settings_pane.read(cx).accounts.lastfm.asking {
             return;
         }
 
         self.keep_the_typed_application(cx);
         let stopped = Arc::new(AtomicBool::new(false));
-        self.accounts.lastfm.stopped = Arc::clone(&stopped);
-        self.accounts.lastfm.asking = true;
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.lastfm.stopped = Arc::clone(&stopped);
+            pane.accounts.lastfm.asking = true;
+        });
         cx.notify();
-        self.accounts.lastfm.task = Some(cx.spawn(async move |this, cx| {
+        let task = Some(cx.spawn(async move |this, cx| {
             let asked_for = cx
                 .background_executor()
                 .spawn(async move { scrobblers.lastfm_approval(&asked) })
@@ -263,7 +265,9 @@ impl RootView {
             };
             let address = approval.address().to_owned();
             let shown = this.update(cx, |this, cx| {
-                this.accounts.lastfm.waiting = Some(address.clone());
+                this.settings_pane.update(cx, |pane, _| {
+                    pane.accounts.lastfm.waiting = Some(address.clone());
+                });
                 cx.open_url(&address);
                 cx.notify();
             });
@@ -277,13 +281,22 @@ impl RootView {
             let told = this.update(cx, |this, cx| this.lastfm_signed_in(answered, cx));
             let _ = told;
         }));
+        self.settings_pane
+            .update(cx, |pane, _| pane.accounts.lastfm.task = task);
     }
 
     fn stop_signing_in_to_lastfm(&mut self, cx: &mut Context<Self>) {
-        self.accounts.lastfm.stopped.store(true, Ordering::SeqCst);
-        self.accounts.lastfm.asking = false;
-        self.accounts.lastfm.waiting = None;
-        self.accounts.lastfm.task = None;
+        self.settings_pane
+            .read(cx)
+            .accounts
+            .lastfm
+            .stopped
+            .store(true, Ordering::SeqCst);
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.lastfm.asking = false;
+            pane.accounts.lastfm.waiting = None;
+            pane.accounts.lastfm.task = None;
+        });
         cx.notify();
     }
 
@@ -292,8 +305,10 @@ impl RootView {
         answered: resonate_library::Result<Option<LastfmSession>>,
         cx: &mut Context<Self>,
     ) {
-        self.accounts.lastfm.asking = false;
-        self.accounts.lastfm.waiting = None;
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.lastfm.asking = false;
+            pane.accounts.lastfm.waiting = None;
+        });
         let notice = match answered {
             Ok(Some(LastfmSession { name, key })) => {
                 cx.update_global::<ResonateApp, _>(|global, _| {
@@ -302,7 +317,15 @@ impl RootView {
                 self.store(&Setting::LastfmSession(key), cx);
                 Notice::Done(words::settings_lastfm::signed_in_as(&name))
             }
-            Ok(None) if self.accounts.lastfm.stopped.load(Ordering::SeqCst) => {
+            Ok(None)
+                if self
+                    .settings_pane
+                    .read(cx)
+                    .accounts
+                    .lastfm
+                    .stopped
+                    .load(Ordering::SeqCst) =>
+            {
                 cx.notify();
                 return;
             }
@@ -335,7 +358,7 @@ impl RootView {
         let app = cx.global::<ResonateApp>();
         let signed_in = !app.online.lastfm_session.trim().is_empty();
         let reachable = app.scrobblers.is_some() && app.online.enabled;
-        let asking = self.accounts.lastfm.asking;
+        let asking = self.settings_pane.read(cx).accounts.lastfm.asking;
 
         let mut body = kit::rows();
         for account in LastfmAccount::ALL {
@@ -363,7 +386,7 @@ impl RootView {
                 )))
                 .note(words::settings_lastfm::signed_in_note());
         }
-        if let Some(address) = self.accounts.lastfm.waiting.clone() {
+        if let Some(address) = self.settings_pane.read(cx).accounts.lastfm.waiting.clone() {
             return body
                 .child(
                     kit::action_row()

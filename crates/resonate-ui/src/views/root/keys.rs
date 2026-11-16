@@ -360,11 +360,12 @@ impl RootView {
             return;
         };
         if token.is_empty() {
-            self.accounts._token_checked = Task::ready(());
+            self.settings_pane
+                .update(cx, |pane, _| pane.accounts._token_checked = Task::ready(()));
             return;
         }
 
-        self.accounts._token_checked = cx.spawn(async move |this, cx| {
+        let token_checked = cx.spawn(async move |this, cx| {
             let held = cx
                 .background_executor()
                 .spawn(async move { scrobblers.under(token).token_held() })
@@ -372,6 +373,8 @@ impl RootView {
             let outcome = this.update(cx, |this, cx| this.report(token_notice(held), cx));
             let _ = outcome;
         });
+        self.settings_pane
+            .update(cx, |pane, _| pane.accounts._token_checked = token_checked);
     }
 
     pub(crate) fn leave_listenbrainz_token(&mut self, window: &mut Window, cx: &mut Context<Self>) {

@@ -23,7 +23,6 @@ mod wayback;
 
 use std::{
     cell::{Cell, RefCell},
-    path::PathBuf,
     rc::Rc,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -74,7 +73,7 @@ use crate::{
         announcing,
         browser::{ArtistShows, OpenedRecord},
         chrome,
-        dropping::{FolderStanding, Incoming, TakingIn},
+        dropping::{Incoming, TakingIn},
         field::{self, Field},
         focus::Controls,
         hint::{self},
@@ -92,11 +91,7 @@ use crate::{
         replacing::ReplacingSheet,
         search::SearchShows,
         served::ServicesPane,
-        settings::{
-            Armed, Category, CheckingYoutubeMusic, Fitting, HeldBand, LastfmSigning, Page, Plotted,
-            QuickConnecting, SettingsFields, SigningIn, SigningInToYoutubeMusic, SpotifyState,
-            Tending,
-        },
+        settings::{HeldBand, Plotted, SettingsFields, SettingsPane},
         sharing,
         sheets::{self},
         slider::{Grab, Rail},
@@ -556,30 +551,6 @@ pub(crate) struct Rooms {
     pub(crate) reached_unseen: Rc<Cell<bool>>,
 }
 
-pub(crate) struct Remotely {
-    pub(super) songs: Vec<super::remote::RemoteSong>,
-    pub(crate) collapsed: bool,
-    pub(crate) fits_from: Option<Pixels>,
-    pub(crate) expanded_by_hand: bool,
-    pub(crate) heading_pressed_at: Option<Point<Pixels>>,
-    pub(crate) controls: Controls,
-    pub(crate) driving: Option<(String, String)>,
-    pub(crate) driving_redraws: super::pulse::Pulse,
-    pub(crate) mirror_redraws: super::pulse::Pulse,
-    pub(crate) driving_rails: std::collections::BTreeMap<u32, crate::views::slider::Rail>,
-    pub(crate) driving_rows: usize,
-}
-
-pub(crate) struct Accounts {
-    pub(crate) spotify: SpotifyState,
-    pub(crate) youtube_music_check: CheckingYoutubeMusic,
-    pub(crate) youtube_music_sign_in: SigningInToYoutubeMusic,
-    pub(crate) jellyfin_quick: QuickConnecting,
-    pub(crate) signing_in: SigningIn,
-    pub(crate) lastfm: LastfmSigning,
-    pub(crate) _token_checked: Task<()>,
-}
-
 pub(crate) struct Rails {
     pub(crate) seek: Rail,
     pub(crate) seek_pointed: Option<f32>,
@@ -631,35 +602,6 @@ pub(crate) struct Typed {
     pub(crate) search: Entity<Field>,
 }
 
-pub(crate) struct SettingsShown {
-    pub(crate) category: Category,
-    pub(crate) page: Option<Page>,
-    pub(crate) music_folder_standing: FolderStanding,
-    pub(crate) looking_at_the_music_folder: Task<()>,
-    pub(crate) reading_the_room: Task<()>,
-    pub(crate) looking_at_the_room: Task<()>,
-    pub(crate) room_shape: Option<(std::path::PathBuf, bool)>,
-    pub(crate) audition: Option<crate::views::settings::ListeningTest>,
-    pub(crate) test_setup: crate::views::settings::Setup,
-    pub(crate) fitting_the_preamp: Fitting,
-    pub(crate) making_the_vault: Task<()>,
-    pub(crate) tending: Tending,
-    pub(crate) looking_at_the_typed_root: Task<()>,
-    pub(crate) armed: Option<Armed>,
-    pub(crate) code_regenerated: bool,
-    pub(crate) pairing_shown: bool,
-    pub(crate) own_server_asked: bool,
-    pub(crate) reset_everything_landed: bool,
-    pub(crate) vault_named: Option<PathBuf>,
-    pub(crate) newer: Option<crate::Newer>,
-    pub(crate) looking_for_updates: Task<()>,
-    pub(crate) trying: Option<(resonate_engine::NodeName, Task<()>)>,
-    pub(crate) heard: Option<(
-        resonate_engine::NodeName,
-        Result<resonate_engine::Learning, resonate_engine::Unlearnt>,
-    )>,
-}
-
 pub(crate) struct Social {
     pub(crate) wrapped: Option<wrapped::Deck>,
     pub(crate) reading_wrapped: Option<Task<()>>,
@@ -702,6 +644,7 @@ pub struct RootView {
     pub(crate) suggestions: Entity<SuggestionsPane>,
     pub(crate) services: Entity<ServicesPane>,
     pub(crate) settings_fields: Entity<SettingsFields>,
+    pub(crate) settings_pane: Entity<SettingsPane>,
     pub(crate) listening_open: bool,
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,
@@ -754,14 +697,11 @@ pub struct RootView {
     pub(crate) parts: Parts,
     pub(crate) scrolls: Scrolls,
     pub(crate) rooms: Rooms,
-    pub(crate) remotely: Remotely,
-    pub(crate) accounts: Accounts,
     pub(crate) rails: Rails,
     pub(crate) orders: Orders,
     pub(crate) remembered: Remembered,
     pub(crate) dropped: Dropped,
     pub(crate) typed: Typed,
-    pub(crate) settings_shown: SettingsShown,
     pub(crate) social: Social,
     pub(crate) shows: Shows,
     pub(crate) typing: TypedAhead,
@@ -1063,7 +1003,7 @@ impl Render for RootView {
                 toast::drawn(self.typing.ahead.typed().is_some(), window, cx),
                 ParentElement::child,
             )
-            .when_some(self.focused_control_named(window), |app, name| {
+            .when_some(self.focused_control_named(window, cx), |app, name| {
                 app.child(hint::caption(name))
             })
             .when_some(self.type_ahead_pill(), ParentElement::child)

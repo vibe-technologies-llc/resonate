@@ -266,7 +266,7 @@ impl RootView {
                     || here == self.menu_focus
                     || self.controls.owns(&here)
                     || self.standing_controls.owns(&here)
-                    || self.remotely.controls.owns(&here)
+                    || self.settings_pane.read(cx).remotely.controls.owns(&here)
                     || self.sheet_panels.owns(&here)
             }
         }

@@ -151,11 +151,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   and `basic-toml` (uniffi's askama)
 
 ## Later: Structure
-- [L] The party, inspector, services, queue, lyrics, analysis, missing, statistics and
-  suggestions panes and the settings pane's fields are entities owning their state and
-  subscriptions (`ui.md`), but `RootView` (76 fields, 122 more in its groups) still carries the
-  settings pane's own state (`SettingsShown`, `Accounts`, `Remotely`) and the browse panes'
-  scrolls, orders and reach, with `RootView::new` some 470 lines making 26 subscriptions;
+- [L] The party, inspector, services, queue, lyrics, analysis, missing, statistics, suggestions
+  and settings panes (the settings' fields and its own state) are entities owning their state and
+  subscriptions (`ui.md`), but `RootView` (74 fields, 81 more in its groups) still carries the
+  browse panes' scrolls, orders and reach, with `RootView::new` some 420 lines making 27
+  subscriptions;
   `LibraryModel` (46) still holds the browse panes' catalog state (`Shelf`, `Detail`, …). Each
   wants a driven test pinning it before it moves, as the panes moved so far got, and a pane's
   drawing stays on the root while its controls live in the root's focus ring

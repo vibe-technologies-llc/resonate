@@ -285,37 +285,52 @@ impl RootView {
     pub(crate) fn music_folder_is_there(&mut self, cx: &mut Context<Self>) -> Option<bool> {
         let folder = cx.global::<ResonateApp>().music_folder.clone()?;
         if self
-            .settings_shown
+            .settings_pane
+            .read(cx)
+            .shown
             .music_folder_standing
             .is_due_for(&folder)
         {
             self.look_at_the_music_folder(folder.clone(), cx);
         }
-        self.settings_shown.music_folder_standing.of(&folder)
+        self.settings_pane
+            .read(cx)
+            .shown
+            .music_folder_standing
+            .of(&folder)
     }
 
     fn look_at_the_music_folder(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
-        self.settings_shown.music_folder_standing.looking = true;
-        self.settings_shown.looking_at_the_music_folder = cx.spawn(async move |this, cx| {
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.music_folder_standing.looking = true;
+        });
+        let looking_at_the_music_folder = cx.spawn(async move |this, cx| {
             let looked = folder.clone();
             let there = cx
                 .background_executor()
                 .spawn(async move { looked.is_dir() })
                 .await;
             let _ = this.update(cx, |this, cx| {
-                let moved = this.settings_shown.music_folder_standing.of(&folder) != Some(there);
-                this.settings_shown.music_folder_standing = FolderStanding {
-                    seen: Some(Seen {
-                        folder,
-                        there,
-                        at: Instant::now(),
-                    }),
-                    looking: false,
-                };
+                let moved = this.settings_pane.update(cx, |pane, _| {
+                    let standing = &mut pane.shown.music_folder_standing;
+                    let moved = standing.of(&folder) != Some(there);
+                    *standing = FolderStanding {
+                        seen: Some(Seen {
+                            folder,
+                            there,
+                            at: Instant::now(),
+                        }),
+                        looking: false,
+                    };
+                    moved
+                });
                 if moved {
                     cx.notify();
                 }
             });
+        });
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.looking_at_the_music_folder = looking_at_the_music_folder;
         });
     }
 

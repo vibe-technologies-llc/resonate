@@ -1305,7 +1305,9 @@ mod tests {
     fn other_devices_make_way_for_the_services_row_as_for_every_category(cx: &mut TestAppContext) {
         let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
         driven.root.update(&mut driven.cx, |root, cx| {
-            root.remotely.songs = vec![remote::tests::song()];
+            root.settings_pane.update(cx, |pane, _| {
+                pane.remotely.songs = vec![remote::tests::song()];
+            });
             cx.notify();
         });
         driven.settle();
@@ -1331,7 +1333,7 @@ mod tests {
         ));
         driven.settle();
 
-        assert!(driven.read(|root, _| root.remotely.collapsed));
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         assert_eq!(
             driven.read(|root, _| root.scrolls.sidebar.max_offset().y),
             px(0.0)

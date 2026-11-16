@@ -1215,7 +1215,7 @@ mod tests {
         assert!(!driven.read(|root, _| root.listening_open));
         assert_eq!(driven.read(|root, _| root.pane), Pane::Settings);
         assert_eq!(
-            driven.read(|root, _| root.settings_shown.category),
+            driven.read(|root, cx| root.settings_pane.read(cx).shown.category),
             SettingsCategory::Online
         );
     }

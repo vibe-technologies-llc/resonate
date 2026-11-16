@@ -13,8 +13,8 @@ use resonate_engine::Command;
 use resonate_library::{Direction, RowOrder, SortOrder, is_a_followed_link};
 
 use super::{
-    Accounts, Arrangement, Dropped, Orders, Pane, Rails, Remembered, Remotely, Rooms, RootView,
-    Scrolls, SettingsShown, Shows, Social, Typed, TypedAhead, WINDOW_SIZE_SETTLE,
+    Arrangement, Dropped, Orders, Pane, Rails, Remembered, Rooms, RootView, Scrolls, Shows, Social,
+    Typed, TypedAhead, WINDOW_SIZE_SETTLE,
 };
 use crate::{
     EqualiserModel, LibraryModel, LyricsModel, ResonateApp, Setting, WindowSize,
@@ -30,7 +30,6 @@ use crate::{
     views::{
         announcing,
         browser::ArtistShows,
-        dropping::FolderStanding,
         field::{Caught, Field, Submitted},
         focus::Controls,
         inspector::InspectorPane,
@@ -40,14 +39,10 @@ use crate::{
         part::Parts,
         party::PartyPane,
         playlists::PlaylistsDrawn,
-        pulse::Pulse,
         queue::{NamesRead, PutInOrder, QueuePane},
         search::SearchShows,
         served::ServicesPane,
-        settings::{
-            Category, CheckingYoutubeMusic, Entered, Fitting, LastfmSigning, Left, QuickConnecting,
-            SettingsFields, SigningIn, SigningInToYoutubeMusic, SpotifyState, Tending,
-        },
+        settings::{Category, Entered, Left, SettingsFields, SettingsPane},
         sheets::{self},
         slider::Rail,
         statistics::StatisticsPane,
@@ -251,6 +246,9 @@ impl RootView {
         )
         .detach();
 
+        let settings_pane = cx.new(|cx| SettingsPane::new(settings_category, cx));
+        cx.observe(&settings_pane, |_, _, cx| cx.notify()).detach();
+
         let (typed_words, typed_isrc) = matching::matching_fields(window, cx);
 
         let server = cx.new(ServerModel::new);
@@ -288,9 +286,7 @@ impl RootView {
         })
         .detach();
 
-        Self::watch_remote_playback(cx);
-
-        let mut view = Self {
+        let view = Self {
             player,
             library,
             lyrics,
@@ -305,6 +301,7 @@ impl RootView {
             suggestions,
             services,
             settings_fields,
+            settings_pane,
             listening_open: false,
             downloads_open: false,
             downloads_pressed_off: None,
@@ -387,28 +384,6 @@ impl RootView {
                 columns_fit: listing::Fitting::default(),
                 reached_unseen: Rc::default(),
             },
-            remotely: Remotely {
-                songs: Vec::new(),
-                collapsed: false,
-                fits_from: None,
-                expanded_by_hand: false,
-                heading_pressed_at: None,
-                controls: Controls::default(),
-                driving: None,
-                driving_redraws: Pulse::default(),
-                mirror_redraws: Pulse::default(),
-                driving_rails: std::collections::BTreeMap::new(),
-                driving_rows: crate::views::settings::sync::DRIVEN_ROWS_AT_FIRST,
-            },
-            accounts: Accounts {
-                spotify: SpotifyState::default(),
-                youtube_music_check: CheckingYoutubeMusic::default(),
-                youtube_music_sign_in: SigningInToYoutubeMusic::default(),
-                jellyfin_quick: QuickConnecting::default(),
-                signing_in: SigningIn::default(),
-                lastfm: LastfmSigning::default(),
-                _token_checked: Task::ready(()),
-            },
             rails: Rails {
                 seek: Rail::default(),
                 seek_pointed: None,
@@ -455,31 +430,6 @@ impl RootView {
                 zone_name,
                 search,
             },
-            settings_shown: SettingsShown {
-                category: settings_category,
-                page: None,
-                music_folder_standing: FolderStanding::default(),
-                looking_at_the_music_folder: Task::ready(()),
-                reading_the_room: Task::ready(()),
-                looking_at_the_room: Task::ready(()),
-                room_shape: None,
-                audition: None,
-                test_setup: crate::views::settings::Setup::default(),
-                fitting_the_preamp: Fitting::idle(),
-                making_the_vault: Task::ready(()),
-                tending: Tending::default(),
-                looking_at_the_typed_root: Task::ready(()),
-                armed: None,
-                code_regenerated: false,
-                pairing_shown: false,
-                own_server_asked: false,
-                reset_everything_landed: false,
-                vault_named: None,
-                newer: None,
-                looking_for_updates: Task::ready(()),
-                trying: None,
-                heard: None,
-            },
             social: Social {
                 wrapped: None,
                 reading_wrapped: None,
@@ -522,7 +472,6 @@ impl RootView {
         .detach();
         cx.on_release(|this, _| this.keep_the_volume_as_the_window_leaves())
             .detach();
-        view.look_for_a_newer_release(cx);
         let opened_on_statistics = view.pane == Pane::Statistics;
         view.library.update(cx, |library, cx| {
             library.statistics_shown(opened_on_statistics, cx);

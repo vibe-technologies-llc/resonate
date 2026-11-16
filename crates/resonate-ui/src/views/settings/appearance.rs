@@ -830,11 +830,12 @@ impl RootView {
 
     pub(crate) fn remember_current_settings_category(&mut self, cx: &mut Context<Self>) {
         if !self.remembered.settings_category
-            || cx.global::<ResonateApp>().last_settings_category == self.settings_shown.category
+            || cx.global::<ResonateApp>().last_settings_category
+                == self.settings_pane.read(cx).shown.category
         {
             return;
         }
-        let category = self.settings_shown.category;
+        let category = self.settings_pane.read(cx).shown.category;
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.last_settings_category = category;
         });

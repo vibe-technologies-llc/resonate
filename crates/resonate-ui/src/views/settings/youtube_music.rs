@@ -287,20 +287,26 @@ impl RootView {
         };
         let online = app.online.clone();
 
-        self.accounts.youtube_music_check.asking = true;
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.youtube_music_check.asking = true;
+        });
         cx.notify();
-        self.accounts.youtube_music_check.task = cx.spawn(async move |this, cx| {
+        let task = cx.spawn(async move |this, cx| {
             let answered = cx
                 .background_executor()
                 .spawn(async move { checks(&online) })
                 .await;
             let told = this.update(cx, |this, cx| {
-                this.accounts.youtube_music_check.asking = false;
+                this.settings_pane.update(cx, |pane, _| {
+                    pane.accounts.youtube_music_check.asking = false;
+                });
                 this.report(notice_of(answered), cx);
                 cx.notify();
             });
             let _ = told;
         });
+        self.settings_pane
+            .update(cx, |pane, _| pane.accounts.youtube_music_check.task = task);
     }
 
     fn hold_the_youtube_music_cookies(&mut self, cookies: String, cx: &mut Context<Self>) {
@@ -320,15 +326,19 @@ impl RootView {
             return;
         };
 
-        self.accounts.youtube_music_sign_in.asking = true;
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.youtube_music_sign_in.asking = true;
+        });
         cx.notify();
-        self.accounts.youtube_music_sign_in.task = cx.spawn(async move |this, cx| {
+        let task = cx.spawn(async move |this, cx| {
             let answered = cx
                 .background_executor()
                 .spawn(async move { signs_in.sign_in() })
                 .await;
             let told = this.update(cx, |this, cx| {
-                this.accounts.youtube_music_sign_in.asking = false;
+                this.settings_pane.update(cx, |pane, _| {
+                    pane.accounts.youtube_music_sign_in.asking = false;
+                });
                 this.report(notice_of_the_sign_in(&answered), cx);
                 if let YoutubeMusicSignIn::SignedIn { cookies } = answered {
                     this.hold_the_youtube_music_cookies(cookies, cx);
@@ -338,6 +348,9 @@ impl RootView {
             });
             let _ = told;
         });
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.youtube_music_sign_in.task = task;
+        });
     }
 
     fn sign_out_of_youtube_music(&mut self, cx: &mut Context<Self>) {
@@ -345,9 +358,11 @@ impl RootView {
             return;
         };
 
-        self.accounts.youtube_music_sign_in.asking = true;
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.youtube_music_sign_in.asking = true;
+        });
         cx.notify();
-        self.accounts.youtube_music_sign_in.task = cx.spawn(async move |this, cx| {
+        let task = cx.spawn(async move |this, cx| {
             let gone = cx
                 .background_executor()
                 .spawn({
@@ -356,7 +371,9 @@ impl RootView {
                 })
                 .await;
             let told = this.update(cx, |this, cx| {
-                this.accounts.youtube_music_sign_in.asking = false;
+                this.settings_pane.update(cx, |pane, _| {
+                    pane.accounts.youtube_music_sign_in.asking = false;
+                });
                 let held = cx
                     .global::<ResonateApp>()
                     .online
@@ -375,6 +392,9 @@ impl RootView {
             });
             let _ = told;
         });
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.youtube_music_sign_in.task = task;
+        });
     }
 
     fn sign_in_buttons(&self, row: Div, cx: &mut Context<Self>) -> Div {
@@ -387,7 +407,12 @@ impl RootView {
         }
         let reachable = app.online.enabled && app.online.youtube_music;
         let kept = signs_in.names_the_window_jar(&app.online.youtube_music_cookies);
-        let asking = self.accounts.youtube_music_sign_in.asking;
+        let asking = self
+            .settings_pane
+            .read(cx)
+            .accounts
+            .youtube_music_sign_in
+            .asking;
         let label = match (asking, kept) {
             (true, _) => words::settings_youtube_music::signing_in_label(),
             (false, true) => words::settings_youtube_music::sign_in_again_label(),
@@ -433,7 +458,12 @@ impl RootView {
         let app = cx.global::<ResonateApp>();
         let reachable =
             app.checks_youtube_music.is_some() && app.online.enabled && app.online.youtube_music;
-        let asking = self.accounts.youtube_music_check.asking;
+        let asking = self
+            .settings_pane
+            .read(cx)
+            .accounts
+            .youtube_music_check
+            .asking;
 
         action(
             "youtube-music-check",

@@ -371,16 +371,20 @@ impl RootView {
             return;
         };
 
-        self.accounts
+        self.settings_pane
+            .read(cx)
+            .accounts
             .signing_in
             .stopped
             .store(true, Ordering::Relaxed);
         let stopped = Arc::new(AtomicBool::new(false));
-        self.accounts.signing_in.stopped = Arc::clone(&stopped);
-        self.accounts.signing_in.shown = TidalSigning::Asking;
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.signing_in.stopped = Arc::clone(&stopped);
+            pane.accounts.signing_in.shown = TidalSigning::Asking;
+        });
         cx.notify();
 
-        self.accounts.signing_in.task = cx.spawn(async move |this, cx| {
+        let task = cx.spawn(async move |this, cx| {
             let asking = Arc::clone(&signs_in);
             let asked_for = client.clone();
             let authorizing = cx
@@ -398,7 +402,9 @@ impl RootView {
 
             let shown = authorizing.clone();
             let waiting = this.update(cx, |this, cx| {
-                this.accounts.signing_in.shown = TidalSigning::Waiting(shown);
+                this.settings_pane.update(cx, |pane, _| {
+                    pane.accounts.signing_in.shown = TidalSigning::Waiting(shown);
+                });
                 cx.notify();
             });
             if waiting.is_err() {
@@ -414,6 +420,8 @@ impl RootView {
             let told = this.update(cx, |this, cx| this.tidal_signed_in(answered, cx));
             let _ = told;
         });
+        self.settings_pane
+            .update(cx, |pane, _| pane.accounts.signing_in.task = task);
     }
 
     fn tidal_signed_in(
@@ -421,7 +429,9 @@ impl RootView {
         answered: resonate_providers::Result<Option<RefreshToken>>,
         cx: &mut Context<Self>,
     ) {
-        self.accounts.signing_in.shown = TidalSigning::Idle;
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.signing_in.shown = TidalSigning::Idle;
+        });
         match answered {
             Ok(Some(token)) => {
                 let token = token.into_string();
@@ -449,12 +459,16 @@ impl RootView {
     }
 
     fn stop_signing_in_to_tidal(&mut self, cx: &mut Context<Self>) {
-        self.accounts
+        self.settings_pane
+            .read(cx)
+            .accounts
             .signing_in
             .stopped
             .store(true, Ordering::Relaxed);
-        self.accounts.signing_in.shown = TidalSigning::Idle;
-        self.accounts.signing_in.task = Task::ready(());
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.signing_in.shown = TidalSigning::Idle;
+            pane.accounts.signing_in.task = Task::ready(());
+        });
         cx.notify();
     }
 
@@ -463,7 +477,14 @@ impl RootView {
         let reachable = app.signs_in.is_some() && app.online.enabled;
         let held_back = !reachable || self.client_for_tidal(cx).is_none();
 
-        match self.accounts.signing_in.shown.clone() {
+        match self
+            .settings_pane
+            .read(cx)
+            .accounts
+            .signing_in
+            .shown
+            .clone()
+        {
             TidalSigning::Idle => div()
                 .flex()
                 .flex_col()

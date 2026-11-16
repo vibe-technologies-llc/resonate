@@ -69,7 +69,7 @@ impl Choice for Testing {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub(crate) struct Chosen {
     restoration: Option<Restoration>,
     quality: Option<Quality>,
@@ -382,7 +382,7 @@ fn said_of_a(testing: Testing, set: &OutputSettings) -> Option<String> {
 
 impl RootView {
     pub(super) fn abx_group(&mut self, cx: &mut Context<Self>) -> Rows {
-        let Some(test) = self.settings_shown.audition.as_ref() else {
+        let Some(test) = self.settings_pane.read(cx).shown.audition.as_ref() else {
             return self.setting_up_a_test(cx);
         };
 
@@ -501,15 +501,22 @@ impl RootView {
     }
 
     fn setting_up_a_test(&mut self, cx: &mut Context<Self>) -> Rows {
-        let testing = self.settings_shown.test_setup.testing;
+        let testing = self.settings_pane.read(cx).shown.test_setup.testing;
         let set = self.player.read(cx).engine().output_settings();
-        let busy = self.settings_shown.test_setup.measuring.is_busy();
-        let what = self.settings_shown.test_setup.measuring.what;
+        let busy = self
+            .settings_pane
+            .read(cx)
+            .shown
+            .test_setup
+            .measuring
+            .is_busy();
+        let what = self.settings_pane.read(cx).shown.test_setup.measuring.what;
 
         let mut body =
             kit::rows().child(
                 self.choices("abx-testing", testing, cx, |this, testing, cx| {
-                    this.settings_shown.test_setup.testing = testing;
+                    this.settings_pane
+                        .update(cx, |pane, _| pane.shown.test_setup.testing = testing);
                     cx.notify();
                 }),
             );
@@ -569,7 +576,7 @@ impl RootView {
     }
 
     fn against(&self, testing: Testing, set: &OutputSettings, cx: &mut Context<Self>) -> Div {
-        let chosen = &self.settings_shown.test_setup.chosen;
+        let chosen = self.settings_pane.read(cx).shown.test_setup.chosen;
         let column = div().flex().flex_col().gap_3();
         match testing {
             Testing::Equaliser => column,
@@ -579,7 +586,9 @@ impl RootView {
                 chosen.restoration_against(set),
                 cx,
                 |this, value, cx| {
-                    this.settings_shown.test_setup.chosen.restoration = Some(value);
+                    this.settings_pane.update(cx, |pane, _| {
+                        pane.shown.test_setup.chosen.restoration = Some(value);
+                    });
                     cx.notify();
                 },
             )),
@@ -590,7 +599,9 @@ impl RootView {
                     chosen.quality_against(set),
                     cx,
                     |this, value, cx| {
-                        this.settings_shown.test_setup.chosen.quality = Some(value);
+                        this.settings_pane.update(cx, |pane, _| {
+                            pane.shown.test_setup.chosen.quality = Some(value);
+                        });
                         cx.notify();
                     },
                 ))
@@ -600,7 +611,9 @@ impl RootView {
                     chosen.phase_against(set),
                     cx,
                     |this, value, cx| {
-                        this.settings_shown.test_setup.chosen.phase = Some(value);
+                        this.settings_pane.update(cx, |pane, _| {
+                            pane.shown.test_setup.chosen.phase = Some(value);
+                        });
                         cx.notify();
                     },
                 )),
@@ -611,7 +624,9 @@ impl RootView {
                     chosen.dither_against(set),
                     cx,
                     |this, value, cx| {
-                        this.settings_shown.test_setup.chosen.dither = Some(value);
+                        this.settings_pane.update(cx, |pane, _| {
+                            pane.shown.test_setup.chosen.dither = Some(value);
+                        });
                         cx.notify();
                     },
                 ))
@@ -621,7 +636,9 @@ impl RootView {
                     chosen.shaping_against(set),
                     cx,
                     |this, value, cx| {
-                        this.settings_shown.test_setup.chosen.shaping = Some(value);
+                        this.settings_pane.update(cx, |pane, _| {
+                            pane.shown.test_setup.chosen.shaping = Some(value);
+                        });
                         cx.notify();
                     },
                 )),
@@ -658,7 +675,7 @@ impl RootView {
     }
 
     fn begin_a_listening_test(&mut self, trials: usize, cx: &mut Context<Self>) {
-        match self.settings_shown.test_setup.testing {
+        match self.settings_pane.read(cx).shown.test_setup.testing {
             Testing::Equaliser => self.begin_testing_the_equaliser(trials, cx),
             _ => self.begin_testing_a_setting(trials, cx),
         }
@@ -691,19 +708,16 @@ impl RootView {
             );
             return;
         };
-        self.settings_shown.audition = Some(test);
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.audition = Some(test));
         cx.notify();
     }
 
     fn begin_testing_a_setting(&mut self, trials: usize, cx: &mut Context<Self>) {
         let engine = self.player.read(cx).engine();
         let set = engine.output_settings();
-        let Some(contest) = self
-            .settings_shown
-            .test_setup
-            .chosen
-            .contest(self.settings_shown.test_setup.testing, &set)
-        else {
+        let setup = &self.settings_pane.read(cx).shown.test_setup;
+        let Some(contest) = setup.chosen.contest(setup.testing, &set) else {
             return;
         };
         let Ok(session) = Session::new(trials, clock_seed()) else {
@@ -722,11 +736,14 @@ impl RootView {
         let landing = cx.spawn(async move |this, cx| {
             let begun = begun.await;
             let _ = this.update(cx, |this, cx| {
-                this.settings_shown.test_setup.measuring.finish();
+                this.settings_pane
+                    .update(cx, |pane, _| pane.shown.test_setup.measuring.finish());
                 match begun {
                     Ok(lowered) => {
-                        this.settings_shown.audition =
-                            Some(ListeningTest::of_a_setting(session, contest, lowered));
+                        this.settings_pane.update(cx, |pane, _| {
+                            pane.shown.audition =
+                                Some(ListeningTest::of_a_setting(session, contest, lowered));
+                        });
                     }
                     Err(error) => {
                         tracing::warn!(%error, "the listening test could not begin");
@@ -742,49 +759,60 @@ impl RootView {
         } else {
             words::settings_abx::measuring()
         };
-        self.settings_shown.test_setup.measuring = Measuring::under(stop, what, landing);
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.test_setup.measuring = Measuring::under(stop, what, landing);
+        });
         cx.notify();
     }
 
     fn stop_measuring(&mut self, cx: &mut Context<Self>) {
-        self.settings_shown.test_setup.measuring = Measuring::idle();
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.test_setup.measuring = Measuring::idle();
+        });
         self.send(Command::Audition(None), cx);
         cx.notify();
     }
 
     fn hear_in_the_test(&mut self, hear: Hear, cx: &mut Context<Self>) {
-        let Some(test) = self.settings_shown.audition.as_mut() else {
+        let heard = self.settings_pane.update(cx, |pane, _| {
+            let test = pane.shown.audition.as_mut()?;
+            let arm = match hear {
+                Hear::A => Arm::A,
+                Hear::B => Arm::B,
+                Hear::X => test.session.x()?,
+            };
+            test.heard = match hear {
+                Hear::X => None,
+                Hear::A => Some(Arm::A),
+                Hear::B => Some(Arm::B),
+            };
+            Some(test.command(arm))
+        });
+        let Some(command) = heard else {
             return;
         };
-        let arm = match hear {
-            Hear::A => Arm::A,
-            Hear::B => Arm::B,
-            Hear::X => match test.session.x() {
-                Some(x) => x,
-                None => return,
-            },
-        };
-        test.heard = match hear {
-            Hear::X => None,
-            Hear::A => Some(Arm::A),
-            Hear::B => Some(Arm::B),
-        };
-        let command = test.command(arm);
         self.send(command, cx);
         cx.notify();
     }
 
     fn answer_the_test(&mut self, said: Arm, cx: &mut Context<Self>) {
-        let Some(test) = self.settings_shown.audition.as_mut() else {
+        let answered = self.settings_pane.update(cx, |pane, _| {
+            let test = pane.shown.audition.as_mut()?;
+            test.last = test.session.answer(said).ok();
+            test.heard = None;
+            Some(())
+        });
+        if answered.is_none() {
             return;
-        };
-        test.last = test.session.answer(said).ok();
-        test.heard = None;
+        }
         cx.notify();
     }
 
     pub(crate) fn end_the_listening_test(&mut self, cx: &mut Context<Self>) {
-        let Some(test) = self.settings_shown.audition.take() else {
+        let Some(test) = self
+            .settings_pane
+            .update(cx, |pane, _| pane.shown.audition.take())
+        else {
             return;
         };
         match test.subject {
@@ -1013,24 +1041,37 @@ mod tests {
         driven.scroll("settings", 6000.0);
         driven.click("abx-default");
         driven.until(|root, cx| {
-            !root.settings_shown.test_setup.measuring.is_busy() && toast::showing_text(cx).is_some()
+            !root
+                .settings_pane
+                .read(cx)
+                .shown
+                .test_setup
+                .measuring
+                .is_busy()
+                && toast::showing_text(cx).is_some()
         });
 
         assert_eq!(
             driven.read(|_, cx| toast::showing_text(cx)).as_deref(),
             Some(words::settings_abx::not_playing())
         );
-        assert!(driven.read(|root, _| root.settings_shown.audition.is_none()));
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).shown.audition.is_none()));
 
         driven.click("abx-testing-3");
         driven.scroll("settings", 6000.0);
         driven.click("abx-default");
         driven.until(|root, cx| {
-            !root.settings_shown.test_setup.measuring.is_busy()
+            !root
+                .settings_pane
+                .read(cx)
+                .shown
+                .test_setup
+                .measuring
+                .is_busy()
                 && toast::showing_text(cx).is_some_and(|said| said.ends_with("(×2)"))
         });
 
-        assert!(driven.read(|root, _| root.settings_shown.audition.is_none()));
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).shown.audition.is_none()));
     }
 
     #[gpui::test]
@@ -1047,8 +1088,10 @@ mod tests {
         let stop = Arc::new(AtomicBool::new(false));
         let watched = Arc::clone(&stop);
         driven.root.update(&mut driven.cx, |root, cx| {
-            root.settings_shown.test_setup.measuring =
-                Measuring::under(stop, words::settings_abx::measuring(), Task::ready(()));
+            root.settings_pane.update(cx, |pane, _| {
+                pane.shown.test_setup.measuring =
+                    Measuring::under(stop, words::settings_abx::measuring(), Task::ready(()));
+            });
             cx.notify();
         });
         driven.scroll("settings", 6000.0);
@@ -1056,8 +1099,16 @@ mod tests {
         driven.bounds_of("abx-measuring");
         driven.click("abx-stop-measuring");
 
-        assert!(driven.read(|root, _| !root.settings_shown.test_setup.measuring.is_busy()));
+        assert!(driven.read(|root, cx| {
+            !root
+                .settings_pane
+                .read(cx)
+                .shown
+                .test_setup
+                .measuring
+                .is_busy()
+        }));
         assert!(watched.load(Ordering::Relaxed));
-        assert!(driven.read(|root, _| root.settings_shown.audition.is_none()));
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).shown.audition.is_none()));
     }
 }

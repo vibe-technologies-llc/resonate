@@ -14,6 +14,7 @@ mod lastfm;
 mod library;
 mod online;
 mod output;
+mod pane;
 mod processing;
 pub(crate) mod spotify;
 mod subsonic;
@@ -27,8 +28,9 @@ use std::{cell::Cell, path::PathBuf, rc::Rc};
 
 pub(crate) use abx::{ListeningTest, Setup};
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, Entity, FocusHandle, FontWeight, MouseButton, Pixels,
-    Point, Role, SharedString, Stateful, Window, canvas, div, prelude::*, px, relative, rgb,
+    AnyElement, App, ClickEvent, Context, Div, Entity, FocusHandle, FontWeight, MouseButton,
+    Pixels, Point, Role, SharedString, Stateful, Window, canvas, div, prelude::*, px, relative,
+    rgb,
 };
 use resonate_core::{Appearance, Following, HeadYaw, SpeakerAngle, SpeakerElevation};
 use resonate_library::{DEFAULT_LAYOUT, HistoryKept};
@@ -43,6 +45,7 @@ pub(crate) use crate::views::{
         find::{Category, Group, Page},
         jellyfin::QuickConnecting,
         lastfm::{LastfmAccount, LastfmSigning},
+        pane::SettingsPane,
         spotify::SpotifyState,
         subsonic::{Account, Service},
         tending::{Tend, Tending},
@@ -118,9 +121,11 @@ impl RootView {
 
     pub(crate) fn settings(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let narrowing = Narrowing::of(self.settings_fields.read(cx).finding.read(cx).text());
-        let category = self.settings_shown.category;
+        let category = self.settings_pane.read(cx).shown.category;
         let page = self
-            .settings_shown
+            .settings_pane
+            .read(cx)
+            .shown
             .page
             .filter(|page| page.category() == category && !narrowing.narrows());
         let standing = self.standing(cx);
@@ -293,7 +298,7 @@ impl RootView {
     }
 
     fn categories(&self, narrowing: &Narrowing, cx: &mut Context<Self>) -> Stateful<Div> {
-        let chosen = self.settings_shown.category;
+        let chosen = self.settings_pane.read(cx).shown.category;
         let mut rail = div()
             .id("settings-categories")
             .named_as(Role::TabList, words::settings_pane::categories(), "")
@@ -447,8 +452,8 @@ impl RootView {
             .id("settings")
             .debug_selector(|| "settings".to_owned())
             .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
-                if !*hovered && this.holds_a_press_armed() {
-                    this.lower_every_armed_press();
+                if !*hovered && this.holds_a_press_armed(cx) {
+                    this.lower_every_armed_press(cx);
                     cx.notify();
                 }
             }))
@@ -536,17 +541,22 @@ impl RootView {
 
     pub(crate) fn open_the_settings_page(&mut self, page: Page, cx: &mut Context<Self>) {
         self.show_settings(page.category(), cx);
-        self.settings_shown.page = Some(page);
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.page = Some(page));
         self.scrolls.settings.set_offset(Point::default());
         cx.notify();
     }
 
     pub(crate) fn leave_the_settings_page(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.settings_shown.page.take().is_none() {
+        if self
+            .settings_pane
+            .update(cx, |pane, _| pane.shown.page.take())
+            .is_none()
+        {
             return false;
         }
         self.scrolls.settings.set_offset(Point::default());
-        self.disarm();
+        self.disarm(cx);
         cx.notify();
         true
     }
@@ -989,43 +999,40 @@ impl RootView {
         }
     }
 
-    pub(crate) fn disarm(&mut self) {
-        self.lower_every_armed_press();
-        self.settings_shown.reset_everything_landed = false;
+    pub(crate) fn disarm(&self, cx: &mut App) {
+        self.settings_pane.update(cx, |pane, _| pane.disarm());
     }
 
-    fn holds_a_press_armed(&self) -> bool {
-        self.settings_shown.armed.is_some()
+    fn holds_a_press_armed(&self, cx: &App) -> bool {
+        self.settings_pane.read(cx).shown.armed.is_some()
     }
 
-    pub(super) fn lower_every_armed_press(&mut self) {
-        self.settings_shown.armed = None;
-        self.settings_shown.pairing_shown = false;
+    pub(super) fn lower_every_armed_press(&self, cx: &mut App) {
+        self.settings_pane
+            .update(cx, |pane, _| pane.lower_every_armed_press());
     }
 
-    pub(crate) fn is_armed(&self, armed: &Armed) -> bool {
-        self.settings_shown.armed.as_ref() == Some(armed)
+    pub(crate) fn is_armed(&self, armed: &Armed, cx: &App) -> bool {
+        self.settings_pane.read(cx).is_armed(armed)
     }
 
-    pub(crate) fn arm(&mut self, armed: Armed) {
-        self.settings_shown.armed = Some(armed);
+    pub(crate) fn arm(&self, armed: Armed, cx: &mut App) {
+        self.settings_pane.update(cx, |pane, _| pane.arm(armed));
     }
 
-    pub(crate) fn lower(&mut self, armed: &Armed) {
-        if self.is_armed(armed) {
-            self.settings_shown.armed = None;
-        }
+    pub(crate) fn lower(&self, armed: &Armed, cx: &mut App) {
+        self.settings_pane.update(cx, |pane, _| pane.lower(armed));
     }
 
-    pub(crate) const fn history_armed(&self) -> Option<HistoryKept> {
-        match &self.settings_shown.armed {
+    pub(crate) fn history_armed(&self, cx: &App) -> Option<HistoryKept> {
+        match &self.settings_pane.read(cx).shown.armed {
             Some(Armed::AgeTheHistory(kept)) => Some(*kept),
             _ => None,
         }
     }
 
-    pub(crate) fn folder_armed(&self) -> Option<&PathBuf> {
-        match &self.settings_shown.armed {
+    pub(crate) fn folder_armed<'a>(&self, cx: &'a App) -> Option<&'a PathBuf> {
+        match &self.settings_pane.read(cx).shown.armed {
             Some(Armed::ForgetTheFolder(root)) => Some(root),
             _ => None,
         }

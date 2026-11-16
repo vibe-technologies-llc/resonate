@@ -522,7 +522,7 @@ impl RootView {
             self.equaliser.read(cx).shown_curve(),
             Some(crate::equaliser::Curve::Own(_))
         );
-        let armed = self.is_armed(&Armed::DiscardTheCurve);
+        let armed = self.is_armed(&Armed::DiscardTheCurve, cx);
 
         kit::action_row()
             .child(action(
@@ -579,7 +579,7 @@ impl RootView {
                         if armed {
                             this.discard_the_curve(cx);
                         } else {
-                            this.arm(Armed::DiscardTheCurve);
+                            this.arm(Armed::DiscardTheCurve, cx);
                             cx.notify();
                         }
                     },
@@ -1907,7 +1907,9 @@ impl RootView {
     }
 
     fn fit_the_preamp_to_the_queue(&mut self, cx: &mut Context<Self>) {
-        self.settings_shown.fitting_the_preamp = Fitting::idle();
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.fitting_the_preamp = Fitting::idle();
+        });
         let Some(shown) = self.equaliser.read(cx).shown().cloned() else {
             return;
         };
@@ -1951,7 +1953,9 @@ impl RootView {
                 }
             });
         });
-        self.settings_shown.fitting_the_preamp = Fitting::measuring(watch, landing);
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.fitting_the_preamp = Fitting::measuring(watch, landing);
+        });
     }
 
     fn import_a_profile(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
@@ -2094,7 +2098,7 @@ impl RootView {
     }
 
     fn discard_the_curve(&mut self, cx: &mut Context<Self>) {
-        self.lower(&Armed::DiscardTheCurve);
+        self.lower(&Armed::DiscardTheCurve, cx);
         let Some(curve) = self.equaliser.read(cx).shown_curve().cloned() else {
             return;
         };
@@ -2148,8 +2152,10 @@ const SPEAKER_ELEVATIONS: [i16; 5] = [0, 10, 20, 30, 45];
 const BINAURAL_FILE: &str = "binaural-response.wav";
 
 impl RootView {
-    fn room_is_crossed(&self) -> bool {
-        self.settings_shown
+    fn room_is_crossed(&self, cx: &App) -> bool {
+        self.settings_pane
+            .read(cx)
+            .shown
             .room_shape
             .as_ref()
             .is_some_and(|(_, crossed)| *crossed)
@@ -2157,33 +2163,44 @@ impl RootView {
 
     fn look_at_the_room(&mut self, file: &Path, cx: &mut Context<Self>) {
         if self
-            .settings_shown
+            .settings_pane
+            .read(cx)
+            .shown
             .room_shape
             .as_ref()
             .is_some_and(|(seen, _)| seen == file)
         {
             return;
         }
-        self.settings_shown.room_shape = Some((file.to_path_buf(), false));
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.room_shape = Some((file.to_path_buf(), false));
+        });
         let reading = file.to_path_buf();
         let speakers = speakers_worn(cx);
         let read = cx.background_executor().spawn({
             let reading = reading.clone();
             async move { read_impulse(&Sources::local(), &MediaLocation::local(&reading), speakers) }
         });
-        self.settings_shown.looking_at_the_room = cx.spawn(async move |this, cx| {
+        let looking_at_the_room = cx.spawn(async move |this, cx| {
             let crossed = matches!(read.await, Ok(Some(impulse)) if impulse.is_crossed());
             let _ = this.update(cx, |this, cx| {
                 if this
-                    .settings_shown
+                    .settings_pane
+                    .read(cx)
+                    .shown
                     .room_shape
                     .as_ref()
                     .is_some_and(|(seen, _)| *seen == reading)
                 {
-                    this.settings_shown.room_shape = Some((reading, crossed));
+                    this.settings_pane.update(cx, |pane, _| {
+                        pane.shown.room_shape = Some((reading, crossed));
+                    });
                     cx.notify();
                 }
             });
+        });
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.looking_at_the_room = looking_at_the_room;
         });
     }
 
@@ -2198,7 +2215,7 @@ impl RootView {
                 Some(file) => note(file.display().to_string()),
                 None => note(words::settings_equaliser::no_room()),
             })
-            .when(held.is_some() && self.room_is_crossed(), |body| {
+            .when(held.is_some() && self.room_is_crossed(cx), |body| {
                 body.child(note(words::settings_equaliser::binaural_note()))
             })
             .child(
@@ -2546,18 +2563,21 @@ impl RootView {
                 words::settings_equaliser::kept_not().to_owned()
             })
         });
-        self.settings_shown.reading_the_room = cx.spawn(async move |this, cx| {
+        let reading_the_room = cx.spawn(async move |this, cx| {
             let assembled = assembled.await;
             let _ = this.update(cx, |this, cx| match assembled {
                 Ok(()) => this.correct_the_room(Some(kept), cx),
                 Err(words) => this.report(Notice::Trouble(words), cx),
             });
         });
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.reading_the_room = reading_the_room);
     }
 
     pub(crate) fn correct_the_room(&mut self, file: Option<PathBuf>, cx: &mut Context<Self>) {
         let Some(file) = file else {
-            self.settings_shown.reading_the_room = Task::ready(());
+            self.settings_pane
+                .update(cx, |pane, _| pane.shown.reading_the_room = Task::ready(()));
             cx.update_global::<ResonateApp, _>(|global, _| global.convolution = None);
             self.send(Command::SetConvolution(None), cx);
             self.store(&Setting::Convolution(None), cx);
@@ -2569,11 +2589,13 @@ impl RootView {
         let read = cx.background_executor().spawn(async move {
             read_impulse(&Sources::local(), &MediaLocation::local(&reading), speakers)
         });
-        self.settings_shown.reading_the_room = cx.spawn(async move |this, cx| {
+        let reading_the_room = cx.spawn(async move |this, cx| {
             let read = read.await;
             let _ = this.update(cx, |this, cx| match read {
                 Ok(Some(impulse)) => {
-                    this.settings_shown.room_shape = Some((file.clone(), impulse.is_crossed()));
+                    this.settings_pane.update(cx, |pane, _| {
+                        pane.shown.room_shape = Some((file.clone(), impulse.is_crossed()));
+                    });
                     cx.update_global::<ResonateApp, _>(|global, _| {
                         global.convolution = Some(file.clone());
                     });
@@ -2598,6 +2620,8 @@ impl RootView {
                 }
             });
         });
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.reading_the_room = reading_the_room);
     }
 }
 

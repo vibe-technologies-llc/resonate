@@ -31,11 +31,10 @@ field joins the group its subject belongs to.
 `keys`, `panes`, `reaching`, `acting`, `landing`, `pointer`, `wayback`, `typing_ahead`, `searching`,
 `loudness`, `heading`, `downloading`, `deletion`, `regions`) beside `tests.rs`. Its fields are grouped
 alike: `Scrolls` (every scroll handle), `Rooms` (the widths and heights measured a frame behind),
-`Remotely` (another device's zones driven), `Accounts` (sign-ins), `Rails` (seek, volume and a held
-band), `Orders` (the row and query orders and the Sort pop-up), `Remembered`, `Dropped` (files
-dragged in), `Typed` (the search, the zone and playlist names and the Match sheet's fields), `SettingsShown` (the settings pane's own state),
-`Social` (Wrapped, sharing and party offers), `Shows` (which tab or shape a pane is drawn in) and
-`TypedAhead`.
+`Rails` (seek, volume and a held band), `Orders` (the row and query orders and the Sort pop-up),
+`Remembered`, `Dropped` (files dragged in), `Typed` (the search, the zone and playlist names and the
+Match sheet's fields), `Social` (Wrapped, sharing and party offers), `Shows` (which tab or shape a
+pane is drawn in) and `TypedAhead`.
 
 **A pane with state of its own holds it in an entity of its own**, made in `RootView::new`, which
 observes it and redraws when it notifies (or, for one telling the root what was done, subscribes to
@@ -80,6 +79,18 @@ the root's list:
   naming it; the root holds one subscription to each and `RootView::entered` and `RootView::left`
   answer through the handlers that store a setting (`contact_given`, `contact_left` and kin), since
   writing the settings, the toasts and the window's focus are the root's.
+- `SettingsPane` (`views/settings/pane.rs`): the settings pane's own state in three groups,
+  `SettingsShown` (the category and page shown, the armed press, the music folder's and the room's
+  standing, the listening test, the vault's tending, the release heard of, the device tried, and the
+  tasks reading them), `Accounts` (each service's sign-in under way) and `Remotely` (the other
+  devices' songs and their card's fold, its own `Controls`, the device driven with its rails and
+  rows, and the `Pulse`s redrawing the driven zones and a mirror's build). What feeds it is its own:
+  `SettingsPane::new` starts the watch of what other devices play (`watch_remote_playback`) and the
+  look for a newer release (`SettingsPane::look_for_a_newer_release`), each landing on the pane,
+  which the root observes. The armed press's gestures are the pane's (`SettingsPane::arm`,
+  `is_armed`, `lower`, `disarm`), and the root's `arm`, `is_armed`, `lower` and `disarm` reach them;
+  a handler that stores a setting, toasts or sends a command stays the root's and updates the pane
+  for its part (`this.settings_pane.update(…)`), a task it spawns stored on the pane once spawned.
 
 **A pane whose state the catalog reads takes it from `LibraryModel`'s `Landed`**: the read still
 lands in the library's one pass (`take_the_shelves`, `take_the_listing`), which leaves each pane's
@@ -1645,7 +1656,7 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   saved value.
 - **A newer release is told once and offered in About.** `ResonateApp::updates` is the binary's
   `Updates` seam (`None` where the build names no repository or lacks `online`);
-  `RootView::look_for_a_newer_release` runs from `RootView::new` and again when *Check for updates*
+  `SettingsPane::look_for_a_newer_release` runs from `SettingsPane::new` and again when *Check for updates*
   is switched on, asking `Updates::newer(reaching)` on the background executor with the live Online
   switch every `LOOKED_AT_AGAIN_EVERY` (6 h; the binary keeps it to once a day). A release other
   than the one `update_dismissed` names lands in `SettingsShown::newer` and is toasted once (`Noted`,

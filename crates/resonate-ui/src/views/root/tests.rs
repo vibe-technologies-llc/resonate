@@ -1093,7 +1093,7 @@ mod driven {
 
         assert_eq!(driven.read(|root, _| root.pane), Pane::Settings);
         assert_eq!(
-            driven.read(|root, _| root.settings_shown.category),
+            driven.read(|root, cx| root.settings_pane.read(cx).shown.category),
             SettingsCategory::About
         );
     }

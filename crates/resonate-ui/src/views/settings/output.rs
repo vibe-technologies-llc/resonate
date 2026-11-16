@@ -939,10 +939,18 @@ impl RootView {
             .formats_learnt_for
             .of([&name])
             .cloned();
-        let trying = self.settings_shown.trying.as_ref().map(|(name, _)| name);
+        let trying = self
+            .settings_pane
+            .read(cx)
+            .shown
+            .trying
+            .as_ref()
+            .map(|(name, _)| name);
         let this_tried = trying == Some(&name);
         let heard = self
-            .settings_shown
+            .settings_pane
+            .read(cx)
+            .shown
             .heard
             .as_ref()
             .filter(|(heard, _)| *heard == name)
@@ -1028,8 +1036,10 @@ impl RootView {
                 .await;
             let _ = this.update(cx, |this, cx| this.heard_what_it_plays(asked, heard, cx));
         });
-        self.settings_shown.heard = None;
-        self.settings_shown.trying = Some((device, tried));
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.heard = None;
+            pane.shown.trying = Some((device, tried));
+        });
         cx.notify();
     }
 
@@ -1039,7 +1049,8 @@ impl RootView {
         heard: Result<Learning, Unlearnt>,
         cx: &mut Context<Self>,
     ) {
-        self.settings_shown.trying = None;
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.trying = None);
         if let Ok(learning) = &heard {
             let plays = learning.plays();
             cx.update_global::<ResonateApp, _>(|global, _| {
@@ -1055,7 +1066,8 @@ impl RootView {
                 cx,
             );
         }
-        self.settings_shown.heard = Some((device, heard));
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.heard = Some((device, heard)));
         cx.notify();
     }
 
@@ -1078,7 +1090,8 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.formats_learnt_for = Learnt::default();
         });
-        self.settings_shown.heard = None;
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.heard = None);
         self.teach_now(cx);
         cx.notify();
     }

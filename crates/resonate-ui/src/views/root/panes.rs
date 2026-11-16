@@ -196,16 +196,19 @@ impl RootView {
     }
 
     pub(crate) fn show_settings(&mut self, category: Category, cx: &mut Context<Self>) {
-        let left_a_page = self.settings_shown.page.take().is_some();
-        let moved = self.settings_shown.category != category;
+        let (left_a_page, moved) = self.settings_pane.update(cx, |pane, _| {
+            let left_a_page = pane.shown.page.take().is_some();
+            let moved = pane.shown.category != category;
+            pane.shown.category = category;
+            (left_a_page, moved)
+        });
         if moved {
-            self.settings_shown.category = category;
             self.remember_current_settings_category(cx);
         }
         if moved || left_a_page {
             self.scrolls.settings.set_offset(Point::default());
         }
-        self.disarm();
+        self.disarm(cx);
         cx.notify();
     }
 }

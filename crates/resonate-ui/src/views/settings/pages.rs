@@ -136,8 +136,12 @@ impl Pane {
     }
 
     fn place(&mut self) -> (Category, Option<Page>) {
-        self.driven
-            .read(|root, _| (root.settings_shown.category, root.settings_shown.page))
+        self.driven.read(|root, cx| {
+            (
+                root.settings_pane.read(cx).shown.category,
+                root.settings_pane.read(cx).shown.page,
+            )
+        })
     }
 
     fn page(&mut self, page: Page) {
@@ -150,11 +154,11 @@ impl Pane {
 
     fn reset_everything_landed(&mut self) -> bool {
         self.driven
-            .read(|root, _| root.settings_shown.reset_everything_landed)
+            .read(|root, cx| root.settings_pane.read(cx).shown.reset_everything_landed)
     }
 
     fn armed(&mut self, armed: &Armed) -> bool {
-        self.driven.read(|root, _| root.is_armed(armed))
+        self.driven.read(|root, cx| root.is_armed(armed, cx))
     }
 }
 
@@ -206,7 +210,9 @@ fn each_category_opens_onto_the_controls_it_holds(cx: &mut TestAppContext) {
     for (category, control) in DRAWN {
         pane.category(category);
 
-        let opened = pane.driven.read(|root, _| root.settings_shown.category);
+        let opened = pane
+            .driven
+            .read(|root, cx| root.settings_pane.read(cx).shown.category);
         assert_eq!(opened, category);
         pane.reach(control);
     }
@@ -230,9 +236,12 @@ fn every_page_opens_in_its_own_category_and_leaving_it_returns_to_the_category(
             .update(|_, cx| root.update(cx, |root, cx| root.open_the_settings_page(page, cx)));
         pane.driven.settle();
 
-        let (category, shown) = pane
-            .driven
-            .read(|root, _| (root.settings_shown.category, root.settings_shown.page));
+        let (category, shown) = pane.driven.read(|root, cx| {
+            (
+                root.settings_pane.read(cx).shown.category,
+                root.settings_pane.read(cx).shown.page,
+            )
+        });
         assert_eq!((category, shown), (page.category(), Some(page)));
 
         let left = pane
@@ -240,7 +249,11 @@ fn every_page_opens_in_its_own_category_and_leaving_it_returns_to_the_category(
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.leave_the_settings_page(cx)));
         assert!(left);
-        assert_eq!(pane.driven.read(|root, _| root.settings_shown.page), None);
+        assert_eq!(
+            pane.driven
+                .read(|root, cx| root.settings_pane.read(cx).shown.page),
+            None
+        );
     }
 }
 
@@ -357,7 +370,7 @@ fn the_library_page_writes_the_vault_a_folder_is_made_into(cx: &mut TestAppConte
     assert_eq!(written, [stored(Setting::Vault(named.clone()))]);
     assert_eq!(
         pane.driven
-            .read(|root, _| root.settings_shown.vault_named.clone()),
+            .read(|root, cx| root.settings_pane.read(cx).shown.vault_named.clone()),
         Some(named)
     );
 }
@@ -384,7 +397,7 @@ fn the_library_page_refuses_a_vault_inside_a_folder_the_library_scans(cx: &mut T
     assert_eq!(*pane.written.lock(), Vec::new());
     assert_eq!(
         pane.driven
-            .read(|root, _| root.settings_shown.vault_named.clone()),
+            .read(|root, cx| root.settings_pane.read(cx).shown.vault_named.clone()),
         None
     );
 }
@@ -565,7 +578,7 @@ fn leaving_the_category_lowers_a_press_armed_in_it(cx: &mut TestAppContext) {
     pane.driven.click("reset-everything");
     assert!(
         pane.driven
-            .read(|root, _| root.is_armed(&Armed::ResetEverything))
+            .read(|root, cx| root.is_armed(&Armed::ResetEverything, cx))
     );
 
     pane.category(Category::Online);
@@ -573,7 +586,7 @@ fn leaving_the_category_lowers_a_press_armed_in_it(cx: &mut TestAppContext) {
     assert!(
         !pane
             .driven
-            .read(|root, _| root.is_armed(&Armed::ResetEverything))
+            .read(|root, cx| root.is_armed(&Armed::ResetEverything, cx))
     );
 }
 

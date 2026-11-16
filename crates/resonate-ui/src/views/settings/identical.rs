@@ -27,7 +27,7 @@ impl RootView {
         let foldable = found
             .as_ref()
             .is_some_and(|found| !found.copies.identical.is_empty());
-        let armed = self.is_armed(&Armed::FoldTheCopies) && foldable;
+        let armed = self.is_armed(&Armed::FoldTheCopies, cx) && foldable;
 
         kit::rows()
             .child(
@@ -90,7 +90,7 @@ impl RootView {
                 if armed {
                     this.fold_the_identical_songs(cx);
                 } else {
-                    this.arm(Armed::FoldTheCopies);
+                    this.arm(Armed::FoldTheCopies, cx);
                     cx.notify();
                 }
             },
@@ -100,14 +100,14 @@ impl RootView {
     }
 
     fn look_for_identical_songs(&mut self, cx: &mut Context<Self>) {
-        self.lower(&Armed::FoldTheCopies);
+        self.lower(&Armed::FoldTheCopies, cx);
         self.library
             .update(cx, |library, cx| library.find_identical_songs(cx));
         cx.notify();
     }
 
     fn fold_the_identical_songs(&mut self, cx: &mut Context<Self>) {
-        self.lower(&Armed::FoldTheCopies);
+        self.lower(&Armed::FoldTheCopies, cx);
         self.library
             .update(cx, |library, cx| library.fold_identical_songs(cx));
         cx.notify();

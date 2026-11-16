@@ -190,13 +190,20 @@ impl RootView {
             return;
         }
 
-        self.accounts.spotify.stopped.store(true, Ordering::Relaxed);
+        self.settings_pane
+            .read(cx)
+            .accounts
+            .spotify
+            .stopped
+            .store(true, Ordering::Relaxed);
         let stopped = Arc::new(AtomicBool::new(false));
-        self.accounts.spotify.stopped = Arc::clone(&stopped);
-        self.accounts.spotify.shown = SpotifySigning::Asking;
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.spotify.stopped = Arc::clone(&stopped);
+            pane.accounts.spotify.shown = SpotifySigning::Asking;
+        });
         cx.notify();
 
-        self.accounts.spotify.task = cx.spawn(async move |this, cx| {
+        let task = cx.spawn(async move |this, cx| {
             let authorizing = cx
                 .background_executor()
                 .spawn(async move { signs_in.authorizing(&client_id) })
@@ -211,7 +218,9 @@ impl RootView {
             };
             let waiting = approval.address().to_owned();
             let shown = this.update(cx, |this, cx| {
-                this.accounts.spotify.shown = SpotifySigning::Waiting(waiting.clone());
+                this.settings_pane.update(cx, |pane, _| {
+                    pane.accounts.spotify.shown = SpotifySigning::Waiting(waiting.clone());
+                });
                 cx.open_url(&waiting);
                 cx.notify();
             });
@@ -225,6 +234,8 @@ impl RootView {
             let told = this.update(cx, |this, cx| this.spotify_answered(answered, cx));
             let _ = told;
         });
+        self.settings_pane
+            .update(cx, |pane, _| pane.accounts.spotify.task = task);
     }
 
     fn spotify_answered(
@@ -232,7 +243,9 @@ impl RootView {
         answered: Result<Option<String>, SpotifySignInFailure>,
         cx: &mut Context<Self>,
     ) {
-        self.accounts.spotify.shown = SpotifySigning::Idle;
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.spotify.shown = SpotifySigning::Idle;
+        });
         match answered {
             Ok(Some(token)) => {
                 cx.update_global::<ResonateApp, _>(|global, _| {
@@ -253,9 +266,16 @@ impl RootView {
     }
 
     fn stop_signing_in_to_spotify(&mut self, cx: &mut Context<Self>) {
-        self.accounts.spotify.stopped.store(true, Ordering::Relaxed);
-        self.accounts.spotify.shown = SpotifySigning::Idle;
-        self.accounts.spotify.task = Task::ready(());
+        self.settings_pane
+            .read(cx)
+            .accounts
+            .spotify
+            .stopped
+            .store(true, Ordering::Relaxed);
+        self.settings_pane.update(cx, |pane, _| {
+            pane.accounts.spotify.shown = SpotifySigning::Idle;
+            pane.accounts.spotify.task = Task::ready(());
+        });
         cx.notify();
     }
 
@@ -292,7 +312,7 @@ impl RootView {
     }
 
     fn read_the_spotify_account(&mut self, upkeep: Upkeep, cx: &mut Context<Self>) {
-        if self.accounts.spotify.reading {
+        if self.settings_pane.read(cx).accounts.spotify.reading {
             return;
         }
         let Some((library, reference)) = self.library.read(cx).follows_links() else {
@@ -302,7 +322,8 @@ impl RootView {
             );
             return;
         };
-        self.accounts.spotify.reading = true;
+        self.settings_pane
+            .update(cx, |pane, _| pane.accounts.spotify.reading = true);
         cx.notify();
         cx.spawn(async move |this, cx| {
             let followed = cx
@@ -312,7 +333,8 @@ impl RootView {
                 })
                 .await;
             let _ = this.update(cx, |this, cx| {
-                this.accounts.spotify.reading = false;
+                this.settings_pane
+                    .update(cx, |pane, _| pane.accounts.spotify.reading = false);
                 match followed {
                     Err(Error::Refused {
                         op: LookupOp::SpotifyAccount,
@@ -346,7 +368,7 @@ impl RootView {
         let reachable = app.spotify.is_some() && app.online.enabled;
         let client_given = !app.online.spotify_client_id.trim().is_empty();
         let signed_in = !app.online.spotify_refresh_token.trim().is_empty();
-        let reading = self.accounts.spotify.reading;
+        let reading = self.settings_pane.read(cx).accounts.spotify.reading;
 
         let body = kit::rows().child(kit::field(
             words::settings_spotify::client_id(),
@@ -394,7 +416,7 @@ impl RootView {
                 .note(words::settings_spotify::account_note());
         }
 
-        let signing: Div = match self.accounts.spotify.shown.clone() {
+        let signing: Div = match self.settings_pane.read(cx).accounts.spotify.shown.clone() {
             SpotifySigning::Idle => kit::action_row().child(self.spotify_button(
                 "spotify-sign-in",
                 words::settings_spotify::sign_in_to_spotify(),

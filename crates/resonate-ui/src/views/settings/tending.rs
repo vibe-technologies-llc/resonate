@@ -302,16 +302,31 @@ impl RootView {
     }
 
     fn tending_row(&mut self, tend: Tend, held_back: bool, cx: &mut Context<Self>) -> Div {
-        let held_back = held_back || self.settings_shown.tending.running().is_some();
-        let counted = self.settings_shown.tending.counted(tend).cloned();
+        let held_back = held_back
+            || self
+                .settings_pane
+                .read(cx)
+                .shown
+                .tending
+                .running()
+                .is_some();
+        let counted = self
+            .settings_pane
+            .read(cx)
+            .shown
+            .tending
+            .counted(tend)
+            .cloned();
         let acts = counted.as_ref().is_some_and(|counted| counted.acts);
-        let armed = self.is_armed(&Armed::TendTheVault(tend)) && acts;
-        let running = self.settings_shown.tending.running();
+        let armed = self.is_armed(&Armed::TendTheVault(tend), cx) && acts;
+        let running = self.settings_pane.read(cx).shown.tending.running();
         let previewing = running == Some((tend, Pass::Preview));
         let applying = running == Some((tend, Pass::Apply));
         let progress = (tend == Tend::Check && (previewing || applying))
             .then(|| {
-                self.settings_shown
+                self.settings_pane
+                    .read(cx)
+                    .shown
                     .tending
                     .weighing()
                     .map(|weighing| weighing.snapshot())
@@ -339,7 +354,7 @@ impl RootView {
                 if armed {
                     this.tend_to_the_vault(tend, Pass::Apply, cx);
                 } else {
-                    this.arm(Armed::TendTheVault(tend));
+                    this.arm(Armed::TendTheVault(tend), cx);
                     cx.notify();
                 }
             },
@@ -362,7 +377,9 @@ impl RootView {
 
     fn stop_tending_row(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let stopping = self
-            .settings_shown
+            .settings_pane
+            .read(cx)
+            .shown
             .tending
             .weighing()
             .is_some_and(|weighing| weighing.is_cancelled());
@@ -383,7 +400,7 @@ impl RootView {
     }
 
     pub(crate) fn stop_tending_the_vault(&mut self, cx: &mut Context<Self>) {
-        if let Some(weighing) = self.settings_shown.tending.weighing() {
+        if let Some(weighing) = self.settings_pane.read(cx).shown.tending.weighing() {
             weighing.cancel();
             cx.notify();
         }
@@ -398,9 +415,11 @@ impl RootView {
             }
         };
 
-        self.settings_shown.tending.weighing = Some(Arc::clone(handle.progress()));
-        self.settings_shown.tending.running = Some((Tend::Check, pass));
-        self.settings_shown.tending.task = cx.spawn(async move |this, cx| {
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.tending.weighing = Some(Arc::clone(handle.progress()));
+            pane.shown.tending.running = Some((Tend::Check, pass));
+        });
+        let task = cx.spawn(async move |this, cx| {
             while !handle.is_finished() {
                 cx.background_executor()
                     .timer(WEIGHING_LOOKED_AT_EVERY)
@@ -412,12 +431,14 @@ impl RootView {
             let done = handle.join().map(Tended::Weighed);
             let _ = this.update(cx, |this, cx| this.tended(Tend::Check, pass, done, cx));
         });
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.tending.task = task);
         cx.notify();
     }
 
     pub(crate) fn tend_to_the_vault(&mut self, tend: Tend, pass: Pass, cx: &mut Context<Self>) {
-        self.lower(&Armed::TendTheVault(tend));
-        if self.settings_shown.tending.running.is_some() {
+        self.lower(&Armed::TendTheVault(tend), cx);
+        if self.settings_pane.read(cx).shown.tending.running.is_some() {
             return;
         }
 
@@ -430,11 +451,15 @@ impl RootView {
         let done = cx
             .background_executor()
             .spawn(async move { tend.run(&library, pass) });
-        self.settings_shown.tending.running = Some((tend, pass));
-        self.settings_shown.tending.task = cx.spawn(async move |this, cx| {
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.tending.running = Some((tend, pass));
+        });
+        let task = cx.spawn(async move |this, cx| {
             let done = done.await;
             let _ = this.update(cx, |this, cx| this.tended(tend, pass, done, cx));
         });
+        self.settings_pane
+            .update(cx, |pane, _| pane.shown.tending.task = task);
         cx.notify();
     }
 
@@ -445,19 +470,21 @@ impl RootView {
         done: resonate_library::Result<Tended>,
         cx: &mut Context<Self>,
     ) {
-        self.settings_shown.tending.running = None;
-        self.settings_shown.tending.weighing = None;
+        self.settings_pane.update(cx, |pane, _| {
+            pane.shown.tending.running = None;
+            pane.shown.tending.weighing = None;
+        });
         match done {
             Ok(done) if pass.applies() => {
-                self.settings_shown.tending.counted.clear();
+                self.settings_pane
+                    .update(cx, |pane, _| pane.shown.tending.counted.clear());
                 toast::tell(Notice::Done(done.told(pass).text), cx);
                 self.library.update(cx, |library, cx| library.reload(cx));
             }
             Ok(done) => {
-                self.settings_shown
-                    .tending
-                    .counted
-                    .insert(tend, done.told(pass));
+                self.settings_pane.update(cx, |pane, _| {
+                    pane.shown.tending.counted.insert(tend, done.told(pass));
+                });
             }
             Err(error) => {
                 tracing::error!(%error, "the vault could not be tended to");
@@ -583,12 +610,25 @@ mod tests {
     }
 
     fn counted(driven: &mut Driven, tend: Tend) -> Told {
-        driven.until(|root, _| {
-            root.settings_shown.tending.running().is_none()
-                && root.settings_shown.tending.counted(tend).is_some()
+        driven.until(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
+                .tending
+                .running()
+                .is_none()
+                && root
+                    .settings_pane
+                    .read(cx)
+                    .shown
+                    .tending
+                    .counted(tend)
+                    .is_some()
         });
-        driven.read(|root, _| {
-            root.settings_shown
+        driven.read(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
                 .tending
                 .counted(tend)
                 .cloned()
@@ -633,7 +673,7 @@ mod tests {
         pressed(&mut driven, "mend-the-vault");
         driven.settle();
 
-        assert!(!driven.read(|root, _| root.is_armed(&Armed::TendTheVault(Tend::Check))));
+        assert!(!driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Check), cx)));
         assert!(stands_in(&library, "Echoes") && stands_in(&library, "Time"));
     }
 
@@ -714,28 +754,34 @@ mod tests {
         let (mut driven, _library, _music, _held) = a_vault_holding_two_long_songs(cx);
 
         pressed(&mut driven, "check-the-vault");
-        driven.until(|root, _| {
-            root.settings_shown
+        driven.until(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
                 .tending
                 .weighing()
                 .is_some_and(|weighing| weighing.snapshot().to_weigh == 2)
         });
-        let watched = driven.read(|root, _| {
-            root.settings_shown
+        let watched = driven.read(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
                 .tending
                 .weighing()
                 .cloned()
                 .expect("a weighing")
         });
         assert_eq!(
-            driven.read(|root, _| root.settings_shown.tending.running()),
+            driven.read(|root, cx| root.settings_pane.read(cx).shown.tending.running()),
             Some((Tend::Check, Pass::Preview))
         );
         assert!(!watched.is_cancelled());
 
         pressed(&mut driven, "stop-checking-the-vault");
-        assert!(driven.read(|root, _| {
-            root.settings_shown
+        assert!(driven.read(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
                 .tending
                 .weighing()
                 .is_some_and(|weighing| weighing.is_cancelled())
@@ -744,7 +790,14 @@ mod tests {
 
         assert!(!told.acts);
         assert!(told.text.ends_with("stopped before it finished"));
-        assert!(driven.read(|root, _| root.settings_shown.tending.weighing().is_none()));
+        assert!(driven.read(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
+                .tending
+                .weighing()
+                .is_none()
+        }));
         assert!(watched.snapshot().weighed < watched.snapshot().to_weigh);
     }
 
@@ -762,20 +815,38 @@ mod tests {
         assert!(told.text.contains("did not read back 1"));
 
         pressed(&mut driven, "mend-the-vault");
-        assert!(driven.read(|root, _| root.is_armed(&Armed::TendTheVault(Tend::Check))));
-        assert!(driven.read(|root, _| root.settings_shown.tending.running().is_none()));
+        assert!(driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Check), cx)));
+        assert!(driven.read(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
+                .tending
+                .running()
+                .is_none()
+        }));
         let standing = ["Echoes", "Time"].map(|title| stands_in(&library, title));
         assert_eq!(standing, [true, true]);
 
         pressed(&mut driven, "mend-the-vault");
-        driven.until(|root, _| {
-            root.settings_shown.tending.running().is_none()
-                && root.settings_shown.tending.counted(Tend::Check).is_none()
+        driven.until(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
+                .tending
+                .running()
+                .is_none()
+                && root
+                    .settings_pane
+                    .read(cx)
+                    .shown
+                    .tending
+                    .counted(Tend::Check)
+                    .is_none()
         });
 
         let standing = ["Echoes", "Time"].map(|title| stands_in(&library, title));
         assert_eq!(standing.iter().filter(|stands| **stands).count(), 1);
-        assert!(!driven.read(|root, _| root.is_armed(&Armed::TendTheVault(Tend::Check))));
+        assert!(!driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Check), cx)));
     }
 
     #[gpui::test]
@@ -785,7 +856,7 @@ mod tests {
         let (mut driven, library, _vault, _music, _held) = a_vault_holding_two_songs(cx);
 
         pressed(&mut driven, "release-from-the-vault");
-        assert!(!driven.read(|root, _| root.is_armed(&Armed::TendTheVault(Tend::Release))));
+        assert!(!driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Release), cx)));
 
         pressed(&mut driven, "count-what-release-points-back");
         let told = counted(&mut driven, Tend::Release);
@@ -794,13 +865,24 @@ mod tests {
         assert!(stands_in(&library, "Echoes"));
 
         pressed(&mut driven, "release-from-the-vault");
-        assert!(driven.read(|root, _| root.is_armed(&Armed::TendTheVault(Tend::Release))));
+        assert!(driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Release), cx)));
         assert!(stands_in(&library, "Echoes"));
 
         pressed(&mut driven, "release-from-the-vault");
-        driven.until(|root, _| {
-            root.settings_shown.tending.running().is_none()
-                && root.settings_shown.tending.counted(Tend::Release).is_none()
+        driven.until(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
+                .tending
+                .running()
+                .is_none()
+                && root
+                    .settings_pane
+                    .read(cx)
+                    .shown
+                    .tending
+                    .counted(Tend::Release)
+                    .is_none()
         });
 
         assert!(!stands_in(&library, "Echoes") && !stands_in(&library, "Time"));
@@ -819,8 +901,10 @@ mod tests {
         library.release_from_vault(&[]).expect("a release");
         let objects = vault.holding().expect("a count").objects;
         pressed(&mut driven, "count-what-prune-takes");
-        driven.until(|root, _| {
-            root.settings_shown
+        driven.until(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
                 .tending
                 .counted(Tend::Prune)
                 .is_some_and(|told| told.acts)
@@ -829,9 +913,20 @@ mod tests {
 
         pressed(&mut driven, "prune-the-vault");
         pressed(&mut driven, "prune-the-vault");
-        driven.until(|root, _| {
-            root.settings_shown.tending.running().is_none()
-                && root.settings_shown.tending.counted(Tend::Prune).is_none()
+        driven.until(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
+                .tending
+                .running()
+                .is_none()
+                && root
+                    .settings_pane
+                    .read(cx)
+                    .shown
+                    .tending
+                    .counted(Tend::Prune)
+                    .is_none()
         });
 
         assert_eq!(vault.holding().expect("a count").objects, 0);
@@ -853,7 +948,7 @@ mod tests {
         assert!(told.text.starts_with("would swap covers 0"));
 
         pressed(&mut driven, "compact-the-vault-covers");
-        assert!(!driven.read(|root, _| root.is_armed(&Armed::TendTheVault(Tend::Compact))));
+        assert!(!driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Compact), cx)));
     }
 
     #[gpui::test]
@@ -863,20 +958,36 @@ mod tests {
 
         pressed(&mut driven, "count-what-release-points-back");
         pressed(&mut driven, "count-what-prune-takes");
-        driven.until(|root, _| {
-            root.settings_shown
+        driven.until(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
                 .tending
                 .counted(Tend::Prune)
                 .is_some_and(|told| told.acts)
         });
         pressed(&mut driven, "prune-the-vault");
-        assert!(driven.read(|root, _| root.is_armed(&Armed::TendTheVault(Tend::Prune))));
+        assert!(driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Prune), cx)));
 
         pressed(&mut driven, "check-the-vault");
-        driven.until(|root, _| root.settings_shown.tending.counted(Tend::Check).is_some());
+        driven.until(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
+                .tending
+                .counted(Tend::Check)
+                .is_some()
+        });
         pressed(&mut driven, "count-what-release-points-back");
         driven.settle();
 
-        assert!(driven.read(|root, _| root.settings_shown.tending.running().is_none()));
+        assert!(driven.read(|root, cx| {
+            root.settings_pane
+                .read(cx)
+                .shown
+                .tending
+                .running()
+                .is_none()
+        }));
     }
 }

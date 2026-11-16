@@ -13,7 +13,9 @@ use crate::{
     views::{
         kit,
         root::RootView,
-        settings::{Armed, Choice, Rows, action, note, progress, reading, switch_row},
+        settings::{
+            Armed, Choice, Rows, SettingsPane, action, note, progress, reading, switch_row,
+        },
     },
     words,
 };
@@ -218,11 +220,13 @@ impl RootView {
             .map(|mirroring| mirroring.told());
         let building = matches!(told, Some(MirrorTold::Building { .. }));
         if building {
-            self.remotely.mirror_redraws.beats_while_drawn(
-                MIRROR_REDRAWN_EVERY,
-                |root: &mut Self| &mut root.remotely.mirror_redraws,
-                cx,
-            );
+            self.settings_pane.update(cx, |pane, cx| {
+                pane.remotely.mirror_redraws.beats_while_drawn(
+                    MIRROR_REDRAWN_EVERY,
+                    |pane: &mut SettingsPane| &mut pane.remotely.mirror_redraws,
+                    cx,
+                );
+            });
         }
         let held = matches!(told, Some(MirrorTold::Held { .. }));
 
@@ -550,7 +554,7 @@ impl RootView {
             .text()
             .trim()
             .is_empty();
-        let armed = self.is_armed(&Armed::TellTheEarlierPlays);
+        let armed = self.is_armed(&Armed::TellTheEarlierPlays, cx);
         let asked = self.earlier_plays_asked;
 
         kit::rows()
@@ -582,7 +586,7 @@ impl RootView {
                                 if armed {
                                     this.send_the_earlier_plays(cx);
                                 } else {
-                                    this.arm(Armed::TellTheEarlierPlays);
+                                    this.arm(Armed::TellTheEarlierPlays, cx);
                                     cx.notify();
                                 }
                             },
@@ -600,7 +604,7 @@ impl RootView {
     }
 
     fn send_the_earlier_plays(&mut self, cx: &mut Context<Self>) {
-        self.lower(&Armed::TellTheEarlierPlays);
+        self.lower(&Armed::TellTheEarlierPlays, cx);
         self.earlier_plays_asked = self
             .library
             .update(cx, |library, cx| library.tell_earlier_listens(cx));

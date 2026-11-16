@@ -2729,7 +2729,7 @@ mod tests {
 
         assert_eq!(driven.read(|root, _| root.pane), Pane::Settings);
         assert_eq!(
-            driven.read(|root, _| root.settings_shown.category),
+            driven.read(|root, cx| root.settings_pane.read(cx).shown.category),
             SettingsCategory::Library
         );
         assert!(driven.read(|root, _| root.dropped.taking_in.is_none()));
@@ -3226,7 +3226,8 @@ mod tests {
     fn showing_settings(driven: &mut Driven, category: SettingsCategory) {
         driven.root.update(&mut driven.cx, |root, cx| {
             root.set_pane(Pane::Settings, cx);
-            root.settings_shown.category = category;
+            root.settings_pane
+                .update(cx, |pane, _| pane.shown.category = category);
             cx.notify();
         });
         driven.settle();
@@ -3248,11 +3249,11 @@ mod tests {
 
         let mut driven = Driven::open(cx, catalog());
         let place = |driven: &mut Driven| {
-            driven.read(|root, _| {
+            driven.read(|root, cx| {
                 (
                     root.pane,
-                    root.settings_shown.category,
-                    root.settings_shown.page,
+                    root.settings_pane.read(cx).shown.category,
+                    root.settings_pane.read(cx).shown.page,
                 )
             })
         };
@@ -3321,8 +3322,8 @@ mod tests {
 
         assert_eq!(
             driven.read(|root, cx| (
-                root.settings_shown.category,
-                root.settings_shown.page,
+                root.settings_pane.read(cx).shown.category,
+                root.settings_pane.read(cx).shown.page,
                 root.settings_fields
                     .read(cx)
                     .finding
@@ -5434,7 +5435,7 @@ mod tests {
         type_into(&mut driven, 1, "a wrong secret");
         driven.cx.simulate_keystrokes("enter");
         driven.click("lastfm-sign-in");
-        driven.until(|root, _| !root.accounts.lastfm.is_asking());
+        driven.until(|root, cx| !root.settings_pane.read(cx).accounts.lastfm.is_asking());
 
         assert_eq!(driven.read(session), "");
 
@@ -6031,11 +6032,14 @@ mod tests {
         let mut driven = jellyfin_shown(cx, signs_in);
         let stopped = driven.cx.update(|_, cx| {
             driven.root.update(cx, |root, cx| {
-                root.accounts
-                    .jellyfin_quick
-                    .shown_waiting("123456".to_owned());
+                let stopping = root.settings_pane.update(cx, |pane, _| {
+                    pane.accounts
+                        .jellyfin_quick
+                        .shown_waiting("123456".to_owned());
+                    pane.accounts.jellyfin_quick.stopping()
+                });
                 cx.notify();
-                root.accounts.jellyfin_quick.stopping()
+                stopping
             })
         });
         driven.settle();
@@ -6407,17 +6411,16 @@ mod tests {
 
         driven.click("send-the-earlier-plays");
 
-        assert!(
-            driven
-                .read(|root, _| root.is_armed(&crate::views::settings::Armed::TellTheEarlierPlays))
-        );
+        assert!(driven.read(|root, cx| {
+            root.is_armed(&crate::views::settings::Armed::TellTheEarlierPlays, cx)
+        }));
         assert!(!owed(&library), "the first press sent the earlier plays");
 
         driven.click("send-the-earlier-plays");
 
         assert!(owed(&library));
-        assert!(driven.read(|root, _| {
-            !root.is_armed(&crate::views::settings::Armed::TellTheEarlierPlays)
+        assert!(driven.read(|root, cx| {
+            !root.is_armed(&crate::views::settings::Armed::TellTheEarlierPlays, cx)
                 && root.earlier_plays_asked
         }));
     }
@@ -6554,7 +6557,7 @@ mod tests {
             driven.read(|root, cx| {
                 (
                     cx.global::<ResonateApp>().history_kept,
-                    root.history_armed(),
+                    root.history_armed(cx),
                 )
             })
         };
@@ -6603,7 +6606,7 @@ mod tests {
         driven.click(forget);
 
         assert_eq!(
-            driven.read(|root, _| root.folder_armed().cloned()),
+            driven.read(|root, cx| root.folder_armed(cx).cloned()),
             Some(music.clone())
         );
         assert_eq!(
@@ -6614,7 +6617,7 @@ mod tests {
         driven.click(forget);
 
         driven.until(|_, _| library.roots().expect("the roots read").is_empty());
-        assert_eq!(driven.read(|root, _| root.folder_armed().cloned()), None);
+        assert_eq!(driven.read(|root, cx| root.folder_armed(cx).cloned()), None);
     }
 
     #[gpui::test]
@@ -6788,7 +6791,7 @@ mod tests {
         let named_now = |driven: &mut Driven| {
             driven
                 .cx
-                .update(|window, cx| root.read(cx).focused_control_named(window))
+                .update(|window, cx| root.read(cx).focused_control_named(window, cx))
         };
 
         assert_eq!(named_now(&mut driven), None);
