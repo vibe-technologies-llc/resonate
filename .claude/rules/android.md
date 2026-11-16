@@ -1363,7 +1363,8 @@ native failure, a `LinkageError` included, so a screen never waits for ever.
 
 **Device sync keeps a copy of MusicBrainz where asked** (`SyncScreen`'s *MusicBrainz* section;
 `mobile.md`'s *A copy of MusicBrainz fetched from a desktop*): *Keep a copy of MusicBrainz* is
-`SyncConfig.musicbrainz_copy`, kept as `sync-musicbrainz-copy` (off by default), its line
+`SyncConfig.musicbrainz_copy`, kept as `sync-musicbrainz-copy-chosen` (on by default, read by
+`StoredChoices.musicbrainzCopy`: `mobile.md`'s *Taken by default*, `StoredChoicesTest`), its line
 `musicbrainzCopyLine` over the `musicbrainz_copy()` that `pollSync` reads into
 `LibraryFeatures.musicbrainzCopy` (sizes in GB by `gigabytes`), with *Remove the copy* (confirmed,
 `removeMusicbrainzCopy`) while one is held (`SettingsWordsTest`).

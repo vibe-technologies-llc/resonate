@@ -460,7 +460,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     control = SyncControls.of(null),
                     stun = "",
                     certificate = "",
-                    musicbrainzCopy = false,
+                    musicbrainzCopy = true,
                 )
             }
         together.begin(native)

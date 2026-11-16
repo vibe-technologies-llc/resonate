@@ -780,19 +780,38 @@ impl resonate_ui::Mirroring for Mirroring {
 const ASKED_OF_A_DEVICE_WITHIN: Duration = Duration::from_secs(15);
 
 #[cfg(feature = "sync")]
-pub struct ConsultedHere(Consultation);
+pub struct ConsultedHere {
+    consultation: Consultation,
+    config: Config,
+}
 
 #[cfg(feature = "sync")]
 impl ConsultedHere {
     pub fn of(config: &Config) -> Arc<dyn resonate_sync::Consultable> {
-        Arc::new(Self(consultation(config)))
+        Arc::new(Self {
+            consultation: consultation(config),
+            config: config.clone(),
+        })
     }
+}
+
+#[cfg(feature = "sync")]
+fn offers_the_copy(config: &Config) -> bool {
+    current(config).is_on(Switch::OfferMusicbrainzCopy)
+}
+
+#[cfg(feature = "sync")]
+fn offered_unless_withheld(
+    offers: bool,
+    offered: impl FnOnce() -> Option<resonate_musicbrainz::Offered>,
+) -> Option<resonate_musicbrainz::Offered> {
+    if offers { offered() } else { None }
 }
 
 #[cfg(feature = "sync")]
 impl resonate_sync::Consultable for ConsultedHere {
     fn consult(&self, asked: &[u8]) -> Option<Vec<u8>> {
-        self.0.consulted(asked)
+        self.consultation.consulted(asked)
     }
 
     fn kept_after(
@@ -801,7 +820,7 @@ impl resonate_sync::Consultable for ConsultedHere {
         most: usize,
         asker: resonate_sync::DeviceId,
     ) -> Vec<resonate_sync::KeptAnswer> {
-        self.0
+        self.consultation
             .kept_after(after, most, &asker.to_string())
             .into_iter()
             .map(|kept| resonate_sync::KeptAnswer {
@@ -814,7 +833,7 @@ impl resonate_sync::Consultable for ConsultedHere {
     }
 
     fn kept_mark(&self, device: resonate_sync::DeviceId) -> u64 {
-        self.0.kept_mark(&device.to_string())
+        self.consultation.kept_mark(&device.to_string())
     }
 
     fn take_kept(
@@ -832,7 +851,9 @@ impl resonate_sync::Consultable for ConsultedHere {
                 packed: kept.packed,
             })
             .collect();
-        let taken = self.0.take_kept(&device.to_string(), &answers, mark);
+        let taken = self
+            .consultation
+            .take_kept(&device.to_string(), &answers, mark);
         if taken > 0 {
             tracing::debug!(taken, "lookup answers another device kept were taken");
         }
@@ -843,7 +864,9 @@ impl resonate_sync::Consultable for ConsultedHere {
             resonate_sync::ExportPart::Copy => resonate_musicbrainz::CopyPart::TheCopy,
             resonate_sync::ExportPart::Amendments => resonate_musicbrainz::CopyPart::ItsAmendments,
         };
-        let offered = self.0.offered(part)?;
+        let offered = offered_unless_withheld(offers_the_copy(&self.config), || {
+            self.consultation.offered(part)
+        })?;
         Some(resonate_sync::OfferedExport {
             dump: offered.dump,
             sequence: offered.sequence,
@@ -918,6 +941,8 @@ mod tests {
     #[cfg(feature = "ui")]
     use resonate_core::{Meter, Metering};
     use resonate_core::{Switch, Switches};
+    #[cfg(feature = "sync")]
+    use resonate_sync::{Consultable, ExportPart};
 
     use super::*;
 
@@ -1120,6 +1145,36 @@ mod tests {
         assert!(!held_and_stopped);
         assert!(held_and_newer);
         assert!(!only_held);
+    }
+
+    #[cfg(feature = "sync")]
+    #[test]
+    fn a_copy_withheld_in_the_settings_is_refused_as_one_never_held() {
+        let withholding = settings_file("offer-musicbrainz-copy = false\n");
+        let offering = settings_file("online = true\n");
+        let withheld = ConsultedHere {
+            consultation: Consultation::new(None, None),
+            config: started_with(true, true, &withholding),
+        };
+        let mut asked = false;
+
+        let read_off = offers_the_copy(&started_with(true, true, &withholding));
+        let read_on = offers_the_copy(&started_with(true, true, &offering));
+        let unasked = offered_unless_withheld(false, || {
+            asked = true;
+            None
+        });
+        let copy = withheld.export(ExportPart::Copy);
+        let amendments = withheld.export(ExportPart::Amendments);
+        let _ = fs::remove_file(&withholding);
+        let _ = fs::remove_file(&offering);
+
+        assert!(!read_off);
+        assert!(read_on);
+        assert!(unasked.is_none());
+        assert!(!asked);
+        assert!(copy.is_none());
+        assert!(amendments.is_none());
     }
 
     #[cfg(feature = "ui")]

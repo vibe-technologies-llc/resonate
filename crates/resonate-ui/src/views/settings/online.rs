@@ -210,6 +210,7 @@ impl RootView {
 
     fn mirror_rows(&mut self, rows: Rows, cx: &mut Context<Self>) -> Rows {
         let mirrors = cx.global::<ResonateApp>().online.musicbrainz_mirror;
+        let offers = cx.global::<ResonateApp>().online.offer_musicbrainz_copy;
         let told = cx
             .global::<ResonateApp>()
             .mirroring
@@ -312,6 +313,19 @@ impl RootView {
             )
         })
         .when(mirrors, |body| {
+            body.child(self.in_the_ring(
+                "offer-musicbrainz-copy",
+                switch_row(
+                    words::settings_online::offer_the_copy_to_your_phones(),
+                    words::settings_online::off_a_phone_asks_this_copy_one(),
+                    offers,
+                    "offer-musicbrainz-copy",
+                ),
+                move |this, _, cx| this.set_offer_musicbrainz_copy(!offers, cx),
+                cx,
+            ))
+        })
+        .when(mirrors, |body| {
             body.child(
                 kit::field(
                     "MetaBrainz",
@@ -331,6 +345,14 @@ impl RootView {
     pub(crate) fn set_musicbrainz_mirror(&mut self, mirrors: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.musicbrainz_mirror = mirrors);
         self.store(&Setting::Switched(Switch::MusicbrainzMirror, mirrors), cx);
+        cx.notify();
+    }
+
+    pub(crate) fn set_offer_musicbrainz_copy(&mut self, offers: bool, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| {
+            global.online.offer_musicbrainz_copy = offers;
+        });
+        self.store(&Setting::Switched(Switch::OfferMusicbrainzCopy, offers), cx);
         cx.notify();
     }
 

@@ -4373,4 +4373,19 @@ mod tests {
         let error = read("quality = ").expect_err("truncated");
         assert!(matches!(error, Error::ConfigSyntax { .. }), "{error:?}");
     }
+
+    #[test]
+    fn the_copy_of_musicbrainz_is_offered_unless_the_file_withholds_it() {
+        let unsaid = read("").expect("empty is valid");
+        let withheld = read("offer-musicbrainz-copy = false").expect("a well formed document");
+        let offered = read("offer-musicbrainz-copy = true").expect("a well formed document");
+
+        assert!(unsaid.is_on(Switch::OfferMusicbrainzCopy));
+        assert_eq!(
+            withheld.switches.said(Switch::OfferMusicbrainzCopy),
+            Some(false)
+        );
+        assert!(!withheld.is_on(Switch::OfferMusicbrainzCopy));
+        assert!(offered.is_on(Switch::OfferMusicbrainzCopy));
+    }
 }

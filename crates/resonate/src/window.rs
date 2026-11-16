@@ -240,6 +240,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
                     .musicbrainz_replication_token
                     .clone()
                     .unwrap_or_default(),
+                offer_musicbrainz_copy: config.is_on(Switch::OfferMusicbrainzCopy),
                 stall_downloads_on_metered: config.is_on(Switch::StallDownloadsOnMetered),
                 studies: config.is_on(Switch::Study),
                 lyrics: config.is_on(Switch::FetchLyrics),

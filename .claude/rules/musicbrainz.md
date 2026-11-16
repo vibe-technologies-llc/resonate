@@ -366,6 +366,15 @@ everything beside it away
 (`mobile.md`'s *A copy of MusicBrainz fetched from a desktop*); the desktop builds its own and only
 offers.
 
+**Withheld.** `offer-musicbrainz-copy` (on unless said) lets the desktop keep its copy to itself:
+off, the binary's `ConsultedHere::export` answers none for either part (`offered_unless_withheld`,
+never asking the `Consultation`), which sync sends as `Missing`, exactly as a device holding no copy
+does, so a phone tells it as no device holding one. The setting is read from the file as it stands
+on each ask (`offers_the_copy`). It withholds only the whole copy: a lookup a device asks is still
+answered from it, one at a time
+(`a_copy_withheld_in_the_settings_is_refused_as_one_never_held`). Phones take the copy by default
+(`mobile.md`'s *Taken by default*).
+
 ## Between devices
 
 - **Consulted.** `Consultation` is what a device serves (`resonate_sync::Consultable`, adapted in the

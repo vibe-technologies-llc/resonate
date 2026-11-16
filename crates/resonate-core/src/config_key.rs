@@ -118,6 +118,7 @@ keys! {
     EnrichOnMetered = "enrich-on-metered", off;
     MusicbrainzMirror = "musicbrainz-mirror", off;
     MusicbrainzReplicationToken = "musicbrainz-replication-token";
+    OfferMusicbrainzCopy = "offer-musicbrainz-copy", on;
     StallDownloadsOnMetered = "stall-downloads-on-metered", off;
     Study = "study", on;
     FetchLyrics = "fetch-lyrics", on;

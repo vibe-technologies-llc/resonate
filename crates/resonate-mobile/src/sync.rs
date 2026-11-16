@@ -200,7 +200,7 @@ pub struct SyncConfig {
     pub control: driving::SyncControl,
     pub stun: String,
     pub certificate: String,
-    #[uniffi(default = false)]
+    #[uniffi(default = true)]
     pub musicbrainz_copy: bool,
 }
 

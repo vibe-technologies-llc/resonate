@@ -87,6 +87,8 @@ private struct KeptProviderAccount: Codable {
 
 public struct AccountStore: Sendable {
     public static let plainSuite = "provider-accounts"
+    static let musicbrainzCopyChosen = "sync-musicbrainz-copy-chosen"
+    static let musicbrainzCopyAsFirstSaved = "sync-musicbrainz-copy"
     public static let choicesSuite = "library-features"
 
     private static let providerAccountsKey = "download-accounts"
@@ -185,7 +187,7 @@ public struct AccountStore: Sendable {
             control: SyncControls.of(plain.string(forKey: "sync-control")),
             stun: plain.string(forKey: "sync-stun") ?? "",
             certificate: plain.string(forKey: "sync-certificate") ?? "",
-            musicbrainzCopy: flag("sync-musicbrainz-copy", false)
+            musicbrainzCopy: flag(Self.musicbrainzCopyChosen, true)
         )
     }
 
@@ -204,6 +206,7 @@ public struct AccountStore: Sendable {
         plain.set(SyncControls.spelt(config.control), forKey: "sync-control")
         plain.set(config.stun, forKey: "sync-stun")
         plain.set(config.certificate, forKey: "sync-certificate")
-        plain.set(config.musicbrainzCopy, forKey: "sync-musicbrainz-copy")
+        plain.set(config.musicbrainzCopy, forKey: Self.musicbrainzCopyChosen)
+        plain.removeObject(forKey: Self.musicbrainzCopyAsFirstSaved)
     }
 }

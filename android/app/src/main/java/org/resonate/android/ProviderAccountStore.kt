@@ -114,7 +114,7 @@ class ProviderAccountStore(context: Context) {
             control = SyncControls.of(storage.getString("sync-control", null)),
             stun = storage.getString("sync-stun", "").orEmpty(),
             certificate = storage.getString("sync-certificate", "").orEmpty(),
-            musicbrainzCopy = storage.getBoolean("sync-musicbrainz-copy", false),
+            musicbrainzCopy = StoredChoices.musicbrainzCopy(storage::storedFlag),
         )
 
     @Synchronized
@@ -134,7 +134,8 @@ class ProviderAccountStore(context: Context) {
                 .putString("sync-control", SyncControls.spelt(config.control))
                 .putString("sync-stun", config.stun)
                 .putString("sync-certificate", config.certificate)
-                .putBoolean("sync-musicbrainz-copy", config.musicbrainzCopy)
+                .putBoolean(StoredChoices.MUSICBRAINZ_COPY, config.musicbrainzCopy)
+                .remove(StoredChoices.MUSICBRAINZ_COPY_AS_FIRST_SAVED)
         check(edit.commit()) { resources.getString(R.string.provider_sync_not_saved) }
     }
 

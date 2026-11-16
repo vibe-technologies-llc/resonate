@@ -631,6 +631,14 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   the hourly changes (`musicbrainz.md`'s *Following the changes*). The settings pane's field sits
   under the switch (`Setting::MusicbrainzReplicationToken`), and giving it starts the follow.
 
+  `offer-musicbrainz-copy` (on) offers the copy to the listener's phones over sync; off, it is
+  withheld as `musicbrainz.md`'s *Withheld* says. Its switch sits under the mirror's in the same
+  group (`Setting::Switched(Switch::OfferMusicbrainzCopy, _)`), shown while the mirror is on, since
+  it is about the copy held there rather than about which devices sync; nothing is applied in
+  `settings::File::apply`, since `ConsultedHere::export` reads the file as it stands on every ask
+  (`musicbrainz::current`), so a change is followed from the next ask
+  (`the_copy_of_musicbrainz_is_offered_unless_the_file_withholds_it`).
+
   A build without `online` is `NoMirror`.
 - **`check-for-updates` (on) asks whether a newer release is out, at most once a day**
   (`updates.rs`, online alone): the window's `Updates` seam (`updates::checking`, present only

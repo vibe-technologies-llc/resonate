@@ -394,7 +394,25 @@ let interactionNotAllowed: Int32 = -25308
         #expect(read.server == "")
         #expect(read.stun == "" && read.certificate == "")
         #expect(!read.favourites && !read.playlists && !read.everything && !read.meteredAllowed)
-        #expect(!read.musicbrainzCopy)
+        #expect(read.musicbrainzCopy)
+    }
+
+    @Test func aCopyOfMusicbrainzIsTakenWhereTheFirstSwitchSavedItsDefaultAndKeptOffOnceChosenOff() throws {
+        let plain = UserDefaults(suiteName: defaults.names[0])!
+        plain.set(false, forKey: "sync-musicbrainz-copy")
+
+        let saved = try store.readSync()
+
+        #expect(saved.musicbrainzCopy)
+
+        var declined = saved
+        declined.musicbrainzCopy = false
+        try store.writeSync(declined)
+        let chosen = try store.readSync()
+
+        #expect(!chosen.musicbrainzCopy)
+        #expect(plain.object(forKey: "sync-musicbrainz-copy") == nil)
+        #expect(plain.object(forKey: "sync-musicbrainz-copy-chosen") as? Bool == false)
     }
 
     @Test func syncWrittenIsReadBackWithItsKeyInTheKeychainAndTheRestInTheDefaults() throws {

@@ -453,7 +453,7 @@ one** (`musicbrainz.md`):
 
 **A phone never builds the copy (some 50 GB of room, a gigabyte of memory and an hour); it fetches
 the one a device built** (`sync/copied.rs`, over `sync.md`'s *A copy of MusicBrainz between
-devices*). `SyncConfig.musicbrainz_copy` (default off) starts `Copied::keep`, a
+devices*). `SyncConfig.musicbrainz_copy` (default on) starts `Copied::keep`, a
 `resonate-musicbrainz-copy` thread while sync runs: whenever transfers are allowed (unmetered, or
 mobile data allowed) it asks the online devices, nearby first, for `ExportPart::Copy` stating the
 export it holds, so a device holding the same dump answers `AlreadyHeld` and sends nothing. A copy
@@ -472,6 +472,19 @@ amendments follow to and when, and while receiving the bytes so far and of how m
 `remove_musicbrainz_copy()` lets the `Mirrored` go and removes the copy, its amendments and any
 part received (`removed_copy`, `MusicbrainzCopyNotRemoved`)
 (`a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it`).
+
+**Taken by default.** A phone keeps a copy unless the listener turns it off, since lookups answered on
+the phone are quicker, work without the internet and spare MusicBrainz's servers, and the room
+check and the transfer gate already keep it from a phone without the room or off Wi-Fi. The first
+switch was kept as `sync-musicbrainz-copy`, written on every save of the sync settings whatever was
+touched, so a stored `false` cannot tell a listener who turned it off from one who saved anything
+else while the default was off. The choice therefore moved to `sync-musicbrainz-copy-chosen`, read
+as on where it is absent, and the old key is removed on the next save: a phone whose listener had
+turned the copy off before this change takes it once, and turning it off again is kept. iOS's
+`AccountStore.readSync` and Android's `StoredChoices.musicbrainzCopy` read it
+(`aCopyOfMusicbrainzIsTakenWhereTheFirstSwitchSavedItsDefaultAndKeptOffOnceChosenOff`,
+`aCopyOfMusicbrainzIsTakenUnlessChosenOffWhateverTheFirstSwitchSaved`). A desktop may withhold its
+copy (`offer-musicbrainz-copy`, `musicbrainz.md`), which the phone tells as no device holding one.
 
 ## Answers from other devices
 

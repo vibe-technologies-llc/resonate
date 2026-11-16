@@ -422,6 +422,7 @@ pub struct Online {
     pub enrich_on_metered: bool,
     pub musicbrainz_mirror: bool,
     pub musicbrainz_replication_token: String,
+    pub offer_musicbrainz_copy: bool,
     pub stall_downloads_on_metered: bool,
     pub studies: bool,
     pub lyrics: bool,
@@ -524,6 +525,7 @@ impl fmt::Debug for Online {
             enrich_on_metered,
             musicbrainz_mirror,
             musicbrainz_replication_token,
+            offer_musicbrainz_copy,
             stall_downloads_on_metered,
             studies,
             lyrics,
@@ -567,6 +569,7 @@ impl fmt::Debug for Online {
                 "musicbrainz_replication_token",
                 &withheld(musicbrainz_replication_token),
             )
+            .field("offer_musicbrainz_copy", offer_musicbrainz_copy)
             .field("stall_downloads_on_metered", stall_downloads_on_metered)
             .field("studies", studies)
             .field("lyrics", lyrics)

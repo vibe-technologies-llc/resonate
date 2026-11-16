@@ -835,6 +835,7 @@ impl Group {
                     ConfigKey::Online,
                     ConfigKey::MusicbrainzMirror,
                     ConfigKey::MusicbrainzReplicationToken,
+                    ConfigKey::OfferMusicbrainzCopy,
                 ],
             },
             Self::AfterScan => Described {
