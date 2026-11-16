@@ -5174,6 +5174,32 @@ mod tests {
         );
     }
 
+    fn track_rows(driven: &mut Driven) -> gpui::UniformListScrollHandle {
+        driven.read(|root, _| root.scrolls.track_rows.clone())
+    }
+
+    fn playlist_rows(driven: &mut Driven) -> gpui::UniformListScrollHandle {
+        driven.read(|root, _| root.scrolls.playlist_rows.clone())
+    }
+
+    fn offset_of(rows: &gpui::UniformListScrollHandle) -> Pixels {
+        rows.0.borrow().base_handle.offset().y
+    }
+
+    fn track_rows_offset(driven: &mut Driven) -> Pixels {
+        offset_of(&track_rows(driven))
+    }
+
+    fn opened_rows_order(driven: &mut Driven) -> (resonate_library::RowOrder, Direction, bool) {
+        driven.read(|root, _| {
+            (
+                root.orders.row_order,
+                root.orders.row_reading,
+                root.orders.keeping,
+            )
+        })
+    }
+
     fn eighty_tracks_scrolled(cx: &mut TestAppContext) -> (Driven, Pixels) {
         let folder = Folder::new();
         for nth in 0..80 {
@@ -5191,8 +5217,7 @@ mod tests {
         let middle = point(px(WIDE * 0.6), px(TALL * 0.5));
         driven.scroll_at(middle, 1_000.0);
         driven.scroll_at(middle, 37.0);
-        let left_at =
-            driven.read(|root, _| root.scrolls.track_rows.0.borrow().base_handle.offset().y);
+        let left_at = track_rows_offset(&mut driven);
         assert!(left_at < px(-500.0), "the list did not scroll: {left_at:?}");
 
         (driven, left_at)
@@ -5206,20 +5231,230 @@ mod tests {
         driven.cx.simulate_input("track 7");
         driven.settle();
         driven.click("search-songs");
-        driven.read(|root, _| {
-            let base = root.scrolls.track_rows.0.borrow().base_handle.clone();
-            base.set_offset(point(px(0.0), px(0.0)));
-        });
+        let base = track_rows(&mut driven).0.borrow().base_handle.clone();
+        base.set_offset(point(px(0.0), px(0.0)));
         driven.cx.simulate_keystrokes("escape");
         driven.until(|root, _| root.landing_on.is_none());
         driven.settle();
 
-        let landed =
-            driven.read(|root, _| root.scrolls.track_rows.0.borrow().base_handle.offset().y);
+        let landed = track_rows_offset(&mut driven);
         assert!(
             (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
             "clearing the search landed at {landed:?} where the list was left at {left_at:?}"
         );
+    }
+
+    #[gpui::test]
+    fn the_tracks_are_drawn_where_they_were_scrolled_after_other_panes_were_shown(
+        cx: &mut TestAppContext,
+    ) {
+        let (mut driven, left_at) = eighty_tracks_scrolled(cx);
+
+        driven.click("tab-albums");
+        driven.click("tab-statistics");
+        driven.click("tab-tracks");
+        driven.settle();
+
+        let landed = track_rows_offset(&mut driven);
+        assert!(
+            (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
+            "the tracks came back at {landed:?} where they were left at {left_at:?}"
+        );
+    }
+
+    #[gpui::test]
+    fn each_playlist_is_drawn_where_it_was_scrolled_when_it_is_opened_again(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        for nth in 0..80 {
+            folder.tagged(
+                &format!("{nth:02}.wav"),
+                1,
+                &[(b"INAM", &format!("Track {nth}")), (b"IPRD", "Meddle")],
+            );
+        }
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let cuts: Vec<_> = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")
+            .iter()
+            .map(resonate_library::Cut::of)
+            .collect();
+        let long = library.create_playlist("Long").expect("a playlist");
+        library
+            .add_to_playlist(long, &cuts)
+            .expect("the rows put in");
+        let other = library.create_playlist("Other").expect("a playlist");
+        library
+            .add_to_playlist(other, &cuts)
+            .expect("the rows put in");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let open = |driven: &mut Driven, playlist| {
+            driven.root.update(&mut driven.cx, |root, cx| {
+                root.show_playlist(Some(playlist), cx);
+                root.set_pane(Pane::Playlists, cx);
+            });
+            driven.until(|root, cx| root.library.read(cx).entries().len() == 80);
+            driven.settle();
+        };
+
+        open(&mut driven, long);
+        let middle = point(px(WIDE * 0.6), px(TALL * 0.5));
+        driven.scroll_at(middle, 1_000.0);
+        driven.scroll_at(middle, 37.0);
+        let left_at = offset_of(&playlist_rows(&mut driven));
+        assert!(
+            left_at < px(-500.0),
+            "the playlist did not scroll: {left_at:?}"
+        );
+
+        open(&mut driven, other);
+
+        assert_eq!(offset_of(&playlist_rows(&mut driven)), px(0.0));
+
+        driven.click("tab-albums");
+        open(&mut driven, long);
+
+        let landed = offset_of(&playlist_rows(&mut driven));
+        assert!(
+            (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
+            "the playlist came back at {landed:?} where it was left at {left_at:?}"
+        );
+    }
+
+    #[gpui::test]
+    fn a_playlists_order_chosen_and_kept_is_drawn_again_after_another_pane_and_playlist(
+        cx: &mut TestAppContext,
+    ) {
+        use resonate_library::RowOrder;
+
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+        let cuts: Vec<_> = library
+            .tracks(&resonate_library::TrackQuery::default())
+            .expect("the scanned tracks")
+            .iter()
+            .map(resonate_library::Cut::of)
+            .collect();
+        let kept = library.create_playlist("Kept").expect("a playlist");
+        library
+            .add_to_playlist(kept, &cuts)
+            .expect("the rows put in");
+        let other = library.create_playlist("Other").expect("a playlist");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let titles = |driven: &mut Driven| -> Vec<String> {
+            driven.read(|root, cx| {
+                root.library
+                    .read(cx)
+                    .entries()
+                    .iter()
+                    .filter_map(|entry| entry.track.as_ref().map(|track| track.title.clone()))
+                    .collect()
+            })
+        };
+        let show = |driven: &mut Driven, playlist| {
+            driven.root.update(&mut driven.cx, |root, cx| {
+                root.show_playlist(Some(playlist), cx);
+                root.set_pane(Pane::Playlists, cx);
+            });
+            driven.settle();
+        };
+
+        show(&mut driven, kept);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.keep_in_order(kept, true, cx);
+            root.put_in_order(kept, RowOrder::Title, Direction::Descending, cx);
+        });
+        driven.until(|root, cx| {
+            root.library
+                .read(cx)
+                .saved_playlist(kept)
+                .is_some_and(|playlist| playlist.kept.is_some())
+        });
+        driven.settle();
+
+        assert_eq!(
+            opened_rows_order(&mut driven),
+            (RowOrder::Title, Direction::Descending, true)
+        );
+        assert_eq!(titles(&mut driven), ["Time", "Money", "Echoes"]);
+
+        driven.click("tab-albums");
+        driven.click("tab-playlists");
+
+        assert_eq!(
+            opened_rows_order(&mut driven),
+            (RowOrder::Title, Direction::Descending, true)
+        );
+        assert_eq!(titles(&mut driven), ["Time", "Money", "Echoes"]);
+
+        show(&mut driven, other);
+
+        assert_eq!(
+            opened_rows_order(&mut driven),
+            (RowOrder::default(), Direction::default(), false)
+        );
+
+        show(&mut driven, kept);
+
+        assert_eq!(
+            opened_rows_order(&mut driven),
+            (RowOrder::Title, Direction::Descending, true)
+        );
+        assert_eq!(titles(&mut driven), ["Time", "Money", "Echoes"]);
+    }
+
+    #[gpui::test]
+    fn a_row_reached_in_the_tracks_is_walked_widened_and_found_again_after_another_pane(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        for title in ["Echoes", "Money", "Time"] {
+            folder.tagged(
+                &format!("{title}.wav"),
+                1,
+                &[(b"INAM", title), (b"IPRD", "Meddle")],
+            );
+        }
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let tracks = Shift::Listing(Listed::Tracks);
+        driven.click("tab-tracks");
+        driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);
+
+        driven.cx.simulate_keystrokes("down");
+        driven.settle();
+
+        assert_eq!(reached_at(&mut driven), Some((tracks, 0)));
+
+        driven.cx.simulate_keystrokes("down shift-down");
+        driven.settle();
+
+        assert_eq!(reach_in_the_tracks(&mut driven), Some(Span::between(1, 2)));
+
+        driven.click("tab-albums");
+        driven.click("tab-tracks");
+
+        assert_eq!(reached_at(&mut driven), Some((tracks, 2)));
+        assert_eq!(reach_in_the_tracks(&mut driven), Some(Span::between(1, 2)));
+
+        driven.cx.simulate_keystrokes("up");
+        driven.settle();
+
+        assert_eq!(reached_at(&mut driven), Some((tracks, 0)));
+
+        driven.click("tab-albums");
+        driven.cx.simulate_keystrokes("down");
+        driven.settle();
+
+        assert_eq!(
+            reached_at(&mut driven),
+            Some((Shift::Listing(Listed::Albums), 0))
+        );
+        assert_eq!(reach_in_the_tracks(&mut driven), None);
     }
 
     #[gpui::test]
@@ -5245,8 +5480,7 @@ mod tests {
         let middle = point(px(WIDE * 0.6), px(TALL * 0.5));
         driven.scroll_at(middle, 1_000.0);
         driven.scroll_at(middle, 37.0);
-        let left_at =
-            driven.read(|root, _| root.scrolls.track_rows.0.borrow().base_handle.offset().y);
+        let left_at = track_rows_offset(&mut driven);
         assert!(left_at < px(-500.0), "the list did not scroll: {left_at:?}");
 
         let root = driven.root.clone();
@@ -5262,8 +5496,7 @@ mod tests {
         driven.until(|root, _| root.landing_on.is_none());
         driven.settle();
 
-        let landed =
-            driven.read(|root, _| root.scrolls.track_rows.0.borrow().base_handle.offset().y);
+        let landed = track_rows_offset(&mut driven);
         assert!(
             (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
             "the way back landed at {landed:?} where the list was left at {left_at:?}"
