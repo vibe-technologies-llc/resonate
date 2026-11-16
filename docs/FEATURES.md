@@ -31,6 +31,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   `com.apple.developer.networking.multicast` entitlement Apple grants a paid team on request; a
   renderer given by the address of its description and a receiver given by its address or name (the
   zones sheet's *Add a renderer by address* and *Add a receiver by address*) are reached without it
+- [S · blocked: Apple] An iPhone signed for free offers its catalog on the network but nothing finds
+  it: SSDP's answers and announcements are multicast, which need the same entitlement, and the
+  server's port changes on every start, so a control point given its address loses it after the next
 - [M · blocked: rust nightly] Pointer authentication (an `arm64e` slice) is not adopted: the Rust
   library builds for `aarch64-apple-ios` on stable, and `arm64e-apple-ios` needs a nightly
   `build-std`
@@ -152,8 +155,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [M] Right-to-left languages: Fluent's isolation marks are off, and the window's layout is never mirrored.
 
 ## Later: Sources and providers
-- [M] Replacing a playlist's lossy songs with lossless copies is offered from the window's
-  playlist menu alone: the phones, the terminal's `playlist` command and MCP have no way to start it
+- [M] Replacing a playlist's lossy songs with lossless copies is offered on the desktop alone (the
+  window's playlist menu, `resonate playlist NAME --replace-lossy`, MCP's `replace_lossy_songs`):
+  the phones have no way to start it, and their own catalog keeps no replacements
+- [S] The terminal's and MCP's replacement take every lossy song that can be replaced: only the
+  window's sheet lets the listener tick which
 - [M · blocked: service] A Spotify playlist the account only follows is read off its public page,
   at most a hundred songs with no ISRC and nothing where it is private: Spotify's development mode
   answers `403` on `/playlists/<id>/items` unless the account owns or collaborates on it, and extended
@@ -216,12 +222,14 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Later: Network output
 - [M] A song cut from a cue sheet is not offered on the network: a span of a file is no byte range
   of it, and serving one would mean decoding it and sending it as WAVE
-- [S] The phones do not offer their catalogs on the network, only the desktop does
-- [S] Every computer offering its catalog is named Resonate on the network, so two read alike in a
-  control point; the name is the catalog's word, never the host's
-- [S] A search from the network answers under the root and Songs alone: under an artist, an album
-  or a playlist it is UPnP error 720, as the albums, playlists and songs below one would each have
-  to be narrowed to it beside the search
+- [S] A phone offering its catalog is always named Resonate on the network: the desktop's
+  `offer-name` has no setting on the phones
+- [S] The offered catalog's root container is titled by the catalog word whatever `offer-name`
+  says; only the device's `friendlyName` follows the typed name
+- [S] A search under Artists or Albums finds only that shelf's own kind, not the albums and songs
+  nested below it: an exact narrowing wants a track filter for having an album, which the library
+  lacks
+- [S] A phone's song whose scan recorded no size is offered with a `res` size of 0
 - [S] `ContainerUpdateIDs` is not evented, so a control point holding one container's children
   reads them again whenever `SystemUpdateID` moves; the catalog's revision names no container
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio
