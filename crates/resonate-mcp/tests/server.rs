@@ -2641,6 +2641,10 @@ fn more_ids_than_a_search_may_answer_are_refused() {
         ),
         ("mark_favourite", json!({ "album_ids": too_many })),
         ("want_tracks", json!({ "release_track_ids": too_many })),
+        (
+            "replace_lossy_songs",
+            json!({ "playlist": "Hours", "track_ids": too_many }),
+        ),
     ] {
         let answer = asked(
             &server,
@@ -2668,7 +2672,7 @@ fn more_ids_than_a_search_may_answer_are_refused() {
         .flat_map(|fields| fields.values())
         .filter(|field| field["type"] == "array" && field["items"]["type"] == "integer")
         .collect();
-    assert_eq!(id_lists.len(), 7);
+    assert_eq!(id_lists.len(), 8);
     assert!(
         id_lists.iter().all(|field| field["maxItems"] == 1_000),
         "{id_lists:?}"
