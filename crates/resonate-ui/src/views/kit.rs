@@ -746,7 +746,13 @@ pub(crate) fn checkbox_when(
             |row| row.opacity(GREYED).cursor_default(),
         )
         .child(square)
-        .child(label)
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .ends_in_an_ellipsis()
+                .child(label),
+        )
 }
 
 pub(crate) fn stepper() -> Div {

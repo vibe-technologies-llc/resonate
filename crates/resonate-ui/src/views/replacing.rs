@@ -324,7 +324,9 @@ impl RootView {
             spoken::song(&row.track.title, row.track.artist.as_deref()),
             ticked,
         )
-        .names(standing.clone());
+        .names(standing.clone())
+        .flex_1()
+        .min_w_0();
         let ticking = match press {
             kit::Press::Takes => self.in_the_pane_ring(
                 ticking,
@@ -341,10 +343,10 @@ impl RootView {
             .min_w_0()
             .overflow_hidden()
             .child(ticking)
-            .child(div().flex_1())
             .child(kit::format_badge(row.track.codec, row.track.spec))
             .child(
                 div()
+                    .debug_selector(move || format!("replacing-standing-{track}"))
                     .flex_none()
                     .text_size(px(theme::text_xs()))
                     .text_color(rgb(match press {
