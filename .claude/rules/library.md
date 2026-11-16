@@ -575,7 +575,8 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `playlists_with_lossy_songs` names the playlists holding one. `Library::replace(chosen)` takes
   the `Walk` guard before any write (`Error::AlreadyWalking` writes nothing), then in one write
   weighs each row afresh: a track no longer the lossy whole file it named is passed over; a held
-  copy still a lossless whole file, its file there or its row vaulted, is folded into
+  copy still a lossless whole file, its file there or its vault object there (`vault_path` under
+  the open vault), is folded into
   (`replacing::folded`); else a release row the track still holds is wanted (`INSERT OR REPLACE`
   into `replacements`, then `elsewhere::rearmed`, which clears `offered`, `tried` and `misses` of a
   standing want so a lossy delivery that once answered it is not taken as the answer, and keeps its
@@ -590,13 +591,22 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   forgotten. **Dismissing a replacement's want cancels it**: `unwant` deletes the `replacements`
   rows naming the want's release row in the same write, and the lossy song stays.
   **A replacement settles once its lossless copy is held, on evidence alone**:
-  `Library::settle_replacements` reads, for each pending replacement in one read, the track at its
-  want's `offered` path and the tracks holding the recording MBID of the lossy track or of its
-  release row, and keeps the first (the delivered one first) that is a lossless whole file other
-  than the lossy one, its file there or its row vaulted; every pair is weighed afresh and folded in
-  one write (`replacing::folded`), then `remove_tracks_under` trashes the lossy files under the same
-  walk. Nobody is watching, so a copy only named alike (`TheSong`) is never taken, nor a lossy copy
-  offered. It runs once a scan's `Walk` guard has dropped, never under it nor on a poll's lane:
+  `Library::settle_replacements` reads, for each pending replacement, the track at its want's
+  `offered` path and the tracks holding the recording MBID of the lossy track or of its release row
+  (`awaiting`), puts the delivered one first and the rest best first (`Quality::best_first`), and
+  keeps the first that `may_fold`: the replacement still waits on a row of its own (its release row
+  NULL, so only the lossy track's own MBID speaks for it, or held by the lossy track or by that
+  copy), the lossy track is still a lossy whole file, the copy a lossless whole file other than it
+  with its file there or its vault object there, and the two last alike within
+  `LENGTHS_AGREE_WITHIN` where both lengths are known; every pair is weighed by `may_fold` again
+  and folded in one write (`replacing::folded`), then `remove_tracks_under` trashes the lossy files
+  under the same walk. Nobody is watching, so a copy only named alike (`TheSong`) is never taken,
+  nor a lossy copy offered, nor the delivery of a row another song now holds, nor a copy of the
+  recording lasting otherwise
+  (`a_replacement_whose_row_another_song_now_holds_is_never_settled_by_that_rows_delivery`,
+  `a_lossless_copy_of_the_recording_lasting_otherwise_never_replaces_a_song_unattended`,
+  `a_vaulted_copy_whose_object_is_gone_never_replaces_a_lossy_song`,
+  `the_best_of_two_lossless_copies_of_the_recording_takes_the_lossy_songs_place`). It runs once a scan's `Walk` guard has dropped, never under it nor on a poll's lane:
   `scan::start` and `start_over_held` call the closure `Library::scan` and `scan_what_is_held` hand
   them (`settle_after_a_scan`, a failure traced at warn) after `drop` of the guard and only on an
   `Ok` outcome not `cancelled`, so a scan `wind_down` cancels trashes nothing as the window closes
@@ -606,9 +616,13 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   (`Error::AlreadyWalking`) is traced at debug, writes nothing and answers `Deleted::default()`,
   leaving the replacement for the next scan's or poll's end. Under the walk it first calls
   `rejoin_the_replacements`: a replacement whose release row was landed again or whose match was
-  forgotten (`land_release` and `forget_the_match` delete the rows, `ON DELETE SET NULL`) is
-  pointed at the row its track now holds and that row wanted (`elsewhere::wanted`, `ON CONFLICT DO
-  NOTHING`); one whose track holds no row is never deleted but left with a NULL row for every later
+  forgotten (`land_release` and `forget_the_match` delete the rows, `ON DELETE SET NULL`), or whose
+  row its track no longer holds (a rematch, *Place on a release…*), is pointed at the row its track
+  now holds and that row wanted (`elsewhere::wanted`, `ON CONFLICT DO NOTHING`), and that row's want
+  re-armed (`elsewhere::rearmed`) where its `offered` names the lossy track itself, so the lossy
+  delivery that once answered it never answers the replacement
+  (`a_replacement_rejoining_a_row_whose_want_delivered_the_lossy_song_wants_it_again`); one whose
+  track holds no row is never deleted but left with a NULL row for every later
   rejoin to try again, so a settle landing between enrichment's land and rematch writes cancels
   nothing. Such a row is not `pending` (`lossy_songs_of` counts one only where `release_track_id IS
   NOT NULL`), so the listener can tick the song again and `replace` overwrites it (`INSERT OR

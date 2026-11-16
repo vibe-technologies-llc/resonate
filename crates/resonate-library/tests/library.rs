@@ -4181,6 +4181,16 @@ const THE_CODEC_OF_A_FILE_NAMED: [(&str, &[&str]); 4] = [
 ];
 
 fn encoded_with_tags(tree: &Tree, name: &str, tags: &[&str]) -> Option<PathBuf> {
+    encoded_lasting(tree, name, tags, TWO_SECONDS_OF_FRAMES, &[])
+}
+
+fn encoded_lasting(
+    tree: &Tree,
+    name: &str,
+    tags: &[&str],
+    frames: usize,
+    shaped: &[&str],
+) -> Option<PathBuf> {
     if !ffmpeg() {
         eprintln!("skipped: no ffmpeg to build a {name}");
         return None;
@@ -4193,10 +4203,7 @@ fn encoded_with_tags(tree: &Tree, name: &str, tags: &[&str]) -> Option<PathBuf> 
         .iter()
         .find(|(known, _)| *known == extension)?;
     let held = Tree::new();
-    let source = held.write(
-        "tone.wav",
-        &Wav::new().frames(TWO_SECONDS_OF_FRAMES).build(),
-    );
+    let source = held.write("tone.wav", &Wav::new().frames(frames).build());
     let target = tree.path().join(name);
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).expect("a writable temporary directory");
@@ -4205,7 +4212,8 @@ fn encoded_with_tags(tree: &Tree, name: &str, tags: &[&str]) -> Option<PathBuf> 
     command
         .args(["-y", "-v", "error", "-i"])
         .arg(&source)
-        .args(*codec);
+        .args(*codec)
+        .args(shaped);
     for tag in tags {
         command.args(["-metadata", tag]);
     }
@@ -5228,6 +5236,238 @@ fn a_lossless_copy_on_another_album_keeps_its_own_row_and_leaves_the_lossy_songs
     assert_eq!(left.track, None);
     assert!(!opus.exists());
     assert_eq!(the_row_at(&library, &flac)?.plays, 2);
+    Ok(())
+}
+
+const EIGHT_SECONDS_OF_FRAMES: usize = 352_800;
+
+fn live_at_pompeii(recording: &str) -> [String; 4] {
+    [
+        "title=Echoes".to_owned(),
+        "artist=Pink Floyd".to_owned(),
+        "album=Live at Pompeii".to_owned(),
+        format!("MUSICBRAINZ_TRACKID={recording}"),
+    ]
+}
+
+fn wanted_with_no_copy_held(library: &Library, opus: &Path) -> Result<Waiting> {
+    let lossy = the_row_at(library, opus)?;
+    let row = paired_as_the_recording(library, &lossy, Some(RECORDING), RELEASE)?;
+    played_through(library, opus, 2)?;
+    let playlist = library.start_playlist("Road trip", &[whole(opus), whole(opus)])?;
+    let replacing = library.replace(&[Replaceable {
+        track: the_row_at(library, opus)?,
+        held: None,
+        release_track: Some(row),
+        pending: false,
+    }])?;
+    assert_eq!(replacing.wanted, 1, "{replacing:?}");
+    Ok(Waiting {
+        lossy,
+        row,
+        playlist,
+    })
+}
+
+#[test]
+#[cfg(unix)]
+fn a_replacement_whose_row_another_song_now_holds_is_never_settled_by_that_rows_delivery()
+-> Result<()> {
+    let tree = Tree::new();
+    let (Some(opus), Some(mp3), Some(flac)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_as_pink_floyd(&tree, "lossy/B.mp3", "Time"),
+        encoded_as_pink_floyd(&tree, "delivered/B.flac", "Time"),
+    ) else {
+        return Ok(());
+    };
+    let data = Tree::new();
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+    let time = the_row_at(&library, &mp3)?;
+    beside(&database)
+        .execute(
+            "UPDATE release_tracks SET track_id = ?1 WHERE id = ?2",
+            [time.id.get() as i64, waiting.row.get() as i64],
+        )
+        .expect("the row is placed on another song");
+    offered(&library, &flac)?;
+
+    let settled = library.settle_replacements()?;
+
+    assert_eq!(
+        settled,
+        Deleted::default(),
+        "a different song took its place"
+    );
+    assert!(opus.exists());
+    assert!(!trashed(&data, "A.opus"));
+    assert_eq!(the_row_at(&library, &opus)?.plays, 2);
+    assert_eq!(the_row_at(&library, &flac)?.plays, 0);
+    assert_eq!(
+        replacements_of(&database, waiting.lossy.id),
+        [None],
+        "the replacement still names the row another song holds"
+    );
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn a_lossless_copy_of_the_recording_lasting_otherwise_never_replaces_a_song_unattended()
+-> Result<()> {
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let data = Tree::new();
+    let library = Library::open_in_memory()?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
+    let mut tags = pink_floyd("Echoes").to_vec();
+    tags.push(format!("MUSICBRAINZ_TRACKID={RECORDING}"));
+    let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
+    let Some(flac) = encoded_lasting(
+        &tree,
+        "lossless/A.flac",
+        &tags,
+        EIGHT_SECONDS_OF_FRAMES,
+        &[],
+    ) else {
+        return Ok(());
+    };
+
+    scan(&library, &options(&tree))?;
+
+    assert!(
+        opus.exists(),
+        "a copy lasting six seconds longer took its place"
+    );
+    assert!(still_pending(&library, &waiting)?);
+    assert_eq!(the_row_at(&library, &opus)?.plays, 2);
+    assert_eq!(the_row_at(&library, &flac)?.plays, 0);
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn a_vaulted_copy_whose_object_is_gone_never_replaces_a_lossy_song() -> Result<()> {
+    let tree = Tree::new();
+    let held = Tree::new();
+    let tags = live_at_pompeii(RECORDING);
+    let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
+    let (Some(opus), Some(flac)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_with_tags(&tree, "live/A.flac", &tags),
+    ) else {
+        return Ok(());
+    };
+    let data = Tree::new();
+    let (library, _vault) = opened_with_a_vault(&held)?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    vaulted(&library, true)?;
+    let object = library
+        .vault_objects()?
+        .into_iter()
+        .find(|object| object.taken_from == flac)
+        .expect("the lossless copy went into the vault");
+    let waiting = wanted_with_no_copy_held(&library, &opus)?;
+    fs::remove_file(&flac).expect("the lossless file goes");
+    fs::remove_file(&object.path).expect("the lossless copy's object goes");
+
+    let settled = library.settle_replacements()?;
+
+    assert_eq!(settled, Deleted::default(), "{settled:?}");
+    assert!(opus.exists());
+    assert!(library.track(waiting.lossy.id)?.is_some());
+    assert!(still_pending(&library, &waiting)?);
+    assert_eq!(the_row_at(&library, &opus)?.plays, 2);
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn the_best_of_two_lossless_copies_of_the_recording_takes_the_lossy_songs_place() -> Result<()> {
+    let tree = Tree::new();
+    let tags = live_at_pompeii(RECORDING);
+    let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
+    let (Some(opus), Some(plain)) = (
+        encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
+        encoded_with_tags(&tree, "live/A.flac", &tags),
+    ) else {
+        return Ok(());
+    };
+    let data = Tree::new();
+    let library = Library::open_in_memory()?;
+    library.trash_into(Some(data.path().to_path_buf()));
+    scan(&library, &options(&tree))?;
+    let waiting = wanted_with_no_copy_held(&library, &opus)?;
+    let Some(finer) = encoded_lasting(
+        &tree,
+        "live/B.flac",
+        &tags,
+        TWO_SECONDS_OF_FRAMES,
+        &["-ar", "96000"],
+    ) else {
+        return Ok(());
+    };
+
+    scan(&library, &options(&tree))?;
+
+    let plain = the_row_at(&library, &plain)?;
+    let finer = the_row_at(&library, &finer)?;
+    assert!(plain.id < finer.id, "the finer copy was catalogued first");
+    assert_eq!(finer.spec.rate.hz(), 96_000);
+    assert_eq!(finer.plays, 2, "the finer copy was passed over");
+    assert_eq!(plain.plays, 0);
+    assert!(!opus.exists());
+    assert!(library.track(waiting.lossy.id)?.is_none());
+    Ok(())
+}
+
+#[test]
+fn a_replacement_rejoining_a_row_whose_want_delivered_the_lossy_song_wants_it_again() -> Result<()>
+{
+    let tree = Tree::new();
+    let Some(opus) = encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes") else {
+        return Ok(());
+    };
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+    let album = waiting
+        .lossy
+        .album_id
+        .expect("the song files under an album");
+    assert!(library.forget_the_match(album)?);
+    let again = paired_as_the_recording(&library, &waiting.lossy, None, RELEASE)?;
+    let want = library.want(again)?;
+    beside(&database)
+        .execute(
+            "UPDATE wants SET offered = ?1, tried = 5, misses = 1 WHERE id = ?2",
+            rusqlite::params![MediaLocation::local(&opus).to_uri(), want.get() as i64],
+        )
+        .expect("the want names the lossy delivery");
+
+    assert_eq!(library.settle_replacements()?, Deleted::default());
+
+    let wants = library.wants()?;
+    assert_eq!(wants.len(), 1, "{wants:?}");
+    assert_eq!(wants[0].id, want);
+    assert_eq!(wants[0].replacing, Some(waiting.lossy.id));
+    assert_eq!(
+        wants[0].offered, None,
+        "the lossy delivery answers its replacement"
+    );
+    assert_eq!((wants[0].tried, wants[0].misses), (None, 0));
+    assert!(!wants[0].is_answered());
+    assert!(still_pending(&library, &waiting)?);
     Ok(())
 }
 
