@@ -46,13 +46,13 @@ use resonate_library::{
     Missing, MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Pace, Performer,
     Picturing, Played, Playing, PlaylistFormat, PlaylistLink, PlaylistOrder, PlaylistToKeep,
     PollHandle, PollOptions, PollProgress, PollSummary, Popularity, ProfileLink, ProfilePlaylist,
-    Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
-    Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-    ReleaseTrack, Removal, Replaceable, Replaced, Result, RetagOptions, RetagSummary, RowOrder,
-    SUBMITTED_AT_ONCE, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service,
-    SheetEdit, SheetField, SheetScope, Sidecar, SongLink, SongToKeep, SongsAsked, SortOrder,
-    Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet,
-    TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease,
+    Pruned, Quality, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch,
+    RecordingRelease, Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup,
+    ReleaseMatch, ReleaseTrack, Removal, Replaceable, Replaced, Result, RetagOptions, RetagSummary,
+    RowOrder, SUBMITTED_AT_ONCE, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search,
+    Service, SheetEdit, SheetField, SheetScope, Sidecar, SongLink, SongToKeep, SongsAsked,
+    SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField,
+    TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease,
     Unwritten, Upkeep, Vault, VaultWeighingStats, Version, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
@@ -4355,9 +4355,17 @@ fn a_cut_of_a_sheet_is_neither_a_lossy_song_to_replace_nor_a_copy_to_replace_one
 #[test]
 fn the_version_chosen_for_a_lossy_song_is_the_copy_offered_where_it_is_lossless() -> Result<()> {
     let tree = Tree::new();
+    let tags = pink_floyd("Echoes");
+    let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
     let (Some(opus), Some(better), Some(chosen)) = (
         encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
-        encoded_as_pink_floyd(&tree, "one/A.flac", "Echoes"),
+        encoded_lasting(
+            &tree,
+            "one/A.flac",
+            &tags,
+            TWO_SECONDS_OF_FRAMES,
+            &["-ar", "96000"],
+        ),
         encoded_as_pink_floyd(&tree, "two/A.flac", "Echoes"),
     ) else {
         return Ok(());
@@ -4368,7 +4376,12 @@ fn the_version_chosen_for_a_lossy_song_is_the_copy_offered_where_it_is_lossless(
     let chosen = library.track_at(&chosen, None)?.expect("held").id;
     let playlist = library.start_playlist("Dark", &[whole(&opus)])?;
 
-    assert!(library.track_at(&better, None)?.is_some());
+    let better = library.track_at(&better, None)?.expect("held");
+    let chosen_row = library.track(chosen)?.expect("held");
+    assert!(
+        Quality::of(&better).is_above(Quality::of(&chosen_row)),
+        "the copy chosen is not the lesser of the two"
+    );
     assert!(library.choose_version(song, &Version::Held(chosen))?);
 
     let listed = library.lossy_songs_of(playlist)?;
@@ -4451,6 +4464,14 @@ fn a_lossy_song_with_a_lossless_copy_held_is_replaced_at_once_and_its_history_go
     let road_trip = library.start_playlist("Road trip", &[whole(&opus), whole(&opus)])?;
     let night = library.start_playlist("Night", &[whole(&opus)])?;
     let heard = listens_of(&database, lossy.id);
+    assert!(heard > 0, "the lossy song was never heard");
+    let modified = |playlist| -> Result<SystemTime> {
+        Ok(library
+            .playlist(playlist)?
+            .expect("the playlist stands")
+            .modified)
+    };
+    let before = [modified(road_trip)?, modified(night)?];
 
     let replacing = library.replace(&library.lossy_songs_of(road_trip)?)?;
 
@@ -4478,6 +4499,12 @@ fn a_lossy_song_with_a_lossless_copy_held_is_replaced_at_once_and_its_history_go
             cuts.iter()
                 .all(|cut| cut.location.as_path() == Some(flac.as_path())),
             "a playlist still names the lossy copy: {cuts:?}"
+        );
+    }
+    for (playlist, before) in [road_trip, night].into_iter().zip(before) {
+        assert!(
+            modified(playlist)? > before,
+            "a playlist the fold rewrote kept its stamp"
         );
     }
     assert!(!opus.exists());
