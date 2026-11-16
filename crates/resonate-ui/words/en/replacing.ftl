@@ -2,7 +2,7 @@ replace-lossy-songs = Replace lossy songs…
 heading = Replace lossy songs · { $playlist }
 tick-all = Tick all
 tick-all-hint = Tick every song that can be replaced
-held = you hold a { $codec } copy
+held = you hold it in { $codec }
 wanted = wanted through MusicBrainz
 not-matched = not matched on MusicBrainz
 pending = already being replaced
@@ -28,4 +28,7 @@ unmatched-count = { $count ->
     [one] 1 song not matched
    *[other] { $count } songs not matched
 }
-told = { $parts }
+trash-refused = { $count ->
+    [one] 1 lossy file couldn't be removed
+   *[other] { $count } lossy files couldn't be removed
+}

@@ -234,10 +234,17 @@ pub(super) fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice
     if replaced > 0 {
         told = [told, words::models::replaced_lossy_songs(replaced)].join(" · ");
     }
+    let refused = summary.replaced.trashed.kept;
+    if refused > 0 {
+        told = [told, words::replacing::trash_refused(refused)].join(" · ");
+    }
     if summary.cancelled {
         told.push_str(words::models::stopped_early());
     }
-    Some(Notice::Done(told))
+    Some(match refused {
+        0 => Notice::Done(told),
+        _ => Notice::Trouble(told),
+    })
 }
 
 pub(super) fn replaced_now(replacing: &Replacing) -> Notice {
@@ -254,7 +261,13 @@ pub(super) fn replaced_now(replacing: &Replacing) -> Notice {
     if parts.is_empty() {
         parts.push(words::replacing::folded(0));
     }
-    Notice::Done(words::replacing::told(parts.join(", ")))
+    match replacing.trashed.kept {
+        0 => Notice::Done(parts.join(", ")),
+        refused => {
+            parts.push(words::replacing::trash_refused(refused));
+            Notice::Trouble(parts.join(", "))
+        }
+    }
 }
 
 pub(super) fn looked_up(summary: &EnrichSummary, prompted: Prompted) -> Option<Notice> {

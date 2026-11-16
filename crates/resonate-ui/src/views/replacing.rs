@@ -411,6 +411,23 @@ mod tests {
     }
 
     #[test]
+    fn a_row_says_why_it_stands_naming_the_codec_held_with_no_article() {
+        let mut alac = row(1, true, false, false);
+        if let Some(held) = alac.held.as_mut() {
+            held.codec = Codec::Alac;
+        }
+        assert_eq!(standing_of(&alac), "you hold it in ALAC");
+        assert_eq!(
+            standing_of(&row(2, false, true, false)),
+            "wanted through MusicBrainz"
+        );
+        assert_eq!(
+            standing_of(&row(3, false, true, true)),
+            "already being replaced"
+        );
+    }
+
+    #[test]
     fn every_row_that_can_be_ticked_starts_ticked_and_tick_all_turns_them_together() {
         let held = row(1, true, false, false);
         let wanted = row(2, false, true, false);
