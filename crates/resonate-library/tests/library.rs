@@ -30275,8 +30275,8 @@ fn a_lossless_delivery_filed_in_the_music_folder_replaces_the_lossy_song_at_the_
 }
 
 #[test]
-fn a_replacement_with_neither_a_vault_nor_a_music_folder_is_never_offered_a_file_in_place()
--> Result<()> {
+fn a_replacement_with_neither_a_vault_nor_a_music_folder_is_never_asked_of_a_provider() -> Result<()>
+{
     let tree = Tree::new();
     let shop = Tree::new();
     let (Some(opus), Some(flac)) = (
@@ -30295,14 +30295,20 @@ fn a_replacement_with_neither_a_vault_nor_a_music_folder_is_never_offered_a_file
         .poll(store.registered(), PollOptions::ASKING_EVERY_WANT)?
         .join()?;
 
-    assert_eq!(store.asked().len(), 1);
+    assert!(
+        store.asked().is_empty(),
+        "a provider was asked for a copy nowhere could keep"
+    );
+    assert!(!library.is_a_want_due(PollOptions::ASKING_EVERY_WANT)?);
+    assert_eq!(library.next_want_due()?, None);
     assert_eq!(
         (
+            summary.stats.asked,
             summary.stats.offered,
             summary.stats.kept,
             summary.stats.unkept
         ),
-        (1, 0, 1),
+        (0, 0, 0, 0),
         "{summary:?}"
     );
     assert_eq!(summary.replaced, Deleted::default());
