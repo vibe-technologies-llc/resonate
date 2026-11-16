@@ -60,7 +60,6 @@ const MIGRATIONS: &[&str] = &[
     A_LOSSY_SONG_WAITS_TO_BE_REPLACED,
     SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE,
     WHERE_A_LOSSLESS_COPY_WAS_LOOKED_FOR_IS_KEPT,
-    A_LOSSLESS_COPY_FOUND_ELSEWHERE_IS_KEPT_FROM_THERE,
 ];
 
 const SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE: &str = "
@@ -87,26 +86,11 @@ CREATE INDEX replacements_by_release_track ON replacements(release_track_id);
 const WHERE_A_LOSSLESS_COPY_WAS_LOOKED_FOR_IS_KEPT: &str = "
 CREATE TABLE replacements_looked_for (
     track_id         INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
-    release_track_id INTEGER NOT NULL REFERENCES release_tracks(id) ON DELETE CASCADE,
-    offered_by       TEXT,
-    looked           INTEGER NOT NULL
-) STRICT;
-CREATE INDEX replacements_looked_for_by_release_track
-    ON replacements_looked_for(release_track_id);
-";
-
-const A_LOSSLESS_COPY_FOUND_ELSEWHERE_IS_KEPT_FROM_THERE: &str = "
-CREATE TABLE replacements_looked_for_anywhere (
-    track_id         INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
     release_track_id INTEGER REFERENCES release_tracks(id) ON DELETE CASCADE,
     offered_by       TEXT,
     offered_at       TEXT,
     looked           INTEGER NOT NULL
 ) STRICT;
-INSERT INTO replacements_looked_for_anywhere (track_id, release_track_id, offered_by, looked)
-SELECT track_id, release_track_id, offered_by, looked FROM replacements_looked_for;
-DROP TABLE replacements_looked_for;
-ALTER TABLE replacements_looked_for_anywhere RENAME TO replacements_looked_for;
 CREATE INDEX replacements_looked_for_by_release_track
     ON replacements_looked_for(release_track_id);
 CREATE TABLE replacements_kept (
@@ -2286,53 +2270,12 @@ mod tests {
     }
 
     #[test]
-    fn a_catalog_from_before_lossless_copies_were_looked_for_keeps_its_rows_and_gains_the_table() {
+    fn a_catalog_from_before_lossless_copies_were_looked_for_keeps_its_waits_and_gains_tables() {
         let connection = opened();
         let before = MIGRATIONS
             .iter()
             .position(|step| *step == WHERE_A_LOSSLESS_COPY_WAS_LOOKED_FOR_IS_KEPT)
-            .expect("the step that makes the table");
-        connection
-            .execute_batch(V1)
-            .expect("the first release's schema");
-        for step in &MIGRATIONS[..before] {
-            connection.execute_batch(step).expect("an earlier step");
-        }
-        connection
-            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
-            .expect("the earlier stamp");
-
-        lay_out(&connection).expect("the catalog is carried forward");
-
-        let looked: i64 = connection
-            .query_row("SELECT count(*) FROM replacements_looked_for", [], |row| {
-                row.get(0)
-            })
-            .expect("the table stands");
-        assert_eq!(looked, 0);
-        assert!(
-            plan_of(
-                &connection,
-                "SELECT track_id FROM replacements_looked_for WHERE release_track_id = 1"
-            )
-            .contains("replacements_looked_for_by_release_track")
-        );
-        assert!(
-            plan_of(
-                &connection,
-                "SELECT track_id FROM replacements_kept WHERE kept_id = 1"
-            )
-            .contains("replacements_kept_by_keep")
-        );
-    }
-
-    #[test]
-    fn a_catalog_that_looked_only_for_matched_songs_keeps_its_looks_and_gains_the_keeps() {
-        let connection = opened();
-        let before = MIGRATIONS
-            .iter()
-            .position(|step| *step == A_LOSSLESS_COPY_FOUND_ELSEWHERE_IS_KEPT_FROM_THERE)
-            .expect("the step that widens the table");
+            .expect("the step that makes the tables");
         connection
             .execute_batch(V1)
             .expect("the first release's schema");
@@ -2341,28 +2284,30 @@ mod tests {
         }
         connection
             .pragma_update(None, "foreign_keys", false)
-            .expect("the look below names no song this catalog holds");
+            .expect("the replacement below names no song this catalog holds");
         connection
             .execute_batch(
-                "INSERT INTO replacements_looked_for (track_id, release_track_id, offered_by, looked)
-                 VALUES (7, 3, 'tidal', 1);",
+                "INSERT INTO replacements (track_id, release_track_id, asked) VALUES (7, 3, 11);",
             )
-            .expect("a look kept before the step");
+            .expect("a replacement waiting before the step");
         connection
             .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
             .expect("the earlier stamp");
 
         lay_out(&connection).expect("the catalog is carried forward");
 
-        let carried: (i64, Option<i64>, Option<String>, Option<String>) = connection
+        let waiting: (i64, Option<i64>, i64) = connection
             .query_row(
-                "SELECT track_id, release_track_id, offered_by, offered_at
-                   FROM replacements_looked_for",
+                "SELECT track_id, release_track_id, asked FROM replacements",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
-            .expect("the look is carried");
-        assert_eq!(carried, (7, Some(3), Some("tidal".to_owned()), None));
+            .expect("the replacement is carried");
+        let looked: i64 = connection
+            .query_row("SELECT count(*) FROM replacements_looked_for", [], |row| {
+                row.get(0)
+            })
+            .expect("the looks stand");
         let row_required: bool = connection
             .query_row(
                 "SELECT \"notnull\" FROM pragma_table_info('replacements_looked_for')
@@ -2371,9 +2316,19 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("the column stands");
+
+        assert_eq!(waiting, (7, Some(3), 11));
+        assert_eq!(looked, 0);
         assert!(
             !row_required,
             "a song matched nowhere could not be looked for"
+        );
+        assert!(
+            plan_of(
+                &connection,
+                "SELECT track_id FROM replacements_looked_for WHERE release_track_id = 1"
+            )
+            .contains("replacements_looked_for_by_release_track")
         );
         assert!(
             plan_of(
