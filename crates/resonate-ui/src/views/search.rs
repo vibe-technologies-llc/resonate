@@ -978,14 +978,14 @@ impl RootView {
             .min_h(px(0.0))
             .pb_6()
             .overflow_y_scroll()
-            .track_scroll(&self.scrolls.search);
+            .track_scroll(&self.scrolls(cx).search);
 
         if !tracks.is_empty() {
             let mut rows = div().flex().flex_col();
             for (index, track) in tracks.iter().enumerate().take(SONGS_AT_THE_TOP) {
                 let row = run.row_of(TopEntry::Song(index));
                 let shift = Shift::Listing(Listed::Top);
-                let reached = self.reaches(shift, row);
+                let reached = self.reaches(shift, row, cx);
                 let listed = self.track_row(
                     &tracks,
                     index,
@@ -993,14 +993,14 @@ impl RootView {
                     Rowed {
                         playing: playing == Some(track.id),
                         plays: Plays::AsTheListingIsDrawn { in_an_album: false },
-                        reach: self.at_the_reach(shift, row),
+                        reach: self.at_the_reach(shift, row, cx),
                         chooses: Some(Chooses::among(Listed::Top, row)),
                     },
                     cx,
                 );
                 rows = rows.child(
-                    self.marked_where_reached(shift, row, listed)
-                        .when(reached, |row| row.child(self.brought_into_view(None))),
+                    self.marked_where_reached(shift, row, listed, cx)
+                        .when(reached, |row| row.child(self.brought_into_view(None, cx))),
                 );
             }
             sections = sections
@@ -1017,10 +1017,10 @@ impl RootView {
             let mut rows = div().flex().flex_col();
             for (index, song) in found.iter().enumerate().take(FOUND_AT_THE_TOP) {
                 let row = run.row_of(TopEntry::Found(index));
-                let reached = self.reaches(Shift::Listing(Listed::Top), row);
+                let reached = self.reaches(Shift::Listing(Listed::Top), row, cx);
                 rows = rows.child(
                     reorder::marked(self.found_row(index, song, cx), reached)
-                        .when(reached, |row| row.child(self.brought_into_view(None))),
+                        .when(reached, |row| row.child(self.brought_into_view(None, cx))),
                 );
             }
             sections = sections
@@ -1039,6 +1039,7 @@ impl RootView {
                         cell,
                         run.row_of(TopEntry::Artist(at)),
                         Some("search-artist-strip"),
+                        cx,
                     )
                 })
                 .collect();
@@ -1062,6 +1063,7 @@ impl RootView {
                         cell,
                         run.row_of(TopEntry::Album(at)),
                         Some("search-album-strip"),
+                        cx,
                     )
                 })
                 .collect();
@@ -1076,7 +1078,7 @@ impl RootView {
 
         pane.child(Scrollbars::of(cx).around(
             "top-results-scrollbar",
-            self.scrolls.search.clone(),
+            self.scrolls(cx).search.clone(),
             sections,
         ))
         .into_any_element()
@@ -1144,9 +1146,12 @@ impl RootView {
             .map(|(at, artist)| {
                 let cell = self.artist_found_cell(artist, ARTIST_AT_THE_TOP, cx);
                 match in_the_top {
-                    Some(run) => {
-                        self.at_the_top(cell, run.row_of(TopEntry::ArtistFound(at)), Some(STRIP))
-                    }
+                    Some(run) => self.at_the_top(
+                        cell,
+                        run.row_of(TopEntry::ArtistFound(at)),
+                        Some(STRIP),
+                        cx,
+                    ),
                     None => cell.into_any_element(),
                 }
             })
@@ -1169,7 +1174,7 @@ impl RootView {
                 let cell = self.album_found_cell(album, theme::shelf_cover(), cx);
                 match in_the_top {
                     Some(run) => {
-                        self.at_the_top(cell, run.row_of(TopEntry::AlbumFound(at)), Some(STRIP))
+                        self.at_the_top(cell, run.row_of(TopEntry::AlbumFound(at)), Some(STRIP), cx)
                     }
                     None => cell.into_any_element(),
                 }
@@ -1184,30 +1189,24 @@ impl RootView {
         cell: Stateful<Div>,
         row: usize,
         strip: Option<&'static str>,
+        cx: &App,
     ) -> AnyElement {
-        let reached = self.reaches(Shift::Listing(Listed::Top), row);
+        let reached = self.reaches(Shift::Listing(Listed::Top), row, cx);
         div()
             .relative()
             .flex_none()
             .child(cell)
             .when(reached, |held| {
                 held.child(reached_ring())
-                    .child(self.brought_into_view(strip))
+                    .child(self.brought_into_view(strip, cx))
             })
             .into_any_element()
     }
 
-    fn brought_into_view(&self, strip: Option<&'static str>) -> impl IntoElement {
-        let across = strip.map(|strip| {
-            self.scrolls
-                .shelves
-                .borrow_mut()
-                .entry(strip)
-                .or_default()
-                .clone()
-        });
+    fn brought_into_view(&self, strip: Option<&'static str>, cx: &App) -> impl IntoElement {
+        let across = strip.map(|strip| self.browsing.read(cx).shelf(strip));
         kit::brought_into_view_within(
-            Some(self.scrolls.search.clone()),
+            Some(self.scrolls(cx).search.clone()),
             across,
             Rc::clone(&self.rooms.reached_unseen),
         )
@@ -1239,13 +1238,7 @@ impl RootView {
     }
 
     fn strip(&self, id: &'static str, cells: Vec<AnyElement>, cx: &mut Context<Self>) -> Div {
-        let scroll = self
-            .scrolls
-            .shelves
-            .borrow_mut()
-            .entry(id)
-            .or_default()
-            .clone();
+        let scroll = self.browsing.read(cx).shelf(id);
 
         div()
             .relative()

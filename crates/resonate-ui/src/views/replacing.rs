@@ -325,13 +325,14 @@ impl RootView {
                 .gap_0p5()
                 .max_h(px(ROWS_SHOWN_AT_MOST))
                 .overflow_y_scroll()
-                .track_scroll(&self.scrolls.replacing),
+                .track_scroll(&self.window_scrolls.replacing),
             |listed, row| {
                 listed.child(self.replacing_row(row, sheet.ticked.contains(&row.track.id), cx))
             },
         );
         div().relative().child(listed).child(
-            Scrollbars::of(cx).vertical("replacing-scrollbar", self.scrolls.replacing.clone()),
+            Scrollbars::of(cx)
+                .vertical("replacing-scrollbar", self.window_scrolls.replacing.clone()),
         )
     }
 

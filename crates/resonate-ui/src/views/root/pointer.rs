@@ -97,7 +97,7 @@ impl RootView {
         self.pointer_inside
             && self.rails.grabbed.is_none()
             && self.rails.held_band.is_none()
-            && !self.something_stands_over_the_pane()
+            && !self.something_stands_over_the_pane(cx)
             && !cx.has_active_drag()
     }
 
@@ -135,10 +135,10 @@ impl RootView {
         .size(px(0.0))
     }
 
-    pub(super) fn composition_watch(&self) -> Canvas<()> {
+    pub(super) fn composition_watch(&self, cx: &App) -> Canvas<()> {
         let search = self.typed.search.clone();
         let focus = self.focus.clone();
-        let welcomed = !self.something_stands_over_the_pane();
+        let welcomed = !self.something_stands_over_the_pane(cx);
         canvas(
             |_, _, _| (),
             move |_, (), window, cx| {
@@ -219,10 +219,10 @@ impl RootView {
         self.attention.moved()
     }
 
-    pub(crate) fn window_has_moved_on_from(&self, pressed: Serial) -> bool {
+    pub(crate) fn window_has_moved_on_from(&self, pressed: Serial, cx: &App) -> bool {
         self.attention != pressed
             || self
-                .sheet_in_front()
+                .sheet_in_front(cx)
                 .is_some_and(|sheet| sheet != Sheet::Menu)
     }
 
@@ -236,7 +236,7 @@ impl RootView {
                 return;
             };
             let _ = this.update(cx, |this, cx| {
-                if !this.window_has_moved_on_from(pressed) {
+                if !this.window_has_moved_on_from(pressed, cx) {
                     this.opened(Selection::Artist(artist), cx);
                 }
             });
@@ -254,7 +254,7 @@ impl RootView {
 
         if matches!(selection, Selection::Artist(_)) {
             self.shows.artist = ArtistShows::default();
-            self.orders.ordering = None;
+            self.change_the_orders(cx, |orders| orders.ordering = None);
         }
         self.library
             .update(cx, |library, cx| library.select(selection, cx));

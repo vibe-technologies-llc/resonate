@@ -343,14 +343,14 @@ impl RootView {
                                         },
                                     ),
                                 )
-                                .track_scroll(&self.scrolls.album_rows)
+                                .track_scroll(&self.scrolls(cx).album_rows)
                                 .h_full()
                                 .w_full(),
                             )
                         })
                         .child(
                             Scrollbars::of(cx)
-                                .vertical("album-scrollbar", self.scrolls.album_rows.clone()),
+                                .vertical("album-scrollbar", self.scrolls(cx).album_rows.clone()),
                         ),
                 )
             })
@@ -411,9 +411,9 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let id = album.id;
-        let reached = chooses.is_some_and(|at| self.reaches(at.shift, at.row));
-        let reach = chooses.and_then(|at| self.at_the_reach(at.shift, at.row));
-        let cursor_only = chooses.is_some_and(|at| self.stands_unchosen_on(at.shift, at.row));
+        let reached = chooses.is_some_and(|at| self.reaches(at.shift, at.row, cx));
+        let reach = chooses.and_then(|at| self.at_the_reach(at.shift, at.row, cx));
+        let cursor_only = chooses.is_some_and(|at| self.stands_unchosen_on(at.shift, at.row, cx));
         let (lit_title, lit_artist) = {
             let search = self.library.read(cx).search();
             (
@@ -566,7 +566,7 @@ impl RootView {
 
         let lifted = match chooses {
             Some(at) => {
-                let chosen = self.acting_on_chosen(at.shift, at.row);
+                let chosen = self.acting_on_chosen(at.shift, at.row, cx);
                 if chosen.count() > 1 {
                     let page = match at.shift {
                         Shift::Listing(Listed::FavouriteAlbums) => {
@@ -588,7 +588,7 @@ impl RootView {
             reach,
             move |this, at, cx| {
                 if let Some(row) = chooses {
-                    let chosen = this.acting_on_chosen(row.shift, row.row);
+                    let chosen = this.acting_on_chosen(row.shift, row.row, cx);
                     if chosen.count() > 1 {
                         let albums = this.albums_chosen(row.shift, &chosen, cx);
                         return chosen_albums_menu(at, row.shift, albums, this, cx);
@@ -750,7 +750,7 @@ impl RootView {
                 pane.child(
                     Scrollbars::of(cx).around(
                         "artist-scrollbar",
-                        self.scrolls.artist_rows.clone(),
+                        self.scrolls(cx).artist_rows.clone(),
                         uniform_list(
                             "artists",
                             listed,
@@ -828,8 +828,9 @@ impl RootView {
                                                     this.opened(Selection::Artist(id), cx);
                                                 },
                                             )),
+                                        cx,
                                     );
-                                    let reach = this.at_the_reach(shift, index);
+                                    let reach = this.at_the_reach(shift, index, cx);
                                     rows.push(menu::opens_a_reachable_menu(
                                         listed,
                                         reach,
@@ -849,7 +850,7 @@ impl RootView {
                                 rows
                             }),
                         )
-                        .track_scroll(&self.scrolls.artist_rows)
+                        .track_scroll(&self.scrolls(cx).artist_rows)
                         .h_full()
                         .w_full(),
                     ),
@@ -935,7 +936,7 @@ impl RootView {
             .when_some(records, |pane, records| {
                 pane.child(Scrollbars::of(cx).around(
                     "artist-records-scrollbar",
-                    self.scrolls.artist_records.clone(),
+                    self.scrolls(cx).artist_records.clone(),
                     records,
                 ))
             })
@@ -959,7 +960,7 @@ impl RootView {
                 pane.child(
                     Scrollbars::of(cx).around(
                         "track-scrollbar",
-                        self.scrolls.track_rows.clone(),
+                        self.scrolls(cx).track_rows.clone(),
                         uniform_list(
                             "tracks",
                             listed,
@@ -993,7 +994,7 @@ impl RootView {
                                                     plays: Plays::AsTheListingIsDrawn {
                                                         in_an_album,
                                                     },
-                                                    reach: this.at_the_reach(shift, index),
+                                                    reach: this.at_the_reach(shift, index, cx),
                                                     chooses: Some(Chooses::among(
                                                         Listed::Tracks,
                                                         index,
@@ -1002,7 +1003,7 @@ impl RootView {
                                                 cx,
                                             );
                                             drawn.push(
-                                                this.marked_where_reached(shift, index, row)
+                                                this.marked_where_reached(shift, index, row, cx)
                                                     .into_any_element(),
                                             );
                                         }
@@ -1054,7 +1055,7 @@ impl RootView {
                                 drawn
                             }),
                         )
-                        .track_scroll(&self.scrolls.track_rows)
+                        .track_scroll(&self.scrolls(cx).track_rows)
                         .h_full()
                         .w_full(),
                     ),
@@ -1220,7 +1221,7 @@ impl RootView {
         let lifted = match chooses.filter(|chooses| chooses.row == index && !in_an_album) {
             Some(Chooses { shift, row }) => Lifted::tracks(
                 tracks,
-                self.choosable(shift, self.acting_on_chosen(shift, row), cx),
+                self.choosable(shift, self.acting_on_chosen(shift, row, cx), cx),
             ),
             None => Lifted::tracks(tracks, Chosen::of(Span::one(index))),
         };
@@ -1231,7 +1232,7 @@ impl RootView {
             reach,
             move |this, at, cx| {
                 if let Some(Chooses { shift, row }) = chooses {
-                    let chosen = this.choosable(shift, this.acting_on_chosen(shift, row), cx);
+                    let chosen = this.choosable(shift, this.acting_on_chosen(shift, row, cx), cx);
                     if chosen.count() > 1 {
                         let tracks = this.tracks_chosen(shift, &chosen, cx);
                         return chosen_tracks_menu(at, tracks, this, cx);
@@ -1769,13 +1770,14 @@ impl RootView {
                                 .collect()
                         }),
                     )
-                    .track_scroll(&self.scrolls.artist_rows)
+                    .track_scroll(&self.scrolls(cx).artist_rows)
                     .h_full()
                     .w_full(),
                 )
             })
             .child(
-                Scrollbars::of(cx).vertical("artist-scrollbar", self.scrolls.artist_rows.clone()),
+                Scrollbars::of(cx)
+                    .vertical("artist-scrollbar", self.scrolls(cx).artist_rows.clone()),
             )
     }
 
@@ -1789,8 +1791,8 @@ impl RootView {
         let id = artist.id;
         let side = self.grid_side();
         let shift = Shift::Listing(Listed::Artists);
-        let reached = self.reaches(shift, at);
-        let cursor_only = self.stands_unchosen_on(shift, at);
+        let reached = self.reaches(shift, at, cx);
+        let cursor_only = self.stands_unchosen_on(shift, at, cx);
         let favourite = self
             .library
             .read(cx)
@@ -1904,7 +1906,7 @@ impl RootView {
                 this.opened(Selection::Artist(id), cx);
             }));
 
-        let reach = self.at_the_reach(shift, at);
+        let reach = self.at_the_reach(shift, at, cx);
         menu::opens_a_reachable_menu(
             cell,
             reach,
@@ -2320,7 +2322,7 @@ impl RootView {
     fn show_of_the_artist(&mut self, shows: ArtistShows, cx: &mut Context<Self>) {
         self.shows.artist = shows;
         if shows == ArtistShows::Records {
-            self.orders.ordering = None;
+            self.change_the_orders(cx, |orders| orders.ordering = None);
         }
         cx.notify();
     }
@@ -2706,7 +2708,7 @@ impl RootView {
             .flex_1()
             .min_h(px(0.0))
             .overflow_y_scroll()
-            .track_scroll(&self.scrolls.artist_records)
+            .track_scroll(&self.scrolls(cx).artist_records)
             .child(
                 div()
                     .relative()
@@ -2864,7 +2866,7 @@ impl RootView {
                 return;
             };
             let _ = this.update(cx, |this, cx| {
-                if !this.window_has_moved_on_from(pressed) {
+                if !this.window_has_moved_on_from(pressed, cx) {
                     this.opened(Selection::Album(album), cx);
                 }
             });
@@ -2878,8 +2880,9 @@ impl RootView {
         listed: Listed,
         at: usize,
         scroll: &gpui::ScrollHandle,
+        cx: &App,
     ) -> AnyElement {
-        if !self.reaches(Shift::Listing(listed), at) {
+        if !self.reaches(Shift::Listing(listed), at, cx) {
             return cell.into_any_element();
         }
 
@@ -2903,13 +2906,7 @@ impl RootView {
         listed: Listed,
         cx: &mut Context<Self>,
     ) -> Div {
-        let scroll = self
-            .scrolls
-            .shelves
-            .borrow_mut()
-            .entry(id)
-            .or_default()
-            .clone();
+        let scroll = self.browsing.read(cx).shelf(id);
         let mut cells = Vec::new();
         for (at, album) in albums.iter().take(SHELF_AT_MOST).enumerate() {
             let cell = self.album_cell_at(
@@ -2918,7 +2915,7 @@ impl RootView {
                 Some(Chooses::among(listed, at)),
                 cx,
             );
-            cells.push(self.slid_into_view(cell, listed, at, &scroll));
+            cells.push(self.slid_into_view(cell, listed, at, &scroll, cx));
         }
 
         shelf(id, named, albums.len(), cells, scroll, Scrollbars::of(cx))
@@ -2932,13 +2929,7 @@ impl RootView {
         listed: Listed,
         cx: &mut Context<Self>,
     ) -> Div {
-        let scroll = self
-            .scrolls
-            .shelves
-            .borrow_mut()
-            .entry(id)
-            .or_default()
-            .clone();
+        let scroll = self.browsing.read(cx).shelf(id);
         let mut cells = Vec::new();
         for (at, artist) in artists.iter().take(SHELF_AT_MOST).enumerate() {
             let cell = self.artist_cell_at(
@@ -2947,7 +2938,7 @@ impl RootView {
                 Some(Chooses::among(listed, at)),
                 cx,
             );
-            cells.push(self.slid_into_view(cell, listed, at, &scroll));
+            cells.push(self.slid_into_view(cell, listed, at, &scroll, cx));
         }
 
         shelf(id, named, artists.len(), cells, scroll, Scrollbars::of(cx))
@@ -2961,8 +2952,8 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let id = artist.id;
-        let reached = chooses.is_some_and(|at| self.reaches(at.shift, at.row));
-        let cursor_only = chooses.is_some_and(|at| self.stands_unchosen_on(at.shift, at.row));
+        let reached = chooses.is_some_and(|at| self.reaches(at.shift, at.row, cx));
+        let cursor_only = chooses.is_some_and(|at| self.stands_unchosen_on(at.shift, at.row, cx));
         let favourite = self
             .library
             .read(cx)
@@ -3043,7 +3034,7 @@ impl RootView {
                 this.opened(Selection::Artist(id), cx);
             }));
 
-        let reach = chooses.and_then(|at| self.at_the_reach(at.shift, at.row));
+        let reach = chooses.and_then(|at| self.at_the_reach(at.shift, at.row, cx));
 
         menu::opens_a_reachable_menu(
             cell,
@@ -3273,7 +3264,7 @@ fn artist_menu_among(
     this: &RootView,
     cx: &App,
 ) -> Menu {
-    let chosen = this.acting_on_chosen(chooses.shift, chooses.row);
+    let chosen = this.acting_on_chosen(chooses.shift, chooses.row, cx);
     if chosen.count() > 1 {
         let artists = this.artists_chosen(chooses.shift, &chosen, cx);
         return chosen_artists_menu(at, chooses.shift, artists, this, cx);
@@ -3783,7 +3774,7 @@ impl RootView {
         cx.spawn(async move |this, cx| {
             let asked = asking.await;
             let _ = this.update(cx, |this, cx| {
-                if this.window_has_moved_on_from(pressed) {
+                if this.window_has_moved_on_from(pressed, cx) {
                     return;
                 }
                 match asked {
@@ -5330,25 +5321,25 @@ mod tests {
 
             let stale = driven.root.update(&mut driven.cx, |root, cx| {
                 let pressed = root.press_a_lookup();
-                assert!(!root.window_has_moved_on_from(pressed));
+                assert!(!root.window_has_moved_on_from(pressed, cx));
 
                 root.set_pane(Pane::Queue, cx);
-                let after_the_pane = root.window_has_moved_on_from(pressed);
+                let after_the_pane = root.window_has_moved_on_from(pressed, cx);
 
                 let pressed = root.press_a_lookup();
                 root.open_a_menu(
                     Menu::at(Point::default()).does(Icon::Play, "Play", |_, _, _| {}),
                     cx,
                 );
-                let after_a_menu = root.window_has_moved_on_from(pressed);
+                let after_a_menu = root.window_has_moved_on_from(pressed, cx);
 
                 let first = root.press_a_lookup();
                 let second = root.press_a_lookup();
                 (
                     after_the_pane,
                     after_a_menu,
-                    root.window_has_moved_on_from(first),
-                    root.window_has_moved_on_from(second),
+                    root.window_has_moved_on_from(first, cx),
+                    root.window_has_moved_on_from(second, cx),
                 )
             });
 
@@ -6261,7 +6252,7 @@ mod tests {
             }
             driven.settle();
 
-            assert!(driven.read(|root, _| root.reaches(Shift::Listing(Listed::Top), found)));
+            assert!(driven.read(|root, cx| root.reaches(Shift::Listing(Listed::Top), found, cx)));
             driven.cx.simulate_keystrokes("enter");
             driven.until(|root, cx| !root.library.read(cx).downloads().is_empty());
         }
@@ -6302,13 +6293,13 @@ mod tests {
             driven.cx.simulate_keystrokes("down");
             driven.settle();
             assert!(
-                driven.read(|root, _| root.reaches(top, 0)),
+                driven.read(|root, cx| root.reaches(top, 0, cx)),
                 "the song is not reached first"
             );
             driven.cx.simulate_keystrokes("down down");
             driven.settle();
             assert!(
-                driven.read(|root, _| root.reaches(top, 2)),
+                driven.read(|root, cx| root.reaches(top, 2, cx)),
                 "the album is not reached last"
             );
 
@@ -6348,7 +6339,7 @@ mod tests {
                 "the read had settled before enter was pressed"
             );
             driven.cx.simulate_keystrokes("enter");
-            driven.until(|root, _| root.reaches(top, 0));
+            driven.until(|root, cx| root.reaches(top, 0, cx));
             let titles = driven.read(|root, cx| {
                 root.library
                     .read(cx)

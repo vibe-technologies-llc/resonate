@@ -6,15 +6,14 @@ use std::{
     time::SystemTime,
 };
 
-use ahash::AHashMap;
-use gpui::{Context, Point, ScrollHandle, Task, UniformListScrollHandle, Window, prelude::*, px};
+use gpui::{Context, ScrollHandle, Task, UniformListScrollHandle, Window, prelude::*, px};
 use resonate_core::ZoneId;
 use resonate_engine::Command;
 use resonate_library::{Direction, RowOrder, SortOrder, is_a_followed_link};
 
 use super::{
-    Arrangement, Dropped, Orders, Pane, Rails, Remembered, Rooms, RootView, Scrolls, Shows, Social,
-    Typed, TypedAhead, WINDOW_SIZE_SETTLE,
+    Arrangement, Dropped, Pane, Rails, Remembered, Rooms, RootView, Shows, Social, Typed,
+    TypedAhead, WINDOW_SIZE_SETTLE, WindowScrolls,
 };
 use crate::{
     EqualiserModel, LibraryModel, LyricsModel, ResonateApp, Setting, WindowSize,
@@ -30,6 +29,7 @@ use crate::{
     views::{
         announcing,
         browser::ArtistShows,
+        browsing::BrowsePanes,
         field::{Caught, Field, Submitted},
         focus::Controls,
         inspector::InspectorPane,
@@ -249,6 +249,8 @@ impl RootView {
         let settings_pane = cx.new(|cx| SettingsPane::new(settings_category, cx));
         cx.observe(&settings_pane, |_, _, cx| cx.notify()).detach();
 
+        let browsing = cx.new(|_| BrowsePanes::new());
+
         let (typed_words, typed_isrc) = matching::matching_fields(window, cx);
 
         let server = cx.new(ServerModel::new);
@@ -302,6 +304,7 @@ impl RootView {
             services,
             settings_fields,
             settings_pane,
+            browsing,
             listening_open: false,
             downloads_open: false,
             downloads_pressed_off: None,
@@ -336,7 +339,6 @@ impl RootView {
             under_the_pointer: None,
             menu: None,
             record: None,
-            reach: None,
             arranged_as,
             creeping: None,
             creeping_on: Task::ready(()),
@@ -352,27 +354,13 @@ impl RootView {
             focus,
             menu_focus,
             parts: Parts::of(&cx.entity(), cx),
-            scrolls: Scrolls {
-                settings: ScrollHandle::new(),
-                settings_rail: ScrollHandle::new(),
+            window_scrolls: WindowScrolls {
                 sidebar: ScrollHandle::new(),
-                artist_records: ScrollHandle::new(),
-                ordering: ScrollHandle::new(),
                 downloads: ScrollHandle::new(),
                 heard_earlier: ScrollHandle::new(),
                 likely: ScrollHandle::new(),
                 replacing: ScrollHandle::new(),
-                remote: ScrollHandle::new(),
-                search: ScrollHandle::default(),
-                playlist_rows: UniformListScrollHandle::default(),
-                track_rows: UniformListScrollHandle::default(),
-                artist_rows: UniformListScrollHandle::default(),
-                album_rows: UniformListScrollHandle::default(),
-                all_playlist_rows: UniformListScrollHandle::default(),
-                favourite_rows: UniformListScrollHandle::default(),
                 picker_rows: UniformListScrollHandle::default(),
-                shelves: RefCell::new(AHashMap::new()),
-                left_at: AHashMap::new(),
             },
             rooms: Rooms {
                 grid_width: Rc::default(),
@@ -397,17 +385,6 @@ impl RootView {
                 band_untold: None,
                 held_band: None,
                 curve_plotted: Rc::default(),
-            },
-            orders: Orders {
-                row_order: RowOrder::default(),
-                row_reading: Direction::default(),
-                keeping: false,
-                query_sort: SortOrder::default(),
-                query_reading: SortOrder::default().reads(),
-                query_cap: None,
-                ordering: None,
-                ordering_at: Point::default(),
-                ordering_typed: TypeAhead::default(),
             },
             remembered: Remembered {
                 tab: remember_tab,

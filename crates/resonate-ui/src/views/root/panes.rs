@@ -90,8 +90,8 @@ impl RootView {
             self.set_pane(pane, cx);
         }
         if self.shows.search != shows {
-            self.orders.ordering = None;
-            self.reach = None;
+            self.change_the_orders(cx, |orders| orders.ordering = None);
+            self.set_reach(None, cx);
         }
         self.shows.search = shows;
         cx.notify();
@@ -113,7 +113,7 @@ impl RootView {
         self.stop_typing(cx);
         let opens_the_queue = pane == Pane::Queue && self.pane != Pane::Queue;
         if self.pane != pane {
-            self.orders.ordering = None;
+            self.change_the_orders(cx, |orders| orders.ordering = None);
             if let Some(shows) = SearchShows::in_place_of(pane) {
                 self.shows.search = shows;
             }
@@ -172,7 +172,10 @@ impl RootView {
             library.gather_in_playlist(playlist, runs, to, cx);
         });
         if let Some(landed) = landed {
-            self.reach = Some(Reach::spanning(shift, landed.first(), landed.last()));
+            self.set_reach(
+                Some(Reach::spanning(shift, landed.first(), landed.last())),
+                cx,
+            );
         }
         self.typing.landed_by_a_jump = None;
         cx.notify();
@@ -206,7 +209,11 @@ impl RootView {
             self.remember_current_settings_category(cx);
         }
         if moved || left_a_page {
-            self.scrolls.settings.set_offset(Point::default());
+            self.settings_pane
+                .read(cx)
+                .shown
+                .scroll
+                .set_offset(Point::default());
         }
         self.disarm(cx);
         cx.notify();

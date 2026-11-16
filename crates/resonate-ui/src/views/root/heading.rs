@@ -347,12 +347,12 @@ impl RootView {
                             .flex_1()
                             .min_h(px(0.0))
                             .overflow_y_scroll()
-                            .track_scroll(&self.scrolls.sidebar)
+                            .track_scroll(&self.window_scrolls.sidebar)
                             .child(content),
                     )
                     .child(
                         Scrollbars::of(cx)
-                            .vertical("sidebar-scrollbar", self.scrolls.sidebar.clone()),
+                            .vertical("sidebar-scrollbar", self.window_scrolls.sidebar.clone()),
                     ),
             )
             .child(foot)

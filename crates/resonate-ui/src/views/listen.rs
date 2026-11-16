@@ -978,7 +978,7 @@ impl RootView {
                 .gap_0p5()
                 .max_h(px(EARLIER_DRAWN_AT_MOST))
                 .overflow_y_scroll()
-                .track_scroll(&self.scrolls.heard_earlier),
+                .track_scroll(&self.window_scrolls.heard_earlier),
             |rows, (at, found)| {
                 let finding = found.clone();
                 rows.child(self.in_the_pane_ring(
@@ -1004,7 +1004,7 @@ impl RootView {
                     .child(rows)
                     .child(Scrollbars::of(cx).vertical(
                         "heard-earlier-scrollbar",
-                        self.scrolls.heard_earlier.clone(),
+                        self.window_scrolls.heard_earlier.clone(),
                     )),
             )
     }

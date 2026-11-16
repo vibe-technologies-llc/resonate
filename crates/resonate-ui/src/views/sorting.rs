@@ -163,14 +163,14 @@ fn order_typed<O: Ordering>(
         cx.stop_propagation();
 
         let now = Instant::now();
-        if this.orders.ordering_typed.ran_out_by(now) {
-            this.orders.ordering_typed.cleared();
+        if this.orders(cx).ordering_typed.ran_out_by(now) {
+            this.change_the_orders(cx, |orders| orders.ordering_typed.cleared());
         }
-        this.orders.ordering_typed.took(letter, now);
+        this.change_the_orders(cx, |orders| orders.ordering_typed.took(letter, now));
 
         let named: Vec<&str> = O::EVERY.iter().map(|order| order.named()).collect();
         let Some(at) = this
-            .orders
+            .orders(cx)
             .ordering_typed
             .typed()
             .and_then(|typed| typed_onto(&named, held_at, typed))
@@ -189,14 +189,16 @@ impl RootView {
         at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        self.orders.ordering = Some(ordered);
-        self.orders.ordering_at = at + point(px(0.0), px(BELOW_ITS_CONTROL));
-        self.orders.ordering_typed.cleared();
+        self.change_the_orders(cx, |orders| {
+            orders.ordering = Some(ordered);
+            orders.ordering_at = at + point(px(0.0), px(BELOW_ITS_CONTROL));
+            orders.ordering_typed.cleared();
+        });
         cx.notify();
     }
 
     pub(crate) fn close_the_order(&mut self, cx: &mut Context<Self>) {
-        self.orders.ordering = None;
+        self.change_the_orders(cx, |orders| orders.ordering = None);
         cx.notify();
     }
 
@@ -252,7 +254,7 @@ impl RootView {
             .child(
                 deferred(
                     anchored()
-                        .position(self.orders.ordering_at)
+                        .position(self.orders(cx).ordering_at)
                         .snap_to_window_with_margin(px(KEPT_FROM_THE_WINDOW_EDGE))
                         .child(motion::lifted_in(card, "order-sheet-arrives")),
                 )
@@ -286,7 +288,7 @@ impl RootView {
                 .gap_0p5()
                 .min_h(px(0.0))
                 .overflow_y_scroll()
-                .track_scroll(&self.scrolls.ordering),
+                .track_scroll(&self.scrolls(cx).ordering),
             |orders, (at, order)| {
                 let chosen = order_by.clone();
                 orders.child(self.in_the_pane_ring(
@@ -377,7 +379,7 @@ impl RootView {
                     .child(orders)
                     .child(
                         Scrollbars::of(cx)
-                            .vertical("order-scrollbar", self.scrolls.ordering.clone()),
+                            .vertical("order-scrollbar", self.scrolls(cx).ordering.clone()),
                     ),
             )
             .child(kit::rule().mx_1())
@@ -385,7 +387,7 @@ impl RootView {
     }
 
     fn hold_the_order_at(&self, at: usize, window: &mut Window, cx: &mut Context<Self>) {
-        self.scrolls.ordering.scroll_to_item(at);
+        self.scrolls(cx).ordering.scroll_to_item(at);
         self.carry_the_ring_onto(order_row_id(at), window, cx);
     }
 
@@ -741,11 +743,11 @@ pub(crate) fn favourites_sorted(this: &RootView, cx: &Context<RootView>) -> Sort
     }
 }
 
-pub(crate) fn playlist_sorted(this: &RootView) -> Sorted {
+pub(crate) fn playlist_sorted(this: &RootView, cx: &App) -> Sorted {
     Sorted {
         number: Sortable::Number,
-        by: row_column(this.orders.row_order),
-        reading: this.orders.row_reading,
+        by: row_column(this.orders(cx).row_order),
+        reading: this.orders(cx).row_reading,
         offers: ROW_COLUMNS,
         saying: words::sorting::column_hint(),
         press: |this, column, cx| {
@@ -753,8 +755,8 @@ pub(crate) fn playlist_sorted(this: &RootView) -> Sorted {
                 return;
             };
             let wanted = row_order(column);
-            let reading = if this.orders.row_order == wanted {
-                this.orders.row_reading.flipped()
+            let reading = if this.orders(cx).row_order == wanted {
+                this.orders(cx).row_reading.flipped()
             } else {
                 Direction::Ascending
             };

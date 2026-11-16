@@ -164,10 +164,10 @@ impl RootView {
 
     pub(super) fn scroll_of(&self, pane: Pane, cx: &App) -> UniformListScrollHandle {
         match pane {
-            Pane::Artists => self.scrolls.artist_rows.clone(),
-            Pane::Albums => self.scrolls.album_rows.clone(),
+            Pane::Artists => self.scrolls(cx).artist_rows.clone(),
+            Pane::Albums => self.scrolls(cx).album_rows.clone(),
             Pane::Queue => self.queue.read(cx).rows(),
-            Pane::Playlists => self.scrolls.playlist_rows.clone(),
+            Pane::Playlists => self.scrolls(cx).playlist_rows.clone(),
             Pane::Tracks
             | Pane::Statistics
             | Pane::Party
@@ -178,7 +178,7 @@ impl RootView {
             | Pane::Inspector
             | Pane::Visualiser
             | Pane::Analysis
-            | Pane::Settings => self.scrolls.track_rows.clone(),
+            | Pane::Settings => self.scrolls(cx).track_rows.clone(),
             Pane::Server => self.services.read(cx).rows.clone(),
         }
     }

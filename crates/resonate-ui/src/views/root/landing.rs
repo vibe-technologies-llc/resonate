@@ -185,7 +185,7 @@ impl RootView {
             }
             Pane::Favourites => {
                 let shelved = Shelved::of(self.library.read(cx));
-                let reached = self.reach.as_ref().and_then(|reach| match reach.shift {
+                let reached = self.reach(cx).and_then(|reach| match reach.shift {
                     Shift::Listing(listed) if shelved.rows_of(listed) > 0 => Some(listed),
                     _ => None,
                 });
@@ -227,11 +227,8 @@ impl RootView {
         }
     }
 
-    pub(super) fn reach_in(&self, shift: Shift, held: usize) -> Option<Reach> {
-        self.reach
-            .as_ref()
-            .filter(|reach| reach.shift == shift)
-            .and_then(|reach| reach.within(held))
+    pub(super) fn reach_in(&self, shift: Shift, held: usize, cx: &App) -> Option<Reach> {
+        self.browsing.read(cx).reach_in(shift, held)
     }
 
     pub(super) fn opening_row(&self, shift: Shift, rows: usize, cx: &App) -> usize {
@@ -255,16 +252,16 @@ impl RootView {
                 .rows()
                 .scroll_to_item(self.queue_parts(cx).line_of(row), ScrollStrategy::Center),
             Shift::Playlist(_) => self
-                .scrolls
+                .scrolls(cx)
                 .playlist_rows
                 .scroll_to_item(row, ScrollStrategy::Center),
             Shift::Listing(Listed::Tracks) => {
-                self.scrolls
+                self.scrolls(cx)
                     .track_rows
                     .scroll_to_item(row, ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Albums) => {
-                self.scrolls
+                self.scrolls(cx)
                     .album_rows
                     .scroll_to_item(row / self.grid_columns(), ScrollStrategy::Center);
             }
@@ -273,7 +270,7 @@ impl RootView {
                     ArtistsDrawn::List => row,
                     ArtistsDrawn::Grid => row / self.grid_columns(),
                 };
-                self.scrolls
+                self.scrolls(cx)
                     .artist_rows
                     .scroll_to_item(at, ScrollStrategy::Center);
             }
@@ -282,12 +279,12 @@ impl RootView {
                     PlaylistsDrawn::List => row,
                     PlaylistsDrawn::Grid => row / self.grid_columns(),
                 };
-                self.scrolls
+                self.scrolls(cx)
                     .all_playlist_rows
                     .scroll_to_item(at, ScrollStrategy::Center);
             }
             Shift::Listing(Listed::Favourites) => {
-                self.scrolls
+                self.scrolls(cx)
                     .favourite_rows
                     .scroll_to_item(row, ScrollStrategy::Center);
             }

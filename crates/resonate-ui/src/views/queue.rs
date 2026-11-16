@@ -774,7 +774,7 @@ impl RootView {
         let heading = self.queue_heading(&queue, cx);
         let drawn_at = self.player.read(cx).queued().revision;
         let reaching = self
-            .reaching(Shift::Queue)
+            .reaching(Shift::Queue, cx)
             .map(|rows| Reaching::of(&queue, rows));
 
         kit::pane()
@@ -859,8 +859,8 @@ impl RootView {
                                         },
                                         cx,
                                     );
-                                    let reached = this.reaches(Shift::Queue, index);
-                                    let acting_on = this.acting_on(Shift::Queue, index);
+                                    let reached = this.reaches(Shift::Queue, index, cx);
+                                    let acting_on = this.acting_on(Shift::Queue, index, cx);
                                     let holding: Arc<[Cut]> =
                                         match Reaching::acting_on(reaching.as_ref(), acting_on) {
                                             Some(reaching) => Arc::clone(&reaching.holding),
@@ -1005,12 +1005,12 @@ impl RootView {
                                                 }
                                             },
                                         ));
-                                    let reach = this.at_the_reach(Shift::Queue, index);
+                                    let reach = this.at_the_reach(Shift::Queue, index, cx);
                                     let listed = menu::opens_a_reachable_menu(
                                         listed,
                                         reach,
                                         move |this, at, cx| {
-                                            let taken = this.acting_on(Shift::Queue, index);
+                                            let taken = this.acting_on(Shift::Queue, index, cx);
                                             let put = Arc::clone(&menued);
                                             let names = Called {
                                                 title: title.clone(),

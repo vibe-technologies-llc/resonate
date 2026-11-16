@@ -740,7 +740,7 @@ impl RootView {
         shift: Shift,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let moving = self.acting_on_chosen(shift, row);
+        let moving = self.acting_on_chosen(shift, row, cx);
         let Some(to) = moving
             .bounds()
             .and_then(|bounds| step.landing(bounds, held))

@@ -1,4 +1,4 @@
-use gpui::{Context, FocusHandle, WeakFocusHandle, Window};
+use gpui::{App, Context, FocusHandle, WeakFocusHandle, Window};
 
 use crate::views::root::RootView;
 
@@ -161,7 +161,7 @@ impl Standing {
 }
 
 impl RootView {
-    pub(crate) fn sheet_in_front(&self) -> Option<Sheet> {
+    pub(crate) fn sheet_in_front(&self, cx: &App) -> Option<Sheet> {
         if self.deleting.is_some() {
             Some(Sheet::Deleting)
         } else if self.replacing.is_some() {
@@ -184,7 +184,7 @@ impl RootView {
             Some(Sheet::Wrapped)
         } else if self.social.sharing.is_some() {
             Some(Sheet::Sharing)
-        } else if self.orders.ordering.is_some() {
+        } else if self.orders(cx).ordering.is_some() {
             Some(Sheet::Ordering)
         } else if self.menu.is_some() {
             Some(Sheet::Menu)
@@ -204,7 +204,7 @@ impl RootView {
     ) {
         self.sheet_panels.opening();
 
-        let now = self.sheet_in_front();
+        let now = self.sheet_in_front(cx);
         match Change::of(self.sheets.sheet, now) {
             Change::Unchanged => {}
             Change::Opened => self.sheets.opened(window.focused(cx)),

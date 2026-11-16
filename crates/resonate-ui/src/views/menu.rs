@@ -904,7 +904,7 @@ impl RootView {
                 });
                 this.library
                     .update(cx, |library, _| library.keep_the_copies(track, copies));
-                if this.window_has_moved_on_from(pressed) {
+                if this.window_has_moved_on_from(pressed, cx) {
                     return;
                 }
                 let mut menu = offers(this, at, cx).opened_on(owner);

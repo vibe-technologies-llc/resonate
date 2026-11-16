@@ -311,7 +311,7 @@ impl RootView {
         self.rails.volume_aimed = None;
         self.rails.muted_from = None;
         self.rails.grabbed = None;
-        self.reach = None;
+        self.set_reach(None, cx);
         self.typing.landed_by_a_jump = None;
         self.rails.seek_pointed = None;
         self.queue.update(cx, |queue, _| queue.another_zone_shown());

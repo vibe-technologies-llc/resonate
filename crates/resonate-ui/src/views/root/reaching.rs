@@ -18,54 +18,46 @@ use crate::{
 impl RootView {
     pub(super) fn arrangement(&self, cx: &App) -> Arrangement {
         let library = self.library.read(cx);
+        let orders = self.orders(cx);
 
         Arrangement {
             selection: library.selection(),
             sorting: library.sorting(),
             playlists: (library.playlist_order(), library.playlist_reading()),
-            opened_rows: (self.orders.row_order, self.orders.row_reading),
-            search: (self.orders.query_sort, self.orders.query_reading),
+            opened_rows: (orders.row_order, orders.row_reading),
+            search: (orders.query_sort, orders.query_reading),
             shelves: (library.favourited().artists, library.favourited().albums),
         }
     }
 
-    pub(super) fn let_go_of_a_reach_the_rows_left(&mut self, cx: &App) {
+    pub(super) fn let_go_of_a_reach_the_rows_left(&mut self, cx: &mut App) {
         let arranged_as = self.arrangement(cx);
         if arranged_as == self.arranged_as {
             return;
         }
         self.arranged_as = arranged_as;
-        if self
-            .reach
-            .as_ref()
-            .is_some_and(|reach| reach.shift != Shift::Queue)
-        {
-            self.reach = None;
-        }
+        self.browsing.update(cx, |browsing, _| {
+            browsing.let_go_of_the_reach_where(|shift| shift != Shift::Queue);
+        });
     }
 
-    pub(crate) fn reaches(&self, shift: Shift, row: usize) -> bool {
-        self.reach
-            .as_ref()
-            .is_some_and(|reach| reach.shift == shift && reach.reaches(row))
+    pub(crate) fn reaches(&self, shift: Shift, row: usize, cx: &App) -> bool {
+        self.browsing.read(cx).reaches(shift, row)
     }
 
-    pub(crate) fn at_the_reach(&self, shift: Shift, row: usize) -> Option<AtTheReach> {
-        self.reach
-            .as_ref()
-            .filter(|reach| reach.shift == shift && reach.row == row)
-            .map(|_| AtTheReach { shift, row })
+    pub(crate) fn at_the_reach(&self, shift: Shift, row: usize, cx: &App) -> Option<AtTheReach> {
+        self.browsing.read(cx).at_the_reach(shift, row)
     }
 
     pub(super) fn open_the_reached_menu(&mut self, cx: &mut Context<Self>) {
-        if self.something_stands_over_the_pane() {
+        if self.something_stands_over_the_pane(cx) {
             return;
         }
         self.reach_by_hand(cx);
         let Some((shift, held)) = self.reachable(cx) else {
             return;
         };
-        let Some(reach) = self.reach_in(shift, held) else {
+        let Some(reach) = self.reach_in(shift, held, cx) else {
             return;
         };
         let at = AtTheReach {
@@ -78,21 +70,16 @@ impl RootView {
     }
 
     #[cfg(test)]
-    pub(crate) const fn reached(&self) -> Option<&Reach> {
-        self.reach.as_ref()
+    pub(crate) fn reached<'a>(&self, cx: &'a App) -> Option<&'a Reach> {
+        self.reach(cx)
     }
 
-    pub(crate) fn stands_unchosen_on(&self, shift: Shift, row: usize) -> bool {
-        self.reach
-            .as_ref()
-            .is_some_and(|reach| reach.shift == shift && reach.row == row && !reach.is_chosen())
+    pub(crate) fn stands_unchosen_on(&self, shift: Shift, row: usize, cx: &App) -> bool {
+        self.browsing.read(cx).stands_unchosen_on(shift, row)
     }
 
-    pub(crate) fn acting_on_chosen(&self, shift: Shift, row: usize) -> Chosen {
-        match self.reach.as_ref().filter(|reach| reach.shift == shift) {
-            Some(reach) if reach.reaches(row) => reach.selected(),
-            _ => Chosen::of(Span::one(row)),
-        }
+    pub(crate) fn acting_on_chosen(&self, shift: Shift, row: usize, cx: &App) -> Chosen {
+        self.browsing.read(cx).acting_on_chosen(shift, row)
     }
 
     pub(crate) fn choosable(&self, shift: Shift, chosen: Chosen, cx: &App) -> Chosen {
@@ -106,11 +93,8 @@ impl RootView {
         }
     }
 
-    pub(crate) fn reached_chosen(&self, shift: Shift) -> Option<Chosen> {
-        self.reach
-            .as_ref()
-            .filter(|reach| reach.shift == shift)
-            .map(Reach::selected)
+    pub(crate) fn reached_chosen(&self, shift: Shift, cx: &App) -> Option<Chosen> {
+        self.browsing.read(cx).reached_chosen(shift)
     }
 
     pub(crate) fn tracks_chosen(&self, shift: Shift, chosen: &Chosen, cx: &App) -> Vec<Track> {
@@ -178,11 +162,12 @@ impl RootView {
         shift: Shift,
         row: usize,
         listed: E,
+        cx: &App,
     ) -> E {
-        let reached = self.reaches(shift, row);
+        let reached = self.reaches(shift, row, cx);
         reorder::cursor_marked(
             reorder::marked(listed.chosen(reached), reached),
-            self.stands_unchosen_on(shift, row),
+            self.stands_unchosen_on(shift, row, cx),
         )
     }
 
@@ -204,22 +189,24 @@ impl RootView {
         self.reach_by_hand(cx);
 
         let held = self
-            .reach
-            .as_ref()
+            .reach(cx)
             .filter(|reach| reach.shift == shift)
             .and_then(|reach| reach.within(choosable));
-        self.reach = Some(match held {
-            Some(reach) if apart => reach.toggled(row),
-            Some(reach) => reach.widened_to(row),
-            None => Reach::at(shift, row),
-        });
+        self.set_reach(
+            Some(match held {
+                Some(reach) if apart => reach.toggled(row),
+                Some(reach) => reach.widened_to(row),
+                None => Reach::at(shift, row),
+            }),
+            cx,
+        );
         cx.notify();
 
         true
     }
 
     pub(super) fn choose_the_reached(&mut self, cx: &mut Context<Self>) {
-        if self.something_stands_over_the_pane() {
+        if self.something_stands_over_the_pane(cx) {
             return;
         }
         self.reach_by_hand(cx);
@@ -231,16 +218,19 @@ impl RootView {
             return;
         }
 
-        self.reach = Some(match self.reach_in(shift, held) {
-            Some(reach) if reach.row >= choosable => return,
-            Some(reach) => reach.toggled(reach.row),
-            None => Reach::at(shift, self.opening_row(shift, held, cx)),
-        });
+        self.set_reach(
+            Some(match self.reach_in(shift, held, cx) {
+                Some(reach) if reach.row >= choosable => return,
+                Some(reach) => reach.toggled(reach.row),
+                None => Reach::at(shift, self.opening_row(shift, held, cx)),
+            }),
+            cx,
+        );
         cx.notify();
     }
 
     pub(super) fn hop_to_a_row(&mut self, step: Step, cx: &mut Context<Self>) {
-        if self.something_stands_over_the_pane() {
+        if self.something_stands_over_the_pane(cx) {
             return;
         }
         self.reach_by_hand(cx);
@@ -250,7 +240,7 @@ impl RootView {
         if !shift.chooses_apart() {
             return;
         }
-        let Some(reach) = self.reach_in(shift, held) else {
+        let Some(reach) = self.reach_in(shift, held, cx) else {
             return self.reach_row(step, cx);
         };
         let Some(row) = step.landing(Span::one(reach.row), held) else {
@@ -261,23 +251,20 @@ impl RootView {
             return;
         }
 
-        self.reach = Some(reach.hopped_to(row));
+        self.set_reach(Some(reach.hopped_to(row)), cx);
         self.show_row(shift, row, cx);
         cx.notify();
     }
 
-    pub(crate) fn acting_on(&self, shift: Shift, row: usize) -> Span {
-        match self.reaching(shift) {
+    pub(crate) fn acting_on(&self, shift: Shift, row: usize, cx: &App) -> Span {
+        match self.reaching(shift, cx) {
             Some(rows) if rows.holds(row) => rows,
             _ => Span::one(row),
         }
     }
 
-    pub(crate) fn reaching(&self, shift: Shift) -> Option<Span> {
-        self.reach
-            .as_ref()
-            .filter(|reach| reach.shift == shift)
-            .map(Reach::rows)
+    pub(crate) fn reaching(&self, shift: Shift, cx: &App) -> Option<Span> {
+        self.browsing.read(cx).reaching(shift)
     }
 
     pub(crate) fn reach_at(
@@ -287,12 +274,15 @@ impl RootView {
         extending: bool,
         cx: &mut Context<Self>,
     ) {
-        let held = self.reach.as_ref().filter(|reach| reach.shift == shift);
+        let held = self.reach(cx).filter(|reach| reach.shift == shift);
         self.typing.landed_by_a_jump = None;
-        self.reach = Some(match (extending, held) {
-            (true, Some(reach)) => reach.widened_to(row),
-            _ => Reach::at(shift, row),
-        });
+        self.set_reach(
+            Some(match (extending, held) {
+                (true, Some(reach)) => reach.widened_to(row),
+                _ => Reach::at(shift, row),
+            }),
+            cx,
+        );
         cx.notify();
     }
 
@@ -304,7 +294,7 @@ impl RootView {
                 Step::Below => 1,
             },
             cx,
-        ) || self.something_stands_over_the_pane()
+        ) || self.something_stands_over_the_pane(cx)
         {
             return;
         }
@@ -315,12 +305,12 @@ impl RootView {
         if self.reach_across_the_favourites(shift, held, step, cx) {
             return;
         }
-        let row = match self.reach_in(shift, held) {
+        let row = match self.reach_in(shift, held, cx) {
             Some(reach) => self.line_beyond(shift, reach, step, held, cx),
             None => self.opening_row(shift, held, cx),
         };
 
-        self.reach = Some(Reach::at(shift, row));
+        self.set_reach(Some(Reach::at(shift, row)), cx);
         self.show_row(shift, row, cx);
         cx.notify();
     }
@@ -335,7 +325,7 @@ impl RootView {
         let Shift::Listing(from) = shift else {
             return false;
         };
-        let Some(reach) = self.reach_in(shift, held) else {
+        let Some(reach) = self.reach_in(shift, held, cx) else {
             return false;
         };
         let shelved = Shelved::of(self.library.read(cx));
@@ -350,7 +340,7 @@ impl RootView {
 
         if let Some(into) = shelved.beyond(from, step) {
             let shift = Shift::Listing(into);
-            self.reach = Some(Reach::at(shift, 0));
+            self.set_reach(Some(Reach::at(shift, 0)), cx);
             self.show_row(shift, 0, cx);
             cx.notify();
         }
@@ -376,13 +366,13 @@ impl RootView {
     }
 
     pub(super) fn reach_along_the_strip(&mut self, step: Step, cx: &mut Context<Self>) -> bool {
-        if self.something_stands_over_the_pane() {
+        if self.something_stands_over_the_pane(cx) {
             return false;
         }
         let Some((shift @ Shift::Listing(listed), held)) = self.reachable(cx) else {
             return false;
         };
-        let Some(reach) = self.reach_in(shift, held) else {
+        let Some(reach) = self.reach_in(shift, held, cx) else {
             return false;
         };
         let at = step.end(reach.rows());
@@ -394,7 +384,7 @@ impl RootView {
             return false;
         };
         if let Some(row) = along {
-            self.reach = Some(Reach::at(shift, row));
+            self.set_reach(Some(Reach::at(shift, row)), cx);
             self.show_row(shift, row, cx);
             cx.notify();
         }
@@ -403,7 +393,7 @@ impl RootView {
     }
 
     pub(super) fn reach_the_end(&mut self, step: Step, cx: &mut Context<Self>) {
-        if self.something_stands_over_the_pane() {
+        if self.something_stands_over_the_pane(cx) {
             return;
         }
         self.reach_by_hand(cx);
@@ -415,13 +405,13 @@ impl RootView {
             Step::Below => held - 1,
         };
 
-        self.reach = Some(Reach::at(shift, row));
+        self.set_reach(Some(Reach::at(shift, row)), cx);
         self.show_row(shift, row, cx);
         cx.notify();
     }
 
     pub(super) fn reach_a_page(&mut self, step: Step, cx: &mut Context<Self>) {
-        if self.something_stands_over_the_pane() {
+        if self.something_stands_over_the_pane(cx) {
             return;
         }
         self.reach_by_hand(cx);
@@ -429,7 +419,7 @@ impl RootView {
             return;
         };
         let page = self.rows_a_page(shift, cx);
-        let from = match self.reach_in(shift, held) {
+        let from = match self.reach_in(shift, held, cx) {
             Some(reach) => step.end(reach.rows()),
             None => self.opening_row(shift, held, cx),
         };
@@ -438,13 +428,13 @@ impl RootView {
             Step::Below => from.saturating_add(page).min(held - 1),
         };
 
-        self.reach = Some(Reach::at(shift, row));
+        self.set_reach(Some(Reach::at(shift, row)), cx);
         self.show_row(shift, row, cx);
         cx.notify();
     }
 
     pub(super) fn reach_everything(&mut self, cx: &mut Context<Self>) {
-        if self.something_stands_over_the_pane() {
+        if self.something_stands_over_the_pane(cx) {
             return;
         }
         self.reach_by_hand(cx);
@@ -452,18 +442,18 @@ impl RootView {
             return;
         };
 
-        self.reach = Some(Reach::spanning(shift, 0, held - 1));
+        self.set_reach(Some(Reach::spanning(shift, 0, held - 1)), cx);
         cx.notify();
     }
 
     pub(super) fn drop_reached(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.something_stands_over_the_pane() {
+        if self.something_stands_over_the_pane(cx) {
             return false;
         }
         let Some((shift, held)) = self.reachable(cx) else {
             return false;
         };
-        let Some(reach) = self.reach_in(shift, held) else {
+        let Some(reach) = self.reach_in(shift, held, cx) else {
             return false;
         };
         if !shift.is_edited() {
@@ -480,12 +470,12 @@ impl RootView {
     pub(super) fn rows_a_page(&self, shift: Shift, cx: &App) -> usize {
         let listing = match shift {
             Shift::Queue => self.queue.read(cx).rows(),
-            Shift::Playlist(_) => self.scrolls.playlist_rows.clone(),
-            Shift::Listing(Listed::Tracks) => self.scrolls.track_rows.clone(),
-            Shift::Listing(Listed::Albums) => self.scrolls.album_rows.clone(),
-            Shift::Listing(Listed::Artists) => self.scrolls.artist_rows.clone(),
-            Shift::Listing(Listed::Playlists) => self.scrolls.all_playlist_rows.clone(),
-            Shift::Listing(Listed::Favourites) => self.scrolls.favourite_rows.clone(),
+            Shift::Playlist(_) => self.scrolls(cx).playlist_rows.clone(),
+            Shift::Listing(Listed::Tracks) => self.scrolls(cx).track_rows.clone(),
+            Shift::Listing(Listed::Albums) => self.scrolls(cx).album_rows.clone(),
+            Shift::Listing(Listed::Artists) => self.scrolls(cx).artist_rows.clone(),
+            Shift::Listing(Listed::Playlists) => self.scrolls(cx).all_playlist_rows.clone(),
+            Shift::Listing(Listed::Favourites) => self.scrolls(cx).favourite_rows.clone(),
             Shift::Listing(Listed::FavouriteArtists | Listed::FavouriteAlbums) => return 1,
             Shift::Listing(Listed::Missing) => self.missing.read(cx).rows(),
             Shift::Listing(Listed::Suggested) => self.suggestions.read(cx).rows(),
@@ -513,21 +503,21 @@ impl RootView {
     }
 
     pub(super) fn widen_reach(&mut self, step: Step, cx: &mut Context<Self>) {
-        if self.something_stands_over_the_pane() {
+        if self.something_stands_over_the_pane(cx) {
             return;
         }
         self.reach_by_hand(cx);
         let Some((shift, held)) = self.reachable(cx) else {
             return;
         };
-        let Some(reach) = self.reach_in(shift, held) else {
+        let Some(reach) = self.reach_in(shift, held, cx) else {
             return self.reach_row(step, cx);
         };
         let Some(row) = step.landing(Span::one(reach.row), held) else {
             return;
         };
 
-        self.reach = Some(reach.widened_to(row));
+        self.set_reach(Some(reach.widened_to(row)), cx);
         self.show_row(shift, row, cx);
         cx.notify();
     }

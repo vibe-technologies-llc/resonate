@@ -480,7 +480,7 @@ impl RootView {
                     )
                     .names(words::statistics::window_hint()),
                     move |this, _, cx| {
-                        this.let_go_of_the_reach_in(Shift::Listing(Listed::Heard));
+                        this.let_go_of_the_reach_in(Shift::Listing(Listed::Heard), cx);
                         this.library
                             .update(cx, |library, cx| library.read_over(offered, cx));
                     },
@@ -705,7 +705,7 @@ impl RootView {
         let scroll = self.statistics.read(cx).scroll.clone();
         let mut listed = div().flex().flex_col().p_1();
         for (rank, held) in rows.iter().enumerate() {
-            let reached = self.reaches(Shift::Listing(Listed::Heard), reached_from + rank);
+            let reached = self.reaches(Shift::Listing(Listed::Heard), reached_from + rank, cx);
             let art = pictured(self, held, cx);
             let placed = Placing {
                 rank,
@@ -1505,7 +1505,7 @@ mod tests {
     }
 
     fn reached_at(driven: &mut Driven) -> Option<(Shift, usize)> {
-        driven.read(|root, _| root.reached().map(|reach| (reach.shift, reach.row)))
+        driven.read(|root, cx| root.reached(cx).map(|reach| (reach.shift, reach.row)))
     }
 
     fn tabbed_onto(driven: &mut Driven, named: &'static str) -> bool {

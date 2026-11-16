@@ -36,7 +36,7 @@ impl RootView {
 
         match keystroke.key.as_str() {
             "escape" => self.escaped(window, cx),
-            _ if self.something_stands_over_the_pane() => {}
+            _ if self.something_stands_over_the_pane(cx) => {}
             "backspace" => {
                 if !self.drop_typed(cx)
                     && !self.stands_where_a_jump_landed(cx)
@@ -68,7 +68,7 @@ impl RootView {
             Shift::Playlist(_) | Shift::Listing(_) => return None,
         }
         let from = self
-            .reach_in(shift, held)
+            .reach_in(shift, held, cx)
             .map_or_else(|| self.opening_row(shift, held, cx), |reach| reach.row);
 
         Some((shift, from))
@@ -161,7 +161,7 @@ impl RootView {
             return;
         };
         self.reach_at(shift, row, false, cx);
-        self.typing.landed_by_a_jump.clone_from(&self.reach);
+        self.typing.landed_by_a_jump = self.reach(cx).cloned();
         self.show_row(shift, row, cx);
     }
 
@@ -218,7 +218,7 @@ impl RootView {
             self.close_wrapped(cx);
         } else if self.social.sharing.is_some() {
             self.close_sharing(cx);
-        } else if self.orders.ordering.is_some() {
+        } else if self.orders(cx).ordering.is_some() {
             self.close_the_order(cx);
         } else if self.menu.is_some() {
             if !self.back_out_of_the_menu(cx) {
@@ -230,14 +230,14 @@ impl RootView {
         true
     }
 
-    pub(crate) const fn something_stands_over_the_pane(&self) -> bool {
+    pub(crate) fn something_stands_over_the_pane(&self, cx: &App) -> bool {
         self.menu.is_some()
             || self.adding.is_some()
             || self.magnified.is_some()
             || self.record.is_some()
             || self.social.wrapped.is_some()
             || self.social.sharing.is_some()
-            || self.orders.ordering.is_some()
+            || self.orders(cx).ordering.is_some()
             || self.listening_open
             || self.deleting.is_some()
             || self.replacing.is_some()
@@ -256,7 +256,7 @@ impl RootView {
             return false;
         };
 
-        self.reach.as_ref() == Some(landed)
+        self.reach(cx) == Some(landed)
             && self
                 .reachable(cx)
                 .is_some_and(|(shift, _)| shift == landed.shift)

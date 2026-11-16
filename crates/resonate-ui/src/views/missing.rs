@@ -277,8 +277,11 @@ impl RootView {
                                         None => None,
                                     };
                                     if let Some(listed) = listed {
-                                        let reached =
-                                            this.reaches(Shift::Listing(Listed::Missing), index);
+                                        let reached = this.reaches(
+                                            Shift::Listing(Listed::Missing),
+                                            index,
+                                            cx,
+                                        );
                                         drawn.push(
                                             in_a_card(
                                                 reorder::marked(listed, reached),
@@ -304,7 +307,7 @@ impl RootView {
 
     pub(crate) fn show_what_is_missing(&mut self, shows: MissingShows, cx: &mut Context<Self>) {
         if self.missing.read(cx).shows != shows {
-            self.let_go_of_the_reach_in(Shift::Listing(Listed::Missing));
+            self.let_go_of_the_reach_in(Shift::Listing(Listed::Missing), cx);
         }
         self.missing.update(cx, |pane, cx| {
             pane.shows = shows;
@@ -776,7 +779,7 @@ mod tests {
     }
 
     fn reached_at(driven: &mut Driven) -> Option<(Shift, usize)> {
-        driven.read(|root, _| root.reached().map(|reach| (reach.shift, reach.row)))
+        driven.read(|root, cx| root.reached(cx).map(|reach| (reach.shift, reach.row)))
     }
 
     fn tabbed_onto(driven: &mut Driven, named: &'static str) -> bool {

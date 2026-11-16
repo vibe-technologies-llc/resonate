@@ -303,12 +303,11 @@ impl RootView {
             .id("likely-recordings")
             .max_h(px(LIKELY_LIST_AT_MOST))
             .overflow_y_scroll()
-            .track_scroll(&self.scrolls.likely)
+            .track_scroll(&self.window_scrolls.likely)
             .child(self.likely_rows(&likely, cx));
-        let found = div()
-            .relative()
-            .child(found)
-            .child(Scrollbars::of(cx).vertical("likely-scrollbar", self.scrolls.likely.clone()));
+        let found = div().relative().child(found).child(
+            Scrollbars::of(cx).vertical("likely-scrollbar", self.window_scrolls.likely.clone()),
+        );
         let isrc_heading = div()
             .id("matching-isrc-heading")
             .headed(3, words::matching::isrc_heading())

@@ -4,6 +4,7 @@ mod announcing;
 mod audit;
 pub(crate) mod better;
 mod browser;
+pub(crate) mod browsing;
 pub(crate) mod chrome;
 pub(crate) mod dropping;
 mod favourites;

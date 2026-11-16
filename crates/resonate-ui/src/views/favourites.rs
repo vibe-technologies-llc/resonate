@@ -180,7 +180,7 @@ impl RootView {
             .child(
                 Scrollbars::of(cx).around(
                     "favourites-scrollbar",
-                    self.scrolls.favourite_rows.clone(),
+                    self.scrolls(cx).favourite_rows.clone(),
                     uniform_list(
                         "favourite-tracks",
                         held,
@@ -198,17 +198,17 @@ impl RootView {
                                     Rowed {
                                         playing: playing == Some(track.id),
                                         plays: Plays::TheseRows,
-                                        reach: this.at_the_reach(shift, index),
+                                        reach: this.at_the_reach(shift, index, cx),
                                         chooses: Some(Chooses::among(Listed::Favourites, index)),
                                     },
                                     cx,
                                 );
-                                drawn.push(this.marked_where_reached(shift, index, row));
+                                drawn.push(this.marked_where_reached(shift, index, row, cx));
                             }
                             drawn
                         }),
                     )
-                    .track_scroll(&self.scrolls.favourite_rows)
+                    .track_scroll(&self.scrolls(cx).favourite_rows)
                     .h_full()
                     .w_full(),
                 ),

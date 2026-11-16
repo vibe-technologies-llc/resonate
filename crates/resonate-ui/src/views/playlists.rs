@@ -308,7 +308,7 @@ impl RootView {
                 PlaylistsDrawn::List => Scrollbars::of(cx)
                     .around(
                         "playlists-scrollbar",
-                        self.scrolls.all_playlist_rows.clone(),
+                        self.scrolls(cx).all_playlist_rows.clone(),
                         uniform_list(
                             "playlists",
                             saved.len(),
@@ -330,7 +330,7 @@ impl RootView {
                                 rows
                             }),
                         )
-                        .track_scroll(&self.scrolls.all_playlist_rows)
+                        .track_scroll(&self.scrolls(cx).all_playlist_rows)
                         .h_full()
                         .w_full(),
                     )
@@ -424,14 +424,14 @@ impl RootView {
                                 .collect()
                         }),
                     )
-                    .track_scroll(&self.scrolls.all_playlist_rows)
+                    .track_scroll(&self.scrolls(cx).all_playlist_rows)
                     .h_full()
                     .w_full(),
                 )
             })
             .child(Scrollbars::of(cx).vertical(
                 "playlist-grid-scrollbar",
-                self.scrolls.all_playlist_rows.clone(),
+                self.scrolls(cx).all_playlist_rows.clone(),
             ))
             .into_any_element()
     }
@@ -573,7 +573,10 @@ impl RootView {
     }
 
     fn search_shape(&self, cx: &mut Context<Self>) -> Div {
-        let cap = self.orders.query_cap;
+        let (cap, sort, reading) = {
+            let orders = self.orders(cx);
+            (orders.query_cap, orders.query_sort, orders.query_reading)
+        };
 
         let mut caps = kit::segmented();
         for (index, held) in CAPS.into_iter().enumerate() {
@@ -583,11 +586,7 @@ impl RootView {
                 cx,
             ));
         }
-        let ordered_as = format!(
-            "{} · {}",
-            self.orders.query_sort.named(),
-            self.orders.query_sort.read(self.orders.query_reading)
-        );
+        let ordered_as = format!("{} · {}", sort.named(), sort.read(reading));
 
         div()
             .flex()
@@ -613,9 +612,14 @@ impl RootView {
     }
 
     pub(crate) fn search_in_order(&self, cx: &mut Context<Self>) -> Div {
+        let (sort, reading) = {
+            let orders = self.orders(cx);
+            (orders.query_sort, orders.query_reading)
+        };
+
         self.order_choices(
-            self.orders.query_sort,
-            self.orders.query_reading,
+            sort,
+            reading,
             |this, order, cx| this.sort_a_search(order, cx),
             |this, reading, cx| this.read_a_search(reading, cx),
             cx,
@@ -647,7 +651,7 @@ impl RootView {
         let playing = self.playing_row(opened, &entries, cx);
         let reaching = rows
             .are_reached()
-            .then(|| self.reached_chosen(Shift::Playlist(opened)))
+            .then(|| self.reached_chosen(Shift::Playlist(opened), cx))
             .flatten()
             .map(|reached| Reaching::of(&entries, reached));
 
@@ -655,7 +659,7 @@ impl RootView {
             self.nothing_in_the_playlist(opened, rows, cx)
         } else {
             let held = Arc::clone(&entries);
-            let scroll = self.scrolls.playlist_rows.clone();
+            let scroll = self.scrolls(cx).playlist_rows.clone();
             let listing = uniform_list(
                 "playlist-entries",
                 entries.len(),
@@ -700,7 +704,7 @@ impl RootView {
             .child(listing)
             .child(
                 Scrollbars::of(cx)
-                    .vertical("playlist-scrollbar", self.scrolls.playlist_rows.clone()),
+                    .vertical("playlist-scrollbar", self.scrolls(cx).playlist_rows.clone()),
             )
             .into_any_element()
         };
@@ -712,7 +716,7 @@ impl RootView {
                     "#",
                     true,
                     rows.control_count(),
-                    sorting::playlist_sorted(self),
+                    sorting::playlist_sorted(self, cx),
                     &self.rooms.columns_fit,
                     &self.controls,
                     cx,
@@ -1112,7 +1116,10 @@ impl RootView {
     }
 
     pub(crate) fn rows_in_order(&self, opened: PlaylistId, cx: &mut Context<Self>) -> Div {
-        let keeping = self.orders.keeping;
+        let (keeping, order, reading) = {
+            let orders = self.orders(cx);
+            (orders.keeping, orders.row_order, orders.row_reading)
+        };
         let mut keeps = kit::segmented().w_full();
         for (index, (label, wanted, saying)) in keeping_choices().into_iter().enumerate() {
             keeps = keeps.child(
@@ -1133,10 +1140,14 @@ impl RootView {
         }
 
         self.order_choices(
-            self.orders.row_order,
-            self.orders.row_reading,
-            move |this, order, cx| this.put_in_order(opened, order, this.orders.row_reading, cx),
-            move |this, reading, cx| this.put_in_order(opened, this.orders.row_order, reading, cx),
+            order,
+            reading,
+            move |this, order, cx| {
+                this.put_in_order(opened, order, this.orders(cx).row_reading, cx)
+            },
+            move |this, reading, cx| {
+                this.put_in_order(opened, this.orders(cx).row_order, reading, cx)
+            },
             cx,
         )
         .child(kit::rule().mx_1())
@@ -1207,9 +1218,9 @@ impl RootView {
         );
         let shift = Shift::Playlist(opened);
         let reaches = rows.are_reached();
-        let reached = reaches && self.reaches(shift, index);
+        let reached = reaches && self.reaches(shift, index, cx);
         let acting_on = if reaches {
-            self.acting_on_chosen(shift, index)
+            self.acting_on_chosen(shift, index, cx)
         } else {
             Chosen::of(Span::one(index))
         };
@@ -1350,7 +1361,7 @@ impl RootView {
             }));
         let edited = rows.are_edited();
         let reach = if reaches {
-            self.at_the_reach(shift, index)
+            self.at_the_reach(shift, index, cx)
         } else {
             None
         };
@@ -1364,7 +1375,7 @@ impl RootView {
                     album: this.album_named(album, &location, span, cx),
                 };
                 let taken = if reaches {
-                    this.acting_on_chosen(shift, index)
+                    this.acting_on_chosen(shift, index, cx)
                 } else {
                     Chosen::of(Span::one(position))
                 };
@@ -1412,7 +1423,7 @@ impl RootView {
         if !rows.are_edited() {
             return listed;
         }
-        let cursor_only = reaches && self.stands_unchosen_on(shift, index);
+        let cursor_only = reaches && self.stands_unchosen_on(shift, index, cx);
         let listed = if rows.are_moved() {
             reorder::movable(listed, index, carried, reached, cx)
         } else {
@@ -1439,7 +1450,7 @@ impl RootView {
                     .collect()
             }),
         )
-        .track_scroll(&self.scrolls.picker_rows)
+        .track_scroll(&self.window_scrolls.picker_rows)
         .w_full()
         .h(theme::width(theme::row_height() * shown as f32));
 
@@ -1479,7 +1490,7 @@ impl RootView {
                                     .child(rows)
                                     .child(Scrollbars::of(cx).vertical(
                                         "playlist-picker-scrollbar",
-                                        self.scrolls.picker_rows.clone(),
+                                        self.window_scrolls.picker_rows.clone(),
                                     )),
                             ),
                     )
@@ -1640,7 +1651,7 @@ impl RootView {
             kit::icon_button(id, icon, saying),
             move |this, _, cx| {
                 cx.stop_propagation();
-                let chosen = this.acting_on_chosen(shift, row);
+                let chosen = this.acting_on_chosen(shift, row, cx);
                 let tracks = this.tracks_chosen(shift, &chosen, cx);
                 this.queue(&listed(&tracks), at, cx);
             },
@@ -1856,7 +1867,7 @@ impl RootView {
             Some(_) => listed,
         };
 
-        let reach = self.at_the_reach(Shift::Listing(Listed::Playlists), at);
+        let reach = self.at_the_reach(Shift::Listing(Listed::Playlists), at, cx);
         let listed = menu::opens_a_reachable_menu(
             listed,
             reach,
@@ -1865,7 +1876,7 @@ impl RootView {
             },
             cx,
         );
-        self.marked_where_reached(Shift::Listing(Listed::Playlists), at, listed)
+        self.marked_where_reached(Shift::Listing(Listed::Playlists), at, listed, cx)
     }
 
     fn playlist_cell(
@@ -1880,7 +1891,7 @@ impl RootView {
         let side = self.grid_side();
         let pinned = playlist.pinned.is_some();
         let searched = playlist.query.is_some();
-        let reached = self.reaches(Shift::Listing(Listed::Playlists), at);
+        let reached = self.reaches(Shift::Listing(Listed::Playlists), at, cx);
         let albums = self.library.read(cx).pictured(id);
         let art = self.playlist_art(&playlist.name, searched, &albums, side, cx);
         let cell_id = ElementId::from(("playlist-cell", id.get() as usize));
@@ -1899,7 +1910,7 @@ impl RootView {
             )),
             None => about_a_cell(playlist, now),
         };
-        let cursor_only = self.stands_unchosen_on(Shift::Listing(Listed::Playlists), at);
+        let cursor_only = self.stands_unchosen_on(Shift::Listing(Listed::Playlists), at, cx);
 
         let cell = div()
             .id(cell_id.clone())
@@ -2007,7 +2018,7 @@ impl RootView {
             Some(_) => cell,
         };
 
-        let reach = self.at_the_reach(Shift::Listing(Listed::Playlists), at);
+        let reach = self.at_the_reach(Shift::Listing(Listed::Playlists), at, cx);
         menu::opens_a_reachable_menu(
             cell,
             reach,
@@ -2132,7 +2143,7 @@ fn playlist_menu_among_the_chosen(
     pinned: bool,
     cx: &App,
 ) -> Menu {
-    let chosen = this.acting_on_chosen(Shift::Listing(Listed::Playlists), row);
+    let chosen = this.acting_on_chosen(Shift::Listing(Listed::Playlists), row, cx);
     if chosen.count() > 1 {
         let playlists = this.library.read(cx).playlists_at(chosen.rows());
         return chosen_playlists_menu(at, playlists);

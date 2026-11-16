@@ -1291,7 +1291,7 @@ mod tests {
             .cx
             .simulate_resize(gpui::size(px(theme::WINDOW_MIN_WIDTH), shortest));
         driven.settle();
-        assert!(driven.read(|root, _| root.scrolls.sidebar.max_offset().y) > px(0.0));
+        assert!(driven.read(|root, _| root.window_scrolls.sidebar.max_offset().y) > px(0.0));
 
         let categories = driven.centre_of("tab-albums");
         driven.scroll_at(categories, SCROLLED_PAST_EVERY_CATEGORY);
@@ -1311,12 +1311,13 @@ mod tests {
             cx.notify();
         });
         driven.settle();
-        let room_with_the_cards = driven.read(|root, _| root.scrolls.sidebar.bounds().size.height);
+        let room_with_the_cards =
+            driven.read(|root, _| root.window_scrolls.sidebar.bounds().size.height);
         driven.click("toggle-other-devices");
-        let room = driven.read(|root, _| root.scrolls.sidebar.bounds().size.height);
+        let room = driven.read(|root, _| root.window_scrolls.sidebar.bounds().size.height);
         driven.click("toggle-other-devices");
         let categories = driven.read(|root, _| {
-            root.scrolls
+            root.window_scrolls
                 .sidebar
                 .bounds_for_item(0)
                 .expect("the categories")
@@ -1335,7 +1336,7 @@ mod tests {
 
         assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         assert_eq!(
-            driven.read(|root, _| root.scrolls.sidebar.max_offset().y),
+            driven.read(|root, _| root.window_scrolls.sidebar.max_offset().y),
             px(0.0)
         );
         driven.click("tab-server");

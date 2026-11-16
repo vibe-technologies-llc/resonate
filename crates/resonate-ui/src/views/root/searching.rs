@@ -1,5 +1,5 @@
 use ahash::AHashSet;
-use gpui::{App, Context, Entity, Focusable, UniformListScrollHandle, Window, point, px};
+use gpui::{App, Context, Entity, Focusable, Window, point, px};
 use resonate_core::PlaylistId;
 
 use super::{Pane, RootView};
@@ -38,7 +38,7 @@ impl RootView {
             return;
         }
         window.focus(&self.focus, cx);
-        self.reach = None;
+        self.set_reach(None, cx);
         self.reach_row(Step::Below, cx);
         cx.notify();
     }
@@ -52,7 +52,7 @@ impl RootView {
     }
 
     pub(super) fn tab_past_the_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.focus.is_focused(window) && !self.something_stands_over_the_pane() {
+        if self.focus.is_focused(window) && !self.something_stands_over_the_pane(cx) {
             let search = self.typed.search.focus_handle(cx);
             search.focus(window, cx);
         }
@@ -60,7 +60,7 @@ impl RootView {
     }
 
     pub(super) fn tab_back_to_the_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.focus.is_focused(window) && !self.something_stands_over_the_pane() {
+        if self.focus.is_focused(window) && !self.something_stands_over_the_pane(cx) {
             let search = self.typed.search.focus_handle(cx);
             search.focus(window, cx);
             return;
@@ -282,7 +282,7 @@ impl RootView {
             return;
         }
 
-        self.reach = None;
+        self.set_reach(None, cx);
         window.focus(&self.focus, cx);
         if self.typed.search.read(cx).text().is_empty() {
             let scoped = self.library.read(cx).selection() != Selection::Everything;
@@ -322,14 +322,10 @@ impl RootView {
         });
     }
 
-    pub(crate) fn let_go_of_the_reach_in(&mut self, shift: Shift) {
-        if self
-            .reach
-            .as_ref()
-            .is_some_and(|reach| reach.shift == shift)
-        {
-            self.reach = None;
-        }
+    pub(crate) fn let_go_of_the_reach_in(&self, shift: Shift, cx: &mut App) {
+        self.browsing.update(cx, |browsing, _| {
+            browsing.let_go_of_the_reach_where(|held| held == shift);
+        });
     }
 
     pub(super) fn open_the_search(&mut self, cx: &mut Context<Self>) {
@@ -341,7 +337,7 @@ impl RootView {
             self.set_pane(Pane::Tracks, cx);
         }
         self.shows.search = SearchShows::Top;
-        self.orders.ordering = None;
+        self.change_the_orders(cx, |orders| orders.ordering = None);
     }
 
     pub(super) fn leave_the_scroll_for_the_search(&mut self, cx: &App) {
@@ -377,15 +373,11 @@ impl RootView {
         if query.is_empty() {
             self.land_where_the_search_began();
         }
-        self.scrolls.search.set_offset(point(px(0.0), px(0.0)));
+        self.scrolls(cx).search.set_offset(point(px(0.0), px(0.0)));
         self.read_from_the_top(cx);
-        if self
-            .reach
-            .as_ref()
-            .is_some_and(|reach| matches!(reach.shift, Shift::Listing(_)))
-        {
-            self.reach = None;
-        }
+        self.browsing.update(cx, |browsing, _| {
+            browsing.let_go_of_the_reach_where(|shift| matches!(shift, Shift::Listing(_)));
+        });
         self.library
             .update(cx, |library, cx| library.set_query(query, cx));
         cx.notify();
@@ -395,15 +387,13 @@ impl RootView {
         if self.library.read(cx).opened() != opened {
             self.read_the_kept_order(opened, cx);
         }
-        self.scrolls.playlist_rows = match opened {
-            Some(id) => self.scrolls.left_at.entry(id).or_default().clone(),
-            None => UniformListScrollHandle::default(),
-        };
+        self.browsing
+            .update(cx, |browsing, _| browsing.open_the_rows_of(opened));
         self.library
             .update(cx, |library, cx| library.open_playlist(opened, cx));
     }
 
-    pub(super) fn forget_what_has_gone(&mut self, library: &Entity<LibraryModel>, cx: &App) {
+    pub(super) fn forget_what_has_gone(&self, library: &Entity<LibraryModel>, cx: &mut App) {
         let listing = library.read(cx);
         if listing.narrowing().is_some() {
             return;
@@ -414,15 +404,13 @@ impl RootView {
             .iter()
             .map(|playlist| playlist.id)
             .collect();
-        self.scrolls.left_at.retain(|id, _| held.contains(id));
+        self.browsing
+            .update(cx, |browsing, _| browsing.forget_playlists_gone(&held));
     }
 
-    pub(super) fn read_from_the_top(&mut self, cx: &App) {
-        self.scrolls.playlist_rows = UniformListScrollHandle::default();
-        if let Some(opened) = self.library.read(cx).opened() {
-            self.scrolls
-                .left_at
-                .insert(opened, self.scrolls.playlist_rows.clone());
-        }
+    pub(super) fn read_from_the_top(&self, cx: &mut App) {
+        let opened = self.library.read(cx).opened();
+        self.browsing
+            .update(cx, |browsing, _| browsing.read_from_the_top(opened));
     }
 }

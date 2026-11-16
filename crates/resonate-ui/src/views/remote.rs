@@ -180,7 +180,7 @@ impl RootView {
         let room = room.min(px(theme::sidebar_width() * 2.0));
         let room = if floating {
             room.min(
-                (self.scrolls.sidebar.bounds().size.height - FLOATS_CLEAR_OF_THE_TOP_BY)
+                (self.window_scrolls.sidebar.bounds().size.height - FLOATS_CLEAR_OF_THE_TOP_BY)
                     .max(px(0.0)),
             )
         } else {
@@ -254,13 +254,13 @@ impl RootView {
                                 .gap_1p5()
                                 .max_h(room)
                                 .overflow_y_scroll()
-                                .track_scroll(&self.scrolls.remote)
+                                .track_scroll(&self.settings_pane.read(cx).remotely.scroll)
                                 .children(cards),
                         )
-                        .child(
-                            Scrollbars::of(cx)
-                                .vertical("remote-devices-scrollbar", self.scrolls.remote.clone()),
-                        );
+                        .child(Scrollbars::of(cx).vertical(
+                            "remote-devices-scrollbar",
+                            self.settings_pane.read(cx).remotely.scroll.clone(),
+                        ));
                     if floating {
                         panel.child(Self::floating_over_the_categories(list, cx))
                     } else {
@@ -320,7 +320,7 @@ impl RootView {
         let open_in_flow =
             !remotely.collapsed && !remotely.songs.is_empty() && !self.remote_floats(window, cx);
         let by_hand = remotely.expanded_by_hand;
-        let scroll = self.scrolls.sidebar.clone();
+        let scroll = self.window_scrolls.sidebar.clone();
         let this = cx.entity().downgrade();
         canvas(
             |_, _, _| (),
@@ -665,14 +665,14 @@ pub(crate) mod tests {
         });
         driven.settle();
         assert!(!driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
-        let available = driven.read(|root, _| root.scrolls.sidebar.bounds().size.height);
+        let available = driven.read(|root, _| root.window_scrolls.sidebar.bounds().size.height);
         driven.click("toggle-other-devices");
-        let categories = driven.read(|root, _| root.scrolls.sidebar.bounds().size.height);
+        let categories = driven.read(|root, _| root.window_scrolls.sidebar.bounds().size.height);
         let cards = categories - available;
         assert!(cards > px(0.0));
         driven.click("toggle-other-devices");
         let content = driven.read(|root, _| {
-            root.scrolls
+            root.window_scrolls
                 .sidebar
                 .bounds_for_item(0)
                 .expect("the categories")
@@ -688,7 +688,7 @@ pub(crate) mod tests {
         assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         assert!(driven.cx.debug_bounds("remote-devices").is_none());
         assert_eq!(
-            driven.read(|root, _| root.scrolls.sidebar.max_offset().y),
+            driven.read(|root, _| root.window_scrolls.sidebar.max_offset().y),
             px(0.0)
         );
         assert!(driven.bounds_of("tab-settings").bottom() <= px(height));
@@ -704,7 +704,7 @@ pub(crate) mod tests {
                 <= driven.bounds_of("toggle-other-devices").top()
         );
         assert_eq!(
-            driven.read(|root, _| root.scrolls.sidebar.max_offset().y),
+            driven.read(|root, _| root.window_scrolls.sidebar.max_offset().y),
             px(0.0)
         );
 

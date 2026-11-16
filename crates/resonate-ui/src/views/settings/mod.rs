@@ -148,12 +148,12 @@ impl RootView {
                             .child(rail)
                             .child(Scrollbars::of(cx).vertical(
                                 "settings-categories-scrollbar",
-                                self.scrolls.settings_rail.clone(),
+                                self.settings_pane.read(cx).shown.rail_scroll.clone(),
                             )),
                     )
                     .child(Scrollbars::of(cx).around(
                         "settings-scrollbar",
-                        self.scrolls.settings.clone(),
+                        self.settings_pane.read(cx).shown.scroll.clone(),
                         body,
                     )),
             )
@@ -313,7 +313,7 @@ impl RootView {
             .border_r_1()
             .border_color(rgb(theme::border()))
             .overflow_y_scroll()
-            .track_scroll(&self.scrolls.settings_rail)
+            .track_scroll(&self.settings_pane.read(cx).shown.rail_scroll)
             .h_full();
 
         for category in Category::ALL {
@@ -463,7 +463,7 @@ impl RootView {
             .min_w(px(0.0))
             .min_h(px(0.0))
             .overflow_y_scroll()
-            .track_scroll(&self.scrolls.settings)
+            .track_scroll(&self.settings_pane.read(cx).shown.scroll)
             .child(motion::faded_in(
                 div()
                     .flex()
@@ -543,7 +543,11 @@ impl RootView {
         self.show_settings(page.category(), cx);
         self.settings_pane
             .update(cx, |pane, _| pane.shown.page = Some(page));
-        self.scrolls.settings.set_offset(Point::default());
+        self.settings_pane
+            .read(cx)
+            .shown
+            .scroll
+            .set_offset(Point::default());
         cx.notify();
     }
 
@@ -555,7 +559,11 @@ impl RootView {
         {
             return false;
         }
-        self.scrolls.settings.set_offset(Point::default());
+        self.settings_pane
+            .read(cx)
+            .shown
+            .scroll
+            .set_offset(Point::default());
         self.disarm(cx);
         cx.notify();
         true
@@ -571,7 +579,11 @@ impl RootView {
             Some(page) => self.open_the_settings_page(page, cx),
             None => {
                 self.show_settings(category, cx);
-                self.scrolls.settings.set_offset(Point::default());
+                self.settings_pane
+                    .read(cx)
+                    .shown
+                    .scroll
+                    .set_offset(Point::default());
             }
         }
     }

@@ -1,0 +1,198 @@
+use std::cell::RefCell;
+
+use ahash::{AHashMap, AHashSet};
+use gpui::{App, Pixels, Point, ScrollHandle, UniformListScrollHandle};
+use resonate_core::{PlaylistId, Span};
+use resonate_library::{Direction, Kept, RowOrder, SortOrder};
+
+use crate::views::{
+    RootView,
+    menu::AtTheReach,
+    reorder::{Chosen, Reach, Shift},
+    sorting::Ordered,
+    typing::TypeAhead,
+};
+
+pub(crate) struct Scrolls {
+    pub(crate) artist_records: ScrollHandle,
+    pub(crate) ordering: ScrollHandle,
+    pub(crate) search: ScrollHandle,
+    pub(crate) playlist_rows: UniformListScrollHandle,
+    pub(crate) track_rows: UniformListScrollHandle,
+    pub(crate) artist_rows: UniformListScrollHandle,
+    pub(crate) album_rows: UniformListScrollHandle,
+    pub(crate) all_playlist_rows: UniformListScrollHandle,
+    pub(crate) favourite_rows: UniformListScrollHandle,
+    pub(crate) shelves: RefCell<AHashMap<&'static str, ScrollHandle>>,
+    pub(crate) left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
+}
+
+pub(crate) struct Orders {
+    pub(crate) row_order: RowOrder,
+    pub(crate) row_reading: Direction,
+    pub(crate) keeping: bool,
+    pub(crate) query_sort: SortOrder,
+    pub(crate) query_reading: Direction,
+    pub(crate) query_cap: Option<usize>,
+    pub(crate) ordering: Option<Ordered>,
+    pub(crate) ordering_at: Point<Pixels>,
+    pub(crate) ordering_typed: TypeAhead,
+}
+
+pub(crate) struct BrowsePanes {
+    pub(crate) scrolls: Scrolls,
+    pub(crate) orders: Orders,
+    pub(crate) reach: Option<Reach>,
+}
+
+impl BrowsePanes {
+    pub(crate) fn new() -> Self {
+        Self {
+            scrolls: Scrolls {
+                artist_records: ScrollHandle::new(),
+                ordering: ScrollHandle::new(),
+                search: ScrollHandle::new(),
+                playlist_rows: UniformListScrollHandle::default(),
+                track_rows: UniformListScrollHandle::default(),
+                artist_rows: UniformListScrollHandle::default(),
+                album_rows: UniformListScrollHandle::default(),
+                all_playlist_rows: UniformListScrollHandle::default(),
+                favourite_rows: UniformListScrollHandle::default(),
+                shelves: RefCell::new(AHashMap::new()),
+                left_at: AHashMap::new(),
+            },
+            orders: Orders {
+                row_order: RowOrder::default(),
+                row_reading: Direction::default(),
+                keeping: false,
+                query_sort: SortOrder::default(),
+                query_reading: SortOrder::default().reads(),
+                query_cap: None,
+                ordering: None,
+                ordering_at: Point::default(),
+                ordering_typed: TypeAhead::default(),
+            },
+            reach: None,
+        }
+    }
+
+    pub(crate) fn shelf(&self, id: &'static str) -> ScrollHandle {
+        self.scrolls
+            .shelves
+            .borrow_mut()
+            .entry(id)
+            .or_default()
+            .clone()
+    }
+
+    pub(crate) fn open_the_rows_of(&mut self, opened: Option<PlaylistId>) {
+        self.scrolls.playlist_rows = match opened {
+            Some(id) => self.scrolls.left_at.entry(id).or_default().clone(),
+            None => UniformListScrollHandle::default(),
+        };
+    }
+
+    pub(crate) fn read_from_the_top(&mut self, opened: Option<PlaylistId>) {
+        self.scrolls.playlist_rows = UniformListScrollHandle::default();
+        if let Some(opened) = opened {
+            self.scrolls
+                .left_at
+                .insert(opened, self.scrolls.playlist_rows.clone());
+        }
+    }
+
+    pub(crate) fn forget_playlists_gone(&mut self, held: &AHashSet<PlaylistId>) {
+        self.scrolls.left_at.retain(|id, _| held.contains(id));
+    }
+
+    pub(crate) fn read_the_kept_order(&mut self, kept: Option<Kept>) {
+        self.orders.keeping = kept.is_some();
+        let Kept { order, reading } = kept.unwrap_or(Kept {
+            order: RowOrder::default(),
+            reading: Direction::default(),
+        });
+        self.orders.row_order = order;
+        self.orders.row_reading = reading;
+    }
+
+    pub(crate) fn reach_in(&self, shift: Shift, held: usize) -> Option<Reach> {
+        self.reach
+            .as_ref()
+            .filter(|reach| reach.shift == shift)
+            .and_then(|reach| reach.within(held))
+    }
+
+    pub(crate) fn reaches(&self, shift: Shift, row: usize) -> bool {
+        self.reach
+            .as_ref()
+            .is_some_and(|reach| reach.shift == shift && reach.reaches(row))
+    }
+
+    pub(crate) fn at_the_reach(&self, shift: Shift, row: usize) -> Option<AtTheReach> {
+        self.reach
+            .as_ref()
+            .filter(|reach| reach.shift == shift && reach.row == row)
+            .map(|_| AtTheReach { shift, row })
+    }
+
+    pub(crate) fn stands_unchosen_on(&self, shift: Shift, row: usize) -> bool {
+        self.reach
+            .as_ref()
+            .is_some_and(|reach| reach.shift == shift && reach.row == row && !reach.is_chosen())
+    }
+
+    pub(crate) fn acting_on_chosen(&self, shift: Shift, row: usize) -> Chosen {
+        match self.reach.as_ref().filter(|reach| reach.shift == shift) {
+            Some(reach) if reach.reaches(row) => reach.selected(),
+            _ => Chosen::of(Span::one(row)),
+        }
+    }
+
+    pub(crate) fn reached_chosen(&self, shift: Shift) -> Option<Chosen> {
+        self.reach
+            .as_ref()
+            .filter(|reach| reach.shift == shift)
+            .map(Reach::selected)
+    }
+
+    pub(crate) fn reaching(&self, shift: Shift) -> Option<Span> {
+        self.reach
+            .as_ref()
+            .filter(|reach| reach.shift == shift)
+            .map(Reach::rows)
+    }
+
+    pub(crate) fn let_go_of_the_reach_where(&mut self, held: impl FnOnce(Shift) -> bool) {
+        if self.reach.as_ref().is_some_and(|reach| held(reach.shift)) {
+            self.reach = None;
+        }
+    }
+}
+
+impl RootView {
+    pub(crate) fn scrolls<'a>(&self, cx: &'a App) -> &'a Scrolls {
+        &self.browsing.read(cx).scrolls
+    }
+
+    pub(crate) fn orders<'a>(&self, cx: &'a App) -> &'a Orders {
+        &self.browsing.read(cx).orders
+    }
+
+    pub(crate) fn change_the_orders<R>(
+        &self,
+        cx: &mut App,
+        change: impl FnOnce(&mut Orders) -> R,
+    ) -> R {
+        self.browsing
+            .update(cx, |browsing, _| change(&mut browsing.orders))
+    }
+
+    pub(crate) fn reach<'a>(&self, cx: &'a App) -> Option<&'a Reach> {
+        self.browsing.read(cx).reach.as_ref()
+    }
+
+    pub(crate) fn set_reach(&self, reach: Option<Reach>, cx: &mut App) {
+        self.browsing
+            .update(cx, |browsing, _| browsing.reach = reach);
+    }
+}

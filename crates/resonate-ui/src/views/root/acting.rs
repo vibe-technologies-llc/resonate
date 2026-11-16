@@ -18,13 +18,13 @@ use crate::{
 
 impl RootView {
     pub(super) fn move_reached_rows(&mut self, step: Step, cx: &mut Context<Self>) {
-        if self.something_stands_over_the_pane() {
+        if self.something_stands_over_the_pane(cx) {
             return;
         }
         let Some((shift, held)) = self.movable(cx) else {
             return;
         };
-        let Some(reach) = self.reach_in(shift, held) else {
+        let Some(reach) = self.reach_in(shift, held, cx) else {
             return;
         };
         let chosen = reach.acted_on();
@@ -38,9 +38,14 @@ impl RootView {
 
         self.shift_chosen(shift, &chosen, to, cx);
         match (chosen.single(), landed) {
-            (Some(rows), _) if rows == reach.rows() => self.reach = Some(reach.stepped(step)),
+            (Some(rows), _) if rows == reach.rows() => {
+                self.set_reach(Some(reach.stepped(step)), cx);
+            }
             (Some(_), Some(landed)) => {
-                self.reach = Some(Reach::spanning(shift, landed.first(), landed.last()));
+                self.set_reach(
+                    Some(Reach::spanning(shift, landed.first(), landed.last())),
+                    cx,
+                );
             }
             _ => {}
         }
@@ -50,14 +55,14 @@ impl RootView {
     }
 
     pub(super) fn play_reached_rows(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.press_the_menu(window, cx) || self.something_stands_over_the_pane() {
+        if self.press_the_menu(window, cx) || self.something_stands_over_the_pane(cx) {
             return;
         }
 
         let Some((shift, held)) = self.reachable(cx) else {
             return;
         };
-        let Some(reach) = self.reach_in(shift, held) else {
+        let Some(reach) = self.reach_in(shift, held, cx) else {
             return;
         };
         let chosen = self.choosable(shift, reach.selected(), cx);
@@ -213,7 +218,10 @@ impl RootView {
             .queue
             .update(cx, |queue, _| queue.keeping_all(&queued, &runs));
 
-        self.reach = Reach::after_dropping_runs(Shift::Queue, &runs, queued.len());
+        self.set_reach(
+            Reach::after_dropping_runs(Shift::Queue, &runs, queued.len()),
+            cx,
+        );
         self.typing.landed_by_a_jump = None;
 
         self.send_by_position(Command::RemoveAll(runs), cx);
@@ -234,7 +242,7 @@ impl RootView {
             Shift::Playlist(playlist) => {
                 let held = self.library.read(cx).entries().len();
                 let runs = chosen.runs().to_vec();
-                self.reach = Reach::after_dropping_runs(shift, &runs, held);
+                self.set_reach(Reach::after_dropping_runs(shift, &runs, held), cx);
                 self.typing.landed_by_a_jump = None;
                 self.library.update(cx, |library, cx| {
                     library.remove_runs_from_playlist(playlist, runs, cx);
@@ -261,7 +269,7 @@ impl RootView {
             Shift::Listing(_) => return,
         };
 
-        self.reach = Reach::after_dropping(shift, rows, held);
+        self.set_reach(Reach::after_dropping(shift, rows, held), cx);
         self.typing.landed_by_a_jump = None;
         cx.notify();
     }

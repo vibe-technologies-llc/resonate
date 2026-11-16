@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use gpui::{Context, Pixels, Point, Task};
+use gpui::{Context, Pixels, Point, ScrollHandle, Task};
 use resonate_engine::{Learning, NodeName, Unlearnt};
 
 use crate::{
@@ -31,6 +31,7 @@ pub(crate) struct Remotely {
     pub(crate) mirror_redraws: Pulse,
     pub(crate) driving_rails: BTreeMap<u32, Rail>,
     pub(crate) driving_rows: usize,
+    pub(crate) scroll: ScrollHandle,
 }
 
 pub(crate) struct Accounts {
@@ -46,6 +47,8 @@ pub(crate) struct Accounts {
 pub(crate) struct SettingsShown {
     pub(crate) category: Category,
     pub(crate) page: Option<Page>,
+    pub(crate) scroll: ScrollHandle,
+    pub(crate) rail_scroll: ScrollHandle,
     pub(crate) music_folder_standing: FolderStanding,
     pub(crate) looking_at_the_music_folder: Task<()>,
     pub(crate) reading_the_room: Task<()>,
@@ -83,6 +86,8 @@ impl SettingsPane {
             shown: SettingsShown {
                 category,
                 page: None,
+                scroll: ScrollHandle::new(),
+                rail_scroll: ScrollHandle::new(),
                 music_folder_standing: FolderStanding::default(),
                 looking_at_the_music_folder: Task::ready(()),
                 reading_the_room: Task::ready(()),
@@ -126,6 +131,7 @@ impl SettingsPane {
                 mirror_redraws: Pulse::default(),
                 driving_rails: BTreeMap::new(),
                 driving_rows: DRIVEN_ROWS_AT_FIRST,
+                scroll: ScrollHandle::new(),
             },
         };
         pane.look_for_a_newer_release(cx);

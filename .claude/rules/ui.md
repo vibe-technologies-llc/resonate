@@ -30,9 +30,9 @@ field joins the group its subject belongs to.
 `views/root/` one `impl RootView` a subject (`made` for `new`, `told`, `started`, `playlist_actions`,
 `keys`, `panes`, `reaching`, `acting`, `landing`, `pointer`, `wayback`, `typing_ahead`, `searching`,
 `loudness`, `heading`, `downloading`, `deletion`, `regions`) beside `tests.rs`. Its fields are grouped
-alike: `Scrolls` (every scroll handle), `Rooms` (the widths and heights measured a frame behind),
-`Rails` (seek, volume and a held band), `Orders` (the row and query orders and the Sort pop-up),
-`Remembered`, `Dropped` (files dragged in), `Typed` (the search, the zone and playlist names and the
+alike: `WindowScrolls` (the window's own scroll handles: the sidebar's, the downloads panel's and
+the sheets'), `Rooms` (the widths and heights measured a frame behind), `Rails` (seek, volume and a
+held band), `Remembered`, `Dropped` (files dragged in), `Typed` (the search, the zone and playlist names and the
 Match sheet's fields), `Social` (Wrapped, sharing and party offers), `Shows` (which tab or shape a
 pane is drawn in) and `TypedAhead`.
 
@@ -80,10 +80,10 @@ the root's list:
   answer through the handlers that store a setting (`contact_given`, `contact_left` and kin), since
   writing the settings, the toasts and the window's focus are the root's.
 - `SettingsPane` (`views/settings/pane.rs`): the settings pane's own state in three groups,
-  `SettingsShown` (the category and page shown, the armed press, the music folder's and the room's
+  `SettingsShown` (the category and page shown, the body's and the category rail's scrolls, the armed press, the music folder's and the room's
   standing, the listening test, the vault's tending, the release heard of, the device tried, and the
   tasks reading them), `Accounts` (each service's sign-in under way) and `Remotely` (the other
-  devices' songs and their card's fold, its own `Controls`, the device driven with its rails and
+  devices' songs and their card's fold and scroll, its own `Controls`, the device driven with its rails and
   rows, and the `Pulse`s redrawing the driven zones and a mirror's build). What feeds it is its own:
   `SettingsPane::new` starts the watch of what other devices play (`watch_remote_playback`) and the
   look for a newer release (`SettingsPane::look_for_a_newer_release`), each landing on the pane,
@@ -91,6 +91,22 @@ the root's list:
   `is_armed`, `lower`, `disarm`), and the root's `arm`, `is_armed`, `lower` and `disarm` reach them;
   a handler that stores a setting, toasts or sends a command stays the root's and updates the pane
   for its part (`this.settings_pane.update(…)`), a task it spawns stored on the pane once spawned.
+- `BrowsePanes` (`views/browsing.rs`): what the browse panes hold between frames, in three parts:
+  `Scrolls` (the listings' and opened playlist's rows, an artist's records, the search page, the
+  Sort pop-up's list, the shelves and strips by id, `BrowsePanes::shelf`, and each playlist's rows
+  where it was left, `left_at`), `Orders` (an opened playlist's row order and whether it is kept, a
+  saved search's order and cap, and the Sort pop-up: what it sorts, where it stands, what was typed
+  into it) and the reach (`Reach`, the rows the keys stand on in any listing, the queue's included).
+  Nothing feeds it of its own and it never notifies, so the root, which redraws itself after each
+  change it makes, does not observe it: the root reads it through
+  `RootView::scrolls`, `RootView::orders` and `RootView::reach` and writes through
+  `RootView::change_the_orders` and `RootView::set_reach`, and the reach's questions
+  (`BrowsePanes::reaches`, `at_the_reach`, `reach_in`, `acting_on_chosen`, …) are the pane's, which
+  the root's same-named methods ask with a `cx`. A step that changes more than one part goes through
+  the pane (`open_the_rows_of`, `read_from_the_top`, `forget_playlists_gone`, `read_the_kept_order`,
+  `let_go_of_the_reach_where`); writing a kept order to the catalog stays the root's
+  (`put_in_order`, `keep_in_order`). Since the Sort pop-up stands over the pane,
+  `RootView::something_stands_over_the_pane` and `sheet_in_front` take a `cx` to ask it.
 
 **A pane whose state the catalog reads takes it from `LibraryModel`'s `Landed`**: the read still
 lands in the library's one pass (`take_the_shelves`, `take_the_listing`), which leaves each pane's
@@ -222,7 +238,7 @@ so `editing` sees it.
   control is not drawn (`the_window_page_writes_the_button_switch`). The sound system a sentence
   names is `system::sound_system!`: *PipeWire*, *Windows* or *Core Audio*.
 - **The sidebar scrolls its middle and keeps its foot.** `RootView::sidebar` holds the tabs in an
-  `overflow_y_scroll` region tracked by `Scrolls::sidebar`, with a `Scrollbars` bar over its edge; the
+  `overflow_y_scroll` region tracked by `WindowScrolls::sidebar`, with a `Scrollbars` bar over its edge; the
   download and enrichment status and *Settings* stand below it, never scrolled, so a window squeezed
   vertically scrolls the tabs and leaves the foot above the playback bar. The two status rows are a
   pane row's height and inset with a `theme::pane_icon()` mark, so their marks and words line up
@@ -2367,7 +2383,7 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   the run. A filter that finds nothing is a `kit::empty`.
   Body = a column `theme::settings_column()` (720) wide at most, centred in the pane with a measure of
   padding on every side, of `kit::group`s a measure apart, then *Reset <category>* right-aligned at
-  its end. Body scrolls under `Scrolls::settings`; `show_settings` resets it on category or
+  its end. Body scrolls under `SettingsShown::scroll`; `show_settings` resets it on category or
   page change (gpui keys scroll offset by element id).
 - **A group is a title above a card of rows.** `kit::group(heading, rows)`: `kit::group_heading`
   holds `kit::group_title` (`text_sm`, semibold, in `text`, a level-2 heading), the *Experimental*

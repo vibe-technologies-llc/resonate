@@ -1202,7 +1202,7 @@ mod tests {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Time"]);
         let mut driven = Driven::opened_in(cx, library, &folder);
-        let ordering = |driven: &mut Driven| driven.read(|root, _| root.orders.ordering);
+        let ordering = |driven: &mut Driven| driven.read(|root, cx| root.orders(cx).ordering);
         let title = SortOrder::ALL
             .iter()
             .position(|order| *order == SortOrder::Title)
@@ -1210,7 +1210,7 @@ mod tests {
 
         driven.click("order-tracks");
         assert_eq!(ordering(&mut driven), Some(Ordered::Tracks));
-        assert!(driven.read(|root, _| root.something_stands_over_the_pane()));
+        assert!(driven.read(|root, cx| root.something_stands_over_the_pane(cx)));
 
         driven.click(named("order-choice", title));
         driven.click(named("order-reading", 1));
@@ -1283,10 +1283,10 @@ mod tests {
         assert_eq!(order(&mut driven).tracks, SortOrder::Artist);
         pressed(&mut driven, "a");
         assert_eq!(order(&mut driven).tracks, SortOrder::DateAdded);
-        assert!(driven.read(|root, _| root.orders.ordering.is_some()));
+        assert!(driven.read(|root, cx| root.orders(cx).ordering.is_some()));
 
         pressed(&mut driven, "enter");
-        assert_eq!(driven.read(|root, _| root.orders.ordering), None);
+        assert_eq!(driven.read(|root, cx| root.orders(cx).ordering), None);
 
         driven.click("order-tracks");
         driven.settle();
@@ -1294,7 +1294,7 @@ mod tests {
         pressed(&mut driven, "a");
         assert_eq!(order(&mut driven).tracks, SortOrder::Played);
         pressed(&mut driven, "escape");
-        assert_eq!(driven.read(|root, _| root.orders.ordering), None);
+        assert_eq!(driven.read(|root, cx| root.orders(cx).ordering), None);
     }
 
     #[gpui::test]
@@ -1591,14 +1591,14 @@ mod tests {
         let mut driven = Driven::open(cx, catalog());
         let second = with_a_second_zone(&mut driven);
         zone_shown(&mut driven, ZoneId::FIRST);
-        driven.root.update(&mut driven.cx, |root, _| {
-            root.reach = Some(crate::views::reorder::Reach::at(Shift::Queue, 2));
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_reach(Some(crate::views::reorder::Reach::at(Shift::Queue, 2)), cx);
             root.typing.landed_by_a_jump = Some(crate::views::reorder::Reach::at(Shift::Queue, 2));
         });
 
         zone_shown(&mut driven, second);
 
-        assert_eq!(driven.read(|root, _| root.reach.clone()), None);
+        assert_eq!(driven.read(|root, cx| root.reach(cx).cloned()), None);
         assert_eq!(
             driven.read(|root, _| root.typing.landed_by_a_jump.clone()),
             None
@@ -1979,14 +1979,14 @@ mod tests {
         });
         driven.settle();
 
-        assert!(driven.read(|root, _| root.orders.keeping));
+        assert!(driven.read(|root, cx| root.orders(cx).keeping));
 
         driven.root.update(&mut driven.cx, |root, cx| {
             root.show_playlist(Some(other), cx);
         });
         driven.settle();
 
-        assert!(!driven.read(|root, _| root.orders.keeping));
+        assert!(!driven.read(|root, cx| root.orders(cx).keeping));
     }
 
     #[gpui::test]
@@ -2740,12 +2740,12 @@ mod tests {
         let mut driven = Driven::open(cx, catalog());
         driven.settle();
 
-        let roomy = driven.read(|root, _| root.scrolls.sidebar.max_offset().y);
+        let roomy = driven.read(|root, _| root.window_scrolls.sidebar.max_offset().y);
 
         driven.cx.simulate_resize(size(px(WIDE), px(300.0)));
         driven.settle();
 
-        let squeezed = driven.read(|root, _| root.scrolls.sidebar.max_offset().y);
+        let squeezed = driven.read(|root, _| root.window_scrolls.sidebar.max_offset().y);
 
         let settings = driven.bounds_of("tab-settings");
 
@@ -3521,7 +3521,7 @@ mod tests {
     }
 
     fn reach_in_the_tracks(driven: &mut Driven) -> Option<Span> {
-        driven.read(|root, _| root.reaching(Shift::Listing(Listed::Tracks)))
+        driven.read(|root, cx| root.reaching(Shift::Listing(Listed::Tracks), cx))
     }
 
     const HELD_TO_CHOOSE_APART: Modifiers = Modifiers {
@@ -3533,8 +3533,8 @@ mod tests {
     };
 
     fn chosen_rows(driven: &mut Driven) -> Vec<usize> {
-        driven.read(|root, _| {
-            root.reached()
+        driven.read(|root, cx| {
+            root.reached(cx)
                 .map(|reach| reach.selected().rows().collect())
                 .unwrap_or_default()
         })
@@ -3575,7 +3575,7 @@ mod tests {
 
         assert_eq!(chosen_rows(&mut driven), [2]);
         assert_eq!(
-            driven.read(|root, _| root.reached().map(|reach| reach.row)),
+            driven.read(|root, cx| root.reached(cx).map(|reach| reach.row)),
             Some(0)
         );
     }
@@ -3622,7 +3622,7 @@ mod tests {
 
         assert_eq!(chosen_rows(&mut driven), [0]);
         assert_eq!(
-            driven.read(|root, _| root.reached().map(|reach| reach.row)),
+            driven.read(|root, cx| root.reached(cx).map(|reach| reach.row)),
             Some(2)
         );
 
@@ -4165,7 +4165,7 @@ mod tests {
 
         assert_eq!(chosen_rows(&mut driven), [0, 2]);
         assert_eq!(
-            driven.read(|root, _| root.reached().map(|reach| reach.shift)),
+            driven.read(|root, cx| root.reached(cx).map(|reach| reach.shift)),
             Some(Shift::Listing(Listed::FavouriteArtists))
         );
         assert_eq!(driven.read(|root, _| root.pane), Pane::Favourites);
@@ -4212,7 +4212,7 @@ mod tests {
 
         assert_eq!(chosen_rows(&mut driven), [1, 2]);
         assert_eq!(
-            driven.read(|root, _| root.reached().map(|reach| reach.shift)),
+            driven.read(|root, cx| root.reached(cx).map(|reach| reach.shift)),
             Some(Shift::Listing(Listed::FavouriteAlbums))
         );
 
@@ -4265,7 +4265,7 @@ mod tests {
     }
 
     fn reached_at(driven: &mut Driven) -> Option<(Shift, usize)> {
-        driven.read(|root, _| root.reached().map(|reach| (reach.shift, reach.row)))
+        driven.read(|root, cx| root.reached(cx).map(|reach| (reach.shift, reach.row)))
     }
 
     #[gpui::test]
@@ -4374,7 +4374,7 @@ mod tests {
 
         assert_eq!(chosen_rows(&mut driven), [0, 2]);
         assert_eq!(
-            driven.read(|root, _| root.reached().map(|reach| reach.shift)),
+            driven.read(|root, cx| root.reached(cx).map(|reach| reach.shift)),
             Some(Shift::Listing(Listed::FavouriteArtists))
         );
 
@@ -4905,7 +4905,7 @@ mod tests {
 
         assert_eq!(chosen_rows(&mut driven), [0, 1]);
         assert_eq!(
-            driven.read(|root, _| root.reached().map(|reach| reach.row)),
+            driven.read(|root, cx| root.reached(cx).map(|reach| reach.row)),
             Some(1)
         );
     }
@@ -5175,11 +5175,11 @@ mod tests {
     }
 
     fn track_rows(driven: &mut Driven) -> gpui::UniformListScrollHandle {
-        driven.read(|root, _| root.scrolls.track_rows.clone())
+        driven.read(|root, cx| root.scrolls(cx).track_rows.clone())
     }
 
     fn playlist_rows(driven: &mut Driven) -> gpui::UniformListScrollHandle {
-        driven.read(|root, _| root.scrolls.playlist_rows.clone())
+        driven.read(|root, cx| root.scrolls(cx).playlist_rows.clone())
     }
 
     fn offset_of(rows: &gpui::UniformListScrollHandle) -> Pixels {
@@ -5191,12 +5191,9 @@ mod tests {
     }
 
     fn opened_rows_order(driven: &mut Driven) -> (resonate_library::RowOrder, Direction, bool) {
-        driven.read(|root, _| {
-            (
-                root.orders.row_order,
-                root.orders.row_reading,
-                root.orders.keeping,
-            )
+        driven.read(|root, cx| {
+            let orders = root.orders(cx);
+            (orders.row_order, orders.row_reading, orders.keeping)
         })
     }
 
@@ -6857,11 +6854,11 @@ mod tests {
     fn the_wheel_scrolls_the_settings_body(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
         driven.click("tab-settings");
-        let before = driven.read(|root, _| root.scrolls.settings.offset().y);
+        let before = driven.read(|root, cx| root.settings_pane.read(cx).shown.scroll.offset().y);
 
         driven.scroll("settings", 400.0);
 
-        let after = driven.read(|root, _| root.scrolls.settings.offset().y);
+        let after = driven.read(|root, cx| root.settings_pane.read(cx).shown.scroll.offset().y);
         assert!(
             after < before,
             "the body did not scroll: {before:?} to {after:?}"

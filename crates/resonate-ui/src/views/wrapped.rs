@@ -683,7 +683,7 @@ mod tests {
         });
         driven.settle();
 
-        assert!(driven.read(|root, _| root.something_stands_over_the_pane()));
+        assert!(driven.read(|root, cx| root.something_stands_over_the_pane(cx)));
 
         driven.cx.simulate_keystrokes("right");
         driven.settle();

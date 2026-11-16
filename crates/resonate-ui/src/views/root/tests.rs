@@ -396,7 +396,7 @@ mod driven {
     }
 
     fn reach(driven: &mut Driven) -> Option<Reach> {
-        driven.read(|root, _| root.reach.clone())
+        driven.read(|root, cx| root.reach(cx).cloned())
     }
 
     impl Driven {
@@ -450,7 +450,7 @@ mod driven {
         let mut driven = queue_open(cx, &folder, &["alpha", "bravo", "charlie"]);
 
         driven.cx.simulate_keystrokes("c->c");
-        driven.until(|root, _| root.reach == Some(Reach::at(Shift::Queue, 2)));
+        driven.until(|root, cx| root.reach(cx).cloned() == Some(Reach::at(Shift::Queue, 2)));
         driven.lapse_the_type_ahead();
 
         driven.cx.simulate_keystrokes("backspace");
@@ -468,7 +468,7 @@ mod driven {
         let mut driven = queue_open(cx, &folder, &["alpha", "bravo", "charlie"]);
 
         driven.cx.simulate_keystrokes("c->c");
-        driven.until(|root, _| root.reach == Some(Reach::at(Shift::Queue, 2)));
+        driven.until(|root, cx| root.reach(cx).cloned() == Some(Reach::at(Shift::Queue, 2)));
         driven.lapse_the_type_ahead();
 
         driven.cx.simulate_keystrokes("up backspace");

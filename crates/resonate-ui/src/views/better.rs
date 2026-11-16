@@ -258,7 +258,7 @@ impl RootView {
         cx.spawn(async move |this, cx| {
             let held = reading.await;
             let _ = this.update(cx, |this, cx| {
-                if this.window_has_moved_on_from(pressed) {
+                if this.window_has_moved_on_from(pressed, cx) {
                     return;
                 }
                 this.look_for_versions_beyond(sought, track, held, at, pressed, cx);
@@ -315,7 +315,7 @@ impl RootView {
         cx.spawn(async move |this, cx| {
             let asked = asking.await;
             let _ = this.update(cx, |this, cx| {
-                if this.window_has_moved_on_from(pressed) {
+                if this.window_has_moved_on_from(pressed, cx) {
                     return;
                 }
                 let found = held.len() + asked.served.len();

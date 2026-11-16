@@ -28,7 +28,6 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use ahash::AHashMap;
 use futures_channel::oneshot;
 use gpui::{
     AnyElement, App, Context, Div, DragMoveEvent, Entity, ExternalPaths, FocusHandle, Focusable,
@@ -72,6 +71,7 @@ use crate::{
     views::{
         announcing,
         browser::{ArtistShows, OpenedRecord},
+        browsing::BrowsePanes,
         chrome,
         dropping::{Incoming, TakingIn},
         field::{self, Field},
@@ -95,7 +95,6 @@ use crate::{
         sharing,
         sheets::{self},
         slider::{Grab, Rail},
-        sorting::Ordered,
         spoken::{self},
         statistics::StatisticsPane,
         suggestions::SuggestionsPane,
@@ -517,27 +516,13 @@ impl Pane {
     }
 }
 
-pub(crate) struct Scrolls {
-    pub(crate) settings: ScrollHandle,
-    pub(crate) settings_rail: ScrollHandle,
+pub(crate) struct WindowScrolls {
     pub(crate) sidebar: ScrollHandle,
-    pub(crate) artist_records: ScrollHandle,
-    pub(crate) ordering: ScrollHandle,
     pub(crate) downloads: ScrollHandle,
     pub(crate) heard_earlier: ScrollHandle,
     pub(crate) likely: ScrollHandle,
     pub(crate) replacing: ScrollHandle,
-    pub(crate) remote: ScrollHandle,
-    pub(crate) search: ScrollHandle,
-    pub(crate) playlist_rows: UniformListScrollHandle,
-    pub(crate) track_rows: UniformListScrollHandle,
-    pub(crate) artist_rows: UniformListScrollHandle,
-    pub(crate) album_rows: UniformListScrollHandle,
-    pub(crate) all_playlist_rows: UniformListScrollHandle,
-    pub(crate) favourite_rows: UniformListScrollHandle,
     pub(crate) picker_rows: UniformListScrollHandle,
-    pub(crate) shelves: RefCell<AHashMap<&'static str, ScrollHandle>>,
-    pub(crate) left_at: AHashMap<PlaylistId, UniformListScrollHandle>,
 }
 
 pub(crate) struct Rooms {
@@ -564,18 +549,6 @@ pub(crate) struct Rails {
     pub(crate) band_untold: Option<bool>,
     pub(crate) held_band: Option<HeldBand>,
     pub(crate) curve_plotted: Rc<Cell<Plotted>>,
-}
-
-pub(crate) struct Orders {
-    pub(crate) row_order: RowOrder,
-    pub(crate) row_reading: Direction,
-    pub(crate) keeping: bool,
-    pub(crate) query_sort: SortOrder,
-    pub(crate) query_reading: Direction,
-    pub(crate) query_cap: Option<usize>,
-    pub(crate) ordering: Option<Ordered>,
-    pub(crate) ordering_at: Point<Pixels>,
-    pub(crate) ordering_typed: TypeAhead,
 }
 
 pub(crate) struct Remembered {
@@ -645,6 +618,7 @@ pub struct RootView {
     pub(crate) services: Entity<ServicesPane>,
     pub(crate) settings_fields: Entity<SettingsFields>,
     pub(crate) settings_pane: Entity<SettingsPane>,
+    pub(crate) browsing: Entity<BrowsePanes>,
     pub(crate) listening_open: bool,
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,
@@ -676,7 +650,6 @@ pub struct RootView {
     under_the_pointer: Option<UnderThePointer>,
     pub(crate) menu: Option<Menu>,
     pub(crate) record: Option<OpenedRecord>,
-    pub(crate) reach: Option<Reach>,
     arranged_as: Arrangement,
     pub(crate) creeping: Option<Creeping>,
     pub(crate) creeping_on: Task<()>,
@@ -695,10 +668,9 @@ pub struct RootView {
     pub(crate) focus: FocusHandle,
     pub(crate) menu_focus: FocusHandle,
     pub(crate) parts: Parts,
-    pub(crate) scrolls: Scrolls,
+    pub(crate) window_scrolls: WindowScrolls,
     pub(crate) rooms: Rooms,
     pub(crate) rails: Rails,
-    pub(crate) orders: Orders,
     pub(crate) remembered: Remembered,
     pub(crate) dropped: Dropped,
     pub(crate) typed: Typed,
@@ -826,7 +798,7 @@ impl Render for RootView {
             .on_action(cx.listener(|this, _: &SeekForward, _, cx| {
                 if this.step_into_the_menu(cx)
                     || this.turn_the_slide(1, cx)
-                    || this.something_stands_over_the_pane()
+                    || this.something_stands_over_the_pane(cx)
                 {
                     return;
                 }
@@ -837,7 +809,7 @@ impl Render for RootView {
             .on_action(cx.listener(|this, _: &SeekBackward, _, cx| {
                 if this.back_out_of_the_menu(cx)
                     || this.turn_the_slide(-1, cx)
-                    || this.something_stands_over_the_pane()
+                    || this.something_stands_over_the_pane(cx)
                 {
                     return;
                 }
@@ -997,7 +969,7 @@ impl Render for RootView {
             .child(self.parts.transport())
             .child(self.drag_surface(cx))
             .child(self.pointer_watch(cx))
-            .child(self.composition_watch())
+            .child(self.composition_watch(cx))
             .when_some(self.announcement(), ParentElement::child)
             .when_some(
                 toast::drawn(self.typing.ahead.typed().is_some(), window, cx),
@@ -1044,7 +1016,7 @@ impl Render for RootView {
                     motion::ARRIVES_OVER,
                 ))
             })
-            .when_some(self.orders.ordering, |app, ordered| {
+            .when_some(self.browsing.read(cx).orders.ordering, |app, ordered| {
                 app.child(self.order_sheet(ordered, window.viewport_size(), cx))
             })
             .when(self.social.party_offered.is_some(), |app| {

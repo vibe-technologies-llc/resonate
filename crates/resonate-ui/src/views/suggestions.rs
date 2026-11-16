@@ -194,7 +194,7 @@ impl RootView {
                 .filter_map(|(place, index)| Some((place, *index, offered.get(*index)?)))
                 .filter(|(_, _, suggestion)| suggestion.reason.kind() == kind)
                 .map(|(place, index, suggestion)| {
-                    let reached = self.reaches(Shift::Listing(Listed::Offered), place);
+                    let reached = self.reaches(Shift::Listing(Listed::Offered), place, cx);
                     self.suggestion_card(index, suggestion, reached, cx)
                         .into_any_element()
                 })
@@ -369,7 +369,7 @@ impl RootView {
     }
 
     pub(crate) fn open_offered(&mut self, query: SavedQuery, cx: &mut Context<Self>) {
-        self.let_go_of_the_reach_in(Shift::Listing(Listed::Offered));
+        self.let_go_of_the_reach_in(Shift::Listing(Listed::Offered), cx);
         self.suggestions
             .update(cx, |pane, cx| pane.open(Some(query), cx));
         cx.notify();
@@ -491,12 +491,12 @@ impl RootView {
                                     Rowed {
                                         playing: playing == Some(track.id),
                                         plays: Plays::TheseRows,
-                                        reach: this.at_the_reach(shift, index),
+                                        reach: this.at_the_reach(shift, index, cx),
                                         chooses: Some(Chooses::among(Listed::Suggested, index)),
                                     },
                                     cx,
                                 );
-                                drawn.push(this.marked_where_reached(shift, index, row));
+                                drawn.push(this.marked_where_reached(shift, index, row, cx));
                             }
                             drawn
                         }),
@@ -782,7 +782,7 @@ mod tests {
     }
 
     fn reached_at(driven: &mut Driven) -> Option<(Shift, usize)> {
-        driven.read(|root, _| root.reached().map(|reach| (reach.shift, reach.row)))
+        driven.read(|root, cx| root.reached(cx).map(|reach| (reach.shift, reach.row)))
     }
 
     fn tabbed_onto(driven: &mut Driven, named: &'static str) -> bool {
