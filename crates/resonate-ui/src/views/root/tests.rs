@@ -1497,6 +1497,46 @@ mod driven {
     }
 
     #[gpui::test]
+    fn the_lossy_songs_sheet_of_a_playlist_the_shelves_miss_is_headed_by_its_name(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let Some(opus) = encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"])
+        else {
+            return;
+        };
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        let road_trip = library
+            .start_playlist(
+                "Road trip",
+                &[Cut::whole(resonate_core::MediaLocation::local(&opus))],
+            )
+            .expect("a playlist holding the lossy copy");
+        assert_eq!(
+            driven.read(|root, cx| root.library.read(cx).playlist_name(road_trip)),
+            None,
+            "the shelves already hold the playlist"
+        );
+
+        let root = driven.root.clone();
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.open_replacing(road_trip, cx));
+        });
+        driven.until(|root, _| {
+            root.replacing
+                .as_ref()
+                .is_some_and(|sheet| sheet.rows.is_some())
+        });
+
+        assert_eq!(
+            driven.read(|root, _| root.replacing.as_ref().map(|sheet| sheet.name.clone())),
+            Some("Road trip".to_owned())
+        );
+    }
+
+    #[gpui::test]
     fn a_playlists_lossy_songs_are_replaced_from_its_menu_and_the_sheet_closes_with_a_toast(
         cx: &mut TestAppContext,
     ) {

@@ -1,5 +1,6 @@
 replace-lossy-songs = Replace lossy songs…
 heading = Replace lossy songs · { $playlist }
+heading-unnamed = Replace lossy songs
 tick-all = Tick all
 tick-all-hint = Tick every song that can be replaced
 held = you hold it in { $codec }
