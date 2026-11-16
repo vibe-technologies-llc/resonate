@@ -492,6 +492,7 @@ struct PlaybackView: View {
 struct OutputView: View {
     @Environment(Library.self) private var library
     @State private var buffer: Double?
+    @State private var catalogName = ""
     @AppStorage(NowPlaying.followsSongRateKey, store: NowPlaying.playbackSettings) private var followsSongRate = true
 
     var body: some View {
@@ -531,6 +532,13 @@ struct OutputView: View {
             }
             Section {
                 Toggle("output.catalog.share", isOn: Binding(get: { library.catalogShared }, set: { library.shareCatalog($0) }))
+                LabeledContent("output.catalog.name") {
+                    TextField("output.catalog.name", text: $catalogName, prompt: Text("output.catalog.name.default"))
+                        .multilineTextAlignment(.trailing)
+                        .autocorrectionDisabled()
+                        .submitLabel(.done)
+                        .onSubmit { library.nameCatalog(catalogName) }
+                }
             } header: {
                 Text("output.catalog")
             } footer: {
@@ -557,6 +565,8 @@ struct OutputView: View {
             }
         }
         .navigationTitle("output.title")
+        .onAppear { catalogName = library.catalogName }
+        .onChange(of: library.catalogName) { _, kept in catalogName = kept }
     }
 }
 

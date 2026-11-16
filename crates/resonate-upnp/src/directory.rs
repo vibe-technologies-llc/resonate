@@ -9,6 +9,7 @@ use crate::{
     criteria::{self, Criterion, Described, Reduced, SEARCH_CAPABILITIES},
     didl::{Didl, FOLDER, escaped},
     naming,
+    watched::Watched,
 };
 
 pub(crate) const CONTENT_DIRECTORY: &str = "urn:schemas-upnp-org:service:ContentDirectory:1";
@@ -151,6 +152,8 @@ pub(crate) fn source_protocols() -> String {
 pub(crate) struct Asking<'a, C> {
     pub catalog: &'a C,
     pub base: &'a str,
+    pub name: &'a str,
+    pub watched: &'a Watched,
 }
 
 impl<C: Catalog> Asking<'_, C> {
@@ -186,6 +189,7 @@ impl<C: Catalog> Asking<'_, C> {
     fn browse(&self, called: &Called) -> Result<Vec<(&'static str, String)>, Fault> {
         let object = object_named(called, "ObjectID")?;
         let Page { from, most } = page_asked(called)?;
+        let read_at = self.catalog.revision();
 
         let mut didl = Didl::new(self.base);
         let (returned, total) = match called.argument("BrowseFlag").map(str::trim) {
@@ -194,7 +198,9 @@ impl<C: Catalog> Asking<'_, C> {
                 (1, 1)
             }
             Some("BrowseDirectChildren") => {
-                self.children(object, Page { from, most }, &mut didl)?
+                let children = self.children(object, Page { from, most }, &mut didl)?;
+                self.watched.watch(object, read_at);
+                children
             }
             _ => return Err(Fault::InvalidArgs),
         };
@@ -310,7 +316,7 @@ impl<C: Catalog> Asking<'_, C> {
 
     fn metadata(&self, object: Object, didl: &mut Didl<'_>) -> Result<(), Fault> {
         match object {
-            Object::Root => didl.root(naming::server_name(), Shelf::TOP.len() as u32),
+            Object::Root => didl.root(self.name, Shelf::TOP.len() as u32),
             Object::Shelf(shelf) => didl.shelf(&self.held(shelf)?, shelf.parent()),
             Object::Song(id) => {
                 let song = self

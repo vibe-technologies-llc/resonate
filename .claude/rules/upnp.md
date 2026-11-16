@@ -400,7 +400,9 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   container carries `childCount`, its class (storage folder, music artist, music album, playlist),
   the album artist and an `albumArtURI` where the album holds a cover; a song is a `musicTrack` with
   creator, artist, album, genre, track number, cover and one `res`: `http-get:*:<mime>:` the DLNA
-  flags (`DLNA_FEATURES`), size, duration, rate, channels and, for a lossless codec, bits. Every
+  flags (`DLNA_FEATURES`), size, duration, rate, channels and, for a lossless codec, bits. `Song`'s
+  `size` is an `Option`: a size the catalog does not know leaves the attribute out (DIDL-Lite's
+  `size` is optional), never a `0` a control point would read as an empty file. Every
   text is escaped and a control character a tag may hold is dropped, so the document always reads.
   `GetSortCapabilities` answers empty, `GetSystemUpdateID` and every `UpdateID` the catalog's
   `revision`; ConnectionManager answers `GetProtocolInfo` (a `Source` entry
@@ -426,7 +428,9 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   default; the text is escaped as every XML text is. The name is the description's alone: the
   announcements carry the UDN and a control point reads the name when it fetches the description,
   so a name changed under a running server is told by announcing the server again
-  (`Offered::rename`). The root container's title stays the catalog word. Every answer's `Server` is `SERVED_AS`: `resonate/<version>
+  (`Offered::rename`). The root container's `dc:title` is the same name, the catalog word where
+  none was typed (`Shared::shown_as`, handed to `Asking` as its `name`), since a control point
+  lists a server's root by it too. Every answer's `Server` is `SERVED_AS`: `resonate/<version>
   UPnP/1.0 DLNADOC/1.50`.
 - **Search reads `SearchCriteria` by hand and asks the catalog a typed query** (`criteria.rs`).
   `GetSearchCapabilities` answers `SEARCH_CAPABILITIES`: `dc:title`, `dc:creator`, `upnp:artist`,
@@ -472,9 +476,28 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   `SystemUpdateID`, ConnectionManager's protocol info and connection ids, which never change), then
   ContentDirectory's `SystemUpdateID` each time the revision moved, at most every
   `TOLD_AT_MOST_EVERY` (2 s, the spec's moderated rate) a subscriber, `SEQ` counting on and wrapping
-  to 1. `ContainerUpdateIDs` is not evented: the revision names no container. A `NOTIFY` not
-  answered 2xx within `TOLD_WITHIN` (2 s) drops the subscriber. `SystemUpdateID` moves because the
-  binary's `revision` is `Library::catalog_revision`, which every catalog write moves.
+  to 1. A `NOTIFY` not answered 2xx within `TOLD_WITHIN` (2 s) drops the subscriber.
+  `SystemUpdateID` moves because the binary's `revision` is `Library::catalog_revision`, which
+  every catalog write moves.
+- **`ContainerUpdateIDs` is evented for the containers a control point holds** (`watched.rs`),
+  with no change to the seam: the revision names no container, so the crate tells a change by what
+  a container lists. A container a `BrowseDirectChildren` answered (the root, a shelf, an artist,
+  an album, a playlist; never a song) is watched, at most `WATCHED_AT_MOST` (64) of them, the least
+  lately browsed leaving first, each from the revision read before its children were (`watch`).
+  While a ContentDirectory subscriber is held, a container newly watched is printed at that
+  revision (`print_new`: a hash of its own `Held` and the first `BROWSED_AT_MOST` children with
+  their total, the root's the four top totals), the print kept only where the revision has not
+  moved meanwhile. Once a subscriber is due a change (`awaits_a_change`), every container watched
+  since an earlier revision is printed again and named, `id,revision`, where the print differs, was
+  never kept, cannot be taken (more children than one page, so a whole catalog's Songs is named at
+  every change) or the container is gone (then it is no longer watched): a change can be named
+  needlessly, never missed (`changed`). The names wait per subscriber (`note`, at most
+  `CONTAINERS_PENDING_AT_MOST`) and go out beside `SystemUpdateID` under the same moderation,
+  `ContainerUpdateIDs` being written empty in the initial event and left out of one that names
+  none; a subscriber holding names is due even where the revision has not moved again
+  (`a_container_watched_is_named_only_once_what_it_holds_has_changed`,
+  `a_subscriber_is_told_which_containers_it_browsed_changed_at_most_every_two_seconds`). Every
+  `UpdateID` a Browse or Search answers stays the catalog's `revision`.
 - **One doorway for both servers** (`door.rs`): the stream server's accept loop (non-blocking heads
   under `mio`, `HEADS_AT_MOST` waiting, `HEAD_ENDS_WITHIN`, an answer thread only for a head that
   names something, at most `ANSWERS_AT_MOST` at once, the rest `503`) is generic over a `Door`, and
@@ -596,7 +619,7 @@ as one sink and refuses it to a second while the first holds it bit-perfect (`au
   **A song's bytes come through the same `Sources` the engine reads**, so a granted document is
   opened by the descriptor the front end hands over (`mobile.md`'s *Granted documents*), never a
   path; one that will not open is 404. Its `res@size` is the size the scan recorded
-  (`documents.size`), 0 where none was. A song and a playlist are named by their rows' ids; an album
+  (`documents.size`), left out where none was. A song and a playlist are named by their rows' ids; an album
   or an artist has no row, so its id is a 64-bit FNV-1a of its grouping key (the album key, the
   folded artist name; `named`), the same across runs while the key stands, and a second group
   hashing to a taken id is left off with a warning. A cover is the album's artwork track's picture
@@ -612,10 +635,15 @@ as one sink and refuses it to a second while the first holds it bit-perfect (`au
   nothing.
   `share_catalog_on_network(on)` starts or stops it (`CatalogNotOffered` where the server cannot
   start; asking for what already holds does nothing) and `catalog_shared_on_network` answers
-  whether it runs; `Offered` keeps the UDN in the player's folder as `media-server-udn`
+  whether it runs; `name_catalog_on_network(name)` is the phones' `offer-name`: it keeps the name
+  as `ServerName` folds it (answering it, empty for the catalog word), and a running server is
+  stopped and started again under it on the caller's thread, the farewell before the new
+  announcement, while a resting one holds it for the next start (`Offered::rename`,
+  `a_name_typed_on_the_phone_names_the_catalog_and_its_root_on_the_network_at_once`); `Offered` keeps the UDN in the player's folder as `media-server-udn`
   (`kept_udn`, as the binary's), the port is the system's choice each start, and `shutdown` stops
   it. Each phone's *Audio output* page has *Offer the catalog on the network* (off by default, kept
-  as `share-catalog-on-network` and applied as the player opens). **Android holds a
+  as `share-catalog-on-network` and applied as the player opens) and *Name on the network* (empty by
+  default, the catalog word, kept as `offer-name` and told before the switch as the player opens). **Android holds a
   `MulticastLock` of its own** (`resonate-catalog`, beside the renderers' and sync's) while it
   offers, since an `M-SEARCH` arrives multicast (`android.md`). **An iPhone signed for free is
   offered but not found**: joining the SSDP group and announcing are multicast from the app's own

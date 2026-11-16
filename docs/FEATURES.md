@@ -220,16 +220,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Later: Network output
 - [M] A song cut from a cue sheet is not offered on the network: a span of a file is no byte range
   of it, and serving one would mean decoding it and sending it as WAVE
-- [S] A phone offering its catalog is always named Resonate on the network: the desktop's
-  `offer-name` has no setting on the phones
-- [S] The offered catalog's root container is titled by the catalog word whatever `offer-name`
-  says; only the device's `friendlyName` follows the typed name
 - [S] A search under Artists or Albums finds only that shelf's own kind, not the albums and songs
   nested below it: an exact narrowing wants a track filter for having an album, which the library
   lacks
-- [S] A phone's song whose scan recorded no size is offered with a `res` size of 0
-- [S] `ContainerUpdateIDs` is not evented, so a control point holding one container's children
-  reads them again whenever `SystemUpdateID` moves; the catalog's revision names no container
 - [L · blocked: Apple] AirPlay 2 cannot be played to: its pairing, encryption and buffered audio
   are Apple's own, with no published specification to build against
 

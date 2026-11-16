@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import org.resonate.android.nativecore.MobilePlayer
 
 private const val SHARES_THE_CATALOG = "share-catalog-on-network"
+private const val NAMED_ON_THE_NETWORK = "offer-name"
 
 class CatalogOffering(
     context: Context,
@@ -16,6 +17,8 @@ class CatalogOffering(
 ) {
     private val mutableShared = MutableStateFlow(false)
     val shared = mutableShared.asStateFlow()
+    private val mutableName = MutableStateFlow(settings.getString(NAMED_ON_THE_NETWORK, "") ?: "")
+    val name = mutableName.asStateFlow()
     private val searchesHeard: WifiManager.MulticastLock? by lazy {
         context.applicationContext
             .getSystemService(WifiManager::class.java)
@@ -24,6 +27,14 @@ class CatalogOffering(
     }
 
     fun begin(native: MobilePlayer) {
+        val kept = mutableName.value
+        if (kept.isNotEmpty()) {
+            try {
+                mutableName.value = native.nameCatalogOnNetwork(kept)
+            } catch (failure: Exception) {
+                library.report(failure)
+            }
+        }
         if (settings.getBoolean(SHARES_THE_CATALOG, false)) {
             try {
                 hearSearches(true)
@@ -41,6 +52,18 @@ class CatalogOffering(
                 if (on) hearSearches(true)
                 native.shareCatalogOnNetwork(on)
                 settings.edit().putBoolean(SHARES_THE_CATALOG, on).apply()
+            } finally {
+                settle(native)
+            }
+        }
+    }
+
+    fun rename(typed: String) {
+        library.request { native ->
+            try {
+                val kept = native.nameCatalogOnNetwork(typed)
+                settings.edit().putString(NAMED_ON_THE_NETWORK, kept).apply()
+                mutableName.value = kept
             } finally {
                 settle(native)
             }

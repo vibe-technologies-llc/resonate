@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 
 use crate::{
     Asked, Located, Udn,
+    catalog::Object,
     didl::escaped,
     directory::{self, Service},
     http::{self, HEADERS_AT_MOST},
@@ -24,6 +25,8 @@ pub(crate) const KEPT_AT_LEAST: Duration = Duration::from_secs(60);
 pub(crate) const TOLD_AT_MOST_EVERY: Duration = Duration::from_secs(2);
 
 pub(crate) const TOLD_WITHIN: Duration = Duration::from_secs(2);
+
+const CONTAINERS_PENDING_AT_MOST: usize = 2 * crate::watched::WATCHED_AT_MOST;
 
 const CALLBACKS_AT_MOST: usize = 4;
 
@@ -138,6 +141,20 @@ struct Subscription {
     answered: bool,
     told: Option<u32>,
     told_at: Instant,
+    containers: Vec<(Object, u32)>,
+}
+
+impl Subscription {
+    fn awaits(&self, revision: u32) -> bool {
+        match self.told {
+            None => self.answered,
+            Some(told) => {
+                self.service == Service::ContentDirectory
+                    && (told != revision || !self.containers.is_empty())
+                    && self.told_at.elapsed() >= TOLD_AT_MOST_EVERY
+            }
+        }
+    }
 }
 
 pub(crate) struct Telling {
@@ -190,6 +207,7 @@ impl Subscribers {
                 answered: false,
                 told: None,
                 told_at: now,
+                containers: Vec::new(),
             },
         );
         Some(sid)
@@ -230,25 +248,58 @@ impl Subscribers {
         self.held.lock().len()
     }
 
+    pub(crate) fn directory_heard(&self) -> bool {
+        self.held
+            .lock()
+            .values()
+            .any(|subscription| subscription.service == Service::ContentDirectory)
+    }
+
+    pub(crate) fn awaits_a_change(&self, revision: u32) -> bool {
+        self.held.lock().values().any(|subscription| {
+            subscription.told.is_some_and(|told| told != revision) && subscription.awaits(revision)
+        })
+    }
+
+    pub(crate) fn note(&self, changed: &[(Object, u32)]) {
+        if changed.is_empty() {
+            return;
+        }
+        let mut held = self.held.lock();
+        for subscription in held
+            .values_mut()
+            .filter(|subscription| subscription.service == Service::ContentDirectory)
+        {
+            let containers = &mut subscription.containers;
+            for (object, update) in changed {
+                match containers.iter().position(|(pending, _)| pending == object) {
+                    Some(at) => containers[at].1 = *update,
+                    None if containers.len() < CONTAINERS_PENDING_AT_MOST => {
+                        containers.push((*object, *update));
+                    }
+                    None => {}
+                }
+            }
+        }
+    }
+
     pub(crate) fn due(&self, revision: u32) -> Vec<Telling> {
         let now = Instant::now();
         let mut held = self.held.lock();
         held.retain(|_, subscription| subscription.until > now);
         held.iter()
-            .filter(|(_, subscription)| match subscription.told {
-                None => subscription.answered,
-                Some(told) => {
-                    subscription.service == Service::ContentDirectory
-                        && told != revision
-                        && subscription.told_at.elapsed() >= TOLD_AT_MOST_EVERY
-                }
-            })
+            .filter(|(_, subscription)| subscription.awaits(revision))
             .map(|(sid, subscription)| Telling {
                 sid: sid.clone(),
                 callback: subscription.callback.clone(),
                 seq: subscription.seq,
                 revision,
-                body: property_set(subscription.service, revision),
+                body: property_set(
+                    subscription.service,
+                    revision,
+                    &subscription.containers,
+                    subscription.told.is_none(),
+                ),
             })
             .collect()
     }
@@ -263,13 +314,25 @@ impl Subscribers {
             subscription.seq = next_seq(telling.seq);
             subscription.told = Some(telling.revision);
             subscription.told_at = Instant::now();
+            subscription.containers.clear();
         }
     }
 }
 
-pub(crate) fn property_set(service: Service, revision: u32) -> String {
+pub(crate) fn property_set(
+    service: Service,
+    revision: u32,
+    containers: &[(Object, u32)],
+    initial: bool,
+) -> String {
     let properties: Vec<(&str, String)> = match service {
-        Service::ContentDirectory => vec![("SystemUpdateID", revision.to_string())],
+        Service::ContentDirectory => {
+            let mut properties = vec![("SystemUpdateID", revision.to_string())];
+            if initial || !containers.is_empty() {
+                properties.push(("ContainerUpdateIDs", container_update_ids(containers)));
+            }
+            properties
+        }
         Service::ConnectionManager => vec![
             ("SourceProtocolInfo", directory::source_protocols()),
             ("SinkProtocolInfo", String::new()),
@@ -289,6 +352,14 @@ pub(crate) fn property_set(service: Service, revision: u32) -> String {
     }
     written.push_str(PROPERTY_SET_CLOSES);
     written
+}
+
+fn container_update_ids(containers: &[(Object, u32)]) -> String {
+    containers
+        .iter()
+        .map(|(object, update)| format!("{object},{update}"))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 pub(crate) fn tell(telling: &Telling) -> bool {
@@ -326,7 +397,10 @@ pub(crate) fn tell(telling: &Telling) -> bool {
 mod tests {
     use std::net::Ipv4Addr;
 
+    use resonate_core::PlaylistId;
+
     use super::*;
+    use crate::catalog::Shelf;
 
     const PEER: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20));
 
@@ -466,11 +540,31 @@ mod tests {
 
     #[test]
     fn a_property_set_names_each_evented_variable_and_reads_as_a_document() {
-        let told = property_set(Service::ContentDirectory, 42);
-        let connection = property_set(Service::ConnectionManager, 42);
+        let initial = property_set(Service::ContentDirectory, 42, &[], true);
+        let told = property_set(
+            Service::ContentDirectory,
+            43,
+            &[
+                (
+                    Object::Shelf(Shelf::Playlist(PlaylistId::new(3).expect("an id"))),
+                    43,
+                ),
+                (Object::Root, 43),
+            ],
+            false,
+        );
+        let unnamed = property_set(Service::ContentDirectory, 44, &[], false);
+        let connection = property_set(Service::ConnectionManager, 42, &[], true);
 
-        assert!(told.contains("<e:property><SystemUpdateID>42</SystemUpdateID></e:property>"));
+        assert!(initial.contains("<e:property><SystemUpdateID>42</SystemUpdateID></e:property>"));
+        assert!(
+            initial.contains("<e:property><ContainerUpdateIDs></ContainerUpdateIDs></e:property>")
+        );
+        assert!(roxmltree::Document::parse(&initial).is_ok());
+        assert!(told.contains("<ContainerUpdateIDs>playlist-3,43,0,43</ContainerUpdateIDs>"));
         assert!(roxmltree::Document::parse(&told).is_ok());
+        assert!(unnamed.contains("<SystemUpdateID>44</SystemUpdateID>"));
+        assert!(!unnamed.contains("ContainerUpdateIDs"));
         assert!(connection.contains("<CurrentConnectionIDs>0</CurrentConnectionIDs>"));
         assert!(roxmltree::Document::parse(&connection).is_ok());
     }

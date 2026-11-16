@@ -114,6 +114,7 @@ enum class Setting(
             R.string.settings_inner_usb_dac,
             R.string.settings_inner_route,
             R.string.output_share_catalog,
+            R.string.output_catalog_name,
             R.string.settings_inner_media_server,
         ),
         names = listOf("Bluetooth", "UPnP", "DLNA"),

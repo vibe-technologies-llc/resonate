@@ -28,6 +28,7 @@ mod ssdp;
 mod stream;
 #[cfg(test)]
 mod testing;
+mod watched;
 mod wave;
 mod wire;
 

@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.rounded.Usb
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +39,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -75,6 +79,7 @@ class OutputViewModel(resonate: Resonate) : ViewModel() {
     val stream = features.outputStream
     val followsSongRate = library.followsSongRate
     val catalogShared = features.catalogOffering.shared
+    val catalogName = features.catalogOffering.name
 
     val clamped: StateFlow<ULong> =
         library.snapshot
@@ -89,6 +94,8 @@ class OutputViewModel(resonate: Resonate) : ViewModel() {
     fun followSongRate(follows: Boolean) = library.followSongRate(follows)
 
     fun shareCatalog(on: Boolean) = features.catalogOffering.share(on)
+
+    fun nameCatalog(typed: String) = features.catalogOffering.rename(typed)
 }
 
 private fun iconFor(output: AudioOutput): ImageVector =
@@ -141,6 +148,7 @@ fun OutputScreen() {
     val stream by model.stream.collectAsStateWithLifecycle()
     val followsSongRate by model.followsSongRate.collectAsStateWithLifecycle()
     val catalogShared by model.catalogShared.collectAsStateWithLifecycle()
+    val catalogName by model.catalogName.collectAsStateWithLifecycle()
     FollowDevices(model::refresh)
     val words = words()
     val choices = offeredOutputs(outputs)
@@ -242,6 +250,25 @@ fun OutputScreen() {
                     supporting = stringResource(R.string.output_share_catalog_note),
                     modifier = Modifier.testTag("share-catalog"),
                 )
+            }
+            item(key = "catalog-name") {
+                var typed by rememberSaveable(catalogName) { mutableStateOf(catalogName) }
+                Field(
+                    value = typed,
+                    onValueChange = { typed = it },
+                    label = stringResource(R.string.output_catalog_name),
+                    supporting = stringResource(R.string.output_catalog_name_note),
+                    modifier = Modifier.testTag("catalog-name"),
+                )
+                ButtonRow {
+                    FilledTonalButton(
+                        onClick = { model.nameCatalog(typed) },
+                        enabled = typed.trim() != catalogName,
+                        modifier = Modifier.testTag("rename-catalog"),
+                    ) {
+                        Text(stringResource(R.string.output_rename_catalog))
+                    }
+                }
             }
         }
     }

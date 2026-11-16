@@ -299,6 +299,7 @@ final class Library {
     private(set) var renderers: [NetworkRenderer] = []
     private(set) var lookingForRenderers = false
     private(set) var catalogShared = false
+    private(set) var catalogName = ""
     private(set) var rendererAddresses: [String] = []
     private(set) var receiverAddresses: [String] = []
     private(set) var renderersLearnt: [RendererLearnt] = []
@@ -583,9 +584,12 @@ final class Library {
 
     private func restoreCatalogShared() {
         let shares = Self.rendererSettings.bool(forKey: Self.sharesCatalogKey)
+        let named = Self.rendererSettings.string(forKey: Self.catalogNameKey) ?? ""
         catalogShared = shares
+        catalogName = named
 
         reachRenderers({ native in
+            if !named.isEmpty { _ = try? native.nameCatalogOnNetwork(name: named) }
             if shares { try? native.shareCatalogOnNetwork(on: true) }
             return native.catalogSharedOnNetwork()
         }) { [self] shared in
@@ -600,6 +604,16 @@ final class Library {
         }) { [self] shared in
             Self.rendererSettings.set(on, forKey: Self.sharesCatalogKey)
             catalogShared = shared
+        }
+    }
+
+    func nameCatalog(_ typed: String) {
+        reachRenderers({ native in
+            (try native.nameCatalogOnNetwork(name: typed), native.catalogSharedOnNetwork())
+        }) { [self] read in
+            Self.rendererSettings.set(read.0, forKey: Self.catalogNameKey)
+            catalogName = read.0
+            catalogShared = read.1
         }
     }
 
@@ -737,6 +751,7 @@ final class Library {
 
     static let looksForRenderersKey = "renderers"
     static let sharesCatalogKey = "share-catalog-on-network"
+    static let catalogNameKey = "offer-name"
     static let rendererAddressesKey = "renderer-addresses"
     static let receiverAddressesKey = "receiver-addresses"
     static let rendererSettings = UserDefaults(suiteName: "library-features") ?? .standard

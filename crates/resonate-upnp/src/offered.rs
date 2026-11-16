@@ -27,6 +27,7 @@ use crate::{
     naming, neighbours, presented,
     serve::NOT_HERE,
     ssdp::SSDP,
+    watched::Watched,
 };
 
 const SSDP_PORT: u16 = 1900;
@@ -183,6 +184,7 @@ impl<C: Catalog> MediaServer<C> {
             name: offering.name,
             stopped: AtomicBool::new(false),
             subscribers: Subscribers::default(),
+            watched: Watched::default(),
             told,
         });
         let evented = Arc::downgrade(&shared);
@@ -238,7 +240,17 @@ struct Shared<C> {
     name: Option<ServerName>,
     stopped: AtomicBool,
     subscribers: Subscribers,
+    watched: Watched,
     told: Sender<()>,
+}
+
+impl<C> Shared<C> {
+    fn shown_as(&self) -> &str {
+        match &self.name {
+            Some(typed) => typed.as_str(),
+            None => naming::server_name(),
+        }
+    }
 }
 
 fn tell_each_change<C: Catalog>(shared: &Weak<Shared<C>>, heard: &Receiver<()>) {
@@ -258,6 +270,13 @@ fn tell_each_change<C: Catalog>(shared: &Weak<Shared<C>>, heard: &Receiver<()>) 
         if read_at.is_none_or(|read_at| read_at.elapsed() >= REVISION_READ_EVERY) {
             revision = shared.catalog.revision();
             read_at = Some(Instant::now());
+        }
+        if shared.subscribers.directory_heard() {
+            shared.watched.print_new(shared.catalog.as_ref(), revision);
+        }
+        if shared.subscribers.awaits_a_change(revision) {
+            let changed = shared.watched.changed(shared.catalog.as_ref(), revision);
+            shared.subscribers.note(&changed);
         }
         for telling in shared.subscribers.due(revision) {
             if shared.stopped.load(Ordering::Acquire) {
@@ -403,11 +422,7 @@ impl<C: Catalog> Door for Hall<C> {
         stream.set_write_timeout(Some(WRITTEN_WITHIN))?;
         match task.route {
             Route::Description => {
-                let name = match &shared.name {
-                    Some(typed) => typed.as_str(),
-                    None => naming::server_name(),
-                };
-                let described = presented::device(&shared.udn, name);
+                let described = presented::device(&shared.udn, shared.shown_as());
                 said(&mut stream, "200 OK", XML, described.as_bytes(), head_only)
             }
             Route::Scpd(service) => {
@@ -569,6 +584,8 @@ fn controlled<C: Catalog>(
     let asking = Asking {
         catalog: shared.catalog.as_ref(),
         base: &base,
+        name: shared.shown_as(),
+        watched: &shared.watched,
     };
     let answered = std::str::from_utf8(&body)
         .ok()

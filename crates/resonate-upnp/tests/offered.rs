@@ -8,6 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use parking_lot::Mutex;
 use resonate_core::{AlbumId, ArtistId, PlaylistId, TrackId};
 use resonate_upnp::{
     AudioKind, Catalog, Entry, Field, Held, Kind, MediaServer, Offering, Opened, Page, Picture,
@@ -19,17 +20,21 @@ const LOOPBACK: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
 const HEARD_WITHIN: Duration = Duration::from_secs(5);
 
+const MODERATED_AT_LEAST: Duration = Duration::from_millis(1_800);
+
 const DIRECTORY: &str = "urn:schemas-upnp-org:service:ContentDirectory:1";
 
 const SERVER_TYPE: &str = "urn:schemas-upnp-org:device:MediaServer:1";
 
 const COVER: &[u8] = b"\xff\xd8\xff\xe0 a picture";
 
+type Listed = (PlaylistId, &'static str, Vec<TrackId>);
+
 struct Shelves {
-    songs: Vec<Song>,
+    songs: Mutex<Vec<Song>>,
     albums: Vec<(AlbumId, &'static str, ArtistId)>,
     artists: Vec<(ArtistId, &'static str)>,
-    playlists: Vec<(PlaylistId, &'static str, Vec<TrackId>)>,
+    playlists: Mutex<Vec<Listed>>,
     revision: AtomicU32,
 }
 
@@ -63,40 +68,52 @@ impl Shelves {
             track_number: Some(raw as u32),
             duration: Some(Duration::from_secs(180)),
             kind: AudioKind::Flac,
-            size: 1000,
+            size: Some(1000),
             rate: 44_100,
             channels: 2,
             bits: Some(16),
         };
         Self {
-            songs: vec![
+            songs: Mutex::new(vec![
                 song(1, "One", 1, "The Band"),
                 song(2, "Two & Three", 1, "The Band"),
                 song(3, "<Three>", 1, "The Band"),
                 song(4, "Four", 2, "The Band"),
                 song(5, "Five", 2, "The Band"),
                 song(6, "Only One", 3, "Soloist"),
-            ],
+            ]),
             albums: vec![
                 (album(1), "Album 1", artist(1)),
                 (album(2), "Album 2", artist(1)),
                 (album(3), "Solo", artist(2)),
             ],
             artists: vec![(artist(1), "The Band"), (artist(2), "Soloist")],
-            playlists: vec![(
+            playlists: Mutex::new(vec![(
                 PlaylistId::new(1).expect("an id"),
                 "Mixed",
                 vec![track(3), track(6), track(1)],
-            )],
+            )]),
             revision: AtomicU32::new(7),
         }
     }
 
+    fn songs(&self) -> Vec<Song> {
+        self.songs.lock().clone()
+    }
+
+    fn playlists(&self) -> Vec<Listed> {
+        self.playlists.lock().clone()
+    }
+
+    fn changed(&self, change: impl FnOnce(&Self)) {
+        change(self);
+        self.revision.fetch_add(1, Ordering::AcqRel);
+    }
+
     fn songs_on(&self, on: AlbumId) -> Vec<Song> {
-        self.songs
-            .iter()
+        self.songs()
+            .into_iter()
             .filter(|song| song.cover == Some(on))
-            .cloned()
             .collect()
     }
 
@@ -109,20 +126,19 @@ impl Shelves {
 
     fn songs_within(&self, within: Within) -> Vec<Song> {
         match within {
-            Within::Catalog => self.songs.clone(),
+            Within::Catalog => self.songs(),
             Within::Artist(artist) => self
-                .songs
-                .iter()
+                .songs()
+                .into_iter()
                 .filter(|song| song.artist.as_deref() == self.named(artist))
-                .cloned()
                 .collect(),
             Within::Album(on) => self.songs_on(on),
             Within::Playlist(id) => self
-                .playlists
-                .iter()
+                .playlists()
+                .into_iter()
                 .filter(|(held, ..)| *held == id)
-                .flat_map(|(_, _, listed)| listed.iter())
-                .filter_map(|id| self.songs.iter().find(|song| song.id == *id).cloned())
+                .flat_map(|(_, _, listed)| listed)
+                .filter_map(|id| self.songs().into_iter().find(|song| song.id == id))
                 .collect(),
         }
     }
@@ -250,11 +266,11 @@ impl Catalog for Shelves {
                 })
                 .collect(),
             (Kind::Playlist, Within::Catalog) => self
-                .playlists
-                .iter()
+                .playlists()
+                .into_iter()
                 .filter_map(|(id, name, _)| {
-                    let held = self.shelf(Shelf::Playlist(*id)).ok().flatten()?;
-                    Some((Entry::Shelf(held), vec![(Field::Title, Some(*name))]))
+                    let held = self.shelf(Shelf::Playlist(id)).ok().flatten()?;
+                    Some((Entry::Shelf(held), vec![(Field::Title, Some(name))]))
                 })
                 .collect(),
             (Kind::Album | Kind::Artist | Kind::Playlist, _) => Vec::new(),
@@ -301,15 +317,18 @@ impl Catalog for Shelves {
                 }
                 self.songs_on(id).into_iter().map(Entry::Song).collect()
             }
-            Shelf::Songs => self.songs.iter().cloned().map(Entry::Song).collect(),
+            Shelf::Songs => self.songs().into_iter().map(Entry::Song).collect(),
             Shelf::Playlists => self
-                .playlists
-                .iter()
-                .filter_map(|(id, ..)| self.shelf(Shelf::Playlist(*id)).ok().flatten())
+                .playlists()
+                .into_iter()
+                .filter_map(|(id, ..)| self.shelf(Shelf::Playlist(id)).ok().flatten())
                 .map(Entry::Shelf)
                 .collect(),
             Shelf::Playlist(id) => {
-                let Some((_, _, held)) = self.playlists.iter().find(|(named, ..)| *named == id)
+                let Some((_, _, held)) = self
+                    .playlists()
+                    .into_iter()
+                    .find(|(named, ..)| *named == id)
                 else {
                     return Ok(None);
                 };
@@ -337,24 +356,23 @@ impl Catalog for Shelves {
                     })
             }
             Shelf::Album(id) => self.album_held(id),
-            Shelf::Playlist(id) => {
-                self.playlists
-                    .iter()
-                    .find(|(held, ..)| *held == id)
-                    .map(|(_, name, songs)| Held {
-                        shelf,
-                        title: (*name).to_owned(),
-                        artist: None,
-                        children: songs.len() as u32,
-                        cover: None,
-                    })
-            }
+            Shelf::Playlist(id) => self
+                .playlists()
+                .into_iter()
+                .find(|(held, ..)| *held == id)
+                .map(|(_, name, songs)| Held {
+                    shelf,
+                    title: name.to_owned(),
+                    artist: None,
+                    children: songs.len() as u32,
+                    cover: None,
+                }),
             Shelf::Artists | Shelf::Albums | Shelf::Songs | Shelf::Playlists => None,
         })
     }
 
     fn song(&self, id: TrackId) -> io::Result<Option<Song>> {
-        Ok(self.songs.iter().find(|song| song.id == id).cloned())
+        Ok(self.songs().into_iter().find(|song| song.id == id))
     }
 
     fn bytes_of(&self, id: TrackId) -> io::Result<Option<Opened>> {
@@ -704,6 +722,31 @@ fn a_name_typed_is_escaped_in_the_description_and_cut_to_the_length_a_control_po
 
     assert_eq!(cut.chars().count(), 63);
     assert!(cut.chars().all(|letter| letter == 'é'));
+}
+
+fn root_title_of(name: Option<ServerName>) -> String {
+    let Started { server, .. } = started_as(name);
+    let root = browsed(discovered(&server), "0", "BrowseMetadata", 0, 0);
+    let didl = root.didl();
+    let document = Document::parse(&didl).expect("a DIDL document");
+
+    document
+        .descendants()
+        .find(|node| node.tag_name().name() == "title")
+        .and_then(|node| node.text())
+        .expect("a title")
+        .to_owned()
+}
+
+#[test]
+fn the_root_container_is_titled_by_the_name_typed_and_the_catalogs_word_where_none_was() {
+    assert_eq!(root_title_of(None), "Resonate");
+    assert_eq!(root_title_of(ServerName::new("   ")), "Resonate");
+    assert_eq!(root_title_of(ServerName::new("  Study ")), "Study");
+    assert_eq!(
+        root_title_of(ServerName::new("Kitchen <&> \"Two\"")),
+        "Kitchen <&> \"Two\""
+    );
 }
 
 #[test]
@@ -1183,6 +1226,68 @@ fn a_subscriber_is_told_of_every_change_to_the_catalog_until_it_unsubscribes() {
             .body
             .contains("<CurrentConnectionIDs>0</CurrentConnectionIDs>")
     );
+}
+
+fn evented(told: &Notified, name: &str) -> Option<String> {
+    let document = Document::parse(&told.body).expect("a property set");
+    document
+        .descendants()
+        .find(|node| node.tag_name().name() == name)
+        .map(|node| node.text().unwrap_or_default().to_owned())
+}
+
+fn containers_named(told: &Notified) -> Option<Vec<String>> {
+    let named = evented(told, "ContainerUpdateIDs")?;
+    let figures: Vec<&str> = named.split(',').filter(|part| !part.is_empty()).collect();
+    let mut pairs: Vec<String> = figures.chunks(2).map(|pair| pair.join(",")).collect();
+    pairs.sort();
+    Some(pairs)
+}
+
+#[test]
+fn a_subscriber_is_told_which_containers_it_browsed_changed_at_most_every_two_seconds() {
+    let Started {
+        server,
+        told: _told,
+        shelves,
+    } = started();
+    let at = discovered(&server);
+    for container in ["0", "playlist-1", "album-2", "artist-2"] {
+        assert_eq!(children(at, container, 0, 0).status, 200, "{container}");
+    }
+    let listener = TcpListener::bind(SocketAddr::new(LOOPBACK, 0)).expect("a callback");
+    let callback = format!(
+        "http://{}/notify",
+        listener.local_addr().expect("an address")
+    );
+
+    let subscription = subscribed(
+        at,
+        "SUBSCRIBE",
+        "ContentDirectory",
+        &format!("CALLBACK: <{callback}>\r\nNT: upnp:event\r\n"),
+    );
+    let first = notified(&listener);
+    let first_at = Instant::now();
+    shelves.changed(|shelves| shelves.playlists.lock()[0].2.reverse());
+    let reordered = notified(&listener);
+    let reordered_at = Instant::now();
+    shelves.changed(|shelves| shelves.songs.lock().retain(|song| song.id != track(5)));
+    let removed = notified(&listener);
+    let removed_at = Instant::now();
+
+    assert_eq!(subscription.status, 200);
+    assert_eq!(evented(&first, "SystemUpdateID").as_deref(), Some("7"));
+    assert_eq!(containers_named(&first), Some(Vec::new()));
+    assert_eq!(evented(&reordered, "SystemUpdateID").as_deref(), Some("8"));
+    assert_eq!(containers_named(&reordered), Some(owned(&["playlist-1,8"])));
+    assert_eq!(evented(&removed, "SystemUpdateID").as_deref(), Some("9"));
+    assert_eq!(
+        containers_named(&removed),
+        Some(owned(&["0,9", "album-2,9"]))
+    );
+    assert!(reordered_at - first_at >= MODERATED_AT_LEAST);
+    assert!(removed_at - reordered_at >= MODERATED_AT_LEAST);
 }
 
 #[test]

@@ -484,7 +484,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   are not run together (`the_catalog_is_offered_until_told_to_stop_and_byebye_is_sent` drives
   `offer` on loopback sockets, so nothing reaches the network).
 - `offer-name` (empty unless set): the name the offered catalog is shown under in a control point,
-  the description's `friendlyName` (`Config::offer_name`, a `resonate_upnp::ServerName`: trimmed,
+  the description's `friendlyName` and the root container's title (`Config::offer_name`, a `resonate_upnp::ServerName`: trimmed,
   whitespace folded, control characters dropped, cut at 63 letters, a blank one `None`; a
   non-text value costs the key alone). Empty is the catalog word, *Resonate*, as before: the
   host's name and the listener's are never read, a name going out only where it is typed into a

@@ -18,8 +18,10 @@ use crate::{
     events::{self, Subscribing},
     http,
     http::HEADERS_AT_MOST,
+    naming,
     offered::{self, Wanted},
     serve, soap, ssdp,
+    watched::Watched,
 };
 
 const SERVED_FROM: &str = "http://10.0.0.2:8200";
@@ -112,9 +114,12 @@ fn read_what_a_control_point_asks(bytes: &[u8], text: Option<&str>) {
         let Some(called) = directory::called(text, service) else {
             continue;
         };
+        let watched = Watched::default();
         let asking = Asking {
             catalog: &Nothing,
             base: SERVED_FROM,
+            name: naming::server_name(),
+            watched: &watched,
         };
         let envelope = match asking.answer(service, &called) {
             Answered::Said(envelope) => envelope,

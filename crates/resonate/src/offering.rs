@@ -407,7 +407,7 @@ fn song_of(track: &Track, album: Option<&str>) -> Option<Song> {
         track_number: track.track_number,
         duration: track.duration.map(|frames| frames.to_duration(spec.rate)),
         kind,
-        size: track.file_size,
+        size: Some(track.file_size),
         rate: spec.rate.hz(),
         channels: u16::from(spec.channels.count().get()),
         bits: track

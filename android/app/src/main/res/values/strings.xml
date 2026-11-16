@@ -1517,7 +1517,10 @@
     <string name="output_play_through">Play through</string>
     <string name="output_catalog_on_the_network">The catalog on the network</string>
     <string name="output_share_catalog">Offer the catalog on the network</string>
-    <string name="output_share_catalog_note">On, this phone\'s catalog is a UPnP and DLNA media server named Resonate: a streamer\'s app, BubbleUPnP, Kodi or VLC on this Wi-Fi can browse its artists, albums, songs and playlists and play the files as they are. Only devices on the local network are answered, nothing can be changed from them, and the phone keeps listening while the player runs. Off, nothing is announced or served.</string>
+    <string name="output_catalog_name">Name on the network</string>
+    <string name="output_catalog_name_note">What a control point lists this phone\'s catalog as. Left empty, it is Resonate.</string>
+    <string name="output_rename_catalog">Rename</string>
+    <string name="output_share_catalog_note">On, this phone\'s catalog is a UPnP and DLNA media server under the name below: a streamer\'s app, BubbleUPnP, Kodi or VLC on this Wi-Fi can browse its artists, albums, songs and playlists and play the files as they are. Only devices on the local network are answered, nothing can be changed from them, and the phone keeps listening while the player runs. Off, nothing is announced or served.</string>
     <string name="output_note">Android owns the physical route: choosing an output asks for it, and Android may still send sound elsewhere. Unless the current stream says it is exclusive or bit-perfect, Android\'s mixer may still convert what Resonate hands it.</string>
     <string name="output_playing_through">Playing through</string>
     <string name="output_pending">Asked for %1$s; Android has not moved the sound there yet</string>

@@ -821,8 +821,10 @@ shares with it, the first zone's `queue` and `resume` while it is shown;
 `Shelves` is a `resonate_upnp::Catalog` over the document catalog and the search index, so the
 boundary's `Searching` is held behind an `Arc` in `Services` and shared with it, and a song's bytes
 are read through the player's `Sources`, the granted documents included. `MobilePlayer` holds one
-`Offered` (the running `MediaServer` and the folder its UDN is kept in); the boundary's switch is
-`share_catalog_on_network(on)` and `catalog_shared_on_network()`, and `shutdown` stops it, so the
+`Offered` (the running `MediaServer`, the folder its UDN is kept in and the name typed); the
+boundary's switch is `share_catalog_on_network(on)` and `catalog_shared_on_network()`, its name
+`name_catalog_on_network(name)` (answering the name kept, empty for the catalog word, and
+restarting a running server under it), and `shutdown` stops it, so the
 server lives exactly as long as the player the service holds. The test `Harness` builds its player
 with a loopback `Offering` told to a socket it keeps (`Harness.told`), and every other test player
 with `Offered::untold`, so no host test announces anything to the network.

@@ -13,7 +13,7 @@ use resonate_codec::{ImageFormat, Sources};
 use resonate_core::{AlbumId, ArtistId, PlaylistId, TrackId, folded_letters, is_lettered};
 use resonate_upnp::{
     AudioKind, Entry, Field, Held, Kind, MediaServer, Offering, Opened, Page, Picture, Query,
-    Searched, Shelf, Shelved, Song, Test, Udn, Within,
+    Searched, ServerName, Shelf, Shelved, Song, Test, Udn, Within,
 };
 use rusqlite::OptionalExtension as _;
 
@@ -428,7 +428,7 @@ impl View {
             track_number: track.track_number,
             duration: (track.duration_ms > 0).then(|| Duration::from_millis(track.duration_ms)),
             kind: kind_of(track)?,
-            size: self.sizes.get(&track.id).copied().unwrap_or_default(),
+            size: self.sizes.get(&track.id).copied(),
             rate: track.rate,
             channels: u16::try_from(track.channels).unwrap_or(u16::MAX),
             bits: track
@@ -809,6 +809,7 @@ fn kept_udn(folder: &Path) -> Udn {
 pub(crate) struct Offered {
     kept_in: PathBuf,
     offering: Offering,
+    name: Mutex<Option<ServerName>>,
     running: Mutex<Option<MediaServer<Shelves>>>,
 }
 
@@ -821,6 +822,7 @@ impl Offered {
         Self {
             kept_in,
             offering,
+            name: Mutex::new(None),
             running: Mutex::new(None),
         }
     }
@@ -850,10 +852,16 @@ impl Offered {
         if running.is_some() {
             return Ok(());
         }
+        *running = Some(self.started(shelves)?);
+        Ok(())
+    }
+
+    fn started(&self, shelves: impl FnOnce() -> Shelves) -> Result<MediaServer<Shelves>> {
+        let name = self.name.lock().clone();
         let server = MediaServer::start(
             Arc::new(shelves()),
             kept_udn(&self.kept_in),
-            self.offering.clone(),
+            self.offering.clone().named(name),
         )
         .map_err(|source| Error::CatalogNotOffered {
             source: Box::new(source),
@@ -862,8 +870,29 @@ impl Offered {
             port = server.port(),
             "the catalog is offered on the network"
         );
-        *running = Some(server);
-        Ok(())
+        Ok(server)
+    }
+
+    fn rename(&self, typed: &str, shelves: impl FnOnce() -> Shelves) -> Result<String> {
+        let name = ServerName::new(typed);
+        let shown = name
+            .as_ref()
+            .map_or_else(String::new, |name| name.as_str().to_owned());
+        {
+            let mut kept = self.name.lock();
+            if *kept == name {
+                return Ok(shown);
+            }
+            *kept = name;
+        }
+
+        let mut running = self.running.lock();
+        let Some(stopping) = running.take() else {
+            return Ok(shown);
+        };
+        drop(stopping);
+        *running = Some(self.started(shelves)?);
+        Ok(shown)
     }
 
     fn shared(&self) -> bool {
@@ -881,20 +910,28 @@ impl Offered {
     }
 }
 
+impl MobilePlayer {
+    fn shelves_offered(&self) -> Shelves {
+        Shelves::over(
+            Arc::clone(&self.catalog),
+            Arc::clone(&self.services.searching),
+            Arc::clone(&self.sources),
+        )
+    }
+}
+
 #[uniffi::export]
 impl MobilePlayer {
     pub fn share_catalog_on_network(&self, on: bool) -> Result<()> {
-        self.offered.share(on, || {
-            Shelves::over(
-                Arc::clone(&self.catalog),
-                Arc::clone(&self.services.searching),
-                Arc::clone(&self.sources),
-            )
-        })
+        self.offered.share(on, || self.shelves_offered())
     }
 
     pub fn catalog_shared_on_network(&self) -> bool {
         self.offered.shared()
+    }
+
+    pub fn name_catalog_on_network(&self, name: String) -> Result<String> {
+        self.offered.rename(&name, || self.shelves_offered())
     }
 }
 
@@ -1164,10 +1201,24 @@ mod tests {
             .catalog
             .keep_artwork_of(&[ids["Blue Train"]], PNG, "folder", false)
             .expect("a cover kept");
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET size = NULL WHERE id = ?1",
+                [ids["Moment's Notice"] as i64],
+            )
+            .expect("a size forgotten");
         let shelves = shelves(&harness);
         let blue_train = TrackId::new(ids["Blue Train"]).expect("an id");
 
         let song = shelves.song(blue_train).expect("read").expect("a song");
+        let unsized_song = shelves
+            .song(TrackId::new(ids["Moment's Notice"]).expect("an id"))
+            .expect("read")
+            .expect("a song");
         let mut opened = shelves.bytes_of(blue_train).expect("read").expect("bytes");
         let mut served = Vec::new();
         opened.bytes.read_to_end(&mut served).expect("the bytes");
@@ -1186,7 +1237,8 @@ mod tests {
         assert_eq!(song.genre.as_deref(), Some("Jazz"));
         assert_eq!(song.track_number, Some(1));
         assert_eq!(song.kind, AudioKind::Flac);
-        assert_eq!(song.size, 4_096);
+        assert_eq!(song.size, Some(4_096));
+        assert_eq!(unsized_song.size, None);
         assert_eq!(song.duration, Some(Duration::from_secs(300)));
         assert_eq!((song.rate, song.channels, song.bits), (44_100, 2, Some(16)));
         assert_eq!(opened.kind, AudioKind::Flac);
@@ -1471,8 +1523,12 @@ mod tests {
     }
 
     fn browsed(port: u16, object: &str) -> String {
+        browsed_by(port, object, "BrowseDirectChildren")
+    }
+
+    fn browsed_by(port: u16, object: &str, flag: &str) -> String {
         let body = format!(
-            "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:Browse xmlns:u=\"{DIRECTORY}\"><ObjectID>{object}</ObjectID><BrowseFlag>BrowseDirectChildren</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>0</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"
+            "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:Browse xmlns:u=\"{DIRECTORY}\"><ObjectID>{object}</ObjectID><BrowseFlag>{flag}</BrowseFlag><Filter>*</Filter><StartingIndex>0</StartingIndex><RequestedCount>0</RequestedCount><SortCriteria></SortCriteria></u:Browse></s:Body></s:Envelope>"
         );
         let (head, answer) = fetched(
             port,
@@ -1556,6 +1612,84 @@ mod tests {
         assert!(albums.contains("Kind of Blue"), "{albums}");
         assert!(song_head.starts_with("HTTP/1.1 200"), "{song_head}");
         assert_eq!(song, written_for("blue-train.flac"));
+        assert!(!harness.player.catalog_shared_on_network());
+    }
+
+    fn named_on_the_network(port: u16) -> (String, String) {
+        let (_, described) = got(port, "/description.xml");
+        let described = String::from_utf8(described).expect("text");
+        let root = browsed_by(port, "0", "BrowseMetadata");
+        let between = |text: &str, opens: &str, closes: &str| {
+            text.split(opens)
+                .nth(1)
+                .and_then(|rest| rest.split(closes).next())
+                .expect("a name")
+                .to_owned()
+        };
+
+        (
+            between(&described, "<friendlyName>", "</friendlyName>"),
+            between(&root, "&lt;dc:title&gt;", "&lt;/dc:title&gt;"),
+        )
+    }
+
+    #[test]
+    fn a_name_typed_on_the_phone_names_the_catalog_and_its_root_on_the_network_at_once() {
+        let harness = Harness::new();
+        filed(&harness);
+
+        let kept_before = harness
+            .player
+            .name_catalog_on_network("  Kitchen \n shelf ".to_owned())
+            .expect("named");
+        harness
+            .player
+            .share_catalog_on_network(true)
+            .expect("offered");
+        let first_port = harness.player.offered.port().expect("a port");
+        let first = named_on_the_network(first_port);
+        let kept_again = harness
+            .player
+            .name_catalog_on_network("Kitchen shelf".to_owned())
+            .expect("named alike");
+        let same_port = harness.player.offered.port();
+
+        let renamed = harness
+            .player
+            .name_catalog_on_network("Study".to_owned())
+            .expect("renamed");
+        let byebye = heard(&harness, "ssdp:byebye");
+        let study = named_on_the_network(harness.player.offered.port().expect("a port"));
+        let still_shared = harness.player.catalog_shared_on_network();
+
+        let blank = harness
+            .player
+            .name_catalog_on_network("   ".to_owned())
+            .expect("named by default");
+        let unnamed = named_on_the_network(harness.player.offered.port().expect("a port"));
+        harness
+            .player
+            .share_catalog_on_network(false)
+            .expect("taken off");
+        let resting = harness
+            .player
+            .name_catalog_on_network("Den".to_owned())
+            .expect("named while resting");
+
+        assert_eq!(kept_before, "Kitchen shelf");
+        assert_eq!(
+            first,
+            ("Kitchen shelf".to_owned(), "Kitchen shelf".to_owned())
+        );
+        assert_eq!(kept_again, "Kitchen shelf");
+        assert_eq!(same_port, Some(first_port));
+        assert_eq!(renamed, "Study");
+        assert!(byebye.contains("uuid:"), "{byebye}");
+        assert_eq!(study, ("Study".to_owned(), "Study".to_owned()));
+        assert!(still_shared);
+        assert_eq!(blank, "");
+        assert_eq!(unnamed, ("Resonate".to_owned(), "Resonate".to_owned()));
+        assert_eq!(resting, "Den");
         assert!(!harness.player.catalog_shared_on_network());
     }
 }

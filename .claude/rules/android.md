@@ -505,11 +505,13 @@ it comes back (`upnp.md`'s *On the phones*).
 phones*): under *The catalog on the network*, *Offer the catalog on the network* is a switch
 (`CatalogOffering.share`, kept as `share-catalog-on-network` in the `library-features` preferences,
 off by default, and applied at `initialize` by `begin`), its note saying what a control point on the
-Wi-Fi can do with it. Kotlin holds a `WifiManager.MulticastLock` of its own (`resonate-catalog`,
+Wi-Fi can do with it. *Name on the network* is a field under it with *Rename* (`CatalogOffering.rename`,
+enabled while the text differs from the name kept; the name the boundary answers is kept as
+`offer-name` in the same preferences, empty for *Resonate*, and told by `begin` before the switch). Kotlin holds a `WifiManager.MulticastLock` of its own (`resonate-catalog`,
 apart from the renderers' and sync's) exactly while the boundary offers, read back from
 `catalogSharedOnNetwork` after every change, and released at `stop`; the server itself lives as long
 as the player the service holds (`mobile.md`). The settings search finds the page by *Offer the
-catalog on the network*, *Media server*, *UPnP* and *DLNA*.
+catalog on the network*, *Name on the network*, *Media server*, *UPnP* and *DLNA*.
 
 **The queue sheet** lists the devices that handed off (one row), History, the playing row and Up
 next, the window the repository read (`QueueView.first`, `total`; the header counts the whole queue

@@ -144,7 +144,7 @@ impl Page {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Held {
     pub shelf: Shelf,
     pub title: String,
@@ -153,7 +153,7 @@ pub struct Held {
     pub cover: Option<AlbumId>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Song {
     pub id: TrackId,
     pub title: String,
@@ -164,19 +164,19 @@ pub struct Song {
     pub track_number: Option<u32>,
     pub duration: Option<Duration>,
     pub kind: AudioKind,
-    pub size: u64,
+    pub size: Option<u64>,
     pub rate: u32,
     pub channels: u16,
     pub bits: Option<u16>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Entry {
     Shelf(Held),
     Song(Song),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Shelved {
     pub held: Vec<Entry>,
     pub total: u32,

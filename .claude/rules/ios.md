@@ -1815,7 +1815,10 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
   network* section; `upnp.md`'s *On the phones*): a toggle (`Library.shareCatalog`, kept as
   `share-catalog-on-network` in the `library-features` defaults beside `renderers`, off by default and
   applied on the renderers' lane once the player is open, `restoreCatalogShared`, reading back
-  `catalogSharedOnNetwork`). **It is offered though a free signing cannot be found**: the media
+  `catalogSharedOnNetwork`), and *Name on the network* a field beside it (prompted *Resonate*,
+  committed on submit through `Library.nameCatalog`, the name the boundary answers kept as
+  `offer-name` in the same defaults and told before the switch by `restoreCatalogShared`; the
+  settings search finds the page by it too). **It is offered though a free signing cannot be found**: the media
   server's SSDP group and announcements are multicast from the library's own socket, which needs the
   `com.apple.developer.networking.multicast` entitlement a free signing cannot carry, so such an
   iPhone serves whoever is given its address and is found by no control point. The switch stays, as

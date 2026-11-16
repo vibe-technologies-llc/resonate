@@ -158,6 +158,7 @@ const DIRECTORY_VARIABLES: &[Variable] = &[
     variable("SearchCapabilities", "string"),
     variable("SortCapabilities", "string"),
     evented("SystemUpdateID", "ui4"),
+    evented("ContainerUpdateIDs", "string"),
     variable("A_ARG_TYPE_ObjectID", "string"),
     variable("A_ARG_TYPE_Result", "string"),
     one_of(

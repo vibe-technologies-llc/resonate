@@ -177,10 +177,12 @@ impl<'a> Didl<'a> {
         }
         let _ = write!(
             self.written,
-            "<res protocolInfo=\"{}\" size=\"{}\"",
-            protocol_of(song.kind),
-            song.size
+            "<res protocolInfo=\"{}\"",
+            protocol_of(song.kind)
         );
+        if let Some(size) = song.size {
+            let _ = write!(self.written, " size=\"{size}\"");
+        }
         if let Some(duration) = song.duration {
             let _ = write!(self.written, " duration=\"{}\"", clock(duration));
         }
@@ -252,7 +254,7 @@ mod tests {
             track_number: Some(3),
             duration: Some(Duration::from_millis(3_723_045)),
             kind: AudioKind::Flac,
-            size: 1234,
+            size: Some(1234),
             rate: 96_000,
             channels: 2,
             bits: Some(24),
@@ -280,6 +282,7 @@ mod tests {
             res.text(),
             Some("http://10.0.0.2:8200/resonate/song-9.flac")
         );
+        assert_eq!(res.attribute("size"), Some("1234"));
         assert_eq!(res.attribute("duration"), Some("1:02:03.045"));
         assert_eq!(res.attribute("bitsPerSample"), Some("24"));
         assert!(
@@ -287,5 +290,25 @@ mod tests {
                 .is_some_and(|info| info.starts_with("http-get:*:audio/flac:DLNA.ORG_OP=01"))
         );
         assert!(written.contains("<upnp:albumArtURI>http://10.0.0.2:8200/cover/album-4<"));
+    }
+
+    #[test]
+    fn a_song_whose_size_is_unknown_carries_no_size_rather_than_none() {
+        let unsized_song = Song {
+            size: None,
+            ..song()
+        };
+        let mut didl = Didl::new("http://10.0.0.2:8200");
+        didl.song(&unsized_song, Object::Shelf(Shelf::Songs));
+        let written = didl.finished();
+
+        let read = document(&written, crate::Asked::Description).expect("a document");
+        let res = read
+            .descendants()
+            .find(|node| node.tag_name().name() == "res")
+            .expect("a resource");
+
+        assert_eq!(res.attribute("size"), None);
+        assert_eq!(res.attribute("sampleFrequency"), Some("96000"));
     }
 }
