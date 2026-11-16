@@ -381,8 +381,8 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
 - **The catalog is a seam, `Catalog`** (`catalog.rs`), since the crate may not see
   `resonate-library`: `shelved` (a `Shelf`'s children in a `Page`, and their `total`), `shelf` (one
   artist, album or playlist), `song`, `bytes_of` (an `Opened`: a `Read + Seek` of the file and its
-  `AudioKind`), `cover`, `searched` (one `Kind`'s rows a typed `Query` holds, in a `Page`, or
-  `Searched::Unanswered`) and `revision`, each answering `None` for a row it does not hold and its own
+  `AudioKind`), `cover`, `searched` (one `Kind`'s rows a typed `Query` holds `Within` a scope, in a
+  `Page`, or `Searched::Unanswered`) and `revision`, each answering `None` for a row it does not hold and its own
   `Failure` (logged, a SOAP `501`) where it cannot read. The binary's `offering::Shelves` fills it
   over `Library`. The crate owns the tree: the root (`0`) holds `Shelf::TOP`, Artists (an artist,
   then the albums by or holding them, then the songs), Albums, Songs and Playlists; a top shelf's
@@ -434,13 +434,21 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   any case), a property the kind does not carry (an album's genre, an artist's `upnp:artist`) is
   missing, so `=` and `contains` fail on it and `!=` and `doesNotContain` hold, and what is left is a
   `Query` (`All`, `Any`, `Text` of a `Field`, a `Test` and the text, `Present`) or settled
-  `Always`/`Never`; a kind settled `Never` is not asked. The search answers under the root, which
-  holds the four top shelves (their titles weighed in the crate, folded: `text_holds`), then
-  artists, albums, playlists and songs, the `Page` running through them in that order with
-  `TotalMatches` their sum, and under Songs, which holds songs alone; those two carry
-  `searchable="1"` (`is_searchable`), any other container is 720, a song 710, a container no row
-  holds 701. A song found is written with Songs as its parent, an album Albums, an artist Artists, a
-  playlist Playlists, as `BrowseMetadata` writes them.
+  `Always`/`Never`; a kind settled `Never` is not asked. **Every container answers a search for what
+  it holds** (`searched_under`), so every container carries `searchable="1"`: the root holds the
+  four top shelves (their titles weighed in the crate, folded: `text_holds`), then artists, albums,
+  playlists and songs, all `Within::Catalog`; Artists, Albums, Songs and Playlists hold their own
+  kind alone, `Within::Catalog`; an artist holds their albums, then their songs,
+  `Within::Artist`; an album and a playlist hold their songs, `Within::Album` and
+  `Within::Playlist`. The `Page` runs through the kinds in that order with `TotalMatches` their
+  sum, each kind in the catalog's own order. A top shelf answers its own kind alone, not the rows
+  nested further down (no songs under Albums): Songs and the root already search every song, and a
+  control point searching a shelf asks for what it lists. A song is 710, an id no row holds 701 (an artist, album or playlist is asked of `shelf` before it is
+  searched). A row found is written with the parent `BrowseMetadata` gives it, whatever container
+  was searched: a song Songs, an album Albums, an artist Artists, a playlist Playlists. `Within`
+  is the seam's only word for a scope: the crate asks only the kinds a scope holds (`Within::Album`
+  and `Within::Playlist` songs alone, `Within::Artist` albums and songs), and a catalog answers any
+  other pairing with nothing found.
 - **Eventing is GENA on `/event/<service>`** (`events.rs`): `SUBSCRIBE` with `NT: upnp:event` and a
   `CALLBACK` subscribes, with a `SID` and neither renews, `UNSUBSCRIBE` with a `SID` ends
   (`subscribing`); a `SID` beside `NT` or `CALLBACK` is 400, a `SID` the service does not hold or a
@@ -501,7 +509,13 @@ file as it is: the renderer decodes it, nothing is transcoded, and the engine pl
   letter or digit, or `Present`, is unanswered. Songs read `whole_files` by it, albums `albums` by
   its `album:` and `artist:` words, artists `artists` by `artist:`, both refusing a denial (a
   denied word over the grouped rows is not the container's own), and playlists answer `contains`
-  on their name alone (`playlists_named`). `Offered` holds the running `MediaServer` for the window (*binary.md*'s `share-catalog-on-network`), and `resonate offer` runs one with no window until interrupted (`offer::offer`).
+  on their name alone (`playlists_named`). A scope narrows the same queries the shelves browse
+  (`songs_found`): under an artist the albums are `by_the_artist`'s (by or holding them, by year)
+  and the songs `played_by` them (their own or credited, album then track), under an album
+  `on_the_album`'s songs, each with the search's text beside the narrowing; under a playlist the
+  songs are its entries narrowed by the text (`Library::playlist_entries` with it, so a saved query's
+  playlist narrows its own query) in the playlist's order, whole files alone, paged in memory
+  (`played_from_matching`), and with no text the kept list `played_from` pages. `Offered` holds the running `MediaServer` for the window (*binary.md*'s `share-catalog-on-network`), and `resonate offer` runs one with no window until interrupted (`offer::offer`).
 - **Fuzzed** with the rest of the crate (`read_what_a_network_says`): an `M-SEARCH`, a request head
   through `routed`, a GENA head (a callback taken only at the sender, a timeout inside its bounds), a
   path, an object id read back as itself, a UDN, a `Range` span inside its length, a

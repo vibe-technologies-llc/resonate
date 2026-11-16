@@ -11,7 +11,7 @@ use std::{
 use resonate_core::{AlbumId, ArtistId, PlaylistId, TrackId};
 use resonate_upnp::{
     AudioKind, Catalog, Entry, Field, Held, Kind, MediaServer, Offering, Opened, Page, Picture,
-    Query, Searched, Shelf, Shelved, Song, Test, Udn,
+    Query, Searched, Shelf, Shelved, Song, Test, Udn, Within,
 };
 use roxmltree::Document;
 
@@ -53,10 +53,10 @@ fn bytes_of(id: TrackId) -> Vec<u8> {
 
 impl Shelves {
     fn new() -> Self {
-        let song = |raw: u64, title: &str, on: u64| Song {
+        let song = |raw: u64, title: &str, on: u64, by: &str| Song {
             id: track(raw),
             title: title.to_owned(),
-            artist: Some("The Band".to_owned()),
+            artist: Some(by.to_owned()),
             album: Some(format!("Album {on}")),
             cover: Some(album(on)),
             genre: None,
@@ -70,21 +70,23 @@ impl Shelves {
         };
         Self {
             songs: vec![
-                song(1, "One", 1),
-                song(2, "Two & Three", 1),
-                song(3, "<Three>", 1),
-                song(4, "Four", 2),
-                song(5, "Five", 2),
+                song(1, "One", 1, "The Band"),
+                song(2, "Two & Three", 1, "The Band"),
+                song(3, "<Three>", 1, "The Band"),
+                song(4, "Four", 2, "The Band"),
+                song(5, "Five", 2, "The Band"),
+                song(6, "Only One", 3, "Soloist"),
             ],
             albums: vec![
                 (album(1), "Album 1", artist(1)),
                 (album(2), "Album 2", artist(1)),
+                (album(3), "Solo", artist(2)),
             ],
-            artists: vec![(artist(1), "The Band")],
+            artists: vec![(artist(1), "The Band"), (artist(2), "Soloist")],
             playlists: vec![(
                 PlaylistId::new(1).expect("an id"),
                 "Mixed",
-                vec![track(3), track(1)],
+                vec![track(3), track(6), track(1)],
             )],
             revision: AtomicU32::new(7),
         }
@@ -98,12 +100,39 @@ impl Shelves {
             .collect()
     }
 
+    fn named(&self, artist: ArtistId) -> Option<&'static str> {
+        self.artists
+            .iter()
+            .find(|(held, _)| *held == artist)
+            .map(|(_, name)| *name)
+    }
+
+    fn songs_within(&self, within: Within) -> Vec<Song> {
+        match within {
+            Within::Catalog => self.songs.clone(),
+            Within::Artist(artist) => self
+                .songs
+                .iter()
+                .filter(|song| song.artist.as_deref() == self.named(artist))
+                .cloned()
+                .collect(),
+            Within::Album(on) => self.songs_on(on),
+            Within::Playlist(id) => self
+                .playlists
+                .iter()
+                .filter(|(held, ..)| *held == id)
+                .flat_map(|(_, _, listed)| listed.iter())
+                .filter_map(|id| self.songs.iter().find(|song| song.id == *id).cloned())
+                .collect(),
+        }
+    }
+
     fn album_held(&self, id: AlbumId) -> Option<Held> {
-        let (_, title, _) = self.albums.iter().find(|(held, ..)| *held == id)?;
+        let (_, title, by) = self.albums.iter().find(|(held, ..)| *held == id)?;
         Some(Held {
             shelf: Shelf::Album(id),
             title: (*title).to_owned(),
-            artist: Some("The Band".to_owned()),
+            artist: self.named(*by).map(str::to_owned),
             children: self.songs_on(id).len() as u32,
             cover: Some(id),
         })
@@ -171,10 +200,16 @@ fn paged(entries: Vec<Entry>, page: Page) -> Shelved {
 impl Catalog for Shelves {
     type Failure = io::Error;
 
-    fn searched(&self, kind: Kind, query: &Query, page: Page) -> io::Result<Searched> {
-        let candidates: Vec<(Entry, Fields<'_>)> = match kind {
-            Kind::Song => self
-                .songs
+    fn searched(
+        &self,
+        kind: Kind,
+        within: Within,
+        query: &Query,
+        page: Page,
+    ) -> io::Result<Searched> {
+        let songs = self.songs_within(within);
+        let candidates: Vec<(Entry, Fields<'_>)> = match (kind, within) {
+            (Kind::Song, _) => songs
                 .iter()
                 .map(|song| {
                     (
@@ -188,21 +223,25 @@ impl Catalog for Shelves {
                     )
                 })
                 .collect(),
-            Kind::Album => self
+            (Kind::Album, Within::Catalog | Within::Artist(_)) => self
                 .albums
                 .iter()
-                .filter_map(|(id, title, _)| {
+                .filter(|(_, _, by)| match within {
+                    Within::Artist(artist) => *by == artist,
+                    _ => true,
+                })
+                .filter_map(|(id, title, by)| {
                     let held = self.album_held(*id)?;
                     Some((
                         Entry::Shelf(held),
                         vec![
                             (Field::Title, Some(*title)),
-                            (Field::Artist, Some("The Band")),
+                            (Field::Artist, self.named(*by)),
                         ],
                     ))
                 })
                 .collect(),
-            Kind::Artist => self
+            (Kind::Artist, Within::Catalog) => self
                 .artists
                 .iter()
                 .filter_map(|(id, name)| {
@@ -210,7 +249,7 @@ impl Catalog for Shelves {
                     Some((Entry::Shelf(held), vec![(Field::Title, Some(*name))]))
                 })
                 .collect(),
-            Kind::Playlist => self
+            (Kind::Playlist, Within::Catalog) => self
                 .playlists
                 .iter()
                 .filter_map(|(id, name, _)| {
@@ -218,6 +257,7 @@ impl Catalog for Shelves {
                     Some((Entry::Shelf(held), vec![(Field::Title, Some(*name))]))
                 })
                 .collect(),
+            (Kind::Album | Kind::Artist | Kind::Playlist, _) => Vec::new(),
         };
         let mut found = Vec::new();
         for (entry, fields) in candidates {
@@ -555,7 +595,7 @@ fn a_control_point_finds_the_server_browses_its_shelves_page_by_page_and_fetches
     assert_eq!(root.counted("UpdateID"), 7);
 
     let artists = children(at, "artists", 0, 0);
-    assert_eq!(artists.ids("container"), ["artist-1"]);
+    assert_eq!(artists.ids("container"), ["artist-1", "artist-2"]);
     let albums_of_the_artist = children(at, "artist-1", 0, 0);
     assert_eq!(
         albums_of_the_artist.ids("container"),
@@ -565,22 +605,25 @@ fn a_control_point_finds_the_server_browses_its_shelves_page_by_page_and_fetches
     assert_eq!(on_the_album.ids("item"), ["song-1", "song-2", "song-3"]);
     assert!(on_the_album.didl().contains("&lt;Three&gt;"));
     let listed = children(at, "playlist-1", 0, 0);
-    assert_eq!(listed.ids("item"), ["song-3", "song-1"]);
+    assert_eq!(listed.ids("item"), ["song-3", "song-6", "song-1"]);
 
     let mut paged = Vec::new();
     let mut from = 0;
     loop {
         let page = children(at, "songs", from, 2);
-        assert_eq!(page.counted("TotalMatches"), 5);
+        assert_eq!(page.counted("TotalMatches"), 6);
         let returned = page.counted("NumberReturned");
         assert!(returned <= 2);
         paged.extend(page.ids("item"));
         from += returned;
-        if returned == 0 || from >= 5 {
+        if returned == 0 || from >= 6 {
             break;
         }
     }
-    assert_eq!(paged, ["song-1", "song-2", "song-3", "song-4", "song-5"]);
+    assert_eq!(
+        paged,
+        ["song-1", "song-2", "song-3", "song-4", "song-5", "song-6"]
+    );
 
     let itself = browsed(at, "album-2", "BrowseMetadata", 0, 0);
     assert_eq!(itself.ids("container"), ["album-2"]);
@@ -730,11 +773,20 @@ impl Browsed {
 }
 
 fn searched_page_by_page(at: SocketAddr, criteria: &str, most: u32) -> (Vec<String>, u32) {
+    searched_within_page_by_page(at, "0", criteria, most)
+}
+
+fn searched_within_page_by_page(
+    at: SocketAddr,
+    container: &str,
+    criteria: &str,
+    most: u32,
+) -> (Vec<String>, u32) {
     let mut ids = Vec::new();
     let mut from = 0;
     loop {
-        let page = searched(at, "0", criteria, from, most);
-        assert_eq!(page.status, 200, "{criteria}: {}", page.body);
+        let page = searched(at, container, criteria, from, most);
+        assert_eq!(page.status, 200, "{container} {criteria}: {}", page.body);
         let total = page.counted("TotalMatches");
         let returned = page.counted("NumberReturned");
         assert!(returned <= most);
@@ -788,7 +840,7 @@ fn a_control_point_searches_the_catalog_by_artist_and_by_title_page_by_page() {
     assert_eq!(named_album.every_id(), ["albums", "album-1", "album-2"]);
     assert_eq!(named_album.counted("TotalMatches"), 3);
     assert_eq!(among_the_songs.counted("TotalMatches"), 0);
-    assert_eq!(everything.1, 13);
+    assert_eq!(everything.1, 16);
     assert_eq!(
         everything.0,
         [
@@ -797,14 +849,17 @@ fn a_control_point_searches_the_catalog_by_artist_and_by_title_page_by_page() {
             "songs",
             "playlists",
             "artist-1",
+            "artist-2",
             "album-1",
             "album-2",
+            "album-3",
             "playlist-1",
             "song-1",
             "song-2",
             "song-3",
             "song-4",
-            "song-5"
+            "song-5",
+            "song-6"
         ]
     );
     assert!(root.didl().contains("searchable=\"1\""));
@@ -836,24 +891,105 @@ fn a_search_the_catalog_cannot_answer_is_refused_not_answered_wrongly() {
             "{criteria:?}"
         );
     }
-    assert_eq!(
-        searched(at, "album-1", "*", 0, 0)
-            .named("errorCode")
-            .as_deref(),
-        Some("720")
-    );
-    assert_eq!(
-        searched(at, "album-99", "*", 0, 0)
-            .named("errorCode")
-            .as_deref(),
-        Some("701")
-    );
+    for unheld in ["artist-99", "album-99", "playlist-99", "song-99"] {
+        assert_eq!(
+            searched(at, unheld, "*", 0, 0)
+                .named("errorCode")
+                .as_deref(),
+            Some("701"),
+            "{unheld}"
+        );
+    }
     assert_eq!(
         searched(at, "song-1", "*", 0, 0)
             .named("errorCode")
             .as_deref(),
         Some("710")
     );
+}
+
+fn owned(ids: &[&str]) -> Vec<String> {
+    ids.iter().copied().map(str::to_owned).collect()
+}
+
+#[test]
+fn a_search_under_an_artist_an_album_a_playlist_or_a_shelf_answers_what_it_holds_page_by_page() {
+    let Started {
+        server,
+        told: _told,
+        ..
+    } = started();
+    let at = discovered(&server);
+
+    let the_band = searched_within_page_by_page(at, "artist-1", "*", 2);
+    let the_bands_with_an_o = searched(at, "artist-1", "dc:title contains \"o\"", 0, 0);
+    let the_soloist = searched_within_page_by_page(at, "artist-2", "*", 1);
+    let the_bands_songs = searched(
+        at,
+        "artist-1",
+        "upnp:class derivedfrom \"object.item.audioItem\"",
+        0,
+        0,
+    );
+    let on_the_album =
+        searched_within_page_by_page(at, "album-1", "dc:title contains \"three\"", 1);
+    let second_on_the_album = searched(at, "album-1", "dc:title contains \"three\"", 1, 1);
+    let no_album_on_the_album = searched(
+        at,
+        "album-1",
+        "upnp:class derivedfrom \"object.container\"",
+        0,
+        0,
+    );
+    let in_the_playlist = searched_within_page_by_page(at, "playlist-1", "*", 2);
+    let named_in_the_playlist = searched(at, "playlist-1", "dc:title contains \"one\"", 0, 0);
+    let among_the_artists = searched(at, "artists", "dc:title contains \"solo\"", 0, 0);
+    let among_the_albums = searched_within_page_by_page(at, "albums", "*", 2);
+    let no_song_among_the_albums =
+        searched(at, "albums", "upnp:class derivedfrom \"object.item\"", 0, 0);
+    let among_the_playlists = searched(at, "playlists", "dc:title contains \"mix\"", 0, 0);
+    let among_the_songs = searched(at, "songs", "dc:title contains \"one\"", 0, 0);
+    let an_artist = browsed(at, "artist-1", "BrowseMetadata", 0, 0);
+    let a_playlist = children(at, "playlists", 0, 0);
+
+    assert_eq!(
+        the_band,
+        (
+            owned(&[
+                "album-1", "album-2", "song-1", "song-2", "song-3", "song-4", "song-5"
+            ]),
+            7
+        )
+    );
+    assert_eq!(
+        the_bands_with_an_o.every_id(),
+        ["song-1", "song-2", "song-4"]
+    );
+    assert_eq!(the_bands_with_an_o.counted("TotalMatches"), 3);
+    assert_eq!(the_soloist, (owned(&["album-3", "song-6"]), 2));
+    assert_eq!(the_bands_songs.counted("TotalMatches"), 5);
+    assert_eq!(on_the_album, (owned(&["song-2", "song-3"]), 2));
+    assert_eq!(second_on_the_album.every_id(), ["song-3"]);
+    assert_eq!(second_on_the_album.counted("TotalMatches"), 2);
+    assert_eq!(no_album_on_the_album.counted("TotalMatches"), 0);
+    assert_eq!(in_the_playlist, (owned(&["song-3", "song-6", "song-1"]), 3));
+    assert_eq!(named_in_the_playlist.every_id(), ["song-6", "song-1"]);
+    assert_eq!(among_the_artists.every_id(), ["artist-2"]);
+    assert_eq!(
+        among_the_albums,
+        (owned(&["album-1", "album-2", "album-3"]), 3)
+    );
+    assert_eq!(no_song_among_the_albums.counted("TotalMatches"), 0);
+    assert_eq!(among_the_playlists.every_id(), ["playlist-1"]);
+    assert_eq!(among_the_songs.every_id(), ["song-1", "song-6"]);
+    assert!(the_bands_songs.didl().contains("parentID=\"songs\""));
+    assert!(
+        searched(at, "artist-1", "*", 0, 1)
+            .didl()
+            .contains("id=\"album-1\" parentID=\"albums\"")
+    );
+    assert!(an_artist.didl().contains("searchable=\"1\""));
+    assert!(a_playlist.didl().contains("searchable=\"1\""));
 }
 
 struct Notified {

@@ -10,6 +10,7 @@ use crate::{
     Action, Located, Udn, announce,
     catalog::{
         Catalog, Held, Kind, Object, Opened, Page, Picture, Query, Searched, Shelf, Shelved, Song,
+        Within,
     },
     criteria::{self, Described, RELATIONS_AT_MOST},
     description,
@@ -28,7 +29,7 @@ struct Nothing;
 impl Catalog for Nothing {
     type Failure = io::Error;
 
-    fn searched(&self, _: Kind, query: &Query, page: Page) -> io::Result<Searched> {
+    fn searched(&self, _: Kind, _: Within, query: &Query, page: Page) -> io::Result<Searched> {
         Ok(match query {
             Query::Present { .. } => Searched::Unanswered,
             _ => Searched::Found(Shelved {

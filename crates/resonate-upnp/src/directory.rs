@@ -3,7 +3,9 @@ use std::fmt::Write as _;
 use roxmltree::{Document, ParsingOptions};
 
 use crate::{
-    catalog::{AudioKind, Catalog, Entry, Held, Kind, Object, Page, Query, Searched, Shelf},
+    catalog::{
+        AudioKind, Catalog, Entry, Held, Kind, Object, Page, Query, Searched, Shelf, Within,
+    },
     criteria::{self, Criterion, Described, Reduced, SEARCH_CAPABILITIES},
     didl::{Didl, FOLDER, escaped},
     naming,
@@ -69,7 +71,6 @@ pub(crate) enum Fault {
     NoSuchContainer,
     InvalidConnection,
     UnsupportedCriteria,
-    CannotProcess,
 }
 
 impl Fault {
@@ -82,7 +83,6 @@ impl Fault {
             Self::InvalidConnection => 706,
             Self::UnsupportedCriteria => 708,
             Self::NoSuchContainer => 710,
-            Self::CannotProcess => 720,
         }
     }
 
@@ -95,7 +95,6 @@ impl Fault {
             Self::InvalidConnection => "Invalid connection reference",
             Self::UnsupportedCriteria => "Unsupported or invalid search criteria",
             Self::NoSuchContainer => "No such container",
-            Self::CannotProcess => "Cannot process the request",
         }
     }
 }
@@ -219,12 +218,13 @@ impl<C: Catalog> Asking<'_, C> {
                 Fault::UnsupportedCriteria
             })?;
         let page = page_asked(called)?;
-        let within = match container {
-            Object::Root => &SEARCHED_UNDER_THE_ROOT[..],
-            Object::Shelf(Shelf::Songs) => &SEARCHED_AMONG_THE_SONGS[..],
+        let (within, sought) = match container {
+            Object::Root => (Within::Catalog, &SEARCHED_UNDER_THE_ROOT[..]),
             Object::Shelf(shelf) => {
-                self.held(shelf)?;
-                return Err(Fault::CannotProcess);
+                if !shelf.is_top() {
+                    self.held(shelf)?;
+                }
+                (Within::of(shelf), searched_under(shelf))
             }
             Object::Song(id) => {
                 return Err(match self.catalog.song(id).map_err(failed)? {
@@ -237,13 +237,13 @@ impl<C: Catalog> Asking<'_, C> {
         let mut didl = Didl::new(self.base);
         let mut returned = 0;
         let mut total: u32 = 0;
-        for sought in within {
+        for sought in sought {
             let next = page.from.saturating_add(returned);
             let wanted = Page {
                 from: next.saturating_sub(total),
                 most: page.most - returned,
             };
-            let (taken, held) = self.sought(*sought, &criterion, wanted, &mut didl)?;
+            let (taken, held) = self.sought(*sought, within, &criterion, wanted, &mut didl)?;
             returned += taken;
             total = total.saturating_add(held);
         }
@@ -259,6 +259,7 @@ impl<C: Catalog> Asking<'_, C> {
     fn sought(
         &self,
         sought: Sought,
+        within: Within,
         criterion: &Criterion,
         page: Page,
         didl: &mut Didl<'_>,
@@ -286,7 +287,11 @@ impl<C: Catalog> Asking<'_, C> {
             Reduced::Always => Query::Everything,
             Reduced::Asks(query) => query,
         };
-        let shelved = match self.catalog.searched(kind, &query, page).map_err(failed)? {
+        let shelved = match self
+            .catalog
+            .searched(kind, within, &query, page)
+            .map_err(failed)?
+        {
             Searched::Found(shelved) => shelved,
             Searched::Unanswered => {
                 tracing::debug!(?kind, ?query, "the catalog answers no such search");
@@ -401,10 +406,14 @@ const SEARCHED_UNDER_THE_ROOT: [Sought; 8] = [
     Sought::Of(Kind::Song),
 ];
 
-const SEARCHED_AMONG_THE_SONGS: [Sought; 1] = [Sought::Of(Kind::Song)];
-
-pub(crate) const fn is_searchable(object: Object) -> bool {
-    matches!(object, Object::Root | Object::Shelf(Shelf::Songs))
+const fn searched_under(shelf: Shelf) -> &'static [Sought] {
+    match shelf {
+        Shelf::Artists => &[Sought::Of(Kind::Artist)],
+        Shelf::Albums => &[Sought::Of(Kind::Album)],
+        Shelf::Playlists => &[Sought::Of(Kind::Playlist)],
+        Shelf::Artist(_) => &[Sought::Of(Kind::Album), Sought::Of(Kind::Song)],
+        Shelf::Songs | Shelf::Album(_) | Shelf::Playlist(_) => &[Sought::Of(Kind::Song)],
+    }
 }
 
 fn object_named(called: &Called, name: &str) -> Result<Object, Fault> {

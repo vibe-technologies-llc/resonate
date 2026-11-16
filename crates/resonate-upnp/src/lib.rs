@@ -44,7 +44,7 @@ pub use crate::{
     carriage::{Carriage, Wrapping},
     catalog::{
         AudioKind, Bytes, Catalog, Entry, Field, Held, Kind, Object, Opened, Page, Picture, Query,
-        Searched, Shelf, Shelved, Song, Test,
+        Searched, Shelf, Shelved, Song, Test, Within,
     },
     error::{Action, Asked, Error, FlacOp, Result, SearchOp, ServeOp},
     feed::Feed,

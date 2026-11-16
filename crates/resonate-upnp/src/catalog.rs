@@ -259,6 +259,25 @@ pub enum Query {
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Within {
+    Catalog,
+    Artist(ArtistId),
+    Album(AlbumId),
+    Playlist(PlaylistId),
+}
+
+impl Within {
+    pub(crate) const fn of(shelf: Shelf) -> Self {
+        match shelf {
+            Shelf::Artist(id) => Self::Artist(id),
+            Shelf::Album(id) => Self::Album(id),
+            Shelf::Playlist(id) => Self::Playlist(id),
+            Shelf::Artists | Shelf::Albums | Shelf::Songs | Shelf::Playlists => Self::Catalog,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Searched {
     Found(Shelved),
@@ -268,7 +287,13 @@ pub enum Searched {
 pub trait Catalog: Send + Sync + 'static {
     type Failure: StdError + Send + Sync + 'static;
 
-    fn searched(&self, kind: Kind, query: &Query, page: Page) -> Result<Searched, Self::Failure>;
+    fn searched(
+        &self,
+        kind: Kind,
+        within: Within,
+        query: &Query,
+        page: Page,
+    ) -> Result<Searched, Self::Failure>;
 
     fn shelved(&self, shelf: Shelf, page: Page) -> Result<Option<Shelved>, Self::Failure>;
 

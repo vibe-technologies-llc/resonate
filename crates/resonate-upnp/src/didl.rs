@@ -2,10 +2,7 @@ use std::{fmt::Write as _, time::Duration};
 
 use resonate_core::AlbumId;
 
-use crate::{
-    catalog::{AudioKind, Held, Object, Shelf, Song},
-    directory,
-};
+use crate::catalog::{AudioKind, Held, Object, Shelf, Song};
 
 pub(crate) const DLNA_FEATURES: &str =
     "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000";
@@ -132,11 +129,9 @@ impl<'a> Didl<'a> {
             .map_or_else(|| NO_PARENT.to_owned(), |parent| parent.to_string());
         let _ = write!(
             self.written,
-            "<container id=\"{}\" parentID=\"{parent}\" restricted=\"1\" searchable=\"{}\" \
+            "<container id=\"{}\" parentID=\"{parent}\" restricted=\"1\" searchable=\"1\" \
              childCount=\"{}\"><dc:title>",
-            container.id,
-            u8::from(directory::is_searchable(container.id)),
-            container.children,
+            container.id, container.children,
         );
         xml_text(container.title, &mut self.written);
         let _ = write!(
