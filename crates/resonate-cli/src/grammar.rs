@@ -787,6 +787,16 @@ pub struct PlaylistArgs {
     )]
     pub replace_lossy: bool,
 
+    #[arg(
+        long,
+        value_name = "N",
+        value_delimiter = ',',
+        requires = "replace_lossy",
+        conflicts_with = "lossy",
+        help = words::grammar::playlist_args_only()
+    )]
+    pub only: Vec<NonZeroUsize>,
+
     #[command(flatten)]
     pub transport: TransportArgs,
 }

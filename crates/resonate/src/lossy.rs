@@ -1,6 +1,13 @@
-use resonate_library::{Library, Playlist, Replaceable, Replacing};
+use std::{collections::BTreeSet, num::NonZeroUsize};
 
-use crate::{error::Result, table::Table, words, words::columns};
+use resonate_library::{Library, Playlist, PlaylistName, Replaceable, Replacing};
+
+use crate::{
+    error::{Error, Result},
+    table::Table,
+    words,
+    words::columns,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Fate {
@@ -61,16 +68,42 @@ fn listed(name: &str, songs: &[Replaceable]) -> String {
     )
 }
 
-pub(crate) fn replace(library: &Library, playlist: &Playlist) -> Result<()> {
+pub(crate) fn replace(library: &Library, playlist: &Playlist, only: &[NonZeroUsize]) -> Result<()> {
     let songs = library.lossy_songs_of(playlist.id)?;
     if songs.is_empty() {
         said!("{}", words::lossy::none_lossy(&playlist.name));
         return Ok(());
     }
 
+    let songs = numbered(&playlist.name, songs, only)?;
     let settled = settle(library, &songs)?;
     said!("{}", told(&playlist.name, &settled));
     Ok(())
+}
+
+fn numbered(
+    name: &str,
+    songs: Vec<Replaceable>,
+    only: &[NonZeroUsize],
+) -> Result<Vec<Replaceable>> {
+    if only.is_empty() {
+        return Ok(songs);
+    }
+    if let Some(number) = only.iter().find(|number| number.get() > songs.len()) {
+        return Err(Error::NotALossySong {
+            playlist: PlaylistName::new(name),
+            number: *number,
+            lossy: songs.len(),
+        });
+    }
+
+    let wanted: BTreeSet<usize> = only.iter().map(|number| number.get()).collect();
+    Ok(songs
+        .into_iter()
+        .enumerate()
+        .filter(|(index, _)| wanted.contains(&(index + 1)))
+        .map(|(_, song)| song)
+        .collect())
 }
 
 pub(crate) fn settle(library: &Library, songs: &[Replaceable]) -> Result<Settled> {
@@ -94,13 +127,15 @@ pub(crate) fn settle(library: &Library, songs: &[Replaceable]) -> Result<Settled
 
 fn table_of(songs: &[Replaceable]) -> Table {
     let mut table = Table::new(vec![
+        "#",
         columns::title(),
         columns::artist(),
         columns::format(),
         columns::status(),
     ]);
-    for song in songs {
+    for (index, song) in songs.iter().enumerate() {
         table.push(vec![
+            (index + 1).to_string(),
             song.track.title.clone(),
             song.track.artist.clone().unwrap_or_default(),
             song.track.codec.as_str().to_owned(),
@@ -327,10 +362,90 @@ mod tests {
 
         let said = listed("Dark", &songs);
 
-        assert!(said.starts_with("TITLE"), "{said}");
+        assert!(said.starts_with('#'), "{said}");
+        assert!(
+            said.lines().nth(1).is_some_and(|row| row.starts_with('1')),
+            "{said}"
+        );
         assert!(said.contains("Echoes"));
         assert!(said.contains("Pink Floyd"));
         assert!(said.contains("no lossless copy held and no release to want"));
         assert!(said.ends_with("0 of 1 lossy song can be replaced now\n"));
+    }
+
+    fn nonzero(numbers: &[usize]) -> Vec<NonZeroUsize> {
+        numbers
+            .iter()
+            .map(|number| NonZeroUsize::new(*number).expect("a number from one"))
+            .collect()
+    }
+
+    fn two_with_copies() -> (Collection, Playlist) {
+        let other = [
+            (TITLE, "Fearless"),
+            (ARTIST, "Pink Floyd"),
+            (ALBUM, "Meddle"),
+        ];
+        let held = collection(&[
+            ("lossy/echoes.mp3", tagged_mp3(&TAGS)),
+            ("lossless/echoes.wav", tagged_wave(&TAGS)),
+            ("lossy/fearless.mp3", tagged_mp3(&other)),
+            ("lossless/fearless.wav", tagged_wave(&other)),
+        ]);
+        let playlist = playlist_of(&held, "Dark", &["lossy/echoes.mp3", "lossy/fearless.mp3"]);
+        (held, playlist)
+    }
+
+    #[test]
+    fn the_numbers_chosen_are_the_only_songs_replaced() {
+        let (held, playlist) = two_with_copies();
+
+        replace(&held.library, &playlist, &nonzero(&[2, 2])).expect("replaced");
+
+        assert!(held.folder.join("lossy/echoes.mp3").exists());
+        assert!(!held.folder.join("lossy/fearless.mp3").exists());
+        let left = held.library.lossy_songs_of(playlist.id).expect("a read");
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].track.title, "Echoes");
+    }
+
+    #[test]
+    fn no_number_chosen_replaces_every_song_that_can_be() {
+        let (held, playlist) = two_with_copies();
+
+        replace(&held.library, &playlist, &[]).expect("replaced");
+
+        assert!(!held.folder.join("lossy/echoes.mp3").exists());
+        assert!(!held.folder.join("lossy/fearless.mp3").exists());
+        assert!(
+            held.library
+                .lossy_songs_of(playlist.id)
+                .expect("a read")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_number_the_listing_does_not_hold_is_refused_and_nothing_is_replaced() {
+        let (held, playlist) = two_with_copies();
+
+        let refused = replace(&held.library, &playlist, &nonzero(&[1, 3])).expect_err("refused");
+
+        assert!(
+            matches!(
+                refused,
+                Error::NotALossySong { number, lossy: 2, .. } if number.get() == 3
+            ),
+            "{refused:?}"
+        );
+        assert!(held.folder.join("lossy/echoes.mp3").exists());
+        assert!(held.folder.join("lossy/fearless.mp3").exists());
+        assert_eq!(
+            held.library
+                .lossy_songs_of(playlist.id)
+                .expect("a read")
+                .len(),
+            2
+        );
     }
 }

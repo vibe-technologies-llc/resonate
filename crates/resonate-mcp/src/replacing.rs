@@ -1,8 +1,11 @@
-use resonate_library::{Library, Replaceable, Replacing};
+use std::collections::BTreeSet;
+
+use resonate_core::TrackId;
+use resonate_library::{Library, PlaylistName, Replaceable, Replacing};
 use serde_json::{Value, json};
 
 use crate::{
-    Result, catalog,
+    Error, Result, catalog,
     written::{self, AlbumTitles},
 };
 
@@ -81,9 +84,35 @@ fn lossy_song(titles: &mut AlbumTitles<'_>, song: &Replaceable) -> Result<Value>
     Ok(written)
 }
 
-pub(crate) fn replace_lossy_songs(library: &Library, name: &str) -> Result<Value> {
+fn only_the_chosen(
+    playlist: &str,
+    songs: Vec<Replaceable>,
+    chosen: Option<&[TrackId]>,
+) -> Result<Vec<Replaceable>> {
+    let Some(chosen) = chosen else {
+        return Ok(songs);
+    };
+    let held: BTreeSet<TrackId> = songs.iter().map(|song| song.track.id).collect();
+    if let Some(track) = chosen.iter().find(|track| !held.contains(track)) {
+        return Err(Error::NotALossySong {
+            playlist: PlaylistName::new(playlist),
+            track: *track,
+        });
+    }
+    let wanted: BTreeSet<TrackId> = chosen.iter().copied().collect();
+    Ok(songs
+        .into_iter()
+        .filter(|song| wanted.contains(&song.track.id))
+        .collect())
+}
+
+pub(crate) fn replace_lossy_songs(
+    library: &Library,
+    name: &str,
+    chosen: Option<&[TrackId]>,
+) -> Result<Value> {
     let found = catalog::playlist_called(library, name)?;
-    let songs = library.lossy_songs_of(found.id)?;
+    let songs = only_the_chosen(&found.name, library.lossy_songs_of(found.id)?, chosen)?;
     let chosen: Vec<Replaceable> = songs
         .iter()
         .filter(|song| song.can_be_ticked())

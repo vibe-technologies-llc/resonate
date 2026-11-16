@@ -147,7 +147,7 @@ pub(crate) fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Res
         return lossy::list(&library, &found);
     }
     if wanted.replace_lossy {
-        return lossy::replace(&library, &found);
+        return lossy::replace(&library, &found, &wanted.only);
     }
     if wanted.pin || wanted.unpin {
         library.pin_playlist(found.id, wanted.pin)?;
@@ -620,6 +620,57 @@ mod tests {
                 assert!(!taken(&arguments), "{arguments:?} was taken");
             }
         }
+    }
+
+    #[test]
+    fn only_numbers_choose_the_songs_replace_lossy_takes_and_nothing_else_takes_it() {
+        let taken = |arguments: &[&str]| Cli::try_parse_from(arguments.iter().copied()).is_ok();
+        let chosen = |arguments: &[&str]| match parsed(arguments).command {
+            Some(Sub::Playlist(wanted)) => wanted.only,
+            other => panic!("{arguments:?} is not playlist: {other:?}"),
+        };
+
+        assert!(chosen(&["resonate", "playlist", "Road", "--replace-lossy"]).is_empty());
+        assert_eq!(
+            chosen(&[
+                "resonate",
+                "playlist",
+                "Road",
+                "--replace-lossy",
+                "--only",
+                "2,5"
+            ])
+            .iter()
+            .map(|number| number.get())
+            .collect::<Vec<_>>(),
+            [2, 5]
+        );
+        assert_eq!(
+            chosen(&[
+                "resonate",
+                "playlist",
+                "Road",
+                "--replace-lossy",
+                "--only",
+                "1",
+                "--only",
+                "3"
+            ])
+            .len(),
+            2
+        );
+        assert!(!taken(&["resonate", "playlist", "Road", "--only", "1"]));
+        assert!(!taken(&[
+            "resonate", "playlist", "Road", "--lossy", "--only", "1"
+        ]));
+        assert!(!taken(&[
+            "resonate",
+            "playlist",
+            "Road",
+            "--replace-lossy",
+            "--only",
+            "0"
+        ]));
     }
 
     fn playlist_transport_of(arguments: &[&str]) -> TransportArgs {

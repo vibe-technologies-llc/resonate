@@ -148,7 +148,11 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
   takes its place, `lossless_copy` naming it; `wanted`: its `release_track_id` is wanted; `waiting`:
   already so; `unmatched`: neither), `matched` counting every lossy song and `replaceable` the ones
   `replace_lossy_songs` acts on. `replace_lossy_songs` is `Library::replace` over the songs that
-  `Replaceable::can_be_ticked`, as the window ticks them, and is `destructiveHint`: a held copy folds
+  `Replaceable::can_be_ticked`, as the window ticks them, or only the `track_ids` given (the
+  `track_id` the listing gives each song, as every other tool names a track; a duplicate counts
+  once, an empty list is `Refusal::OutOfRange`, and an id that is no lossy song of the playlist is
+  `Error::NotALossySong` with nothing replaced, `lossy` then counting the songs chosen:
+  `only_the_lossy_songs_chosen_are_replaced_and_an_unknown_one_is_refused`), and is `destructiveHint`: a held copy folds
   in at once and the lossy file goes to the trash, so it answers `replaced`, `trashed`,
   `not_trashed`, `wanted` (fetched by the next `start_poll`, which this starts nothing of),
   `already_waiting` and `left`. A song with no held copy is never trashed, and a playlist with no

@@ -3547,6 +3547,78 @@ fn a_lossy_song_with_a_lossless_copy_held_is_folded_in_and_one_with_none_is_neve
 }
 
 #[test]
+fn only_the_lossy_songs_chosen_are_replaced_and_an_unknown_one_is_refused() {
+    let tree = Tree::new();
+    let trash = Tree::new();
+    let night = tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
+    let dusk = tree.mp3("lossy/b.mp3", "Afterglow", "Dusk");
+    tree.wav("lossless/a.wav", "Night Signal", "Hours", "1");
+    let copy = tree.wav("lossless/b.wav", "Afterglow", "Dusk", "1");
+    let library = scanned(&tree);
+    library.trash_into(Some(trash.root.clone()));
+    library
+        .start_playlist(
+            "Late",
+            &[
+                Cut::whole(MediaLocation::local(&night)),
+                Cut::whole(MediaLocation::local(&dusk)),
+            ],
+        )
+        .expect("a playlist");
+    let server = server(library, Fake::default());
+    let listed = listed_lossy(&server, "Late");
+    let night_id = listed["songs"][0]["track_id"].clone();
+    let dusk_id = listed["songs"][1]["track_id"].clone();
+    let copy_id = listed["songs"][1]["lossless_copy"]["track_id"].clone();
+
+    let unknown = failed(
+        &server,
+        "replace_lossy_songs",
+        json!({ "playlist": "Late", "track_ids": [dusk_id, 999_999] }),
+    );
+    let not_lossy = failed(
+        &server,
+        "replace_lossy_songs",
+        json!({ "playlist": "Late", "track_ids": [copy_id] }),
+    );
+
+    assert!(unknown.contains("999999"), "{unknown}");
+    assert!(not_lossy.contains(&copy_id.to_string()), "{not_lossy}");
+    assert!(night.exists() && dusk.exists(), "a refused call trashed");
+    assert_eq!(
+        refused_call(
+            &server,
+            "replace_lossy_songs",
+            json!({ "playlist": "Late", "track_ids": [] })
+        ),
+        -32_602
+    );
+
+    let replaced = called(
+        &server,
+        "replace_lossy_songs",
+        json!({ "playlist": "Late", "track_ids": [dusk_id, dusk_id] }),
+    );
+
+    assert_eq!(replaced["lossy"], 1);
+    assert_eq!(replaced["replaced"], 1);
+    assert_eq!(replaced["trashed"], 1);
+    assert!(night.exists(), "a song not chosen was replaced");
+    assert!(!dusk.exists());
+    assert!(copy.exists());
+    let rows = called(&server, "playlist_tracks", json!({ "playlist": "Late" }));
+    assert_eq!(
+        rows["tracks"][1]["uri"],
+        MediaLocation::local(&copy).to_uri()
+    );
+    assert_eq!(listed_lossy(&server, "Late")["matched"], 1);
+    assert_eq!(
+        night_id,
+        listed_lossy(&server, "Late")["songs"][0]["track_id"]
+    );
+}
+
+#[test]
 fn a_lossy_song_with_a_release_and_no_copy_is_wanted_and_kept_until_one_is_held() {
     let tree = Tree::new();
     let trash = Tree::new();

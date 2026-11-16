@@ -282,6 +282,9 @@ impl Tool {
                                         none is wanted, so start_poll fetches a lossless copy, and \
                                         the lossy file stays until one is held. A song with \
                                         neither is left, and one already waiting is passed over. \
+                                        With track_ids, only those songs, a track_id that is no \
+                                        lossy song of the playlist failing the call; without, \
+                                        every lossy song. \
                                         Refused while a scan is walking the library. Needs no \
                                         player."
                 .to_owned(),
@@ -452,6 +455,10 @@ impl Tool {
             }),
             Self::ReplaceLossySongs => json!({
                 "playlist": { "type": "string", "description": "The playlist's name." },
+                "track_ids": ids(
+                    "Only these lossy songs, by the track_id playlist_lossy_songs gives each; \
+                     every lossy song that can be replaced when left out.",
+                ),
             }),
             Self::Favourites => json!({
                 "limit": limit(LISTED_BY_DEFAULT, "The most of each kind to answer with."),
@@ -815,8 +822,12 @@ impl Tool {
                 )
             }
             Self::ReplaceLossySongs => {
-                let asked: Choosing = self.taken(arguments)?;
-                replacing::replace_lossy_songs(library, &asked.playlist)
+                let asked: Replacement = self.taken(arguments)?;
+                let chosen = asked
+                    .track_ids
+                    .map(|ids| self.chosen_songs(ids))
+                    .transpose()?;
+                replacing::replace_lossy_songs(library, &asked.playlist, chosen.as_deref())
             }
             Self::Favourites => {
                 let asked: Limited = self.taken(arguments)?;
@@ -1135,6 +1146,16 @@ impl Tool {
         Ok(text)
     }
 
+    fn chosen_songs(self, ids: Vec<NonZeroU64>) -> std::result::Result<Vec<TrackId>, Refusal> {
+        if ids.is_empty() {
+            return Err(Refusal::OutOfRange {
+                tool: self,
+                field: Field("track_ids"),
+            });
+        }
+        self.track_ids(ids)
+    }
+
     fn track_ids(self, ids: Vec<NonZeroU64>) -> std::result::Result<Vec<TrackId>, Refusal> {
         Ok(self
             .capped(Field("track_ids"), ids)?
@@ -1327,6 +1348,12 @@ struct Naming {
 #[derive(Deserialize)]
 struct Choosing {
     playlist: String,
+}
+
+#[derive(Deserialize)]
+struct Replacement {
+    playlist: String,
+    track_ids: Option<Vec<NonZeroU64>>,
 }
 
 #[derive(Deserialize)]

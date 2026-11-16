@@ -1,4 +1,4 @@
-use std::{fmt, io, path::PathBuf, result};
+use std::{fmt, io, num::NonZeroUsize, path::PathBuf, result};
 
 pub use resonate_core::ConfigKey;
 use resonate_core::MediaLocation;
@@ -268,6 +268,13 @@ pub enum Error {
 
     #[error("no playlist named {0}")]
     NoSuchPlaylist(PlaylistName),
+
+    #[error("{playlist} holds {lossy} lossy songs, none numbered {number}")]
+    NotALossySong {
+        playlist: PlaylistName,
+        number: NonZeroUsize,
+        lossy: usize,
+    },
 
     #[error("the catalog holds no artist named {0}")]
     NoSuchArtist(ArtistName),

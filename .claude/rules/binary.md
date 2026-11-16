@@ -67,10 +67,16 @@ paths:
   and how it follows.
 - **A playlist's lossy songs are listed and replaced from the terminal** (`lossy.rs`, the window's
   *Replace lossy songs* sheet without its ticks, `library.md`'s *Replacing a lossy song*).
-  `playlist NAME --lossy` lists `Library::lossy_songs_of` as TITLE, ARTIST, FORMAT and STATUS
+  `playlist NAME --lossy` lists `Library::lossy_songs_of` as #, TITLE, ARTIST, FORMAT and STATUS
   (replaced by the held copy's codec, wanted, no lossless copy held and no release to want, already
   waiting) and says how many can be replaced now; `--replace-lossy` hands `Library::replace` every
-  song `Replaceable::can_be_ticked` (the window's default ticks), and says what it did in one line:
+  song `Replaceable::can_be_ticked` (the window's default ticks), or only the listing's numbers `--only`
+  names (repeatable and comma separated, `1,3`: the listing's own numbers are what a listener
+  already reads, so no title is typed or matched; `requires` `--replace-lossy` and conflicts with
+  `--lossy`), a number past the last refused whole as `NotALossySong` with nothing replaced
+  (`a_number_the_listing_does_not_hold_is_refused_and_nothing_is_replaced`,
+  `the_numbers_chosen_are_the_only_songs_replaced`, `no_number_chosen_replaces_every_song_that_can_be`),
+  and says what it did in one line, over the songs chosen:
   songs folded into a held copy, files moved to the trash (and any the trash would not take), songs
   wanted, songs already waiting and songs left. **Songs wanted are fetched by the next `resonate
   poll`**, as `import` and `playlist --refresh` leave theirs: the command starts no fetch. Neither

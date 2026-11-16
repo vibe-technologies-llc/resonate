@@ -43,6 +43,12 @@ pub enum Error {
     #[error("the catalog holds no track numbered {track}")]
     NoSuchTrack { track: TrackId },
 
+    #[error("{playlist} holds no lossy song numbered {track}")]
+    NotALossySong {
+        playlist: PlaylistName,
+        track: TrackId,
+    },
+
     #[error("{playlist} holds no row {row}")]
     NotInThePlaylist { playlist: PlaylistName, row: usize },
 
