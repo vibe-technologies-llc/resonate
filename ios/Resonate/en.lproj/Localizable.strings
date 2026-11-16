@@ -978,8 +978,8 @@
 "providers.field.username" = "Username";
 "providers.hosted" = "Ask the hosted services";
 "providers.hosted.footer" = "A Monochrome or hifi-api provider with no server address is asked at the hosted service unless this is off.";
-"providers.metered" = "Wait on a metered connection";
-"providers.metered.footer" = "Downloads pause until the network is not metered: cellular, a Personal Hotspot or Low Data Mode.";
+"providers.metered" = "Download on a metered connection";
+"providers.metered.footer" = "Off, downloads pause until the network is not metered: cellular, a Personal Hotspot or Low Data Mode.";
 "providers.missing.client" = "Missing client ID";
 "providers.missing.login" = "Missing username or password";
 "providers.missing.server" = "Missing server";
@@ -1282,7 +1282,7 @@
 "settings.providers.inner.hosted-services" = "Hosted services";
 "settings.providers.inner.server-address" = "Server address";
 "settings.providers.inner.sign-in-with-tidal" = "Sign in with TIDAL";
-"settings.providers.inner.wait-on-a-metered-connection" = "Wait on a metered connection";
+"settings.providers.inner.download-on-a-metered-connection" = "Download on a metered connection";
 "settings.providers.summary" = "Monochrome, hifi-api, Subsonic, Jellyfin and TIDAL";
 "settings.providers.title" = "Download sources";
 "settings.room-correction.inner.binaural" = "Binaural";

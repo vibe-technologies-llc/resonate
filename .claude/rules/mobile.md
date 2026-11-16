@@ -862,16 +862,18 @@ with `Range`; `android.md`'s *A download that breaks off resumes* has the whole 
 The boundary holds the same two gates as the desktop's `metered.rs`, over one `Metering` in
 `Services`: `report_connection(ConnectionMeter)` is how a phone says what its network is (`Unknown`
 where it cannot tell, which is not metered), `configure_enrich_on_metered(allowed)` (default off,
-so lookups are skipped while metered) and `configure_stall_downloads_on_metered(stalls)` (default
-off) are the two switches, and `downloads_wait_on_the_meter()` says whether a download is
+so lookups are skipped while metered) and `configure_download_on_metered(allowed)` (default
+on) are the two switches, each meaning allowed while metered as the desktop's do, and `downloads_wait_on_the_meter()` says whether a download is
 waiting. The lookup gate is on the one `Client` (`online.md`) and ends an enrichment pass
 `Offline`; `Downloads::waits_out_the_meter` holds `find` before it searches and `download` before
 each chunk, ends on a cancel, and leaves the partial for the next job to resume. A song played in
 place is not a download.
 
-Each phone reports its network and keeps the two switches (`enrich-on-metered` and
-`stall-downloads-on-metered`, both off, in the phone's own settings store, handed to the boundary at
-start and on a change). Android's default-network callback reports a network without
+Each phone reports its network and keeps the two switches (`enrich-on-metered`, off, and
+`download-on-metered`, on, in the phone's own settings store, handed to the boundary at start and on
+a change). A phone that kept the earlier `stall-downloads-on-metered` reads it the other way round
+until the switch is next changed, which writes `download-on-metered` and removes the old key (iOS's
+`MeteredDownloads`, Android's `StoredChoices.downloadOnMetered`). Android's default-network callback reports a network without
 `NET_CAPABILITY_NOT_METERED` as `Metered`, one with it as `Unmetered` and `onLost` as `Unknown`
 (`ConnectionMeters.of`); iOS's `NWPathMonitor` reports an expensive or constrained satisfied path as
 `Metered`, another satisfied path as `Unmetered` and an unsatisfied one as `Unknown`

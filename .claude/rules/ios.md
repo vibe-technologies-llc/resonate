@@ -1618,8 +1618,9 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 - **The network is reported, and downloads may wait on it**: `Features.watchNetwork`'s
   `NWPathMonitor` hands every path to `ConnectionMeters.of(satisfied:expensive:constrained:)` (an
   unsatisfied path is `Unknown`, an expensive or constrained one `Metered`, else `Unmetered`) and
-  `Features.networkChanged` calls `report_connection` with the latest. *Wait on a metered connection*
-  (`stall-downloads-on-metered`, off, Download sources) is `configure_stall_downloads_on_metered`;
+  `Features.networkChanged` calls `report_connection` with the latest. *Download on a metered connection*
+  (`download-on-metered`, on, Download sources, read and kept through `MeteredDownloads`, which reads
+  an older `stall-downloads-on-metered` the other way round) is `configure_download_on_metered`;
   the 250 ms poll reads `downloads_wait_on_the_meter()` into `DownloadQueue.waitsOnTheMeter`, and the
   Downloads screen and its summary say *Waiting for a network that is not metered*.
 - **Progress is polled every 250 ms while a job runs** (`download_progress`): a percentage where the

@@ -227,7 +227,7 @@ the export it came from is the source.
    - Each download is resumable: `.part` grows through `Ranged::opened_from`, under `Held`.
      Its total is the whole archive's (`Ranged::total`, else the length to come plus what the part
      held), so a resumed one never reads past it (`whole_size`).
-   - It waits while the download gate is shut (`stall-downloads-on-metered`).
+   - It waits while the download gate is shut (`download-on-metered` off).
    - Each archive is checked against its sum before being renamed whole and marked `.verified`.
    - A mismatch removes the part and is `Error::Checksum`.
    - A part already whole (a cancel during the checksum, a kill before the rename) is answered

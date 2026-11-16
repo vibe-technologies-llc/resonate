@@ -119,7 +119,7 @@ keys! {
     MusicbrainzMirror = "musicbrainz-mirror", off;
     MusicbrainzReplicationToken = "musicbrainz-replication-token";
     OfferMusicbrainzCopy = "offer-musicbrainz-copy", on;
-    StallDownloadsOnMetered = "stall-downloads-on-metered", off;
+    DownloadOnMetered = "download-on-metered", on;
     Study = "study", on;
     FetchLyrics = "fetch-lyrics", on;
     LyricsLanguageFromLocale = "lyrics-language-from-locale", off;

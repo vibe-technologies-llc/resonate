@@ -853,10 +853,7 @@ impl Group {
                 hint: words::settings_find::metered_hint(),
                 also_called: words::settings_find::metered_mobile_data_hotspot_tethering_bandwidth(
                 ),
-                keys: &[
-                    ConfigKey::EnrichOnMetered,
-                    ConfigKey::StallDownloadsOnMetered,
-                ],
+                keys: &[ConfigKey::EnrichOnMetered, ConfigKey::DownloadOnMetered],
             },
             Self::Lyrics => Described {
                 category: Category::Online,
@@ -1396,10 +1393,7 @@ mod tests {
         assert_eq!(Group::FlacRenderers.category(), Category::Output);
         assert_eq!(
             Group::Metered.keys(),
-            &[
-                ConfigKey::EnrichOnMetered,
-                ConfigKey::StallDownloadsOnMetered
-            ]
+            &[ConfigKey::EnrichOnMetered, ConfigKey::DownloadOnMetered]
         );
         assert_eq!(Group::FlacRenderers.keys(), &[ConfigKey::FlacAbove96kFor]);
         assert_eq!(Group::LearntFormats.category(), Category::Output);

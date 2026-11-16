@@ -170,14 +170,11 @@ impl Settings for File {
                         ConfigKey::MusicbrainzMirror.switched(None),
                     );
                 }
-                SettingChange::Store(Setting::Switched(
-                    Switch::StallDownloadsOnMetered,
-                    stalls,
-                )) => {
-                    metered::stall_downloads(*stalls);
+                SettingChange::Store(Setting::Switched(Switch::DownloadOnMetered, allowed)) => {
+                    metered::allow_downloads(*allowed);
                 }
-                SettingChange::Forget(ConfigKey::StallDownloadsOnMetered) => {
-                    metered::stall_downloads(ConfigKey::StallDownloadsOnMetered.switched(None));
+                SettingChange::Forget(ConfigKey::DownloadOnMetered) => {
+                    metered::allow_downloads(ConfigKey::DownloadOnMetered.switched(None));
                 }
                 _ => {}
             }
@@ -855,27 +852,24 @@ mod tests {
 
         file.apply(&[
             SettingChange::Store(Setting::Switched(Switch::EnrichOnMetered, true)),
-            SettingChange::Store(Setting::Switched(Switch::StallDownloadsOnMetered, true)),
+            SettingChange::Store(Setting::Switched(Switch::DownloadOnMetered, false)),
         ])
         .expect("a writable temporary directory");
         let allowed = config::load(Some(&path)).expect("the file reads back");
         file.apply(&[
             SettingChange::Forget(ConfigKey::EnrichOnMetered),
-            SettingChange::Forget(ConfigKey::StallDownloadsOnMetered),
+            SettingChange::Forget(ConfigKey::DownloadOnMetered),
         ])
         .expect("a writable temporary directory");
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
         assert!(allowed.is_on(Switch::EnrichOnMetered));
-        assert!(allowed.is_on(Switch::StallDownloadsOnMetered));
+        assert!(!allowed.is_on(Switch::DownloadOnMetered));
         assert_eq!(forgotten.switches.said(Switch::EnrichOnMetered), None);
-        assert_eq!(
-            forgotten.switches.said(Switch::StallDownloadsOnMetered),
-            None
-        );
+        assert_eq!(forgotten.switches.said(Switch::DownloadOnMetered), None);
         assert!(!forgotten.is_on(Switch::EnrichOnMetered));
-        assert!(!forgotten.is_on(Switch::StallDownloadsOnMetered));
+        assert!(forgotten.is_on(Switch::DownloadOnMetered));
     }
 
     #[test]

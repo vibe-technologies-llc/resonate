@@ -19,4 +19,17 @@ class StoredChoicesTest {
             ),
         )
     }
+
+    @Test
+    fun downloadsGoOnWhileMeteredUnlessTurnedOffAndAStallSavedBeforeReadsTheOtherWayRound() {
+        assertTrue(StoredChoices.downloadOnMetered(stored()))
+        assertFalse(StoredChoices.downloadOnMetered(stored("stall-downloads-on-metered" to true)))
+        assertTrue(StoredChoices.downloadOnMetered(stored("stall-downloads-on-metered" to false)))
+        assertFalse(StoredChoices.downloadOnMetered(stored("download-on-metered" to false)))
+        assertTrue(
+            StoredChoices.downloadOnMetered(
+                stored("stall-downloads-on-metered" to true, "download-on-metered" to true),
+            ),
+        )
+    }
 }

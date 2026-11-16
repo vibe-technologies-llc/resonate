@@ -596,16 +596,29 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   catalog's kin (`kinship::kin_from`), a command with no catalog none.
 - `history-kept`: `forever` or whole days; every command opening the catalog first forgets listens
   and skipped time older than that.
-- **`enrich-on-metered` (off) and `stall-downloads-on-metered` (off)** are read through
-  `metered.rs`: one process-wide `Metering` fed by `resonate_mpris::watch_the_meter` (started the
+- **`enrich-on-metered` (off) and `download-on-metered` (on)** are read through
+  `metered.rs`, both meaning *allowed while metered*, so the two switches read the same way round:
+  one process-wide `Metering` fed by `resonate_mpris::watch_the_meter` (started the
   first time a gate that could be shut is handed out, never for a command that asks nothing), two
   `Gate`s on it (`for_lookups` is shut while metered unless `enrich-on-metered`, handed to the one
-  `online::client`; `for_downloads` is shut while metered when `stall-downloads-on-metered`, handed
+  `online::client`; `for_downloads` is shut while metered unless `download-on-metered`, handed
   to every `open_library_with`). The settings pane's *Metered connections* group (Online) has a
-  switch for each, written as `Setting::Switched` of `Switch::EnrichOnMetered` and `Switch::StallDownloadsOnMetered`
+  switch for each, written as `Setting::Switched` of `Switch::EnrichOnMetered` and `Switch::DownloadOnMetered`
   and applied live: `settings::File::apply` calls `metered::allow_lookups` and
-  `metered::stall_downloads` (a forgotten key is the default again) on the same gates, which
-  wake what waits on them. The group says while `PollProgress::is_waiting_on_the_meter` holds that
+  `metered::allow_downloads` (a forgotten key is the default again) on the same gates, which
+  wake what waits on them.
+
+  **A retired spelling is read and never written.** `download-on-metered` was
+  `stall-downloads-on-metered`, the other way round; `config.rs`'s `RETIRED` names it with the
+  switch it became and how its value reads there (`reads_as`, here `Not::not`), so a file holding `stall-downloads-on-metered = true` reads
+  as `download-on-metered = false`. The new key wins where a file holds both, whatever their order
+  (`take_unless_said_anew`), a retired value that is not a boolean is passed over with a warning,
+  and `Editing::store` and `Editing::clear` take every retired spelling of the key out of the file
+  (`retire_the_spellings_of`), so the pane writes back the new key alone and forgetting it leaves
+  nothing behind
+  (`a_file_holding_the_stall_switch_reads_it_as_downloads_allowed_the_other_way_round`,
+  `writing_or_forgetting_the_download_switch_takes_the_stall_spelling_out_of_the_file`). A key
+  renamed later adds a row to `RETIRED`. The group says while `PollProgress::is_waiting_on_the_meter` holds that
   downloads wait. Neither key has a flag. `online = false` outranks both, and a build
   without `online` has no lookups to gate (`providers.md`, `online.md`).
 - **`musicbrainz-mirror` (off) keeps a copy of MusicBrainz on this device** (`musicbrainz.rs`,

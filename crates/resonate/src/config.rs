@@ -1075,18 +1075,67 @@ fn document(path: &Path, text: &str) -> Result<DocumentMut> {
     })
 }
 
+#[derive(Clone, Copy, Debug)]
+struct Retired {
+    spelt: &'static str,
+    became: Switch,
+    reads_as: fn(bool) -> bool,
+}
+
+const RETIRED: [Retired; 1] = [Retired {
+    spelt: "stall-downloads-on-metered",
+    became: Switch::DownloadOnMetered,
+    reads_as: std::ops::Not::not,
+}];
+
+impl Retired {
+    fn spelt(name: &str) -> Option<Self> {
+        RETIRED.into_iter().find(|retired| retired.spelt == name)
+    }
+
+    fn spellings_of(key: ConfigKey) -> impl Iterator<Item = &'static str> {
+        RETIRED
+            .into_iter()
+            .filter(move |retired| retired.became.key() == key)
+            .map(|retired| retired.spelt)
+    }
+
+    fn take_unless_said_anew(self, config: &mut Config, path: &Path, value: &Item) {
+        if config.switches.said(self.became).is_some() {
+            return;
+        }
+        match value.as_bool() {
+            Some(said) => config.switches.say(self.became, (self.reads_as)(said)),
+            None => tracing::warn!(
+                key = self.spelt,
+                path = %path.display(),
+                "ignoring a retired setting that is not true or false"
+            ),
+        }
+    }
+}
+
 fn parse(path: &Path, text: &str, mut refused: impl FnMut(Error)) -> Result<Config> {
     let document = document(path, text)?;
 
     let mut config = Config::default();
+    let mut retired = Vec::new();
     for (name, value) in document.iter() {
         let Some(key) = ConfigKey::parse(name) else {
-            tracing::warn!(key = name, path = %path.display(), "ignoring an unknown setting");
+            match Retired::spelt(name) {
+                Some(spelling) => retired.push((spelling, value)),
+                None => {
+                    tracing::warn!(key = name, path = %path.display(), "ignoring an unknown setting");
+                }
+            }
             continue;
         };
         if let Err(error) = config.take(At { path, key }, value) {
             refused(error);
         }
+    }
+    for (spelling, value) in retired {
+        spelling.take_unless_said_anew(&mut config, path, value);
     }
     Ok(config)
 }
@@ -1610,11 +1659,19 @@ pub struct Editing<'d> {
 impl Editing<'_> {
     pub fn store(&mut self, key: ConfigKey, value: impl Into<toml_edit::Value>) {
         replaced_in_place(&mut self.document[key.as_str()], value.into());
+        self.retire_the_spellings_of(key);
         self.changed = true;
     }
 
     pub fn clear(&mut self, key: ConfigKey) {
         self.changed |= self.document.remove(key.as_str()).is_some();
+        self.retire_the_spellings_of(key);
+    }
+
+    fn retire_the_spellings_of(&mut self, key: ConfigKey) {
+        for spelt in Retired::spellings_of(key) {
+            self.changed |= self.document.remove(spelt).is_some();
+        }
     }
 
     pub fn store_in_table(
@@ -3269,12 +3326,12 @@ mod tests {
         assert!(!config.is_on(Switch::EnrichAfterScan));
 
         assert!(!config.is_on(Switch::EnrichOnMetered));
-        assert!(!config.is_on(Switch::StallDownloadsOnMetered));
+        assert!(config.is_on(Switch::DownloadOnMetered));
 
-        let config = read("enrich-on-metered = true\nstall-downloads-on-metered = true")
+        let config = read("enrich-on-metered = true\ndownload-on-metered = false")
             .expect("a well formed document");
         assert!(config.is_on(Switch::EnrichOnMetered));
-        assert!(config.is_on(Switch::StallDownloadsOnMetered));
+        assert!(!config.is_on(Switch::DownloadOnMetered));
 
         let error = read("online = \"yes\"").expect_err("a string is not a boolean");
         assert!(
@@ -4387,5 +4444,56 @@ mod tests {
         );
         assert!(!withheld.is_on(Switch::OfferMusicbrainzCopy));
         assert!(offered.is_on(Switch::OfferMusicbrainzCopy));
+    }
+
+    #[test]
+    fn a_file_holding_the_stall_switch_reads_it_as_downloads_allowed_the_other_way_round() {
+        let stalled = read("stall-downloads-on-metered = true").expect("a well formed document");
+        let let_through =
+            read("stall-downloads-on-metered = false").expect("a well formed document");
+        let both = read("stall-downloads-on-metered = true\ndownload-on-metered = true")
+            .expect("a well formed document");
+        let both_the_other_order =
+            read("download-on-metered = false\nstall-downloads-on-metered = false")
+                .expect("a well formed document");
+        let mistyped = read("stall-downloads-on-metered = \"yes\"").expect("passed over");
+
+        assert_eq!(
+            stalled.switches.said(Switch::DownloadOnMetered),
+            Some(false)
+        );
+        assert_eq!(
+            let_through.switches.said(Switch::DownloadOnMetered),
+            Some(true)
+        );
+        assert!(both.is_on(Switch::DownloadOnMetered));
+        assert!(!both_the_other_order.is_on(Switch::DownloadOnMetered));
+        assert_eq!(mistyped.switches.said(Switch::DownloadOnMetered), None);
+    }
+
+    #[test]
+    fn writing_or_forgetting_the_download_switch_takes_the_stall_spelling_out_of_the_file() {
+        let folder = env::temp_dir().join(format!("resonate-config-retired-{}", process::id()));
+        let path = folder.join("config.toml");
+        fs::create_dir_all(&folder).expect("a temporary folder");
+        fs::write(&path, "online = true\nstall-downloads-on-metered = true\n")
+            .expect("an older file");
+
+        let before = load(Some(&path)).expect("the older file reads");
+        store(&path, ConfigKey::DownloadOnMetered, true).expect("written");
+        let stored = fs::read_to_string(&path).expect("the file");
+        fs::write(&path, "stall-downloads-on-metered = true\n").expect("an older file again");
+        clear(&path, ConfigKey::DownloadOnMetered).expect("forgotten");
+        let cleared = fs::read_to_string(&path).expect("the file");
+        let after = load(Some(&path)).expect("the file reads");
+        let _ = fs::remove_dir_all(&folder);
+
+        assert!(!before.is_on(Switch::DownloadOnMetered));
+        assert!(stored.contains("download-on-metered = true"));
+        assert!(!stored.contains("stall-downloads-on-metered"));
+        assert!(stored.contains("online = true"));
+        assert!(!cleared.contains("stall-downloads-on-metered"));
+        assert_eq!(after.switches.said(Switch::DownloadOnMetered), None);
+        assert!(after.is_on(Switch::DownloadOnMetered));
     }
 }

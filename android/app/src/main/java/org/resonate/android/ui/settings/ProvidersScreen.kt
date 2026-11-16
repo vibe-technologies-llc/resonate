@@ -27,14 +27,13 @@ class ProvidersViewModel(resonate: Resonate) : ViewModel() {
 
     val book = features.providerAccounts
     val hostedServices = features.hostedServices
-    val stallDownloadsOnMetered = features.stallDownloadsOnMetered
+    val downloadOnMetered = features.downloadOnMetered
 
     fun turn(id: Long, on: Boolean) = features.turnProviderAccount(id, on)
 
     fun setHostedServices(enabled: Boolean) = features.setHostedServices(enabled)
 
-    fun setStallDownloadsOnMetered(enabled: Boolean) =
-        features.setStallDownloadsOnMetered(enabled)
+    fun setDownloadOnMetered(enabled: Boolean) = features.setDownloadOnMetered(enabled)
 }
 
 @Composable
@@ -43,7 +42,7 @@ fun ProvidersScreen() {
     val navigator = LocalNavigator.current
     val book by model.book.collectAsStateWithLifecycle()
     val hostedServices by model.hostedServices.collectAsStateWithLifecycle()
-    val stallDownloadsOnMetered by model.stallDownloadsOnMetered.collectAsStateWithLifecycle()
+    val downloadOnMetered by model.downloadOnMetered.collectAsStateWithLifecycle()
     val words = words()
     Page(stringResource(R.string.providers_title)) { padding ->
         val all = book
@@ -67,14 +66,14 @@ fun ProvidersScreen() {
                     modifier = Modifier.testTag("setting-hosted-services"),
                 )
             }
-            item(key = "stall-downloads-on-metered") {
+            item(key = "download-on-metered") {
                 SwitchRow(
-                    title = stringResource(R.string.providers_stall_on_metered),
+                    title = stringResource(R.string.providers_download_on_metered),
                     icon = Icons.Rounded.SignalCellularAlt,
-                    supporting = stringResource(R.string.providers_stall_on_metered_detail),
-                    checked = stallDownloadsOnMetered,
-                    onCheckedChange = model::setStallDownloadsOnMetered,
-                    modifier = Modifier.testTag("setting-stall-downloads-on-metered"),
+                    supporting = stringResource(R.string.providers_download_on_metered_detail),
+                    checked = downloadOnMetered,
+                    onCheckedChange = model::setDownloadOnMetered,
+                    modifier = Modifier.testTag("setting-download-on-metered"),
                 )
             }
             item(key = "sources-header") { SectionHeader(stringResource(R.string.providers_yours)) }

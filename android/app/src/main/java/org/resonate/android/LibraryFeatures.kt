@@ -229,8 +229,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val online = MutableStateFlow(settings.getBoolean("online", true))
     val hostedServices = MutableStateFlow(settings.getBoolean("hosted-services", true))
     val enrichOnMetered = MutableStateFlow(settings.getBoolean("enrich-on-metered", false))
-    val stallDownloadsOnMetered =
-        MutableStateFlow(settings.getBoolean("stall-downloads-on-metered", false))
+    val downloadOnMetered = MutableStateFlow(StoredChoices.downloadOnMetered(settings::storedFlag))
     val downloadsWaitOnTheMeter = MutableStateFlow(false)
     val served = Served(library, scope, online, providerAccounts, hostedServices)
     val folders = MutableStateFlow<List<MusicFolder>>(emptyList())
@@ -428,7 +427,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         native.configureOnline(online.value)
         native.configureHostedServices(hostedServices.value)
         native.configureEnrichOnMetered(enrichOnMetered.value)
-        native.configureStallDownloadsOnMetered(stallDownloadsOnMetered.value)
+        native.configureDownloadOnMetered(downloadOnMetered.value)
         served.begin(native)
         enrichment.initialize(online.value)
         downloads.recover(native)
@@ -681,11 +680,15 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun setStallDownloadsOnMetered(enabled: Boolean) {
+    fun setDownloadOnMetered(enabled: Boolean) {
         work { native ->
-            native.configureStallDownloadsOnMetered(enabled)
-            stallDownloadsOnMetered.value = enabled
-            settings.edit().putBoolean("stall-downloads-on-metered", enabled).commit()
+            native.configureDownloadOnMetered(enabled)
+            downloadOnMetered.value = enabled
+            settings
+                .edit()
+                .putBoolean(StoredChoices.DOWNLOAD_ON_METERED, enabled)
+                .remove(StoredChoices.STALL_DOWNLOADS_ON_METERED)
+                .commit()
         }
     }
 

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import ResonateLogic
@@ -21,5 +22,27 @@ import Testing
     @Test func theWaitingLineShowsOnlyWhileDownloadsWaitOnTheMeter() {
         #expect(ConnectionMeters.line(waiting: true) == "Waiting for a network that is not metered")
         #expect(ConnectionMeters.line(waiting: false) == nil)
+    }
+
+    @Test func downloadsGoOnWhileMeteredUnlessTurnedOffAndAStallSavedBeforeReadsTheOtherWayRound() {
+        let defaults = Defaults()
+        let settings = defaults.first
+
+        let unsaid = MeteredDownloads.allowed(in: settings)
+        settings.set(true, forKey: "stall-downloads-on-metered")
+        let stalled = MeteredDownloads.allowed(in: settings)
+        settings.set(false, forKey: "stall-downloads-on-metered")
+        let letThrough = MeteredDownloads.allowed(in: settings)
+        settings.set(true, forKey: "download-on-metered")
+        settings.set(true, forKey: "stall-downloads-on-metered")
+        let theNewKeyWins = MeteredDownloads.allowed(in: settings)
+        MeteredDownloads.keep(false, in: settings)
+
+        #expect(unsaid)
+        #expect(!stalled)
+        #expect(letThrough)
+        #expect(theNewKeyWins)
+        #expect(!MeteredDownloads.allowed(in: settings))
+        #expect(settings.object(forKey: "stall-downloads-on-metered") == nil)
     }
 }

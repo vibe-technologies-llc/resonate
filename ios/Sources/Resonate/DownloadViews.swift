@@ -357,7 +357,7 @@ struct ProviderView: View {
                 Text("providers.hosted.footer")
             }
             Section {
-                Toggle(isOn: Binding(get: { library.features.stallDownloadsOnMetered }, set: { library.features.setStallDownloadsOnMetered($0) })) {
+                Toggle(isOn: Binding(get: { library.features.downloadOnMetered }, set: { library.features.setDownloadOnMetered($0) })) {
                     Text("providers.metered")
                 }
             } footer: {

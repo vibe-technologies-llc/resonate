@@ -388,8 +388,8 @@ impl MobilePlayer {
         self.services.lookups.shut_while_metered(!allowed);
     }
 
-    pub fn configure_stall_downloads_on_metered(&self, stalls: bool) {
-        self.services.downloads.shut_while_metered(stalls);
+    pub fn configure_download_on_metered(&self, allowed: bool) {
+        self.services.downloads.shut_while_metered(!allowed);
     }
 
     pub fn downloads_wait_on_the_meter(&self) -> bool {

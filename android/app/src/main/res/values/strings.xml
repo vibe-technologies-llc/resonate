@@ -934,8 +934,8 @@
     <string name="providers_intro">Songs you find in Search can be downloaded from the sources chosen here. Downloads are matched by recording codes, or by title, artist and length, and you choose the folder for each song. %1$s</string>
     <string name="providers_hosted_services">Ask the hosted services</string>
     <string name="providers_hosted_services_detail">A Monochrome or hifi-api source with no server address is asked at the hosted service unless this is off</string>
-    <string name="providers_stall_on_metered">Wait on a metered connection</string>
-    <string name="providers_stall_on_metered_detail">Downloads pause until the network is not metered</string>
+    <string name="providers_download_on_metered">Download on a metered connection</string>
+    <string name="providers_download_on_metered_detail">Off, downloads pause until the network is not metered</string>
     <string name="providers_yours">Your sources</string>
     <string name="providers_none">Add a source below to download songs.</string>
     <string name="providers_add">Add a source</string>

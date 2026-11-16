@@ -241,7 +241,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
                     .clone()
                     .unwrap_or_default(),
                 offer_musicbrainz_copy: config.is_on(Switch::OfferMusicbrainzCopy),
-                stall_downloads_on_metered: config.is_on(Switch::StallDownloadsOnMetered),
+                download_on_metered: config.is_on(Switch::DownloadOnMetered),
                 studies: config.is_on(Switch::Study),
                 lyrics: config.is_on(Switch::FetchLyrics),
                 contact: config.contact.clone().unwrap_or_default(),

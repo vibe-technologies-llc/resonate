@@ -88,7 +88,7 @@ final class Features {
         didSet { servedChanged() }
     }
     private(set) var enrichOnMetered: Bool
-    private(set) var stallDownloadsOnMetered: Bool
+    private(set) var downloadOnMetered: Bool
     var statistics: LibraryStatistics?
     var listeningDetail: ListeningDetail?
     private(set) var listeningBars: [ListeningBar] = []
@@ -231,7 +231,7 @@ final class Features {
         online = settings.object(forKey: "online") == nil ? true : settings.bool(forKey: "online")
         hostedServices = settings.object(forKey: "hosted-services") == nil ? true : settings.bool(forKey: "hosted-services")
         enrichOnMetered = settings.bool(forKey: "enrich-on-metered")
-        stallDownloadsOnMetered = settings.bool(forKey: "stall-downloads-on-metered")
+        downloadOnMetered = MeteredDownloads.allowed(in: settings)
         syncFolder = settings.string(forKey: "sync-folder")
     }
 
@@ -337,7 +337,7 @@ final class Features {
         native.configureOnline(enabled: online)
         native.configureHostedServices(enabled: hostedServices)
         native.configureEnrichOnMetered(allowed: enrichOnMetered)
-        native.configureStallDownloadsOnMetered(stalls: stallDownloadsOnMetered)
+        native.configureDownloadOnMetered(allowed: downloadOnMetered)
         together.tellName(to: native)
         Task { [weak self] in
             await self?.readSecrets()
@@ -497,12 +497,13 @@ final class Features {
         }
     }
 
-    func setStallDownloadsOnMetered(_ enabled: Bool) {
+    func setDownloadOnMetered(_ enabled: Bool) {
         work { [weak self] native in
-            native.configureStallDownloadsOnMetered(stalls: enabled)
+            native.configureDownloadOnMetered(allowed: enabled)
             await MainActor.run {
-                self?.stallDownloadsOnMetered = enabled
-                self?.settings.set(enabled, forKey: "stall-downloads-on-metered")
+                guard let self else { return }
+                self.downloadOnMetered = enabled
+                MeteredDownloads.keep(enabled, in: self.settings)
             }
         }
     }

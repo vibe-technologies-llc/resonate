@@ -375,7 +375,7 @@ impl RootView {
     pub(super) fn metered_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let online = &cx.global::<ResonateApp>().online;
         let enriches = online.enrich_on_metered;
-        let stalls = online.stall_downloads_on_metered;
+        let downloads = online.download_on_metered;
         let waiting = self.library.read(cx).is_waiting_on_the_meter();
 
         kit::rows()
@@ -391,14 +391,14 @@ impl RootView {
                 cx,
             ))
             .child(self.in_the_ring(
-                "stall-downloads-on-metered",
+                "download-on-metered",
                 switch_row(
-                    words::settings_online::hold_downloads_while_the_connection_is(),
-                    words::settings_online::off_a_providers_downloads_go_on(),
-                    stalls,
-                    "stall-downloads-on-metered",
+                    words::settings_online::download_on_a_metered_connection(),
+                    words::settings_online::off_a_providers_downloads_wait_for(),
+                    downloads,
+                    "download-on-metered",
                 ),
-                move |this, _, cx| this.set_stall_downloads_on_metered(!stalls, cx),
+                move |this, _, cx| this.set_download_on_metered(!downloads, cx),
                 cx,
             ))
             .when(waiting, |body| {
@@ -413,14 +413,11 @@ impl RootView {
         cx.notify();
     }
 
-    pub(crate) fn set_stall_downloads_on_metered(&mut self, stalls: bool, cx: &mut Context<Self>) {
+    pub(crate) fn set_download_on_metered(&mut self, downloads: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| {
-            global.online.stall_downloads_on_metered = stalls;
+            global.online.download_on_metered = downloads;
         });
-        self.store(
-            &Setting::Switched(Switch::StallDownloadsOnMetered, stalls),
-            cx,
-        );
+        self.store(&Setting::Switched(Switch::DownloadOnMetered, downloads), cx);
         cx.notify();
     }
 

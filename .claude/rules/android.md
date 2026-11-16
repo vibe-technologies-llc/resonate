@@ -1605,8 +1605,10 @@ accessibility tree while hidden. **A computer is paired by the system camera or 
 move only on an unmetered network unless mobile data is allowed. The same callback
 (`LibraryFeatures.watchNetwork`, registered at start and unregistered in `stop`) tells the boundary
 the network through `ConnectionMeters.of` and `report_connection`; *Look up on a metered connection*
-(`enrich-on-metered`, Library tools) and *Wait on a metered connection* (`stall-downloads-on-metered`,
-Download sources) are handed to `configureEnrichOnMetered` and `configureStallDownloadsOnMetered` at
+(`enrich-on-metered`, Library tools) and *Download on a metered connection* (`download-on-metered`, on,
+Download sources, read by `StoredChoices.downloadOnMetered`, which reads an older
+`stall-downloads-on-metered` the other way round) are handed to `configureEnrichOnMetered` and
+`configureDownloadOnMetered` at
 start and on a change, and `tick` reads `downloadsWaitOnTheMeter()` while a download runs so the
 download card says *Waiting for a network that is not metered* (`DownloadPlan.meterLine`). While sync runs Kotlin holds a
 `WifiManager.MulticastLock` (`CHANGE_WIFI_MULTICAST_STATE`, released when sync stops and when the

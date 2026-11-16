@@ -2410,10 +2410,12 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   applied on Enter or leaving (a positive minimum excludes tracks of unknown length); a refused number
   stays in the field and toasts; Escape restores the held value.
 - **Metered connections and the renderers' FLAC are groups of their own.** `Group::Metered` (Online)
-  is two `switch_row`s, `enrich-on-metered` and `stall-downloads-on-metered`, held in
-  `ResonateApp::online` (`Online::{enrich_on_metered, stall_downloads_on_metered}`) and applied live
+  is two `switch_row`s, `enrich-on-metered` and `download-on-metered`, each on meaning allowed
+  while metered, held in
+  `ResonateApp::online` (`Online::{enrich_on_metered, download_on_metered}`) and applied live
   by the binary from the `SettingChange` (`binary.md`); it draws a line while
-  `Library::is_waiting_on_the_meter` (the poll's `PollProgress`) holds, and its mark puts both off.
+  `Library::is_waiting_on_the_meter` (the poll's `PollProgress`) holds, and its mark puts both back
+  (lookups off, downloads on).
   `Group::FlacRenderers` (Output) is a `switch_row` per sink whose `NodeName::names_a_upnp_renderer`
   holds, then one per name in `ResonateApp::flac_above_96k_for` that no sink answers (so a renderer
   that has left can still be unnamed); it stores the whole set as `Setting::FlacAbove96kFor`, says it

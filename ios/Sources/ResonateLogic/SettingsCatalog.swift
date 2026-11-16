@@ -339,7 +339,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
                 said("settings.providers.inner.server-address"),
                 said("settings.providers.inner.sign-in-with-tidal"),
                 said("settings.providers.inner.hosted-services"),
-                said("settings.providers.inner.wait-on-a-metered-connection"),
+                said("settings.providers.inner.download-on-a-metered-connection"),
             ]
         case .server:
             [

@@ -118,7 +118,7 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   or failed before any claim is `owes_a_poll` (`a_cancelled_poll_is_not_nudged_and_owes_nothing`,
   `a_poll_nudged_before_it_was_cancelled_owes_another`). `PollProgress` keeps a lane per want asked
   (`asking_all`, `provider_of`, `received_for`).
-- **A metered connection holds a poll's downloads when `stall-downloads-on-metered` is on.**
+- **A metered connection holds a poll's downloads when `download-on-metered` is off.**
   `Library::stall_downloads_by(Gate)` (set by the binary at open from `metered::for_downloads`; the
   gate is shut only while `Meter::Metered`, so off, unknown and unmetered hold nothing). A lane waits
   in `PollProgress::waits_out_the_meter` at three places: after claiming a want and before

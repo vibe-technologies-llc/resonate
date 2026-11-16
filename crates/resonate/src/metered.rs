@@ -37,12 +37,12 @@ pub fn allow_lookups(allowed: bool) {
 }
 
 #[cfg(feature = "ui")]
-pub fn stall_downloads(stalls: bool) {
-    shut_while_metered(&DOWNLOADS, stalls);
+pub fn allow_downloads(allowed: bool) {
+    shut_while_metered(&DOWNLOADS, !allowed);
 }
 
 pub fn for_downloads(config: &Config) -> Gate {
-    shut_while_metered(&DOWNLOADS, config.is_on(Switch::StallDownloadsOnMetered));
+    shut_while_metered(&DOWNLOADS, !config.is_on(Switch::DownloadOnMetered));
     DOWNLOADS.clone()
 }
 
@@ -57,10 +57,7 @@ mod tests {
         let config = Config::default();
         let metering = Metering::new();
         let lookups = Gate::new(metering.clone(), !config.is_on(Switch::EnrichOnMetered));
-        let downloads = Gate::new(
-            metering.clone(),
-            config.is_on(Switch::StallDownloadsOnMetered),
-        );
+        let downloads = Gate::new(metering.clone(), !config.is_on(Switch::DownloadOnMetered));
 
         metering.report(Meter::Metered);
 
@@ -73,15 +70,12 @@ mod tests {
         let config = Config {
             switches: Switches::UNSAID
                 .with(Switch::EnrichOnMetered, true)
-                .with(Switch::StallDownloadsOnMetered, true),
+                .with(Switch::DownloadOnMetered, false),
             ..Config::default()
         };
         let metering = Metering::new();
         let lookups = Gate::new(metering.clone(), !config.is_on(Switch::EnrichOnMetered));
-        let downloads = Gate::new(
-            metering.clone(),
-            config.is_on(Switch::StallDownloadsOnMetered),
-        );
+        let downloads = Gate::new(metering.clone(), !config.is_on(Switch::DownloadOnMetered));
 
         metering.report(Meter::Metered);
 
