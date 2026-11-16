@@ -49,6 +49,10 @@ const VOLUME_SETTLED_BY: Duration = Duration::from_secs(1);
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
 
+fn nobody_provides() -> Registering {
+    Arc::new(|_: &Supplying<'_>| Providers::none())
+}
+
 pub(crate) struct Reaching {
     pub(crate) reference: Arc<dyn Reference>,
     pub(crate) register: Registering,
@@ -379,10 +383,28 @@ impl Driven {
             library,
             &Folder::new(),
             Corrected::uncorrected(),
-            None,
+            (None, nobody_provides()),
             None,
             Lyricists::unsourced(),
             sinks,
+        )
+    }
+
+    pub(crate) fn provided_by(
+        cx: &mut TestAppContext,
+        library: Arc<Library>,
+        folder: &Folder,
+        register: Registering,
+    ) -> Self {
+        Self::built_over(
+            cx,
+            library,
+            folder,
+            Corrected::uncorrected(),
+            (None, register),
+            None,
+            Lyricists::unsourced(),
+            Vec::new(),
         )
     }
 
@@ -400,7 +422,13 @@ impl Driven {
             library,
             folder,
             corrections,
-            reaching,
+            match reaching {
+                Some(Reaching {
+                    reference,
+                    register,
+                }) => (Some(reference), register),
+                None => (None, nobody_provides()),
+            },
             recognising,
             lyricists,
             Vec::new(),
@@ -413,23 +441,13 @@ impl Driven {
         library: Arc<Library>,
         folder: &Folder,
         corrections: Corrected,
-        reaching: Option<Reaching>,
+        (reference, register): (Option<Arc<dyn Reference>>, Registering),
         recognising: Option<Arc<Fingerprinters>>,
         lyricists: Lyricists,
         sinks: Vec<SinkInfo>,
     ) -> Self {
         cx.executor().allow_parking();
 
-        let (reference, register) = match reaching {
-            Some(Reaching {
-                reference,
-                register,
-            }) => (Some(reference), register),
-            None => {
-                let register: Registering = Arc::new(|_: &Supplying<'_>| Providers::none());
-                (None, register)
-            }
-        };
         let online = Online {
             enabled: reference.is_some() || recognising.is_some(),
             ..Online::default()

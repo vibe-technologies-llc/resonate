@@ -384,19 +384,22 @@ impl RootView {
             })
             .when(fetching.can_be_cancelled(), |actions| {
                 let cancelled = recording.clone();
-                actions.child(self.in_the_pane_ring(
-                    kit::icon_button(
-                        listing::keyed_by("cancel-download", &recording),
-                        Icon::Stop,
-                        words::root::cancel_download_hint(),
+                actions.child(
+                    self.in_the_pane_ring(
+                        kit::icon_button(
+                            listing::keyed_by("cancel-download", &recording),
+                            Icon::Stop,
+                            words::root::cancel_download_hint(),
+                        )
+                        .debug_selector(move || format!("cancel-download-{at}")),
+                        move |this, _, cx| {
+                            this.library.update(cx, |library, cx| {
+                                library.cancel_download(&cancelled, cx);
+                            });
+                        },
+                        cx,
                     ),
-                    move |this, _, cx| {
-                        this.library.update(cx, |library, cx| {
-                            library.cancel_download(&cancelled, cx);
-                        });
-                    },
-                    cx,
-                ))
+                )
             })
             .when(!fetching.is_underway(), |actions| {
                 let dismissed = recording.clone();

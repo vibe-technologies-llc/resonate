@@ -4543,6 +4543,7 @@ fn a_lossy_song_matched_on_musicbrainz_is_wanted_and_waits_while_one_with_neithe
     assert_eq!(replacing.trashed, Deleted::default());
     let wants = library.wants()?;
     assert_eq!(wants.len(), 1);
+    assert_eq!(replacing.wants, [(paired, wants[0].id)]);
     assert_eq!(wants[0].release_track, paired);
     assert_eq!(wants[0].replacing, Some(lossy.id));
     assert!(

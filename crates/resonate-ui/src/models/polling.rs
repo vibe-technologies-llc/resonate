@@ -165,6 +165,7 @@ impl LibraryModel {
             return;
         }
         self.running.checking_the_wants = true;
+        self.library.deliver_into(delivery_folder(cx));
         let library = Arc::clone(&self.library);
         self.running._due = cx.spawn(async move |this, cx| {
             let due = cx

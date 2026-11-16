@@ -422,8 +422,9 @@ fn settled(
                     ],
                 )
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
-            elsewhere::rearmed(transaction, row, now)?;
+            let want = elsewhere::rearmed(transaction, row, now)?;
             settled.replacing.wanted += 1;
+            settled.replacing.wants.push((row, want));
         } else {
             settled.replacing.unmatched += 1;
         }

@@ -1967,7 +1967,13 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   (`keep_the_lossy_songs`); *Replace N songs* (greyed at none) closes the sheet and calls
   `LibraryModel::replace_lossy_songs`: `Library::replace` on the background executor, a toast from
   `replaced_now` (*1 song replaced, 2 songs wanted*), `fetch_or_say_nobody_can` where anything was
-  wanted, an `AlreadyWalking` said as another task running, then an `Everything` read. **A fold
+  wanted, an `AlreadyWalking` said as another task running, then an `Everything` read. Each want
+  it placed (`Replacing::wants`) is read back on the same background task and listed in the
+  Downloads panel at once (`list_the_replacements_wanted`: `downloads::found_of` the want, then
+  `landing` and `wanted`, as `list_as_downloads` does for an album's rows), so it stands there in
+  the session that placed it and its *Cancel* is there to press; a want whose row has no recording
+  MBID is not listed, the panel being keyed by recording
+  (`a_lossy_song_wanted_again_stands_in_the_downloads_and_its_cancel_keeps_the_song`). **A fold
   moves the zones' queues as organise's moves do**: every `Fold` that `replace`, a scan the window
   started or a poll it ran names (`Replacing::folds`, `ScanSummary::replaced`,
   `PollSummary::replaced`) goes into the model's relocations through `folds_moved`, which the root

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use resonate_core::{MediaLocation, ReleaseTrackId, TrackId};
+use resonate_core::{MediaLocation, ReleaseTrackId, TrackId, WantId};
 use rusqlite::{OptionalExtension as _, ToSql, Transaction, params};
 
 use crate::{
@@ -30,6 +30,7 @@ pub struct Replacing {
     pub unmatched: u64,
     pub trashed: Deleted,
     pub folds: Vec<Fold>,
+    pub wants: Vec<(ReleaseTrackId, WantId)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
