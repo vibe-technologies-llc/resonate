@@ -481,6 +481,16 @@ one at a time on `LibraryFeatures`' scope through `holding`, never the ordered w
 lasts up to a minute and a half) and *Forget* (`forgetWhatItPlays`), showing each trial's sentence as
 it comes back (`upnp.md`'s *On the phones*).
 
+**The catalog is offered on the network from the *Audio output* page** (`upnp.md`'s *On the
+phones*): under *The catalog on the network*, *Offer the catalog on the network* is a switch
+(`CatalogOffering.share`, kept as `share-catalog-on-network` in the `library-features` preferences,
+off by default, and applied at `initialize` by `begin`), its note saying what a control point on the
+Wi-Fi can do with it. Kotlin holds a `WifiManager.MulticastLock` of its own (`resonate-catalog`,
+apart from the renderers' and sync's) exactly while the boundary offers, read back from
+`catalogSharedOnNetwork` after every change, and released at `stop`; the server itself lives as long
+as the player the service holds (`mobile.md`). The settings search finds the page by *Offer the
+catalog on the network*, *Media server*, *UPnP* and *DLNA*.
+
 **The queue sheet** lists the devices that handed off (one row), History, the playing row and Up
 next, the window the repository read (`QueueView.first`, `total`; the header counts the whole queue
 and a jump or move adds `first`), each end a row counting the rest (`queue_earlier`, `queue_more`)
