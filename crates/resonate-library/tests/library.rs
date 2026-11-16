@@ -37,8 +37,8 @@ use resonate_library::{
     ArtistLink, ArtistMatch, ArtistOrder, ArtistPressings, ArtistProfile, ArtistQuery,
     ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, ChosenVersion, Codec,
     Compacted, CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography,
-    Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form,
-    Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HiddenTracks, HistoryKept,
+    Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Fold,
+    Form, Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HiddenTracks, HistoryKept,
     ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, KEPT_IN_STEP_EVERY, KeepStopped,
     KeepSummary, Kept, KeptList, KeptSong, Layout, Learning, Library, LifeSpan, Link, LinkNames,
     Linked, LinkedPlaylist, LinkedProfile, ListedSong, Listen, ListeningService, LookupOp, Love,
@@ -48,7 +48,7 @@ use resonate_library::{
     PollHandle, PollOptions, PollProgress, PollSummary, Popularity, ProfileLink, ProfilePlaylist,
     Pruned, RETRY_WAITS, Rated, Recording, RecordingAsked, RecordingMatch, RecordingRelease,
     Reference, Refusal, Refused, Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
-    ReleaseTrack, Removal, Replaceable, Result, RetagOptions, RetagSummary, RowOrder,
+    ReleaseTrack, Removal, Replaceable, Replaced, Result, RetagOptions, RetagSummary, RowOrder,
     SUBMITTED_AT_ONCE, SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service,
     SheetEdit, SheetField, SheetScope, Sidecar, SongLink, SongToKeep, SongsAsked, SortOrder,
     Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet,
@@ -4460,6 +4460,13 @@ fn a_lossy_song_with_a_lossless_copy_held_is_replaced_at_once_and_its_history_go
         "{replacing:?}"
     );
     assert_eq!(replacing.trashed.files, 1);
+    assert_eq!(
+        replacing.folds,
+        [Fold {
+            taken: MediaLocation::local(&opus),
+            kept: MediaLocation::local(&flac),
+        }]
+    );
     let kept = the_row_at(&library, &flac)?;
     assert_eq!(kept.plays, 3);
     assert!(kept.favourite.is_some(), "the favourite stayed behind");
@@ -4882,7 +4889,7 @@ fn a_lossless_copy_delivered_for_a_replacement_takes_the_lossy_songs_place() -> 
 
     let settled = library.settle_replacements()?;
 
-    assert_eq!(settled.files, 1, "{settled:?}");
+    assert_eq!(settled.trashed.files, 1, "{settled:?}");
     let kept = the_row_at(&library, &flac)?;
     assert_eq!(kept.plays, 2);
     let cuts = library.playlist_cuts(waiting.playlist)?;
@@ -4926,8 +4933,16 @@ fn a_lossless_copy_holding_the_same_recording_takes_the_lossy_songs_place() -> R
         return Ok(());
     };
 
-    scan(&library, &options(&tree))?;
+    let scanned = library.scan(options(&tree))?.join()?;
 
+    assert_eq!(
+        scanned.replaced.folds,
+        [Fold {
+            taken: MediaLocation::local(&opus),
+            kept: MediaLocation::local(&flac),
+        }],
+        "the scan kept quiet about the fold"
+    );
     assert!(!opus.exists(), "the scan left the lossy song in place");
     assert!(trashed(&data, "A.opus"));
     assert_eq!(the_row_at(&library, &flac)?.plays, 2);
@@ -4952,7 +4967,7 @@ fn a_lossless_copy_named_alike_alone_never_replaces_a_song_unattended() -> Resul
 
     let settled = library.settle_replacements()?;
 
-    assert_eq!(settled, Deleted::default());
+    assert_eq!(settled, Replaced::default());
     assert!(still_pending(&library, &waiting)?);
     assert!(opus.exists());
     assert!(flac.exists());
@@ -4978,7 +4993,7 @@ fn a_lossy_copy_offered_for_a_replacement_is_never_taken_for_it() -> Result<()> 
 
     let settled = library.settle_replacements()?;
 
-    assert_eq!(settled, Deleted::default());
+    assert_eq!(settled, Replaced::default());
     assert!(still_pending(&library, &waiting)?);
     assert!(opus.exists());
     assert!(other.exists());
@@ -5015,7 +5030,7 @@ fn a_settle_while_another_pass_walks_the_tree_leaves_the_replacement_for_the_nex
         reaches.recv().expect("the deletion reached the trash");
 
         let refused = library.settle_replacements()?;
-        assert_eq!(refused, Deleted::default());
+        assert_eq!(refused, Replaced::default());
 
         lift.send(()).expect("the deletion still waits");
         deleting.join().expect("the deletion finished")?;
@@ -5034,7 +5049,7 @@ fn a_settle_while_another_pass_walks_the_tree_leaves_the_replacement_for_the_nex
     lift.send(()).expect("the trash waits for the next");
     let settled = library.settle_replacements()?;
 
-    assert_eq!(settled.files, 1, "{settled:?}");
+    assert_eq!(settled.trashed.files, 1, "{settled:?}");
     assert!(!opus.exists());
     assert_eq!(the_row_at(&library, &flac)?.plays, 2);
     assert!(replacements_of(&database, waiting.lossy.id).is_empty());
@@ -5080,7 +5095,7 @@ fn a_cancelled_scan_settles_no_replacement() -> Result<()> {
     );
     assert!(opus.exists());
     assert_eq!(the_row_at(&library, &flac)?.plays, 0);
-    assert_eq!(library.settle_replacements()?.files, 1);
+    assert_eq!(library.settle_replacements()?.trashed.files, 1);
     assert!(!opus.exists());
     Ok(())
 }
@@ -5124,7 +5139,7 @@ fn a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_hold
     assert_ne!(again, waiting.row, "the release was not landed again");
     assert_eq!(replacements_of(&database, waiting.lossy.id), [None]);
 
-    assert_eq!(library.settle_replacements()?, Deleted::default());
+    assert_eq!(library.settle_replacements()?, Replaced::default());
 
     assert_eq!(
         replacements_of(&database, waiting.lossy.id),
@@ -5158,7 +5173,7 @@ fn a_replacement_whose_match_is_forgotten_waits_unpending_and_rejoins_once_match
     assert!(library.forget_the_match(album)?);
     assert_eq!(replacements_of(&database, waiting.lossy.id), [None]);
 
-    assert_eq!(library.settle_replacements()?, Deleted::default());
+    assert_eq!(library.settle_replacements()?, Replaced::default());
 
     assert_eq!(
         replacements_of(&database, waiting.lossy.id),
@@ -5170,7 +5185,7 @@ fn a_replacement_whose_match_is_forgotten_waits_unpending_and_rejoins_once_match
     assert_eq!(the_row_at(&library, &opus)?.plays, 2);
 
     let again = paired_as_the_recording(&library, &waiting.lossy, None, RELEASE)?;
-    assert_eq!(library.settle_replacements()?, Deleted::default());
+    assert_eq!(library.settle_replacements()?, Replaced::default());
 
     assert_eq!(
         replacements_of(&database, waiting.lossy.id),
@@ -5220,7 +5235,7 @@ fn a_lossless_copy_on_another_album_keeps_its_own_row_and_leaves_the_lossy_songs
 
     let settled = library.settle_replacements()?;
 
-    assert_eq!(settled.files, 1, "{settled:?}");
+    assert_eq!(settled.trashed.files, 1, "{settled:?}");
     let held_own = library
         .release_tracks(live_album)?
         .into_iter()
@@ -5300,7 +5315,7 @@ fn a_replacement_whose_row_another_song_now_holds_is_never_settled_by_that_rows_
 
     assert_eq!(
         settled,
-        Deleted::default(),
+        Replaced::default(),
         "a different song took its place"
     );
     assert!(opus.exists());
@@ -5382,7 +5397,7 @@ fn a_vaulted_copy_whose_object_is_gone_never_replaces_a_lossy_song() -> Result<(
 
     let settled = library.settle_replacements()?;
 
-    assert_eq!(settled, Deleted::default(), "{settled:?}");
+    assert_eq!(settled, Replaced::default(), "{settled:?}");
     assert!(opus.exists());
     assert!(library.track(waiting.lossy.id)?.is_some());
     assert!(still_pending(&library, &waiting)?);
@@ -5455,7 +5470,7 @@ fn a_replacement_rejoining_a_row_whose_want_delivered_the_lossy_song_wants_it_ag
         )
         .expect("the want names the lossy delivery");
 
-    assert_eq!(library.settle_replacements()?, Deleted::default());
+    assert_eq!(library.settle_replacements()?, Replaced::default());
 
     let wants = library.wants()?;
     assert_eq!(wants.len(), 1, "{wants:?}");
@@ -30173,7 +30188,7 @@ fn a_replacement_is_never_asked_of_a_last_resort() -> Result<()> {
         "a last resort was asked for a lossless copy"
     );
     assert_eq!(summary.stats.offered, 0, "{summary:?}");
-    assert_eq!(summary.replaced, Deleted::default());
+    assert_eq!(summary.replaced, Replaced::default());
     assert!(opus.exists());
     assert!(still_pending(&library, &waiting)?);
     Ok(())
@@ -30218,7 +30233,7 @@ fn a_lossy_delivery_for_a_replacement_is_refused_and_the_next_provider_asked() -
         "{summary:?}"
     );
     assert_eq!((one.asked().len(), two.asked().len()), (1, 1));
-    assert_eq!(summary.replaced.files, 1, "{summary:?}");
+    assert_eq!(summary.replaced.trashed.files, 1, "{summary:?}");
     let mut kept = Vec::new();
     for object in library.vault_objects()? {
         kept.extend(library.track_at(&object.path, None)?);
@@ -30264,9 +30279,16 @@ fn a_lossless_delivery_filed_in_the_music_folder_replaces_the_lossy_song_at_the_
         .join()?;
 
     assert_eq!(summary.stats.kept, 1, "{summary:?}");
-    assert_eq!(summary.replaced.files, 1, "{summary:?}");
+    assert_eq!(summary.replaced.trashed.files, 1, "{summary:?}");
     let filed = files_named(tree.path(), "flac");
     assert_eq!(filed.len(), 1, "{filed:?}");
+    assert_eq!(
+        summary.replaced.folds,
+        [Fold {
+            taken: MediaLocation::local(&opus),
+            kept: MediaLocation::local(&filed[0]),
+        }]
+    );
     named_only_by_the_playlist(&library, &waiting, &filed[0])?;
     assert_eq!(the_row_at(&library, &filed[0])?.plays, 2);
     assert!(!opus.exists());
@@ -30311,7 +30333,7 @@ fn a_replacement_with_neither_a_vault_nor_a_music_folder_is_never_asked_of_a_pro
         (0, 0, 0, 0),
         "{summary:?}"
     );
-    assert_eq!(summary.replaced, Deleted::default());
+    assert_eq!(summary.replaced, Replaced::default());
     assert_eq!(library.wants()?[0].offered, None);
     assert!(still_pending(&library, &waiting)?);
     assert!(opus.exists());
@@ -30340,7 +30362,7 @@ fn a_lossy_file_filed_for_a_replacement_is_taken_away_and_refused() -> Result<()
         .join()?;
 
     assert_eq!(summary.stats.kept, 0, "{summary:?}");
-    assert_eq!(summary.replaced, Deleted::default());
+    assert_eq!(summary.replaced, Replaced::default());
     assert_eq!(
         every_file_under(tree.path()),
         before,

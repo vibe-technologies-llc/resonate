@@ -179,7 +179,7 @@ pub use crate::{
         wikipedia_urls,
     },
     renamed::NamesMoved,
-    replacing::{Replaceable, Replacing},
+    replacing::{Fold, Replaceable, Replaced, Replacing},
     retag::{
         PassedOver, RetagOptions, RetagProgress, RetagStats, RetagSummary, Retagging, Unwritten,
         Written,

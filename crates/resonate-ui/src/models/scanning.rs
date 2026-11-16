@@ -5,7 +5,9 @@ use resonate_library::{Layout, OrganiseOptions};
 
 use super::{
     Change, Edited, LibraryModel, POLLS_PER_RELOAD, Pass, Prompted, Reading, RootWaiting,
-    SCAN_POLL, ToFile, Wanted, Work, told::scanned, watched::walk,
+    SCAN_POLL, ToFile, Wanted, Work,
+    told::{folds_moved, scanned},
+    watched::walk,
 };
 use crate::{toast, words};
 
@@ -213,6 +215,9 @@ impl LibraryModel {
                 this.take_up_what_waited(cx);
                 match handle.join() {
                     Ok(summary) => {
+                        this.passes
+                            .relocated
+                            .extend(folds_moved(&summary.replaced.folds));
                         if let Some(notice) = scanned(&summary, prompted) {
                             toast::tell(notice, cx);
                         }

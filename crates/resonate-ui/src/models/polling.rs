@@ -9,7 +9,8 @@ use resonate_providers::Providers;
 
 use super::{
     Followed, LibraryModel, Notice, OWED_ASKED_AGAIN_AFTER, Prompted, SCAN_POLL, Work,
-    delivery_folder, told::polled,
+    delivery_folder,
+    told::{folds_moved, polled},
 };
 use crate::{
     ResonateApp,
@@ -258,6 +259,9 @@ impl LibraryModel {
                 }
                 match joined {
                     Ok(summary) => {
+                        this.passes
+                            .relocated
+                            .extend(folds_moved(&summary.replaced.folds));
                         if summary.stats.kept > 0 {
                             this.enrich_new_songs(cx);
                         }

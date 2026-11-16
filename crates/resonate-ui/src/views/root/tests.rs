@@ -1260,6 +1260,59 @@ mod driven {
         });
     }
 
+    fn queued_at(driven: &mut Driven) -> Vec<resonate_core::MediaLocation> {
+        driven.read(|root, cx| {
+            root.player
+                .read(cx)
+                .queue()
+                .iter()
+                .map(|item| item.location.clone())
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn a_queued_lossy_song_plays_from_its_lossless_copy_once_replaced(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (Some(opus), Some(flac)) = (
+            encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"]),
+            encoded_as_echoes(&folder, "A.flac", &["-c:a", "flac"]),
+        ) else {
+            return;
+        };
+        let trash = Folder::new();
+        let library = catalog();
+        library.trash_into(Some(trash.path().to_path_buf()));
+        Driven::scanned(&library, &folder);
+        let lossy = resonate_core::MediaLocation::local(&opus);
+        let road_trip = library
+            .start_playlist("Road trip", &[Cut::whole(lossy.clone())])
+            .expect("a playlist holding the lossy copy");
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        driven.play(&[opus.clone()]);
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+        assert_eq!(queued_at(&mut driven), [lossy]);
+
+        let rows = library
+            .lossy_songs_of(road_trip)
+            .expect("the playlist read");
+        let model = driven.read(|root, _| root.library.clone());
+        driven.cx.update(|_, cx| {
+            model.update(cx, |library, cx| library.replace_lossy_songs(rows, cx));
+        });
+        driven.until(|_, _| !opus.exists());
+
+        let lossless = resonate_core::MediaLocation::local(&flac);
+        driven.until(|root, cx| {
+            root.player
+                .read(cx)
+                .queue()
+                .iter()
+                .all(|item| item.location == lossless)
+        });
+        assert_eq!(queued_at(&mut driven), [lossless]);
+    }
+
     #[gpui::test]
     fn a_playlists_lossy_songs_are_replaced_from_its_menu_and_the_sheet_closes_with_a_toast(
         cx: &mut TestAppContext,

@@ -718,10 +718,13 @@ fn a_poll_that_replaced_lossy_songs_is_told_so_beside_what_it_kept() {
             ..PollStats::default()
         },
         cancelled: false,
-        replaced: resonate_library::Deleted {
-            tracks,
-            files: tracks,
-            kept: 0,
+        replaced: resonate_library::Replaced {
+            trashed: resonate_library::Deleted {
+                tracks,
+                files: tracks,
+                kept: 0,
+            },
+            folds: Vec::new(),
         },
     };
 

@@ -260,9 +260,9 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   (the `track_id IS NULL` pairing still leaves the row alone), and `wants.offered` names it either
   way. **The poll settles replacements once its lanes end**: `run` calls
   `rejoin_the_replacements` before the lanes start and, after the last `scanned_and_paired` and
-  only where the poll was not cancelled, `settle_replacements`, whose `Deleted` is
-  `PollSummary::replaced` (a failure traced at warn, nothing replaced) and which the window's
-  toast tells (`told::polled`)
+  only where the poll was not cancelled, `settle_replacements`, whose `Replaced` is
+  `PollSummary::replaced` (a failure traced at warn, nothing replaced), which the window's
+  toast tells (`told::polled`) and whose folds it relocates its zones by
   (`a_lossless_delivery_filed_in_the_music_folder_replaces_the_lossy_song_at_the_polls_end`).
 - **No vault open: a delivery is filed in the music folder.** `Library::deliver_into` names a
   `DeliveryFolder` (`music-folder`, `organise-as`), set by the binary at open and by the window

@@ -17,8 +17,8 @@ use super::{
 };
 use crate::{
     CoverArt, EnrichHandle, EnrichOptions, Error, Fingerprinters, ImportHandle, ImportOptions,
-    Move, OrganiseHandle, OrganiseOptions, PassKind, PollHandle, PollOptions, Reference, Result,
-    RetagHandle, RetagOptions, ScanHandle, ScanOptions, StoreOp, TagSink, enrich, import,
+    Move, OrganiseHandle, OrganiseOptions, PassKind, PollHandle, PollOptions, Reference, Replaced,
+    Result, RetagHandle, RetagOptions, ScanHandle, ScanOptions, StoreOp, TagSink, enrich, import,
     organise::{self},
     retag::{self, Followed, TrackToTag},
     scan, sheeted, store, supply, undo,
@@ -108,14 +108,15 @@ impl Library {
         &self,
         options: ScanOptions,
     ) -> Result<ScanHandle> {
-        scan::start(Arc::clone(&self.inner), options, || {})
+        scan::start(Arc::clone(&self.inner), options, Replaced::default)
     }
 
-    fn settle_after_a_scan(self) -> impl FnOnce() + Send + 'static {
+    fn settle_after_a_scan(self) -> impl FnOnce() -> Replaced + Send + 'static {
         move || {
-            if let Err(error) = self.settle_replacements() {
+            self.settle_replacements().unwrap_or_else(|error| {
                 tracing::warn!(%error, "the replacements were not settled after the scan");
-            }
+                Replaced::default()
+            })
         }
     }
 

@@ -604,7 +604,9 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   into `replacements`, then `elsewhere::rearmed`, which clears `offered`, `tried` and `misses` of a
   standing want so a lossy delivery that once answered it is not taken as the answer, and keeps its
   `refused_offers`, unlike `want_in`); else it is `unmatched`. Then `remove_tracks_under` trashes
-  the folded files (`Why::Folded`), so `Replacing` counts folded, wanted, unmatched and `trashed`.
+  the folded files (`Why::Folded`), so `Replacing` counts folded, wanted, unmatched and `trashed`,
+  and names each `Fold` (the taken and kept locations) so the window can move its zones' queues
+  as organise does.
   **The fold is the identical copies' hand-over and a little more**: `copies::handed_over` takes a
   `HandOver` (kept and taken ids and paths; `IdenticalCopy::hand_over` builds one for
   `fold_copies`), moving plays, the last play, the favourite, listens, playlist entries, kept songs,
@@ -623,7 +625,7 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   with its file there or its vault object there, and the two last alike within
   `LENGTHS_AGREE_WITHIN` where both lengths are known; every pair is weighed by `may_fold` again
   and folded in one write (`replacing::folded`), then `remove_tracks_under` trashes the lossy files
-  under the same walk. Nobody is watching, so a copy only named alike (`TheSong`) is never taken,
+  under the same walk; it answers a `Replaced`, the `trashed` count beside every `Fold`. Nobody is watching, so a copy only named alike (`TheSong`) is never taken,
   nor a lossy copy offered, nor the delivery of a row another song now holds, nor a copy of the
   recording lasting otherwise
   (`a_replacement_whose_row_another_song_now_holds_is_never_settled_by_that_rows_delivery`,
@@ -632,7 +634,7 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `the_best_of_two_lossless_copies_of_the_recording_takes_the_lossy_songs_place`). It runs once a scan's `Walk` guard has dropped, never under it nor on a poll's lane:
   `scan::start` and `start_over_held` call the closure `Library::scan` and `scan_what_is_held` hand
   them (`settle_after_a_scan`, a failure traced at warn) after `drop` of the guard and only on an
-  `Ok` outcome not `cancelled`, so a scan `wind_down` cancels trashes nothing as the window closes
+  `Ok` outcome not `cancelled` (`replaced_after`), its `Replaced` becoming `ScanSummary::replaced`, so a scan `wind_down` cancels trashes nothing as the window closes
   (`a_cancelled_scan_settles_no_replacement`). The poll's own scans (`pair_what_was_filed`,
   `scanned_and_paired`) start through `scan_leaving_the_replacements_unsettled`, so nothing is
   settled while other lanes run. With no replacement waiting it takes no walk; a walk refused

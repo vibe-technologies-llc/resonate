@@ -4,7 +4,10 @@ use gpui::Context;
 use resonate_core::PlaylistId;
 use resonate_library::{Replaceable, Replacing};
 
-use super::{LibraryModel, Notice, Wanted, told};
+use super::{
+    LibraryModel, Notice, Wanted,
+    told::{self, folds_moved},
+};
 use crate::{toast, words};
 
 impl LibraryModel {
@@ -48,6 +51,7 @@ impl LibraryModel {
     fn replaced(&mut self, replaced: resonate_library::Result<Replacing>, cx: &mut Context<Self>) {
         match replaced {
             Ok(replacing) => {
+                self.passes.relocated.extend(folds_moved(&replacing.folds));
                 toast::tell(told::replaced_now(&replacing), cx);
                 if replacing.wanted > 0 {
                     self.fetch_or_say_nobody_can(cx);

@@ -26,7 +26,7 @@ use resonate_core::{MediaLocation, TrackId, naming};
 use rusqlite::params;
 
 use crate::{
-    Error, Result, StoreOp, alternatives,
+    Error, Replaced, Result, StoreOp, alternatives,
     db::Inner,
     enriched::stripped_title,
     forgetting::{Forgetting, Rows, forget_rows},
@@ -239,16 +239,24 @@ impl Cancelling for ScanProgress {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ScanSummary {
     pub stats: ScanStats,
     pub cancelled: bool,
+    pub replaced: Replaced,
+}
+
+fn replaced_after(mut summary: ScanSummary, after: impl FnOnce() -> Replaced) -> ScanSummary {
+    if !summary.cancelled {
+        summary.replaced = after();
+    }
+    summary
 }
 
 pub(crate) fn start(
     inner: Arc<Inner>,
     options: ScanOptions,
-    after: impl FnOnce() + Send + 'static,
+    after: impl FnOnce() -> Replaced + Send + 'static,
 ) -> Result<ScanHandle> {
     let walking = inner.walk_the_tree()?;
     let progress = Arc::new(ScanProgress::default());
@@ -261,10 +269,7 @@ pub(crate) fn start(
             let outcome = roots(&inner, &options.roots)
                 .and_then(|roots| run(&inner, &options, roots, Beside::Tidied, &progress));
             drop(walking);
-            if outcome.as_ref().is_ok_and(|summary| !summary.cancelled) {
-                after();
-            }
-            outcome
+            outcome.map(|summary| replaced_after(summary, after))
         })
         .map_err(|source| Error::ThreadSpawn { source })?;
 
@@ -274,7 +279,7 @@ pub(crate) fn start(
 pub(crate) fn start_over_held(
     inner: Arc<Inner>,
     options: ScanOptions,
-    after: impl FnOnce() + Send + 'static,
+    after: impl FnOnce() -> Replaced + Send + 'static,
 ) -> Result<Option<ScanHandle>> {
     let walking = inner.walk_the_tree()?;
     let roots = held_roots(&inner, &options.roots)?;
@@ -290,10 +295,7 @@ pub(crate) fn start_over_held(
         .spawn(move || {
             let outcome = run(&inner, &options, roots, Beside::LeftToTheWatch, &progress);
             drop(walking);
-            if outcome.as_ref().is_ok_and(|summary| !summary.cancelled) {
-                after();
-            }
-            outcome
+            outcome.map(|summary| replaced_after(summary, after))
         })
         .map_err(|source| Error::ThreadSpawn { source })?;
 
@@ -689,6 +691,7 @@ fn run(
     Ok(ScanSummary {
         stats: progress.snapshot(),
         cancelled,
+        replaced: Replaced::default(),
     })
 }
 
