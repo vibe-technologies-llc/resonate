@@ -1959,14 +1959,15 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   `lossy_songs_of` on the background executor, dropped where the window's `attention` moved or the
   sheet in front is another. Every row that can be ticked (a held lossless copy, or a release row to
   want) arrives ticked; a `kit::checkbox_when` row names the song (`spoken::song`), its
-  `kit::format_badge` and why it stands (*you hold a FLAC copy*, *wanted through MusicBrainz*), and
+  `kit::format_badge` and why it stands (*you hold it in FLAC*, *wanted through MusicBrainz*), and
   one not matched or already being replaced is `kit::Press::Greyed`. *Tick all* in the heading row
   ticks every tickable row or, all ticked, unticks them. A note in `muted` says each lossy copy goes
   to the trash once its lossless copy is held, in place of a confirmation, the trash being reversible.
   *Cancel* (`KEEP_THE_LOSSY_SONGS`, the welcome), escape and a press outside keep the songs
   (`keep_the_lossy_songs`); *Replace N songs* (greyed at none) closes the sheet and calls
   `LibraryModel::replace_lossy_songs`: `Library::replace` on the background executor, a toast from
-  `replaced_now` (*1 song replaced, 2 songs wanted*), `fetch_or_say_nobody_can` where anything was
+  `replaced_now` (*1 song replaced, 2 songs wanted*; a trouble naming the lossy files the trash
+  refused, as `folding_told` does, and `told::polled` the same after a poll), `fetch_or_say_nobody_can` where anything was
   wanted, an `AlreadyWalking` said as another task running, then an `Everything` read. Each want
   it placed (`Replacing::wants`) is read back on the same background task and listed in the
   Downloads panel at once (`list_the_replacements_wanted`: `downloads::found_of` the want, then
@@ -1985,7 +1986,8 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   cancels the replacement and leaves the lossy copy
   (`a_playlists_lossy_songs_are_replaced_from_its_menu_and_the_sheet_closes_with_a_toast`,
   `every_row_that_can_be_ticked_starts_ticked_and_tick_all_turns_them_together`,
-  `the_toast_says_what_was_replaced_wanted_and_not_matched`).
+  `the_toast_says_what_was_replaced_wanted_and_not_matched`,
+  `a_lossy_file_the_trash_refused_is_told_beside_what_was_replaced`).
 - **A search is a page of its own; what the library lacks is never buried under what it holds.**
   `views/search.rs`. `RootView::search_in_front` answers a `SearchShows` wherever the box holds words,
   the pane in front is Albums, Artists or Tracks, nothing is scoped and no songs are being added to a

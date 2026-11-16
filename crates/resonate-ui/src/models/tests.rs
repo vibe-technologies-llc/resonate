@@ -767,6 +767,40 @@ fn the_toast_says_what_was_replaced_wanted_and_not_matched() {
 }
 
 #[test]
+fn a_lossy_file_the_trash_refused_is_told_beside_what_was_replaced() {
+    let trashed = |files, kept| resonate_library::Deleted {
+        tracks: files,
+        files,
+        kept,
+    };
+
+    assert_eq!(
+        super::told::replaced_now(&resonate_library::Replacing {
+            folded: 2,
+            trashed: trashed(1, 1),
+            ..resonate_library::Replacing::default()
+        }),
+        Notice::Trouble("2 songs replaced, 1 lossy file couldn't be removed".to_owned())
+    );
+    assert_eq!(
+        super::told::polled(
+            &resonate_library::PollSummary {
+                replaced: resonate_library::Replaced {
+                    trashed: trashed(2, 2),
+                    folds: Vec::new(),
+                },
+                ..resonate_library::PollSummary::default()
+            },
+            super::Prompted::OnItsOwn
+        ),
+        Some(Notice::Trouble(
+            "Nothing in the inbox filled a want · replaced 2 lossy songs · 2 lossy files couldn't be removed"
+                .to_owned()
+        ))
+    );
+}
+
+#[test]
 fn only_a_playlist_edit_is_told_as_one_when_it_fails() {
     let not_playlists = [
         Change::Want,
