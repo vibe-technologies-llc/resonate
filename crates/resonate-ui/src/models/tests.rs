@@ -11,8 +11,8 @@ use gpui::{BorrowAppContext as _, Context, Entity, TestAppContext};
 use parking_lot::Mutex;
 use resonate_core::{AlbumId, ArtistId, MediaLocation, SourceId};
 use resonate_library::{
-    AlbumFound, Direction, Found, Isrc, KeepStopped, KeepSummary, Library, Mbid, PassKind,
-    PollStats, Shared, SortOrder,
+    AlbumFound, Cut, Direction, Found, Isrc, KeepStopped, KeepSummary, Library, Looked, Mbid,
+    PassKind, PollStats, Shared, SortOrder,
 };
 use resonate_providers::{Identity, Obtained, Provider, Providers, WhyAway};
 
@@ -68,7 +68,7 @@ struct Keeping {
     model: Entity<LibraryModel>,
     asked: Arc<Mutex<Vec<String>>>,
     released: Arc<AtomicBool>,
-    _music: Folder,
+    music: Folder,
 }
 
 impl Keeping {
@@ -102,8 +102,37 @@ impl Keeping {
             model,
             asked,
             released,
-            _music: music,
+            music,
         }
+    }
+
+    fn a_lossy_song_replaced_from_the_service(&mut self) -> bool {
+        let Some(opus) =
+            self.music
+                .encoded_titled("A.opus", &["-c:a", "libopus", "-b:a", "96k"], "Echoes")
+        else {
+            return false;
+        };
+        let model = self.model.clone();
+        let catalog = self.driven.cx.update(|_, cx| {
+            model.update(cx, |library, cx| {
+                library.library.deliver_into(delivery_folder(cx));
+                Arc::clone(&library.library)
+            })
+        });
+        Driven::scanned(&catalog, &self.music);
+        let playlist = catalog
+            .start_playlist("Road trip", &[Cut::whole(MediaLocation::local(&opus))])
+            .expect("a playlist holding the lossy song");
+        let by = SourceId::new(KEPT_FROM).expect("a source");
+        let mut rows = catalog.lossy_songs_of(playlist).expect("the lossy songs");
+        rows[0].looked = Some(Looked::Offered {
+            at: MediaLocation::new(by.clone(), "track/Echoes"),
+            by,
+        });
+
+        assert_eq!(catalog.replace(&rows).expect("replaced").kept, 1);
+        true
     }
 
     fn pressed(&mut self, song: &str) {
@@ -319,6 +348,53 @@ fn what_was_left_queued_is_taken_up_at_open_only_while_youtube_music_is_on(
     off.until_the_pass_ends();
 
     assert_eq!(off.queued(), 0);
+}
+
+#[gpui::test]
+fn a_keep_replacing_a_lossy_song_is_taken_up_at_open_and_kept_on_with_youtube_music_off(
+    cx: &mut TestAppContext,
+) {
+    let mut keeping = Keeping::open(
+        cx,
+        Online {
+            youtube_music: false,
+            ..turned_on()
+        },
+        true,
+    );
+    if !keeping.a_lossy_song_replaced_from_the_service() {
+        return;
+    }
+    let model = keeping.model.clone();
+
+    keeping.driven.cx.update(|_, cx| {
+        model.update(cx, |library, cx| library.keep_what_was_left_queued(cx));
+    });
+    keeping.until_asked(1);
+    for _ in 0..3 {
+        keeping
+            .driven
+            .cx
+            .executor()
+            .advance_clock(KEEPS_LOOKED_AT_EVERY);
+        keeping.driven.settle();
+    }
+    let still_keeping = keeping.driven.cx.update(|_, cx| {
+        model
+            .read(cx)
+            .keeps
+            .pass
+            .as_ref()
+            .is_some_and(|pass| !pass.stop.load(Ordering::Relaxed))
+    });
+    keeping.released.store(true, Ordering::Relaxed);
+    keeping.until_the_pass_ends();
+
+    assert!(
+        still_keeping,
+        "a pass begun with YouTube Music off was stopped for it being off"
+    );
+    assert_eq!(keeping.asked.lock().clone(), ["Echoes"]);
 }
 
 #[test]

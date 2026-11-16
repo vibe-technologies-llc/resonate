@@ -82,6 +82,37 @@ impl Folder {
         self.tagged(name, seconds, &[])
     }
 
+    pub(crate) fn encoded_titled(
+        &self,
+        name: &str,
+        codec: &[&str],
+        title: &str,
+    ) -> Option<PathBuf> {
+        let source = Self::new();
+        let tone = source.tone("tone.wav", 2);
+        let target = self.root.join(name);
+        let made = std::process::Command::new("ffmpeg")
+            .args(["-y", "-v", "error", "-i"])
+            .arg(&tone)
+            .args(codec)
+            .args(["-metadata", &format!("title={title}")])
+            .args([
+                "-metadata",
+                "artist=Pink Floyd",
+                "-metadata",
+                "album=Meddle",
+            ])
+            .arg(&target)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        if !made.is_ok_and(|status| status.success()) || !target.exists() {
+            eprintln!("skipped: ffmpeg would not encode {name}");
+            return None;
+        }
+        Some(target)
+    }
+
     pub(crate) fn tagged(&self, name: &str, seconds: u32, tags: &[(&[u8; 4], &str)]) -> PathBuf {
         let frames = RATE * seconds;
         let block = u32::from(CHANNELS) * 2;

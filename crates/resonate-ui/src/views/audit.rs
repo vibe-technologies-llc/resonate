@@ -237,7 +237,7 @@ mod words {
         "wrapped_card/markup.rs",
     ];
 
-    const ONLY_UNDER_TEST: &[&str] = &["models/tests.rs", "views/root/tests.rs"];
+    const ONLY_UNDER_TEST: &[&str] = &["driven.rs", "models/tests.rs", "views/root/tests.rs"];
 
     const STILL_TO_MOVE: &[&str] = &[];
 

@@ -1130,7 +1130,8 @@ service offers it.
   browser may raise a keyring prompt, and a window opening touches nothing unasked
   (`a_service_that_keeps_songs_is_asked_for_its_first_page_only_once_the_pane_is_shown`). *Stop* in the *Downloads* panel cancels it, the rest queued for the next open,
   and so does turning `online` off, or `youtube-music` off where the pass began with it on, heard within a second
-  (`keep_only_while_turned_on`, `KeepPass::began_with_youtube_music`); neither is undone by a yield or a refusal. What a pass that gave way
+  (`keep_only_while_turned_on`, `KeepPass::began_with_youtube_music`:
+  `a_keep_replacing_a_lossy_song_is_taken_up_at_open_and_kept_on_with_youtube_music_off`); neither is undone by a yield or a refusal. What a pass that gave way
   did is added to `Keeps::tally` and told in one toast when a pass ends without yielding
   (`a_song_pressed_while_a_pass_runs_waits_for_it_and_is_asked_by_the_next_pass`,
   `a_poll_asked_for_during_a_pass_goes_first_and_the_pass_is_begun_again_after_it`,

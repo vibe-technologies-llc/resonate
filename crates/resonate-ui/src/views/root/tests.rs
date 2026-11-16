@@ -1210,33 +1210,7 @@ mod driven {
     }
 
     fn encoded_as_echoes(folder: &Folder, name: &str, codec: &[&str]) -> Option<PathBuf> {
-        encoded_titled(folder, name, codec, "Echoes")
-    }
-
-    fn encoded_titled(folder: &Folder, name: &str, codec: &[&str], title: &str) -> Option<PathBuf> {
-        let source = Folder::new();
-        let tone = source.tone("tone.wav", 2);
-        let target = folder.path().join(name);
-        let made = std::process::Command::new("ffmpeg")
-            .args(["-y", "-v", "error", "-i"])
-            .arg(&tone)
-            .args(codec)
-            .args(["-metadata", &format!("title={title}")])
-            .args([
-                "-metadata",
-                "artist=Pink Floyd",
-                "-metadata",
-                "album=Meddle",
-            ])
-            .arg(&target)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-        if !made.is_ok_and(|status| status.success()) || !target.exists() {
-            eprintln!("skipped: ffmpeg would not encode {name}");
-            return None;
-        }
-        Some(target)
+        folder.encoded_titled(name, codec, "Echoes")
     }
 
     fn playlist_row(playlist: resonate_core::PlaylistId) -> &'static str {
@@ -1487,12 +1461,9 @@ mod driven {
     ) {
         let folder = Folder::new();
         let long = "Echoes ".repeat(40);
-        let Some(opus) = encoded_titled(
-            &folder,
-            "A.opus",
-            &["-c:a", "libopus", "-b:a", "96k"],
-            long.trim(),
-        ) else {
+        let Some(opus) =
+            folder.encoded_titled("A.opus", &["-c:a", "libopus", "-b:a", "96k"], long.trim())
+        else {
             return;
         };
         let library = catalog();
@@ -1692,8 +1663,7 @@ mod driven {
         let folder = Folder::new();
         let mut songs = Vec::new();
         for at in 0..40 {
-            let Some(song) = encoded_titled(
-                &folder,
+            let Some(song) = folder.encoded_titled(
                 &format!("{at}.opus"),
                 &["-c:a", "libopus", "-b:a", "96k"],
                 &format!("Song {at}"),
