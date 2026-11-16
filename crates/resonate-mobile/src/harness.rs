@@ -2,7 +2,7 @@ use std::{
     env,
     fs::{self, File},
     io::ErrorKind,
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     os::fd::IntoRawFd,
     path::{Path, PathBuf},
     process,
@@ -26,7 +26,7 @@ use resonate_core::{
     ChannelLayout, Frames, Gain, Resumable, Resumption, SampleFormat, SampleRate, TrackId, ZoneId,
 };
 use resonate_engine::{Command, EngineConfig, Player};
-use resonate_upnp::Searching;
+use resonate_upnp::{Offering, Searching};
 
 use crate::{
     Documents, MobilePlayer, PlaybackPreferences, Snapshot, Track,
@@ -34,6 +34,7 @@ use crate::{
     documents::{DOCUMENT_NOT_FOUND, DOCUMENT_REFUSED, GrantedFiles, location},
     downloads::Downloads,
     features::Services,
+    offering::Offered,
     output::{self, Routing},
     rendering::{Kinds, Rendering},
     sync::Syncing,
@@ -46,6 +47,7 @@ pub(crate) const SETTLED_WITHIN: Duration = Duration::from_secs(10);
 pub(crate) const LOOKED_AGAIN_AFTER: Duration = Duration::from_millis(10);
 pub(crate) const FOLDER: &str = "content://test/";
 pub(crate) const SONGS: [&str; 4] = ["a", "b", "c", "d"];
+const LOOPBACK: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
 pub(crate) struct Folder(PathBuf);
 
@@ -194,10 +196,12 @@ pub(crate) struct Harness {
     pub(crate) player: MobilePlayer,
     pub(crate) songs: Vec<Track>,
     pub(crate) folder: PathBuf,
+    pub(crate) told: UdpSocket,
 }
 
 impl Drop for Harness {
     fn drop(&mut self) {
+        self.player.offered.leave();
         if let Some(zones) = self.player.playing.take() {
             let _ = crate::zoning::shut_down(zones);
         }
@@ -243,6 +247,17 @@ impl Harness {
         let sources = Arc::new(served.sources(Sources::local().and(Arc::new(
             GrantedFiles::new(documents, "content").expect("a granted provider"),
         ))));
+        let told =
+            UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of the server");
+        told.set_read_timeout(Some(LOOKED_AGAIN_AFTER))
+            .expect("a read timeout");
+        let offering = Offering {
+            heard_on: SocketAddr::new(LOOPBACK, 0),
+            told: told.local_addr().expect("the told address"),
+            every: Duration::from_secs(3_600),
+            serving_on: LOOPBACK,
+        };
+
         let kinds = rendering.kinds();
         let engines: Box<Engines> = {
             let sources = Arc::clone(&sources);
@@ -276,6 +291,7 @@ impl Harness {
             served: Arc::new(served),
             together: crate::together::Together::default(),
             rendering,
+            offered: Offered::on(folder.clone(), offering),
         };
         player.services.files.reach_through(files);
 
@@ -292,6 +308,7 @@ impl Harness {
             player,
             songs,
             folder,
+            told,
         }
     }
 

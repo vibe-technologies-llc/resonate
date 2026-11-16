@@ -789,6 +789,18 @@ volume preference of its own
 shares with it, the first zone's `queue` and `resume` while it is shown;
 `a_handoff_offers_the_queue_and_place_of_the_zone_shown_and_not_the_first_zones`).
 
+## The catalog offered on the network
+
+**A phone offers its catalog as the desktop does** (`offering.rs`, `upnp.md`'s *On the phones*):
+`Shelves` is a `resonate_upnp::Catalog` over the document catalog and the search index, so the
+boundary's `Searching` is held behind an `Arc` in `Services` and shared with it, and a song's bytes
+are read through the player's `Sources`, the granted documents included. `MobilePlayer` holds one
+`Offered` (the running `MediaServer` and the folder its UDN is kept in); the boundary's switch is
+`share_catalog_on_network(on)` and `catalog_shared_on_network()`, and `shutdown` stops it, so the
+server lives exactly as long as the player the service holds. The test `Harness` builds its player
+with a loopback `Offering` told to a socket it keeps (`Harness.told`), and every other test player
+with `Offered::untold`, so no host test announces anything to the network.
+
 ## TIDAL sign-in
 
 `authorize_tidal` asks TIDAL for a device code and `finish_tidal_authorization` waits for it on the

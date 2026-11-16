@@ -507,7 +507,11 @@ impl Searching {
         })
     }
 
-    fn saved(&self, catalog: &Catalog, query: &SavedQuery) -> Result<(Arc<Index>, Vec<usize>)> {
+    pub(crate) fn saved(
+        &self,
+        catalog: &Catalog,
+        query: &SavedQuery,
+    ) -> Result<(Arc<Index>, Vec<usize>)> {
         self.saved_by(catalog, query, || self.index(catalog))
     }
 
@@ -1275,23 +1279,23 @@ fn lasts(compare: Compare, duration_ms: u64, length: Duration, grain: Grain) -> 
     }
 }
 
-struct Row {
-    track: Track,
+pub(crate) struct Row {
+    pub(crate) track: Track,
     title: Name,
     artist: Name,
     album_artist: Name,
     album: Name,
     genre: Name,
-    filed_title: String,
-    filed_artist: String,
-    filed_album_artist: String,
-    filed_album: String,
-    filed_genre: String,
+    pub(crate) filed_title: String,
+    pub(crate) filed_artist: String,
+    pub(crate) filed_album_artist: String,
+    pub(crate) filed_album: String,
+    pub(crate) filed_genre: String,
     year: Option<i32>,
-    codec: Codec,
+    pub(crate) codec: Codec,
     heard: Vec<i64>,
     added: Option<i64>,
-    album_group: Option<usize>,
+    pub(crate) album_group: Option<usize>,
 }
 
 impl Row {
@@ -1355,21 +1359,21 @@ impl Row {
     }
 }
 
-struct AlbumGroup {
-    key: String,
+pub(crate) struct AlbumGroup {
+    pub(crate) key: String,
     various_artists: bool,
-    title: String,
-    artist: String,
+    pub(crate) title: String,
+    pub(crate) artist: String,
     title_name: Name,
     artist_name: Name,
-    filed_title: String,
-    filed_artist: String,
+    pub(crate) filed_title: String,
+    pub(crate) filed_artist: String,
     year: Option<i32>,
-    rows: Vec<usize>,
+    pub(crate) rows: Vec<usize>,
     duration_ms: u64,
     plays: usize,
     added: u64,
-    artwork_track: u64,
+    pub(crate) artwork_track: u64,
 }
 
 impl AlbumGroup {
@@ -1418,7 +1422,7 @@ impl AlbumGroup {
         self.artwork_track = pictured_among(held());
     }
 
-    fn has_a_picture(&self, rows: &[Row]) -> bool {
+    pub(crate) fn has_a_picture(&self, rows: &[Row]) -> bool {
         self.rows.iter().any(|at| rows[*at].track.art_revision > 0)
     }
 
@@ -1443,12 +1447,12 @@ impl AlbumGroup {
     }
 }
 
-struct ArtistGroup {
-    name: String,
-    filed: String,
+pub(crate) struct ArtistGroup {
+    pub(crate) name: String,
+    pub(crate) filed: String,
     name_words: Name,
     spellings: HashMap<String, usize>,
-    rows: Vec<usize>,
+    pub(crate) rows: Vec<usize>,
     albums: usize,
     year: Option<i32>,
     plays: usize,
@@ -1512,10 +1516,10 @@ impl ArtistGroup {
 
 pub(crate) struct Index {
     revision: u64,
-    rows: Vec<Row>,
-    albums: Vec<AlbumGroup>,
+    pub(crate) rows: Vec<Row>,
+    pub(crate) albums: Vec<AlbumGroup>,
     album_at: HashMap<String, usize>,
-    artists: Vec<ArtistGroup>,
+    pub(crate) artists: Vec<ArtistGroup>,
     artist_at: HashMap<String, usize>,
     spellings: OnceLock<Spellings>,
 }
@@ -2034,7 +2038,11 @@ fn in_artist_order(one: &Row, other: &Row, albums: &[AlbumGroup]) -> Ordering {
         .then_with(|| in_album_order(one, other))
 }
 
-fn album_order(order: CollectionOrder, one: &AlbumGroup, other: &AlbumGroup) -> Ordering {
+pub(crate) fn album_order(
+    order: CollectionOrder,
+    one: &AlbumGroup,
+    other: &AlbumGroup,
+) -> Ordering {
     let by_title = || {
         (&one.filed_title, &one.filed_artist, &one.key).cmp(&(
             &other.filed_title,
@@ -2056,7 +2064,11 @@ fn album_order(order: CollectionOrder, one: &AlbumGroup, other: &AlbumGroup) -> 
     }
 }
 
-fn artist_order(order: CollectionOrder, one: &ArtistGroup, other: &ArtistGroup) -> Ordering {
+pub(crate) fn artist_order(
+    order: CollectionOrder,
+    one: &ArtistGroup,
+    other: &ArtistGroup,
+) -> Ordering {
     let by_name =
         || (one.filed.is_empty(), &one.filed).cmp(&(other.filed.is_empty(), &other.filed));
 

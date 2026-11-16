@@ -534,6 +534,7 @@ pub(crate) mod tests {
             served: Arc::new(crate::served::Served::default()),
             together: crate::together::Together::default(),
             rendering: crate::rendering::Rendering::default(),
+            offered: crate::offering::Offered::untold(),
         }
     }
 

@@ -26,6 +26,7 @@ mod loves;
 mod lyrics;
 mod measurement;
 mod mixes;
+mod offering;
 mod online_tools;
 mod organising;
 mod output;
@@ -313,6 +314,7 @@ pub struct MobilePlayer {
     served: Arc<served::Served>,
     rendering: rendering::Rendering,
     together: together::Together,
+    offered: offering::Offered,
 }
 
 #[uniffi::export]
@@ -378,6 +380,7 @@ impl MobilePlayer {
             served,
             together: together::Together::default(),
             rendering,
+            offered: offering::Offered::under(PathBuf::from(&folder)),
         });
         this.downloads.stall_by(this.services.downloads.clone());
         this.services.files.reach_through(files);
@@ -703,6 +706,7 @@ impl MobilePlayer {
     }
 
     pub fn shutdown(&self) -> Result<()> {
+        self.offered.leave();
         self.sync_stop();
         self.pause_enrichment();
         self.configure_online(false);

@@ -6,6 +6,7 @@ paths:
   - "crates/resonate/src/zoning.rs"
   - "crates/resonate-ui/src/views/settings/output.rs"
   - "crates/resonate-mobile/src/rendering.rs"
+  - "crates/resonate-mobile/src/offering.rs"
   - "crates/resonate-mobile/src/output/mod.rs"
 ---
 
@@ -559,6 +560,46 @@ as one sink and refuses it to a second while the first holds it bit-perfect (`au
   off the transport's lane)
   (`what_a_renderer_was_tried_with_is_kept_listed_and_forgotten`,
   `a_catalog_of_before_renderers_were_tried_keeps_its_songs_and_gains_the_table`).
+
+- **A phone offers its own catalog as the same MediaServer** (`offering.rs`), turned on by the
+  listener alone. `Shelves` fills `Catalog` over the phone's document catalog, never `Library`: it
+  reads the search index (`Searching::index`, rebuilt once a catalog revision and shared, behind an
+  `Arc`, with the boundary's own reads), so the tree is the phone's own grouping: Artists by name
+  (an artist, then the albums holding them, newest first as the phone's artist page orders them),
+  Albums by title, an album's songs in album order, Songs by title, Playlists by name and a
+  playlist's songs in its order (a saved search's as its search finds them, `Searching::saved`; a
+  playlist's served rows read once a view, at most 32 kept). Only a song whose URI is a granted
+  document (`location`) and whose name, else URI, names an `AudioKind` is offered, in every shelf
+  and count; an album or artist holding none is left off, and so is an artist with no name.
+  **A song's bytes come through the same `Sources` the engine reads**, so a granted document is
+  opened by the descriptor the front end hands over (`mobile.md`'s *Granted documents*), never a
+  path; one that will not open is 404. Its `res@size` is the size the scan recorded
+  (`documents.size`), 0 where none was. A song and a playlist are named by their rows' ids; an album
+  or an artist has no row, so its id is a 64-bit FNV-1a of its grouping key (the album key, the
+  folded artist name; `named`), the same across runs while the key stands, and a second group
+  hashing to a taken id is left off with a warning. A cover is the album's artwork track's picture
+  (`pictured`), its type sniffed. **A search is answered in memory** over the index's folded fields
+  (`Wanted`): `=` a whole folded name, `contains` each word beginning a word of the field, `!=` and
+  `doesNotContain` their denials (an album's and an artist's read against their own title and
+  artist, so a denial is answered there too), `exists` whether the field holds anything; a song's
+  artist is its artist or its album artist; a text with no letter or digit is unanswered.
+  `share_catalog_on_network(on)` starts or stops it (`CatalogNotOffered` where the server cannot
+  start; asking for what already holds does nothing) and `catalog_shared_on_network` answers
+  whether it runs; `Offered` keeps the UDN in the player's folder as `media-server-udn`
+  (`kept_udn`, as the binary's), the port is the system's choice each start, and `shutdown` stops
+  it. Each phone's *Audio output* page has *Offer the catalog on the network* (off by default, kept
+  as `share-catalog-on-network` and applied as the player opens). **Android holds a
+  `MulticastLock` of its own** (`resonate-catalog`, beside the renderers' and sync's) while it
+  offers, since an `M-SEARCH` arrives multicast (`android.md`). **An iPhone signed for free is
+  offered but not found**: joining the SSDP group and announcing are multicast from the app's own
+  socket, which needs the entitlement a free signing lacks, so the server runs and answers a control
+  point given its address, and nothing finds it; the switch stays, its note saying so, as *Find
+  renderers* stays (`ios.md`)
+  (`the_phones_catalog_is_browsed_as_artists_albums_songs_and_playlists_paged_and_whole_files_only`,
+  `a_song_is_described_by_its_row_and_served_through_the_documents_seam_and_a_cover_by_its_album`,
+  `a_search_from_the_network_is_answered_over_the_folded_catalog_and_an_unreadable_one_is_not`,
+  `the_switch_offers_the_phones_catalog_under_one_kept_name_and_takes_it_off_the_network`, the last
+  over loopback sockets the test harness holds, so nothing reaches the network).
 
 `crates/resonate-mobile/src/rendering.rs` proves it over a fake on loopback (an SSDP answer, a
 description with AVTransport alone, SOAP recording actions): the search lists the renderer, a zone

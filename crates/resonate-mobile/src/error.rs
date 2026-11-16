@@ -194,6 +194,11 @@ pub enum Error {
         #[source]
         source: Box<resonate_cast::Error>,
     },
+    #[error("{}", words::errors::catalog_not_offered())]
+    CatalogNotOffered {
+        #[source]
+        source: Box<resonate_upnp::Error>,
+    },
     #[error("{}", words::errors::unknown_renderer())]
     UnknownRenderer,
     #[error("{}", words::errors::renderer_in_use())]

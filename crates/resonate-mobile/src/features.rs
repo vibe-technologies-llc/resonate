@@ -44,7 +44,7 @@ pub(crate) struct Services {
     analysis: Mutex<Option<Arc<Watch>>>,
     pub(crate) fitting: Mutex<Option<Arc<Watch>>>,
     pub(crate) analyses: Mutex<BTreeMap<u64, Arc<resonate_analysis::Analysis>>>,
-    pub(crate) searching: crate::search::Searching,
+    pub(crate) searching: Arc<crate::search::Searching>,
     pub(crate) watching: crate::watching::Watching,
     pub(crate) files: crate::deleting::Files,
 }
@@ -82,7 +82,7 @@ impl Default for Services {
             analysis: Mutex::new(None),
             fitting: Mutex::new(None),
             analyses: Mutex::new(BTreeMap::new()),
-            searching: crate::search::Searching::default(),
+            searching: Arc::default(),
             watching: crate::watching::Watching::default(),
             files: crate::deleting::Files::default(),
         }
