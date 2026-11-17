@@ -278,7 +278,8 @@ Invariants the layering protects (the rules files have the rest):
   (`setsid`, a pseudo-terminal) and, on Windows, `resonate`'s `console::` (ConPTY, an audio
   endpoint `sinks` lists); `resonate`'s `dragging::` (`RESONATE_DRAG_TESTS`, a hosted KWin, GTK 4
   in python3, `spectacle`); `resonate-mpris`'s `trash::` (`xdg-desktop-portal`, and `bwrap` with `xdg-dbus-proxy` for the
-  sandboxed case). `resonate-subsonic`, `-jellyfin`, `-tidal`, `-monochrome` and `-ytmusic` serve fake servers
+  sandboxed case); `resonate-server`'s `shared::` page tests (`node`, and a headless `firefox` driven over
+  Marionette for the pages' policy). `resonate-subsonic`, `-jellyfin`, `-tidal`, `-monochrome` and `-ytmusic` serve fake servers
   on loopback (`-ytmusic` a fake `yt-dlp` too, on Unix).
 - `cargo run -p resonate-server -- --help`: the sync server. `cargo nextest run -p resonate-server` runs
   it in-process with two clients over loopback (playlists, favourites, a peer fetch, a stranger's

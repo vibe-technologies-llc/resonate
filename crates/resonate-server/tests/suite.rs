@@ -1,4 +1,5 @@
 mod compaction;
+mod firefox;
 mod frames;
 mod hifi;
 mod scripted;

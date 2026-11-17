@@ -326,7 +326,8 @@ here, add it there.
   the same frames over a WebSocket for a server behind a proxy with no UDP (`server.md`); TLS for
   it is `tokio-rustls` on `ring`, and neither pulls serde into `resonate-sync`.
   `resonate-server` takes `tokio-tungstenite` as a dev-dependency alone, for the test that speaks
-  WebSocket itself.
+  WebSocket itself, and `serde_json` as one alone, for the Marionette client its Firefox test drives
+  the shared-list page with.
 - **`ring`** (direct): sealing (ChaCha20-Poly1305), HKDF, SHA-256, randomness and the peer
   signature check in `resonate-sync`; the crate rustls already links. **`x25519-dalek`**
   (`static_secrets`, pure Rust) is `resonate-sync`'s Diffie-Hellman for sealing a removal's new

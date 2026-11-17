@@ -403,7 +403,15 @@ it off.
   against a real shared list, skipped without Node
   (`a_browser_given_either_link_opens_the_list_as_it_stands_and_a_link_nobody_shared_is_not_held`,
   `a_browser_given_the_link_of_a_list_shared_anew_is_told_it_moved`,
-  `only_a_shared_playlists_page_reads_the_list_and_its_words_cannot_close_the_script`).
+  `only_a_shared_playlists_page_reads_the_list_and_its_words_cannot_close_the_script`). **A real
+  browser enforces the policy in a test**: `firefox_runs_both_pages_under_their_policy_and_shows_the_list_a_real_link_names`
+  starts a headless Firefox on a profile of its own and drives it over Marionette (`tests/firefox.rs`,
+  `marionette.port` 0 and the port read from the profile's `MarionetteActivePort`), opens the `/s/`
+  and `/p/` pages a real view link and party key name on loopback, waits for the list to be drawn and
+  the code and the `resonate://` link to be written, and reads the browser console in its chrome
+  context (`MOZ_REMOTE_ALLOW_SYSTEM_ACCESS`) for any `Content-Security-Policy` message; skipped
+  without `firefox` on the path. Site icons are off in that profile, since Firefox's own request
+  for `/favicon.ico` is the one load `default-src 'none'` refuses.
 - At most 256 upgrades are in flight at once and the upgrade and `Hello` share the 10 s allowance.
   The server pings every 30 s and a reader silent for 90 s ends the session.
   `a_listener_behind_a_proxy_turns_away_a_connection_the_proxy_did_not_forward`.

@@ -16,13 +16,15 @@ use parking_lot::Mutex;
 use resonate_core::Recording;
 use resonate_server::{Allowance, Limits, Server, Store};
 use resonate_sync::{
-    LocalPlaylistId, Refused, Server as Reached,
+    LocalPlaylistId, Refused, Server as Reached, SyncKey,
+    party::PartyKey,
     shared::{LocalShared, Shared, SharedCatalog, SharedSettings, SharedShown, SharedStanding},
     wire::{FromServer, LARGEST_FRAME, LONGEST_TEXT, Record, Refusal, SpaceHead, ToServer},
 };
+use serde_json::json;
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::scripted::Scripted;
+use crate::{firefox::Firefox, scripted::Scripted};
 
 const SETTLES_WITHIN: Duration = Duration::from_secs(30);
 
@@ -1068,4 +1070,60 @@ fn a_compaction_finding_the_space_full_backs_off_and_the_round_still_ends_well()
     assert_eq!(shown_on(&ada)[0].standing, SharedStanding::Reached);
     assert_eq!(shown_on(&ada)[0].owed, 0);
     assert_eq!(compactions, 1);
+}
+
+const WHAT_THE_LIST_PAGE_SHOWS: &str = "return { \
+     hidden: document.getElementById(\"list\").hidden, \
+     name: document.getElementById(\"name\").textContent, \
+     songs: Array.from(document.querySelectorAll(\"#songs b\"), (title) => title.textContent), \
+     code: document.getElementById(\"code\").textContent, \
+     open: document.getElementById(\"open\").getAttribute(\"href\") };";
+
+const WHAT_THE_PARTY_PAGE_SHOWS: &str = "return { \
+     code: document.getElementById(\"code\").textContent, \
+     open: document.getElementById(\"open\").getAttribute(\"href\") };";
+
+#[test]
+fn firefox_runs_both_pages_under_their_policy_and_shows_the_list_a_real_link_names() {
+    if !Firefox::installed() {
+        eprintln!("skipped: no firefox to enforce the pages' policy");
+        return;
+    }
+    let hosted = hosted("firefox");
+    let ada = hosted.person("Ada", Shelf::default());
+    let list = ada.shelf.made("Mix", &["One", "Two", "Three"]);
+    let invites = ada.shared.share(list).expect("shared");
+    eventually("the list reaching the server", &ada, || {
+        shown_on(&ada)[0].owed == 0
+    });
+    let list_page = invites.view_page.expect("a page for the list");
+    let list_code = code_in(&invites.view);
+    let party = PartyKey::FirstToClaim(SyncKey::minted().expect("a key"));
+    let party_page = party
+        .web_link(Some(&format!("ws://{}/", hosted.address)))
+        .expect("a page for the party");
+
+    let mut firefox = Firefox::headless(&hosted.folder.join("firefox"));
+    firefox.open(&list_page);
+    let listed = firefox.until("the list shown", WHAT_THE_LIST_PAGE_SHOWS, |shown| {
+        shown["hidden"] == false
+    });
+    firefox.open(&party_page);
+    let invited = firefox.page_says(WHAT_THE_PARTY_PAGE_SHOWS);
+    let violations = firefox.policy_violations();
+
+    assert!(list_page.starts_with(&format!("http://{}/s/#", hosted.address)));
+    assert_eq!(listed["name"], "Mix");
+    assert_eq!(listed["songs"], json!(["One", "Two", "Three"]));
+    assert_eq!(listed["code"], list_code.as_str());
+    assert!(
+        listed["open"]
+            .as_str()
+            .is_some_and(|open| open.starts_with(&format!("resonate://shared/{list_code}?server=")))
+    );
+    assert_eq!(invited["code"], party.code().as_str());
+    assert!(invited["open"].as_str().is_some_and(|open| {
+        open.starts_with(&format!("resonate://party/{}?server=", party.code()))
+    }));
+    assert!(violations.is_empty(), "{violations:#?}");
 }
