@@ -25,6 +25,7 @@ use crate::{
     service::{HOSTED_SERVER, resolve, within},
     shared::{
         Access,
+        appending::{AppendFrame, append_frames, owed_sent},
         catalog::{LocalShared, SharedCatalog},
         diff::{Looking, Resolving, edits_seen, written_order},
         invitation::{Invited, link_to, web_link_to},
@@ -1143,20 +1144,38 @@ impl Running {
             .iter()
             .flat_map(|(_, ops)| ops.iter().cloned())
             .collect();
-        let mut blobs = Vec::new();
-        for bundle in ops.chunks(BUNDLE_OPS_AT_MOST) {
-            sealed_within(&keys.sealer, keys.space, bundle, &mut blobs)?;
+        let frames = append_frames(ops.chunks(BUNDLE_OPS_AT_MOST), |bundle, sealed| {
+            sealed_within(&keys.sealer, keys.space, bundle, sealed)
+        })?;
+        for frame in frames {
+            if let Some(closed) = self.appended(at, keys, frame, send, recv, changed).await? {
+                return Ok(Some(closed));
+            }
         }
-        send.send(&ToServer::Append { blobs }.encoded()).await?;
+
+        Ok(None)
+    }
+
+    async fn appended(
+        &mut self,
+        at: usize,
+        keys: &crate::shared::SharedKeys,
+        frame: AppendFrame,
+        send: &mut Outgoing,
+        recv: &mut Incoming,
+        changed: &mut bool,
+    ) -> Result<Option<Vec<u8>>> {
+        send.send(&ToServer::Append { blobs: frame.blobs }.encoded())
+            .await?;
 
         loop {
-            let frame = within(async { recv.read().await }).await?;
-            let Some(frame) = frame else {
+            let reply = within(async { recv.read().await }).await?;
+            let Some(reply) = reply else {
                 return Err(Error::ServerSilent);
             };
-            match FromServer::decoded(&frame)? {
+            match FromServer::decoded(&reply)? {
                 FromServer::Appended { .. } => {
-                    self.lists[at].owed.clear();
+                    owed_sent(&mut self.lists[at].owed, frame.ops);
                     return Ok(None);
                 }
                 FromServer::Records { entries } => {

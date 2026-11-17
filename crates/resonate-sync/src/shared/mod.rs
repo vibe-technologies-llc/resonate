@@ -1,3 +1,4 @@
+mod appending;
 mod catalog;
 mod diff;
 mod invitation;
