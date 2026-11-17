@@ -3507,8 +3507,14 @@ fn a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start()
     );
 
     let remaining = wanted - graph.lock().played.len();
-    graph.lock().pull(remaining);
+    wait_for_the_ring_to_hold(&player, &graph, remaining / frame_bytes(SampleFormat::S16));
+    let pulled = graph.lock().pull(remaining);
     graph.lock().source = None;
+
+    assert_eq!(
+        pulled, remaining,
+        "the graph let go before it was handed the first row's last frames"
+    );
 
     wait_for(
         &player,
