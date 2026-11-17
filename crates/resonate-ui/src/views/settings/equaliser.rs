@@ -1,8 +1,13 @@
 use std::{
     cell::Cell as Slot,
+    fs,
     path::{Path, PathBuf},
+    process,
     rc::Rc,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -15,6 +20,7 @@ use resonate_core::{
     HeadYaw, MediaLocation, SampleRate, SpeakerAngle, SpeakerElevation, Speakers, Switch,
     eq::{Band, BandKind, Preamp, Traced, TracedOn},
     file_facts::{self, Unwritten},
+    writer::{self, Held, Writer},
 };
 use resonate_engine::{
     AnalysisError, Applied, BandGains, Command, DspError, Impulse, Loudest, NodeName,
@@ -2152,6 +2158,10 @@ const SPEAKER_ELEVATIONS: [i16; 5] = [0, 10, 20, 30, 45];
 
 const BINAURAL_FILE: &str = "binaural-response.wav";
 
+const STAGED_SUFFIX: &str = ".new";
+
+static STAGED: AtomicU64 = AtomicU64::new(0);
+
 impl RootView {
     fn room_is_crossed(&self, cx: &App) -> bool {
         self.settings_pane
@@ -2721,10 +2731,58 @@ fn speaker_options(label: &'static str) -> PathPromptOptions {
 }
 
 fn write_beside(target: &Path, bytes: &[u8]) -> Result<(), Unwritten> {
-    let staged = target.with_extension(format!("{}.new", std::process::id()));
+    sweep_stages_left_beside(target);
+    let staged = target.with_extension(format!(
+        "{}-{}{STAGED_SUFFIX}",
+        process::id(),
+        STAGED.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut held_while_placed = None;
     file_facts::write_atomically(target, &staged, bytes, |staged| {
-        std::fs::File::create(staged)
+        let held = Held::made(staged)?;
+        let written = held.file().try_clone()?;
+        held_while_placed = Some(held);
+        Ok(written)
     })
+}
+
+fn sweep_stages_left_beside(target: &Path) {
+    let (Some(folder), Some(stem)) = (
+        target.parent(),
+        target.file_stem().and_then(|stem| stem.to_str()),
+    ) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(folder) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let stamped = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| stamp_of_a_stage(name, stem));
+        if stamped.is_some_and(|stamp| writer::writer_of(&path, stamp) == Writer::Gone)
+            && let Err(error) = fs::remove_file(&path)
+        {
+            tracing::debug!(%error, path = %path.display(), "a binaural pair's stage could not be swept");
+        }
+    }
+}
+
+fn stamp_of_a_stage(name: &str, stem: &str) -> Option<u32> {
+    let stamped = name
+        .strip_prefix(stem)?
+        .strip_prefix('.')?
+        .strip_suffix(STAGED_SUFFIX)?;
+    let pid = match stamped.split_once('-') {
+        Some((pid, nth)) => {
+            nth.parse::<u64>().ok()?;
+            pid
+        }
+        None => stamped,
+    };
+    pid.parse().ok()
 }
 
 fn side(speaker: Speaker) -> &'static str {
@@ -2814,6 +2872,39 @@ mod tests {
             left_in(folder.path()),
             vec![std::ffi::OsString::from(BINAURAL_FILE)]
         );
+    }
+
+    #[test]
+    fn a_binaural_stage_a_gone_writer_left_is_swept_by_the_next_pair_and_a_living_ones_is_not() {
+        const NEVER_A_PROCESS: u32 = 999_999_999;
+        let folder = crate::driven::Folder::new();
+        let kept = folder.path().join(BINAURAL_FILE);
+        let left = [
+            format!("binaural-response.{NEVER_A_PROCESS}-0.new"),
+            format!("binaural-response.{NEVER_A_PROCESS}.new"),
+        ];
+        let living = format!("binaural-response.{}-{}.new", process::id(), u64::MAX);
+        let others = [
+            "config.toml".to_owned(),
+            format!("binaural-response.{NEVER_A_PROCESS}-x.new"),
+            format!("room-correction.{NEVER_A_PROCESS}-0.new"),
+        ];
+        for name in left.iter().chain(&others) {
+            fs::write(folder.path().join(name), b"").expect("a writable folder");
+        }
+        let held = Held::made(&folder.path().join(&living)).expect("a stage being written");
+
+        write_beside(&kept, b"pair").expect("the pair is kept");
+
+        let mut stays: Vec<_> = others
+            .iter()
+            .chain([&living, &BINAURAL_FILE.to_owned()])
+            .map(std::ffi::OsString::from)
+            .collect();
+        stays.sort();
+        assert_eq!(left_in(folder.path()), stays);
+        assert_eq!(fs::read(&kept).expect("the pair reads"), b"pair");
+        drop(held);
     }
 
     #[test]

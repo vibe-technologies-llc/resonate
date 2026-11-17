@@ -787,7 +787,11 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   file the settings and the phones already name. The desktop's *Room correction* group has *Choose a
   pair…* (left file, then right), which keeps `binaural-response.wav` beside the equaliser folder,
   written whole through `file_facts::write_atomically` (synced, renamed into place, no stage left on a
-  failure: `a_binaural_pair_is_kept_whole_and_one_that_cannot_be_put_in_place_leaves_no_stage`), and
+  failure: `a_binaural_pair_is_kept_whole_and_one_that_cannot_be_put_in_place_leaves_no_stage`) from
+  a stage `Held` while it is written and placed (`binaural-response.<pid>-<n>.new`); each pair kept
+  first sweeps the stages beside it whose writer is gone (`sweep_stages_left_beside`, a stage of an
+  older build's `<pid>.new` shape too, so one a crash left is taken away:
+  `a_binaural_stage_a_gone_writer_left_is_swept_by_the_next_pair_and_a_living_ones_is_not`), and
   corrects by it as by any chosen file; the phones' boundary has `keep_binaural_room_correction`
   (two byte strings and extensions, a refusal `Error::ImpulsePair`), which keeps the joined pair as
   the one `room-correction.*` response. Each phone's *Room correction* page offers *Choose a
