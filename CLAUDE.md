@@ -211,7 +211,9 @@ Invariants the layering protects (the rules files have the rest):
 
 - `android/gradlew -p android :app:assembleDebug :app:lintDebug :app:testDebugUnitTest`: Android APK, Kotlin/manifest
   checks; `python3 android/check-native.py --sdk "$ANDROID_HOME"` checks native alignment and
-  Android Rust clippy; `android/gradlew -p android :app:connectedDebugAndroidTest`: native playback and
+  Android Rust clippy; `android/gradlew -p android :app:assembleRelease`, then
+  `python3 android/check-release.py --sdk "$ANDROID_HOME"`: the release APK's native libraries at 16 KB
+  alignment and the classes JNA reads by name kept by R8; `android/gradlew -p android :app:connectedDebugAndroidTest`: native playback and
   resumption on an attached emulator/device. `:app:installDebug` installs the runnable app.
 
 - `python3 -m unittest discover -s ios`: the icon drawing, what declares the icons, the words (`test_strings.py`) and the reading of
