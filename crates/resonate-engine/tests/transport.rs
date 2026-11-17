@@ -6253,12 +6253,36 @@ fn steady_in_twenty_four_bits(level: i16, frames: usize) -> Vec<u8> {
     wave(24, CHANNELS, &data)
 }
 
+enum AskedAtTheTurn {
+    Nothing,
+    Volume(Volume),
+    Equaliser(Arc<Equalisation>),
+}
+
+impl AskedAtTheTurn {
+    const fn pulled_before(&self) -> usize {
+        match self {
+            Self::Nothing => 0,
+            Self::Volume(_) => 14_000,
+            Self::Equaliser(_) => 9_500,
+        }
+    }
+
+    fn command(self) -> Option<Command> {
+        match self {
+            Self::Nothing => None,
+            Self::Volume(volume) => Some(Command::SetVolume(volume)),
+            Self::Equaliser(equalisation) => Some(Command::SetEqualisation(equalisation)),
+        }
+    }
+}
+
 #[test]
 fn the_leaving_tail_a_resampler_still_holds_at_a_gapless_turn_is_heard_at_its_own_gain()
 -> Result<()> {
     the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
         &steady(ENTERING_LEVEL, FRAMES),
-        Volume::MAX,
+        AskedAtTheTurn::Nothing,
         [4_000, ENTERING_LEVEL],
     )
 }
@@ -6268,8 +6292,18 @@ fn a_volume_asked_while_a_boundary_waits_behind_a_resampler_reaches_each_row_at_
 -> Result<()> {
     the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
         &steady(ENTERING_LEVEL, FRAMES),
-        Volume::new(0.5).expect("half volume"),
+        AskedAtTheTurn::Volume(Volume::new(0.5).expect("half volume")),
         [500, 1_500],
+    )
+}
+
+#[test]
+fn an_equaliser_asked_while_the_entering_gain_waits_behind_a_resampler_leaves_each_row_at_its_own_gain()
+-> Result<()> {
+    the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
+        &steady(ENTERING_LEVEL, FRAMES),
+        AskedAtTheTurn::Equaliser(equalised(vec![(1_000.0, -3.0, 1.0)])),
+        [4_000, ENTERING_LEVEL],
     )
 }
 
@@ -6278,7 +6312,7 @@ fn the_leaving_tail_a_carried_resampler_holds_at_a_gapless_turn_is_heard_at_its_
 -> Result<()> {
     the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
         &steady_in_twenty_four_bits(ENTERING_LEVEL, FRAMES),
-        Volume::MAX,
+        AskedAtTheTurn::Nothing,
         [4_000, ENTERING_LEVEL],
     )
 }
@@ -6374,10 +6408,10 @@ fn a_carried_resampler_steps_the_entering_gain_where_the_leaving_row_ends_though
 
 fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
     entering: &[u8],
-    asked: Volume,
+    asked: AskedAtTheTurn,
     [leaving_heard, entering_heard]: [i16; 2],
 ) -> Result<()> {
-    const PULLED_BEFORE_THE_ASK: usize = 14_000;
+    const PULLED_BEFORE_THE_LEAVING_ROW_ENDS: usize = 14_000;
     const RAMP_AND_MARGIN: usize = 1_000;
     const TURNING_WITHIN: usize = 1_500;
     const MEASURED_OVER: usize = 4_500;
@@ -6407,19 +6441,18 @@ fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
         start_at: 0,
         autoplay: true,
     })?;
-    if asked != Volume::MAX {
+    let pulled_before_the_ask = asked.pulled_before();
+    if let Some(command) = asked.command() {
         play_until(
             &player,
             &graph,
             SHORT_PULL_FRAMES * frame,
-            |_, graph| graph.played.len() >= PULLED_BEFORE_THE_ASK * frame,
+            |_, graph| graph.played.len() >= pulled_before_the_ask * frame,
             "the leaving row to play until its end is in the ring",
         );
         thread::sleep(Duration::from_millis(300));
         assert!(plays(&player, 1), "the boundary was reached before the ask");
-        player
-            .request(Command::SetVolume(asked))?
-            .wait_for(PATIENCE)?;
+        player.request(command)?.wait_for(PATIENCE)?;
     }
     play_until(
         &player,
@@ -6431,7 +6464,7 @@ fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
 
     let graph = graph.lock();
     let heard = left_words(&graph.played);
-    let searched_from = PULLED_BEFORE_THE_ASK + RAMP_AND_MARGIN;
+    let searched_from = PULLED_BEFORE_THE_LEAVING_ROW_ENDS + RAMP_AND_MARGIN;
     let turned = heard
         .iter()
         .skip(searched_from)

@@ -441,8 +441,13 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   the row being decoded or queue, a sleep fade, a rebind owed, a draining or discarding ring, and
   an eighth boundary behind seven the graph has not reached; a splice, reshape or ramp in flight,
   or an opening not landed, waits while the ring holds more than `HANDED_ON_WHILE_THE_RING_HOLDS`
-  (40 ms), or while no stream has opened yet. A splice asked while a boundary waits is owed
-  (`rows_of_one_format_play_on_through_one_stream_with_no_drain_and_not_a_frame_between_them`,
+  (40 ms), or while no stream has opened yet. **A splice asked while a boundary waits is owed**
+  (`Engine::splice_the_back`), and that is what keeps an equaliser change from dropping a gain step
+  still waiting: `Output::splice_the_back` builds the new back at the entering row's gain alone, so
+  run over the leaving tail it would render it at the entering gain, but a boundary is passed only
+  once the graph has read past it, by then the gain stage has taken the step on that very frame
+  (`an_equaliser_asked_while_the_entering_gain_waits_behind_a_resampler_leaves_each_row_at_its_own_gain`,
+  `rows_of_one_format_play_on_through_one_stream_with_no_drain_and_not_a_frame_between_them`,
   `dop_rows_play_on_through_one_stream_with_no_drain_no_gap_and_the_marker_unbroken_across_them`,
   `a_row_heard_on_without_a_gap_is_announced_as_the_graph_reaches_it_not_as_it_is_written`,
   `a_row_at_another_rate_still_drains_the_stream_and_opens_one_of_its_own`). A stream takes every
