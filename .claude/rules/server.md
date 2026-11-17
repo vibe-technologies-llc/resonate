@@ -192,18 +192,25 @@ keeps a script from filling the store (`guard.rs`, `Store::limited`):
   however briefly each lasts) and `--spaces-per-address-per-day` (5 new spaces, refused `TooFast`;
   a connection to a space that exists is never counted). A connection over either is dropped
   before a byte is read.
-- **Per prefix, beside the address**: the three daily allowances (spaces, shared spaces, rooms) are
-  also spent by every wider prefix an address sits in, an IPv6 `/56` and an IPv4 `/24` four times
-  the address's (`A_SITE_SPENDS_AS_ADDRESSES`), an IPv6 `/48` eight times
-  (`A_NETWORK_SPENDS_AS_ADDRESSES`), and a making is allowed only where the address and every prefix
-  have room, spent from all of them or none, so one routed prefix or a handful of neighbouring IPv4
-  addresses cannot fill `--spaces` or `--rooms` (a space holding one record outlives the unused
-  sweep for `--idle-days`)
-  (`the_sixty_fours_of_one_fifty_six_and_one_forty_eight_share_an_allowance_of_their_own`,
+- **Per prefix, beside the address**: the connections open, the attempts a minute and the three
+  daily allowances (spaces, shared spaces, rooms) are also counted by every wider prefix an address
+  sits in, an IPv6 `/56` and an IPv4 `/24` four times the address's (`A_SITE_SPENDS_AS_ADDRESSES`),
+  an IPv6 `/48` eight times (`A_NETWORK_SPENDS_AS_ADDRESSES`), so by default a `/56` or `/24` holds
+  256 connections and a `/48` 512, never all of `--connections`. A connection or a making is allowed
+  only where the address and every prefix have room, counted against all of them or none, so one
+  routed prefix or a handful of neighbouring IPv4 addresses cannot fill `--connections`, `--spaces`
+  or `--rooms` (a space holding one record outlives the unused sweep for `--idle-days`)
+  (`the_sixty_fours_of_one_fifty_six_and_one_forty_eight_hold_only_so_many_connections_together`,
+  `the_addresses_of_one_twenty_four_hold_only_so_many_connections_and_get_them_back`,
+  `the_addresses_of_one_twenty_four_are_held_to_so_many_attempts_a_minute_together`,
+  `a_connection_a_wider_prefix_refuses_is_not_counted_against_the_address`,
+  `the_sixty_fours_of_one_fifty_six_and_one_forty_eight_share_an_allowance_of_their_own`,
   `the_addresses_of_one_twenty_four_share_an_allowance_of_their_own`,
-  `what_a_wider_prefix_refuses_is_not_spent_from_the_address`). A prefix is kept only once it has
-  spent, forgotten a day after it last did, and the table holds twice as many as the address table,
-  letting the least recently seen go a hundredth at a time.
+  `what_a_wider_prefix_refuses_is_not_spent_from_the_address`). A prefix is kept from its first
+  connection, forgotten a day after it was last seen unless it holds one open, and the table holds
+  twice as many as the address table, letting the least recently seen holding nothing open go a
+  hundredth at a time
+  (`a_full_table_of_prefixes_lets_go_of_those_holding_nothing_open_and_keeps_the_rest`).
 - **Everyone together**: `--connections` (2048 open), `--spaces` (10 000, refused `Busy`) and
   `--total-bytes` (16 GiB over all spaces, an append past it `SpaceFull`). The per-space limits
   above still hold under them.

@@ -117,15 +117,27 @@ impl Daily {
     }
 }
 
-struct Account {
+#[derive(Clone, Copy)]
+struct Flow {
     open: usize,
     attempts: u32,
     attempts_since: Instant,
+}
+
+#[derive(Clone, Copy)]
+struct Flowing {
+    open: usize,
+    attempts: u32,
+}
+
+struct Account {
+    flow: Flow,
     daily: Daily,
     seen: Instant,
 }
 
 struct Pooled {
+    flow: Flow,
     daily: Daily,
     seen: Instant,
 }
@@ -171,6 +183,43 @@ impl Width {
     }
 }
 
+impl Flow {
+    const fn new(now: Instant) -> Self {
+        Self {
+            open: 0,
+            attempts: 0,
+            attempts_since: now,
+        }
+    }
+
+    fn has_room(&mut self, most: Flowing, now: Instant) -> bool {
+        if now.duration_since(self.attempts_since) >= ATTEMPT_WINDOW {
+            self.attempts_since = now;
+            self.attempts = 0;
+        }
+        self.attempts < most.attempts && self.open < most.open
+    }
+
+    const fn take(&mut self) {
+        self.attempts = self.attempts.saturating_add(1);
+        self.open = self.open.saturating_add(1);
+    }
+
+    const fn give_back(&mut self) {
+        self.open = self.open.saturating_sub(1);
+    }
+}
+
+impl Pooled {
+    const fn new(now: Instant) -> Self {
+        Self {
+            flow: Flow::new(now),
+            daily: Daily::new(now),
+            seen: now,
+        }
+    }
+}
+
 impl Prefix {
     fn around(address: IpAddr) -> impl Iterator<Item = Self> {
         let widths: &[(Width, usize)] = match address.to_canonical() {
@@ -203,6 +252,23 @@ fn kept_to(address: IpAddr, kept: usize) -> IpAddr {
 }
 
 impl Allowance {
+    const fn per_address(&self) -> Flowing {
+        Flowing {
+            open: self.connections_per_address,
+            attempts: self.attempts_per_minute,
+        }
+    }
+
+    const fn per_prefix(&self, width: Width) -> Flowing {
+        let addresses = width.spends_as_addresses();
+        Flowing {
+            open: self
+                .connections_per_address
+                .saturating_mul(addresses as usize),
+            attempts: self.attempts_per_minute.saturating_mul(addresses),
+        }
+    }
+
     const fn per_address_per_day(&self, making: Making) -> u32 {
         match making {
             Making::Space => self.spaces_per_address_per_day,
@@ -213,11 +279,9 @@ impl Allowance {
 }
 
 impl Account {
-    fn new(now: Instant) -> Self {
+    const fn new(now: Instant) -> Self {
         Self {
-            open: 0,
-            attempts: 0,
-            attempts_since: now,
+            flow: Flow::new(now),
             daily: Daily::new(now),
             seen: now,
         }
@@ -239,8 +303,12 @@ impl Guard {
 
     pub fn admit(self: &Arc<Self>, address: IpAddr) -> Option<Arc<Admitted>> {
         let source = Source::of(address);
+        let prefixes: Vec<(Prefix, Flowing)> = Prefix::around(address)
+            .map(|prefix| (prefix, self.allowance.per_prefix(prefix.width)))
+            .collect();
         let now = Instant::now();
-        let mut ledger = self.ledger.lock();
+        let mut held = self.ledger.lock();
+        let ledger = &mut *held;
         if ledger.open >= self.allowance.connections {
             return None;
         }
@@ -255,18 +323,38 @@ impl Guard {
             .accounts
             .entry(source)
             .or_insert_with(|| Account::new(now));
-        if now.duration_since(account.attempts_since) >= ATTEMPT_WINDOW {
-            account.attempts_since = now;
-            account.attempts = 0;
-        }
         account.seen = now;
-        if account.attempts >= self.allowance.attempts_per_minute
-            || account.open >= self.allowance.connections_per_address
-        {
+        if !account.flow.has_room(self.allowance.per_address(), now) {
             return None;
         }
-        account.attempts += 1;
-        account.open += 1;
+        let prefixes_have_room = prefixes.iter().all(|(prefix, most)| {
+            ledger
+                .prefixes
+                .get_mut(prefix)
+                .is_none_or(|pooled| pooled.flow.has_room(*most, now))
+        });
+        if !prefixes_have_room {
+            return None;
+        }
+        let unkept = prefixes
+            .iter()
+            .filter(|(prefix, _)| !ledger.prefixes.contains_key(prefix))
+            .count();
+        if !ledger.room_for_prefixes(unkept, self.most_prefixes(), now) {
+            return None;
+        }
+
+        if let Some(account) = ledger.accounts.get_mut(&source) {
+            account.flow.take();
+        }
+        for (prefix, _) in &prefixes {
+            let pooled = ledger
+                .prefixes
+                .entry(*prefix)
+                .or_insert_with(|| Pooled::new(now));
+            pooled.seen = now;
+            pooled.flow.take();
+        }
         ledger.open += 1;
         Some(Arc::new(Admitted {
             guard: Arc::clone(self),
@@ -275,11 +363,20 @@ impl Guard {
         }))
     }
 
-    fn release(&self, source: Source) {
+    const fn most_prefixes(&self) -> usize {
+        self.most_addresses.saturating_mul(PREFIXES_KEPT_AN_ADDRESS)
+    }
+
+    fn release(&self, source: Source, address: IpAddr) {
         let mut ledger = self.ledger.lock();
         ledger.open = ledger.open.saturating_sub(1);
         if let Some(account) = ledger.accounts.get_mut(&source) {
-            account.open = account.open.saturating_sub(1);
+            account.flow.give_back();
+        }
+        for prefix in Prefix::around(address) {
+            if let Some(pooled) = ledger.prefixes.get_mut(&prefix) {
+                pooled.flow.give_back();
+            }
         }
     }
 
@@ -296,7 +393,7 @@ impl Ledger {
         let mut closed: Vec<(Instant, Source)> = self
             .accounts
             .iter()
-            .filter(|(_, account)| account.open == 0)
+            .filter(|(_, account)| account.flow.open == 0)
             .map(|(source, account)| (account.seen, *source))
             .collect();
         let evicted = (most / ADDRESSES_EVICTED_AT_ONCE_DIVISOR)
@@ -313,31 +410,44 @@ impl Ledger {
 
     fn forget_quiet(&mut self, now: Instant) {
         self.accounts.retain(|_, account| {
-            account.open > 0 || now.duration_since(account.seen) < FORGET_AFTER
+            account.flow.open > 0 || now.duration_since(account.seen) < FORGET_AFTER
         });
-        self.prefixes
-            .retain(|_, pooled| now.duration_since(pooled.seen) < FORGET_AFTER);
+        self.forget_quiet_prefixes(now);
     }
 
-    fn room_for_a_prefix(&mut self, most: usize, now: Instant) {
-        if self.prefixes.len() < most {
-            return;
+    fn forget_quiet_prefixes(&mut self, now: Instant) {
+        self.prefixes.retain(|_, pooled| {
+            pooled.flow.open > 0 || now.duration_since(pooled.seen) < FORGET_AFTER
+        });
+    }
+
+    fn room_for_prefixes(&mut self, unkept: usize, most: usize, now: Instant) -> bool {
+        let fits =
+            |prefixes: &HashMap<Prefix, Pooled>| prefixes.len().saturating_add(unkept) <= most;
+        if fits(&self.prefixes) {
+            return true;
         }
-        self.prefixes
-            .retain(|_, pooled| now.duration_since(pooled.seen) < FORGET_AFTER);
-        if self.prefixes.len() < most {
-            return;
+        self.forget_quiet_prefixes(now);
+        if fits(&self.prefixes) {
+            return true;
         }
-        let mut seen: Vec<(Instant, Prefix)> = self
+        let mut closed: Vec<(Instant, Prefix)> = self
             .prefixes
             .iter()
+            .filter(|(_, pooled)| pooled.flow.open == 0)
             .map(|(prefix, pooled)| (pooled.seen, *prefix))
             .collect();
-        let evicted = (most / ADDRESSES_EVICTED_AT_ONCE_DIVISOR).clamp(1, seen.len());
-        seen.select_nth_unstable_by_key(evicted - 1, |(seen, _)| *seen);
-        for (_, prefix) in &seen[..evicted] {
-            self.prefixes.remove(prefix);
+        let wanted = (self.prefixes.len() + unkept).saturating_sub(most);
+        let evicted = (most / ADDRESSES_EVICTED_AT_ONCE_DIVISOR)
+            .max(wanted)
+            .min(closed.len());
+        if evicted > 0 {
+            closed.select_nth_unstable_by_key(evicted - 1, |(seen, _)| *seen);
+            for (_, prefix) in &closed[..evicted] {
+                self.prefixes.remove(prefix);
+            }
         }
+        fits(&self.prefixes)
     }
 }
 
@@ -380,20 +490,11 @@ impl Admitted {
             return false;
         }
         account.daily.of(making).spend();
-        let most_prefixes = self
-            .guard
-            .most_addresses
-            .saturating_mul(PREFIXES_KEPT_AN_ADDRESS);
         for (prefix, _) in prefixes {
-            if !ledger.prefixes.contains_key(&prefix) {
-                ledger.room_for_a_prefix(most_prefixes, now);
+            if let Some(pooled) = ledger.prefixes.get_mut(&prefix) {
+                pooled.seen = now;
+                pooled.daily.of(making).spend();
             }
-            let pooled = ledger.prefixes.entry(prefix).or_insert_with(|| Pooled {
-                daily: Daily::new(now),
-                seen: now,
-            });
-            pooled.seen = now;
-            pooled.daily.of(making).spend();
         }
         true
     }
@@ -401,7 +502,7 @@ impl Admitted {
 
 impl Drop for Admitted {
     fn drop(&mut self) {
-        self.guard.release(self.source);
+        self.guard.release(self.source, self.address);
     }
 }
 
@@ -547,6 +648,108 @@ mod tests {
 
         assert_eq!(within, [true, true, true, true, false]);
         assert!(beyond);
+    }
+
+    fn roomy() -> Allowance {
+        Allowance {
+            connections: 1_000,
+            ..tight()
+        }
+    }
+
+    #[test]
+    fn the_sixty_fours_of_one_fifty_six_and_one_forty_eight_hold_only_so_many_connections_together()
+    {
+        let guard = Guard::new(roomy());
+        let held = |site: u16, network: u16, block: u16| {
+            [
+                guard.admit(in_six(site, network, block)),
+                guard.admit(in_six(site, network, block)),
+            ]
+        };
+
+        let first_site: Vec<_> = (1..=4).map(|block| held(0, 0, block)).collect();
+        let past_the_site = guard.admit(in_six(0, 0, 5));
+        let second_site: Vec<_> = (1..=4).map(|block| held(1, 0, block)).collect();
+        let past_the_network = guard.admit(in_six(2, 0, 1));
+        let another_network = guard.admit(in_six(0, 1, 1));
+
+        assert!(first_site.iter().flatten().all(Option::is_some));
+        assert!(past_the_site.is_none(), "a /56 held more than its share");
+        assert!(second_site.iter().flatten().all(Option::is_some));
+        assert!(past_the_network.is_none(), "a /48 held more than its share");
+        assert!(another_network.is_some());
+    }
+
+    #[test]
+    fn the_addresses_of_one_twenty_four_hold_only_so_many_connections_and_get_them_back() {
+        let guard = Guard::new(roomy());
+
+        let mut within: Vec<_> = (1..=4)
+            .flat_map(|last| [guard.admit(address(last)), guard.admit(address(last))])
+            .collect();
+        let past_the_site = guard.admit(address(5));
+        let beyond = guard.admit(IpAddr::from([198, 51, 100, 1]));
+
+        assert!(within.iter().all(Option::is_some));
+        assert!(past_the_site.is_none(), "a /24 held more than its share");
+        assert!(beyond.is_some());
+
+        within.pop();
+
+        assert!(guard.admit(address(5)).is_some());
+    }
+
+    #[test]
+    fn the_addresses_of_one_twenty_four_are_held_to_so_many_attempts_a_minute_together() {
+        let guard = Guard::new(roomy());
+
+        let within: Vec<bool> = (1..=4)
+            .flat_map(|last| (0..3).map(move |_| last))
+            .map(|last| guard.admit(address(last)).is_some())
+            .collect();
+        let past_the_site = guard.admit(address(5));
+        let beyond = guard.admit(IpAddr::from([198, 51, 100, 1]));
+
+        assert!(within.iter().all(|admitted| *admitted));
+        assert!(
+            past_the_site.is_none(),
+            "a /24 tried more often than its share"
+        );
+        assert!(beyond.is_some());
+    }
+
+    #[test]
+    fn a_connection_a_wider_prefix_refuses_is_not_counted_against_the_address() {
+        let guard = Guard::new(roomy());
+
+        let _within: Vec<_> = (1..=4)
+            .flat_map(|last| [guard.admit(address(last)), guard.admit(address(last))])
+            .collect();
+        let refused = guard.admit(address(5));
+
+        assert!(refused.is_none());
+        let flow = guard.ledger.lock().accounts[&Source::of(address(5))].flow;
+        assert_eq!((flow.open, flow.attempts), (0, 0));
+    }
+
+    #[test]
+    fn a_full_table_of_prefixes_lets_go_of_those_holding_nothing_open_and_keeps_the_rest() {
+        let guard = Guard::keeping(roomy(), 2);
+        let kept = |network: u16| {
+            Prefix::around(in_six(0, network, 1))
+                .all(|prefix| guard.ledger.lock().prefixes.contains_key(&prefix))
+        };
+
+        let held = guard.admit(in_six(0, 1, 1));
+        drop(guard.admit(in_six(0, 2, 1)));
+        let arriving = guard.admit(in_six(0, 3, 1));
+
+        assert!(held.is_some() && arriving.is_some());
+        assert_eq!(guard.ledger.lock().prefixes.len(), 4);
+        assert!(kept(1), "a prefix holding a connection was let go");
+        assert!(!kept(2));
+        assert!(kept(3));
     }
 
     #[test]
