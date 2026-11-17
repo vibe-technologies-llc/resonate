@@ -113,15 +113,9 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   Spotify's holder reads the file again when its mtime moves (`binary.md`)
 
 ## macOS
-- [S · 0.12.1] A panic in a press handler unwinds into Objective-C: `notices.rs`'s `did_receive` and
-  `now_playing.rs`'s `RcBlock` handlers call the listener's closure with no `catch_unwind`, where
-  `listening.rs` guards its nudge, so a panic there ends the window
-- [S · 0.12.1] Investigate: `buffers.rs`'s `rendered` destructures `mBuffers` without asking
-  `mNumberBuffers >= 1`, so a list of no buffers would be written through a stale pointer on the
-  realtime thread
-- [S · 0.12.1] Investigate: `NowPlaying::drop` removes every remote-command target in the process
-  (`removeTarget(None)`, posted to the main queue), so a `NowPlaying` made before the last one's drop
-  lands loses its handlers; one transport thread a service keeps it latent
+- [S · 0.12.1] `NowPlaying::drop` still clears the process's now-playing information and sets the state
+  stopped (`now_playing.rs`), so a `NowPlaying` made before the last one's drop lands is shown as
+  stopped with nothing playing; clear it only where this owner set it last
 
 ## Equaliser
 - [S · 0.12.1] A binaural pair's stage left by a crash (`write_atomically`'s staged name beside the
