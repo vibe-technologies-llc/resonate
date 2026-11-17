@@ -9,6 +9,9 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::{Error, Result, StoreOp};
 
+#[cfg(test)]
+mod released;
+
 const V1: &str = "
 CREATE TABLE spaces (
     id BLOB PRIMARY KEY,

@@ -91,7 +91,9 @@ decodes both and requires a decoded value to read back as itself.
   (`answers_kept_before_they_were_numbered_go_on_from_the_newest_number`), the third
   `answers_by_age` (`AN_ANSWERS_AGE_IS_READ_OFF_AN_INDEX`), so the open's sweep of the stale and
   its bringing of a future stamp back to now read only the rows they change
-  (`answers_kept_before_their_age_was_indexed_stay_and_are_aged_off_the_index`). A later
+  (`answers_kept_before_their_age_was_indexed_stay_and_are_aged_off_the_index`). The steps a release shipped are
+  pinned by their text's hash in `kept/released.rs` (`release.md`), since a counted `user_version`
+  would leave an edited step and the shipped one apart silently. A later
   build's store is `Error::KeptVersion`
   (`kept_answers_laid_out_by_a_later_build_are_refused_and_this_builds_open_again`).
 

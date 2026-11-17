@@ -29,6 +29,8 @@ use crate::{
 };
 
 mod deletions;
+#[cfg(test)]
+mod released;
 mod unheld;
 
 pub const BUNDLE_BYTES: usize = 192 * 1024;

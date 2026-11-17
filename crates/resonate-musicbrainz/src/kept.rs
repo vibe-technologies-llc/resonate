@@ -12,6 +12,9 @@ use crate::{
     wire::mbid_bytes,
 };
 
+#[cfg(test)]
+mod released;
+
 pub const KEPT_FRESH_FOR: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 pub const KEPT_ANSWERS_TOLD_AT_ONCE: usize = 512;
 

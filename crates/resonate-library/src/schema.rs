@@ -2997,3 +2997,7 @@ mod tests {
         assert_eq!(never_unstamped(FNV_OFFSET_BASIS), FNV_OFFSET_BASIS);
     }
 }
+
+#[cfg(test)]
+#[path = "schema_released_tests.rs"]
+mod released;

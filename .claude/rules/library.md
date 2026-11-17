@@ -31,7 +31,10 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   it; any other stamp (a later build's, an edited schema's) is `Error::SchemaMismatch`, the one case
   where the catalog is deleted and rescanned. All of it in one `IMMEDIATE` transaction, the stamp read
   inside it (a second process waits, then reads the stamp left). The stamp stays a hash (a counted
-  version cannot tell same-count builds apart).
+  version cannot tell same-count builds apart). `STAMPS_RELEASED` (`schema_released_tests.rs`) is
+  every stamp a release wrote, as a literal, so an edit to `V1` or a released step fails
+  `every_stamp_a_release_shipped_is_hashed_as_it_shipped` instead of wiping a listener's catalog on
+  upgrade (`release.md`).
   (`a_catalog_laid_out_at_the_first_release_is_carried_forward_not_refused`,
   `every_step_of_the_chain_stamps_a_catalog_differently`,
   `a_catalog_another_schema_wrote_is_refused_rather_than_read`,

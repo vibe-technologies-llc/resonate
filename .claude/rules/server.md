@@ -13,7 +13,7 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 ## What it keeps
 
 - **SQLite, three tables** (`store.rs`, `V1` in `MIGRATIONS`, the 0.1.0 baseline never edited, and
-  the steps after it): `spaces` (id, the SHA-256 of
+  the steps after it, those a release shipped pinned in `store/released.rs`, `release.md`): `spaces` (id, the SHA-256 of
   the token, created, touched, bytes, head, snapshot through), `records` (space, seq, device,
   blob, and the blob's SHA-256 `digest` the second step `RECORDS_ARE_KNOWN_BY_THEIR_DIGEST` added,
   NULL for a record stored before it), `snapshots` (space, part, blob). Every store call runs on `spawn_blocking` behind one lock.

@@ -160,7 +160,8 @@ table and `state.joined`, below; `LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED`: an inde
 listen's `at`, so a look's aging never scans the table; `UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS`:
 `answers.named` and `state.held_mark`, below); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
-(`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`). All merging lives here, once for both
+(`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`); the steps a release
+shipped are pinned by their text's hash in `ledger/released.rs`'s `STEPS_RELEASED` (`release.md`). All merging lives here, once for both
 platforms; the catalog seam stays thin.
 
 - **Stamps are last-writer-wins on a hybrid clock**: `Stamp { nanos, device }` ordered by both;
