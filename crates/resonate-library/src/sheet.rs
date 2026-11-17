@@ -23,6 +23,8 @@ use crate::{
 
 const LARGEST_PLAYLIST_FILE: u64 = 64 * 1024 * 1024;
 
+const LINKS_FOLLOWED_AT_MOST: usize = 40;
+
 const HIDDEN_MARK: &str = ".";
 
 const SCHEME_SEPARATOR: &str = "://";
@@ -237,14 +239,31 @@ pub(crate) fn write(
 }
 
 fn landing_of(path: &Path) -> Result<PathBuf> {
-    match fs::canonicalize(path) {
-        Ok(landing) => Ok(landing),
-        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(path.to_path_buf()),
-        Err(source) => Err(Error::Io {
-            path: path.to_path_buf(),
-            source,
-        }),
+    let mut landing = path.to_path_buf();
+    for _ in 0..LINKS_FOLLOWED_AT_MOST {
+        match fs::canonicalize(&landing) {
+            Ok(found) => return Ok(found),
+            Err(source) if source.kind() == io::ErrorKind::NotFound => {
+                match fs::read_link(&landing) {
+                    Ok(named) => landing = folder_of(&landing).join(named),
+                    Err(_) => return Ok(landing),
+                }
+            }
+            Err(source) => {
+                return Err(Error::Io {
+                    path: path.to_path_buf(),
+                    source,
+                });
+            }
+        }
     }
+    Err(Error::NotAPlaylistFile {
+        path: path.to_path_buf(),
+    })
+}
+
+fn folder_of(path: &Path) -> &Path {
+    path.parent().unwrap_or_else(|| Path::new(""))
 }
 
 pub fn timed(entry: &PlaylistEntry) -> Option<Timed> {

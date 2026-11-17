@@ -2571,7 +2571,10 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   `sheet::parse` reads a sheet with no file. Shared there: the relative-or-absolute path rule,
   percent escaping both ways, and the staged rename over the target. **An export lands where a
   linked sheet points** (`sheet::landing_of` canonicalises the target, so a symlinked `.m3u` stays a
-  link: `a_playlist_exported_over_a_linked_sheet_rewrites_what_the_link_names_and_keeps_the_link`);
+  link: `a_playlist_exported_over_a_linked_sheet_rewrites_what_the_link_names_and_keeps_the_link`;
+  a link naming nothing yet is followed hop by hop, at most `LINKS_FOLLOWED_AT_MOST`, to the name
+  it points at, so a dangling link stays a link too:
+  `a_playlist_exported_over_a_link_naming_no_sheet_yet_writes_where_it_points_and_keeps_the_link`);
   rows are still written relative to the path as given. The stage is a hidden sibling of the landing
   (`.<name>.<pid>-<n>` and `organise::STAGED`), noted in `staged_writes` before a byte is written
   and held under `Held::made` until renamed, so a kill's stage is swept by the next
