@@ -14,9 +14,9 @@ use crate::{
     DeviceId, Error, Malformed, Result, SpaceId, Token,
     catalog::{Held, SongTags},
     change::{
-        AnswerNote, Change, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, LayoutNote,
-        Listen, Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody,
-        QueryFolded, QueryNote, ShareNote, Stamp,
+        AnswerNote, Change, DeletionNote, DeviceForgotten, DeviceNote, FavouriteNote, Handoff,
+        LayoutNote, Listen, Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote,
+        QueryBody, QueryFolded, QueryNote, ShareNote, Stamp,
     },
     consulted::{Dates, ExportPart, KeptAnswer},
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
@@ -2223,6 +2223,12 @@ pub fn encoded_change(change: &Change) -> Vec<u8> {
             writer.text(&note.layout);
             writer.stamp(note.stamp);
         }
+        Change::Deletion(note) => {
+            writer.byte(12);
+            writer.recording(&note.recording);
+            writer.flag(note.deleted);
+            writer.stamp(note.stamp);
+        }
     }
     writer.finish()
 }
@@ -2389,6 +2395,11 @@ fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
         11 => Change::Layout(LayoutNote {
             device: reader.device()?,
             layout: reader.text()?,
+            stamp: reader.stamp()?,
+        }),
+        12 => Change::Deletion(DeletionNote {
+            recording: reader.recording()?,
+            deleted: reader.flag()?,
             stamp: reader.stamp()?,
         }),
         _ => return Ok(None),
@@ -3249,6 +3260,16 @@ mod tests {
             Change::Layout(LayoutNote {
                 device: DeviceId([1; DEVICE_BYTES]),
                 layout: "{albumartist}/{year} {album}/{track} {title}".into(),
+                stamp: stamp(),
+            }),
+            Change::Deletion(DeletionNote {
+                recording: song("Echoes"),
+                deleted: true,
+                stamp: stamp(),
+            }),
+            Change::Deletion(DeletionNote {
+                recording: song("Fearless"),
+                deleted: false,
                 stamp: stamp(),
             }),
         ];

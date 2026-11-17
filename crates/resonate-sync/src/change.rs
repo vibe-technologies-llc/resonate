@@ -149,6 +149,13 @@ pub struct LayoutNote {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeletionNote {
+    pub recording: Recording,
+    pub deleted: bool,
+    pub stamp: Stamp,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Change {
     Device(DeviceNote),
     Forgotten(DeviceForgotten),
@@ -162,6 +169,7 @@ pub enum Change {
     QueryFolded(QueryFolded),
     Share(ShareNote),
     Layout(LayoutNote),
+    Deletion(DeletionNote),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -239,6 +247,7 @@ impl Change {
             Self::Answer(note) => Some(note.stamp),
             Self::Share(note) => Some(note.stamp),
             Self::Layout(note) => Some(note.stamp),
+            Self::Deletion(note) => Some(note.stamp),
             Self::Listen(_) | Self::PlaylistFolded(_) | Self::QueryFolded(_) => None,
         }
     }

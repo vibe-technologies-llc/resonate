@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, path::Path, time::Duration};
 use resonate_core::{Answer, Answered, Recording, RecordingKey, WholeFile};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
+use self::deletions::SONGS_DELETED_EVERYWHERE;
 use crate::{
     DeviceId, Error, Result, SpaceId, StoreOp,
     catalog::{
@@ -23,6 +24,8 @@ use crate::{
         encoded_recording, encoded_recordings,
     },
 };
+
+mod deletions;
 
 pub const BUNDLE_BYTES: usize = 192 * 1024;
 pub const LISTENS_LOOKED_AT_ONCE: usize = 2_000;
@@ -205,6 +208,7 @@ const MIGRATIONS: &[&str] = &[
     NAMESAKES_MADE_APART_BECOME_ONE,
     SHARED_PLAYLISTS_STAND_APART,
     LAYOUTS_TRAVEL,
+    SONGS_DELETED_EVERYWHERE,
 ];
 
 const OWE_EVERYTHING: &str = "
@@ -219,6 +223,7 @@ UPDATE shares SET owed = 1;
 UPDATE answers SET owed = 1;
 UPDATE playlist_folds SET owed = 1;
 UPDATE query_folds SET owed = 1;
+UPDATE deletions SET owed = 1;
 ";
 
 const FORGET_THE_SPACE: &str = "
@@ -233,6 +238,7 @@ DELETE FROM shares;
 DELETE FROM answers;
 DELETE FROM playlist_folds;
 DELETE FROM query_folds;
+DELETE FROM deletions;
 UPDATE state SET cursor = 0, since_snapshot = 0, bytes_since = 0, listens_mark = 0, answers_mark = 0, resumed = NULL;
 ";
 
@@ -281,6 +287,7 @@ pub struct Ledger {
     device: DeviceId,
     clock: Clock,
     answers_tried_at: Option<u64>,
+    deletions_tried_at: Option<u64>,
 }
 
 struct AnswerSlot {
@@ -500,6 +507,7 @@ impl Ledger {
             device,
             clock: Clock::from_last(clock),
             answers_tried_at: None,
+            deletions_tried_at: None,
         })
     }
 
@@ -525,6 +533,7 @@ impl Ledger {
                 params![space.0.as_slice()],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Self::joined_now(&transaction)?;
         transaction
             .commit()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -563,6 +572,9 @@ impl Ledger {
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         self.connection
             .execute("UPDATE layouts SET owed = 1", [])
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        self.connection
+            .execute("UPDATE deletions SET owed = 1", [])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         self.connection
             .execute("UPDATE queries SET owed = 1", [])
@@ -654,6 +666,7 @@ impl Ledger {
         self.look_at_resumption(catalog)?;
         self.look_at_layout(catalog)?;
         self.look_at_answers(catalog)?;
+        self.look_at_deletions(catalog)?;
         self.keep_the_clock()?;
         self.age_listens()?;
 
@@ -1761,7 +1774,8 @@ impl Ledger {
                       + (SELECT count(*) FROM shares WHERE owed = 1)
                       + (SELECT count(*) FROM answers WHERE owed = 1)
                       + (SELECT count(*) FROM playlist_folds WHERE owed = 1)
-                      + (SELECT count(*) FROM query_folds WHERE owed = 1)",
+                      + (SELECT count(*) FROM query_folds WHERE owed = 1)
+                      + (SELECT count(*) FROM deletions WHERE owed = 1)",
                 [],
                 |row| row.get(0),
             )
@@ -1804,6 +1818,11 @@ impl Ledger {
                 .into_iter()
                 .map(Change::Layout),
         );
+        changes.extend(
+            self.deletions_where("owed = 1")?
+                .into_iter()
+                .map(Change::Deletion),
+        );
         Ok(bundled(changes))
     }
 
@@ -1822,6 +1841,7 @@ impl Ledger {
         changes.extend(self.answer_notes("1")?.into_iter().map(Change::Answer));
         changes.extend(self.share_notes("1")?.into_iter().map(Change::Share));
         changes.extend(self.layouts_where("1")?.into_iter().map(Change::Layout));
+        changes.extend(self.deletions_where("1")?.into_iter().map(Change::Deletion));
         Ok(bundled(changes))
     }
 
@@ -1876,6 +1896,14 @@ impl Ledger {
                 Change::Layout(note) => transaction.execute(
                     "UPDATE layouts SET owed = 0 WHERE device = ?1 AND nanos = ?2",
                     params![note.device.0.as_slice(), note.stamp.nanos],
+                ),
+                Change::Deletion(note) => transaction.execute(
+                    "UPDATE deletions SET owed = 0 WHERE key = ?1 AND nanos = ?2 AND stamped_by = ?3",
+                    params![
+                        note.recording.key().as_str(),
+                        note.stamp.nanos,
+                        note.stamp.device.0.as_slice()
+                    ],
                 ),
                 Change::Answer(note) => {
                     let slot = AnswerSlot::of(&note.recording, &note.answer);
@@ -1941,9 +1969,14 @@ impl Ledger {
                     self.layout_arrived(note)?;
                     false
                 }
+                Change::Deletion(note) => {
+                    self.deletion_arrived(note)?;
+                    false
+                }
             };
             applied.changed_here += usize::from(changed);
         }
+        applied.changed_here += self.settle_deletions(catalog)?;
         applied.changed_here += self.fold_playlists(catalog)?;
         applied.changed_here += self.fold_queries(catalog)?;
         self.keep_the_clock()?;
@@ -3233,6 +3266,7 @@ impl Ledger {
         }
 
         settled += self.settle_answers(catalog)?;
+        settled += self.settle_deletions(catalog)?;
         Ok(settled)
     }
 
@@ -3386,7 +3420,7 @@ impl Ledger {
         }
         let mut still_wanted = Vec::with_capacity(wanted.len());
         for recording in one_recording_a_song(wanted.into_values()) {
-            if lacked(catalog, &recording)? {
+            if !self.deleted_everywhere(&recording)? && lacked(catalog, &recording)? {
                 still_wanted.push(recording);
             }
         }
@@ -4243,6 +4277,56 @@ mod tests {
         assert_eq!(ledger.device(), DeviceId([3; 16]));
         assert_eq!(handoffs, 1);
         assert!(layouts.is_empty());
+    }
+
+    #[test]
+    fn a_ledger_of_before_deletions_travelled_keeps_its_layouts_and_knows_no_deletion() {
+        let connection = Connection::open_in_memory().expect("a connection");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == SONGS_DELETED_EVERYWHERE)
+            .expect("the step is in the chain");
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("the ledger of before");
+        }
+        connection
+            .execute(
+                "INSERT INTO state (id, device, space) VALUES (1, ?1, ?2)",
+                params![[3_u8; 16].as_slice(), [5_u8; 16].as_slice()],
+            )
+            .expect("a state row");
+        connection
+            .execute(
+                "INSERT INTO layouts (device, layout, nanos, stamped_by)
+                 VALUES (X'04040404040404040404040404040404', '{artist}/{title}', 1, X'04040404040404040404040404040404')",
+                [],
+            )
+            .expect("a layout of before");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(before).expect("a count"),
+            )
+            .expect("stamped");
+
+        let mut ledger = Ledger::over(connection).expect("carried forward");
+        let layouts = ledger.layouts().expect("layouts").len();
+        let standing = ledger.deletions_where("1").expect("deletions");
+        let joined = ledger.joined().expect("joined");
+        let entered_again = ledger
+            .enter_space(SpaceId([5; 16]))
+            .expect("the same space");
+        ledger
+            .space_made_anew()
+            .expect("everything owed, the new table too");
+
+        assert_eq!(layouts, 1);
+        assert!(standing.is_empty());
+        assert_eq!(joined, 0);
+        assert!(!entered_again);
     }
 
     #[test]

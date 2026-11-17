@@ -1247,6 +1247,44 @@ fn a_song_deleted_from_the_app_after_a_follow_listed_it_is_not_fetched_back() {
 }
 
 #[test]
+fn a_song_deleted_from_every_device_is_not_followed_back_from_one_that_kept_it_even_after_sync_now()
+{
+    let folder = scratch("deleted-everywhere");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+    desk_shelf.favour_here("A", true);
+    desk_shelf.favour_here("B", true);
+    desk_shelf.inside.lock().refuses_deletions = true;
+    phone_shelf.delete_everywhere("A");
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device_following(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+        following_favourites(),
+    );
+    eventually("the other favourite followed", || {
+        holds_title(&phone_shelf, "B")
+    });
+    eventually("the deletion told", || {
+        phone_shelf.inside.lock().to_tell.is_empty()
+    });
+    phone.force();
+    thread::sleep(Duration::from_secs(2));
+
+    assert!(!holds_title(&phone_shelf, "A"));
+    assert!(holds_title(&desk_shelf, "A"));
+
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
 fn a_song_refused_at_landing_is_not_fetched_again_after_a_restart() {
     let folder = scratch("refused-kept");
     let key = SyncKey::minted().expect("a key");

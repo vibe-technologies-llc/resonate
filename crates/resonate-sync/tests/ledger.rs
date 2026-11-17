@@ -1907,3 +1907,204 @@ fn an_owed_share_is_counted_among_what_is_owed() {
     assert_eq!(shares_told(&owed), 1);
     assert_eq!(counted, owed.len());
 }
+
+fn following_playlists(device: &mut Device, name: &str) -> Follow {
+    let (id, _) = device.shelf.playlist_named(name).expect("a playlist");
+    device
+        .ledger
+        .keep_songs_of(
+            LocalPlaylistId {
+                id,
+                created: id * 1000,
+            },
+            true,
+        )
+        .expect("kept");
+    Follow {
+        playlists: true,
+        ..Follow::default()
+    }
+}
+
+fn wanted_titles(device: &Device, follow: Follow) -> Vec<String> {
+    let mut titles = device
+        .ledger
+        .wanted(follow, &device.shelf)
+        .expect("wanted")
+        .into_iter()
+        .map(|recording| recording.title)
+        .collect::<Vec<_>>();
+    titles.sort();
+    titles
+}
+
+fn deletions(changes: &[Change]) -> Vec<(String, bool)> {
+    changes
+        .iter()
+        .filter_map(|change| match change {
+            Change::Deletion(note) => Some((note.recording.title.clone(), note.deleted)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_song_deleted_from_every_device_leaves_the_other_and_is_not_followed_back() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+    desk.shelf.make_playlist("Summer", &["A", "B"]);
+    sync(&mut desk, &mut phone);
+    let follow = following_playlists(&mut phone, "Summer");
+
+    desk.shelf.delete_everywhere("A");
+    let told = desk.send();
+    phone.receive(&told);
+
+    assert_eq!(deletions(&told), [("A".to_owned(), true)]);
+    assert!(desk.shelf.inside.lock().to_tell.is_empty());
+    assert_eq!(phone.shelf.song_titles(), ["B"]);
+    assert!(wanted_titles(&phone, follow).is_empty());
+    assert!(phone.ledger.deleted_everywhere(&song("A")).expect("asked"));
+    assert!(deletions(&phone.send()).is_empty());
+    assert!(deletions(&desk.send()).is_empty());
+}
+
+#[test]
+fn a_song_deleted_only_here_tells_no_other_device() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+    sync(&mut desk, &mut phone);
+
+    desk.shelf.inside.lock().deleted_by_hand = vec!["A".into()];
+    desk.shelf.inside.lock().deleted_here = vec!["A".into()];
+    desk.shelf.moved();
+    let told = desk.send();
+    phone.receive(&told);
+
+    assert!(deletions(&told).is_empty());
+    assert_eq!(phone.shelf.song_titles(), ["A", "B"]);
+    assert!(!phone.ledger.deleted_everywhere(&song("A")).expect("asked"));
+}
+
+#[test]
+fn a_device_refusing_deletions_from_others_keeps_the_song_and_no_device_follows_it_back() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+    let mut laptop = Device::new("Laptop", &["B"]);
+    phone.shelf.inside.lock().refuses_deletions = true;
+    desk.shelf.make_playlist("Summer", &["A", "B"]);
+    sync(&mut desk, &mut phone);
+    laptop.receive(&desk.ledger.snapshot().expect("a snapshot").concat());
+    let desk_follows = following_playlists(&mut desk, "Summer");
+    let laptop_follows = following_playlists(&mut laptop, "Summer");
+    assert_eq!(wanted_titles(&laptop, laptop_follows), ["A"]);
+
+    desk.shelf.delete_everywhere("A");
+    let told = desk.send();
+    phone.receive(&told);
+    laptop.receive(&told);
+
+    assert_eq!(phone.shelf.song_titles(), ["A", "B"]);
+    assert!(
+        phone
+            .ledger
+            .deleted_everywhere(&song("A"))
+            .expect("recorded")
+    );
+    assert!(deletions(&phone.send()).is_empty());
+    assert!(wanted_titles(&desk, desk_follows).is_empty());
+    assert!(wanted_titles(&laptop, laptop_follows).is_empty());
+}
+
+#[test]
+fn a_song_added_again_after_its_deletion_is_never_deleted_again_and_comes_back() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+    let mut laptop = Device::new("Laptop", &["B"]);
+    desk.shelf.make_playlist("Summer", &["A", "B"]);
+    sync(&mut desk, &mut phone);
+    laptop.receive(&desk.ledger.snapshot().expect("a snapshot").concat());
+    let follow = following_playlists(&mut phone, "Summer");
+    desk.shelf.delete_everywhere("A");
+    let told = desk.send();
+    phone.receive(&told);
+    laptop.shelf.add_song(song("A"), b"A".repeat(1000));
+    laptop.receive(&told);
+
+    assert_eq!(phone.shelf.song_titles(), ["B"]);
+    assert_eq!(laptop.shelf.song_titles(), ["A", "B"]);
+    assert!(deletions(&laptop.send()).is_empty());
+
+    desk.shelf.add_song(song("A"), b"A".repeat(1000));
+    let answered = desk.send();
+    phone.receive(&answered);
+    phone.receive(&told);
+    desk.receive(&told);
+
+    assert_eq!(deletions(&answered), [("A".to_owned(), false)]);
+    assert_eq!(desk.shelf.song_titles(), ["A", "B"]);
+    assert!(!phone.ledger.deleted_everywhere(&song("A")).expect("asked"));
+    assert!(phone.shelf.inside.lock().deleted_here.is_empty());
+    assert_eq!(wanted_titles(&phone, follow), ["A"]);
+}
+
+#[test]
+fn a_device_paired_after_a_deletion_keeps_the_songs_it_held_and_tells_none_back() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+    sync(&mut desk, &mut phone);
+    desk.shelf.delete_everywhere("A");
+    sync(&mut desk, &mut phone);
+    let mut laptop = Device::new("Laptop", &["A", "B"]);
+
+    laptop.receive(&desk.ledger.snapshot().expect("a snapshot").concat());
+
+    assert_eq!(phone.shelf.song_titles(), ["B"]);
+    assert_eq!(laptop.shelf.song_titles(), ["A", "B"]);
+    assert!(
+        laptop
+            .ledger
+            .deleted_everywhere(&song("A"))
+            .expect("recorded")
+    );
+    assert!(deletions(&laptop.send()).is_empty());
+}
+
+#[test]
+fn a_deletion_the_trash_refuses_keeps_the_song_and_is_not_tried_again() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+    sync(&mut desk, &mut phone);
+    phone.shelf.inside.lock().trash_refuses = true;
+
+    desk.shelf.delete_everywhere("A");
+    sync(&mut desk, &mut phone);
+    phone.shelf.inside.lock().trash_refuses = false;
+    phone.ledger.settle(&phone.shelf).expect("settled");
+
+    assert_eq!(phone.shelf.song_titles(), ["A", "B"]);
+    assert!(deletions(&phone.send()).is_empty());
+}
+
+#[test]
+fn a_song_asked_for_after_its_deletion_answers_the_deletion_for_every_device() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    sync(&mut desk, &mut phone);
+    desk.shelf.delete_everywhere("A");
+    sync(&mut desk, &mut phone);
+
+    assert!(phone.ledger.asked_back(&song("A")).expect("answered"));
+    let answered = phone.send();
+    desk.receive(&answered);
+
+    assert_eq!(deletions(&answered), [("A".to_owned(), false)]);
+    assert!(!desk.ledger.deleted_everywhere(&song("A")).expect("asked"));
+    assert!(desk.shelf.inside.lock().deleted_here.is_empty());
+    assert!(
+        !phone
+            .ledger
+            .asked_back(&song("A"))
+            .expect("nothing standing")
+    );
+}

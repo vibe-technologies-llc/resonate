@@ -3217,9 +3217,10 @@ async fn followed_songs(running: &Arc<Running>, connection: &Connection) -> Resu
         let follow = held_running.follow;
         let catalog = held_running.catalog.as_ref();
         if follow.everything {
+            let ledger = held_running.ledger.lock();
             let mut missing = Vec::new();
             for recording in one_recording_a_song(holdings.into_iter().map(|held| held.recording)) {
-                if lacked(catalog, &recording)? {
+                if !ledger.deleted_everywhere(&recording)? && lacked(catalog, &recording)? {
                     missing.push(recording);
                 }
             }
@@ -3256,7 +3257,11 @@ async fn fetch_one(
         running.unlisted_waiting(&recording, device);
         true
     } else {
-        fetch_claimed(running, device, connection, &recording).await
+        let landed = fetch_claimed(running, device, connection, &recording).await;
+        if landed && asked {
+            asked_back(running, &recording).await;
+        }
+        landed
     };
     running.fetching.release(&recording);
     let again = running.unpassed(&recording);
@@ -3265,15 +3270,29 @@ async fn fetch_one(
     }
 }
 
+async fn asked_back(running: &Arc<Running>, recording: &Recording) {
+    let ledger = Arc::clone(&running.ledger);
+    let asked = recording.clone();
+    if let Err(error) = blocking(move || ledger.lock().asked_back(&asked)).await {
+        tracing::debug!(%error, "a song asked for could not answer its deletion everywhere");
+    }
+}
+
 async fn deleted_here(running: &Arc<Running>, recording: &Recording) -> bool {
     let catalog = Arc::clone(&running.catalog);
+    let ledger = Arc::clone(&running.ledger);
     let asked = recording.clone();
-    blocking(move || catalog.deleted_here(&asked).map_err(Error::Catalog))
-        .await
-        .unwrap_or_else(|error| {
-            tracing::debug!(%error, "whether a song was deleted here could not be read");
-            false
-        })
+    blocking(move || {
+        if ledger.lock().deleted_everywhere(&asked)? {
+            return Ok(true);
+        }
+        catalog.deleted_here(&asked).map_err(Error::Catalog)
+    })
+    .await
+    .unwrap_or_else(|error| {
+        tracing::debug!(%error, "whether a song was deleted here could not be read");
+        false
+    })
 }
 
 async fn held_already(running: &Arc<Running>, recording: &Recording) -> bool {

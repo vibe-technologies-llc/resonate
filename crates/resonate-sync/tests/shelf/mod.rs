@@ -10,8 +10,8 @@ use std::{
 use parking_lot::{Condvar, Mutex};
 use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile};
 use resonate_sync::{
-    Catalog, Held, HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened,
-    QueryBody, Refused, RemoteListen, Resumed, SongTags,
+    Catalog, DeletedEverywhere, Held, HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId,
+    LocalQuery, Opened, QueryBody, Refused, RemoteListen, Resumed, SongTags,
 };
 
 #[derive(Default)]
@@ -83,6 +83,10 @@ pub struct Inside {
     pub shares_taken: Vec<HeldShare>,
     pub shares_dropped: Vec<String>,
     pub layout: Option<String>,
+    pub arrivals: Vec<(Recording, i64, bool)>,
+    pub to_tell: Vec<DeletedEverywhere>,
+    pub refuses_deletions: bool,
+    pub trash_refuses: bool,
     next_id: i64,
     next_answered: i64,
 }
@@ -107,7 +111,16 @@ impl Shelf {
     }
 
     pub fn add_song(&self, recording: Recording, bytes: Vec<u8>) {
-        self.inside.lock().songs.push((recording, bytes));
+        self.arrive(recording, bytes, false);
+    }
+
+    fn arrive(&self, recording: Recording, bytes: Vec<u8>, received: bool) {
+        let mut inside = self.inside.lock();
+        inside
+            .arrivals
+            .push((recording.clone(), resonate_sync::wall_nanos(), received));
+        inside.songs.push((recording, bytes));
+        drop(inside);
         self.moved();
     }
 
@@ -281,6 +294,52 @@ impl Shelf {
             .favourites
             .iter()
             .map(|recording| recording.title.clone())
+            .collect::<Vec<_>>();
+        titles.sort();
+        titles
+    }
+
+    pub fn delete_everywhere(&self, title: &str) {
+        let mut inside = self.inside.lock();
+        let gone = song(title);
+        Self::remove_where(&mut inside, |held, _| held.names_the_same_song_as(&gone));
+        inside.deleted_here.push(title.into());
+        inside.next_id += 1;
+        let id = inside.next_id;
+        inside.to_tell.push(DeletedEverywhere {
+            id,
+            recording: gone,
+        });
+        drop(inside);
+        self.moved();
+    }
+
+    fn remove_where(inside: &mut Inside, gone: impl Fn(&Recording, i64) -> bool) -> usize {
+        let doomed: Vec<bool> = inside
+            .arrivals
+            .iter()
+            .map(|(held, at, _)| gone(held, *at))
+            .collect();
+        let mut at = 0;
+        inside.songs.retain(|_| {
+            at += 1;
+            !doomed[at - 1]
+        });
+        let mut at = 0;
+        inside.arrivals.retain(|_| {
+            at += 1;
+            !doomed[at - 1]
+        });
+        doomed.iter().filter(|doomed| **doomed).count()
+    }
+
+    pub fn song_titles(&self) -> Vec<String> {
+        let mut titles = self
+            .inside
+            .lock()
+            .songs
+            .iter()
+            .map(|(recording, _)| recording.title.clone())
             .collect::<Vec<_>>();
         titles.sort();
         titles
@@ -559,6 +618,49 @@ impl Catalog for Shelf {
         Ok(())
     }
 
+    fn deleted_everywhere(&self) -> Result<Vec<DeletedEverywhere>, Refused> {
+        Ok(self.inside.lock().to_tell.clone())
+    }
+
+    fn deletions_told(&self, told: &[i64]) -> Result<(), Refused> {
+        self.inside
+            .lock()
+            .to_tell
+            .retain(|deleted| !told.contains(&deleted.id));
+        Ok(())
+    }
+
+    fn takes_deletions(&self) -> bool {
+        !self.inside.lock().refuses_deletions
+    }
+
+    fn take_deletion(&self, recording: &Recording, before: i64) -> Result<u64, Refused> {
+        let mut inside = self.inside.lock();
+        if inside.trash_refuses {
+            return Ok(0);
+        }
+        let removed = Self::remove_where(&mut inside, |held, at| {
+            held.names_the_same_song_as(recording) && at < before
+        });
+        if removed > 0 {
+            inside.deleted_here.push(recording.title.clone());
+        }
+        drop(inside);
+        self.moved();
+        Ok(u64::try_from(removed).expect("a count"))
+    }
+
+    fn added_by_hand_since(&self, recording: &Recording, since: i64) -> Result<bool, Refused> {
+        Ok(self
+            .inside
+            .lock()
+            .arrivals
+            .iter()
+            .any(|(held, at, received)| {
+                held.names_the_same_song_as(recording) && *at > since && !*received
+            }))
+    }
+
     fn held_as(&self, recording: &Recording) -> Result<Option<Recording>, Refused> {
         let inside = self.inside.lock();
         if inside.refuses_resolving {
@@ -627,7 +729,7 @@ impl Catalog for Shelf {
             .lock()
             .landed_with
             .push((recording.clone(), tags.clone()));
-        self.add_song(recording.clone(), bytes);
+        self.arrive(recording.clone(), bytes, true);
         Ok(true)
     }
 

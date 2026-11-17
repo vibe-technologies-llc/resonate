@@ -91,6 +91,12 @@ pub struct HeldShare {
     pub at: Option<LocalPlaylistId>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeletedEverywhere {
+    pub id: i64,
+    pub recording: Recording,
+}
+
 pub trait ReadSeek: Read + Seek + Send {}
 
 impl<T: Read + Seek + Send> ReadSeek for T {}
@@ -161,6 +167,29 @@ pub trait Catalog: Send + Sync + 'static {
 
     fn forgive_deletions(&self) -> Result<(), Refused> {
         Ok(())
+    }
+
+    fn deleted_everywhere(&self) -> Result<Vec<DeletedEverywhere>, Refused> {
+        Ok(Vec::new())
+    }
+
+    fn deletions_told(&self, told: &[i64]) -> Result<(), Refused> {
+        let _ = told;
+        Ok(())
+    }
+
+    fn takes_deletions(&self) -> bool {
+        false
+    }
+
+    fn take_deletion(&self, recording: &Recording, before: i64) -> Result<u64, Refused> {
+        let _ = (recording, before);
+        Ok(0)
+    }
+
+    fn added_by_hand_since(&self, recording: &Recording, since: i64) -> Result<bool, Refused> {
+        let _ = (recording, since);
+        Ok(false)
     }
 
     fn held_as(&self, recording: &Recording) -> Result<Option<Recording>, Refused> {

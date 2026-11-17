@@ -29,13 +29,13 @@ mod words {
 pub use crate::fuzzing::read_a_stun_answer;
 pub use crate::{
     catalog::{
-        Catalog, Held, HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Opened,
-        ReadSeek, Refused, RemoteListen, Resumed, SongTags,
+        Catalog, DeletedEverywhere, Held, HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId,
+        LocalQuery, Opened, ReadSeek, Refused, RemoteListen, Resumed, SongTags,
     },
     change::{
-        AnswerNote, Change, Clock, DeviceForgotten, DeviceNote, FavouriteNote, Handoff, LayoutNote,
-        Listen, Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody,
-        QueryFolded, QueryNote, ShareNote, Stamp,
+        AnswerNote, Change, Clock, DeletionNote, DeviceForgotten, DeviceNote, FavouriteNote,
+        Handoff, LayoutNote, Listen, Platform, PlaylistBody, PlaylistFolded, PlaylistKey,
+        PlaylistNote, QueryBody, QueryFolded, QueryNote, ShareNote, Stamp, wall_nanos,
     },
     consulted::{
         AskedForExport, AskedToConsult, CONSULT_ANSWERED_WITHIN, Consultable, ConsultedAnswer,

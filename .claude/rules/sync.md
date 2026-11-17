@@ -90,6 +90,10 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   stamp); a build without it skips it as any later tag
   (`a_bundle_of_every_change_reads_back_and_an_unknown_change_is_skipped` holds the skip), and, like
   a query, a snapshot an older build compacts lacks it, so `owe_queries` owes the layouts too.
+  **A song deleted from every device is `Change::Deletion`** (wire tag 12: the recording, whether it
+  is deleted or answered by the song being added again, the stamp); a build without it skips it as
+  any later tag and keeps every song, and a snapshot such a build compacts lacks it, so
+  `owe_queries` owes the deletions too.
 - **A server address of `ws://` or `wss://` runs the same frames over a WebSocket** (`web.rs`: TCP,
   TLS through `tokio-rustls` for `wss`, one binary message a frame, at most `LARGEST_FRAME`),
   for a server behind a proxy that carries no UDP (`server.md`). **A plain `ws://` goes only to this
@@ -151,7 +155,8 @@ recording key and when the catalog refused the song, *The service* below;
 `NAMESAKES_MADE_APART_BECOME_ONE`: `minted_here`, `gone_id` and `gone_created` on `playlists` and
 `queries`, a row this ledger stamped last taken as made here, and the `playlist_folds` and
 `query_folds` tables, below; `SHARED_PLAYLISTS_STAND_APART`, `shared-playlists.md`; `LAYOUTS_TRAVEL`:
-the `layouts` table, a device's organise layout, below); `user_version` counts the steps laid, a change appends a
+the `layouts` table, a device's organise layout, below; `SONGS_DELETED_EVERYWHERE`: the `deletions`
+table and `state.joined`, below); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
 (`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`). All merging lives here, once for both
 platforms; the catalog seam stays thin.
@@ -352,6 +357,44 @@ platforms; the catalog seam stays thin.
   `the_layout_organise_files_by_is_told_by_a_look_and_a_new_one_moves_the_revision`,
   `a_ledger_of_before_layouts_travelled_keeps_its_handoffs_and_knows_no_layout`). The desktop
   tells its layout and reads no other device's.
+- **A song deleted from every device is a tombstone, last writer wins per recording key.**
+  The listener's *Delete from every device* is the catalog's own delete, which also queues the
+  recording of each file it removed; a look reads the queue (`Catalog::deleted_everywhere`), stamps
+  a `deletions` row (`key` the recording's key, `named` its named key, the encoded recording,
+  `deleted`, the stamp, `heard` the wall time this ledger wrote it, `owed`, `settled`) for each and
+  empties it (`deletions_told`). Rows live as long as the space, like a device's tombstone, and every
+  snapshot carries them. **What a song's deletion stands at is the newest row naming it**
+  (`deleted_everywhere`, over every row `names_the_same_song_as` the recording, as a favourite's newest
+  word): a standing deletion is never lacked, so neither `wanted`, the `everything` follow nor a
+  follow's fetch (`fetch_one`, beside `deleted_here`) brings it back from a device that kept it, and
+  *Sync now* (which clears only the catalog's own marks) does not either. **An arrival is settled
+  once** (`settle_deletions`, after every arrival and in `settle`): a deletion takes the copies here
+  only where the catalog `takes_deletions` (*Let my other devices delete songs here*, on by default,
+  below), its stamp is past `state.joined` (the wall time this ledger entered the space: a device
+  paired later keeps what it held, since the listener's *every device* was the devices paired then)
+  and no newer row answers it; `Catalog::take_deletion(recording, before)` then removes only the
+  copies that arrived in the catalog before the stamp, through the catalog's own delete, so a song
+  added again later is never deleted by an older tombstone, a file the trash refuses keeps its row,
+  and the deletion is not tried again. A catalog refusing as `Unavailable` leaves the row for the next
+  settle. Switched off, or with nothing held, the row alone is the mark. An answering row (`deleted`
+  false) forgives the catalog's own mark (`forgive_deletion`), so the song may be followed again.
+  **A song added again answers its deletion**: a look, whenever the catalog's revision moved, asks
+  `added_by_hand_since(recording, max(stamp, heard))` of every standing row, and a copy the listener
+  added here since (not one a sync landed, so a follow racing the tombstone keeps its copy here
+  without undoing the deletion elsewhere, and not one added before this ledger heard the deletion)
+  restamps the row as answered and owes it; an asked fetch that lands (`Command::Fetch`) answers it
+  too (`Ledger::asked_back`). Only this ledger's own catalog writes the queue: no peer request, zone
+  command (`RemoteCommand`'s `Remove` takes a row out of a queue) or party or shared-playlist record
+  deletes a song, and a `Change` is sealed under the pairing key a party guest never holds
+  (`a_song_deleted_from_every_device_leaves_the_other_and_is_not_followed_back`,
+  `a_song_deleted_only_here_tells_no_other_device`,
+  `a_device_refusing_deletions_from_others_keeps_the_song_and_no_device_follows_it_back`,
+  `a_song_added_again_after_its_deletion_is_never_deleted_again_and_comes_back`,
+  `a_device_paired_after_a_deletion_keeps_the_songs_it_held_and_tells_none_back`,
+  `a_deletion_the_trash_refuses_keeps_the_song_and_is_not_tried_again`,
+  `a_song_asked_for_after_its_deletion_answers_the_deletion_for_every_device`,
+  `a_song_deleted_from_every_device_is_not_followed_back_from_one_that_kept_it_even_after_sync_now`,
+  `a_ledger_of_before_deletions_travelled_keeps_its_layouts_and_knows_no_deletion`).
 - **A snapshot is the merged state**, cut into bundles of at most `BUNDLE_BYTES`; a device compacts
   the server's log past `COMPACT_PAST_RECORDS` (512) or `COMPACT_PAST_BYTES` (4 MiB) since the last
   snapshot, and a `Compacted` from any device resets every device's count. A snapshot past half a
@@ -387,7 +430,9 @@ list is not offered to it, a mapped one that becomes shared is `released` rather
 read and written (`queries`, `write_query`; removal is `remove_playlist`, one id space), favourites,
 listens after a mark, a remote listen credited, the resume state, whether and how a song is held
 (`held_as`: the recording the catalog lists for the song it resolves one to; default none, so the
-ledger pairs by name alone), opening one to send and landing one received, and a `revision` that
+ledger pairs by name alone), opening one to send and landing one received, deletions told and taken (`deleted_everywhere`,
+`deletions_told`, `takes_deletions`, `take_deletion`, `added_by_hand_since`; by default none told
+and none taken, so such a catalog only records a deletion, *The ledger*), and a `revision` that
 moves with any of these.
 Failures are a `Refused` the implementation logs (errors.md: no boxed error). **Answers**
 (`takes_answers`, `answers_after`, `take_answer`) are the library's `answers.rs`
@@ -601,8 +646,8 @@ will not open is left out of the holdings.
   (`a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay`).
 - **A song deleted from the app stays off that device.** The app's own delete (the desktop's
   `Library::delete_tracks`, the phones' `forget_deleted_songs`, which both phones call) records a
-  per-device mark in the catalog, `songs_deleted` (recording key and when, never synced, so no
-  cross-device tombstone for songs): the keys (`Recording::key` and `named_key`) of the row deleted
+  per-device mark in the catalog, `songs_deleted` (recording key and when, never synced; only
+  *Delete from every device* tells other devices, as a ledger tombstone, *The ledger* above): the keys (`Recording::key` and `named_key`) of the row deleted
   and every key `songs_received` noted against its file, the spellings a sender's ledger names it by
   (`synced::keys_deleted_with`, `deleting.rs`'s `deletion_noted`), **written before the first file goes** on the desktop (`deleted::note_before_removing`, its own transaction ahead of the trashing; `a_song_is_marked_deleted_before_its_file_goes_so_a_follow_meanwhile_does_not_fetch_it_back`), since a row whose file is gone reads as not held and a follow inside a large deletion would otherwise fetch the songs back, and in the delete's own transaction before the row and its `songs_received` go on the phones. **A file the trash kept is not marked**: once every file has been tried `Marked::take_back_for` takes back the keys only kept files noted (a key a removed file shares stays, as does one marked before the run), so a refused deletion is never held against the song (`a_song_the_trash_refused_is_not_marked_deleted_and_one_trashed_beside_it_is`). **A fetch weighs the mark again once claimed** (`fetch_one`: `deleted_here` beside `held_already`, for a follow, never for an asked `Command::Fetch`), so a follow that listed a song before it was marked does not land it (`a_song_deleted_from_the_app_after_a_follow_listed_it_is_not_fetched_back`). **Folding a numbered or identical copy
   into its twin marks nothing** (`deleted::Why::Folded`, `fold_into`: the song is still held), nor
