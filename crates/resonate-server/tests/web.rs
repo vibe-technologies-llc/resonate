@@ -1,5 +1,5 @@
 use std::{
-    env, fs,
+    env, fs, io,
     net::{Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     sync::Arc,
@@ -28,6 +28,11 @@ const KIBIBYTE: usize = 1024;
 const BINARY_AND_FINAL: u8 = 0x82;
 const MASKED_WITH_A_LENGTH_OF_EIGHT_BYTES: u8 = 0x80 | 127;
 const UNMASKING_KEY: [u8; 4] = [0; 4];
+const OPCODE: u8 = 0x0f;
+const CLOSING: u8 = 0x08;
+const UNMASKED_LENGTH: u8 = 0x7f;
+const MEDIUM_LENGTH: u8 = 126;
+const LONG_LENGTH: u8 = 127;
 
 struct Hosted {
     address: SocketAddr,
@@ -367,6 +372,80 @@ async fn upgraded_by_hand(hosted: &Hosted) -> TcpStream {
     stream
 }
 
+struct Holding {
+    stream: TcpStream,
+    heard: Vec<u8>,
+}
+
+impl Holding {
+    async fn part_of_a_message(hosted: &Hosted, key: &SyncKey) -> Self {
+        let mut stream = upgraded_by_hand(hosted).await;
+        stream
+            .write_all(&framed_by_hand(&hello(key)))
+            .await
+            .expect("said hello");
+        stream
+            .write_all(&announced_by_hand(1024 * KIBIBYTE))
+            .await
+            .expect("announced");
+        stream
+            .write_all(&vec![7; 240 * KIBIBYTE])
+            .await
+            .expect("sent part");
+
+        Self {
+            stream,
+            heard: Vec::new(),
+        }
+    }
+
+    fn turned_away(&mut self) -> bool {
+        let mut chunk = [0; 4 * KIBIBYTE];
+        loop {
+            match self.stream.try_read(&mut chunk) {
+                Ok(0) => return true,
+                Ok(read) => self.heard.extend_from_slice(&chunk[..read]),
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(_) => return true,
+            }
+        }
+
+        framed_by_the_server(&self.heard)
+            .into_iter()
+            .any(|(opcode, payload)| {
+                opcode == CLOSING
+                    || matches!(FromServer::decoded(payload), Ok(FromServer::Refused(_)))
+            })
+    }
+}
+
+fn framed_by_the_server(mut heard: &[u8]) -> Vec<(u8, &[u8])> {
+    let mut frames = Vec::new();
+    while let [first, second, rest @ ..] = heard {
+        let (length, rest) = match second & UNMASKED_LENGTH {
+            MEDIUM_LENGTH => match rest.split_first_chunk::<2>() {
+                Some((length, rest)) => (usize::from(u16::from_be_bytes(*length)), rest),
+                None => break,
+            },
+            LONG_LENGTH => match rest.split_first_chunk::<8>() {
+                Some((length, rest)) => (
+                    usize::try_from(u64::from_be_bytes(*length)).expect("a length"),
+                    rest,
+                ),
+                None => break,
+            },
+            short => (usize::from(short), rest),
+        };
+        let Some((payload, after)) = rest.split_at_checked(length) else {
+            break;
+        };
+        frames.push((first & OPCODE, payload));
+        heard = after;
+    }
+
+    frames
+}
+
 #[test]
 fn a_message_still_arriving_on_one_web_socket_holds_its_bytes_from_every_other_session() {
     let hosted = hosted(
@@ -384,21 +463,9 @@ fn a_message_still_arriving_on_one_web_socket_holds_its_bytes_from_every_other_s
         .expect("a runtime");
 
     let refused = runtime.block_on(async {
-        let mut holding = upgraded_by_hand(&hosted).await;
-        holding
-            .write_all(&framed_by_hand(&hello(&holder)))
-            .await
-            .expect("said hello");
-        holding
-            .write_all(&announced_by_hand(1024 * KIBIBYTE))
-            .await
-            .expect("announced");
-        holding
-            .write_all(&vec![7; 240 * KIBIBYTE])
-            .await
-            .expect("sent part");
+        let mut holding = Holding::part_of_a_message(&hosted, &holder).await;
 
-        let deadline = Instant::now() + REFUSED_WITHIN;
+        let deadline = Instant::now() + SETTLES_WITHIN;
         loop {
             let (mut outgoing, mut incoming) = welcomed_over_the_web(&hosted, &asker).await;
             outgoing
@@ -412,6 +479,9 @@ fn a_message_still_arriving_on_one_web_socket_holds_its_bytes_from_every_other_s
             if refused.is_some() || Instant::now() >= deadline {
                 drop(holding);
                 break refused;
+            }
+            if holding.turned_away() {
+                holding = Holding::part_of_a_message(&hosted, &holder).await;
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
