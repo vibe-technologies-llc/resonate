@@ -16,7 +16,7 @@ use super::{
     TypedAhead, WINDOW_SIZE_SETTLE, WindowScrolls,
 };
 use crate::{
-    EqualiserModel, LibraryModel, LyricsModel, ResonateApp, Setting, WindowSize,
+    EqualiserModel, LibraryModel, LyricsModel, ResonateApp, Setting, SettingChange, WindowSize,
     analysis::AnalysisModel,
     app::attend,
     listening::ListenModel,
@@ -390,6 +390,7 @@ impl RootView {
                 window_size: remember_window_size,
                 settings_category: remember_settings_category,
                 last_window_size,
+                window_size_unkept: None,
                 _window_size_settled: Task::ready(()),
             },
             dropped: Dropped {
@@ -443,10 +444,11 @@ impl RootView {
         .detach();
         cx.on_app_quit(|this, cx| {
             this.keep_the_volume(cx);
+            this.keep_the_window_size(cx);
             future::ready(())
         })
         .detach();
-        cx.on_release(|this, _| this.keep_the_volume_as_the_window_leaves())
+        cx.on_release(|this, _| this.keep_what_the_window_leaves())
             .detach();
         let opened_on_statistics = view.pane == Pane::Statistics;
         view.library.update(cx, |library, cx| {
@@ -471,15 +473,31 @@ impl RootView {
             return;
         }
         cx.update_global::<ResonateApp, _>(|global, _| global.window_size = Some(size));
+        self.remembered.window_size_unkept = Some(size);
 
         self.remembered._window_size_settled = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(WINDOW_SIZE_SETTLE).await;
-            let stored = this.update(cx, |this, cx| {
-                if this.remembered.window_size && this.remembered.last_window_size == Some(size) {
-                    this.store(&Setting::WindowSize(size), cx);
-                }
-            });
+            let stored = this.update(cx, |this, cx| this.keep_the_window_size(cx));
             let _ = stored;
         });
+    }
+
+    fn window_size_to_keep(&mut self) -> Option<WindowSize> {
+        let size = self.remembered.window_size_unkept.take()?;
+        self.remembered.window_size.then_some(size)
+    }
+
+    pub(crate) fn keep_the_window_size(&mut self, cx: &mut Context<Self>) {
+        if let Some(size) = self.window_size_to_keep() {
+            self.store(&Setting::WindowSize(size), cx);
+        }
+    }
+
+    pub(crate) fn keep_what_the_window_leaves(&mut self) {
+        self.keep_the_volume_as_the_window_leaves();
+        if let Some(size) = self.window_size_to_keep() {
+            self.settings_written
+                .change(SettingChange::Store(Setting::WindowSize(size)));
+        }
     }
 }

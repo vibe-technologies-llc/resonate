@@ -556,6 +556,7 @@ pub(crate) struct Remembered {
     pub(crate) window_size: bool,
     pub(crate) settings_category: bool,
     pub(crate) last_window_size: Option<WindowSize>,
+    pub(crate) window_size_unkept: Option<WindowSize>,
     pub(crate) _window_size_settled: Task<()>,
 }
 

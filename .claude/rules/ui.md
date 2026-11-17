@@ -1689,7 +1689,11 @@ while shown, reading in-memory state only (the party pane's, the driven device's
 - **Tab, restore size and Settings category each have a memory switch** (`remember-tab`,
   `remember-window-size`, `remember-settings-category`, default on, via `Stored` into `ResonateApp`).
   The tab is the pane `in_front` names; a tab hidden by `Tabs` is ignored on the next open. The size is
-  written after `WINDOW_SIZE_SETTLE` (400 ms) so a drag edits the config once. Switching off removes the
+  written after `WINDOW_SIZE_SETTLE` (400 ms) so a drag edits the config once; a size still waiting
+  (`Remembered::window_size_unkept`) is written as the window leaves, by `on_release`
+  (`keep_what_the_window_leaves`, beside the volume) and `on_app_quit` (`keep_the_window_size`), and
+  never twice (`a_window_resized_just_before_it_leaves_keeps_its_size`,
+  `a_window_size_already_kept_is_not_kept_again_as_the_window_leaves`). Switching off removes the
   saved value.
 - **A newer release is told once and offered in About.** `ResonateApp::updates` is the binary's
   `Updates` seam (`None` where the build names no repository or lacks `online`);

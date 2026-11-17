@@ -792,6 +792,7 @@ impl RootView {
         } else {
             self.forget(ConfigKey::WindowSize, cx);
             self.remembered.last_window_size = None;
+            self.remembered.window_size_unkept = None;
             cx.update_global::<ResonateApp, _>(|global, _| global.window_size = None);
         }
     }
@@ -850,6 +851,7 @@ impl RootView {
             return;
         };
         self.remembered.last_window_size = Some(size);
+        self.remembered.window_size_unkept = None;
         cx.update_global::<ResonateApp, _>(|global, _| global.window_size = Some(size));
         self.store(&Setting::WindowSize(size), cx);
     }

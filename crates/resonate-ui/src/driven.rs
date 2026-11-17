@@ -46,6 +46,7 @@ const FRAME: Duration = Duration::from_millis(16);
 const PATIENCE: Duration = Duration::from_secs(10);
 const HINT_SHOWN_BY: Duration = Duration::from_secs(2);
 const VOLUME_SETTLED_BY: Duration = Duration::from_secs(1);
+const WINDOW_SIZE_SETTLED_BY: Duration = Duration::from_secs(1);
 const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
 
@@ -1615,6 +1616,66 @@ mod tests {
             volumes_stored(&recorded),
             vec![resonate_core::Volume::new(0.5).expect("a volume")]
         );
+    }
+
+    fn window_sizes_stored(
+        recorded: &parking_lot::Mutex<Vec<crate::settings::SettingChange>>,
+    ) -> Vec<crate::WindowSize> {
+        recorded
+            .lock()
+            .iter()
+            .filter_map(|change| match change {
+                crate::settings::SettingChange::Store(crate::settings::Setting::WindowSize(
+                    size,
+                )) => Some(*size),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[gpui::test]
+    fn a_window_resized_just_before_it_leaves_keeps_its_size(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        let recorded = recording_what_is_stored(&mut driven);
+        let resized = gpui::size(gpui::px(WIDE), gpui::px(TALL - 40.0));
+        let kept = crate::WindowSize::from_pixels(resized).expect("a size a window may keep");
+
+        driven.root.update(&mut driven.cx, |root, _| {
+            root.remembered.window_size = true;
+        });
+        driven.cx.simulate_resize(resized);
+        driven.settle();
+
+        assert_eq!(window_sizes_stored(&recorded), Vec::new());
+
+        driven.root.update(&mut driven.cx, |root, _| {
+            root.keep_what_the_window_leaves();
+            root.settings_written = crate::settings::SettingsWriter::over(Arc::new(Ephemeral));
+        });
+
+        assert_eq!(window_sizes_stored(&recorded), vec![kept]);
+    }
+
+    #[gpui::test]
+    fn a_window_size_already_kept_is_not_kept_again_as_the_window_leaves(cx: &mut TestAppContext) {
+        let mut driven = Driven::open(cx, catalog());
+        let recorded = recording_what_is_stored(&mut driven);
+        let resized = gpui::size(gpui::px(WIDE), gpui::px(TALL - 40.0));
+        let kept = crate::WindowSize::from_pixels(resized).expect("a size a window may keep");
+
+        driven.root.update(&mut driven.cx, |root, _| {
+            root.remembered.window_size = true;
+        });
+        driven.cx.simulate_resize(resized);
+        driven.cx.executor().advance_clock(WINDOW_SIZE_SETTLED_BY);
+        driven.settle();
+        stored_through_the_writer(&mut driven, &recorded);
+        driven.root.update(&mut driven.cx, |root, _| {
+            root.keep_what_the_window_leaves();
+            root.settings_written = crate::settings::SettingsWriter::over(Arc::new(Ephemeral));
+        });
+
+        assert_eq!(window_sizes_stored(&recorded), vec![kept]);
     }
 
     #[gpui::test]
