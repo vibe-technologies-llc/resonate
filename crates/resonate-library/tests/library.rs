@@ -26297,6 +26297,9 @@ fn a_queued_download_waits_while_the_connection_is_metered_and_goes_on_when_it_i
 
     let polling = library.poll(shop.registered(), PollOptions::default())?;
     let progress = Arc::clone(polling.progress());
+
+    assert!(waited_for(|| progress.is_waiting_on_the_meter()));
+
     thread::sleep(THE_POLL_HAS_WAITED);
 
     assert!(progress.is_waiting_on_the_meter());
@@ -26326,8 +26329,8 @@ fn a_queued_download_goes_on_when_the_listener_turns_the_setting_off() -> Result
 
     let polling = library.poll(shop.registered(), PollOptions::default())?;
     let progress = Arc::clone(polling.progress());
-    thread::sleep(THE_POLL_HAS_WAITED);
-    assert!(progress.is_waiting_on_the_meter());
+
+    assert!(waited_for(|| progress.is_waiting_on_the_meter()));
 
     gate.shut_while_metered(false);
     let summary = polling.join()?;
@@ -26375,7 +26378,10 @@ fn a_poll_cancelled_while_it_waits_for_the_connection_ends_without_asking() -> R
     let shop = san_tropez_offered();
 
     let polling = library.poll(shop.registered(), PollOptions::default())?;
-    thread::sleep(THE_POLL_HAS_WAITED);
+    let progress = Arc::clone(polling.progress());
+
+    assert!(waited_for(|| progress.is_waiting_on_the_meter()));
+
     polling.cancel();
     let summary = polling.join()?;
 
@@ -26481,9 +26487,11 @@ fn an_offer_found_as_the_connection_turned_metered_is_not_opened_until_it_is_not
 
     let polling = library.poll(providers, PollOptions::default())?;
     let progress = Arc::clone(polling.progress());
+
+    assert!(waited_for(|| progress.is_waiting_on_the_meter()));
+
     thread::sleep(THE_POLL_HAS_WAITED);
 
-    assert!(progress.is_waiting_on_the_meter());
     assert_eq!(opened.load(Ordering::SeqCst), 0);
 
     metering.report(Meter::Unmetered);
@@ -26513,10 +26521,11 @@ fn a_download_under_way_stops_reading_when_the_connection_turns_metered_and_fini
         thread::sleep(Duration::from_millis(2));
     }
     metering.report(Meter::Metered);
-    thread::sleep(THE_POLL_HAS_WAITED);
+
+    assert!(waited_for(|| progress.is_waiting_on_the_meter()));
+
     let received = progress.received();
 
-    assert!(progress.is_waiting_on_the_meter());
     assert!(
         received > 0,
         "nothing was read before the connection turned"
@@ -32585,7 +32594,7 @@ fn a_keep_cancelled_part_way_through_a_download_leaves_the_song_queued() -> Resu
 
     let summary = thread::scope(|scope| {
         let keeping = scope.spawn(|| library.keep_pending(&providers, &cancelled));
-        thread::sleep(THE_POLL_HAS_WAITED);
+        staged_by_a_keep_under_way(tree.path());
         told.store(true, Ordering::SeqCst);
         keeping.join().expect("the pass ends")
     })?;
@@ -32970,10 +32979,19 @@ fn a_poll_refused_while_a_keep_waits_on_the_meter_ends_the_wait() -> Result<()> 
     library.stall_downloads_by(MeteredGate::new(metering, true));
     let tube = Tube::new();
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+    let providers = tube.registered();
+    let begun = AtomicBool::new(false);
+    let heeded = || {
+        begun.store(true, Ordering::SeqCst);
+        false
+    };
 
     let summary = thread::scope(|scope| {
-        let keeping = scope.spawn(|| pass(&library, &tube));
-        thread::sleep(THE_POLL_HAS_WAITED);
+        let keeping = scope.spawn(|| library.keep_pending(&providers, &heeded));
+        assert!(
+            waited_for(|| begun.load(Ordering::SeqCst)),
+            "the keep never began"
+        );
         assert!(refused_a_poll(&library), "the poll was not refused");
         keeping.join().expect("the pass ends")
     })?;
