@@ -9,7 +9,9 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
+bzip2 = "0.6.1"
 libfuzzer-sys = { version = "0.4.13", default-features = false, features = ["link_libfuzzer"] }
+mibz2 = { version = "0.5.4", default-features = false }
 resonate-analysis.path = "../crates/resonate-analysis"
 resonate-cast.path = "../crates/resonate-cast"
 resonate-core.path = "../crates/resonate-core"
@@ -222,6 +224,13 @@ bench = false
 [[bin]]
 name = "replication"
 path = "fuzz_targets/replication.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bzipped"
+path = "fuzz_targets/bzipped.rs"
 test = false
 doc = false
 bench = false

@@ -24,7 +24,9 @@ use super::{
     looked_up::{LookedUp, Shared, store_read},
     tables::{Sequenced, TABLES_FILE, kept_beside_the_build},
 };
-use crate::{ArchiveOp, Entity, Error, PackOp, Result, Store, StoreOp, kept::now, wire::Writer};
+use crate::{
+    ArchiveOp, Entity, Error, PackOp, Result, Store, StoreOp, bzipped, kept::now, wire::Writer,
+};
 
 pub const BLOCK_BYTES: usize = 64 * 1024;
 pub const BLOCKS_PACKED_AT: i32 = 9;
@@ -387,7 +389,7 @@ fn imported(
         read: 0,
         building: Arc::clone(&progress),
     };
-    let decoded = mibz2::BzReader::parallel(counted, all_cores_but(THREADS_THE_READ_KEEPS));
+    let decoded = bzipped::decoded_across(counted, all_cores_but(THREADS_THE_READ_KEEPS));
     let mut archive = tar::Archive::new(decoded);
     let entries = archive
         .entries()

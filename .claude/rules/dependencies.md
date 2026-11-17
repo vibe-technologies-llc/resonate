@@ -165,9 +165,32 @@ here, add it there.
   and `ureq` only under its `download` feature (the binary's `online` turns it on, the phones
   leave it off); no gpui, engine, `resonate-online`, `resonate-sync`, serde, quinn or tokio;
   reached by the binary and `resonate-mobile` alone. **`mibz2`** decodes bzip2 (std alone, every
-  block's and stream's CRC checked, block-parallel through `BzReader::parallel`); **`tar`** has no
-  default features (`xattr` is not read). Both read the MusicBrainz export and its packets alone.
-  `bzip2` (its pure-Rust `libbz2-rs-sys` backend) is a dev-dependency, writing the tests' archives.
+  block's and stream's CRC checked, block-parallel through `BzReader::parallel`), with no default
+  features (it has none on; `default-features = false` keeps a later one out); **`tar`** has no
+  default features (`xattr` is not read). Both read the MusicBrainz export and its packets alone,
+  through `bzipped.rs`: `decoded_across` for the export, on every core but the read's own,
+  `decoded` for a packet. `bzip2` (its pure-Rust `libbz2-rs-sys` backend, its one default) is a
+  dev-dependency, writing the tests' archives and decoding them as the reference.
+- **`mibz2` is kept for the whole export and the hourly packets alike, the listener's decision.** It
+  is young (three releases on its first day, one author, some 170 `unsafe` lines and SIMD kernels
+  chosen at run time) beside a workspace that forbids `unsafe_code`, but the export's 7.5 GB is the
+  build's longest read, and a bzip2 decoder that keeps to one core held the read to that core
+  (`musicbrainz.md`'s measurement), where `mibz2` spreads it over the rest; one decoder for both
+  keeps one reading of bzip2 in the crate. What holds it: the `bzipped` fuzz target feeds arbitrary
+  bytes to both readers (`bzip2_decoded`, `bzip2_decoded_across`) and to `libbz2-rs-sys`, holding
+  the two to the same bytes or both to a refusal, and to the reference's bytes wherever the
+  reference reads; and `bzipped/tests.rs` holds both to the reference on seeded archives
+  (`every_archive_decodes_byte_for_byte_as_libbz2_decodes_it`: random, text and runs at RLE's edges,
+  empty to a megabyte, blocks of 1 and 9;
+  `many_small_streams_one_after_another_decode_as_their_bytes_in_order`), holds a cut or trailed
+  archive and no input at all to a refusal and a flipped bit to a refusal or the very bytes, never
+  a short read
+  (`a_cut_archive_is_refused_never_read_short`,
+  `a_flipped_bit_is_refused_or_leaves_every_byte_as_it_was`,
+  `bytes_after_the_last_stream_are_refused_as_the_reference_refuses_them`,
+  `no_input_at_all_is_refused_as_the_reference_refuses_it`). The one difference from the reference
+  is a randomised block, which `mibz2` refuses and `libbz2-rs-sys` reads; no bzip2 since 0.9.5
+  writes one (`a_randomised_block_is_refused_though_the_reference_reads_it`).
 - `resonate-cli`: `resonate-words` alone among workspace crates, with `clap`; reached by the binary
   alone, as a dependency and as its build script's, so the grammar the man pages are written from is
   the one parsed.

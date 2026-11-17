@@ -101,7 +101,7 @@ decodes both and requires a decoded value to read back as itself.
 ## The mirror
 
 **What it holds is the full export.** `mirror::import` streams `mbdump.tar.bz2` and
-`mbdump-derived.tar.bz2` (`mibz2::BzReader::parallel` on every core but `THREADS_THE_READ_KEEPS`,
+`mbdump-derived.tar.bz2` (`decoded_across`, `mibz2`'s `BzReader::parallel` on every core but `THREADS_THE_READ_KEEPS`,
 the one parsing and inserting and the decoder's own reader, then `tar`) and reads each
 table `copy::TABLES` names as PostgreSQL COPY text. A field is tab-separated, `\N` is null, and
 backslash escapes are read, octal and hex included (`\x` with no hex digit is an `x`, as PostgreSQL reads it). A row that is short of the projected columns is `Error::Columns`, and a final row with no line end is `Error::CutRow`, since PostgreSQL ends every row with one: a cut table is refused, never half kept. Only the projected columns go into

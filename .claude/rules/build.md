@@ -180,7 +180,7 @@ Linux sound server or GUI libraries are needed.
 ## Fuzzing
 
 - **The hand-rolled parsers are fuzzed from outside the workspace**: `fuzz/`'s `[workspace]` table
-  detaches it, so workspace lints do not reach libfuzzer's macros. Thirty-six targets: `listens` (the ListenBrainz JSON lines `history --import-file` reads, holding that each listen kept names a song and an artist and a refusal names a line the input has), `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
+  detaches it, so workspace lints do not reach libfuzzer's macros. Thirty-seven targets: `listens` (the ListenBrainz JSON lines `history --import-file` reads, holding that each listen kept names a song and an artist and a refusal names a line the input has), `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
   `cue` (beside the sheet's reading, `SheetText`'s `own` and `edited` over every field and scope, the edit read back), `rating` (the lofty reads a retag preview makes, `rating_in` and `Counted::read_in`, the input's first byte choosing the extension), `lrc`, `lyricsfile`, `ttml`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`,
   `rewriter` (the vault's `bare` over every container and `declared_digest`), `unpacking` (zstd frame
   indexing and the reader, and the vault's `standing::of_a_flac` and `of_a_packed_wave`), `padding` (the tag writer's padded heads and its Matroska rewrite, then a picture attached to what the rewrite laid, as a keep writes them, kind 5), `journal` (an undo journal,
@@ -192,7 +192,11 @@ Linux sound server or GUI libraries are needed.
   (an input opening as bzip2 read whole as a replication packet through `packet_read`, bzip2 and
   tar, holding that one read is the sequence asked, and every input as `pending_data` rows and their
   JSON alone, seeded with the packets `tests/mirror.rs` replicates; `mibz2` sets up its decoder for
-  each packet, so a packet runs at about a dozen inputs a second), `upnp` (an SSDP
+  each packet, so a packet runs at about a dozen inputs a second), `bzipped` (any bytes through
+  the crate's two `mibz2` readers, `bzip2_decoded` and `bzip2_decoded_across`, beside
+  `libbz2-rs-sys`: the two agree, and agree with the reference wherever it reads, but for a
+  randomised block, `dependencies.md`; seeded with small streams, one of blocks of 1, several one
+  after another, cut, flipped and trailed ones), `upnp` (an SSDP
   answer, a renderer's description, a chunked body, a SOAP answer, an address and the stream server's request head (`serve::read_a_request_head`), holding that no
   control address leaves the host that described the renderer; and what a control point asks the
   media server: an `M-SEARCH`, a request head and path, a GENA head, a `SearchCriteria`, an object

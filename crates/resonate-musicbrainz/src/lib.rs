@@ -1,4 +1,5 @@
 mod asked;
+mod bzipped;
 mod consulted;
 #[cfg(feature = "download")]
 pub mod download;
@@ -35,4 +36,19 @@ pub fn read_a_copy_line(line: &[u8]) {
 #[cfg(fuzzing)]
 pub fn read_pending_changes(rows: &[u8]) {
     mirror::replicated::read_pending_changes(rows);
+}
+
+#[cfg(fuzzing)]
+pub fn bzip2_decoded(packed: &[u8], at_most: u64) -> std::io::Result<Vec<u8>> {
+    bzipped::read_whole(bzipped::decoded(packed), at_most)
+}
+
+#[cfg(fuzzing)]
+pub fn bzip2_decoded_across(
+    packed: &[u8],
+    threads: usize,
+    at_most: u64,
+) -> std::io::Result<Vec<u8>> {
+    let owned = std::io::Cursor::new(packed.to_vec());
+    bzipped::read_whole(bzipped::decoded_across(owned, threads), at_most)
 }

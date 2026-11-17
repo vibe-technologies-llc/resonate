@@ -17,7 +17,7 @@ use super::{
     tables::{Change, TABLES_FILE, applied, opened, sequenced_at},
 };
 use crate::{
-    Entity, Error, Result, Store, StoreOp,
+    Entity, Error, Result, Store, StoreOp, bzipped,
     kept::now,
     wire::{MBID_BYTES, mbid_of},
 };
@@ -325,7 +325,7 @@ pub(crate) fn read_pending_changes(rows: &[u8]) {
 }
 
 pub fn packet_read(packed: impl Read, asked: u64) -> Result<Packet> {
-    let decoded = mibz2::BzReader::new(packed);
+    let decoded = bzipped::decoded(packed);
     let mut archive = tar::Archive::new(decoded);
     let entries = archive.entries().map_err(|_| Error::PacketPart {
         sequence: asked,
