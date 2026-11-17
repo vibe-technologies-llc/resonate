@@ -30,6 +30,22 @@ class ShortcutCards(unittest.TestCase):
         self.assertIn("maxHeight: .infinity", text)
         self.assertIn(".fixedSize(horizontal: false, vertical: true)", text)
 
+    def test_every_symbol_sits_in_one_slot_so_no_glyph_sets_the_height(self):
+        text = source("CollectionViews.swift")
+        card = text[text.index("struct ShortcutCard: View"):text.index("struct ShortcutCardStyle")]
+        symbol = text[text.index("struct ShortcutSymbol: View"):]
+
+        self.assertIn("ShortcutSymbol(name: symbol)", card)
+        self.assertNotIn("Image(systemName:", card)
+        self.assertIn(".frame(height: slot)", symbol)
+
+    def test_favourites_leads_on_both_screens(self):
+        for name in CARDS_ON:
+            text = source(name)
+            row = text[text.index("ShortcutCards {"):]
+
+            self.assertLess(row.index("FavouritesCard()"), row.index(CARD_STYLE), name)
+
 
 if __name__ == "__main__":
     unittest.main()

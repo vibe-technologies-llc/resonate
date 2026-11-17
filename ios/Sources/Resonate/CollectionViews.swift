@@ -349,10 +349,7 @@ struct ShortcutCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Image(systemName: symbol)
-                .font(.title3.weight(.medium))
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
+            ShortcutSymbol(name: symbol)
             Spacer(minLength: 10)
             Text(title)
                 .font(.headline)
@@ -415,6 +412,19 @@ private struct AllSongsCard: View {
             detail: said("counted.songs", library.catalogCount),
             symbol: "music.note"
         )
+    }
+}
+
+private struct ShortcutSymbol: View {
+    @ScaledMetric(relativeTo: .title3) private var slot: CGFloat = 28
+    let name: String
+
+    var body: some View {
+        Image(systemName: name)
+            .font(.title3.weight(.medium))
+            .foregroundStyle(.tint)
+            .frame(height: slot)
+            .accessibilityHidden(true)
     }
 }
 

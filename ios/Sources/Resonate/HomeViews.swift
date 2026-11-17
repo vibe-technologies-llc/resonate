@@ -29,11 +29,11 @@ struct HomeView: View {
             } else {
                 Section {
                     ShortcutCards {
-                        LibraryCard()
                         NavigationLink(value: Destination.favourites) {
                             FavouritesCard()
                         }
                         .buttonStyle(.shortcutCard)
+                        LibraryCard()
                     }
                 }
                 HomeMixes()

@@ -902,7 +902,7 @@ every route change (a pair of headphones at the same rate included), not from th
   it was reached through it. A failed read cuts nothing: a catalog read that fails resumes `wholeCatalog`'s waiters with nothing cut. Now Playing and the sheets are not kept.
 - **Home is the first tab and the one a launch opens** (`Root.home`, `HomeView` in `HomeViews.swift`), Android's
   Home: a title greeting by the hour (`HomeGreeting.of`, `ResonateLogic`, held by `HomeTests`, read again on
-  appearing and coming forward), then *Library* and *Favourites* as two shortcut cards (`LibraryCard`, the song count, a tap
+  appearing and coming forward), then *Favourites* and *Library* as two shortcut cards (Favourites first, as on the Library tab; `LibraryCard`, the song count, a tap
   switching to the Library tab with `Navigation.tab`; Android's Home has the same pair), *Made for you* (`HomeMixes`: `OfferedMixes.home`, the two *Yours* mixes then up to twelve lists of the
   *Made for you*, *Rediscover* and *From your listening* shelves (`Suggestions.home`), as cards on a shelf, their covers from
   `OfferedMixes.covers`, which the Suggestions page shares; a card's cover and its words each open the mix, the words being the one button VoiceOver hears, and its play button stays apart; *See all* is `Destination.suggestions`),
@@ -920,7 +920,8 @@ every route change (a pair of headphones at the same rate included), not from th
   section cards below, 16 pt below the page's title (`ShortcutCard.belowTheTitle`), side by side and stacked at accessibility text sizes. A card is the
   page's own card ground (`Color.cardGround`: the themed card over the backdrop, the grouped
   background's cell colour without it; 20 pt continuous corners), its symbol in the accent at the
-  top and the title and song count at the foot, the count in `.secondary`, at least 92 pt tall,
+  top in a slot of one scaled height whatever the glyph (`ShortcutSymbol`, 28 pt: the cards stretch to
+  their content, so Home's taller `square.stack` drew its pair taller than the Library tab's) and the title and song count at the foot, the count in `.secondary`, at least 92 pt tall,
   scaled, and half as strong while disabled: no gradient, no colour pair of its own and no
   watermark behind the words. Each card is its own `NavigationLink` or `Button` in
   `.buttonStyle(.shortcutCard)` (`ShortcutCardStyle`), since a row holding two controls of the default style fires both on any
