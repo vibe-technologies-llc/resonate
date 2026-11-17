@@ -1236,6 +1236,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `COUNTS_AS_HEARD`); `elapsed::age` fits it from the `REACHES` table `elapsed::since` reads, each span
   naming its two messages in core's `words/en/elapsed.ftl` (`every_span_is_named_both_ways_and_no_two_read_alike`).
   **Every clock is `elapsed::clock`** (`m:ss`, `h:mm:ss` past an hour, later fields under 60): the playback bar,
+  the sleep timer's countdown (`format::counting_down`, a part second rounded up, `a_countdown_past_an_hour_reads_as_every_other_clock_does`),
   the remote and Device sync panes, the analysis plot's marks and the terminal's tables and `ago` read the one
   formatter, so a long clock never reads `75:03` in one place and `1:15:03` in another.
 - **A catalog listing marks the playing track by the row it resolves to, never the queue's id.** The

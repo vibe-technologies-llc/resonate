@@ -50,7 +50,7 @@ pub fn spanned(played: Duration) -> String {
 pub fn counting_down(left: Duration) -> String {
     let seconds = left.as_secs() + u64::from(left.subsec_nanos() > 0);
 
-    format!("{}:{:02}", seconds / A_MINUTE, seconds % A_MINUTE)
+    elapsed::clock(Duration::from_secs(seconds))
 }
 
 const A_MINUTE: u64 = 60;
@@ -167,8 +167,10 @@ mod tests {
     }
 
     #[test]
-    fn a_countdown_is_read_in_minutes_and_seconds_however_many_minutes_are_left() {
-        assert_eq!(counting_down(Duration::from_secs(90 * A_MINUTE)), "90:00");
+    fn a_countdown_past_an_hour_reads_as_every_other_clock_does() {
+        assert_eq!(counting_down(Duration::from_secs(90 * A_MINUTE)), "1:30:00");
+        assert_eq!(counting_down(Duration::from_secs(AN_HOUR)), "1:00:00");
+        assert_eq!(counting_down(Duration::from_secs(AN_HOUR - 1)), "59:59");
         assert_eq!(counting_down(Duration::from_secs(15 * A_MINUTE)), "15:00");
         assert_eq!(counting_down(Duration::from_secs(61)), "1:01");
         assert_eq!(counting_down(Duration::ZERO), "0:00");
