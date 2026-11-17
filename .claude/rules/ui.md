@@ -1960,6 +1960,18 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   is only ever asked for what the pane shows: nothing is read until the pane is opened
   (`the_server_is_a_pane_only_while_an_account_is_given_and_online_is_on`,
   `an_artist_opens_to_its_albums_and_an_album_to_its_songs_and_a_song_plays_the_album_from_it`).
+- **The network's media servers are one more service in the pane** (`providers.md`'s *A media
+  server on the network played in place*), there wherever `online` is on, so with online on the
+  Services row always stands. A service that `Serves::lists_the_network` is read only once the pane
+  is shown, as one that keeps songs is (`waits_to_be_shown`), since its first page is a search
+  multicast on the network; it is titled *Media servers* and counted in servers, its artist (a
+  server) is eyebrowed *Media server* and counted in folders, and its album *Folder on the server*.
+  **An album page lists the albums its service keeps within it before its songs**
+  (`Serves::albums_within`, empty for every service but a media server), so a server's folders open
+  one into another as deep as it keeps them, counted *N folders · N songs*
+  (`counted_on_the_network`). No server answering is *No media server answered* with *Search again*
+  (`server-search-again`, `read_again`), never *Search to begin*
+  (`the_media_servers_are_looked_for_only_once_the_pane_opens_and_a_folder_opens_to_its_folders_and_songs`).
 - **A served song's cover is its service's.** A cover cell for a row whose location any service
   names (`ServerModel::names`) draws `ServerModel::cover` from the service that names it (keyed by
   scheme and cover name), not `Player::art`, in `drawn_cover` and

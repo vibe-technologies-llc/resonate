@@ -256,6 +256,10 @@ impl PlaysInPlace for Dlna {
         TITLE
     }
 
+    fn lists_the_network(&self) -> bool {
+        true
+    }
+
     fn artists(&self) -> Result<Vec<Artist>> {
         let found = self
             .servers

@@ -81,6 +81,7 @@ impl RootView {
         let place = model.place().clone();
         let page = model.page().clone();
         let way_back = model.way_back_name();
+        let network = model.lists_the_network();
 
         let heading = self.server_heading(&place, &page, way_back, cx);
         let body = match page {
@@ -96,6 +97,7 @@ impl RootView {
                     words::served::nothing_found(),
                     Some(words::served::nothing_found_more()),
                 ),
+                Place::Artists if network => self.no_server_answered(cx),
                 Place::Artists => kit::empty(
                     Icon::Server,
                     words::served::nothing_listed(),
@@ -111,6 +113,25 @@ impl RootView {
         };
 
         kit::pane().child(heading).child(body).into_any_element()
+    }
+
+    fn no_server_answered(&self, cx: &mut Context<Self>) -> AnyElement {
+        kit::trouble_offering(
+            Icon::Server,
+            words::served::no_server_answered(),
+            Some(words::served::no_server_answered_more()),
+            self.in_the_pane_ring(
+                kit::button(
+                    "server-search-again",
+                    None,
+                    words::served::search_again(),
+                    words::served::search_again_hint(),
+                    Tone::Outlined,
+                ),
+                |this, _, cx| this.server.update(cx, |server, cx| server.read_again(cx)),
+                cx,
+            ),
+        )
     }
 
     fn server_failed(&self, failure: Failure, cx: &mut Context<Self>) -> AnyElement {
@@ -139,11 +160,14 @@ impl RootView {
         way_back: Option<String>,
         cx: &mut Context<Self>,
     ) -> Div {
+        let network = self.server.read(cx).lists_the_network();
         let counted = match page {
+            Page::Read(rows) if network => Some(counted_on_the_network(rows, place)),
             Page::Read(rows) => Some(counted_in(rows, place)),
             Page::Reading | Page::Failed(_) => None,
         };
         let title = match (place, page) {
+            (Place::Artists, _) if network => words::served::media_servers().to_owned(),
             (Place::Artists, Page::Read(rows)) if favourites_in(rows) => {
                 words::served::favourites().to_owned()
             }
@@ -216,6 +240,10 @@ impl RootView {
                     .get(chosen)
                     .map_or_else(|| place.eyebrow().to_owned(), |title| title.clone()),
             ),
+            Place::Artist { .. } if network => Some(words::served::media_server().to_owned()),
+            Place::Album { .. } if network => {
+                Some(words::served::folder_on_the_server().to_owned())
+            }
             Place::Artist { .. }
             | Place::Album { .. }
             | Place::Mix { .. }
@@ -792,6 +820,22 @@ pub(crate) fn songs_from(rows: &[Row], index: usize) -> Option<(Vec<MediaLocatio
         songs.into_iter().map(|(_, location)| location).collect(),
         start,
     ))
+}
+
+fn counted_on_the_network(rows: &[Row], place: &Place) -> String {
+    let count = |matching: fn(&Row) -> bool| rows.iter().filter(|row| matching(row)).count();
+    let folders = count(|row| matches!(row, Row::Album(_)));
+    let songs = count(|row| matches!(row, Row::Song(_)));
+    match place {
+        Place::Artists => words::served::servers(count(|row| matches!(row, Row::Artist(_)))),
+        Place::Artist { .. } => words::served::folders(folders),
+        Place::Album { .. } if folders > 0 => format!(
+            "{} · {}",
+            words::served::folders(folders),
+            words::served::songs(songs)
+        ),
+        Place::Album { .. } | Place::Mix { .. } | Place::Found { .. } => counted_in(rows, place),
+    }
 }
 
 fn counted_in(rows: &[Row], place: &Place) -> String {
@@ -1373,6 +1417,159 @@ mod tests {
                 .collect::<Vec<_>>()
         });
         assert_eq!(queued, ["subsonic:track/so-1", "subsonic:track/so-2"]);
+    }
+
+    #[derive(Default)]
+    struct OnTheNetwork {
+        first_pages_read: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    fn on_the_network(key: &str) -> MediaLocation {
+        MediaLocation::from_uri(&format!("dlna:{key}")).expect("a dlna location")
+    }
+
+    fn a_folder(key: &str, name: &str) -> ServedAlbum {
+        ServedAlbum {
+            location: on_the_network(&format!("album/uuid:shelf/{key}")),
+            name: name.to_owned(),
+            artist: None,
+            year: None,
+            songs: None,
+            cover: None,
+        }
+    }
+
+    impl Serves for OnTheNetwork {
+        fn scheme(&self) -> &SourceId {
+            static DLNA: std::sync::LazyLock<SourceId> =
+                std::sync::LazyLock::new(|| SourceId::new("dlna").expect("a source"));
+            &DLNA
+        }
+
+        fn title(&self) -> &str {
+            "DLNA"
+        }
+
+        fn names(&self, location: &MediaLocation) -> bool {
+            location.to_uri().starts_with("dlna:")
+        }
+
+        fn lists_the_network(&self) -> bool {
+            true
+        }
+
+        fn artists(&self) -> Result<Vec<ServedArtist>> {
+            self.first_pages_read
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(vec![ServedArtist {
+                location: on_the_network("artist/uuid:shelf"),
+                name: "Shelf".to_owned(),
+                albums: None,
+                cover: None,
+            }])
+        }
+
+        fn albums_of(&self, _: &MediaLocation) -> Result<Vec<ServedAlbum>> {
+            Ok(vec![a_folder("1", "Music")])
+        }
+
+        fn albums_within(&self, album: &MediaLocation) -> Result<Vec<ServedAlbum>> {
+            Ok(if *album == a_folder("1", "Music").location {
+                vec![a_folder("1$2", "Meddle")]
+            } else {
+                Vec::new()
+            })
+        }
+
+        fn songs_of(&self, album: &MediaLocation) -> Result<Vec<ServedSong>> {
+            if *album != a_folder("1$2", "Meddle").location {
+                return Ok(Vec::new());
+            }
+            Ok(["One of These Days", "A Pillow of Winds"]
+                .into_iter()
+                .zip(1..)
+                .map(|(title, track)| ServedSong {
+                    location: on_the_network(&format!("track/uuid:shelf/1$2${track}")),
+                    ..song("so", title, track)
+                })
+                .collect())
+        }
+
+        fn search(&self, _: &str) -> Result<ServedFound> {
+            Ok(ServedFound::default())
+        }
+
+        fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>> {
+            Ok(vec![named.clone()])
+        }
+
+        fn cover(&self, _: &MediaLocation, _: Option<&ServedCover>, _: u32) -> Result<Vec<u8>> {
+            Err(Error::NotOffered {
+                provider: SourceId::new("dlna").expect("a source"),
+                op: ProviderOp::Cover,
+            })
+        }
+    }
+
+    #[gpui::test]
+    fn the_media_servers_are_looked_for_only_once_the_pane_opens_and_a_folder_opens_to_its_folders_and_songs(
+        cx: &mut TestAppContext,
+    ) {
+        let network = Arc::new(OnTheNetwork::default());
+        let read = Arc::clone(&network.first_pages_read);
+        let times_read = || read.load(std::sync::atomic::Ordering::SeqCst);
+        let mut driven = Driven::serving(cx, vec![network], an_account());
+        assert_eq!(
+            times_read(),
+            0,
+            "the network was searched before the pane opened"
+        );
+
+        open_the_server(&mut driven);
+        driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
+        let servers = driven.read(|root, cx| match root.server.read(cx).page() {
+            Page::Read(rows) => counted_on_the_network(rows, &Place::Artists),
+            Page::Reading | Page::Failed(_) => String::new(),
+        });
+        driven.click("server-row-0");
+        driven.until(|root, cx| {
+            matches!(root.server.read(cx).place(), Place::Artist { .. })
+                && matches!(root.server.read(cx).page(), Page::Read(_))
+        });
+        driven.click("server-row-0");
+        driven.until(|root, cx| {
+            matches!(root.server.read(cx).place(), Place::Album { .. })
+                && matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 1)
+        });
+        driven.click("server-row-0");
+        driven.until(
+            |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2),
+        );
+        let songs = driven.read(|root, cx| match root.server.read(cx).page() {
+            Page::Read(rows) => counted_on_the_network(rows, root.server.read(cx).place()),
+            Page::Reading | Page::Failed(_) => String::new(),
+        });
+        driven.click("server-row-1");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
+
+        let queued = driven.read(|root, cx| root.player.read(cx).queue()[1].location.to_uri());
+        assert_eq!(times_read(), 1);
+        assert_eq!(servers, "1 server");
+        assert_eq!(songs, "2 songs");
+        assert_eq!(queued, "dlna:track/uuid%3Ashelf/1%242%242");
+        assert_eq!(
+            counted_on_the_network(
+                &[
+                    Row::Album(a_folder("1$2", "Meddle")),
+                    Row::Song(song("so-1", "One", 1))
+                ],
+                &Place::Album {
+                    location: a_folder("1", "Music").location,
+                    name: "Music".to_owned(),
+                }
+            ),
+            "1 folder · 1 song"
+        );
     }
 
     #[gpui::test]

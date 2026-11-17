@@ -336,6 +336,10 @@ pub trait PlaysInPlace: Send + Sync {
         false
     }
 
+    fn lists_the_network(&self) -> bool {
+        false
+    }
+
     fn favour(&self, _song: &Id, _favoured: bool) -> Result<()> {
         Err(not_offered(self.scheme(), ProviderOp::Favourite))
     }

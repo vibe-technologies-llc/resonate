@@ -12,6 +12,13 @@ search-placeholder = Search the server, then press enter
 nothing-here = Nothing here
 nothing-listed = Search to begin
 favourites = Favourites
+media-servers = Media servers
+media-server = Media server
+folder-on-the-server = Folder on the server
+no-server-answered = No media server answered
+no-server-answered-more = Media servers on this network are looked for each time this page opens. Check that the server is running and on the same network as this computer.
+search-again = Search again
+search-again-hint = Look for media servers on the network again
 search-first = This service lists nothing until it is asked. Search above for an artist, an album or a song.
 choose-hint = Browse this service
 choose-among-hint = Choose which service to browse
@@ -32,6 +39,14 @@ artists = { $count ->
 albums = { $count ->
     [one] { $count } album
    *[other] { $count } albums
+}
+servers = { $count ->
+    [one] { $count } server
+   *[other] { $count } servers
+}
+folders = { $count ->
+    [one] { $count } folder
+   *[other] { $count } folders
 }
 mixes = { $count ->
     [one] { $count } mix

@@ -728,8 +728,8 @@ seam.
   from the type the decoder is hinted by). An album or song id is `<udn>/<object id>`, the object
   id the server's own spelling (`Object::read` splits at the first `/`, a UDN holding one being no
   server listed here); a cover is `<udn>/<address>`. `artists` (the first page) is one search
-  round, so the list follows the servers as they come and go; `search` asks every server found
-  (one round if none is held) for songs named, a server that refuses `Search` passed over.
+  round, so the list follows the servers as they come and go; `search` asks every server held
+  (one round first where none is) for songs named, a server that refuses `Search` passed over.
   Browsing a container reads it once for its albums and its songs (`A_LISTING_IS_KEPT_FOR`, 10 s).
   An artist (a whole server) is never expanded into songs (`NotOffered`), nor is a mix named.
 - **A song is played as stored**: `streamed` asks the item's `BrowseMetadata`, takes the `res`
@@ -742,6 +742,9 @@ seam.
   window's *The server could not be reached*); a SOAP fault `TurnedAway` with the UPnP code (701, no
   such object), an HTTP status `Refused`, anything unreadable `Unreadable`, an address off the server
   `Unaddressable` (`a_server_gone_is_the_provider_away_and_a_fault_is_the_servers_refusal`).
+- **The window draws it as the network** (`PlaysInPlace::lists_the_network`, true here alone, which
+  the window's adapter forwards): `ui.md`'s pane reads its first page only once shown and names its
+  pages as servers and folders.
 - **Asked only when the listener asks, and only with `online` on.** `providers::in_place` appends
   the one `Dlna` a process holds (`Made::media_servers`, so the servers found are kept between a
   pane's reads) wherever `online` is on, after the accounts; it searches nothing until it is asked

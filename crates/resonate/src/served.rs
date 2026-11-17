@@ -348,6 +348,21 @@ impl resonate_ui::Serves for ServedBy {
             .collect())
     }
 
+    fn albums_within(
+        &self,
+        album: &MediaLocation,
+    ) -> resonate_providers::Result<Vec<resonate_ui::ServedAlbum>> {
+        let Some(Named::Album(id)) = self.0.named_by(album) else {
+            return Err(self.unreadable());
+        };
+        Ok(self
+            .0
+            .albums_within(&id)?
+            .into_iter()
+            .map(|within| self.album(within))
+            .collect())
+    }
+
     fn first_page(&self) -> resonate_providers::Result<resonate_ui::ServedFound> {
         Ok(self.found(self.0.first_page()?))
     }
@@ -381,6 +396,10 @@ impl resonate_ui::Serves for ServedBy {
 
     fn keeps_songs(&self) -> bool {
         self.0.keeps_songs()
+    }
+
+    fn lists_the_network(&self) -> bool {
+        self.0.lists_the_network()
     }
 
     fn favour(&self, song: &MediaLocation, favoured: bool) -> resonate_providers::Result<()> {

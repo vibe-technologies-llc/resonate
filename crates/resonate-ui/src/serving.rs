@@ -280,7 +280,13 @@ impl ServerModel {
     }
 
     fn waits_to_be_shown(&self, serves: &dyn Serves) -> bool {
-        !self.shown && serves.keeps_songs() && *self.place() == Place::Artists
+        let reaches_out = serves.keeps_songs() || serves.lists_the_network();
+        !self.shown && reaches_out && *self.place() == Place::Artists
+    }
+
+    pub(crate) fn lists_the_network(&self) -> bool {
+        self.serves()
+            .is_some_and(|serves| serves.lists_the_network())
     }
 
     pub(crate) fn serves(&self) -> Option<Arc<dyn Serves>> {
@@ -552,7 +558,13 @@ fn rows_at(serves: &dyn Serves, place: &Place) -> Result<Vec<Row>, ProviderError
             .into_iter()
             .map(Row::Album)
             .collect(),
-        Place::Album { location, .. } | Place::Mix { location, .. } => serves
+        Place::Album { location, .. } => serves
+            .albums_within(location)?
+            .into_iter()
+            .map(Row::Album)
+            .chain(serves.songs_of(location)?.into_iter().map(Row::Song))
+            .collect(),
+        Place::Mix { location, .. } => serves
             .songs_of(location)?
             .into_iter()
             .map(Row::Song)

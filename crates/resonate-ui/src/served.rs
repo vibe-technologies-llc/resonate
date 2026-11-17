@@ -68,6 +68,10 @@ pub trait Serves: Send + Sync {
 
     fn songs_of(&self, album: &MediaLocation) -> Result<Vec<ServedSong>>;
 
+    fn albums_within(&self, _album: &MediaLocation) -> Result<Vec<ServedAlbum>> {
+        Ok(Vec::new())
+    }
+
     fn search(&self, words: &str) -> Result<ServedFound>;
 
     fn expand(&self, named: &MediaLocation) -> Result<Vec<MediaLocation>>;
@@ -81,6 +85,10 @@ pub trait Serves: Send + Sync {
     }
 
     fn keeps_songs(&self) -> bool {
+        false
+    }
+
+    fn lists_the_network(&self) -> bool {
         false
     }
 
