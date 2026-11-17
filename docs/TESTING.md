@@ -100,12 +100,14 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.12.1] Investigate: three tests failed under 64-thread stress and have no cause found yet:
-  `resonate-engine`'s `a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start`
-  once (`transport.rs`, then 30 clean runs), `resonate-server`'s
-  `web::a_message_still_arriving_on_one_web_socket_holds_its_bytes_from_every_other_session` 3 in 60
-  (`web.rs`, `None` against `Some(Busy)`, apparently on its 5 s deadline) and
-  `shared::what_is_held_is_shown_the_moment_the_service_starts` once (`shared.rs`, 0 against 1)
+- [S · 0.13.0] Investigate: `resonate-engine`'s `a_smart_shuffle_spreads_the_artists_its_kinship_names_once_their_kin_lands`
+  timed out once in 60 whole-crate runs at 64 threads (*the artists to be spread apart*; playback
+  Stopped at row 0 of 30)
+- [S · 0.13.0] Two frame-budget tests in `resonate-server`'s `tests/frames.rs`
+  (`frames_announced_across_sessions_past_what_the_server_holds_are_refused_as_busy`,
+  `first_frames_still_arriving_hold_their_bytes_from_every_other_session`) order their two sessions
+  with a 300 ms sleep (`THE_FIRST_FRAME_IS_HELD_WITHIN`), the assumption the web path's twin test
+  failed on under load; wait on the server having taken the first frame instead
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
