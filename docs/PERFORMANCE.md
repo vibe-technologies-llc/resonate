@@ -16,9 +16,6 @@ are in [ROADMAP.md](ROADMAP.md).
   server's log still grows for good and a new device replays all of it, and answers are never pruned;
   a snapshot of several parts (the server's `Compact` taking them across frames) or answers kept out
   of it, which is a choice of what a newly paired device learns
-- [S · 0.12.1] A search of one very common word is slower through a trigram index than the scan it
-  replaced (one word matching a quarter of 300 000 kept songs: 95 ms against 54 ms), as for every
-  `Infix` reader; a word whose trigrams are common could be read by `instr` instead
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)

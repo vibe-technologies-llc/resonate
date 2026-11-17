@@ -4,19 +4,17 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android
-- [S · 0.12.1] The phones tell a lookup a metered connection or a switched-off network stopped as
-  unreachable (`failure.rs`'s `of_a_lookup`, `enrichment.rs`): the library's `Stopped::{Offline,
-  Metered}` reach them, and `EnrichmentStop::Offline` covers only a network switched off
 
 ## Security
 - [S · blocked: design] A host on the network may take several addresses and so pass the media server's
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Sync and together
-- [S · 0.12.1] `Syncing::leave` drops its handle while a clone held elsewhere (a device consult, a
-  window call) keeps that run going until it lets go, so a leave is not done when it returns
-- [S · 0.12.1] Investigate: a shared playlist's own compaction (`compacted`, `shared/service.rs`) sends
-  every part in one frame with no blob cap; likely bounded by the list's entry limit, unverified
+- [S · 0.12.1] A restart of sync after a settings change still waits for the old run to be let go
+  rather than stopping it (`sync.rs`); `Seat::ended` could stop it as a leave now does
+- [S · 0.12.1] A shared playlist whose state passes one frame is never compacted (`shared/service.rs`
+  backs off, as the device sync did): the multi-part compaction the device sync is getting would
+  serve it too
 
 ## Playback and output
 
