@@ -40,6 +40,7 @@ const OTHER_PROGRAMS_AND_PROTOCOLS: &[&str] = &[
     "ApproachingDataLimit",
     "AttachedFile",
     "AudioObject",
+    "CAP_LEASE",
     "CARGO_CFG_TARGET_ARCH",
     "CFRunLoopRunInMode",
     "CLOCK_MONOTONIC",
