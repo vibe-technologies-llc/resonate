@@ -370,6 +370,7 @@
     <string name="features_scrobble_lastfm_signed_in">Signed in to Last.fm</string>
     <string name="features_scrobble_lastfm_signed_out">Signed out of Last.fm</string>
     <string name="features_sync_joining_when_read">Joining as soon as this phone\'s settings are read</string>
+    <string name="features_sync_settings_unread">Device sync settings could not be read, so sync waits until they can be</string>
     <string name="features_sync_link_holds_no_code">That link holds no pairing code</string>
     <string name="features_sync_already_with_those">This phone already syncs with those devices</string>
     <plurals name="features_sync_asking_for_missing">

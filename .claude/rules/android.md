@@ -1583,7 +1583,12 @@ whole (`sync_start` leaves the previous one first; `shutdown` stops it before an
 ledger is `sync.sqlite` and its staging folder `sync-staging`, both beside `documents.sqlite`.
 A blank key mints one; `SyncStatus.code` hands it back and Kotlin stores it encrypted beside the
 provider accounts, with the other choices (enabled, server, device name, the three follow switches,
-mobile data, `sync-nearby-only`) in plain preferences. Sync is on unless switched off and runs
+mobile data, `sync-nearby-only`) in plain preferences. **A read of them that throws leaves sync
+unset** (`SyncSettingsReading`): a `KeyStoreException` or `AEADBadTagException` never becomes a blank
+key that would mint a new group and be written over the kept one, as iOS refuses (`ios.md`); sync is
+neither started nor written back, the failure is said once, and the settings are read again each
+time the app comes to the foreground until they read (`LibraryFeatures.readSyncAgain`,
+`SyncSettingsReadingTest`). Sync is on unless switched off and runs
 only while online is, unless `nearby_only` (*Only this network*: `Server::Nowhere`, no server
 dialled, which runs with online off); `sync-nearby-only` defaults off, so the hosted server is dialled. A setting change restarts it; `sync_start` with a blank key
 reuses the code of the sync it replaces, so two starts in a row never mint two codes.

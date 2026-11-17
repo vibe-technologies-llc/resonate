@@ -284,6 +284,12 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private val searchRequest = AtomicLong()
     private var visualization: Job? = null
     val syncConfig = MutableStateFlow<SyncConfig?>(null)
+    private val syncSettings =
+        SyncSettingsReading(accounts::readSync) { failure ->
+            library.report(
+                SyncSettingsUnread(library.words.string(R.string.features_sync_settings_unread), failure)
+            )
+        }
     val syncStatus = MutableStateFlow<SyncStatus?>(null)
     val musicbrainzCopy = MutableStateFlow<MusicbrainzCopy?>(null)
     val syncHandoffs = MutableStateFlow<List<HandedOff>>(emptyList())
@@ -441,27 +447,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
         }
         refreshFolders()
-        syncConfig.value =
-            try {
-                accounts.readSync()
-            } catch (failure: Exception) {
-                library.report(failure)
-                SyncConfig(
-                    enabled = true,
-                    nearbyOnly = false,
-                    server = "",
-                    key = "",
-                    device = "",
-                    favourites = false,
-                    playlists = false,
-                    everything = false,
-                    meteredAllowed = false,
-                    control = SyncControls.of(null),
-                    stun = "",
-                    certificate = "",
-                    musicbrainzCopy = true,
-                )
-            }
+        syncConfig.value = syncSettings.read()
         together.begin(native)
         joinWaiting?.let(::joinSync)
         watchNetwork()
@@ -889,6 +875,14 @@ class LibraryFeatures(private val context: Context, private val library: Library
         enrichment.foreground(visible)
         downloads.wantsChanged()
         if (visible) forgetMissing(afterScan = false)
+        if (visible && syncConfig.value == null && syncApplied.value) work(::readSyncAgain)
+    }
+
+    private suspend fun readSyncAgain(native: MobilePlayer) {
+        if (syncConfig.value != null) return
+        syncConfig.value = syncSettings.read() ?: return
+        val waiting = joinWaiting
+        if (waiting != null) joinSync(waiting) else applySync(native)
     }
 
     fun loadPlaylistSync(id: ULong) = work { native ->
