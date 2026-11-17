@@ -161,11 +161,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Listening history
-- [S · 0.13.0] `history --import` reads only a service (`listenbrainz|lastfm`, `online` and an account
-  required) while `--export FILE` writes ListenBrainz's JSON lines with no `online`, so a listener
-  without an account, or a build without `online`, can take the history out and never back in; an
-  `--import FILE` reading the lines the export writes (a fuzz target beside it), landed through
-  `Library::bring_in`
 
 ## Identification
 - [M · blocked: encoders] The quantiser steps are weighed only on the encoders this machine has
