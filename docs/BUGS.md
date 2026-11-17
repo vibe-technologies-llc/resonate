@@ -4,32 +4,10 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android
-- [S · 0.12.1] A Keystore read of the sync settings that throws becomes a blank pairing code that mints a
-  new group over the real one: `LibraryFeatures.kt` falls back to `SyncConfig(enabled = true,
-  key = "")`, `syncWith` starts sync with it (`resonate-mobile`'s `sync.rs` mints where the key is
-  blank) and, the code then differing, `accounts.writeSync` overwrites the kept key, so one
-  `KeyStoreException` or `AEADBadTagException` at engine open leaves the phone in a group of its own
-  with its devices lost; iOS refuses exactly this (`ios.md`): a failed read should leave sync unset
-  and be read again, never started or written back
-- [S · 0.12.1] An Oboe open that timed out still moves the shared `Routing` when it finishes late:
-  `Device::open` gives up after `OPEN_WITHIN` but the `resonate-mobile-output` thread goes on to
-  `prefer_bit_perfect`, `opened_on` (overwriting `actual`) and `routing.opened`, then, its `ready`
-  dropped, `routing.closed` finds itself current and calls `mix_freely`, so a stream opened since
-  loses its bit-perfect mixer preference, `output_stream()` says nothing is open and `zoning.rs`'s
-  *held bit-perfect* refusal reads the late device; an abandoned opener should close its stream
-  without touching `Routing` (`oboe.rs`, a host test in `oboe_state.rs`'s style)
-- [S · 0.12.1] A bit-perfect preference granted before an open that then fails is never given back:
-  `oboe.rs` returns on `FormatRefused` or an `open_stream` error after `prefer_bit_perfect` succeeded,
-  with no `mix_freely`, so the USB device's mixer keeps Resonate's attributes until the next open or
-  `shutdown`, against `android.md`'s *gives back any bit-perfect preference*
-- [S · 0.12.1] `mobile.md` says Android's statistics read `statistics(days)` alone and call no
-  day-cutting export, but `StatisticsScreen.kt` calls `listeningDetail` with the zone's name and
-  offset as iOS does: the rule is stale
-- [S · 0.12.1] Investigate: a `MulticastLock` may be taken again after `LibraryFeatures.stop()`: the
-  settle paths of `NetworkRenderers.kt`, `CatalogOffering.kt` and `syncWith` call
-  `hearSearches(true)` after a blocking native call cancellation cannot stop, and
-  `if (hear && !lock.isHeld) lock.acquire()` is an unsynchronised check-then-act, so Wi-Fi may be
-  held awake with no engine open
+- [S · 0.12.1] A phone whose Keystore key is lost for good (an `AEADBadTagException` on every read)
+  keeps sync unset forever: `SyncSettingsReading` answers `null`, and `newSyncGroup` and `saveSync`
+  return on a `null` config, so nothing short of clearing the app's data starts sync again; offer
+  starting over with a new group where the settings cannot be read
 
 ## iOS
 - [S · 0.12.1] Investigate: a refused `setActive(false)` is swallowed (`try?`, `NowPlaying.swift`) and
