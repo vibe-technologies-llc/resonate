@@ -720,7 +720,9 @@ themselves; `Tidal` (named by `resonate tidal`) reads the account again and hand
 `Followed::Tidal`, which the window writes into its own `Online` and TIDAL fields before asking
 every unheld want again, and a windowless player refuses it (it registers no providers); `Spotify`
 reads the account again and hands a window `Followed::Spotify`. The
-window drains `Bus::followed` on the foreground (`follow_when_told`, as it drains `raise`).
+window hears `Bus::followed` as it hears `raise`, `quit` and `desktop`: one thread blocks on the four
+receivers (`bus_heard::Heard::on_a_thread_of_its_own`, `ui.md`) and the foreground acts on what it
+passes on (`act_on_the_bus`).
 
 Every writer (`config::store`, `clear`, `store_in_table`, `clear_in_table`, `edit`): follows a
 symlinked `config.toml`, a dangling one too (`followed`: `canonicalize`, else `read_link` joined to the

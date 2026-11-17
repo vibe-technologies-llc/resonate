@@ -10,7 +10,7 @@ use std::{
 };
 
 use ahash::AHashMap;
-use crossbeam_channel::{Receiver, Sender, TryRecvError};
+use crossbeam_channel::{Receiver, Sender};
 use gpui::{
     App, AppContext as _, Bounds, Context, Global, KeyBinding, OperatingSystem, Task,
     TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions, actions, px, size,
@@ -36,6 +36,7 @@ use crate::{
     AppIcon, Bindings, CaretBlink, Error, Launcher, Measurers, Notice, Result, RootView, Settings,
     WindowKind,
     asking::Underway,
+    bus_heard::{Heard, Told},
     drawing::Drawer,
     format, icons,
     listening::Listens,
@@ -62,8 +63,6 @@ const POLL_INTERVAL: Duration = Duration::from_millis(16);
 const RESTING_POLL_INTERVAL: Duration = Duration::from_millis(64);
 
 const QUIET_POLLS_BEFORE_RESTING: u32 = 30;
-
-const QUIT_POLL: Duration = Duration::from_millis(100);
 
 const WIND_DOWN_WITHIN: Duration = Duration::from_secs(10);
 
@@ -1064,99 +1063,59 @@ impl LeftOnce {
     }
 }
 
-fn follow_the_desktop_when_told(told: Receiver<DesktopLook>, cx: &mut App) {
-    let waiting = cx.background_executor().clone();
+fn act_on_the_bus(heard: Heard, cx: &mut App) {
+    let Some(mut heard) = heard.on_a_thread_of_its_own() else {
+        return;
+    };
+
     cx.spawn(async move |cx| {
-        loop {
-            match told.try_recv() {
-                Ok(look) => {
-                    cx.update(|cx| {
-                        theme::hear_the_desktop(look);
-                        cx.global::<ResonateApp>()
-                            .launcher
-                            .show(AppIcon::of(theme::worn()));
-                        cx.refresh_windows();
-                    });
-                }
-                Err(TryRecvError::Empty) => waiting.timer(QUIT_POLL).await,
-                Err(TryRecvError::Disconnected) => return,
-            }
+        while let Ok(told) = heard.recv().await {
+            cx.update(|cx| act_on(told, cx));
         }
     })
     .detach();
 }
 
-fn follow_when_told(told: Receiver<Followed>, cx: &mut App) {
-    let waiting = cx.background_executor().clone();
-    cx.spawn(async move |cx| {
-        loop {
-            match told.try_recv() {
-                Ok(followed) => {
-                    cx.update(|cx| {
-                        for handle in cx.windows() {
-                            let Some(root) = handle.downcast::<RootView>() else {
-                                continue;
-                            };
-                            let arrives = matches!(
-                                followed,
-                                Followed::PartyOffered(_) | Followed::ListOffered(_)
-                            );
-                            let _ = root.update(cx, |root, window, cx| {
-                                root.follow(followed.clone(), cx);
-                                if arrives {
-                                    window.activate_window();
-                                }
-                            });
-                        }
-                    });
-                }
-                Err(TryRecvError::Empty) => waiting.timer(QUIT_POLL).await,
-                Err(TryRecvError::Disconnected) => return,
-            }
-        }
-    })
-    .detach();
+fn act_on(told: Told, cx: &mut App) {
+    match told {
+        Told::Quit => close_every_window(cx),
+        Told::Raise => raise_every_window(cx),
+        Told::Followed(followed) => follow(&followed, cx),
+        Told::Desktop(look) => follow_the_desktop(look, cx),
+    }
 }
 
-fn raise_when_asked(asked: Receiver<()>, cx: &mut App) {
-    let waiting = cx.background_executor().clone();
-    cx.spawn(async move |cx| {
-        loop {
-            match asked.try_recv() {
-                Ok(()) => {
-                    cx.update(|cx| {
-                        cx.activate(true);
-                        for handle in cx.windows() {
-                            let _ = handle.update(cx, |_, window, _| window.activate_window());
-                        }
-                    });
-                }
-                Err(TryRecvError::Empty) => waiting.timer(QUIT_POLL).await,
-                Err(TryRecvError::Disconnected) => return,
-            }
-        }
-    })
-    .detach();
+fn follow_the_desktop(look: DesktopLook, cx: &mut App) {
+    theme::hear_the_desktop(look);
+    cx.global::<ResonateApp>()
+        .launcher
+        .show(AppIcon::of(theme::worn()));
+    cx.refresh_windows();
 }
 
-fn close_when_asked(asked: Receiver<()>, cx: &mut App) {
-    let waiting = cx.background_executor().clone();
-    let heard = cx.background_executor().spawn(async move {
-        loop {
-            match asked.try_recv() {
-                Ok(()) => return true,
-                Err(TryRecvError::Empty) => waiting.timer(QUIT_POLL).await,
-                Err(TryRecvError::Disconnected) => return false,
+fn follow(followed: &Followed, cx: &mut App) {
+    let arrives = matches!(
+        followed,
+        Followed::PartyOffered(_) | Followed::ListOffered(_)
+    );
+    for handle in cx.windows() {
+        let Some(root) = handle.downcast::<RootView>() else {
+            continue;
+        };
+        let _ = root.update(cx, |root, window, cx| {
+            root.follow(followed.clone(), cx);
+            if arrives {
+                window.activate_window();
             }
-        }
-    });
+        });
+    }
+}
 
-    cx.spawn(async move |cx| {
-        if heard.await {
-            cx.update(close_every_window);
-        }
-    })
-    .detach();
+fn raise_every_window(cx: &mut App) {
+    cx.activate(true);
+    for handle in cx.windows() {
+        let _ = handle.update(cx, |_, window, _| window.activate_window());
+    }
 }
 
 fn close_every_window(cx: &mut App) {
@@ -1302,10 +1261,15 @@ pub fn run(
         cx.bind_keys(bindings(cx.platform_info().os));
         crate::app_menu::lay_out(cx);
         cx.activate(true);
-        close_when_asked(bus.quit, cx);
-        raise_when_asked(bus.raise, cx);
-        follow_when_told(bus.followed, cx);
-        follow_the_desktop_when_told(bus.desktop, cx);
+        act_on_the_bus(
+            Heard {
+                quit: bus.quit,
+                raise: bus.raise,
+                followed: bus.followed,
+                desktop: bus.desktop,
+            },
+            cx,
+        );
         quit_once_the_last_window_closes(cx);
 
         let opening_size = stored

@@ -3079,9 +3079,15 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   (`an_edit_a_model_made_beside_the_window_is_taken_onto_its_undo_and_put_back_there`).
 - **`Raise` activates the window; `Quit` closes it.** The binary's host answers `can_raise` with whether
   it holds a raise channel (the window's does; windowless `resonate play` and the bus's default `Host`
-  answer false); `Raise` sends on it, `raise_when_asked` drains it on the gpui foreground and calls
-  `activate_window` on every window (a compositor may still refuse without an activation token). `Quit`
-  sends on the channel `resonate play` uses, drained by the gpui foreground on the frame timer.
+  answer false); `Raise` sends on it and `raise_every_window` calls `activate_window` on every window (a compositor
+  may still refuse without an activation token). `Quit` sends on the channel `resonate play` uses and
+  `close_every_window` closes them. **Nothing from the bus is polled**: `Bus`'s four receivers
+  (`quit`, `raise`, `followed`, `desktop`) are handed to one `resonate-bus-heard` thread blocking in
+  a `crossbeam_channel::Select` (`bus_heard::Heard::on_a_thread_of_its_own`), which passes each message
+  on as a `Told` over an unbounded channel the gpui foreground awaits (`act_on_the_bus`, `act_on`), so
+  an idle window wakes only when something comes; a receiver whose sender is gone leaves the select,
+  and the thread ends when all four have
+  (`what_each_channel_says_is_passed_on_and_the_hearing_ends_once_every_one_is_closed`).
 
 The desktop collection orders Favourites, Playlists, Suggestions and Listening Party before Missing. The enrichment status opens the Library category's *Rescan, refresh and retag* page, with live lookup counts and cancellation alongside scan and tag controls. Accounts holds service sign-ins, server credentials and scrobbling, including Spotify, TIDAL, Subsonic, Jellyfin, Last.fm and ListenBrainz; Online retains network policy.
 
