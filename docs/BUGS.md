@@ -48,17 +48,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   spaces and 1 024 rooms in all, and a space holding one record outlives the one-day unused sweep
   for `--idle-days`, so a /48 fills the spaces in a day for a year and about 21 IPv4 addresses hold
   every room; aggregate allowances at /56 and /48 (and /24) beside the /64's
-- [S · 0.12.1] A volume's `.Trash-$uid` is used as found: `trash.rs`'s `made()` creates it with
-  `DirBuilder::recursive(true).mode(0o700)`, which follows a symlink standing there and takes an
-  existing folder without asking its owner or mode, so on a shared or second disk another user who
-  made the folder first receives every song deleted from that volume and its `.trashinfo`; refuse
-  unless it and its `files` and `info` are real folders owned by the uid with no group or other bits
-  (`Owner::keeps_alone`, as the spool does), which the *no trash is no deletion* rule then keeps
-- [S · 0.12.1] A staged copy holds a private file's bytes under the umask until its mode is copied
-  over: `copied_into` (`writing.rs`) and organise's `copied_whole` write the whole track into a
-  `Held::made` file made `0644` and only then `set_permissions`, so a `0600` song in a folder others
-  may list is readable while it is copied, and a reader that opened it keeps it; make the stage
-  `0600` and widen it after
 - [S · 0.12.1] `carries_secret` (`providers/tidal/src/hifi.rs`) takes everything before the first `/`
   or `?` as the host, so `http://localhost:1@other.example/` reads as localhost and would send the
   bearer key in the clear to another host; latent while `with_secret` is handed only `OWN_SERVER`.
@@ -97,33 +86,21 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   clones, so the old `Running` still holds `sync.lock`, the new start's `alone()` meets `WouldBlock`
   and answers `Ok(None)` logged at debug; `Syncing::leave` can also take the service while the watcher
   is inside `arranged`, which then installs a fresh `Running` after the leave (`sync.rs`)
+- [S · 0.12.1] A shared playlist's client sends every owed op in one `Append` (`shared/service.rs`)
+  without bounding its blob count by `BLOBS_A_FRAME_AT_MOST` (4 096), so an owner owing about a
+  million ops has every append refused; split it as the sync service's compaction is
 
 ## Playback and output
-- [S · 0.12.1] A format change mid-track stalls playback for good when the chain holds more than the
-  ring: `swap_chain` (`reshaping.rs`) parks in `settles_into` until `has_room_for_what_the_chain_holds`
-  (`producer.free_frames() >= max_flush_frames`), the ring is sized from `max_process_frames` and the
-  buffer (500 ms by default) and never from the flush, and a convolver's flush is its impulse plus a
-  partition (up to `LONGEST_IMPULSE`, 10 s), so an MP3 turning mono to stereo, a chained Ogg or a
-  radio stream under room correction or Very high stops writing until a seek; where the flush can
-  never fit, drain as the gapless path does
-- [M · 0.12.1] Across a gapless turn under a resampler or a carried convolver, the leaving track's last
-  frames play at the entering track's ReplayGain: `retune_for_the_entering` (`boundary.rs`) sets the new
-  gain at once, `turn_at` takes `frames_rendered_ahead_of_the_ring` (only what lies after the gain
-  stage) while the boundary is at `written + chain.latency_frames()`, and the ring steps rendered and
-  heard level on one frame, so what the resampler still held (about 300 ms at Very high) is heard at
-  the next track's gain: a step on an album played at another rate under track gain
-- [S · 0.12.1] A refused handover leaves the incoming zone's repeat changed: `Zones::hand_over` sends
-  `SetRepeat(state.repeat)` and returns on the `Resume` request's `?` without `put_back`, which every
-  later failure calls, against `audio.md`'s *as it stood before the handover*
 - [S · 0.12.1] Investigate: PipeWire's reshape stores `taking` and calls `update_params` before
   `handing.hand(Feed::new(..))` (`client.rs`), so where `param_changed` settles `Taken::AsAsked` before
   the data thread takes the feed, one quantum of the old ring is written at the old stride into the new
   format with a wrong `chunk.size`
-- [S · 0.12.1] Investigate: lossy restoration carries one track's learnt wall into the next across a
-  gapless turn: two unstudied tracks of one codec tuning plan alike (`wall: None`), `same_shape_as`
-  holds and only the gain is retuned, so a 128k MP3 after a 320k one is extended from the 20 kHz wall
-  until `follow_the_wall` agrees; reset what `Restore` learnt on a turn, or never keep a restoring
-  chain across rows
+- [S · 0.12.1] Under true peak, a gapless turn carrying the resampler or convolver into a new chain lands
+  its boundary a guard delay late: the fresh true-peak guard swallows its delay rather than holding
+  it, so `written + latency` (and the entering gain step that follows it) is late by that delay
+- [S · 0.12.1] An equaliser change spliced in while a gain step still waits (`GainStage`'s waiting
+  steps, a few milliseconds after a gapless turn) builds the new chain at the entering gain and drops
+  the waiting step, so the leaving tail is heard at the entering track's gain
 
 ## Catalog
 - [S · 0.12.1] One silent track keeps a whole album from a measured album gain: `album_loudness`
@@ -131,35 +108,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   track never studied (`s.track_id IS NULL`) from one studied whose every block was gated out, so a
   pregap or a hidden-track spacer leaves the album on track gain with nothing said, where `audio.md`
   asks only that every track be studied
-- [S · 0.12.1] Organise across volumes unlinks the source before the folders it made are on disk:
-  `renamed_onto` makes the destination's folders with `create_dir_all` and `settle` syncs only each
-  file's own parent, so after a power cut the unlink can stand while `Artist/Album` does not, and the
-  song is in neither place (`organise.rs`); sync the parent of every folder in `made`, deepest first,
-  before `left_behind`
-- [S · 0.12.1] A WAVE whose ID3 chunk sits before the RIFF is staged beside the file alone:
-  `FileTags::write` (`writing.rs`) calls `Staged::beside` and answers `Error::Io` on a refusal, where
-  every other path stages under `spool::kept_under` instead, so a writable song in a folder the
-  listener may not create in is never tagged, against `library.md`'s *a folder the listener may not
-  create in does not refuse a file they may write*
-- [S · 0.12.1] The trash can overwrite a file already trashed and does not keep its record: `trash.rs`
-  checks the landing name with `symlink_metadata`, then `fs::rename`s over whatever appeared there,
-  and neither the `.trashinfo` nor the `files` and `info` folders are synced, so a crash can leave a
-  song in the trash nothing restores; `unreplacing::renamed_over_nothing` and the syncs
-- [S · 0.12.1] A drop-in's staging name has no counter: `staged_beside` (`take_in.rs`) names it
-  `.<name>.<pid>.resonate-part` under `Held::taken_over`, so two drops of one name into one folder in
-  one process collide (the second `Unwritable`), and on a filesystem refusing `flock` both write it
-- [S · 0.12.1] A playlist exported over a dangling symlink replaces the link with a file: `landing_of`
-  (`sheet.rs`) answers the path as given on `NotFound`, which a dangling link answers too, against
-  *a symlinked `.m3u` stays a link*
 - [M · 0.12.1] Investigate: a retag's follow takes its size and mtime from an `fs::metadata` after the
   read-back (`retag.rs`), so another program's edit landing in between is stored as seen and the next
   scan never reads it; `TagSink::write` could answer the stamp it landed
 - [M · 0.12.1] Investigate: a same-length in-place tag write lands with no journal where the folder
   refuses one (`overlay.rs`: only a length change falls back to `TooWide`), so a crash part way leaves a
   torn header nothing mends; keep the journal under the spool as whole copies do, or decide the trade
-- [S · 0.12.1] Investigate: the portal trash opens the file with `OFlags::PATH | OFlags::CLOEXEC`
-  and no `NOFOLLOW` (`resonate-mpris`'s `trash.rs`), so trashing a song that is a symlink trashes its
-  target
 - [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
   root runs: `held_open_elsewhere` (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding
   the file except for a process whose `status` names root. A write lease (`F_SETLEASE` with
@@ -225,11 +179,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   lands loses its handlers; one transport thread a service keeps it latent
 
 ## Equaliser
-- [S · 0.12.1] One NaN or infinity silences crossfeed for the chain's life: `lowpassed` (`crossfeed.rs`)
-  zeroes only values under the denormal floor, so a NaN state stays NaN and an infinity becomes one,
-  mixed into both outputs; float sources are widened without cleaning (`buffer.rs`) and the chain is
-  kept across gapless tracks, so one bad sample is silence until a seek. The equaliser's `usable` and
-  `a_sample_that_is_not_a_number_does_not_poison_the_history` are the fix and its test
 - [S · 0.12.1] A binaural pair is kept by `write_beside` (`views/settings/equaliser.rs`): no fsync, no
   folder sync and a `binaural.<pid>.new` left on a failed write or rename that nothing sweeps, where
   `config.rs` and `launcher.rs` hand-write the whole stage, sync and rename each; one
