@@ -12,7 +12,13 @@ const SPACE_WINDOW: Duration = Duration::from_secs(24 * 60 * 60);
 const FORGET_AFTER: Duration = Duration::from_secs(24 * 60 * 60);
 const MOST_ADDRESSES_KEPT: usize = 100_000;
 const ADDRESSES_EVICTED_AT_ONCE_DIVISOR: usize = 100;
+const PREFIXES_KEPT_AN_ADDRESS: usize = 2;
 const IPV6_PREFIX_BYTES: usize = 8;
+const IPV6_SITE_BYTES: usize = 7;
+const IPV6_NETWORK_BYTES: usize = 6;
+const IPV4_SITE_BYTES: usize = 3;
+const A_SITE_SPENDS_AS_ADDRESSES: u32 = 4;
+const A_NETWORK_SPENDS_AS_ADDRESSES: u32 = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Allowance {
@@ -40,6 +46,25 @@ impl Default for Allowance {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct Source(IpAddr);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Width {
+    Site,
+    Network,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct Prefix {
+    width: Width,
+    network: IpAddr,
+}
+
+#[derive(Clone, Copy)]
+enum Making {
+    Space,
+    SharedSpace,
+    Room,
+}
+
 #[derive(Clone, Copy)]
 struct Allowed {
     spent: u32,
@@ -54,16 +79,41 @@ impl Allowed {
         }
     }
 
-    fn spend(&mut self, most: u32, now: Instant) -> bool {
+    fn has_room(&mut self, most: u32, now: Instant) -> bool {
         if now.duration_since(self.since) >= SPACE_WINDOW {
             self.since = now;
             self.spent = 0;
         }
-        if self.spent >= most {
-            return false;
+        self.spent < most
+    }
+
+    const fn spend(&mut self) {
+        self.spent = self.spent.saturating_add(1);
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Daily {
+    spaces: Allowed,
+    shared_spaces: Allowed,
+    rooms: Allowed,
+}
+
+impl Daily {
+    const fn new(now: Instant) -> Self {
+        Self {
+            spaces: Allowed::new(now),
+            shared_spaces: Allowed::new(now),
+            rooms: Allowed::new(now),
         }
-        self.spent += 1;
-        true
+    }
+
+    const fn of(&mut self, making: Making) -> &mut Allowed {
+        match making {
+            Making::Space => &mut self.spaces,
+            Making::SharedSpace => &mut self.shared_spaces,
+            Making::Room => &mut self.rooms,
+        }
     }
 }
 
@@ -71,15 +121,19 @@ struct Account {
     open: usize,
     attempts: u32,
     attempts_since: Instant,
-    spaces: Allowed,
-    shared_spaces: Allowed,
-    rooms: Allowed,
+    daily: Daily,
+    seen: Instant,
+}
+
+struct Pooled {
+    daily: Daily,
     seen: Instant,
 }
 
 #[derive(Default)]
 struct Ledger {
     accounts: HashMap<Source, Account>,
+    prefixes: HashMap<Prefix, Pooled>,
     open: usize,
 }
 
@@ -91,6 +145,7 @@ pub struct Guard {
 
 pub struct Admitted {
     guard: Arc<Guard>,
+    address: IpAddr,
     source: Source,
 }
 
@@ -107,15 +162,63 @@ impl Source {
     }
 }
 
+impl Width {
+    const fn spends_as_addresses(self) -> u32 {
+        match self {
+            Self::Site => A_SITE_SPENDS_AS_ADDRESSES,
+            Self::Network => A_NETWORK_SPENDS_AS_ADDRESSES,
+        }
+    }
+}
+
+impl Prefix {
+    fn around(address: IpAddr) -> impl Iterator<Item = Self> {
+        let widths: &[(Width, usize)] = match address.to_canonical() {
+            IpAddr::V4(_) => &[(Width::Site, IPV4_SITE_BYTES)],
+            IpAddr::V6(_) => &[
+                (Width::Site, IPV6_SITE_BYTES),
+                (Width::Network, IPV6_NETWORK_BYTES),
+            ],
+        };
+        widths.iter().map(move |&(width, kept)| Self {
+            width,
+            network: kept_to(address.to_canonical(), kept),
+        })
+    }
+}
+
+fn kept_to(address: IpAddr, kept: usize) -> IpAddr {
+    match address {
+        IpAddr::V4(v4) => {
+            let mut octets = v4.octets();
+            octets[kept..].fill(0);
+            IpAddr::V4(octets.into())
+        }
+        IpAddr::V6(v6) => {
+            let mut octets = v6.octets();
+            octets[kept..].fill(0);
+            IpAddr::V6(octets.into())
+        }
+    }
+}
+
+impl Allowance {
+    const fn per_address_per_day(&self, making: Making) -> u32 {
+        match making {
+            Making::Space => self.spaces_per_address_per_day,
+            Making::SharedSpace => self.shared_spaces_per_address_per_day,
+            Making::Room => self.rooms_per_address_per_day,
+        }
+    }
+}
+
 impl Account {
     fn new(now: Instant) -> Self {
         Self {
             open: 0,
             attempts: 0,
             attempts_since: now,
-            spaces: Allowed::new(now),
-            shared_spaces: Allowed::new(now),
-            rooms: Allowed::new(now),
+            daily: Daily::new(now),
             seen: now,
         }
     }
@@ -167,6 +270,7 @@ impl Guard {
         ledger.open += 1;
         Some(Arc::new(Admitted {
             guard: Arc::clone(self),
+            address: address.to_canonical(),
             source,
         }))
     }
@@ -211,36 +315,87 @@ impl Ledger {
         self.accounts.retain(|_, account| {
             account.open > 0 || now.duration_since(account.seen) < FORGET_AFTER
         });
+        self.prefixes
+            .retain(|_, pooled| now.duration_since(pooled.seen) < FORGET_AFTER);
+    }
+
+    fn room_for_a_prefix(&mut self, most: usize, now: Instant) {
+        if self.prefixes.len() < most {
+            return;
+        }
+        self.prefixes
+            .retain(|_, pooled| now.duration_since(pooled.seen) < FORGET_AFTER);
+        if self.prefixes.len() < most {
+            return;
+        }
+        let mut seen: Vec<(Instant, Prefix)> = self
+            .prefixes
+            .iter()
+            .map(|(prefix, pooled)| (pooled.seen, *prefix))
+            .collect();
+        let evicted = (most / ADDRESSES_EVICTED_AT_ONCE_DIVISOR).clamp(1, seen.len());
+        seen.select_nth_unstable_by_key(evicted - 1, |(seen, _)| *seen);
+        for (_, prefix) in &seen[..evicted] {
+            self.prefixes.remove(prefix);
+        }
     }
 }
 
 impl Admitted {
     pub fn may_make_a_space(&self) -> bool {
-        let most = self.guard.allowance.spaces_per_address_per_day;
-
-        self.spending(|account, now| account.spaces.spend(most, now))
+        self.spending(Making::Space)
     }
 
     pub fn may_make_a_shared_space(&self) -> bool {
-        let most = self.guard.allowance.shared_spaces_per_address_per_day;
-
-        self.spending(|account, now| account.shared_spaces.spend(most, now))
+        self.spending(Making::SharedSpace)
     }
 
     pub fn may_host_a_room(&self) -> bool {
-        let most = self.guard.allowance.rooms_per_address_per_day;
-
-        self.spending(|account, now| account.rooms.spend(most, now))
+        self.spending(Making::Room)
     }
 
-    fn spending(&self, spend: impl FnOnce(&mut Account, Instant) -> bool) -> bool {
+    fn spending(&self, making: Making) -> bool {
+        let most = self.guard.allowance.per_address_per_day(making);
         let now = Instant::now();
-        let mut ledger = self.guard.ledger.lock();
+        let prefixes: Vec<(Prefix, u32)> = Prefix::around(self.address)
+            .map(|prefix| {
+                let most = most.saturating_mul(prefix.width.spends_as_addresses());
+                (prefix, most)
+            })
+            .collect();
+        let mut held = self.guard.ledger.lock();
+        let ledger = &mut *held;
 
-        ledger
-            .accounts
-            .get_mut(&self.source)
-            .is_some_and(|account| spend(account, now))
+        let Some(account) = ledger.accounts.get_mut(&self.source) else {
+            return false;
+        };
+        let address_has_room = account.daily.of(making).has_room(most, now);
+        let prefixes_have_room = prefixes.iter().all(|(prefix, most)| {
+            ledger
+                .prefixes
+                .get_mut(prefix)
+                .is_none_or(|pooled| pooled.daily.of(making).has_room(*most, now))
+        });
+        if !(address_has_room && prefixes_have_room) {
+            return false;
+        }
+        account.daily.of(making).spend();
+        let most_prefixes = self
+            .guard
+            .most_addresses
+            .saturating_mul(PREFIXES_KEPT_AN_ADDRESS);
+        for (prefix, _) in prefixes {
+            if !ledger.prefixes.contains_key(&prefix) {
+                ledger.room_for_a_prefix(most_prefixes, now);
+            }
+            let pooled = ledger.prefixes.entry(prefix).or_insert_with(|| Pooled {
+                daily: Daily::new(now),
+                seen: now,
+            });
+            pooled.seen = now;
+            pooled.daily.of(making).spend();
+        }
+        true
     }
 }
 
@@ -350,6 +505,85 @@ mod tests {
 
         assert!(held.iter().all(Option::is_some));
         assert!(guard.admit(within(3)).is_none());
+    }
+
+    fn in_six(site: u16, network: u16, block: u16) -> IpAddr {
+        IpAddr::from([0x2001, 0xdb8, network, (site << 8) | block, 0, 0, 0, 1])
+    }
+
+    fn made_a_space(guard: &Arc<Guard>, address: IpAddr) -> bool {
+        guard
+            .admit(address)
+            .is_some_and(|admitted| admitted.may_make_a_space())
+    }
+
+    #[test]
+    fn the_sixty_fours_of_one_fifty_six_and_one_forty_eight_share_an_allowance_of_their_own() {
+        let guard = Guard::new(tight());
+
+        let first_site: Vec<bool> = (1..=5)
+            .map(|block| made_a_space(&guard, in_six(0, 0, block)))
+            .collect();
+        let second_site: Vec<bool> = (1..=4)
+            .map(|block| made_a_space(&guard, in_six(1, 0, block)))
+            .collect();
+        let third_site = made_a_space(&guard, in_six(2, 0, 1));
+        let another_network = made_a_space(&guard, in_six(0, 1, 1));
+
+        assert_eq!(first_site, [true, true, true, true, false]);
+        assert_eq!(second_site, [true; 4]);
+        assert!(!third_site, "a /48 made more spaces than its share");
+        assert!(another_network);
+    }
+
+    #[test]
+    fn the_addresses_of_one_twenty_four_share_an_allowance_of_their_own() {
+        let guard = Guard::new(tight());
+
+        let within: Vec<bool> = (1..=5)
+            .map(|last| made_a_space(&guard, address(last)))
+            .collect();
+        let beyond = made_a_space(&guard, IpAddr::from([198, 51, 100, 1]));
+
+        assert_eq!(within, [true, true, true, true, false]);
+        assert!(beyond);
+    }
+
+    #[test]
+    fn what_a_wider_prefix_refuses_is_not_spent_from_the_address() {
+        let guard = Guard::new(tight());
+
+        for last in 1..=4 {
+            let admitted = guard.admit(address(last)).expect("admitted");
+            assert!(admitted.may_host_a_room() && admitted.may_host_a_room());
+        }
+        let refused = guard.admit(address(5)).expect("admitted");
+
+        assert!(!refused.may_host_a_room());
+        let spent = guard.ledger.lock().accounts[&Source::of(address(5))]
+            .daily
+            .rooms
+            .spent;
+        assert_eq!(spent, 0);
+    }
+
+    #[test]
+    fn the_table_of_prefixes_keeps_twice_as_many_as_the_addresses_and_lets_the_oldest_go() {
+        let guard = Guard::keeping(tight(), 2);
+
+        let made: Vec<bool> = (1..=6)
+            .map(|network| made_a_space(&guard, IpAddr::from([198, 51, network, 1])))
+            .collect();
+
+        assert_eq!(made, [true; 6]);
+        let ledger = guard.ledger.lock();
+        assert_eq!(ledger.prefixes.len(), 4);
+        assert!(
+            ledger
+                .prefixes
+                .keys()
+                .all(|prefix| prefix.network != IpAddr::from([198, 51, 1, 0]))
+        );
     }
 
     #[test]

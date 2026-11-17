@@ -192,6 +192,18 @@ keeps a script from filling the store (`guard.rs`, `Store::limited`):
   however briefly each lasts) and `--spaces-per-address-per-day` (5 new spaces, refused `TooFast`;
   a connection to a space that exists is never counted). A connection over either is dropped
   before a byte is read.
+- **Per prefix, beside the address**: the three daily allowances (spaces, shared spaces, rooms) are
+  also spent by every wider prefix an address sits in, an IPv6 `/56` and an IPv4 `/24` four times
+  the address's (`A_SITE_SPENDS_AS_ADDRESSES`), an IPv6 `/48` eight times
+  (`A_NETWORK_SPENDS_AS_ADDRESSES`), and a making is allowed only where the address and every prefix
+  have room, spent from all of them or none, so one routed prefix or a handful of neighbouring IPv4
+  addresses cannot fill `--spaces` or `--rooms` (a space holding one record outlives the unused
+  sweep for `--idle-days`)
+  (`the_sixty_fours_of_one_fifty_six_and_one_forty_eight_share_an_allowance_of_their_own`,
+  `the_addresses_of_one_twenty_four_share_an_allowance_of_their_own`,
+  `what_a_wider_prefix_refuses_is_not_spent_from_the_address`). A prefix is kept only once it has
+  spent, forgotten a day after it last did, and the table holds twice as many as the address table,
+  letting the least recently seen go a hundredth at a time.
 - **Everyone together**: `--connections` (2048 open), `--spaces` (10 000, refused `Busy`) and
   `--total-bytes` (16 GiB over all spaces, an append past it `SpaceFull`). The per-space limits
   above still hold under them.

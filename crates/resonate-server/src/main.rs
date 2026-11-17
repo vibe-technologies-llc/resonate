@@ -135,21 +135,21 @@ struct Args {
     #[arg(
         long,
         default_value_t = 5,
-        help = "The most new spaces one address may make a day"
+        help = "The most new spaces one address may make a day (an IPv6 /56 or IPv4 /24 four times as many, a /48 eight)"
     )]
     spaces_per_address_per_day: u32,
 
     #[arg(
         long,
         default_value_t = 50,
-        help = "The most shared playlists one address may start a day"
+        help = "The most shared playlists one address may start a day (an IPv6 /56 or IPv4 /24 four times as many, a /48 eight)"
     )]
     shared_spaces_per_address_per_day: u32,
 
     #[arg(
         long,
         default_value_t = 50,
-        help = "The most listening parties one address may start a day"
+        help = "The most listening parties one address may start a day (an IPv6 /56 or IPv4 /24 four times as many, a /48 eight)"
     )]
     rooms_per_address_per_day: u32,
 
