@@ -4,6 +4,8 @@ Gaps: what is not built, a limit by design, an unsupported format or a behaviour
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
+- [S · 0.14.0] The sideloaded Android app never says a newer release is out: the desktop asks once a
+  day while `check-for-updates` is on (`updates.rs`), and nothing on Android asks or shows it
 - [M · blocked: hardware] Android offers no DoP: a marked stream needs the USB bit-perfect mixer at a
   32-bit word (Oboe-rs has no packed 24-bit one) and a DAC that decodes it to prove the markers
   arrive untouched
@@ -121,6 +123,9 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   families 2 and 3 would also need projection decoding
 
 ## Tagging
+- [M · 0.14.0] Neither phone saves fetched lyrics beside the track or into its tags: the desktop's
+  *Save the lyrics* and `tag --lyrics` (`beside.rs`, `--into-tags`) have no counterpart at the
+  phones' boundary, so words a phone fetched stay in its catalog
 - [M · blocked: lofty] `.caf` and the DSD containers have no writer (lofty 0.25.4 has no such file
   type); `.oga` alone could be mapped to Vorbis by hand; `.mka` is written by hand (`library.md`) and
   has no way to take a picture back out
@@ -143,6 +148,11 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Listening history
+- [M · 0.14.0] Neither phone exports or imports the listening history: the desktop's `history
+  --export`, `--import` and `--import-file` (ListenBrainz's JSON lines, Last.fm) have no counterpart
+  at the phones' boundary
+- [S · 0.14.0] Neither phone ages its listens: the desktop's `history-kept` forgets listens and
+  skipped time past the days it names, and the phones keep every listen for good with no setting
 
 ## Identification
 - [M · blocked: encoders] The quantiser steps are weighed only on the encoders this machine has
