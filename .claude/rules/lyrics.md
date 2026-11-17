@@ -70,6 +70,19 @@ dependency (tested without a window).
   (`a_wait_counts_from_whichever_voice_went_out_last`). They live here as the one arithmetic that
   must agree with `LIT_AT_MOST`.
 
+## The clock
+
+- **A line is lit at the moment heard, not the moment rendered, and no pane corrects for latency.**
+  Every lyric clock reads `PlayerState`'s position, which the engine already publishes as the frame
+  heard (`audio.md`, *What the engine publishes*): the desktop pane through `Heard::of` and
+  `LyricsModel::keep_time`, the phones through the snapshot's `position_ms` handed to `lyric_frame`
+  and `kept_lyric_frame`. So the ring, the chain's latency (a resampler at Very high, a convolver)
+  and what the device or renderer reports it holds (a Bluetooth sink's included) are taken off once,
+  in the engine, for the seek bar, MPRIS and the words alike
+  (`a_lyric_line_lights_when_its_words_are_heard_past_the_chain_and_the_device_not_when_rendered`).
+  A sheet's `[offset:]` and the desktop's per-song `LyricsAhead` move the words against that clock,
+  for a sheet timed early or late, never for the output.
+
 ## Providers
 
 - **Lyrics come out of the file; one LRC reader is the whole of how.** `Sidecar`: `.lrc`/`.txt`

@@ -1515,6 +1515,14 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   within `A_DEVICES_HALF_STEP_DB` (0.75 dB, half a coarse hardware step) of any is an echo, since a
   device rounds what it is sent to its own steps (silence matches silence alone). Read as turned
   elsewhere, an echo snapped the slider and cleared the mute. Desktop mute is kept apart from level (`OutputStatus::device_muted`).
+- **`PlayerState`'s position is the frame heard, for every reader.** `Engine::position` takes off
+  what the ring holds, the chain's `latency_frames` and `SinkStream::latency`, which every backend
+  notes on its `StreamClock` (PipeWire's `pw_time.delay`, a Bluetooth sink's latency within it, WASAPI's
+  clock, Core Audio's device, safety offset, stream and buffer latencies, Oboe's measured latency,
+  RemoteIO's output latency and I/O buffer, a renderer's clock against the frames served). The
+  seek bar, MPRIS, `Listening` and the lyric panes on every platform read it as it is; none
+  corrects for the output again (`lyrics.md`). A renderer counting `RelTime` in whole seconds
+  leaves it up to a second behind.
 - **Stream latency is counted in the stream's frames, converted where the graph tick rate is
   known.** `pw_time.delay` is in `pw_time.rate` (graph clock), not the stream's. The `process`
   callback holds the only consistent delay/rate snapshot: it builds a `GraphTime` and publishes

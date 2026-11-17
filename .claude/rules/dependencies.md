@@ -132,7 +132,9 @@ here, add it there.
 - `resonate-codec`, `-dsp`, `-pipewire` never depend on each other. `-dsp` stays off `resonate-eq`
   (the arithmetic is `resonate-core::eq`). `-analysis` reaches `-dsp` for `TruePeakMeter` and the
   Shazam signature's `Resampler`.
-- `resonate-lyrics`, `-eq`, `-listen`, `-analysis`: none of gpui, engine, library, `ureq`. `-listen`
+- `resonate-lyrics`, `-eq`, `-listen`, `-analysis`: none of gpui, engine, library, `ureq`. The
+  engine takes `resonate-lyrics` as a dev-dependency alone, so its transport test lights a line at
+  the position it publishes (`lyrics.md`). `-listen`
   is core + `-audio` + `-pipewire` alone on Linux and core + `-audio` + the `wasapi` crate on Windows,
   never `resonate-pipewire` or `resonate-wasapi` there (`resonate-wasapi` is its dev-dependency, which
   pins the endpoint naming the two agree on), and core + `-audio` + `resonate-apple` + `resonate-dsp`

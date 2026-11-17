@@ -6717,6 +6717,91 @@ fn a_rebind_mid_track_never_publishes_a_position_behind_one_already_published() 
 }
 
 #[test]
+fn a_lyric_line_lights_when_its_words_are_heard_past_the_chain_and_the_device_not_when_rendered()
+-> Result<()> {
+    const DEVICE_HZ: usize = 48_000;
+    const SILENT_FOR: usize = RATE as usize / 2;
+    const SUNG_FOR: usize = RATE as usize;
+    const SUNG_LEVEL: i16 = 8_000;
+    const DEVICE_LATENCY: usize = DEVICE_HZ / 5;
+    const PULLED_A_TIME: usize = DEVICE_HZ / 200;
+    const LIT_LATE_BY_AT_MOST: usize = DEVICE_HZ / 16;
+    const LIT_EARLY_BY_AT_MOST: usize = DEVICE_HZ / 1_000;
+
+    let tree = Tree::new();
+    let silent = vec![0_i16; SILENT_FOR * usize::from(CHANNELS)];
+    let sung = vec![SUNG_LEVEL; SUNG_FOR * usize::from(CHANNELS)];
+    let data: Vec<u8> = silent
+        .iter()
+        .chain(&sung)
+        .flat_map(|sample| sample.to_le_bytes())
+        .collect();
+    let path = tree.write("sung.wav", &wave(16, CHANNELS, &data));
+    let sung_at = Frames(SILENT_FOR as u64).to_duration(SampleRate::HZ_44100);
+    let lyrics = resonate_lyrics::Lyrics::synced(
+        SourceId::local(),
+        vec![resonate_lyrics::LyricLine::sung(sung_at, "the words")],
+    )
+    .expect("a sheet with a timed line");
+
+    let (backend, graph) = FakeSink::with_tail(
+        vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S16])],
+        DEVICE_LATENCY as u64,
+        true,
+    );
+    let player = once_surveyed(Player::with_backend(
+        EngineConfig {
+            quality: Quality::VeryHigh,
+            ..config()
+        },
+        move |_| Ok(Box::new(backend)),
+    )?);
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    let frame = frame_bytes(SampleFormat::S16);
+    let mut lit_with = None;
+    play_paced_until(
+        &player,
+        &graph,
+        PULLED_A_TIME * frame,
+        1,
+        |player, graph| {
+            let heard = player.state().current.map_or(Duration::ZERO, |track| {
+                track.position.to_duration(track.source.rate)
+            });
+            let lit = lyrics.voices_in_play(heard)[0].is_some();
+            if lit {
+                lit_with = Some(graph.played.len() / frame);
+            }
+            lit
+        },
+        "the line to light",
+    );
+
+    let played = lit_with.expect("the line lit");
+    let heard_through = played.saturating_sub(DEVICE_LATENCY);
+    let reached_the_device_at = left_words(&graph.lock().played)
+        .iter()
+        .position(|word| *word >= SUNG_LEVEL / 2)
+        .expect("the words reached the device");
+
+    assert!(
+        reached_the_device_at <= heard_through + LIT_EARLY_BY_AT_MOST,
+        "the line lit at frame {heard_through} heard, before its words at {reached_the_device_at} were"
+    );
+    assert!(
+        heard_through.saturating_sub(reached_the_device_at) <= LIT_LATE_BY_AT_MOST,
+        "the line lit {} frames after its words were heard",
+        heard_through.saturating_sub(reached_the_device_at)
+    );
+    Ok(())
+}
+
+#[test]
 fn a_graph_that_never_reports_a_drain_still_advances_on_the_delay_it_reports() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);

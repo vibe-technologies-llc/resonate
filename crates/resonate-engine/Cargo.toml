@@ -33,6 +33,7 @@ resonate-coreaudio.workspace = true
 
 [dev-dependencies]
 hdf5-writer.workspace = true
+resonate-lyrics.workspace = true
 
 [lints]
 workspace = true

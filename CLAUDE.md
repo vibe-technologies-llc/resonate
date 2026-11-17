@@ -17,7 +17,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `audio.md` | engine, codec, dsp, pipewire | decode, the prescan guards, transport, queue, zones, sleep, resumption, what is published, DSP, sink |
 | `mpris.md` | resonate-mpris, the binary's `mpris.rs`, `starting.rs` | the bus, the track list, covers, the name and each zone's, notifications, the idle inhibit, `Running` and its wires (the bus, a Windows pipe, a Mac's socket) |
 | `library.md` | library, mpris, the playlist panes, the binary's `playlists.rs` | schema, scan, enrichment, tag writing, deleting, organise, search, playlists, undo, sheets, statistics, suggestions, share |
-| `lyrics.md` | resonate-lyrics, the lyrics model and pane, `sylt.rs`, `lrclib.rs`, `sung.rs`, the phones' `lyrics.rs` | the vocabulary, the provider seam, the LRC reader |
+| `lyrics.md` | resonate-lyrics, the lyrics model and pane, `sylt.rs`, `lrclib.rs`, `sung.rs`, the phones' `lyrics.rs` | the vocabulary, the clock lines are lit by, the provider seam, the LRC reader |
 | `eq.md` | resonate-eq, `core::eq`, the DSP stage and convolver, `impulse.rs`, `sofa.rs`, `autoeq.rs`, the equaliser panes, the phones' `equaliser.rs`, `measurement.rs`, `room.rs` and graph | the vocabulary, the biquads, the per-sink binding, the formats, a measurement of your own fitted to a target, AutoEq, the phones' curve, measurement fit and room correction |
 | `ui.md` | resonate-ui | chrome, input, drawing, the palettes, what a screen reader hears, panes |
 | `motion.md` | resonate-ui | the motion vocabulary, what arrives and flips, the song handover, the scrollbar fade |

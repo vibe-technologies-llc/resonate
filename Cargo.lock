@@ -7227,6 +7227,7 @@ dependencies = [
  "resonate-core",
  "resonate-coreaudio",
  "resonate-dsp",
+ "resonate-lyrics",
  "resonate-pipewire",
  "resonate-wasapi",
  "rtrb",
