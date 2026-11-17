@@ -22,10 +22,10 @@ use crate::{
     merge::projection_digest,
     quic::{to_the_server, trusted_roots},
     seal::{opened, sealed},
-    service::{HOSTED_SERVER, resolve, within},
+    service::{HOSTED_SERVER, Oversized, resolve, within},
     shared::{
         Access,
-        appending::{AppendFrame, append_frames, owed_sent},
+        appending::{AppendFrame, append_frames, compaction_parts, owed_sent},
         catalog::{LocalShared, SharedCatalog},
         diff::{Looking, Resolving, edits_seen, written_order},
         invitation::{Invited, link_to, web_link_to},
@@ -170,6 +170,7 @@ impl Shared {
             revision: None,
             standings: BTreeMap::new(),
             closes_before_answer: BTreeMap::new(),
+            oversized: BTreeMap::new(),
             shown: Arc::clone(&shown),
             held: Arc::clone(&held),
             poll_due: Instant::now(),
@@ -283,6 +284,7 @@ struct Running {
     revision: Option<u64>,
     standings: BTreeMap<SpaceId, SharedStanding>,
     closes_before_answer: BTreeMap<String, u32>,
+    oversized: BTreeMap<SpaceId, Oversized>,
     shown: Arc<RwLock<Vec<SharedShown>>>,
     held: Arc<RwLock<Vec<HeldShare>>>,
     poll_due: Instant,
@@ -1196,16 +1198,31 @@ impl Running {
         recv: &mut Incoming,
     ) -> Result<()> {
         let kept = &self.lists[at];
-        if kept.records_since < COMPACT_PAST_RECORDS && kept.bytes_since < COMPACT_PAST_BYTES {
+        let records_since = kept.records_since;
+        let waits = self
+            .oversized
+            .get(&kept.space)
+            .is_some_and(|oversized| oversized.waits(records_since));
+        if (records_since < COMPACT_PAST_RECORDS && kept.bytes_since < COMPACT_PAST_BYTES) || waits
+        {
             return Ok(());
         }
 
         let through = kept.cursor;
         let ops = kept.list.as_ops();
-        let mut parts = Vec::new();
-        for bundle in ops.chunks(BUNDLE_OPS_AT_MOST) {
-            sealed_within(&keys.sealer, keys.space, bundle, &mut parts)?;
-        }
+        let Some(parts) = compaction_parts(ops.chunks(BUNDLE_OPS_AT_MOST), |bundle, parts| {
+            sealed_within(&keys.sealer, keys.space, bundle, parts)
+        })?
+        else {
+            tracing::warn!(
+                records_since,
+                "the shared playlist is too large to compact in one frame, so it is tried again once the records since double"
+            );
+            self.oversized
+                .insert(keys.space, Oversized::found_at(records_since));
+            return Ok(());
+        };
+        self.oversized.remove(&keys.space);
         send.send(&ToServer::Compact { through, parts }.encoded())
             .await?;
 

@@ -88,6 +88,16 @@ frame), a new frame begun where the next bundle would not fit; they are sent one
 waiting for its `Appended`, and the ops it covers leave the owed ones (`owed_sent`), so an owner owing
 a million ops is never refused whole and one refused partway owes only what was not yet taken
 (`an_append_of_more_bundles_than_a_frame_carries_is_split_across_frames`).
+**A list's own compaction is one `Compact` or none**: the server replaces the log through `through`
+with the parts in one transaction, so a snapshot cannot be split across frames as an append is (a
+first part alone would drop records the rest still hold). The bound is real, since the server's
+default space (64 MiB) holds more than a frame (32 MiB): `compaction_parts` seals the list's bundles
+and answers nothing once they pass `BLOBS_A_FRAME_AT_MOST` parts or `APPEND_BYTES_AT_MOST` bytes, and
+the service then sends no `Compact`, keeps the count it was found at (`Oversized`, as the device
+ledger's own compaction does) and seals again only once the records since double, so a list too
+large to compact still syncs its round instead of failing it
+(`a_compaction_of_more_parts_than_a_frame_carries_is_not_sealed_and_one_that_fits_is_whole`,
+`a_compaction_heavier_than_half_a_frame_is_not_sealed`).
 
 **A list keeps at most `ENTRIES_KEPT_AT_MOST` (4 × `ROWS_AT_MOST`) entries in memory**, a removed one's tombstone counted: an op naming an entry past the smallest that many entry ids seen so far is dropped, and one that pushes the largest out evicts it for good. Since the set of the smallest ids only ever shrinks its largest, the entries kept are the smallest ids among every entry any op named, whatever order the ops came in, so every device folds to the same rows and a snapshot carries the same ones; a hostile writer within the server's space limit costs a follower no more than that map (`a_list_keeps_only_so_many_entries_the_same_ones_whatever_order_the_ops_arrived_in`). Removals do not free a slot, since freeing one would need the evicted rows back. **The people map is bounded the same way** (`PEOPLE_KEPT_AT_MOST`, 1024, `Member` and `Left` ops alike): the smallest member ids seen are kept whatever order the ops came in (`a_list_keeps_only_so_many_people_the_same_ones_whatever_order_the_ops_arrived_in`).
 

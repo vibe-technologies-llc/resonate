@@ -524,18 +524,18 @@ fn plain_digest(plain: &[u8]) -> ToldDigest {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct Oversized {
+pub(crate) struct Oversized {
     records_since_at: Option<u64>,
 }
 
 impl Oversized {
-    const fn found_at(records_since: u64) -> Self {
+    pub(crate) const fn found_at(records_since: u64) -> Self {
         Self {
             records_since_at: Some(records_since),
         }
     }
 
-    fn waits(self, records_since: u64) -> bool {
+    pub(crate) fn waits(self, records_since: u64) -> bool {
         self.records_since_at
             .is_some_and(|at| (at..at.saturating_mul(2)).contains(&records_since))
     }

@@ -50,6 +50,25 @@ pub fn append_frames<'a>(
     Ok(frames)
 }
 
+pub fn compaction_parts<'a>(
+    bundles: impl IntoIterator<Item = &'a [SharedOp]>,
+    mut seal: impl FnMut(&[SharedOp], &mut Vec<Vec<u8>>) -> Result<()>,
+) -> Result<Option<Vec<Vec<u8>>>> {
+    let mut parts = Vec::new();
+    let mut bytes = 0;
+
+    for bundle in bundles {
+        let sealed_from = parts.len();
+        seal(bundle, &mut parts)?;
+        bytes += parts[sealed_from..].iter().map(Vec::len).sum::<usize>();
+        if parts.len() > BLOBS_A_FRAME_AT_MOST || bytes > APPEND_BYTES_AT_MOST {
+            return Ok(None);
+        }
+    }
+
+    Ok(Some(parts))
+}
+
 pub fn owed_sent(owed: &mut Vec<(i64, Vec<SharedOp>)>, sent: usize) {
     let mut left = sent;
     let mut whole = 0;
@@ -114,6 +133,35 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(blobs, [1, 1, 1]);
+    }
+
+    #[test]
+    fn a_compaction_of_more_parts_than_a_frame_carries_is_not_sealed_and_one_that_fits_is_whole() {
+        let ops = (0..=BLOBS_A_FRAME_AT_MOST)
+            .map(|nanos| renamed(i64::try_from(nanos).expect("a small stamp")))
+            .collect::<Vec<_>>();
+
+        let past = compaction_parts(ops.chunks(1), sealed_as(64)).expect("sealed");
+        let fitting = compaction_parts(ops[1..].chunks(1), sealed_as(64)).expect("sealed");
+
+        assert!(past.is_none());
+        assert_eq!(
+            fitting.map(|parts| parts.len()),
+            Some(BLOBS_A_FRAME_AT_MOST)
+        );
+    }
+
+    #[test]
+    fn a_compaction_heavier_than_half_a_frame_is_not_sealed() {
+        let ops = (0..2).map(renamed).collect::<Vec<_>>();
+
+        let past = compaction_parts(ops.chunks(1), sealed_as(APPEND_BYTES_AT_MOST / 2 + 1))
+            .expect("sealed");
+        let fitting =
+            compaction_parts(ops.chunks(1), sealed_as(APPEND_BYTES_AT_MOST / 2)).expect("sealed");
+
+        assert!(past.is_none());
+        assert_eq!(fitting.map(|parts| parts.len()), Some(2));
     }
 
     #[test]
