@@ -3729,14 +3729,27 @@ struct ArtistByThree {
     asked: AtomicUsize,
 }
 
+const THE_PLAYING_ROW: u64 = 1;
+const AN_ARTIST_OF_ITS_OWN: u64 = 3;
+const SHARED_ARTISTS: [u64; 3] = [0, 1, 2];
+
+fn artist_by_three(row: u64) -> u64 {
+    if row == THE_PLAYING_ROW {
+        AN_ARTIST_OF_ITS_OWN
+    } else {
+        row % 3
+    }
+}
+
 impl Kinship for ArtistByThree {
     fn kin_of(&self, rows: &[Arc<QueueItem>]) -> Vec<Option<Kin>> {
         self.asked.fetch_add(1, Ordering::SeqCst);
         rows.iter()
             .map(|row| {
+                let artist = artist_by_three(row.id.get());
                 Some(Kin {
-                    artist: Some(row.id.get() % 3),
-                    album: Some(row.id.get() % 3),
+                    artist: Some(artist),
+                    album: Some(artist),
                     heard_lately: false,
                 })
             })
@@ -3744,9 +3757,25 @@ impl Kinship for ArtistByThree {
     }
 }
 
-fn artists_meeting(player: &Player) -> usize {
-    let artists: Vec<u64> = player.queue().iter().map(|row| row.id.get() % 3).collect();
-    artists.windows(2).filter(|pair| pair[0] == pair[1]).count()
+fn every_artist_kept_apart(player: &Player) -> bool {
+    let artists: Vec<u64> = player
+        .queue()
+        .iter()
+        .map(|row| artist_by_three(row.id.get()))
+        .collect();
+
+    SHARED_ARTISTS.iter().all(|artist| {
+        let rows: Vec<usize> = (0..artists.len())
+            .filter(|at| artists[*at] == *artist)
+            .collect();
+        rows.windows(3).all(|three| {
+            let between = &artists[three[0]..three[2]];
+            SHARED_ARTISTS
+                .iter()
+                .filter(|other| *other != artist)
+                .all(|other| between.contains(other))
+        })
+    })
 }
 
 #[test]
@@ -3782,7 +3811,7 @@ fn a_smart_shuffle_spreads_the_artists_its_kinship_names_once_their_kin_lands() 
         .wait_for(PATIENCE)?;
     wait_for(
         &player,
-        |player| kinship.asked.load(Ordering::SeqCst) > 0 && artists_meeting(player) <= 2,
+        |player| kinship.asked.load(Ordering::SeqCst) > 0 && every_artist_kept_apart(player),
         "the artists to be spread apart",
     );
 

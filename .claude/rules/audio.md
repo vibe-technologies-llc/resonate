@@ -1751,7 +1751,15 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   (`Shuffler::seeded`): the spread is a bound on most draws, not every one (about one clock seed
   in seventy put three or more alike neighbours into thirty rows of three artists), so
   `kin_landing_after_a_shuffle_spreads_the_artists_and_keeps_the_playing_row` draws one fixed
-  arrangement, and `shuffling.rs` holds the spread over many seeds.
+  arrangement, and `shuffling.rs` holds the spread over many seeds. A test through `Player`, which
+  cannot seed it, asserts what every draw holds instead: one artist's rows sit about a stride apart
+  with a jitter of a fifth of one (`JITTER_OF_A_STRIDE`), so between any row of an artist and its
+  next but one each other artist of a like count plays, and the playing row, moved to the front, is
+  given an artist of its own so moving it takes away no row the bound counts
+  (`every_artist_kept_apart`, in
+  `a_smart_shuffle_spreads_the_artists_its_kinship_names_once_their_kin_lands`; a plain shuffle
+  keeps that about once in a thousand, a spread never, where counting alike neighbours failed one
+  clock seed in fifty).
 - **A test asserting which row plays pauses the transport first** (`stand_still`): a decode failing
   on a loaded machine reaches `Engine::fail`, which skips.
 - **A test's player is handed over once its first survey has landed** (`once_surveyed`, in
