@@ -6,9 +6,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Security
-- [S · 0.12.1] Firefox's own `/favicon.ico` request is refused and logged as a CSP violation on every
-  visit to the `/s/` and `/p/` pages (`pages.rs`, `default-src 'none'`); a `<link rel="icon"
-  href="data:,">` and a matching `img-src` would keep the console clean
 - [S · blocked: design] A host on the network may take several addresses and so pass the media server's
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 

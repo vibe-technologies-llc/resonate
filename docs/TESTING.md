@@ -100,9 +100,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.12.1] The server's headless Firefox test (`tests/firefox.rs`) skips without `firefox` but would
-  wait out 60 s and fail under a snap Firefox, whose private `/tmp` hides the port file; detect the
-  snap and skip, or put the profile and port file where a snap can see them, before CI meets one
 - [S · 0.12.1] Investigate: three tests failed under 64-thread stress and have no cause found yet:
   `resonate-engine`'s `a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start`
   once (`transport.rs`, then 30 clean runs), `resonate-server`'s
