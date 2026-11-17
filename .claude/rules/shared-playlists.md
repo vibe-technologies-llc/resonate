@@ -88,16 +88,26 @@ frame), a new frame begun where the next bundle would not fit; they are sent one
 waiting for its `Appended`, and the ops it covers leave the owed ones (`owed_sent`), so an owner owing
 a million ops is never refused whole and one refused partway owes only what was not yet taken
 (`an_append_of_more_bundles_than_a_frame_carries_is_split_across_frames`).
-**A list's own compaction is one `Compact` or none**: the server replaces the log through `through`
-with the parts in one transaction, so a snapshot cannot be split across frames as an append is (a
-first part alone would drop records the rest still hold). The bound is real, since the server's
-default space (64 MiB) holds more than a frame (32 MiB): `compaction_parts` seals the list's bundles
-and answers nothing once they pass `BLOBS_A_FRAME_AT_MOST` parts or `APPEND_BYTES_AT_MOST` bytes, and
-the service then sends no `Compact`, keeps the count it was found at (`Oversized`, as the device
-ledger's own compaction does) and seals again only once the records since double, so a list too
-large to compact still syncs its round instead of failing it
-(`a_compaction_of_more_parts_than_a_frame_carries_is_not_sealed_and_one_that_fits_is_whole`,
-`a_compaction_heavier_than_half_a_frame_is_not_sealed`).
+**A list's compaction is staged as the device ledger's is** (`sync.md`): the server's default space
+(64 MiB) holds more than a frame (32 MiB), so `compaction_pieces` seals the list's bundles into
+frames of at most `BLOBS_A_FRAME_AT_MOST` parts and `APPEND_BYTES_AT_MOST` bytes. One frame is one
+`Compact`; more ask `Stage`, and on the server's `Staging` go up as a `Staged` a frame and a
+`CompactStaged` naming `through` with the last, which the server swaps in as one compaction
+(`compaction_answered`,
+`a_compaction_of_more_parts_than_a_frame_carries_is_staged_and_one_that_fits_is_one_compact`,
+`a_compaction_heavier_than_half_a_frame_is_cut_where_half_a_frame_ends`,
+`a_server_staging_is_sent_every_frame_and_named_through_its_last`,
+`a_list_past_a_frames_share_is_compacted_in_parts_and_someone_joining_reads_it_whole`). **A `Stale`
+answering `Stage` (a server before staging) and a `SpaceFull` answering any of them back the
+compaction off**: the service keeps the count it was found at (`Oversized`, as the device ledger
+does), seals again only once the records since double, and ends the round as it would have, with a
+`Bye` and `Reached`, so a list its server cannot compact still syncs
+(`a_server_refusing_to_stage_takes_no_parts_and_a_stale_compaction_was_overtaken`,
+`a_full_space_backs_the_compaction_off_until_the_records_double_and_other_refusals_stand`,
+`a_compaction_finding_the_space_full_backs_off_and_the_round_still_ends_well`). A visit waits on
+each frame's answer before the next, so a `SpaceFull` heard while compacting is the compaction's; one
+answering an `Append` still turns the list away. A `Stale` answering a `Compact` or a
+`CompactStaged` is a compaction another member's overtook.
 
 **A list keeps at most `ENTRIES_KEPT_AT_MOST` (4 × `ROWS_AT_MOST`) entries in memory**, a removed one's tombstone counted: an op naming an entry past the smallest that many entry ids seen so far is dropped, and one that pushes the largest out evicts it for good. Since the set of the smallest ids only ever shrinks its largest, the entries kept are the smallest ids among every entry any op named, whatever order the ops came in, so every device folds to the same rows and a snapshot carries the same ones; a hostile writer within the server's space limit costs a follower no more than that map (`a_list_keeps_only_so_many_entries_the_same_ones_whatever_order_the_ops_arrived_in`). Removals do not free a slot, since freeing one would need the evicted rows back. **The people map is bounded the same way** (`PEOPLE_KEPT_AT_MOST`, 1024, `Member` and `Left` ops alike): the smallest member ids seen are kept whatever order the ops came in (`a_list_keeps_only_so_many_people_the_same_ones_whatever_order_the_ops_arrived_in`).
 

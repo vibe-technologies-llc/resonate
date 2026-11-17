@@ -459,8 +459,8 @@ platforms; the catalog seam stays thin.
   `through` the device was already sent, so applying it moves no cursor, and only the last names the
   snapshot's own, so a device cut off part way reads the whole snapshot again and a device of any
   build reads it as it reads one frame (`a_state_past_a_frames_share_is_compacted_in_parts_and_a_third_device_catches_up_from_it`).
-  A shared playlist's compaction stays one `Compact`; `InParts` and `Pieces` are the seam it would
-  take to stage too. An append carries at most `BLOBS_PER_APPEND` (32) bundles.
+  A shared playlist's compaction is staged through the same `InParts` and `Pieces`
+  (`shared-playlists.md`). An append carries at most `BLOBS_PER_APPEND` (32) bundles.
 - **Owed is cleared by the server's `Appended`, or by a look where there is no server.** With no
   server (`Server::Nowhere`), what a look told its neighbours is marked sent, since a device met
   later is told the whole snapshot; `state.serverless` remembers it, and the first start with a

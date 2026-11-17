@@ -22,10 +22,13 @@ use crate::{
     merge::projection_digest,
     quic::{to_the_server, trusted_roots},
     seal::{opened, sealed},
-    service::{HOSTED_SERVER, Oversized, resolve, within},
+    service::{HOSTED_SERVER, InParts, Oversized, resolve, within},
     shared::{
         Access,
-        appending::{AppendFrame, append_frames, compaction_parts, owed_sent},
+        appending::{
+            AppendFrame, CompactionAnswered, append_frames, compaction_answered, compaction_pieces,
+            owed_sent,
+        },
         catalog::{LocalShared, SharedCatalog},
         diff::{Looking, Resolving, edits_seen, written_order},
         invitation::{Invited, link_to, web_link_to},
@@ -1210,20 +1213,12 @@ impl Running {
 
         let through = kept.cursor;
         let ops = kept.list.as_ops();
-        let Some(parts) = compaction_parts(ops.chunks(BUNDLE_OPS_AT_MOST), |bundle, parts| {
+        let pieces = compaction_pieces(ops.chunks(BUNDLE_OPS_AT_MOST), |bundle, parts| {
             sealed_within(&keys.sealer, keys.space, bundle, parts)
-        })?
-        else {
-            tracing::warn!(
-                records_since,
-                "the shared playlist is too large to compact in one frame, so it is tried again once the records since double"
-            );
-            self.oversized
-                .insert(keys.space, Oversized::found_at(records_since));
-            return Ok(());
-        };
+        })?;
         self.oversized.remove(&keys.space);
-        send.send(&ToServer::Compact { through, parts }.encoded())
+        let mut in_parts = InParts::default();
+        send.send(&in_parts.asked(through, records_since, pieces).encoded())
             .await?;
 
         loop {
@@ -1231,15 +1226,36 @@ impl Running {
             let Some(frame) = frame else {
                 return Err(Error::ServerSilent);
             };
-            match FromServer::decoded(&frame)? {
-                FromServer::Compacted { .. } | FromServer::Refused(Refusal::Stale) => {
+            match compaction_answered(&mut in_parts, records_since, FromServer::decoded(&frame)?) {
+                CompactionAnswered::Staging(frames) => {
+                    for frame in frames {
+                        send.send(&frame.encoded()).await?;
+                    }
+                }
+                CompactionAnswered::Compacted => {
                     let kept = &mut self.lists[at];
                     kept.records_since = 0;
                     kept.bytes_since = 0;
                     return Ok(());
                 }
-                FromServer::Refused(refusal) => return Err(Error::Refused(refusal)),
-                _ => {}
+                CompactionAnswered::TakesNoParts(oversized) => {
+                    tracing::warn!(
+                        records_since,
+                        "the shared playlist's server takes no compaction past one frame, so it is tried again once the records since double"
+                    );
+                    self.oversized.insert(keys.space, oversized);
+                    return Ok(());
+                }
+                CompactionAnswered::SpaceFull(oversized) => {
+                    tracing::warn!(
+                        records_since,
+                        "the shared playlist's space is too full to take a compaction, so it is tried again once the records since double"
+                    );
+                    self.oversized.insert(keys.space, oversized);
+                    return Ok(());
+                }
+                CompactionAnswered::Refused(refusal) => return Err(Error::Refused(refusal)),
+                CompactionAnswered::Unrelated => {}
             }
         }
     }

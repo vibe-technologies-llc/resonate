@@ -2,7 +2,7 @@ use std::{
     env, fs,
     io::{Read, Write},
     net::{Ipv4Addr, SocketAddr},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{self, Command},
     sync::{
         Arc,
@@ -18,8 +18,11 @@ use resonate_server::{Allowance, Limits, Server, Store};
 use resonate_sync::{
     LocalPlaylistId, Refused, Server as Reached,
     shared::{LocalShared, Shared, SharedCatalog, SharedSettings, SharedShown, SharedStanding},
+    wire::{FromServer, LARGEST_FRAME, LONGEST_TEXT, Record, Refusal, SpaceHead, ToServer},
 };
 use tokio::net::{TcpListener, TcpStream};
+
+use crate::scripted::Scripted;
 
 const SETTLES_WITHIN: Duration = Duration::from_secs(30);
 
@@ -246,6 +249,10 @@ struct Hosted {
 }
 
 fn hosted(name: &str) -> Hosted {
+    hosted_over(name, |_| Store::in_memory().expect("a store"))
+}
+
+fn hosted_over(name: &str, store: impl FnOnce(&Path) -> Store) -> Hosted {
     let folder = env::temp_dir().join(format!(
         "resonate-shared-{name}-{}-{}",
         process::id(),
@@ -272,7 +279,7 @@ fn hosted(name: &str) -> Hosted {
         },
         ..Limits::default()
     };
-    let server = Server::new(Store::in_memory().expect("a store"), limits);
+    let server = Server::new(store(&folder), limits);
     runtime.spawn(server.serve_web(listener, None));
 
     Hosted {
@@ -357,10 +364,14 @@ impl Doorman {
 
 impl Hosted {
     fn person_through(&self, name: &str, door: &Doorman) -> Person {
+        self.person_reaching(name, door.address)
+    }
+
+    fn person_reaching(&self, name: &str, address: SocketAddr) -> Person {
         let shelf = Arc::new(Shelf::default());
         let shared = Shared::start(
             SharedSettings {
-                server: Reached::At(format!("ws://{}/", door.address)),
+                server: Reached::At(format!("ws://{address}/")),
                 trusted: None,
                 store: self.folder.join(format!("{name}.sqlite")),
                 name: name.to_owned(),
@@ -910,4 +921,151 @@ fn a_browser_given_the_link_of_a_list_shared_anew_is_told_it_moved() {
         read_in_a_browser(&hosted, the_reader_on(&page), &code_in(&invites.view)).as_deref(),
         Some("{\"failed\":\"moved\"}")
     );
+}
+
+const SONGS_PAST_A_FRAMES_SHARE: usize = 6_000;
+
+fn a_title_deflate_hardly_shortens(seed: usize) -> String {
+    const LETTERS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
+    let mut state = u64::try_from(seed)
+        .expect("a seed")
+        .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+        | 1;
+    (0..LONGEST_TEXT)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let at = usize::try_from(state % LETTERS.len() as u64).expect("an index");
+            char::from(LETTERS[at])
+        })
+        .collect()
+}
+
+fn snapshot_bytes(watching: &Store, space: resonate_sync::SpaceId) -> usize {
+    watching
+        .snapshot(space)
+        .ok()
+        .flatten()
+        .map_or(0, |snapshot| snapshot.parts.iter().map(Vec::len).sum())
+}
+
+#[test]
+fn a_list_past_a_frames_share_is_compacted_in_parts_and_someone_joining_reads_it_whole() {
+    let kept_as = "server.sqlite";
+    let hosted = hosted_over("compacted-in-parts", |folder| {
+        Store::open(&folder.join(kept_as)).expect("a store")
+    });
+    let watching =
+        Store::open(&hosted.folder.join(kept_as)).expect("the server's store, read beside it");
+    let titles = (0..SONGS_PAST_A_FRAMES_SHARE)
+        .map(a_title_deflate_hardly_shortens)
+        .collect::<Vec<_>>();
+    let held = titles.iter().map(String::as_str).collect::<Vec<_>>();
+
+    let ada = hosted.person("Ada", Shelf::default());
+    let list = ada.shelf.made("Long", &held);
+    let invites = ada.shared.share(list).expect("shared");
+    eventually("the list reaching the server", &ada, || {
+        shown_on(&ada)[0].owed == 0
+    });
+    let space = shown_on(&ada)[0].space;
+    let ben = hosted.person("Ben", Shelf::default());
+    ben.shared
+        .join(&code_in(&invites.edit.expect("an edit link")), None)
+        .expect("joined");
+    eventually(
+        "the server holding a snapshot past a frame's share",
+        &ben,
+        || snapshot_bytes(&watching, space) > LARGEST_FRAME / 2,
+    );
+    let cat = hosted.person("Cat", Shelf::default());
+    cat.shared
+        .join(&code_in(&invites.view), None)
+        .expect("joined");
+    let held_by_cat = || {
+        shown_on(&cat)
+            .first()
+            .and_then(|shown| shown.at)
+            .and_then(|at| cat.shelf.titles_of(at))
+            .unwrap_or_default()
+    };
+    eventually("the whole list reaching Cat", &cat, || {
+        held_by_cat().len() == SONGS_PAST_A_FRAMES_SHARE
+    });
+
+    assert_eq!(held_by_cat(), titles);
+    assert_eq!(shown_on(&ben)[0].standing, SharedStanding::Reached);
+}
+
+const RECORDS_PAST_A_COMPACTION: u64 = 600;
+
+fn told_records_past_a_compaction() -> Vec<FromServer> {
+    vec![
+        FromServer::Welcome {
+            online: Vec::new(),
+            seen_at: SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+            head: RECORDS_PAST_A_COMPACTION,
+        },
+        FromServer::Records {
+            entries: (1..=RECORDS_PAST_A_COMPACTION)
+                .map(|seq| Record { seq, blob: None })
+                .collect(),
+        },
+    ]
+}
+
+fn a_full_space(heard: &ToServer) -> Vec<FromServer> {
+    match heard {
+        ToServer::Heads { asked, .. } => vec![FromServer::Heads {
+            heads: asked
+                .iter()
+                .map(|asked| SpaceHead {
+                    space: asked.space,
+                    head: RECORDS_PAST_A_COMPACTION,
+                    closed: false,
+                })
+                .collect(),
+        }],
+        ToServer::Share { .. } => told_records_past_a_compaction(),
+        ToServer::Append { blobs } => vec![FromServer::Appended {
+            count: u32::try_from(blobs.len()).expect("a count"),
+        }],
+        ToServer::Compact { .. } | ToServer::Stage => {
+            vec![FromServer::Refused(Refusal::SpaceFull)]
+        }
+        _ => Vec::new(),
+    }
+}
+
+#[test]
+fn a_compaction_finding_the_space_full_backs_off_and_the_round_still_ends_well() {
+    let scripted = Scripted::answering(a_full_space);
+    let hosted = hosted("full");
+    let ada = hosted.person_reaching("Ada", scripted.address);
+    let list = ada.shelf.made("Mix", &["One"]);
+    ada.shared.share(list).expect("shared");
+
+    eventually("a compaction asked", &ada, || {
+        scripted
+            .heard()
+            .iter()
+            .any(|heard| matches!(heard, ToServer::Compact { .. }))
+    });
+    eventually("the round ending", &ada, || {
+        scripted
+            .heard()
+            .iter()
+            .skip_while(|heard| !matches!(heard, ToServer::Compact { .. }))
+            .any(|heard| *heard == ToServer::Bye)
+    });
+    let compactions = scripted
+        .heard()
+        .iter()
+        .filter(|heard| matches!(heard, ToServer::Compact { .. } | ToServer::Stage))
+        .count();
+
+    assert_eq!(shown_on(&ada)[0].standing, SharedStanding::Reached);
+    assert_eq!(shown_on(&ada)[0].owed, 0);
+    assert_eq!(compactions, 1);
 }

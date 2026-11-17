@@ -559,13 +559,13 @@ enum Snapshotted {
 }
 
 #[derive(Debug, Default)]
-struct Pieces {
+pub(crate) struct Pieces {
     frames: Vec<Vec<Vec<u8>>>,
     last_bytes: usize,
 }
 
 impl Pieces {
-    fn push(&mut self, part: Vec<u8>) {
+    pub(crate) fn push(&mut self, part: Vec<u8>) {
         let fits = self.frames.last().is_some_and(|last| {
             last.len() < BLOBS_A_FRAME_AT_MOST
                 && self.last_bytes + part.len() <= SNAPSHOT_FRAME_SHARE
@@ -583,6 +583,11 @@ impl Pieces {
     const fn more_than_a_frame(&self) -> bool {
         self.frames.len() > 1
     }
+
+    #[cfg(test)]
+    pub(crate) fn frame_lengths(&self) -> Vec<usize> {
+        self.frames.iter().map(Vec::len).collect()
+    }
 }
 
 #[derive(Debug)]
@@ -593,13 +598,13 @@ struct Staging {
 }
 
 #[derive(Debug, Default)]
-struct InParts {
+pub(crate) struct InParts {
     waiting: Option<Staging>,
     refused: bool,
 }
 
 impl InParts {
-    fn asked(&mut self, through: u64, records_since: u64, pieces: Pieces) -> ToServer {
+    pub(crate) fn asked(&mut self, through: u64, records_since: u64, pieces: Pieces) -> ToServer {
         let mut frames = pieces.frames;
         if frames.len() <= 1 {
             return ToServer::Compact {
@@ -615,7 +620,7 @@ impl InParts {
         ToServer::Stage
     }
 
-    fn taken(&mut self) -> Vec<ToServer> {
+    pub(crate) fn taken(&mut self) -> Vec<ToServer> {
         let Some(Staging {
             through,
             mut frames,
@@ -635,7 +640,7 @@ impl InParts {
             .collect()
     }
 
-    fn refused_as_stale(&mut self) -> Option<Oversized> {
+    pub(crate) fn refused_as_stale(&mut self) -> Option<Oversized> {
         let staging = self.waiting.take()?;
         self.refused = true;
         Some(Oversized::found_at(staging.records_since))
@@ -3845,9 +3850,8 @@ mod tests {
         let by_bytes = pieces_of([vec![1; half], vec![2; half], vec![3; 1]]);
         let by_blobs = pieces_of((0..=BLOBS_A_FRAME_AT_MOST).map(|_| vec![4; 40]));
 
-        let lengths = |pieces: &Pieces| pieces.frames.iter().map(Vec::len).collect::<Vec<_>>();
-        assert_eq!(lengths(&by_bytes), [2, 1]);
-        assert_eq!(lengths(&by_blobs), [BLOBS_A_FRAME_AT_MOST, 1]);
+        assert_eq!(by_bytes.frame_lengths(), [2, 1]);
+        assert_eq!(by_blobs.frame_lengths(), [BLOBS_A_FRAME_AT_MOST, 1]);
     }
 
     #[test]
