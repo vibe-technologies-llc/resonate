@@ -88,7 +88,10 @@ decodes both and requires a decoded value to read back as itself.
   `a_kept_answer_older_than_a_month_is_not_served`).
 - **The schema is `V1` plus `MIGRATIONS`**, with `user_version` counting the steps laid; the
   second step is `numbered`, seeded at the store's highest `seq`
-  (`answers_kept_before_they_were_numbered_go_on_from_the_newest_number`). A later
+  (`answers_kept_before_they_were_numbered_go_on_from_the_newest_number`), the third
+  `answers_by_age` (`AN_ANSWERS_AGE_IS_READ_OFF_AN_INDEX`), so the open's sweep of the stale and
+  its bringing of a future stamp back to now read only the rows they change
+  (`answers_kept_before_their_age_was_indexed_stay_and_are_aged_off_the_index`). A later
   build's store is `Error::KeptVersion`
   (`kept_answers_laid_out_by_a_later_build_are_refused_and_this_builds_open_again`).
 

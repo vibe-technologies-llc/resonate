@@ -44,7 +44,19 @@ CREATE TABLE numbered (
 INSERT INTO numbered (id, last) SELECT 1, coalesce(max(seq), 0) FROM answers;
 ";
 
-const MIGRATIONS: &[&str] = &[V1, AN_ANSWERS_NUMBER_NEVER_GOES_BACK];
+const AN_ANSWERS_AGE_IS_READ_OFF_AN_INDEX: &str = "
+CREATE INDEX answers_by_age ON answers(at);
+";
+
+const MIGRATIONS: &[&str] = &[
+    V1,
+    AN_ANSWERS_NUMBER_NEVER_GOES_BACK,
+    AN_ANSWERS_AGE_IS_READ_OFF_AN_INDEX,
+];
+
+const FORGET_THE_STALE: &str = "DELETE FROM answers WHERE at < ?1";
+
+const BRING_THE_FUTURE_BACK_TO_NOW: &str = "UPDATE answers SET at = ?1 WHERE at > ?1";
 
 const A_MARK_NO_DEVICE_REACHES: i64 = i64::MAX / 2;
 
@@ -143,10 +155,10 @@ impl Kept {
             .map_err(Error::store(Store::Kept, StoreOp::LayOut))?;
         let now = now();
         transaction
-            .execute("DELETE FROM answers WHERE at < ?1", [fresh_since(now)])
+            .execute(FORGET_THE_STALE, [fresh_since(now)])
             .map_err(Error::store(Store::Kept, StoreOp::Write))?;
         transaction
-            .execute("UPDATE answers SET at = ?1 WHERE at > ?1", [signed(now)])
+            .execute(BRING_THE_FUTURE_BACK_TO_NOW, [signed(now)])
             .map_err(Error::store(Store::Kept, StoreOp::Write))?;
         transaction
             .commit()
@@ -437,5 +449,54 @@ mod tests {
         assert_eq!(last, 5);
         assert_eq!(next, 6);
         assert_eq!(kept.counted().expect("counted"), 1);
+    }
+
+    fn plan_of(connection: &Connection, sql: &str) -> String {
+        connection
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([0], |row| row.get::<_, String>(3))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .expect("a plan")
+            .join("; ")
+    }
+
+    #[test]
+    fn answers_kept_before_their_age_was_indexed_stay_and_are_aged_off_the_index() {
+        let numbered = kept_at_the_first_shape(5);
+        numbered
+            .execute_batch(AN_ANSWERS_NUMBER_NEVER_GOES_BACK)
+            .expect("the second shape");
+        numbered
+            .pragma_update(None, "user_version", 2)
+            .expect("the second shape's stamp");
+        numbered
+            .execute(
+                "INSERT INTO answers (key, at, seq, came_from, packed) VALUES (?1, 1, 6, NULL, ?2)",
+                params![vec![2_u8], vec![0_u8]],
+            )
+            .expect("an answer long stale");
+
+        let kept = Kept::over(numbered).expect("carried forward");
+        let connection = kept.connection.lock();
+
+        let version: u32 = connection
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("the stamp");
+        let held: i64 = connection
+            .query_row("SELECT count(*) FROM answers", [], |row| row.get(0))
+            .expect("counted");
+
+        assert_eq!(version, 3);
+        assert_eq!(held, 1, "the fresh answer was lost or the stale one kept");
+        for statement in [FORGET_THE_STALE, BRING_THE_FUTURE_BACK_TO_NOW] {
+            let plan = plan_of(&connection, statement);
+            assert!(
+                plan.contains("answers_by_age"),
+                "{statement} reads every answer: {plan}"
+            );
+        }
     }
 }
