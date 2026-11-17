@@ -60,7 +60,10 @@ pub(crate) struct Copied {
     outstanding: Mutex<Option<AskedForExport>>,
     looking: Mutex<bool>,
     woken: Condvar,
+    room_of: Mutex<RoomOf>,
 }
+
+type RoomOf = fn(&Path) -> Option<u64>;
 
 pub(crate) struct Reaching {
     pub(crate) running: Weak<Mutex<Option<Running>>>,
@@ -88,7 +91,13 @@ impl Copied {
             outstanding: Mutex::new(None),
             looking: Mutex::new(false),
             woken: Condvar::new(),
+            room_of: Mutex::new(room_in),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn measures_room_by(&self, room_of: RoomOf) {
+        *self.room_of.lock() = room_of;
     }
 
     pub(crate) fn keep(self: &Arc<Self>, on: bool, reaching: Reaching) {
@@ -370,7 +379,8 @@ impl Copied {
         let partial =
             std::fs::metadata(self.folder.join(COPY_RECEIVED)).map_or(0, |metadata| metadata.len());
         let wanted = ROOM_A_COPY_TAKES.saturating_sub(partial) + ROOM_LEFT_AT_LEAST;
-        room_in(&self.folder).is_none_or(|room| room >= wanted)
+        let room_of = *self.room_of.lock();
+        room_of(&self.folder).is_none_or(|room| room >= wanted)
     }
 }
 
@@ -469,16 +479,37 @@ mod tests {
         fs::read(&path).expect("the copy read")
     }
 
-    #[test]
-    fn a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it() {
+    fn roomy(_: &Path) -> Option<u64> {
+        Some(u64::MAX)
+    }
+
+    fn full(_: &Path) -> Option<u64> {
+        Some(ROOM_LEFT_AT_LEAST)
+    }
+
+    struct Offered {
+        harness: Harness,
+        _desk: Sync,
+        folder: PathBuf,
+        copy: Vec<u8>,
+    }
+
+    impl Drop for Offered {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.folder);
+        }
+    }
+
+    fn a_desk_offers_a_copy_to_a_phone_whose_room_is(room_of: RoomOf, name: &str) -> Offered {
         let harness = Harness::new();
         let player = &harness.player;
-        let folder = env::temp_dir().join(format!("resonate-copied-phone-{}", process::id()));
+        let folder = env::temp_dir().join(format!("resonate-copied-{name}-{}", process::id()));
         let _ = fs::remove_dir_all(&folder);
         fs::create_dir_all(&folder).expect("a test folder");
         let key = SyncKey::minted().expect("a key");
         let copy = a_copy_of_nothing(&folder);
 
+        player.syncing.copied.measures_room_by(room_of);
         player
             .sync_start(SyncConfig {
                 enabled: true,
@@ -535,19 +566,34 @@ mod tests {
         desk.consult_with(Arc::new(OffersACopy(copy.clone())));
         player.syncing.copied.wake();
 
+        Offered {
+            harness,
+            _desk: desk,
+            folder,
+            copy,
+        }
+    }
+
+    #[test]
+    fn a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it() {
+        let offered = a_desk_offers_a_copy_to_a_phone_whose_room_is(roomy, "roomy");
+        let player = &offered.harness.player;
+
         eventually("the copy kept on the phone", || {
             player.syncing.copied.wake();
             player.musicbrainz_copy().standing == MusicbrainzCopyStanding::Held
         });
         let told = player.musicbrainz_copy();
-        let kept = fs::read(mirror_in(&harness.folder.join("musicbrainz"))).expect("the copy");
+        let kept =
+            fs::read(mirror_in(&offered.harness.folder.join("musicbrainz"))).expect("the copy");
 
         assert_eq!(told.dump.as_deref(), Some(DUMP));
-        assert_eq!(told.bytes, copy.len() as u64);
-        assert_eq!(kept, copy);
+        assert_eq!(told.bytes, offered.copy.len() as u64);
+        assert_eq!(kept, offered.copy);
         assert!(player.syncing.copied.mirrored.held().is_some());
         assert!(
-            !harness
+            !offered
+                .harness
                 .folder
                 .join("musicbrainz")
                 .join(COPY_RECEIVED)
@@ -561,8 +607,27 @@ mod tests {
         assert_eq!(removed.standing, MusicbrainzCopyStanding::Off);
         assert_eq!(removed.dump, None);
         assert!(player.syncing.copied.mirrored.held().is_none());
+    }
 
-        drop(desk);
-        let _ = fs::remove_dir_all(&folder);
+    #[test]
+    fn a_phone_without_room_for_a_copy_asks_no_desk_for_one() {
+        let offered = a_desk_offers_a_copy_to_a_phone_whose_room_is(full, "full");
+        let player = &offered.harness.player;
+
+        eventually("the phone to say it has no room", || {
+            player.syncing.copied.wake();
+            player.musicbrainz_copy().standing == MusicbrainzCopyStanding::NoRoom
+        });
+
+        assert!(player.syncing.copied.mirrored.held().is_none());
+        assert!(
+            !offered
+                .harness
+                .folder
+                .join("musicbrainz")
+                .join(COPY_RECEIVED)
+                .exists()
+        );
+        player.sync_stop();
     }
 }

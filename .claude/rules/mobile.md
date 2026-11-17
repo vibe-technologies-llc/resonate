@@ -480,7 +480,9 @@ every `AMENDMENTS_ASKED_EVERY`, an hour), landing through `received_amendments`,
 file not of the copy's dump (`AmendmentsOfAnotherExport`). The `Mirrored` is swapped as each lands,
 so lookups answer from it at once. Before a copy is fetched `room_in` (`fs4::available_space`) must
 leave `ROOM_LEFT_AT_LEAST` (2 GB) past `ROOM_A_COPY_TAKES` (12 GB) less what is already received,
-else `MusicbrainzCopyStanding::NoRoom`. Nothing is asked again for `LOOKED_AT_AGAIN_AFTER` (5
+else `MusicbrainzCopyStanding::NoRoom`; the tests weigh it through `Copied::measures_room_by`, so
+whether a copy is fetched never rests on the room left on the machine running them
+(`a_phone_without_room_for_a_copy_asks_no_desk_for_one`). Nothing is asked again for `LOOKED_AT_AGAIN_AFTER` (5
 minutes) after a miss; `sync_network` wakes it, `sync_stop` and turning the switch off end it
 (a transfer under way stops at its next chunk, the part kept for the next ask).
 `musicbrainz_copy()` answers a `MusicbrainzCopy` (the standing, the dump, its bytes, the packet its
