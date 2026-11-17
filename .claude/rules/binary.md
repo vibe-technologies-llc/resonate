@@ -230,14 +230,19 @@ that name. Every file argument goes through it.
 - **Another source's URI only where its scheme names a source this build's `Sources` holds**
   (`01:intro.flac` is a file here). Scheme and `localhost` are case-insensitive.
 - **A URI of a service played in place is the service's only where the settings set it**
-  (`served.rs`, `providers.md`: `subsonic:`, `jellyfin:`, `tidal:`, `hifi-api:`, `resonate:`, `monochrome:`, each
-  a song, album or artist; Monochrome's a song alone; `ytmusic:` is browsed and never queued): `queue_items_served` reads arguments
+  (`served.rs`, `providers.md`: `subsonic:`, `jellyfin:`, `tidal:`, `hifi-api:`, `resonate:`, `monochrome:`, `dlna:`, each
+  a song, album or artist; Monochrome's a song alone; `ytmusic:` is browsed and never queued; `dlna:`
+  is the media servers on the local network wherever `online` is on, its album a server's folder): `queue_items_served` reads arguments
   through `Served::sources`, and an album or artist URI is queued as the songs the service lists
   for it. `resonate served [--service NAME]` browses a service (`cli::ServedArgs`: the name is a
   scheme, case folded; without it the first the settings set, in the registry's order): bare, its
-  `first_page` (a Subsonic server's artists, a TIDAL account's favourites); `--artist ID`,
+  `first_page` (a Subsonic server's artists, a TIDAL account's favourites, the media servers a search
+  of the network finds); `--artist ID`,
   `--album ID`, `--mix ID`, `--search WORDS` (`cli::BrowsingArgs`, one at a time), one table a kind
-  found, each row with the URI `play` and `queue` take (`served::tables`); `--favour ID` and
+  found, each row with the URI `play` and `queue` take (`served::tables`); an id may be given as that
+  URI too (`server_id` reads the URI back through the service's `named_by`), since a media server's
+  ids are its own spelling, escaped in the URI; `--album` lists the albums a service keeps within
+  the album (`albums_within`: a media server's folders) before its songs; `--favour ID` and
   `--unfavour ID` (the same group) mark or unmark the song the service knows by that id in the
   service's own favourites (`PlaysInPlace::favour`) and print the song's URI; a service with none
   is `NotOffered`. `resonate subsonic` is the same with

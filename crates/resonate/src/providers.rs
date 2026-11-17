@@ -7,6 +7,8 @@ use std::{
 
 #[cfg(feature = "online")]
 use resonate_core::Switch;
+#[cfg(feature = "online")]
+use resonate_dlna::Dlna;
 use resonate_inbox::Inbox;
 #[cfg(feature = "online")]
 use resonate_jellyfin::Jellyfin;
@@ -96,7 +98,11 @@ pub type InPlace = Vec<Arc<dyn PlaysInPlace>>;
 
 #[cfg(feature = "online")]
 pub fn in_place_named(config: &Config, settings: Option<PathBuf>) -> InPlace {
-    in_place(&Accounts::of(config), &made_once(settings))
+    in_place(
+        &Accounts::of(config),
+        &made_once(settings),
+        config.is_on(Switch::Online),
+    )
 }
 
 #[cfg(feature = "online")]
@@ -108,15 +114,21 @@ pub fn youtube_music_named(config: &Config, settings: Option<PathBuf>) -> Option
 
 #[cfg(all(feature = "ui", feature = "online"))]
 pub fn in_place_given(online: &resonate_ui::Online, settings: Option<PathBuf>) -> InPlace {
-    in_place(&Accounts::given(online), &made_once(settings))
+    in_place(
+        &Accounts::given(online),
+        &made_once(settings),
+        online.enabled,
+    )
 }
 
 #[cfg(feature = "online")]
-fn in_place(accounts: &Accounts, made: &Made) -> InPlace {
+fn in_place(accounts: &Accounts, made: &Made, online: bool) -> InPlace {
+    let media_servers = online.then(|| Arc::clone(&made.media_servers) as Arc<dyn PlaysInPlace>);
     accounts
         .0
         .iter()
         .map(|reachable| made.built(reachable).in_place())
+        .chain(media_servers)
         .collect()
 }
 
@@ -490,6 +502,7 @@ struct Made {
     hifi: Kept<Hosting, HifiApi>,
     monochrome: Kept<Hosting, Monochrome>,
     ytmusic: Kept<YoutubeMusicLogin, YtMusic>,
+    media_servers: Arc<Dlna>,
     renewed: Arc<Renewed>,
 }
 
@@ -518,6 +531,7 @@ impl Made {
             hifi: Kept::default(),
             monochrome: Kept::default(),
             ytmusic: Kept::default(),
+            media_servers: Arc::new(Dlna::on_the_network()),
             renewed: Arc::new(Renewed {
                 settings,
                 rotated: parking_lot::Mutex::new(None),
@@ -880,10 +894,14 @@ mod tests {
     fn a_jellyfin_server_is_played_in_place_only_with_its_account_and_while_online_and_is_no_provider()
      {
         let schemes = |config: &Config| -> Vec<String> {
-            in_place(&Accounts::of(config), &Made::new(None))
-                .iter()
-                .map(|served| served.scheme().as_str().to_owned())
-                .collect()
+            in_place(
+                &Accounts::of(config),
+                &Made::new(None),
+                config.is_on(Switch::Online),
+            )
+            .iter()
+            .map(|served| served.scheme().as_str().to_owned())
+            .collect()
         };
         let halfway = Config {
             jellyfin: Some("http://music.local:8096".to_owned()),
@@ -1180,10 +1198,14 @@ mod tests {
     #[test]
     fn youtube_music_is_served_after_monochrome_only_where_it_is_turned_on() {
         let schemes = |config: &Config| -> Vec<String> {
-            in_place(&Accounts::of(config), &Made::new(None))
-                .iter()
-                .map(|served| served.scheme().as_str().to_owned())
-                .collect()
+            in_place(
+                &Accounts::of(config),
+                &Made::new(None),
+                config.is_on(Switch::Online),
+            )
+            .iter()
+            .map(|served| served.scheme().as_str().to_owned())
+            .collect()
         };
         let off = Config {
             switches: Switches::UNSAID.with(Switch::HostedServices, true),
@@ -1196,15 +1218,45 @@ mod tests {
 
         assert!(!schemes(&off).contains(&"ytmusic".to_owned()));
         assert_eq!(
-            schemes(&on).last().map(String::as_str),
+            schemes(&on).iter().rev().nth(1).map(String::as_str),
             Some("ytmusic"),
             "{:?}",
             schemes(&on)
         );
         assert_eq!(
-            schemes(&on).iter().rev().nth(1).map(String::as_str),
+            schemes(&on).iter().rev().nth(2).map(String::as_str),
             Some("monochrome")
         );
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn the_media_servers_on_the_network_are_played_in_place_after_every_account_while_online_alone()
+    {
+        let schemes = |config: &Config| -> Vec<String> {
+            in_place(
+                &Accounts::of(config),
+                &Made::new(None),
+                config.is_on(Switch::Online),
+            )
+            .iter()
+            .map(|served| served.scheme().as_str().to_owned())
+            .collect()
+        };
+        let online = Config {
+            subsonic: Some("http://music.local".to_owned()),
+            subsonic_user: Some("listener".to_owned()),
+            subsonic_password: Some("sesame".to_owned()),
+            ..Config::default()
+        };
+        let offline = Config {
+            switches: online.switches.with(Switch::Online, false),
+            ..online.clone()
+        };
+
+        assert_eq!(schemes(&online).last().map(String::as_str), Some("dlna"));
+        assert!(schemes(&offline).is_empty());
+        assert!(!named(&online).contains(&"dlna".to_owned()));
     }
 
     #[cfg(feature = "online")]

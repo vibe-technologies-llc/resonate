@@ -34,7 +34,7 @@ use crate::{
 const NO_SONG_IS_PLAYED_FROM: [&str; 1] = ["ytmusic"];
 
 #[cfg(feature = "online")]
-const PLAYED_IN_PLACE: [&str; 7] = [
+const PLAYED_IN_PLACE: [&str; 8] = [
     "subsonic",
     "jellyfin",
     "tidal",
@@ -42,6 +42,7 @@ const PLAYED_IN_PLACE: [&str; 7] = [
     "hifi-api",
     "monochrome",
     "ytmusic",
+    "dlna",
 ];
 
 #[cfg(feature = "online")]
@@ -480,25 +481,34 @@ fn chosen(services: InPlace, asked: Option<&str>) -> Result<Arc<dyn PlaysInPlace
 #[cfg(feature = "online")]
 fn tables(service: &dyn PlaysInPlace, wanted: &BrowsingArgs) -> Result<Vec<Table>> {
     if let Some(id) = wanted.artist.as_deref() {
-        let held = service.artist(&server_id(id)?)?;
+        let held = service.artist(&server_id(service, id)?)?;
         return Ok(vec![albums_table(service, &held.albums)]);
     }
     if let Some(id) = wanted.album.as_deref() {
-        let held = service.album(&server_id(id)?)?;
-        return Ok(vec![songs_table(service, &held.songs)]);
+        let album = server_id(service, id)?;
+        let within = service.albums_within(&album)?;
+        let held = service.album(&album)?;
+        let mut tables = Vec::new();
+        if !within.is_empty() {
+            tables.push(albums_table(service, &within));
+        }
+        if !held.songs.is_empty() || tables.is_empty() {
+            tables.push(songs_table(service, &held.songs));
+        }
+        return Ok(tables);
     }
     for (id, favoured) in [
         (wanted.favour.as_deref(), true),
         (wanted.unfavour.as_deref(), false),
     ] {
         if let Some(id) = id {
-            let song = server_id(id)?;
+            let song = server_id(service, id)?;
             service.favour(&song, favoured)?;
             return Ok(vec![favoured_table(service, &song, favoured)]);
         }
     }
     if let Some(id) = wanted.mix.as_deref() {
-        let held = service.mix(&server_id(id)?)?;
+        let held = service.mix(&server_id(service, id)?)?;
         return Ok(vec![songs_table(service, &held.songs)]);
     }
     let found = match wanted.search.as_deref() {
@@ -527,8 +537,13 @@ fn found_tables(service: &dyn PlaysInPlace, found: &Found) -> Vec<Table> {
 }
 
 #[cfg(feature = "online")]
-fn server_id(id: &str) -> Result<Id> {
-    Id::new(id).ok_or(Error::BlankServerId)
+fn server_id(service: &dyn PlaysInPlace, id: &str) -> Result<Id> {
+    let named = MediaLocation::from_uri(id.trim())
+        .and_then(|location| service.named_by(&location))
+        .map(|named| match named {
+            Named::Song(id) | Named::Album(id) | Named::Artist(id) | Named::Mix(id) => id,
+        });
+    named.or_else(|| Id::new(id)).ok_or(Error::BlankServerId)
 }
 
 #[cfg(feature = "online")]
@@ -1120,6 +1135,217 @@ mod tests {
         assert_eq!(whole, written(0));
     }
 
+    struct OneAlbum;
+
+    const SERVER_UDN: &str = "uuid:5e7a1b00-0000-4000-8000-00000000d1a7";
+
+    fn album_shelf() -> resonate_upnp::Shelf {
+        resonate_upnp::Shelf::Album(resonate_core::AlbumId::new(1).expect("an id"))
+    }
+
+    fn album_held() -> resonate_upnp::Held {
+        resonate_upnp::Held {
+            shelf: album_shelf(),
+            title: "Meddle".to_owned(),
+            artist: Some("Pink Floyd".to_owned()),
+            children: 2,
+            cover: None,
+        }
+    }
+
+    fn served_song(raw: u64) -> resonate_upnp::Song {
+        resonate_upnp::Song {
+            id: resonate_core::TrackId::new(raw).expect("an id"),
+            title: ["One", "Two"][usize::try_from(raw - 1).expect("a small id")].to_owned(),
+            artist: Some("Pink Floyd".to_owned()),
+            album: Some("Meddle".to_owned()),
+            cover: None,
+            genre: None,
+            track_number: u32::try_from(raw).ok(),
+            duration: None,
+            kind: resonate_upnp::AudioKind::Flac,
+            content: resonate_upnp::Content::Untouched,
+            size: u64::try_from(flac().len()).ok(),
+            rate: 44_100,
+            channels: 2,
+            bits: Some(16),
+        }
+    }
+
+    impl resonate_upnp::Catalog for OneAlbum {
+        type Failure = io::Error;
+
+        fn searched(
+            &self,
+            _: resonate_upnp::Kind,
+            _: resonate_upnp::Within,
+            _: &resonate_upnp::Query,
+            _: resonate_upnp::Page,
+        ) -> io::Result<resonate_upnp::Searched> {
+            Ok(resonate_upnp::Searched::Unanswered)
+        }
+
+        fn shelved(
+            &self,
+            shelf: resonate_upnp::Shelf,
+            _: resonate_upnp::Page,
+        ) -> io::Result<Option<resonate_upnp::Shelved>> {
+            let held = if shelf == album_shelf() {
+                (1..=2)
+                    .map(|raw| resonate_upnp::Entry::Song(served_song(raw)))
+                    .collect()
+            } else if shelf == resonate_upnp::Shelf::Albums {
+                vec![resonate_upnp::Entry::Shelf(album_held())]
+            } else if matches!(
+                shelf,
+                resonate_upnp::Shelf::Artists
+                    | resonate_upnp::Shelf::Songs
+                    | resonate_upnp::Shelf::Playlists
+            ) {
+                Vec::new()
+            } else {
+                return Ok(None);
+            };
+            Ok(Some(resonate_upnp::Shelved {
+                total: u32::try_from(held.len()).expect("a few"),
+                held,
+            }))
+        }
+
+        fn shelf(&self, shelf: resonate_upnp::Shelf) -> io::Result<Option<resonate_upnp::Held>> {
+            Ok((shelf == album_shelf()).then(album_held))
+        }
+
+        fn song(&self, id: resonate_core::TrackId) -> io::Result<Option<resonate_upnp::Song>> {
+            Ok((1..=2).map(served_song).find(|song| song.id == id))
+        }
+
+        fn bytes_of(
+            &self,
+            id: resonate_core::TrackId,
+        ) -> io::Result<Option<resonate_upnp::Opened>> {
+            Ok(self.song(id)?.map(|song| resonate_upnp::Opened {
+                bytes: Box::new(io::Cursor::new(flac())),
+                kind: song.kind,
+                content: song.content,
+            }))
+        }
+
+        fn cover(&self, _: resonate_core::AlbumId) -> io::Result<Option<resonate_upnp::Picture>> {
+            Ok(None)
+        }
+
+        fn revision(&self) -> u32 {
+            1
+        }
+    }
+
+    fn offered_on_loopback() -> resonate_upnp::MediaServer<OneAlbum> {
+        let loopback = std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+        resonate_upnp::MediaServer::start(
+            Arc::new(OneAlbum),
+            resonate_upnp::Udn::new(SERVER_UDN),
+            resonate_upnp::Offering {
+                heard_on: std::net::SocketAddr::new(loopback, 0),
+                told: std::net::SocketAddr::new(loopback, 9),
+                every: std::time::Duration::from_secs(60),
+                serving_on: loopback,
+                name: resonate_upnp::ServerName::new("Shelf"),
+            },
+        )
+        .expect("the server starts")
+    }
+
+    fn media_servers_at(server: &resonate_upnp::MediaServer<OneAlbum>) -> Arc<dyn PlaysInPlace> {
+        Arc::new(resonate_dlna::Dlna::searching(
+            server.heard_at(),
+            std::time::Duration::from_millis(800),
+        ))
+    }
+
+    #[test]
+    fn an_album_on_a_media_server_on_the_network_is_queued_as_its_songs_and_each_decodes_bit_for_bit()
+     {
+        let server = offered_on_loopback();
+        let served = Served::over(vec![media_servers_at(&server)], false);
+        let album = format!(
+            "dlna:album/{}/album-1",
+            resonate_core::uri_escaped(SERVER_UDN.as_bytes())
+        );
+
+        let queued = crate::arguments::queue_items_served(&[OsString::from(album)], &served);
+        let uris: Vec<_> = queued.iter().map(|item| item.location.to_uri()).collect();
+
+        assert_eq!(
+            uris,
+            [
+                "dlna:track/uuid%3A5e7a1b00-0000-4000-8000-00000000d1a7/song-1",
+                "dlna:track/uuid%3A5e7a1b00-0000-4000-8000-00000000d1a7/song-2"
+            ]
+        );
+        decodes_bit_for_bit_and_seeks_back(&served, &uris[1]);
+    }
+
+    #[test]
+    fn the_terminal_lists_the_media_servers_on_the_network_and_browses_one_by_the_uris_it_prints() {
+        let server = offered_on_loopback();
+        let service = media_servers_at(&server);
+
+        let first: Vec<String> = tables(service.as_ref(), &browsing())
+            .expect("the network is searched")
+            .iter()
+            .map(Table::render)
+            .collect();
+        let top: Vec<String> = tables(
+            service.as_ref(),
+            &BrowsingArgs {
+                artist: Some(format!("dlna:artist/{SERVER_UDN}")),
+                ..browsing()
+            },
+        )
+        .expect("the server's top")
+        .iter()
+        .map(Table::render)
+        .collect();
+        let albums: Vec<String> = tables(
+            service.as_ref(),
+            &BrowsingArgs {
+                album: Some(format!("{SERVER_UDN}/albums")),
+                ..browsing()
+            },
+        )
+        .expect("a shelf")
+        .iter()
+        .map(Table::render)
+        .collect();
+        let songs: Vec<String> = tables(
+            service.as_ref(),
+            &BrowsingArgs {
+                album: Some(format!("dlna:album/{SERVER_UDN}/album-1")),
+                ..browsing()
+            },
+        )
+        .expect("an album")
+        .iter()
+        .map(Table::render)
+        .collect();
+
+        assert_eq!(first.len(), 1);
+        assert!(first[0].contains("Shelf"), "{}", first[0]);
+        assert!(
+            first[0].contains("dlna:artist/uuid%3A5e7a1b00"),
+            "{}",
+            first[0]
+        );
+        assert!(top[0].contains("Albums"), "{}", top[0]);
+        assert!(top[0].contains("Playlists"), "{}", top[0]);
+        assert_eq!(albums.len(), 1);
+        assert!(albums[0].contains("Meddle"), "{}", albums[0]);
+        assert_eq!(songs.len(), 1);
+        assert!(songs[0].contains("Two"), "{}", songs[0]);
+        assert!(songs[0].contains("dlna:track/"), "{}", songs[0]);
+    }
+
     #[test]
     fn a_streamed_song_seeks_back_and_decodes_on_from_where_it_landed() {
         decodes_bit_for_bit_and_seeks_back(&serving(), "subsonic:track/so-1");
@@ -1247,7 +1473,13 @@ mod tests {
         let again = probe(&sources, &location);
 
         assert!(before.is_err());
-        assert_eq!(opened.len(), 1);
+        assert_eq!(
+            opened
+                .iter()
+                .map(|served| served.scheme().as_str())
+                .collect::<Vec<_>>(),
+            ["subsonic", "dlna"]
+        );
         assert!(after.is_ok());
         assert!(withdrawn.is_empty());
         assert!(again.is_err());
@@ -1279,7 +1511,10 @@ mod tests {
             .map(|served| served.title().to_owned())
             .collect();
 
-        assert_eq!(titles, ["Subsonic", "Jellyfin", "TIDAL", "Monochrome"]);
+        assert_eq!(
+            titles,
+            ["Subsonic", "Jellyfin", "TIDAL", "Monochrome", "DLNA"]
+        );
         assert!(
             opened
                 .iter()

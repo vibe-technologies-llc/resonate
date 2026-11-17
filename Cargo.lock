@@ -6993,6 +6993,7 @@ dependencies = [
  "resonate-codec",
  "resonate-core",
  "resonate-discord",
+ "resonate-dlna",
  "resonate-driven",
  "resonate-dsp",
  "resonate-engine",
