@@ -6,7 +6,7 @@ use resonate_core::{
 use resonate_vault::VaultKey;
 use thiserror::Error;
 
-use crate::{LookupOp, PassKind};
+use crate::{ListenFault, LookupOp, PassKind};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct TagName(Box<str>);
@@ -149,6 +149,9 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+
+    #[error("line {line} of the listens is refused: {fault:?}")]
+    ListenLine { line: usize, fault: ListenFault },
 
     #[error("library root {path} is not a directory", path = path.display())]
     RootNotADirectory { path: PathBuf },

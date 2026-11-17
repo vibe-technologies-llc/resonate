@@ -154,6 +154,16 @@ paths:
   `--user` or the account the token or session is held by (`Scrobbler::token_held`; none is
   `Error::NoHistoryUser`, Last.fm without `lastfm-key` and `lastfm-secret` `NoLastfmApplication`),
   and lands each page through `Library::bring_in`, saying the running count after each.
+  **`history --import-file FILE` brings in a file of those lines** with no `online` and no
+  account (`brought_in_from_file`): a flag of its own beside `--import`, never the same one taking
+  a service or a path, so a file named `listenbrainz` is never mistaken for a service (the two
+  conflict, and `--user` belongs to `--import`). The whole file is read by
+  `resonate_library::heard_in_lines` first and landed in pages of `READ_AT_ONCE` as
+  `ListeningService::ListenBrainz` after, so a line that is no listen is
+  `resonate_library::Error::ListenLine` naming it and nothing has landed; an unreadable file is
+  the library's `Io`. What it reads is in `library.md`'s *The history taken out and brought in*
+  (`a_history_exported_to_a_file_is_imported_into_a_fresh_catalog_and_a_second_import_adds_nothing`,
+  `a_file_with_a_line_that_is_no_listen_is_refused_with_its_number_and_brings_nothing_in`).
 
 - **`wrapped [--year Y] [--summary]` prints Resonate Wrapped** (`wrapped.rs`): each `Slide` as text, its rankings as tables, or with `--summary` the few lines `YearReview::summary` writes. With nothing ever played it is `Error::NothingHeardYet`, exit 1; a year named with nothing in it says so and exits 0. A year that is over is the copy kept the first time it was shown, so the table, the window and the phones agree on it for good (`library.md`).
 

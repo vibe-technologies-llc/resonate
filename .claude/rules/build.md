@@ -180,7 +180,7 @@ Linux sound server or GUI libraries are needed.
 ## Fuzzing
 
 - **The hand-rolled parsers are fuzzed from outside the workspace**: `fuzz/`'s `[workspace]` table
-  detaches it, so workspace lints do not reach libfuzzer's macros. Thirty-four targets: `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
+  detaches it, so workspace lints do not reach libfuzzer's macros. Thirty-six targets: `listens` (the ListenBrainz JSON lines `history --import-file` reads, holding that each listen kept names a song and an artist and a refusal names a line the input has), `together` (what a shared list and a party say, their reading back and that ops converge whichever order they cross), `probe`, `boxes`,
   `cue` (beside the sheet's reading, `SheetText`'s `own` and `edited` over every field and scope, the edit read back), `rating` (the lofty reads a retag preview makes, `rating_in` and `Counted::read_in`, the input's first byte choosing the extension), `lrc`, `lyricsfile`, `ttml`, `playlist`, `search`, `uri`, `decoded`, `equaliser`, `mcp`, `sync`,
   `rewriter` (the vault's `bare` over every container and `declared_digest`), `unpacking` (zstd frame
   indexing and the reader, and the vault's `standing::of_a_flac` and `of_a_packed_wave`), `padding` (the tag writer's padded heads and its Matroska rewrite, then a picture attached to what the rewrite laid, as a keep writes them, kind 5), `journal` (an undo journal,

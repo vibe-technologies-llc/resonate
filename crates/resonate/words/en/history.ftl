@@ -4,3 +4,4 @@ exported = { $count ->
 }
 brought-so-far = { $credited } counted, { $held } held already, { $unmatched } of songs not held here
 brought-in = brought in { $credited } from { $service }: { $held } were held already, and { $unmatched } name no song held here, which a later run brings in once it is
+brought-in-from-file = brought in { $credited } from { $file }: { $held } were held already, and { $unmatched } name no song held here, which a later run brings in once it is

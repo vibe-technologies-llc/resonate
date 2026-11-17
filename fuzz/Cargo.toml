@@ -274,3 +274,10 @@ path = "fuzz_targets/catalogue.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "listens"
+path = "fuzz_targets/listens.rs"
+test = false
+doc = false
+bench = false

@@ -135,6 +135,17 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   by an opaque `u64` it hands back
   (`listens_brought_in_from_a_service_land_once_on_the_songs_held_and_one_already_heard_here_is_not_counted_again`,
   `the_history_is_read_out_whole_the_songs_held_named_and_the_ones_not_held_by_where_they_were`).
+  **A file of ListenBrainz JSON lines is read by `heard_in_lines`** (`listen_lines.rs`, over
+  the crate's own small `json.rs`, since the library links no `serde_json`; `resonate-online`'s
+  reader of the service's page cannot be reached without `online`): one listen a line, as
+  `history --export` writes and ListenBrainz exports (`listened_at`, `track_metadata`'s names,
+  `additional_info`'s or `mbid_mapping`'s `recording_mbid`, `additional_info`'s `duration_ms`),
+  into the `HeardElsewhere` the service import builds, a listen naming no song or no artist
+  passed over as the service's are. Blank lines and a leading byte-order mark are passed over; a
+  line that is not UTF-8, not JSON, not an object, without a whole `listened_at` or without a
+  `track_metadata` object is `Error::ListenLine { line, fault }` and the whole file is refused
+  (`a_bad_line_is_refused_with_its_number_whatever_the_fault`), the fuzz target `listens` holding
+  that it never panics and that a refusal names a line the input has.
 - **A service's told-ness is a mark in the history.** `submissions`: per `ListeningService`, id of
   the last `listens` row told. `Library::submit_listens` (`scrobble.rs`) reads listens past the mark
   in id order, `SUBMITTED_AT_ONCE` (100) a batch, each at `listens.began`, joined for the names and

@@ -20,6 +20,7 @@ mod hinted;
 mod history;
 mod identical;
 mod import;
+mod json;
 mod keeps;
 mod keyed;
 mod learning;
@@ -27,6 +28,7 @@ mod learning;
 mod left_alone;
 mod likeness;
 mod linked;
+mod listen_lines;
 mod loose;
 mod m3u;
 mod meant;
@@ -148,6 +150,7 @@ pub use crate::{
         Linked, LinkedPlaylist, LinkedProfile, ListedSong, PlaylistLink, ProfileLink,
         ProfilePlaylist, SongLink, is_a_followed_link,
     },
+    listen_lines::{ListenFault, heard_in_lines},
     meant::{ByArtist, Meant},
     model::{
         Album, AlbumToAsk, Artist, ArtistDetail, ArtistToAsk, ArtistTotals, AsDrawn, Compacted,

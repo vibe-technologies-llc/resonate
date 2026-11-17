@@ -533,8 +533,8 @@ pub struct HistoryArgs {
     #[arg(
         long,
         value_name = "FILE",
-        required_unless_present = "import",
-        conflicts_with_all = ["import", "user"],
+        required_unless_present_any = ["import", "import_file"],
+        conflicts_with_all = ["import", "import_file", "user"],
         help = words::grammar::history_args_export()
     )]
     pub export: Option<PathBuf>,
@@ -543,14 +543,23 @@ pub struct HistoryArgs {
         long,
         value_enum,
         value_name = "SERVICE",
+        conflicts_with = "import_file",
         help = words::grammar::history_args_import()
     )]
     pub import: Option<ListeningServiceArg>,
 
     #[arg(
         long,
+        value_name = "FILE",
+        help = words::grammar::history_args_import_file()
+    )]
+    pub import_file: Option<PathBuf>,
+
+    #[arg(
+        long,
         value_name = "NAME",
         requires = "import",
+        conflicts_with = "import_file",
         help = words::grammar::history_args_user()
     )]
     pub user: Option<String>,
