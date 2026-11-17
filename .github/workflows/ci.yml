@@ -216,6 +216,7 @@ jobs:
           refuse resonate-tidal gpui
           refuse resonate-monochrome gpui
           refuse resonate-ytmusic gpui
+          refuse resonate-dlna gpui
           only resonate-words
           only resonate-words-build
           only resonate-providers resonate-core resonate-words
@@ -226,6 +227,9 @@ jobs:
           only resonate-tidal resonate-core resonate-providers resonate-fetch resonate-words
           only resonate-monochrome resonate-core resonate-providers resonate-fetch resonate-words
           only resonate-ytmusic resonate-core resonate-providers resonate-fetch resonate-words
+          only resonate-dlna resonate-core resonate-providers resonate-upnp resonate-audio resonate-words
+          check "resonate-dlna" "$(held_by -p resonate-dlna -e normal)" ureq rustls serde serde_json resonate-fetch
+          reached_by_the_binary_alone resonate-dlna
           only resonate-audio resonate-core resonate-words
           refuse resonate-audio pipewire libspa resonate-codec resonate-dsp gpui
           only resonate-upnp resonate-core resonate-audio resonate-words

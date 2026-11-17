@@ -23,13 +23,13 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `motion.md` | resonate-ui | the motion vocabulary, what arrives and flips, the song handover, the scrollbar fade |
 | `vault.md` | resonate-vault, `Library::import`, `vaulted.rs`, `supply.rs`, the Vault group | the forms, the keys, validation, what the catalog holds |
 | `online.md` | resonate-online, the binary's `online.rs` | the paced client, the identity, what each service is asked and how its answer is read |
-| `providers.md` | resonate-providers, resonate-fetch, providers/*, resonate-signin, the binary's `providers.rs`, `served.rs`, `supply.rs`, `filed.rs`, `keeps.rs`, `signing_in.rs` | the seam, the registry, the last resort, the inbox, Jellyfin and Emby (played in place), Subsonic (fetched and played in place, with covers, live in the window), TIDAL, hifi-api, Monochrome, a YouTube Music account and its sign-in window (`resonate-signin`, `signing_in.rs`), a keep's queue, what a delivery is and where it lands |
+| `providers.md` | resonate-providers, resonate-fetch, providers/*, resonate-signin, the binary's `providers.rs`, `served.rs`, `supply.rs`, `filed.rs`, `keeps.rs`, `signing_in.rs` | the seam, the registry, the last resort, the inbox, Jellyfin and Emby (played in place), Subsonic (fetched and played in place, with covers, live in the window), TIDAL, hifi-api, Monochrome, a YouTube Music account and its sign-in window (`resonate-signin`, `signing_in.rs`), a keep's queue, a media server on the network (`resonate-dlna`), what a delivery is and where it lands |
 | `analysis.md` | resonate-analysis, `studies.rs`, `fingerprint.rs`, the analysis pane, `acoustid.rs`, `analyse.rs` | the one decode pass, the fake-lossless heuristic, the print, the studies and recognition |
 | `musicbrainz.md` | resonate-musicbrainz, the binary's `musicbrainz.rs` and `online.rs`, the phones' `enrichment.rs` and `sync/consulted.rs` | the order a lookup is answered in (kept, mirror, a device, the network), the vocabulary on the wire, kept answers, the compressed and indexed mirror of the export and its search scores, fetching the export, devices consulting each other |
 | `mcp.md` | resonate-mcp, the binary's `mcp.rs` | the transport, refusals against failures, the tools, the resources and their seam |
 | `sync.md` | resonate-sync, resonate-driven, the binary's `sync.rs`, `synced.rs`, the sync panes | the pairing key and what it derives, the wire, the ledger, the seam, peers and transfers, devices meeting on one network, one device driving another's zones |
 | `server.md` | resonate-server, `packaging/server/**` | what the server keeps, sessions, presence, punching, limits, deployment |
-| `upnp.md` | resonate-upnp, the binary's `rendering.rs`, `zoning.rs`, `offering.rs`, the output settings pane, the phones' `rendering.rs`, `offering.rs` and `output/mod.rs` | the catalog offered on the network as a MediaServer (the `Catalog` seam, Browse, the files served, SSDP), by the desktop and by a phone, network renderers: a renderer as a sink beside PipeWire's, Oboe's and RemoteIO's, the `Neighbours` seam, a resting network and its switch, SSDP, the description, SOAP, the paced live stream, seek, pause and volume past its buffer, the renderer's clock, multicast on the phones |
+| `upnp.md` | resonate-upnp, the binary's `rendering.rs`, `zoning.rs`, `offering.rs`, the output settings pane, the phones' `rendering.rs`, `offering.rs` and `output/mod.rs` | the catalog offered on the network as a MediaServer (the `Catalog` seam, Browse, the files served, SSDP), by the desktop and by a phone, network renderers: a renderer as a sink beside PipeWire's, Oboe's and RemoteIO's, the `Neighbours` seam, a resting network and its switch, SSDP, the description, SOAP, the paced live stream, seek, pause and volume past its buffer, the renderer's clock, multicast on the phones, media servers on the network browsed (the search, paged Browse, the DIDL-Lite reader, a song fetched by range) |
 | `cast.md` | resonate-cast, the binary's `rendering.rs` | Google Cast receivers: one more sink kind beside UPnP's, the mDNS browse, TLS and the hand-written `CastMessage` and JSON, the Default Media Receiver's launch and load, the receiver's clock, the volume |
 | `discord.md` | resonate-discord, `core::presence`, the binary's `discord.rs`, the Desktop groups | the gate, the seam, the frame, what an activity says and how often |
 | `shared-playlists.md` | `shared/**`, the binary's `together.rs`, the sharing sheet, the phones' `shared.rs` | playlists shared with other people: keys and links, the op log, the catalog seam, your own devices, removing someone |
@@ -80,7 +80,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Forty-two crates. `resonate-core` is the only universal dependency, beside `resonate-words`, the
+Forty-three crates. `resonate-core` is the only universal dependency, beside `resonate-words`, the
 leaf every crate that says words reaches; `resonate-codec`, `resonate-dsp` and `resonate-pipewire`
 never depend on each other; `resonate-engine` joins them.
 
@@ -100,7 +100,7 @@ resonate            bin: CLI, tracing, wiring
   │     ├── resonate-pipewire Linux sink enumeration, negotiation, stream
   │     ├── resonate-wasapi   Windows endpoints, shared and exclusive streams
   │     └── resonate-coreaudio macOS devices, shared and hog-mode streams; the AudioUnit fill iOS shares
-  ├── resonate-upnp       UPnP AV renderers on the network as sinks beside PipeWire's
+  ├── resonate-upnp       UPnP AV renderers on the network as sinks beside PipeWire's; media servers found and browsed
   ├── resonate-cast       Google Cast receivers as sinks beside them, over UPnP's paced stream
   ├── resonate-online     MusicBrainz, covers, portraits, lyrics, AutoEq  [`online`]
   ├── resonate-musicbrainz  MusicBrainz kept here: the export compressed and indexed, kept answers, layered before `Online`  [`online`]
@@ -112,6 +112,7 @@ resonate            bin: CLI, tracing, wiring
   ├── resonate-eq         profile formats, profile store, AutoEq catalogue and its seam
   ├── resonate-providers  the provider seam: an identity in, media out  (filled by providers/*)
   ├── resonate-fetch      what network providers share: agents, trust, Retry-After, resuming
+  ├── providers/dlna      resonate-dlna, a DLNA or UPnP media server on the network played in place  [`online`]
   ├── providers/inbox     resonate-inbox, a folder of the listener's
   ├── providers/monochrome resonate-monochrome  [`online`]
   ├── providers/jellyfin  resonate-jellyfin, Jellyfin and Emby played in place  [`online`]
@@ -132,7 +133,8 @@ resonate-server      bin: keeps sealed sync records and introduces devices, over
 `cargo tree` is the authority on edges and the `layering` job in `.github/workflows/ci.yml` holds
 the refusals. Worth knowing: only the binary (and the detached `fuzz/`, for `resonate-mcp`) reaches
 `resonate-mcp` and `resonate-discord`; `resonate-online` is composed by the binary and `resonate-mobile`; `resonate-musicbrainz` reaches core and the library (and `resonate-fetch` under its `download` feature) and is reached by the binary and `resonate-mobile` alone; a provider crate reaches the seam, core and
-(over the network) `resonate-fetch` alone; `resonate-upnp` reaches core and `resonate-audio` alone (its HTTP
+(over the network) `resonate-fetch` alone, but `resonate-dlna`, which reaches `resonate-upnp` instead (the
+client a media server on the network is browsed through, written there once) and is reached by the binary alone; `resonate-upnp` reaches core and `resonate-audio` alone (its HTTP
 hand-written over `httparse`, so a build without `online` still plays to a renderer); `resonate-cast` reaches those and `resonate-upnp` alone (its JSON hand-written, so no `serde_json` without `online`) and is reached by the binary and `resonate-mobile` alone; `resonate-listen` reaches core, `resonate-audio` and `resonate-pipewire`
 alone on Linux (its own PipeWire client per recording) and core, `resonate-audio` and the `wasapi` crate on Windows
 (capture and loopback on threads of its own, never `resonate-wasapi`) and core, `resonate-audio`, `resonate-apple` and `resonate-dsp` on macOS

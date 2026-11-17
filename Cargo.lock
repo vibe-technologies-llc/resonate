@@ -7190,6 +7190,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "resonate-dlna"
+version = "0.13.0"
+dependencies = [
+ "parking_lot 0.13.0",
+ "resonate-core",
+ "resonate-providers",
+ "resonate-upnp",
+ "tracing",
+]
+
+[[package]]
 name = "resonate-driven"
 version = "0.13.0"
 dependencies = [

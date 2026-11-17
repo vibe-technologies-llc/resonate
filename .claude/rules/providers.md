@@ -706,6 +706,57 @@ whose `Seek` is `Unsupported`; both are held under a `parking_lot::Mutex` so a s
   `a_monochrome_song_decodes_bit_for_bit_and_seeks`,
   `a_song_the_keyed_server_sends_decodes_bit_for_bit_and_seeks_with_the_key`).
 
+## A media server on the network played in place
+
+`resonate-dlna` (`Dlna`) is the network's DLNA and UPnP media servers (MiniDLNA, Plex's or Jellyfin's
+DLNA server, another Resonate offering its catalog) as one service played in place beside the
+accounts: `SourceId` `dlna`, titled *DLNA* (a proper name, so no catalog word). It is no `Provider`,
+never registered for wants and never asked for a delivery. **Where it lives is the layering's
+answer**: the client (the search, the description, paged Browse, the DIDL-Lite reader, a song
+fetched by range) is `resonate-upnp`'s (`upnp.md`'s *Media servers on the network, browsed*), since
+that crate already hand-writes every part of it over plain HTTP; this crate only turns it into the
+seam's vocabulary, so it reaches core, the seam and `resonate-upnp` (no `resonate-fetch`, `ureq`,
+`rustls` or serde: `dependencies.md`, the `layering` job), and `resonate-upnp` stays blind to the
+seam.
+
+- **The tree is the seam's vocabulary bent as little as it will go.** A server is an `Artist` (its
+  UDN the id, its `friendlyName` the name), its root's containers that artist's albums; every
+  container is an `Album` (title, `upnp:artist`, `childCount`, `albumArtURI`) whose songs are the
+  audio items directly in it, and whose own containers are `PlaysInPlace::albums_within` (the
+  seam's one addition, empty for every other service), so a server's folders go as deep as it
+  keeps them. An item is a `Song` (title, artist, album, track, length from its `res`, `suffix`
+  from the type the decoder is hinted by). An album or song id is `<udn>/<object id>`, the object
+  id the server's own spelling (`Object::read` splits at the first `/`, a UDN holding one being no
+  server listed here); a cover is `<udn>/<address>`. `artists` (the first page) is one search
+  round, so the list follows the servers as they come and go; `search` asks every server found
+  (one round if none is held) for songs named, a server that refuses `Search` passed over.
+  Browsing a container reads it once for its albums and its songs (`A_LISTING_IS_KEPT_FOR`, 10 s).
+  An artist (a whole server) is never expanded into songs (`NotOffered`), nor is a mix named.
+- **A song is played as stored**: `streamed` asks the item's `BrowseMetadata`, takes the `res`
+  `Item::played_from` names (the original before a transcode) and answers `Streamed::seeking` over
+  `Fetched`, its length the answer's (else the `res`'s size), its type the answer's `Content-Type`
+  (else the `res`'s). A queued `dlna:track/…` is found again by its server's UDN in a later run
+  (`MediaServers::server`), wherever the server now answers.
+- **Failures say what happened**: a server that answers no search is `Error::Io` with
+  `io::ErrorKind::NotFound` around `NoSuchServer`, a connection that fails `Io`, both away (the
+  window's *The server could not be reached*); a SOAP fault `TurnedAway` with the UPnP code (701, no
+  such object), an HTTP status `Refused`, anything unreadable `Unreadable`, an address off the server
+  `Unaddressable` (`a_server_gone_is_the_provider_away_and_a_fault_is_the_servers_refusal`).
+- **Asked only when the listener asks, and only with `online` on.** `providers::in_place` appends
+  the one `Dlna` a process holds (`Made::media_servers`, so the servers found are kept between a
+  pane's reads) wherever `online` is on, after the accounts; it searches nothing until it is asked
+  for a page, a search or a song, so nothing is multicast unasked. `PLAYED_IN_PLACE` holds `dlna`.
+- **Proved over loopback** (`tests/server.rs`): `resonate-upnp`'s own `MediaServer` answers the
+  search and is listed by its typed name, browsed from its top to an album's songs, a song streamed
+  whole and from a seek, searched, its cover fetched, and gone once it leaves
+  (`a_media_server_on_the_network_is_listed_by_name_and_browsed_down_to_its_songs`,
+  `a_song_on_a_media_server_is_named_by_a_location_and_streamed_as_served_and_seeks`,
+  `a_search_asks_every_server_and_a_cover_is_the_servers_own_picture`,
+  `a_server_that_has_left_the_network_is_said_to_be_away_and_is_no_longer_listed`); the binary
+  queues a server's album as its songs and decodes one bit for bit through `Served::sources`, seeking
+  back (`an_album_on_a_media_server_on_the_network_is_queued_as_its_songs_and_each_decodes_bit_for_bit`).
+  No MiniDLNA, Plex or Jellyfin server has been asked: their shapes are the fuzz seeds'.
+
 ## A TIDAL account
 
 `resonate-tidal` is the listener's own subscription, named by `tidal-client-id`,

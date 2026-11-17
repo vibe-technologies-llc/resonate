@@ -32,6 +32,7 @@ members = [
     "crates/resonate-server",
     "crates/resonate-signin",
     "crates/resonate-sync",
+    "crates/providers/dlna",
     "crates/providers/inbox",
     "crates/providers/jellyfin",
     "crates/providers/monochrome",
@@ -308,6 +309,7 @@ resonate-musicbrainz = { version = "0.13.0", path = "crates/resonate-musicbrainz
 resonate-online = { version = "0.13.0", path = "crates/resonate-online" }
 resonate-providers = { version = "0.13.0", path = "crates/resonate-providers" }
 resonate-sync = { version = "0.13.0", path = "crates/resonate-sync" }
+resonate-dlna = { version = "0.13.0", path = "crates/providers/dlna" }
 resonate-inbox = { version = "0.13.0", path = "crates/providers/inbox" }
 resonate-jellyfin = { version = "0.13.0", path = "crates/providers/jellyfin" }
 resonate-monochrome = { version = "0.13.0", path = "crates/providers/monochrome" }

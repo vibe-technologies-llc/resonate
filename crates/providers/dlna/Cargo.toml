@@ -1,0 +1,23 @@
+[package]
+name = "resonate-dlna"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+autotests = false
+
+[lib]
+doctest = false
+
+[dependencies]
+parking_lot.workspace = true
+resonate-core.workspace = true
+resonate-providers.workspace = true
+resonate-upnp.workspace = true
+tracing.workspace = true
+
+[[test]]
+name = "suite"
+path = "tests/suite.rs"
+
+[lints]
+workspace = true

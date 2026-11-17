@@ -306,6 +306,10 @@ pub trait PlaysInPlace: Send + Sync {
 
     fn search(&self, words: &str) -> Result<Found>;
 
+    fn albums_within(&self, _album: &Id) -> Result<Vec<Album>> {
+        Ok(Vec::new())
+    }
+
     fn mix(&self, _id: &Id) -> Result<MixSongs> {
         Err(not_offered(self.scheme(), ProviderOp::Browse))
     }

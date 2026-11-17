@@ -149,7 +149,13 @@ here, add it there.
   `-mcp` and `-discord` remain binary-only. These are optional behind CLI features, so
   `cargo tree -p resonate-library` has no `ureq`/`serde`/`serde_json` and `cargo tree -p resonate --no-default-features` links no HTTP client. `-mcp`: off `-online`, gpui, UI. `-discord`: core,
   engine vocabulary, serde; no gpui, library, HTTP client.
-- A provider crate reaches core, the seam and (a network one) `resonate-fetch` alone.
+- A provider crate reaches core, the seam and (a network one) `resonate-fetch` alone. The one
+  exception is `resonate-dlna`, which reaches core, the seam and `resonate-upnp` (and through it
+  `resonate-audio`) instead: a media server on the local network speaks SSDP, a description, SOAP,
+  DIDL-Lite and plain HTTP, all of which `resonate-upnp` already hand-writes, so the client is
+  written once there and this crate only turns it into the seam's vocabulary. It holds no `ureq`,
+  `rustls` or serde, and `resonate-upnp` does not reach the seam, so neither `resonate-cast` nor
+  anything else above `resonate-upnp` gains an edge. It is reached by the binary alone.
 - `resonate-upnp`: core and `resonate-audio` alone, with `httparse`, `mio` (`os-poll` and `net`: the
   stream server's one thread woken by readiness rather than polling; the safe API alone, since the
   crate forbids `unsafe`), `roxmltree`, `flacenc` (the live
