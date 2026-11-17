@@ -2,7 +2,6 @@ package org.resonate.android
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.net.wifi.WifiManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.resonate.android.nativecore.MobilePlayer
@@ -19,14 +18,10 @@ class CatalogOffering(
     val shared = mutableShared.asStateFlow()
     private val mutableName = MutableStateFlow(settings.getString(NAMED_ON_THE_NETWORK, "") ?: "")
     val name = mutableName.asStateFlow()
-    private val searchesHeard: WifiManager.MulticastLock? by lazy {
-        context.applicationContext
-            .getSystemService(WifiManager::class.java)
-            ?.createMulticastLock("resonate-catalog")
-            ?.apply { setReferenceCounted(false) }
-    }
+    private val searchesHeard = multicastHearing<MobilePlayer>(context, "resonate-catalog")
 
     fun begin(native: MobilePlayer) {
+        searchesHeard.begin(native)
         val kept = mutableName.value
         if (kept.isNotEmpty()) {
             try {
@@ -37,7 +32,7 @@ class CatalogOffering(
         }
         if (settings.getBoolean(SHARES_THE_CATALOG, false)) {
             try {
-                hearSearches(true)
+                searchesHeard.hear(native, true)
                 native.shareCatalogOnNetwork(true)
             } catch (failure: Exception) {
                 library.report(failure)
@@ -49,7 +44,7 @@ class CatalogOffering(
     fun share(on: Boolean) {
         library.request { native ->
             try {
-                if (on) hearSearches(true)
+                if (on) searchesHeard.hear(native, true)
                 native.shareCatalogOnNetwork(on)
                 settings.edit().putBoolean(SHARES_THE_CATALOG, on).apply()
             } finally {
@@ -71,19 +66,13 @@ class CatalogOffering(
     }
 
     fun stop() {
-        hearSearches(false)
+        searchesHeard.stop()
         mutableShared.value = false
     }
 
     private fun settle(native: MobilePlayer) {
         val shared = native.catalogSharedOnNetwork()
-        hearSearches(shared)
+        searchesHeard.hear(native, shared)
         mutableShared.value = shared
-    }
-
-    private fun hearSearches(hear: Boolean) {
-        val lock = searchesHeard ?: return
-        if (hear && !lock.isHeld) lock.acquire()
-        if (!hear && lock.isHeld) lock.release()
     }
 }

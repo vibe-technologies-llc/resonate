@@ -2,7 +2,6 @@ package org.resonate.android
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.net.wifi.WifiManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,14 +37,10 @@ class NetworkRenderers(
     val addresses = mutableAddresses.asStateFlow()
     private val mutableReceiverAddresses = MutableStateFlow<List<String>>(emptyList())
     val receiverAddresses = mutableReceiverAddresses.asStateFlow()
-    private val searchesHeard: WifiManager.MulticastLock? by lazy {
-        context.applicationContext
-            .getSystemService(WifiManager::class.java)
-            ?.createMulticastLock("resonate-renderers")
-            ?.apply { setReferenceCounted(false) }
-    }
+    private val searchesHeard = multicastHearing<MobilePlayer>(context, "resonate-renderers")
 
     fun begin(native: MobilePlayer) {
+        searchesHeard.begin(native)
         for (address in savedAddresses()) {
             try {
                 native.addRendererAddress(address)
@@ -72,7 +67,7 @@ class NetworkRenderers(
 
     fun look(on: Boolean) {
         library.request { native ->
-            hearSearches(on)
+            searchesHeard.hear(native, on)
             try {
                 native.lookForRenderers(on)
                 settings.edit().putBoolean(LOOKS_FOR_RENDERERS, on).apply()
@@ -149,7 +144,7 @@ class NetworkRenderers(
     }
 
     fun stop() {
-        hearSearches(false)
+        searchesHeard.stop()
         mutableLooking.value = false
         mutableListed.value = emptyList()
         mutableAddresses.value = emptyList()
@@ -179,17 +174,11 @@ class NetworkRenderers(
 
     private fun settle(native: MobilePlayer) {
         val looking = native.lookingForRenderers()
-        hearSearches(looking)
+        searchesHeard.hear(native, looking)
         mutableLooking.value = looking
         mutableListed.value = native.renderers()
         mutableAddresses.value = native.rendererAddresses()
         mutableReceiverAddresses.value = native.receiverAddresses()
         mutableLearnt.value = native.renderersLearnt()
-    }
-
-    private fun hearSearches(hear: Boolean) {
-        val lock = searchesHeard ?: return
-        if (hear && !lock.isHeld) lock.acquire()
-        if (!hear && lock.isHeld) lock.release()
     }
 }

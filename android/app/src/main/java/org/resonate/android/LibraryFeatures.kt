@@ -8,7 +8,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.SystemClock
 import android.provider.DocumentsContract
@@ -313,12 +312,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private val syncAccess = Mutex()
     private var syncPolling: Job? = null
     private var network: ConnectivityManager.NetworkCallback? = null
-    private val beaconsHeard: WifiManager.MulticastLock? by lazy {
-        context.applicationContext
-            .getSystemService(WifiManager::class.java)
-            ?.createMulticastLock("resonate-sync")
-            ?.apply { setReferenceCounted(false) }
-    }
+    private val beaconsHeard = multicastHearing<MobilePlayer>(context, "resonate-sync")
     @Volatile private var unmetered = false
     @Volatile private var connection = ConnectionMeter.UNKNOWN
     @Volatile private var foreground = true
@@ -341,6 +335,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun routeInUse(): OutputRoute? = routes.routeNow()
 
     fun initialize(native: MobilePlayer) {
+        beaconsHeard.begin(native)
         room.restore(native)
         zones.bindRoutes(native, outputsNow())
         renderers.begin(native)
@@ -953,19 +948,13 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 syncConfig.value = kept
             }
             native.syncNetwork(unmetered)
-            hearBeacons(status.standing != SyncStanding.OFF)
+            beaconsHeard.hear(native, status.standing != SyncStanding.OFF)
             syncStatus.value = status
             paceInBackground(config)
         } catch (failure: Exception) {
             syncStatus.value = native.syncStatus()
             throw failure
         }
-    }
-
-    private fun hearBeacons(hear: Boolean) {
-        val lock = beaconsHeard ?: return
-        if (hear && !lock.isHeld) lock.acquire()
-        if (!hear && lock.isHeld) lock.release()
     }
 
     private fun watchNetwork() {
@@ -2238,7 +2227,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
         }
         network = null
-        hearBeacons(false)
+        beaconsHeard.stop()
         renderers.stop()
         catalogOffering.stop()
         unmetered = false

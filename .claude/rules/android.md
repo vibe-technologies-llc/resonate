@@ -491,7 +491,10 @@ those found, read every two seconds while the switch is on and the sheet open. E
 host) and, on one, *Play on this phone*; the row names the renderer before the device
 (`ZonePlan.heardOn`). The *Audio output* page takes its zone off a renderer before binding the device.
 Kotlin holds a `WifiManager.MulticastLock` (`resonate-renderers`, apart from sync's) exactly while the
-boundary searches, released at `stop`. A song played in place holds a `WifiLock` (`StreamingWifi`,
+boundary searches, released at `stop`. **Every multicast lock is a `MulticastHearing`**, which takes,
+under one monitor, only what the engine `begin` named asks and refuses everything once `stop` ran, so a
+settle that ends after `stop` behind a native call cancellation cannot stop never takes the lock again,
+and an earlier engine's late answer moves nothing the open one set (`MulticastHearingTest`). A song played in place holds a `WifiLock` (`StreamingWifi`,
 `resonate-streaming`, under `WAKE_LOCK`) while the transport plays or loads it, released at pause, stop
 and `handleRelease`, so power saving with the screen off does not starve a hi-res stream
 (`StreamingWifiTest`). Below the switch, *Add a renderer by address*
@@ -1638,7 +1641,7 @@ Download sources, read by `StoredChoices.downloadOnMetered`, which reads an olde
 `configureDownloadOnMetered` at
 start and on a change, and `tick` reads `downloadsWaitOnTheMeter()` while a download runs so the
 download card says *Waiting for a network that is not metered* (`DownloadPlan.meterLine`). While sync runs Kotlin holds a
-`WifiManager.MulticastLock` (`CHANGE_WIFI_MULTICAST_STATE`, released when sync stops and when the
+`WifiManager.MulticastLock` (`CHANGE_WIFI_MULTICAST_STATE`, a `MulticastHearing` begun by `initialize`, released when sync stops and when the
 repository closes), so beacons and Bonjour from devices on the same network are heard (`sync.md`'s *Nearby*); the status text counts them when the server is away and a
 playlist's menu offers fetching from a nearby device whatever the server's standing. Kotlin polls the status every two
 seconds while the Activity is started (30 s otherwise), refreshes the library and playlists when
