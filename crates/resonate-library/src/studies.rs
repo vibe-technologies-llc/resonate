@@ -496,7 +496,7 @@ pub(crate) fn study_of(
 pub(crate) fn album_loudness(connection: &Connection, track: TrackId) -> Result<Option<f64>> {
     let mut statement = connection
         .prepare_cached(
-            "SELECT t.duration, t.sample_rate, s.loudness
+            "SELECT t.duration, t.sample_rate, s.track_id IS NOT NULL, s.loudness
                FROM tracks t LEFT JOIN track_studies s ON s.track_id = t.id
               WHERE t.album_id = (SELECT album_id FROM tracks WHERE id = ?1)
                 AND t.alternative_of IS NULL",
@@ -507,7 +507,8 @@ pub(crate) fn album_loudness(connection: &Connection, track: TrackId) -> Result<
             Ok((
                 row.get::<_, Option<i64>>(0)?,
                 row.get::<_, i64>(1)?,
-                row.get::<_, Option<f64>>(2)?,
+                row.get::<_, bool>(2)?,
+                row.get::<_, Option<f64>>(3)?,
             ))
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
@@ -515,8 +516,14 @@ pub(crate) fn album_loudness(connection: &Connection, track: TrackId) -> Result<
 
     let mut energy = 0.0;
     let mut seconds = 0.0;
-    for (frames, rate, loudness) in rows {
-        let (Some(frames), Some(loudness)) = (frames.filter(|frames| *frames > 0), loudness) else {
+    for (frames, rate, studied, loudness) in rows {
+        if !studied {
+            return Ok(None);
+        }
+        let Some(loudness) = loudness else {
+            continue;
+        };
+        let Some(frames) = frames.filter(|frames| *frames > 0) else {
             return Ok(None);
         };
         if rate <= 0 {

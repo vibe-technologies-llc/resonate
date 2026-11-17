@@ -168,7 +168,14 @@ fn song(ceiling_hz: f32, seed: u32, tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
 }
 
 fn song_in(sampled: Sampled, ceiling_hz: f32, seed: u32, tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
-    let period = noise_up_to(ceiling_hz, seed);
+    wave(sampled, &noise_up_to(ceiling_hz, seed), tags)
+}
+
+fn silence(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
+    wave(Sampled::Sixteen, &[0.0; PERIOD], tags)
+}
+
+fn wave(sampled: Sampled, period: &[f32], tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
     let mut data = Vec::new();
     for frame in 0..(RATE * SECONDS) as usize {
         sampled.write(&mut data, period[frame % PERIOD]);
@@ -504,6 +511,43 @@ fn a_studied_track_is_hinted_the_gain_its_loudness_and_its_albums_ask_for() -> R
             .album,
         None,
         "an album one of whose tracks is unstudied was hinted a gain for all of it"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_silent_track_studied_leaves_its_album_the_gain_the_others_ask_for() -> Result<()> {
+    let tree = Tree::new();
+    let first = tree.write(
+        "1.wav",
+        &song(
+            21_700.0,
+            1,
+            &[(TITLE, "One"), (ARTIST, "Ada"), (ALBUM, "Orbits")],
+        ),
+    );
+    let spacer = tree.write(
+        "2.wav",
+        &silence(&[(TITLE, "Spacer"), (ARTIST, "Ada"), (ALBUM, "Orbits")]),
+    );
+    let library = scanned(&tree)?;
+    enriched(&library, Silent::new(), Fingerprinters::none())?;
+
+    let (_, silent) = library
+        .study_of(&MediaLocation::local(&spacer), None)?
+        .expect("the spacer is studied");
+    let hints = library.hinting().hints(&MediaLocation::local(&first), None);
+    let track = hints.measured.track.expect("a measured track gain").get();
+    let album = hints
+        .measured
+        .album
+        .expect("an album whose silent track was studied is hinted a gain")
+        .get();
+
+    assert_eq!(silent.loudness, None);
+    assert!(
+        (album - track).abs() < 1e-3,
+        "an album of one sounding track and one gated out was hinted {album} dB against {track} dB"
     );
     Ok(())
 }

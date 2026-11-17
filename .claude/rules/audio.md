@@ -1410,7 +1410,9 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   peak; no gain declared takes `untagged` with no peak (the one case the per-sample limiter is for).
   **A studied track declaring no gain is levelled by what was measured** (`TrackHints::measured`, a
   `MeasuredGain`: -18 LUFS less integrated loudness; album: duration-weighted energy mean, only where
-  every album track is studied), used by `engine::tagged_or_measured` only where tags carry neither
+  every album track is studied, a studied track whose every block was gated out (a pregap, a hidden
+  track's spacer, its `loudness` NULL beside a study row) weighing nothing, as BS.1770's gate would
+  (`a_silent_track_studied_leaves_its_album_the_gain_the_others_ask_for`)), used by `engine::tagged_or_measured` only where tags carry neither
   gain (the vault strips a delivered row's tags).
 - **The plan alone judges a gain stage; a converting plan always carries one.** `gain_config`
   answers `None` at full volume under unity gain, but `plan_for` asks for a stage anyway wherever the
