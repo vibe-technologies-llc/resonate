@@ -439,16 +439,63 @@ impl Infix {
         indexed_column: "key",
     };
 
+    pub(super) const OF_A_KEPT_SONG: Infix = Infix {
+        column: "s.folded",
+        owner: "s.id",
+        index: "discography_songs_fts",
+        indexed_column: "folded",
+    };
+
     pub(super) fn holding(&self, folded: &str, binds: &mut Vec<Value>) -> String {
-        binds.push(Value::Text(playlist::anywhere(folded)));
-        if folded.chars().count() < Self::FEWEST_LETTERS_INDEXED {
-            return format!("{} LIKE ? ESCAPE '\\'", self.column);
+        if !Self::is_indexed(folded) {
+            return Self::like(self.column, folded, binds);
         }
 
         format!(
-            "{} IN (SELECT rowid FROM {} WHERE {} LIKE ? ESCAPE '\\')",
-            self.owner, self.index, self.indexed_column
+            "{} IN (SELECT rowid FROM {} WHERE {})",
+            self.owner,
+            self.index,
+            Self::like(self.indexed_column, folded, binds)
         )
+    }
+
+    pub(super) fn holding_every(&self, pieces: &[String], binds: &mut Vec<Value>) -> String {
+        let (indexed, unindexed): (Vec<&String>, Vec<&String>) =
+            pieces.iter().partition(|piece| Self::is_indexed(piece));
+        let mut held = Vec::new();
+
+        if !indexed.is_empty() {
+            let every = indexed
+                .iter()
+                .map(|piece| Self::like(self.indexed_column, piece, binds))
+                .collect::<Vec<String>>()
+                .join(" AND ");
+            held.push(format!(
+                "{} IN (SELECT rowid FROM {} WHERE {every})",
+                self.owner, self.index
+            ));
+        }
+        held.extend(
+            unindexed
+                .iter()
+                .map(|piece| Self::like(self.column, piece, binds)),
+        );
+
+        held.join(" AND ")
+    }
+
+    fn is_indexed(folded: &str) -> bool {
+        folded.chars().count() >= Self::FEWEST_LETTERS_INDEXED
+    }
+
+    fn like(column: &str, folded: &str, binds: &mut Vec<Value>) -> String {
+        let pattern = playlist::anywhere(folded);
+        let escape = match playlist::escapes_a_letter(&pattern) {
+            true => " ESCAPE '\\'",
+            false => "",
+        };
+        binds.push(Value::Text(pattern));
+        format!("{column} LIKE ?{escape}")
     }
 
     pub(super) fn held_by_a_release_or_its_artist(folded: &str, binds: &mut Vec<Value>) -> String {

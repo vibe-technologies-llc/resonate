@@ -61,7 +61,142 @@ const MIGRATIONS: &[&str] = &[
     SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE,
     WHERE_A_LOSSLESS_COPY_WAS_LOOKED_FOR_IS_KEPT,
     A_SONG_DELETED_EVERYWHERE_WAITS_TO_BE_TOLD,
+    ANSWERS_ARE_READ_IN_THE_ORDER_THEY_WERE_TAKEN,
+    A_KEPT_SONG_IS_LOOKED_UP_BY_A_PIECE_OF_A_WORD,
+    A_LYRIC_LET_GO_IS_SWEPT_BY_ITS_KEY,
 ];
+
+const ANSWERS_ARE_READ_IN_THE_ORDER_THEY_WERE_TAKEN: &str = "
+CREATE INDEX track_studies_by_studied ON track_studies(studied_under, studied);
+CREATE INDEX lyrics_kept_by_taken ON lyrics_kept(taken) WHERE text IS NOT NULL;
+";
+
+const A_KEPT_SONG_IS_LOOKED_UP_BY_A_PIECE_OF_A_WORD: &str = "
+CREATE TABLE discography_songs_numbered (
+    id             INTEGER PRIMARY KEY,
+    release_group  TEXT NOT NULL,
+    recording_mbid TEXT NOT NULL,
+    release_mbid   TEXT NOT NULL,
+    release_title  TEXT NOT NULL,
+    released       TEXT,
+    kind           TEXT,
+    disc           INTEGER NOT NULL,
+    position       INTEGER NOT NULL,
+    title          TEXT NOT NULL,
+    artist         TEXT NOT NULL,
+    length_ms      INTEGER,
+    words          TEXT NOT NULL,
+    folded         TEXT NOT NULL,
+    UNIQUE (release_group, recording_mbid)
+) STRICT;
+INSERT INTO discography_songs_numbered
+       (release_group, recording_mbid, release_mbid, release_title, released, kind, disc,
+        position, title, artist, length_ms, words, folded)
+SELECT release_group, recording_mbid, release_mbid, release_title, released, kind, disc,
+       position, title, artist, length_ms, words, folded
+  FROM discography_songs;
+DROP TABLE discography_songs;
+ALTER TABLE discography_songs_numbered RENAME TO discography_songs;
+CREATE INDEX discography_songs_by_recording ON discography_songs(recording_mbid);
+CREATE VIRTUAL TABLE discography_songs_fts USING fts5(
+         folded, content = 'discography_songs', content_rowid = 'id', tokenize = 'trigram'
+     );
+INSERT INTO discography_songs_fts (discography_songs_fts) VALUES ('rebuild');
+CREATE TRIGGER discography_songs_fts_added AFTER INSERT ON discography_songs BEGIN
+         INSERT INTO discography_songs_fts (rowid, folded) VALUES (new.id, new.folded);
+     END;
+CREATE TRIGGER discography_songs_fts_gone AFTER DELETE ON discography_songs BEGIN
+         INSERT INTO discography_songs_fts (discography_songs_fts, rowid, folded)
+         VALUES ('delete', old.id, old.folded);
+     END;
+CREATE TRIGGER discography_songs_fts_refolded AFTER UPDATE OF folded ON discography_songs BEGIN
+         INSERT INTO discography_songs_fts (discography_songs_fts, rowid, folded)
+         VALUES ('delete', old.id, old.folded);
+         INSERT INTO discography_songs_fts (rowid, folded) VALUES (new.id, new.folded);
+     END;
+";
+
+const A_LYRIC_LET_GO_IS_SWEPT_BY_ITS_KEY: &str = "
+CREATE TABLE lyric_keys_let_go (
+    path       TEXT NOT NULL,
+    span_start INTEGER NOT NULL,
+    PRIMARY KEY (path, span_start)
+) STRICT, WITHOUT ROWID;
+INSERT INTO lyric_keys_let_go (path, span_start)
+SELECT path, span_start FROM lyrics_kept
+UNION SELECT path, span_start FROM lyrics_refused
+UNION SELECT path, span_start FROM lyrics_ahead
+EXCEPT SELECT path, span_start FROM tracks;
+CREATE TRIGGER lyric_keys_let_go_with_a_track AFTER DELETE ON tracks
+     WHEN EXISTS (SELECT 1 FROM lyrics_kept WHERE path = old.path AND span_start = old.span_start)
+       OR EXISTS (SELECT 1 FROM lyrics_refused WHERE path = old.path AND span_start = old.span_start)
+       OR EXISTS (SELECT 1 FROM lyrics_ahead WHERE path = old.path AND span_start = old.span_start)
+     BEGIN
+         INSERT INTO lyric_keys_let_go (path, span_start)
+         SELECT old.path, old.span_start
+          WHERE NOT EXISTS (SELECT 1 FROM lyric_keys_let_go
+                             WHERE path = old.path AND span_start = old.span_start);
+     END;
+CREATE TRIGGER lyric_keys_let_go_as_a_track_moves AFTER UPDATE OF path, span_start ON tracks
+     WHEN (old.path IS NOT new.path OR old.span_start IS NOT new.span_start)
+      AND (EXISTS (SELECT 1 FROM lyrics_kept WHERE path = old.path AND span_start = old.span_start)
+       OR EXISTS (SELECT 1 FROM lyrics_refused WHERE path = old.path AND span_start = old.span_start)
+       OR EXISTS (SELECT 1 FROM lyrics_ahead WHERE path = old.path AND span_start = old.span_start))
+     BEGIN
+         INSERT INTO lyric_keys_let_go (path, span_start)
+         SELECT old.path, old.span_start
+          WHERE NOT EXISTS (SELECT 1 FROM lyric_keys_let_go
+                             WHERE path = old.path AND span_start = old.span_start);
+     END;
+CREATE TRIGGER lyric_keys_kept_unheld AFTER INSERT ON lyrics_kept
+     WHEN NOT EXISTS (SELECT 1 FROM tracks WHERE path = new.path AND span_start = new.span_start)
+     BEGIN
+         INSERT INTO lyric_keys_let_go (path, span_start)
+         SELECT new.path, new.span_start
+          WHERE NOT EXISTS (SELECT 1 FROM lyric_keys_let_go
+                             WHERE path = new.path AND span_start = new.span_start);
+     END;
+CREATE TRIGGER lyric_keys_kept_moved_unheld AFTER UPDATE OF path, span_start ON lyrics_kept
+     WHEN NOT EXISTS (SELECT 1 FROM tracks WHERE path = new.path AND span_start = new.span_start)
+     BEGIN
+         INSERT INTO lyric_keys_let_go (path, span_start)
+         SELECT new.path, new.span_start
+          WHERE NOT EXISTS (SELECT 1 FROM lyric_keys_let_go
+                             WHERE path = new.path AND span_start = new.span_start);
+     END;
+CREATE TRIGGER lyric_keys_refused_unheld AFTER INSERT ON lyrics_refused
+     WHEN NOT EXISTS (SELECT 1 FROM tracks WHERE path = new.path AND span_start = new.span_start)
+     BEGIN
+         INSERT INTO lyric_keys_let_go (path, span_start)
+         SELECT new.path, new.span_start
+          WHERE NOT EXISTS (SELECT 1 FROM lyric_keys_let_go
+                             WHERE path = new.path AND span_start = new.span_start);
+     END;
+CREATE TRIGGER lyric_keys_refused_moved_unheld AFTER UPDATE OF path, span_start ON lyrics_refused
+     WHEN NOT EXISTS (SELECT 1 FROM tracks WHERE path = new.path AND span_start = new.span_start)
+     BEGIN
+         INSERT INTO lyric_keys_let_go (path, span_start)
+         SELECT new.path, new.span_start
+          WHERE NOT EXISTS (SELECT 1 FROM lyric_keys_let_go
+                             WHERE path = new.path AND span_start = new.span_start);
+     END;
+CREATE TRIGGER lyric_keys_ahead_unheld AFTER INSERT ON lyrics_ahead
+     WHEN NOT EXISTS (SELECT 1 FROM tracks WHERE path = new.path AND span_start = new.span_start)
+     BEGIN
+         INSERT INTO lyric_keys_let_go (path, span_start)
+         SELECT new.path, new.span_start
+          WHERE NOT EXISTS (SELECT 1 FROM lyric_keys_let_go
+                             WHERE path = new.path AND span_start = new.span_start);
+     END;
+CREATE TRIGGER lyric_keys_ahead_moved_unheld AFTER UPDATE OF path, span_start ON lyrics_ahead
+     WHEN NOT EXISTS (SELECT 1 FROM tracks WHERE path = new.path AND span_start = new.span_start)
+     BEGIN
+         INSERT INTO lyric_keys_let_go (path, span_start)
+         SELECT new.path, new.span_start
+          WHERE NOT EXISTS (SELECT 1 FROM lyric_keys_let_go
+                             WHERE path = new.path AND span_start = new.span_start);
+     END;
+";
 
 const A_SONG_DELETED_EVERYWHERE_WAITS_TO_BE_TOLD: &str = "
 CREATE TABLE songs_deleted_everywhere (
@@ -2002,6 +2137,108 @@ mod tests {
         assert_eq!(answered(1), Some(1));
         assert_eq!(answered(2), Some(500));
         assert_eq!(answered(3), None);
+    }
+
+    #[test]
+    fn a_catalog_from_before_its_answers_and_kept_songs_were_indexed_keeps_them_and_finds_them() {
+        let connection = Connection::open_in_memory().expect("a catalog");
+        connection.execute_batch(V1).expect("the baseline");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == ANSWERS_ARE_READ_IN_THE_ORDER_THEY_WERE_TAKEN)
+            .expect("the first indexing step");
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("an earlier migration");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO tracks (path, title, sample_rate, channels, sample_format, codec,
+                                     file_size, modified, added, seen)
+                 VALUES ('/music/held.flac', 'Held', 44100, 2, 16, 1, 100, 1, 1, 1);
+                 INSERT INTO lyrics_kept (path, span_start, text, taken)
+                 VALUES ('/music/held.flac', 0, 'la', 1), ('/music/gone.flac', 0, 'la', 1);
+                 INSERT INTO lyrics_ahead (path, span_start, ahead_ms)
+                 VALUES ('/music/ahead.flac', 0, 50);
+                 INSERT INTO discography_songs
+                        (release_group, recording_mbid, release_mbid, release_title, released, kind,
+                         disc, position, title, artist, length_ms, words, folded)
+                 VALUES ('g', 'r1', 'm', 'Odes', '1999', 'Album', 1, 1, 'Daybreak', 'Ada', 180000,
+                         'daybreak', ' daybreak ada odes '),
+                        ('g', 'r2', 'm', 'Odes', '1999', 'Album', 1, 2, 'Nightfall', 'Ada', NULL,
+                         'nightfall', ' nightfall ada odes ');",
+            )
+            .expect("a catalog of the earlier shape");
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+
+        lay_out(&connection).expect("the indexing steps");
+
+        let strings = |sql: &str| -> Vec<String> {
+            connection
+                .prepare(sql)
+                .and_then(|mut query| {
+                    query
+                        .query_map([], |row| row.get(0))
+                        .and_then(Iterator::collect)
+                })
+                .expect("the rows")
+        };
+        let indexes = strings("SELECT name FROM sqlite_master WHERE type = 'index' ORDER BY name");
+
+        assert!(indexes.contains(&"track_studies_by_studied".to_owned()));
+        assert!(indexes.contains(&"lyrics_kept_by_taken".to_owned()));
+        assert!(indexes.contains(&"discography_songs_by_recording".to_owned()));
+        assert_eq!(
+            strings(
+                "SELECT recording_mbid || ':' || title || ':' || coalesce(length_ms, '-')
+                   FROM discography_songs ORDER BY release_group, recording_mbid"
+            ),
+            vec!["r1:Daybreak:180000".to_owned(), "r2:Nightfall:-".to_owned()]
+        );
+        assert_eq!(
+            strings(
+                "SELECT s.recording_mbid FROM discography_songs s
+                  WHERE s.id IN (SELECT rowid FROM discography_songs_fts WHERE folded LIKE '% nigh%')"
+            ),
+            vec!["r2".to_owned()]
+        );
+        assert_eq!(
+            strings("SELECT path FROM lyric_keys_let_go ORDER BY path"),
+            vec![
+                "/music/ahead.flac".to_owned(),
+                "/music/gone.flac".to_owned()
+            ]
+        );
+
+        connection
+            .execute_batch(
+                "DELETE FROM discography_songs WHERE recording_mbid = 'r2';
+                 INSERT INTO discography_songs
+                        (release_group, recording_mbid, release_mbid, release_title, disc,
+                         position, title, artist, words, folded)
+                 VALUES ('h', 'r3', 'n', 'Later', 1, 1, 'Nightjar', 'Ada', 'nightjar',
+                         ' nightjar ada later ');",
+            )
+            .expect("a discography landed again");
+        connection
+            .execute_batch(store::ORPHANS)
+            .expect("the orphans swept");
+
+        assert_eq!(
+            strings(
+                "SELECT s.recording_mbid FROM discography_songs s
+                  WHERE s.id IN (SELECT rowid FROM discography_songs_fts WHERE folded LIKE '% nigh%')"
+            ),
+            vec!["r3".to_owned()]
+        );
+        assert_eq!(
+            strings("SELECT path FROM lyrics_kept"),
+            vec!["/music/held.flac".to_owned()]
+        );
+        assert!(strings("SELECT path FROM lyrics_ahead").is_empty());
     }
 
     fn plan_of(connection: &Connection, sql: &str) -> String {

@@ -438,7 +438,10 @@ Failures are a `Refused` the implementation logs (errors.md: no boxed error). **
 (`takes_answers`, `answers_after`, `take_answer`) are the library's `answers.rs`
 (`Library::answers_to_share`, `take_shared_answer`): kept lyrics with text and studies at this
 build's `JUDGED_UNDER` with whole band levels of a whole-file row with a packets digest, in `at`
-order; **covers** (`covers_wanted`, `cover`, `take_cover`; default none) are the library's
+order, each read off an index in that order (`lyrics_kept_by_taken`, partial on a kept text, and
+`track_studies_by_studied` on `(studied_under, studied)`), so a look that follows every revision
+reads only what was kept since its mark
+(`a_sync_look_reads_the_answers_kept_since_its_mark_off_an_index_in_their_order`); **covers** (`covers_wanted`, `cover`, `take_cover`; default none) are the library's
 `Library::covers_wanted` (the release ids of albums holding no picture, newest album first),
 `cover_to_share` (the picture of an album of that release id, a closest pressing's only where the
 picture is not the file's own) and `take_shared_cover` (sniffed as an image, else refused, and landed

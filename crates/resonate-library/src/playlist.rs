@@ -234,6 +234,10 @@ pub(crate) fn anywhere(word: &str) -> String {
     held
 }
 
+pub(crate) fn escapes_a_letter(pattern: &str) -> bool {
+    pattern.contains(LIKE_ESCAPE)
+}
+
 pub fn one(inner: &Inner, id: PlaylistId) -> Result<Option<Playlist>> {
     let found = inner.read(|connection| {
         connection

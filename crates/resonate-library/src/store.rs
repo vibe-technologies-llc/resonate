@@ -55,15 +55,14 @@ DELETE FROM artists
    AND id NOT IN (SELECT artist_id FROM tracks WHERE artist_id IS NOT NULL)
    AND id NOT IN (SELECT artist_id FROM albums WHERE artist_id IS NOT NULL)
    AND id NOT IN (SELECT artist_id FROM track_credits);
-DELETE FROM lyrics_kept
- WHERE NOT EXISTS (SELECT 1 FROM tracks t
-                    WHERE t.path = lyrics_kept.path AND t.span_start = lyrics_kept.span_start);
+DELETE FROM lyric_keys_let_go
+ WHERE EXISTS (SELECT 1 FROM tracks t
+                WHERE t.path = lyric_keys_let_go.path AND t.span_start = lyric_keys_let_go.span_start);
+DELETE FROM lyrics_kept WHERE (path, span_start) IN (SELECT path, span_start FROM lyric_keys_let_go);
 DELETE FROM lyrics_refused
- WHERE NOT EXISTS (SELECT 1 FROM tracks t
-                    WHERE t.path = lyrics_refused.path AND t.span_start = lyrics_refused.span_start);
-DELETE FROM lyrics_ahead
- WHERE NOT EXISTS (SELECT 1 FROM tracks t
-                    WHERE t.path = lyrics_ahead.path AND t.span_start = lyrics_ahead.span_start);
+ WHERE (path, span_start) IN (SELECT path, span_start FROM lyric_keys_let_go);
+DELETE FROM lyrics_ahead WHERE (path, span_start) IN (SELECT path, span_start FROM lyric_keys_let_go);
+DELETE FROM lyric_keys_let_go;
 DELETE FROM likenesses
  WHERE picture NOT IN (SELECT ",
     the_picture_of!("a"),
@@ -2856,6 +2855,86 @@ mod tests {
             packets: None,
             walked: None,
         }
+    }
+
+    fn laid_out() -> Connection {
+        let connection = Connection::open_in_memory().expect("a catalog");
+        crate::schema::configure(&connection, crate::schema::Role::Writing).expect("the pragmas");
+        crate::schema::lay_out(&connection).expect("the schema applies");
+        connection
+    }
+
+    #[test]
+    fn the_orphan_sweep_reads_only_the_lyric_keys_a_track_let_go() {
+        let connection = laid_out();
+
+        for statement in ORPHANS
+            .split(';')
+            .filter(|statement| statement.contains("lyric"))
+        {
+            let plan: Vec<String> = connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {statement}"))
+                .and_then(|mut plan| plan.query_map([], |row| row.get::<_, String>(3))?.collect())
+                .expect("a plan");
+
+            for table in ["lyrics_kept", "lyrics_refused", "lyrics_ahead"] {
+                assert!(
+                    !plan.iter().any(|step| step == &format!("SCAN {table}")),
+                    "{statement} reads every row of {table}: {plan:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_lyric_goes_with_the_track_that_held_its_key_and_stays_where_one_holds_it_again() {
+        let mut connection = laid_out();
+        connection
+            .execute_batch(
+                "INSERT INTO tracks (id, path, title, sample_rate, channels, sample_format, codec,
+                                     file_size, modified, added, seen)
+                 VALUES (1, '/music/kept.flac', 'Kept', 44100, 2, 16, 1, 1, 1, 1, 1),
+                        (2, '/music/moved.flac', 'Moved', 44100, 2, 16, 1, 1, 1, 1, 1),
+                        (3, '/music/gone.flac', 'Gone', 44100, 2, 16, 1, 1, 1, 1, 1),
+                        (4, '/music/back.flac', 'Back', 44100, 2, 16, 1, 1, 1, 1, 1);
+                 INSERT INTO lyrics_kept (path, span_start, text, taken)
+                 VALUES ('/music/kept.flac', 0, 'la', 1), ('/music/moved.flac', 0, 'la', 1),
+                        ('/music/gone.flac', 0, 'la', 1), ('/music/back.flac', 0, 'la', 1),
+                        ('/elsewhere/played.flac', 0, 'la', 1);
+                 INSERT INTO lyrics_refused (path, span_start, refused, refusals)
+                 VALUES ('/music/gone.flac', 0, 1, 1), ('/music/kept.flac', 0, 1, 1);
+                 INSERT INTO lyrics_ahead (path, span_start, ahead_ms)
+                 VALUES ('/music/moved.flac', 0, 50), ('/music/kept.flac', 0, 50);
+                 UPDATE tracks SET path = '/music/elsewhere.flac' WHERE id = 2;
+                 DELETE FROM tracks WHERE id IN (3, 4);
+                 INSERT INTO tracks (id, path, title, sample_rate, channels, sample_format, codec,
+                                     file_size, modified, added, seen)
+                 VALUES (5, '/music/back.flac', 'Back', 44100, 2, 16, 1, 1, 1, 1, 1);",
+            )
+            .expect("a catalog whose tracks moved and went");
+
+        let transaction = connection.transaction().expect("a write");
+        sweep_orphans(&transaction).expect("the sweep");
+        transaction.commit().expect("the sweep is kept");
+
+        let paths = |table: &str| -> Vec<String> {
+            connection
+                .prepare(&format!("SELECT path FROM {table} ORDER BY path"))
+                .and_then(|mut query| {
+                    query
+                        .query_map([], |row| row.get(0))
+                        .and_then(Iterator::collect)
+                })
+                .expect("the rows")
+        };
+
+        assert_eq!(
+            paths("lyrics_kept"),
+            vec!["/music/back.flac".to_owned(), "/music/kept.flac".to_owned()]
+        );
+        assert_eq!(paths("lyrics_refused"), vec!["/music/kept.flac".to_owned()]);
+        assert_eq!(paths("lyrics_ahead"), vec!["/music/kept.flac".to_owned()]);
+        assert!(paths("lyric_keys_let_go").is_empty());
     }
 
     #[test]

@@ -688,15 +688,7 @@ impl Library {
         if words.is_empty() {
             return Ok(Vec::new());
         }
-        let sought = vec!["instr(s.folded, ?) > 0"; words.len()].join(" AND ");
-        let sql = format!(
-            "SELECT {} FROM discography_songs s WHERE {sought} AND {SONG_HELD_NOWHERE})
-               ORDER BY s.kind IS NOT 'Album', s.released IS NULL, s.released, s.disc, s.position
-               LIMIT ?",
-            songs::SONG_COLUMNS
-        );
-        let mut binds: Vec<Value> = words.into_iter().map(Value::Text).collect();
-        binds.push(Value::Integer(SONGS_SOUGHT_AT_MOST));
+        let (sql, binds) = songs_kept_holding(&words);
 
         let found = self.inner.read(|connection| {
             rows(connection, &sql, binds, |row| {
@@ -810,4 +802,17 @@ impl Library {
             releases: u64::from(releases),
         })
     }
+}
+
+pub(super) fn songs_kept_holding(words: &[String]) -> (String, Vec<Value>) {
+    let mut binds = Vec::new();
+    let sought = Infix::OF_A_KEPT_SONG.holding_every(words, &mut binds);
+    let sql = format!(
+        "SELECT {} FROM discography_songs s WHERE {sought} AND {SONG_HELD_NOWHERE})
+           ORDER BY s.kind IS NOT 'Album', s.released IS NULL, s.released, s.disc, s.position
+           LIMIT ?",
+        songs::SONG_COLUMNS
+    );
+    binds.push(Value::Integer(SONGS_SOUGHT_AT_MOST));
+    (sql, binds)
 }

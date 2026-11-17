@@ -12,9 +12,13 @@ use resonate_core::{ArtistId, SampleFormat, TrackId};
 use rusqlite::params_from_iter;
 
 use super::{
+    following,
     ordered::{album_order_by, artist_order_by, order_by},
-    searched::{listing, matching_tracks, scoped, sought},
-    statements::{ALBUMS_NOT_HELD_BY_AN_ARTIST, MISSING_FROM_AN_ARTISTS_ALBUMS},
+    searched::{self, Infix, listing, matching_tracks, scoped, sought},
+    statements::{
+        ALBUMS_NOT_HELD_BY_AN_ARTIST, MISSING_FROM_AN_ARTISTS_ALBUMS, UNHELD_IN_ORDER,
+        UNHELD_RELEASES,
+    },
     *,
 };
 use crate::{
@@ -199,6 +203,111 @@ fn plan(library: &Library, query: &TrackQuery) -> Vec<String> {
                 .map_err(|source| Error::store(StoreOp::Query, source))
         })
         .expect("the planner answers for a listing it can prepare")
+}
+
+fn planned(library: &Library, sql: &str, binds: Vec<Value>) -> String {
+    library
+        .inner
+        .read(|connection| {
+            let mut statement = connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+            statement
+                .query_map(params_from_iter(binds), |row| row.get::<_, String>(3))
+                .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })
+        .expect("the planner answers")
+        .join("; ")
+}
+
+#[test]
+fn a_piece_of_a_word_is_looked_up_in_each_trigram_index_and_never_scanned_for() {
+    let library = Library::open_in_memory().expect("an in-memory catalog opens");
+    let (held, mut unheld_binds) = searched::unheld_holding(Some("daybreak"));
+    unheld_binds.push(Value::Integer(64));
+
+    let (kept_songs, kept_binds) =
+        following::songs_kept_holding(&[" dayb".to_owned(), " ho".to_owned()]);
+    let unheld = format!("{UNHELD_RELEASES}{held}{UNHELD_IN_ORDER}");
+
+    for (sql, binds, lookups) in [
+        (
+            kept_songs.as_str(),
+            kept_binds,
+            ["discography_songs_fts VIRTUAL TABLE INDEX 0:L0L0"].as_slice(),
+        ),
+        (
+            unheld.as_str(),
+            unheld_binds,
+            [
+                "artist_releases_fts VIRTUAL TABLE INDEX 0:L0",
+                "artists_key_fts VIRTUAL TABLE INDEX 0:L0",
+            ]
+            .as_slice(),
+        ),
+    ] {
+        let plan = planned(&library, sql, binds);
+
+        for lookup in lookups {
+            assert!(plan.contains(lookup), "no {lookup}: {plan}");
+        }
+        assert!(
+            !plan.split("; ").any(|step| step == "SCAN s"),
+            "every kept song is read: {plan}"
+        );
+    }
+}
+
+#[test]
+fn a_word_holding_a_wildcard_is_still_matched_letter_for_letter() {
+    let library = Library::open_in_memory().expect("an in-memory catalog opens");
+    library
+        .inner
+        .write(|transaction| {
+            transaction
+                .execute_batch(
+                    "INSERT INTO discography_songs
+                            (release_group, recording_mbid, release_mbid, release_title, disc,
+                             position, title, artist, words, folded)
+                     VALUES ('g', 'r1', 'm', 'Odes', 1, 1, '100% Pure', 'Ada', '100 pure',
+                             ' 100% pure ada odes '),
+                            ('g', 'r2', 'm', 'Odes', 1, 2, '1000 Pure', 'Ada', '1000 pure',
+                             ' 1000 pure ada odes ');",
+                )
+                .map_err(|source| Error::store(StoreOp::Insert, source))
+        })
+        .expect("two kept songs");
+
+    for (pieces, expected) in [
+        (vec![" 100%"], vec!["r1"]),
+        (vec![" pure"], vec!["r1", "r2"]),
+        (vec![" 1000"], vec!["r2"]),
+        (vec![" pure", " 1", " ada"], vec!["r1", "r2"]),
+        (vec![" 100%", " ada"], vec!["r1"]),
+        (vec![" 1"], vec!["r1", "r2"]),
+    ] {
+        let pieces: Vec<String> = pieces.into_iter().map(str::to_owned).collect();
+        let mut binds = Vec::new();
+        let holding = Infix::OF_A_KEPT_SONG.holding_every(&pieces, &mut binds);
+        let sql =
+            format!("SELECT s.recording_mbid FROM discography_songs s WHERE {holding} ORDER BY 1");
+
+        let found: Vec<String> = library
+            .inner
+            .read(|connection| {
+                let mut statement = connection
+                    .prepare(&sql)
+                    .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+                statement
+                    .query_map(params_from_iter(binds), |row| row.get::<_, String>(0))
+                    .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+                    .map_err(|source| Error::store(StoreOp::Query, source))
+            })
+            .expect("the songs");
+
+        assert_eq!(found, expected, "{pieces:?}");
+    }
 }
 
 #[test]

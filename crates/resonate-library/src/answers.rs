@@ -55,15 +55,44 @@ pub(crate) fn after(inner: &Inner, mark: i64, most: usize) -> Result<Vec<Answere
     Ok(answered)
 }
 
+fn lyrics_kept_since() -> String {
+    format!(
+        "SELECT k.taken, k.text, k.synced, {RECORDING_COLUMNS}
+           FROM lyrics_kept k JOIN tracks t ON t.path = k.path AND t.span_start = k.span_start
+           {RECORDING_JOINS}
+          WHERE k.text IS NOT NULL AND k.taken >= ?1
+          ORDER BY k.taken LIMIT ?2"
+    )
+}
+
+fn studies_kept_since() -> String {
+    format!(
+        "SELECT s.studied, t.packets, t.duration, t.sample_rate, s.verdict, s.cutoff_hz,
+                s.cutoff_drop, s.lossy_guess, s.upsampled_from, s.bits_in_use, s.declared_bits,
+                s.peak, s.rms, s.true_peak, s.loudness, s.loudness_range, s.dynamic_range,
+                s.clipped, s.mono_as_stereo, s.band_levels, {RECORDING_COLUMNS}
+           FROM track_studies s JOIN tracks t ON t.id = s.track_id
+           {RECORDING_JOINS}
+          WHERE s.studied >= ?1 AND s.studied_under = ?3 AND length(s.band_levels) = ?4
+            AND t.packets IS NOT NULL AND t.duration IS NOT NULL AND {WHOLE_FILE}
+          ORDER BY s.studied LIMIT ?2"
+    )
+}
+
+fn band_peaks_kept_since() -> String {
+    format!(
+        "SELECT s.studied, t.packets, t.duration, t.sample_rate, s.band_peaks, {RECORDING_COLUMNS}
+           FROM track_studies s JOIN tracks t ON t.id = s.track_id
+           {RECORDING_JOINS}
+          WHERE s.studied >= ?1 AND s.studied_under = ?3 AND length(s.band_peaks) = ?4
+            AND t.packets IS NOT NULL AND t.duration IS NOT NULL AND {WHOLE_FILE}
+          ORDER BY s.studied LIMIT ?2"
+    )
+}
+
 fn lyrics_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<Answered>> {
     let mut statement = connection
-        .prepare_cached(&format!(
-            "SELECT k.taken, k.text, k.synced, {RECORDING_COLUMNS}
-               FROM lyrics_kept k JOIN tracks t ON t.path = k.path AND t.span_start = k.span_start
-               {RECORDING_JOINS}
-              WHERE k.text IS NOT NULL AND k.taken >= ?1
-              ORDER BY k.taken LIMIT ?2"
-        ))
+        .prepare_cached(&lyrics_kept_since())
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let rows = statement
         .query_map(params![mark, most], |row| {
@@ -85,17 +114,7 @@ fn lyrics_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<Ans
 
 fn studies_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<Answered>> {
     let mut statement = connection
-        .prepare_cached(&format!(
-            "SELECT s.studied, t.packets, t.duration, t.sample_rate, s.verdict, s.cutoff_hz,
-                    s.cutoff_drop, s.lossy_guess, s.upsampled_from, s.bits_in_use, s.declared_bits,
-                    s.peak, s.rms, s.true_peak, s.loudness, s.loudness_range, s.dynamic_range,
-                    s.clipped, s.mono_as_stereo, s.band_levels, {RECORDING_COLUMNS}
-               FROM track_studies s JOIN tracks t ON t.id = s.track_id
-               {RECORDING_JOINS}
-              WHERE s.studied >= ?1 AND s.studied_under = ?3 AND length(s.band_levels) = ?4
-                AND t.packets IS NOT NULL AND t.duration IS NOT NULL AND {WHOLE_FILE}
-              ORDER BY s.studied LIMIT ?2"
-        ))
+        .prepare_cached(&studies_kept_since())
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let rows = statement
         .query_map(
@@ -117,14 +136,7 @@ fn studies_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<An
 
 fn band_peaks_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<Answered>> {
     let mut statement = connection
-        .prepare_cached(&format!(
-            "SELECT s.studied, t.packets, t.duration, t.sample_rate, s.band_peaks, {RECORDING_COLUMNS}
-               FROM track_studies s JOIN tracks t ON t.id = s.track_id
-               {RECORDING_JOINS}
-              WHERE s.studied >= ?1 AND s.studied_under = ?3 AND length(s.band_peaks) = ?4
-                AND t.packets IS NOT NULL AND t.duration IS NOT NULL AND {WHOLE_FILE}
-              ORDER BY s.studied LIMIT ?2"
-        ))
+        .prepare_cached(&band_peaks_kept_since())
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let rows = statement
         .query_map(
@@ -1103,4 +1115,52 @@ fn held_row(connection: &Connection, recording: &Recording) -> Result<Option<(St
     };
     let (span_start, _) = store::span_columns(cut.span);
     Ok(Some((store::path_text(path).into_owned(), span_start)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema;
+
+    #[test]
+    fn a_sync_look_reads_the_answers_kept_since_its_mark_off_an_index_in_their_order() {
+        let connection = Connection::open_in_memory().expect("a catalog");
+        schema::configure(&connection, schema::Role::Writing).expect("the pragmas");
+        schema::lay_out(&connection).expect("the schema applies");
+
+        let judged = i64::from(JUDGED_UNDER);
+
+        for (sql, binds, index) in [
+            (lyrics_kept_since(), vec![0, 64], "lyrics_kept_by_taken"),
+            (
+                studies_kept_since(),
+                vec![0, 64, judged, BANDS as i64],
+                "track_studies_by_studied",
+            ),
+            (
+                band_peaks_kept_since(),
+                vec![0, 64, judged, BAND_PEAKS_BYTES as i64],
+                "track_studies_by_studied",
+            ),
+        ] {
+            let plan: Vec<String> = connection
+                .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+                .and_then(|mut plan| {
+                    plan.query_map(rusqlite::params_from_iter(binds), |row| {
+                        row.get::<_, String>(3)
+                    })?
+                    .collect()
+                })
+                .expect("a plan");
+
+            assert!(
+                plan.iter().any(|step| step.contains(index)),
+                "{sql} reads every answer: {plan:?}"
+            );
+            assert!(
+                !plan.iter().any(|step| step.contains("TEMP B-TREE")),
+                "{sql} sorts what it read: {plan:?}"
+            );
+        }
+    }
 }
