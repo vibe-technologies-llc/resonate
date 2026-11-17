@@ -136,7 +136,7 @@ impl RootView {
 
     fn server_failed(&self, failure: Failure, cx: &mut Context<Self>) -> AnyElement {
         let network = self.server.read(cx).lists_the_network();
-        if failure.is_searched_away(network) {
+        if failure.is_searched_again(network) {
             return kit::trouble_offering(
                 Icon::Server,
                 failure.says(),
@@ -1442,6 +1442,7 @@ mod tests {
     struct OnTheNetwork {
         first_pages_read: Arc<std::sync::atomic::AtomicUsize>,
         asleep: Arc<std::sync::atomic::AtomicBool>,
+        garbled: Arc<std::sync::atomic::AtomicBool>,
     }
 
     fn on_the_network(key: &str) -> MediaLocation {
@@ -1495,6 +1496,12 @@ mod tests {
                     provider: SourceId::new("dlna").expect("a source"),
                     op: ProviderOp::Browse,
                     source: std::io::Error::from(std::io::ErrorKind::ConnectionRefused),
+                });
+            }
+            if self.garbled.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(Error::Unreadable {
+                    provider: SourceId::new("dlna").expect("a source"),
+                    op: ProviderOp::Browse,
                 });
             }
             Ok(vec![a_folder("1", "Music")])
@@ -1635,8 +1642,47 @@ mod tests {
             Failure::Unreached.advises(false),
             Failure::Unreached.advises(true)
         );
-        assert!(!Failure::Unreached.is_searched_away(false));
-        assert!(!Failure::Unreadable.is_searched_away(true));
+        assert!(!Failure::Unreached.is_searched_again(false));
+        assert!(!Failure::Unwelcome.is_searched_again(true));
+    }
+
+    #[gpui::test]
+    fn a_media_server_whose_answer_cannot_be_read_is_not_told_the_accounts_advice_and_the_network_is_searched_again(
+        cx: &mut TestAppContext,
+    ) {
+        let network = Arc::new(OnTheNetwork::default());
+        let read = Arc::clone(&network.first_pages_read);
+        let garbled = Arc::clone(&network.garbled);
+        let times_read = || read.load(std::sync::atomic::Ordering::SeqCst);
+        let mut driven = Driven::serving(cx, vec![network], an_account());
+        open_the_server(&mut driven);
+        driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
+
+        garbled.store(true, std::sync::atomic::Ordering::SeqCst);
+        driven.click("server-row-0");
+        driven.until(|root, cx| {
+            matches!(
+                root.server.read(cx).page(),
+                Page::Failed(Failure::Unreadable)
+            )
+        });
+        driven.until_drawn("server-search-again");
+        driven.click("server-search-again");
+        driven.until(|root, cx| {
+            matches!(root.server.read(cx).place(), Place::Artists)
+                && matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 1)
+        });
+
+        assert_eq!(times_read(), 2);
+        assert_eq!(
+            Failure::Unreadable.advises(true),
+            "Its folders may have changed since it was found, or it answers in a way this player does not read."
+        );
+        assert_eq!(
+            Failure::Unreadable.advises(false),
+            "The address may not be the service's."
+        );
+        assert!(!Failure::Unreadable.is_searched_again(false));
     }
 
     #[gpui::test]

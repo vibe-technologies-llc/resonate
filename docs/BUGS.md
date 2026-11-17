@@ -23,9 +23,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   listener's to grant
 
 ## Providers and network
-- [S · 0.13.0] A media server whose answer cannot be read is told with the accounts' advice (*The
-  address may not be the service's*), which a server found on the network has no address setting for;
-  `Unreachable` has its own words and *Search again* now, `Unreadable` does not
 
 ## The window
 

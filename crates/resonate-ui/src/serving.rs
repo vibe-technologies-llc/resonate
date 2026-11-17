@@ -199,12 +199,15 @@ impl Failure {
             Self::Unwelcome => words::serving::unwelcome_advice(),
             Self::Unreached if on_the_network => words::serving::unreached_on_the_network_advice(),
             Self::Unreached => words::serving::unreached_advice(),
+            Self::Unreadable if on_the_network => {
+                words::serving::unreadable_on_the_network_advice()
+            }
             Self::Unreadable => words::serving::unreadable_advice(),
         }
     }
 
-    pub(crate) const fn is_searched_away(self, on_the_network: bool) -> bool {
-        on_the_network && matches!(self, Self::Unreached)
+    pub(crate) const fn is_searched_again(self, on_the_network: bool) -> bool {
+        on_the_network && matches!(self, Self::Unreached | Self::Unreadable)
     }
 }
 

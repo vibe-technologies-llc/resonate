@@ -742,7 +742,9 @@ seam.
   window's *The server could not be reached*, with a network server's own advice and *Search
   again*, `ui.md`); a SOAP fault `TurnedAway` with the UPnP code (701, no
   such object), an HTTP status `Refused`, anything unreadable `Unreadable`, an address off the server
-  `Unaddressable` (`a_server_gone_is_the_provider_away_and_a_fault_is_the_servers_refusal`).
+  `Unaddressable` (`a_server_gone_is_the_provider_away_and_a_fault_is_the_servers_refusal`). A
+  fault, an unreadable answer and a refusal not counted away are the window's *The server did not
+  answer in a way that could be read*, with a network server's own advice and *Search again* too.
 - **The window draws it as the network** (`PlaysInPlace::lists_the_network`, true here alone, which
   the window's adapter forwards): `ui.md`'s pane reads its first page only once shown and names its
   pages as servers and folders.

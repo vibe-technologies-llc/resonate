@@ -15,6 +15,7 @@ unwelcome-advice = Check the account in Settings, under Online.
 unreached-advice = Check the address in Settings, under Online, and that the server is running.
 unreached-on-the-network-advice = It may be switched off, asleep or on another network.
 unreadable-advice = The address may not be the service's.
+unreadable-on-the-network-advice = Its folders may have changed since it was found, or it answers in a way this player does not read.
 unwelcome-after = the server turned the account away
 unreached-after = the server could not be reached
 unreadable-after = the server did not answer in a way that could be read
