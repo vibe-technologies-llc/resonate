@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use gpui::{
-    AnyElement, Context, Div, Entity, FontWeight, ScrollHandle, SharedString, Stateful, Window,
-    div, prelude::*, px, rgb,
+    AnyElement, Context, Div, Entity, EventEmitter, FontWeight, ScrollHandle, SharedString,
+    Stateful, Window, div, prelude::*, px, rgb,
 };
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
     views::{
         field::{Field, Submitted},
         kit::{self, EndsInAnEllipsis as _, Tone},
-        pulse::Pulse,
+        pulse::{Beat, Pulse},
         root::RootView,
         scrollbar::Scrollbars,
         settings::sync::scanned,
@@ -307,6 +307,8 @@ pub(crate) struct PartyPane {
     pub(crate) handing_armed: Option<[u8; 16]>,
     redraws: Pulse,
 }
+
+impl EventEmitter<Beat> for PartyPane {}
 
 impl PartyPane {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {

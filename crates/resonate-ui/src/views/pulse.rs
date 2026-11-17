@@ -1,6 +1,9 @@
 use std::{mem, time::Duration};
 
-use gpui::{Context, Task};
+use gpui::{Context, EventEmitter, Task};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Beat;
 
 #[derive(Default)]
 pub(crate) struct Pulse {
@@ -9,7 +12,7 @@ pub(crate) struct Pulse {
 }
 
 impl Pulse {
-    pub(crate) fn beats_while_drawn<T: 'static>(
+    pub(crate) fn beats_while_drawn<T: EventEmitter<Beat> + 'static>(
         &mut self,
         every: Duration,
         within: fn(&mut T) -> &mut Self,
@@ -25,7 +28,7 @@ impl Pulse {
                 let kept = this.update(cx, |this, cx| {
                     let pulse = within(this);
                     if mem::take(&mut pulse.drawn) {
-                        cx.notify();
+                        cx.emit(Beat);
                         return true;
                     }
                     pulse.beating = None;
@@ -53,9 +56,9 @@ impl Pulse {
 mod tests {
     use std::time::Duration;
 
-    use gpui::{AppContext as _, Context, Entity, TestAppContext};
+    use gpui::{AppContext as _, Context, Entity, EventEmitter, TestAppContext};
 
-    use super::Pulse;
+    use super::{Beat, Pulse};
 
     const EVERY: Duration = Duration::from_millis(500);
 
@@ -63,6 +66,8 @@ mod tests {
         pulse: Pulse,
         redrawn: usize,
     }
+
+    impl EventEmitter<Beat> for Beaten {}
 
     impl Beaten {
         fn drawn(&mut self, cx: &mut Context<Self>) {
@@ -78,7 +83,7 @@ mod tests {
         });
         let counting = beaten.clone();
         cx.update(|cx| {
-            cx.observe(&beaten, move |_, cx| {
+            cx.subscribe(&beaten, move |_, _: &Beat, cx| {
                 counting.update(cx, |beaten, _| beaten.redrawn += 1);
             })
             .detach();

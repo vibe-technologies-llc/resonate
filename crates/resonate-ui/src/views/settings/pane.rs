@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use gpui::{Context, Pixels, Point, ScrollHandle, Task};
+use gpui::{Context, EventEmitter, Pixels, Point, ScrollHandle, Task};
 use resonate_engine::{Learning, NodeName, Unlearnt};
 
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
     views::{
         dropping::FolderStanding,
         focus::Controls,
-        pulse::Pulse,
+        pulse::{Beat, Pulse},
         remote::RemoteSong,
         settings::{
             Armed, Category, CheckingYoutubeMusic, Fitting, LastfmSigning, ListeningTest, Page,
@@ -77,6 +77,8 @@ pub(crate) struct SettingsPane {
     pub(crate) accounts: Accounts,
     pub(crate) remotely: Remotely,
 }
+
+impl EventEmitter<Beat> for SettingsPane {}
 
 impl SettingsPane {
     pub(crate) fn new(category: Category, cx: &mut Context<Self>) -> Self {

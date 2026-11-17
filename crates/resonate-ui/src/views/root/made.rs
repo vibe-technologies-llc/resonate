@@ -39,6 +39,7 @@ use crate::{
         part::Parts,
         party::PartyPane,
         playlists::PlaylistsDrawn,
+        pulse::Beat,
         queue::{NamesRead, PutInOrder, QueuePane},
         search::SearchShows,
         served::ServicesPane,
@@ -140,6 +141,10 @@ impl RootView {
         cx.observe(&listen, |_, _, cx| cx.notify()).detach();
         let party = cx.new(|cx| PartyPane::new(window, cx));
         cx.observe(&party, |_, _, cx| cx.notify()).detach();
+        cx.subscribe(&party, |this, _, _: &Beat, cx| {
+            this.parts.the_pane_moved(cx)
+        })
+        .detach();
         let inspector = cx.new(|_| InspectorPane::default());
         cx.observe(&inspector, |_, _, cx| cx.notify()).detach();
         let queue = cx.new(|_| QueuePane::new());
@@ -249,6 +254,10 @@ impl RootView {
 
         let settings_pane = cx.new(|cx| SettingsPane::new(settings_category, cx));
         cx.observe(&settings_pane, |_, _, cx| cx.notify()).detach();
+        cx.subscribe(&settings_pane, |this, _, _: &Beat, cx| {
+            this.parts.the_pane_moved(cx);
+        })
+        .detach();
 
         let (typed_words, typed_isrc) = matching::matching_fields(window, cx);
 

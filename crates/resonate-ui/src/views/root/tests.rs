@@ -355,7 +355,7 @@ fn the_missing_tab_is_hidden_until_it_is_asked_for() {
 }
 
 mod driven {
-    use std::{path::PathBuf, sync::Arc, time::Duration};
+    use std::{cell::RefCell, path::PathBuf, rc::Rc, sync::Arc, time::Duration};
 
     use gpui::{OperatingSystem, PlatformInfo, PlatformTarget, TestAppContext};
     use resonate_core::{Span, Volume};
@@ -368,6 +368,7 @@ mod driven {
         toast,
         views::{
             menu::Menu,
+            part::Region,
             party_offer,
             playlists::Held,
             reorder::{Reach, Shift},
@@ -1228,6 +1229,46 @@ mod driven {
         }
 
         assert!(!driven.read(|root, cx| root.party.read(cx).is_redrawing()));
+    }
+
+    fn regions_told(driven: &mut Driven) -> Rc<RefCell<Vec<Region>>> {
+        let told = Rc::new(RefCell::new(Vec::new()));
+        let parts = driven.read(|root, _| root.parts.each());
+        driven.cx.update(|_, cx| {
+            for (region, part) in parts {
+                let telling = Rc::clone(&told);
+                cx.observe(&part, move |_, _| telling.borrow_mut().push(region))
+                    .detach();
+            }
+        });
+        told
+    }
+
+    #[gpui::test]
+    fn the_party_panes_pulse_redraws_the_pane_and_leaves_the_other_regions_alone(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = Driven::opened_in(cx, catalog(), &folder);
+        let beat = Duration::from_millis(500);
+        let root = driven.root.clone();
+
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.set_pane(Pane::Party, cx));
+        });
+        driven.settle();
+        let told = regions_told(&mut driven);
+        for _ in 0..3 {
+            driven.cx.executor().advance_clock(beat);
+            driven.cx.run_until_parked();
+        }
+        let told = told.borrow().clone();
+
+        assert!(told.contains(&Region::Pane));
+        assert!(
+            told.iter().all(|region| *region == Region::Pane),
+            "{told:?}"
+        );
     }
 
     #[gpui::test]

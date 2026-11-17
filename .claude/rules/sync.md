@@ -765,7 +765,7 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   watch and answers a `RemoteShown`: `Waiting`, `Zones(Vec<RemoteZoneShown>)`, `Refused`), `unwatch`
   and `press` (a `RemoteKey`, run on the background executor since it waits for the answer; a refusal
   is a toast), with defaults so a seam with no sync answers `Refused`; `driving_redraws` (a `Pulse`) redraws the
-  pane every `DRIVEN_REDRAWN_EVERY` (500 ms) while the driven page is drawn: leaving the page or the
+  pane region alone (`Parts::the_pane_moved`, `ui.md`) every `DRIVEN_REDRAWN_EVERY` (500 ms) while the driven page is drawn: leaving the page or the
   pane ends the redraws and the device stays driven, the beat resuming when the page is drawn again
   (`a_driven_device_is_sought_jumped_moved_and_emptied_from_its_rows`,
   `driving_a_device_redraws_the_window_only_while_its_page_is_drawn`).

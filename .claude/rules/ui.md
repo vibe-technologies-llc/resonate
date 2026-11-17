@@ -1338,7 +1338,11 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   notified. `views/part.rs`: a `Part` per region (header, sidebar, pane, bar) renders
   `RootView::region` via a weak handle (panes stay `RootView` methods, listeners bind to the root);
   `RootView::render` = shell (actions, overlays, menus, toasts). Each `Part` observes the root; a
-  hover/scroll/frame asked inside a region notifies it alone. A cached view is laid out from a style,
+  hover/scroll/frame asked inside a region notifies it alone. **A pane's own pulse redraws the pane
+  alone**: a `Pulse` beat emits `pulse::Beat` rather than notifying its entity, and the root
+  subscribes to `PartyPane`'s and `SettingsPane`'s beats with `Parts::the_pane_moved`, so the party
+  pane's and the driven zones' 500 ms beats and the mirror's 1 s one leave the header, sidebar and bar
+  cached (`the_party_panes_pulse_redraws_the_pane_and_leaves_the_other_regions_alone`). A cached view is laid out from a style,
   not content, so `Region::laid_out` declares sizes. **The Windows header is always drawn whole**:
   gpui replays ordinary hitboxes from a cached view but drops its window-control hitboxes, so a
   reused header loses drag, minimise, maximise and close after its first frame. `part::cached`

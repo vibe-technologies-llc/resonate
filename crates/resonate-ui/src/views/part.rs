@@ -103,6 +103,20 @@ impl Parts {
         cached(&self.transport, Region::Transport)
     }
 
+    #[cfg(test)]
+    pub(crate) fn each(&self) -> [(Region, Entity<Part>); 4] {
+        [
+            (Region::Header, self.header.clone()),
+            (Region::Sidebar, self.sidebar.clone()),
+            (Region::Pane, self.pane.clone()),
+            (Region::Transport, self.transport.clone()),
+        ]
+    }
+
+    pub(crate) fn the_pane_moved(&self, cx: &mut Context<RootView>) {
+        self.pane.update(cx, |_, cx| cx.notify());
+    }
+
     pub(crate) fn the_clock_moved(&self, pane_follows: bool, cx: &mut Context<RootView>) {
         self.transport.update(cx, |_, cx| cx.notify());
         if pane_follows {
