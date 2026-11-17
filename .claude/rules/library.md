@@ -846,7 +846,11 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   pretending it is a row: no row's path is a URI, so `credit_the_unheld` never takes it, and no
   service is told it (`a_song_played_in_place_counts_as_a_listen_against_its_uri_and_never_as_a_row`);
   it is never a favourite of the catalog's (the service's own mark is `providers.md`'s);
-  `history::credit_the_unheld` runs after the prune of every scan a row arrived in: a play whose
+  `history::credit_the_unheld` runs after the prune of every scan a row arrived in, and returns
+  once none of the unheld names a row; its count updates only the tracks the join of
+  `unheld_listens` to `tracks` names, by id, since SQLite does not turn an `UPDATE`'s `EXISTS` into
+  a join (`the_credit_counts_only_the_tracks_an_unheld_listen_names`,
+  `an_unheld_listen_whose_track_arrived_is_counted_on_it_and_the_others_wait`): a play whose
   path and start now name a row becomes a `listens` row stamped when heard, **under its own id where
   that is free and with its origin**, so a listen already told to devices and services stays at or
   behind their marks and one credited from elsewhere stays `elsewhere` (one whose origin a credit

@@ -54,17 +54,18 @@ const CREDIT_AN_UNHELD: &str = "INSERT INTO listens
 const NOTE_AN_UNHELD_CREDITED: &str =
     "INSERT INTO unheld_credited (unheld, listen) VALUES (?1, ?2)";
 
-const COUNT_THE_CREDITED_AND_LET_THEM_GO: &str = "UPDATE tracks
+const COUNT_THE_CREDITED: &str = "UPDATE tracks
         SET plays = plays + (SELECT count(*) FROM unheld_listens u
                               WHERE u.path = tracks.path AND u.span_start = tracks.span_start),
             played = max(coalesce(played, 0),
                          (SELECT max(u.at) FROM unheld_listens u
                            WHERE u.path = tracks.path AND u.span_start = tracks.span_start))
-      WHERE EXISTS (SELECT 1 FROM unheld_listens u
-                     WHERE u.path = tracks.path AND u.span_start = tracks.span_start);
-     DELETE FROM unheld_listens
+      WHERE id IN (SELECT t.id FROM unheld_listens u
+                     JOIN tracks t ON t.path = u.path AND t.span_start = u.span_start)";
+
+const LET_THE_CREDITED_GO: &str = "DELETE FROM unheld_listens
       WHERE EXISTS (SELECT 1 FROM tracks t
-                     WHERE t.path = unheld_listens.path AND t.span_start = unheld_listens.span_start);";
+                     WHERE t.path = unheld_listens.path AND t.span_start = unheld_listens.span_start)";
 
 const SPEND_A_HELD_LISTEN: &str = "UPDATE listens SET heard = ?1 WHERE id = ?2";
 
@@ -186,20 +187,28 @@ pub(crate) fn credit_the_unheld(transaction: &Transaction<'_>) -> Result<()> {
                 .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         })
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+    if now_held.is_empty() {
+        return Ok(());
+    }
     for unheld in now_held {
-        let listen = transaction
-            .query_row(CREDIT_AN_UNHELD, params![unheld], |row| {
-                row.get::<_, i64>(0)
-            })
-            .map_err(|source| Error::store(StoreOp::Insert, source))?;
-        transaction
-            .execute(NOTE_AN_UNHELD_CREDITED, params![unheld, listen])
-            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        let listen = store::queried(transaction, CREDIT_AN_UNHELD, params![unheld], |row| {
+            row.get::<_, i64>(0)
+        })
+        .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        store::cached(
+            transaction,
+            NOTE_AN_UNHELD_CREDITED,
+            params![unheld, listen],
+        )
+        .map_err(|source| Error::store(StoreOp::Insert, source))?;
     }
 
-    transaction
-        .execute_batch(COUNT_THE_CREDITED_AND_LET_THEM_GO)
-        .map_err(|source| Error::store(StoreOp::Update, source))
+    for counting in [COUNT_THE_CREDITED, LET_THE_CREDITED_GO] {
+        transaction
+            .execute(counting, [])
+            .map_err(|source| Error::store(StoreOp::Update, source))?;
+    }
+    Ok(())
 }
 
 pub(crate) fn spent(transaction: &Transaction<'_>, listen: Listen, heard: i64) -> Result<()> {
@@ -223,7 +232,89 @@ pub(crate) fn spent(transaction: &Transaction<'_>, listen: Listen, heard: i64) -
 
 #[cfg(test)]
 mod tests {
+    use rusqlite::Connection;
+
     use super::*;
+    use crate::schema;
+
+    fn plan_of(connection: &Connection, sql: &str) -> String {
+        connection
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| row.get::<_, String>(3))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .expect("a plan")
+            .join("; ")
+    }
+
+    #[test]
+    fn the_credit_counts_only_the_tracks_an_unheld_listen_names() {
+        let connection = Connection::open_in_memory().expect("a catalog");
+        schema::configure(&connection, schema::Role::Writing).expect("the pragmas");
+        schema::lay_out(&connection).expect("the schema applies");
+
+        let plan = plan_of(&connection, COUNT_THE_CREDITED);
+
+        assert!(
+            !plan.contains("SCAN tracks"),
+            "the credit reads every track: {plan}"
+        );
+    }
+
+    #[test]
+    fn an_unheld_listen_whose_track_arrived_is_counted_on_it_and_the_others_wait() {
+        let mut connection = Connection::open_in_memory().expect("a catalog");
+        schema::configure(&connection, schema::Role::Writing).expect("the pragmas");
+        schema::lay_out(&connection).expect("the schema applies");
+        connection
+            .execute_batch(
+                "INSERT INTO tracks (id, path, title, sample_rate, channels, sample_format, codec,
+                                     file_size, modified, added, seen, plays, played)
+                 VALUES (1, '/music/arrived.flac', 'Arrived', 44100, 2, 16, 1, 1, 1, 1, 1, 2, 5),
+                        (2, '/music/other.flac', 'Other', 44100, 2, 16, 1, 1, 1, 1, 1, 3, 7);
+                 INSERT INTO unheld_listens (path, span_start, at, heard)
+                 VALUES ('/music/arrived.flac', 0, 10, 100),
+                        ('/music/arrived.flac', 0, 20, 100),
+                        ('/music/away.flac', 0, 30, 100);",
+            )
+            .expect("a catalog with listens kept against paths");
+
+        let transaction = connection.transaction().expect("a write");
+        credit_the_unheld(&transaction).expect("the credit");
+        transaction.commit().expect("the credit is kept");
+
+        let counted = |id: i64| -> (i64, i64) {
+            connection
+                .query_row(
+                    "SELECT plays, played FROM tracks WHERE id = ?1",
+                    [id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .expect("a track")
+        };
+        let waiting: Vec<String> = connection
+            .prepare("SELECT path FROM unheld_listens")
+            .and_then(|mut query| {
+                query
+                    .query_map([], |row| row.get(0))
+                    .and_then(Iterator::collect)
+            })
+            .expect("the unheld listens");
+        let credited: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM listens WHERE track_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the listens");
+
+        assert_eq!(counted(1), (4, 20));
+        assert_eq!(counted(2), (3, 7));
+        assert_eq!(waiting, vec!["/music/away.flac".to_owned()]);
+        assert_eq!(credited, 2);
+    }
 
     #[test]
     fn a_kept_history_reads_back_as_it_was_written() {
