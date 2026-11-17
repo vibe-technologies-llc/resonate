@@ -34,6 +34,8 @@ mod render;
 mod status;
 #[cfg(any(target_os = "macos", test))]
 mod targets;
+#[cfg(any(target_os = "macos", test))]
+mod told;
 #[cfg(target_vendor = "apple")]
 mod toolbox;
 #[cfg(any(target_vendor = "apple", test))]

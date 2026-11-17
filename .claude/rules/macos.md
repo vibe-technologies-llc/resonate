@@ -138,7 +138,12 @@ for them.
   `NowPlaying`'s own number), and the drop, posted after the registration on the same serial queue,
   removes those alone, so a second `NowPlaying` made before the first one's drop lands keeps its
   handlers. The table is thread-local to the main thread, so `NowPlaying` itself holds no
-  Objective-C object and stays `Send` and `Sync`.
+  Objective-C object and stays `Send` and `Sync`. **Its drop clears the song and sets the state
+  stopped only where it told them last**: `show` and `playback` note their owner in a main-thread
+  `told::LastTold` as they land, and the drop asks it (`LastTold::let_go_by`), so a `NowPlaying` that
+  showed its song before the last one's drop landed keeps it shown and playing
+  (`an_owner_dropped_after_another_told_since_leaves_what_the_other_told`). The clock is not
+  counted: it only merges into the info standing.
 - **Every MediaPlayer call is posted to the main queue and none is waited for**: teardown joins
   the transport thread from the main thread as the application ends, and a synchronous call back
   onto it would never return.

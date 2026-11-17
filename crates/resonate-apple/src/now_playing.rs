@@ -23,7 +23,7 @@ use objc2_media_player::{
     MPRemoteCommandCenter, MPRemoteCommandEvent, MPRemoteCommandHandlerStatus,
 };
 
-use crate::{buffers::guarded, targets::Targets};
+use crate::{buffers::guarded, targets::Targets, told::LastTold};
 
 static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
 
@@ -34,6 +34,7 @@ struct Added {
 
 thread_local! {
     static ADDED: RefCell<Targets<Added>> = const { RefCell::new(Targets::new()) };
+    static TOLD: RefCell<LastTold> = const { RefCell::new(LastTold::new()) };
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -176,6 +177,10 @@ fn answered(
     });
     let token = unsafe { command.addTargetWithHandler(&handler) };
     ADDED.with_borrow_mut(|added| added.add(owner, Added { command, token }));
+}
+
+fn told_by(owner: u64) {
+    TOLD.with_borrow_mut(|told| told.told_by(owner));
 }
 
 fn released(owner: u64) {
@@ -323,9 +328,13 @@ impl NowPlaying {
 
     pub fn show(&self, song: Option<&Shown>) {
         let song = song.cloned();
-        on_the_main_queue(move || match song {
-            Some(song) => shown(&song),
-            None => unsafe { info_center().setNowPlayingInfo(None) },
+        let owner = self.owner;
+        on_the_main_queue(move || {
+            told_by(owner);
+            match song {
+                Some(song) => shown(&song),
+                None => unsafe { info_center().setNowPlayingInfo(None) },
+            }
         });
     }
 
@@ -334,7 +343,9 @@ impl NowPlaying {
     }
 
     pub fn playback(&self, playback: Playback) {
+        let owner = self.owner;
         on_the_main_queue(move || {
+            told_by(owner);
             let state = match playback {
                 Playback::Playing => MPNowPlayingPlaybackState::Playing,
                 Playback::Paused => MPNowPlayingPlaybackState::Paused,
@@ -362,6 +373,9 @@ impl Drop for NowPlaying {
         let owner = self.owner;
         on_the_main_queue(move || {
             released(owner);
+            if !TOLD.with_borrow_mut(|told| told.let_go_by(owner)) {
+                return;
+            }
             let info = info_center();
             unsafe { info.setNowPlayingInfo(None) };
             unsafe { info.setPlaybackState(MPNowPlayingPlaybackState::Stopped) };
