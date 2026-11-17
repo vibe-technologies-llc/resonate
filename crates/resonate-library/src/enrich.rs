@@ -92,6 +92,14 @@ pub struct EnrichOptions {
     pub studies: bool,
     pub lyrics: bool,
     pub pace: Pace,
+    pub breadth: Breadth,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Breadth {
+    #[default]
+    TheLibrary,
+    TheSong(TrackId),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -110,6 +118,7 @@ impl Default for EnrichOptions {
             studies: true,
             lyrics: true,
             pace: Pace::Background,
+            breadth: Breadth::TheLibrary,
         }
     }
 }
@@ -354,7 +363,10 @@ fn run(
     options: &EnrichOptions,
     progress: &Arc<EnrichProgress>,
 ) -> Result<EnrichSummary> {
-    note_began(library, options.refresh);
+    let whole = options.breadth == Breadth::TheLibrary;
+    if whole {
+        note_began(library, options.refresh);
+    }
     if options.pace == Pace::Hurried {
         progress.hurry();
     }
@@ -409,7 +421,7 @@ fn run(
     pictures.rest();
     studies.rest();
     verses.rest();
-    if stopped_by.is_none() {
+    if whole && stopped_by.is_none() {
         note_finished(library);
     }
 
@@ -441,6 +453,9 @@ fn to_be_studied(library: &Library, options: &EnrichOptions) -> Vec<ToStudy> {
             Vec::new()
         }
     };
+    if let Breadth::TheSong(song) = options.breadth {
+        asked.retain(|study| study.id == song);
+    }
     if let Some(at_most) = options.at_most {
         asked.truncate(at_most.get());
     }
@@ -450,6 +465,9 @@ fn to_be_studied(library: &Library, options: &EnrichOptions) -> Vec<ToStudy> {
 fn to_be_sung(library: &Library, options: &EnrichOptions) -> Vec<TrackId> {
     if !options.lyrics {
         return Vec::new();
+    }
+    if let Breadth::TheSong(song) = options.breadth {
+        return vec![song];
     }
     let mut asked = match library.lyrics_to_ask(options.refresh) {
         Ok(asked) => asked,
@@ -1742,6 +1760,9 @@ impl Learner for PassLearning<'_, '_> {
 
 impl Pass<'_> {
     fn run(&self, options: &EnrichOptions) -> Result<()> {
+        if let Breadth::TheSong(song) = options.breadth {
+            return self.the_song(song);
+        }
         let albums = self.library.albums_to_ask(WAITS, options.refresh)?;
         let (mut due, rematch_only): (Vec<AlbumToAsk>, Vec<AlbumToAsk>) =
             albums.into_iter().partition(|album| !album.rematch_only);
@@ -1795,6 +1816,25 @@ impl Pass<'_> {
         self.look_again_for_portraits()?;
         self.learn_the_songs(options)?;
         self.cover_the_unheld(options)
+    }
+
+    fn the_song(&self, song: TrackId) -> Result<()> {
+        let track = self.library.track(song)?.ok_or(Error::UnknownTrack(song))?;
+
+        if let Some(album) = track.album_id
+            && let Some(asked) = self.library.album_to_ask(album)?
+        {
+            passed_over_if_gone(self.album(&asked))?;
+        }
+        if self.library.track_is_due(song, WAITS, true)? {
+            passed_over_if_gone(self.track(song))?;
+        }
+        if let Some(artist) = track.artist_id
+            && self.library.artist_is_due(artist, WAITS, true)?
+        {
+            passed_over_if_gone(self.artist(artist))?;
+        }
+        self.library.settle_the_credits()
     }
 
     fn cover_the_unheld(&self, options: &EnrichOptions) -> Result<()> {

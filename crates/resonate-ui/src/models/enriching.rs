@@ -1,11 +1,13 @@
 use std::{mem, sync::Arc, time::Instant};
 
 use gpui::Context;
-use resonate_library::{EnrichOptions, EnrichStats, EnrichSummary, Pace};
+use resonate_core::{TrackId, gaming};
+use resonate_library::{Breadth, EnrichOptions, EnrichStats, EnrichSummary, Pace};
 
 use super::{
-    A_QUIET_LOOKUP_SHOWS_AFTER, LibraryModel, LookupAsked, POLLS_PER_RELOAD, Prompted, SCAN_POLL,
-    told::looked_up,
+    A_QUIET_LOOKUP_SHOWS_AFTER, LibraryModel, LookupAsked, Notice, POLLS_PER_RELOAD, Prompted,
+    SCAN_POLL, SongAsked,
+    told::{looked_up, song_looked_up},
 };
 use crate::{toast, words};
 
@@ -16,6 +18,7 @@ impl LibraryModel {
 
     pub fn shows_the_lookup(&self) -> bool {
         self.enrichment.running.is_some()
+            && self.enrichment.song.is_none()
             && self
                 .enrichment
                 .asked
@@ -51,6 +54,7 @@ impl LibraryModel {
             studies: self.choices.studies,
             lyrics: self.choices.lyrics,
             pace: Pace::Background,
+            breadth: Breadth::TheLibrary,
         };
         self.enrich_with(asked, Prompted::ByHand, cx);
     }
@@ -63,6 +67,7 @@ impl LibraryModel {
             studies: self.choices.studies,
             lyrics: self.choices.lyrics,
             pace: Pace::Background,
+            breadth: Breadth::TheLibrary,
         };
         self.enrich_with(asked, Prompted::OnItsOwn, cx);
     }
@@ -81,6 +86,7 @@ impl LibraryModel {
                     studies: self.choices.studies,
                     lyrics: self.choices.lyrics,
                     pace: Pace::Hurried,
+                    breadth: Breadth::TheLibrary,
                 };
                 self.enrich_with(asked, Prompted::ByHand, cx);
             }
@@ -113,7 +119,51 @@ impl LibraryModel {
             studies: false,
             lyrics: false,
             pace: Pace::Background,
+            breadth: Breadth::TheLibrary,
         }
+    }
+
+    pub fn look_up_the_song(&mut self, track: TrackId, title: String, cx: &mut Context<Self>) {
+        let song = SongAsked { track, title };
+        if !self.can_enrich() {
+            toast::tell(
+                Notice::Noted(words::models::song_not_looked_up_offline(&song.title)),
+                cx,
+            );
+            return;
+        }
+        if self.for_the_pass.lookups.is_shut() {
+            toast::tell(
+                Notice::Noted(words::models::song_not_looked_up_metered(&song.title)),
+                cx,
+            );
+            return;
+        }
+        if self.enrichment.running.is_some() {
+            toast::tell(
+                Notice::Noted(words::models::song_looked_up_next(&song.title)),
+                cx,
+            );
+            self.enrichment.song_owed = Some(song);
+            return;
+        }
+
+        let said = match gaming::is_active() {
+            true => words::models::song_looked_up_after_the_game(&song.title),
+            false => words::models::looking_up_the_song(&song.title),
+        };
+        let asked = EnrichOptions {
+            refresh: false,
+            at_most: None,
+            sought: Arc::clone(&self.enrichment.sought),
+            studies: self.choices.studies,
+            lyrics: self.choices.lyrics,
+            pace: Pace::Hurried,
+            breadth: Breadth::TheSong(song.track),
+        };
+        toast::tell(Notice::Noted(said), cx);
+        self.enrichment.song = Some(song);
+        self.enrich_with(asked, Prompted::ByHand, cx);
     }
 
     pub(super) fn enrich_with(
@@ -135,6 +185,7 @@ impl LibraryModel {
         ) {
             Ok(handle) => handle,
             Err(error) => {
+                self.enrichment.song = None;
                 tracing::error!(%error, "the lookup could not be started");
                 toast::tell(
                     toast::could_not(words::models::start_the_lookup(), &error),
@@ -150,8 +201,10 @@ impl LibraryModel {
             prompted,
             began: Instant::now(),
         });
-        self.enrichment.owed = false;
-        self.enrichment.looked_up = None;
+        if self.enrichment.song.is_none() {
+            self.enrichment.owed = false;
+            self.enrichment.looked_up = None;
+        }
         cx.notify();
 
         self.enrichment._task = cx.spawn(async move |this, cx| {
@@ -176,16 +229,28 @@ impl LibraryModel {
                 this.enrichment.running = None;
                 this.enrichment.asked = None;
                 let owed = mem::take(&mut this.enrichment.owed);
+                let song = this.enrichment.song.take();
                 let mut finished = false;
-                match handle.join() {
-                    Ok(summary) => {
+                match (handle.join(), &song) {
+                    (Ok(summary), Some(song)) => {
+                        finished = !summary.cancelled && summary.stopped_by.is_none();
+                        toast::tell(song_looked_up(&summary, &song.title), cx);
+                    }
+                    (Ok(summary), None) => {
                         finished = !summary.cancelled && summary.stopped_by.is_none();
                         this.enrichment.looked_up = Some(summary);
                         if let Some(notice) = looked_up(&summary, prompted) {
                             toast::tell(notice, cx);
                         }
                     }
-                    Err(error) => {
+                    (Err(error), Some(_)) => {
+                        tracing::error!(%error, "the song could not be looked up");
+                        toast::tell(
+                            toast::could_not(words::models::look_up_that_song(), &error),
+                            cx,
+                        );
+                    }
+                    (Err(error), None) => {
                         tracing::error!(%error, "the lookup failed");
                         toast::tell(
                             toast::could_not(words::models::finish_the_lookup(), &error),
@@ -194,6 +259,9 @@ impl LibraryModel {
                     }
                 }
                 this.reload(cx);
+                if let Some(owed) = this.enrichment.song_owed.take() {
+                    this.look_up_the_song(owed.track, owed.title, cx);
+                }
                 if owed && finished {
                     this.enrich_new_songs(cx);
                 }
@@ -228,6 +296,7 @@ impl LibraryModel {
 
     pub fn stop_enrich(&mut self, cx: &mut Context<Self>) {
         self.enrichment.owed = false;
+        self.enrichment.song_owed = None;
         let Some(progress) = self.enrichment.running.as_ref() else {
             return;
         };

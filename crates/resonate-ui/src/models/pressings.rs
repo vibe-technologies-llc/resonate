@@ -1,10 +1,4 @@
-use std::{
-    path::Path,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::{path::Path, sync::Arc};
 
 use gpui::{Context, Task};
 use resonate_core::{AlbumId, ArtistId, TrackId};
@@ -190,27 +184,6 @@ impl LibraryModel {
             },
             move |this, edited, cx| {
                 if edited == Edited::Landed {
-                    this.enrichment.sought.track(track);
-                    this.enrich(false, cx);
-                }
-            },
-            cx,
-        );
-    }
-
-    pub fn look_up_a_track(&mut self, track: TrackId, cx: &mut Context<Self>) {
-        let due = Arc::new(AtomicBool::new(false));
-        let held = Arc::clone(&due);
-        self.edited_then(
-            Wanted::Everything,
-            Change::LookUp,
-            move |library| {
-                let asked_again = library.ask_about_again(track)?;
-                held.store(asked_again, Ordering::Relaxed);
-                Ok((!asked_again).then(|| words::models::already_on_a_release().to_owned()))
-            },
-            move |this, edited, cx| {
-                if edited == Edited::Landed && due.load(Ordering::Relaxed) {
                     this.enrichment.sought.track(track);
                     this.enrich(false, cx);
                 }

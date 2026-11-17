@@ -48,7 +48,7 @@ use crossbeam_channel::{Receiver, bounded};
 use futures_channel::mpsc::UnboundedSender;
 use gpui::{App, Context, Task};
 use resonate_core::{
-    AlbumId, ArtistId, MediaLocation, PlaylistId, ReleaseTrackId, TrackId, WantId,
+    AlbumId, ArtistId, Gate, MediaLocation, PlaylistId, ReleaseTrackId, TrackId, WantId,
 };
 use resonate_library::{
     Album, AlbumFound, AlbumMatch, AlbumNotHeld, AlbumOrder, Artist, ArtistDetail, ArtistFound,
@@ -481,7 +481,6 @@ enum Change {
     PlaceOn,
     TakeRecording,
     GiveIsrc,
-    LookUp,
     ReadTheRest,
     ChooseVersion,
     ForgetTheVersionChosen,
@@ -515,7 +514,6 @@ impl Change {
             Self::PlaceOn => words::models::place_the_track_on_that_release(),
             Self::TakeRecording => words::models::treat_the_song_as_that_recording(),
             Self::GiveIsrc => words::models::give_the_track_that_isrc(),
-            Self::LookUp => words::models::look_the_track_up(),
             Self::ReadTheRest => words::models::read_the_rest_of_the_discography(),
             Self::ChooseVersion => words::models::keep_that_version(),
             Self::ForgetTheVersionChosen => words::models::forget_the_version_chosen(),
@@ -706,6 +704,12 @@ struct LookupAsked {
     began: Instant,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SongAsked {
+    track: TrackId,
+    title: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Reading {
     WhatChanged,
@@ -830,6 +834,7 @@ struct KeepPass {
 pub struct Consulted {
     pub reference: Option<Arc<dyn Reference>>,
     pub fingerprinters: Arc<Fingerprinters>,
+    pub lookups: Gate,
 }
 
 struct PageLearning {
@@ -926,6 +931,8 @@ struct Enrichment {
     running: Option<Arc<EnrichProgress>>,
     asked: Option<LookupAsked>,
     owed: bool,
+    song: Option<SongAsked>,
+    song_owed: Option<SongAsked>,
     looked_up: Option<EnrichSummary>,
     sought: Arc<Sought>,
     _task: Task<()>,
@@ -1298,6 +1305,8 @@ impl LibraryModel {
                 running: None,
                 asked: None,
                 owed: false,
+                song: None,
+                song_owed: None,
                 looked_up: None,
                 sought: Arc::default(),
                 _task: Task::ready(()),

@@ -37,26 +37,26 @@ use resonate_library::Fold;
 use resonate_library::{
     Aged, Album, AlbumLink, AlbumMatch, AlbumNames, AlbumOrder, AlbumQuery, Artist, ArtistFound,
     ArtistLink, ArtistMatch, ArtistOrder, ArtistPressings, ArtistProfile, ArtistQuery,
-    ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Certainty, ChosenVersion, Codec,
-    Compacted, CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder, Direction, Discography,
-    Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured, FileTags, Fingerprinters, Form,
-    Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium, HiddenTracks, HistoryKept,
-    ImageFormat, ImportOptions, ImportSummary, Isrc, Issued, KEPT_IN_STEP_EVERY, KeepStopped,
-    KeepSummary, Kept, KeptList, KeptSong, Layout, Learning, Library, LifeSpan, Link, LinkNames,
-    Linked, LinkedPlaylist, LinkedProfile, ListedSong, Listen, ListeningService, Looked,
-    LookingFor, LookupOp, Love, Loved, LovedNames, LovesTold, LyricText, LyricsAhead, LyricsAsked,
-    Maker, Mbid, Medium, Missing, MissingTrack, NamesMoved, OrganiseOptions, OrganiseSummary, Pace,
-    Performer, Picturing, Played, Playing, PlaylistFormat, PlaylistLink, PlaylistOrder,
-    PlaylistToKeep, PollHandle, PollOptions, PollProgress, PollSummary, Popularity, ProfileLink,
-    ProfilePlaylist, Pruned, Quality, RETRY_WAITS, Rated, Recording, RecordingAsked,
-    RecordingMatch, RecordingRelease, Reference, Refusal, Refused, Relation, Release, ReleaseAsked,
-    ReleaseGroup, ReleaseMatch, ReleaseTrack, Removal, Replaceable, Replaced, Result, RetagOptions,
-    RetagSummary, RowOrder, SUBMITTED_AT_ONCE, SavedQuery, ScanOptions, ScanStats, Scrobble,
-    Scrobbler, Search, Service, SheetEdit, SheetField, SheetScope, Sidecar, SongLink, SongToKeep,
-    SongsAsked, SortOrder, Sought, Sources, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP,
-    TagEdit, TagField, TagSet, TagSink, TagSource, TextEncoding, TokenHeld, Track, TrackQuery,
-    Trashes, UnheldRelease, Unwritten, Upkeep, Vault, VaultWeighingStats, Version, Waits, Window,
-    Wording, Written,
+    ArtistRelease, BETTERED_AFTER, Barcode, BarcodeMatch, Billed, Breadth, Certainty,
+    ChosenVersion, Codec, Compacted, CoverArt, CoverSource, Credit, Cut, Deleted, DeliveryFolder,
+    Direction, Discography, Edit, Encoding, EnrichOptions, EnrichSummary, Error, Favoured,
+    FileTags, Fingerprinters, Form, Genre, GroupAsked, GroupMatch, GroupRelease, HeldMedium,
+    HiddenTracks, HistoryKept, ImageFormat, ImportOptions, ImportSummary, Isrc, Issued,
+    KEPT_IN_STEP_EVERY, KeepStopped, KeepSummary, Kept, KeptList, KeptSong, Layout, Learning,
+    Library, LifeSpan, Link, LinkNames, Linked, LinkedPlaylist, LinkedProfile, ListedSong, Listen,
+    ListeningService, Looked, LookingFor, LookupOp, Love, Loved, LovedNames, LovesTold, LyricText,
+    LyricsAhead, LyricsAsked, Maker, Mbid, Medium, Missing, MissingTrack, NamesMoved,
+    OrganiseOptions, OrganiseSummary, Pace, Performer, Picturing, Played, Playing, PlaylistFormat,
+    PlaylistLink, PlaylistOrder, PlaylistToKeep, PollHandle, PollOptions, PollProgress,
+    PollSummary, Popularity, ProfileLink, ProfilePlaylist, Pruned, Quality, RETRY_WAITS, Rated,
+    Recording, RecordingAsked, RecordingMatch, RecordingRelease, Reference, Refusal, Refused,
+    Relation, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack, Removal,
+    Replaceable, Replaced, Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE,
+    SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit,
+    SheetField, SheetScope, Sidecar, SongLink, SongToKeep, SongsAsked, SortOrder, Sought, Sources,
+    StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
+    TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Upkeep, Vault,
+    VaultWeighingStats, Version, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -33321,26 +33321,91 @@ fn an_isrc_typed_for_a_track_is_asked_by_the_next_lookup_though_it_was_asked_in_
     Ok(())
 }
 
+fn look_up_the_song(library: &Library, fake: &Arc<Fake>, song: TrackId) -> Result<EnrichSummary> {
+    let reference = Arc::clone(fake) as Arc<dyn Reference>;
+    let summary = library
+        .enrich(
+            reference,
+            Arc::new(Fingerprinters::none()),
+            EnrichOptions {
+                pace: Pace::Hurried,
+                breadth: Breadth::TheSong(song),
+                ..EnrichOptions::default()
+            },
+        )?
+        .join()?;
+    assert!(!summary.cancelled, "the pass reported itself cancelled");
+    Ok(summary)
+}
+
 #[test]
-fn a_track_asked_in_vain_is_asked_again_at_once_when_the_listener_asks() -> Result<()> {
-    let (_tree, library, _database, file) = scanned_lone(
-        Wav::new()
+fn a_song_looked_up_alone_is_asked_at_once_though_asked_in_vain_and_nothing_else_is() -> Result<()>
+{
+    let tree = Tree::new();
+    tree.write(
+        "1.wav",
+        &Wav::new()
             .text(TITLE, "One of These Days")
-            .text(ARTIST, "The Orbiters"),
-    )?;
-    let track = library
-        .track_at(&file, None)?
-        .expect("the catalog holds the track");
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    );
+    tree.write(
+        "2.wav",
+        &Wav::new()
+            .text(TITLE, "Fearless")
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    );
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
     let fake = Arc::new(Fake::new(Canned::default()));
 
     let first = enrich(&library, &fake, false)?;
+    let song = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .find(|track| track.title == "Fearless")
+        .expect("the catalog holds the song")
+        .id;
+    let looked_up = look_up_the_song(&library, &fake, song)?;
     let waiting = enrich(&library, &fake, false)?;
-    assert_eq!(first.stats.tracks, 1);
-    assert_eq!(waiting.stats.tracks, 0);
 
-    assert!(library.ask_about_again(track.id)?);
-    let again = enrich(&library, &fake, false)?;
-    assert_eq!(again.stats.tracks, 1);
+    assert_eq!(first.stats.tracks, 2);
+    assert_eq!(looked_up.stats.tracks, 1);
+    assert_eq!(looked_up.stats.tracks_unmatched, 1);
+    assert_eq!(looked_up.stats.albums, 0);
+    assert_eq!(
+        waiting.stats.tracks, 0,
+        "the song left waiting was asked again"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_song_on_an_answered_album_is_looked_up_through_its_album_again() -> Result<()> {
+    let tree = Tree::new();
+    write_orbits(&tree, true);
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let fake = Arc::new(Fake::new(Canned {
+        releases: vec![orbits(orbits_rows(), Vec::new())],
+        ..Canned::default()
+    }));
+
+    let first = enrich(&library, &fake, false)?;
+    let song = library.tracks(&TrackQuery::default())?[0].id;
+    let asked_before = fake.called(LookupOp::Release);
+    let looked_up = look_up_the_song(&library, &fake, song)?;
+
+    assert_eq!(first.stats.releases, 1);
+    assert_eq!(fake.called(LookupOp::Release), asked_before + 1);
+    assert_eq!(looked_up.stats.albums, 1);
+    assert_eq!(looked_up.stats.releases, 1);
+    assert_eq!(
+        looked_up.stats.tracks, 0,
+        "a song its album answers for was asked alone"
+    );
+    assert_eq!(looked_up.stopped_by, None);
     Ok(())
 }
 

@@ -372,11 +372,6 @@ impl Library {
         })
     }
 
-    pub fn ask_about_again(&self, track: TrackId) -> Result<bool> {
-        self.inner
-            .write(|transaction| enriched::ask_about_again(transaction, track))
-    }
-
     pub fn set_isrc(&self, track: TrackId, isrc: &Isrc) -> Result<()> {
         self.inner
             .write(|transaction| enriched::set_isrc(transaction, track, isrc))

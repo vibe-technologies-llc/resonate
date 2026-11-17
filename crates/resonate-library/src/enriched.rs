@@ -2050,27 +2050,6 @@ pub(crate) fn track_is_due(
         .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
-pub(crate) fn ask_about_again(tx: &Transaction<'_>, track: TrackId) -> Result<bool> {
-    let paired: bool = tx
-        .query_row(
-            &format!("SELECT {IS_PAIRED} FROM tracks t WHERE t.id = ?1"),
-            params![track.get() as i64],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|source| Error::store(StoreOp::Query, source))?
-        .ok_or(Error::UnknownTrack(track))?;
-    if paired {
-        return Ok(false);
-    }
-    tx.execute(
-        "UPDATE tracks SET asked = NULL, asks = 0, refusals = 0, answered = NULL WHERE id = ?1",
-        params![track.get() as i64],
-    )
-    .map_err(|source| Error::store(StoreOp::Update, source))?;
-    Ok(true)
-}
-
 pub(crate) fn set_isrc(tx: &Transaction<'_>, track: TrackId, isrc: &Isrc) -> Result<()> {
     let changed = tx
         .execute(

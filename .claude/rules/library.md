@@ -952,7 +952,15 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   without an `Outcome` fails the exhaustive `of`, and one with two fails
   `every_counter_is_one_outcome_and_every_outcome_one_counter`. A metered connection is no counter:
   the gated client answers `Unreachable`, which ends the pass as `stopped_by`. `EnrichOptions`:
-  `refresh`, `at_most` (caps albums, tracks, artists each), `sought`, `studies`, `lyrics`.
+  `refresh`, `at_most` (caps albums, tracks, artists each), `sought`, `studies`, `lyrics`,
+  `breadth`. **`Breadth::TheSong` is one song's pass**: its album asked again whatever its clocks
+  say (`album_to_ask`; a song its album answers for is paired, so not asked alone), then the song
+  where still unpaired and its artist, both as under `refresh`, its lyrics and a study only where
+  due; no rematch batch, no songs learnt, no unheld covers, and it neither marks nor clears an
+  unfinished pass (`note_began`), so a whole pass left unfinished is still carried on. Its
+  `EnrichStats` are that song's alone, which the window reads into what came of it
+  (`a_song_looked_up_alone_is_asked_at_once_though_asked_in_vain_and_nothing_else_is`,
+  `a_song_on_an_answered_album_is_looked_up_through_its_album_again`).
   Rematch-only albums go first; the rest is one queue of `Ask`s walked in order, albums first
   because a landing album retires every track under it. `tests/library.rs` drives it via a `Fake`
   that can fault on a chosen call; the online crate proves its mapping over captured fixtures,
@@ -1190,10 +1198,9 @@ group landing and `forget_the_match` clear it), writes each row's `release_track
 - **The listener can give a track an ISRC, and ask about one track at once.** `Library::set_isrc`
   writes `tracks.isrc` (the upsert's `isrc` arm keeps it across rescans of an unchanged file) and
   clears `asked`, `asks`, `refusals`, so the next lookup asks the track by its code.
-  `Library::ask_about_again` clears the same clocks and `answered` for a track no release row is
-  paired with (`false` for a paired one: its album answers for it). `Sought::track` lifts one track
-  to the front of a pass, and `still_due` keeps the seek a nudge (`Library::track_is_due`). The menu
-  offers *Enrich this song* and *Give it an ISRC…* wherever the reference is reachable
+  `Sought::track` lifts one track to the front of a pass, and `still_due` keeps the seek a nudge
+  (`Library::track_is_due`). The menu offers *Enrich this song* (a pass of `Breadth::TheSong`,
+  above) and *Give it an ISRC…* wherever the reference is reachable
   (`an_isrc_typed_for_a_track_is_asked_by_the_next_lookup_though_it_was_asked_in_vain_before`).
 - **`fingerprint.rs` is the seam a recogniser fills.** `Fingerprints` answers a `Printed`
   (`Nothing`, or `Recognised` with `RecordingMatch`es) for a `Sounded` (location, span, length, the

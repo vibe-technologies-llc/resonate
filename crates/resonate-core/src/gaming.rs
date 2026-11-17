@@ -10,8 +10,12 @@ pub fn report(active: bool) {
     ACTIVE.store(active, Ordering::Release);
 }
 
+pub fn is_active() -> bool {
+    ACTIVE.load(Ordering::Acquire)
+}
+
 pub fn wait(stopped: &(dyn Fn() -> bool + Sync)) {
-    while ACTIVE.load(Ordering::Acquire) && !stopped() {
+    while is_active() && !stopped() {
         thread::sleep(Duration::from_millis(100));
     }
 }

@@ -31,6 +31,11 @@ pub fn for_lookups(config: &Config) -> Gate {
     LOOKUPS.clone()
 }
 
+#[cfg(all(feature = "ui", not(feature = "online")))]
+pub fn for_lookups(_: &Config) -> Gate {
+    Gate::open()
+}
+
 #[cfg(all(feature = "ui", feature = "online"))]
 pub fn allow_lookups(allowed: bool) {
     shut_while_metered(&LOOKUPS, !allowed);

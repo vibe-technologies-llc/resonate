@@ -299,6 +299,29 @@ pub(super) fn looked_up(summary: &EnrichSummary, prompted: Prompted) -> Option<N
     })
 }
 
+pub(super) fn song_looked_up(summary: &EnrichSummary, title: &str) -> Notice {
+    let stats = summary.stats;
+    let matched_alone = stats.by_isrc + stats.by_recording + stats.by_search + stats.by_fingerprint;
+
+    if summary.stopped_by.is_some() {
+        Notice::Trouble(words::models::song_lookup_unreached(title))
+    } else if summary.cancelled {
+        Notice::Noted(words::models::song_lookup_stopped(title))
+    } else if matched_alone > 0 {
+        Notice::Done(words::models::song_found(title))
+    } else if stats.tracks_unmatched > 0 {
+        Notice::Noted(words::models::song_unmatched(title))
+    } else if stats.releases > 0 {
+        Notice::Done(words::models::song_found(title))
+    } else if stats.albums_rejected > 0 {
+        Notice::Noted(words::models::song_match_turned_down(title))
+    } else if stats.refused > 0 {
+        Notice::Trouble(words::models::song_lookup_refused(title))
+    } else {
+        Notice::Noted(words::models::song_unmatched(title))
+    }
+}
+
 pub(super) struct Sharing {
     pub(super) link: Option<String>,
     pub(super) notice: Notice,

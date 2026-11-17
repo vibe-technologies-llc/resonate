@@ -1271,6 +1271,7 @@ impl RootView {
                 let chosen = this.library.read(cx).has_a_version_chosen(track_id);
                 let placeable = this.library.read(cx).can_enrich().then_some(track_id);
                 let matched = SharedString::from(track.title.clone());
+                let looked_up = track.title.clone();
                 let deleting = Deleting::of(track);
                 let in_the_queue = this
                     .is_in_the_queue(&track.location, track.span, cx)
@@ -1301,8 +1302,9 @@ impl RootView {
                                     Icon::Globe,
                                     words::browser::look_it_up(),
                                     move |this, _, cx| {
+                                        let title = looked_up.clone();
                                         this.library.update(cx, |library, cx| {
-                                            library.look_up_a_track(track, cx)
+                                            library.look_up_the_song(track, title, cx);
                                         });
                                     },
                                 )
@@ -4636,9 +4638,12 @@ mod tests {
     }
 
     mod driven {
-        use std::sync::{
-            Arc,
-            atomic::{AtomicBool, Ordering},
+        use std::{
+            sync::{
+                Arc,
+                atomic::{AtomicBool, Ordering},
+            },
+            time::Duration,
         };
 
         use gpui::{ClipboardItem, Point, TestAppContext};
@@ -5277,6 +5282,121 @@ mod tests {
                     .and_then(|asked| asked.mbid),
                 Some(mbid(HEROES_TONIGHT)),
                 "the song was not given the recording chosen"
+            );
+        }
+
+        fn a_song_held_alone(
+            cx: &mut TestAppContext,
+            folder: &Folder,
+            named: &str,
+        ) -> (Driven, Arc<Library>, Track) {
+            folder.tone(&format!("{named}.wav"), 1);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(|_: &Supplying<'_>| Providers::none()),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, folder);
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), folder, reaching);
+            driven.until(|root, cx| {
+                let library = root.library.read(cx);
+                !library.listing().is_empty() && !library.is_enriching()
+            });
+            let track = library
+                .tracks(&TrackQuery::default())
+                .expect("the tracks read")
+                .remove(0);
+
+            (driven, library, track)
+        }
+
+        fn enrich_this_song_pressed(driven: &mut Driven, track: &Track) {
+            let row: &'static str = Box::leak(format!("track-{}", track.id.get()).into_boxed_str());
+            driven.right_click(row);
+            let offered = driven
+                .read(|root, _| {
+                    root.menu
+                        .as_ref()
+                        .and_then(|menu| menu.offering("Enrich this song"))
+                })
+                .expect("the song's menu offers to enrich it");
+            let crate::views::menu::Offered::Beneath(at, under) = offered else {
+                panic!("enriching a song stands outside the Identify nest");
+            };
+            let nest: &'static str = Box::leak(format!("menu-entry-{at}").into_boxed_str());
+            let entry: &'static str =
+                Box::leak(format!("menu-beneath-{at}-{under}").into_boxed_str());
+            driven.click(nest);
+            driven.click(entry);
+        }
+
+        fn told(driven: &mut Driven) -> Option<String> {
+            driven.read(|_, cx| toast::showing_text(cx))
+        }
+
+        fn told_in_turn(driven: &mut Driven, said: &str) {
+            driven.until_ticking(Duration::from_secs(1), |_, cx| {
+                toast::showing_text(cx).as_deref() == Some(said)
+            });
+        }
+
+        #[gpui::test]
+        fn enrich_this_song_finds_the_song_by_its_code_and_says_so(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let (mut driven, library, track) = a_song_held_alone(cx, &folder, "Heroes Tonight");
+            library
+                .set_isrc(track.id, &Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc"))
+                .expect("the code is given");
+
+            enrich_this_song_pressed(&mut driven, &track);
+            assert_eq!(
+                told(&mut driven).as_deref(),
+                Some("Looking up Heroes Tonight on MusicBrainz")
+            );
+            told_in_turn(
+                &mut driven,
+                "Found Heroes Tonight on MusicBrainz and filled in what it says",
+            );
+
+            assert_eq!(
+                library
+                    .track_to_ask(track.id)
+                    .expect("the track read")
+                    .and_then(|asked| asked.mbid),
+                Some(mbid(HEROES_TONIGHT)),
+                "the song was not given the recording its code names"
+            );
+        }
+
+        #[gpui::test]
+        fn enrich_this_song_says_plainly_when_nothing_strictly_matches(cx: &mut TestAppContext) {
+            let folder = Folder::new();
+            let (mut driven, _library, track) = a_song_held_alone(cx, &folder, HEROES_MISSPELT);
+
+            enrich_this_song_pressed(&mut driven, &track);
+
+            told_in_turn(
+                &mut driven,
+                "MusicBrainz has no strict match for Heros tonite, so nothing was changed",
+            );
+        }
+
+        #[gpui::test]
+        fn enrich_this_song_on_a_metered_connection_asks_nothing_and_says_why(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let (mut driven, _library, track) = a_song_held_alone(cx, &folder, "Heroes Tonight");
+            driven.metering.report(resonate_core::Meter::Metered);
+
+            enrich_this_song_pressed(&mut driven, &track);
+
+            assert!(driven.read(|root, cx| !root.library.read(cx).is_enriching()));
+            assert_eq!(
+                told(&mut driven).as_deref(),
+                Some(
+                    "Heroes Tonight wasn't looked up: the connection is metered, and Settings › Online holds lookups on it"
+                )
             );
         }
 

@@ -18,8 +18,9 @@ use gpui::{
     TestAppContext, TouchPhase, VisualTestContext, point, px, size,
 };
 use resonate_core::{
-    Appearance, DesktopLook, Frames, Gain, Ground, HeadYaw, MediaLocation, QueueStamp, Resumable,
-    Resumption, SpeakerAngle, SpeakerElevation, TextSize, Theme, TrackId, ZoneId, ZoneName,
+    Appearance, DesktopLook, Frames, Gain, Gate, Ground, HeadYaw, MediaLocation, Metering,
+    QueueStamp, Resumable, Resumption, SpeakerAngle, SpeakerElevation, TextSize, Theme, TrackId,
+    ZoneId, ZoneName,
 };
 use resonate_engine::{
     AudioSource, Backend, Command, EngineConfig, Opener, Opening, Opens, Player, SinkChange,
@@ -269,6 +270,7 @@ fn nobody_listening() -> Listens {
 pub(crate) struct Driven {
     pub(crate) root: Entity<RootView>,
     pub(crate) cx: VisualTestContext,
+    pub(crate) metering: Metering,
     worn_by: Wearers,
 }
 
@@ -489,6 +491,8 @@ impl Driven {
         theme::wear(Appearance::default());
         let (attention, _) = unbounded();
         let unseen = Arc::new(Unseen);
+        let metering = Metering::new();
+        let lookups = Gate::new(metering.clone(), true);
         cx.update(|cx| {
             cx.set_global(Drawer::new());
             cx.set_global(ResonateApp {
@@ -505,6 +509,7 @@ impl Driven {
                 for_the_pass: Consulted {
                     reference: reference.clone(),
                     fingerprinters,
+                    lookups,
                 },
                 reference,
                 scrobblers: None,
@@ -580,7 +585,12 @@ impl Driven {
         cx.update(|window, _| window.activate_window());
         cx.simulate_resize(size(px(WIDE), px(TALL)));
         cx.run_until_parked();
-        Self { root, cx, worn_by }
+        Self {
+            root,
+            cx,
+            metering,
+            worn_by,
+        }
     }
 
     pub(crate) fn wearing_alone(&mut self) {

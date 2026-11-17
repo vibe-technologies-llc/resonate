@@ -736,6 +736,19 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   the catalog that no lookup reached. `a_song_scanned_during_a_lookup_gets_its_metadata_in_the_following_pass`
   holds the first lookup open while a real scan adds another song, then checks that song's
   recording identity lands after it is released.
+- ***Enrich this song* looks that song up and says what came of it.**
+  `LibraryModel::look_up_the_song` runs a pass of `Breadth::TheSong` (`library.md`), hurried, and
+  tells *Looking up {title} on MusicBrainz* (or *once the game ends* while Game Mode holds lookups)
+  as it starts, then `told::song_looked_up` reads that pass's stats into one plain notice: found
+  and filled in, no strict match, offered only on a release the listener turned down, refused,
+  unreached, or stopped. It asks nothing and says why where it cannot run: Online off (or no
+  reference), or the lookup gate shut on a metered connection (`Consulted::lookups`, the binary's
+  `metered::for_lookups`). Asked while another pass runs, the song waits for it (`song_owed`,
+  latest press wins) and is told so. A song's pass draws no lookup progress and leaves the last
+  whole pass's summary in place
+  (`enrich_this_song_finds_the_song_by_its_code_and_says_so`,
+  `enrich_this_song_says_plainly_when_nothing_strictly_matches`,
+  `enrich_this_song_on_a_metered_connection_asks_nothing_and_says_why`).
 - **What a listener reaches for is what the lookup asks next.** `LibraryModel` holds one `Sought` for
   the run and hands it to every `enrich`. Set via `LibraryModel::ask_about`: scoping the tracks pane
   to an album or artist, playing a row, and `ask_about_what_is_drawn` whenever a listing is read with
