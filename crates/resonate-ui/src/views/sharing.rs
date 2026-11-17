@@ -20,7 +20,7 @@ use crate::{
 
 const SCANNED_SIDE: f32 = 132.0;
 
-const SHEET_REDRAWN_EVERY: Duration = Duration::from_millis(1_000);
+const SHEET_READ_EVERY: Duration = Duration::from_millis(1_000);
 
 const UNHELD_NAMED_AT_MOST: usize = 5;
 
@@ -33,9 +33,34 @@ pub(crate) enum Armed {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Seen {
+    Unread,
+    Unshared,
+    Shared(SharedSeen),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Sharing {
     pub(crate) playlist: PlaylistId,
     pub(crate) armed: Armed,
+    pub(crate) seen: Seen,
+}
+
+struct SharesRead {
+    lists: Vec<(PlaylistId, bool)>,
+    seen: Option<(PlaylistId, Seen)>,
+}
+
+impl SharesRead {
+    fn of(together: &dyn Together, sharing: Option<PlaylistId>) -> Self {
+        Self {
+            lists: together.shared_playlists(),
+            seen: sharing.map(|playlist| {
+                let seen = together.seen(playlist).map_or(Seen::Unshared, Seen::Shared);
+                (playlist, seen)
+            }),
+        }
+    }
 }
 
 fn reach_said(reach: SharedReach) -> Option<&'static str> {
@@ -62,41 +87,84 @@ fn person_said(person: &SharedPerson) -> SharedString {
 
 impl RootView {
     pub(crate) fn open_sharing(&mut self, playlist: PlaylistId, cx: &mut Context<Self>) {
+        let together = together_of(cx);
         self.social.sharing = Some(Sharing {
             playlist,
             armed: Armed::Nothing,
+            seen: match together {
+                Some(_) => Seen::Unread,
+                None => Seen::Unshared,
+            },
         });
-        if let Some(together) = together_of(cx) {
-            together.watch(Some(playlist));
-        }
-        self.social.sharing_redraws = Some(cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor().timer(SHEET_REDRAWN_EVERY).await;
-                if this.update(cx, |_, cx| cx.notify()).is_err() {
-                    return;
+        self.social.reading_the_shares = together.map(|together| {
+            cx.spawn(async move |this, cx| {
+                let watching = Arc::clone(&together);
+                cx.background_spawn(async move { watching.watch(Some(playlist)) })
+                    .await;
+                loop {
+                    let reading = Arc::clone(&together);
+                    let read = cx
+                        .background_spawn(async move {
+                            SharesRead::of(reading.as_ref(), Some(playlist))
+                        })
+                        .await;
+                    if this
+                        .update(cx, |this, cx| this.land_the_shares(read, cx))
+                        .is_err()
+                    {
+                        return;
+                    }
+                    cx.background_executor().timer(SHEET_READ_EVERY).await;
                 }
-            }
-        }));
+            })
+        });
         cx.notify();
     }
 
     pub(crate) fn close_sharing(&mut self, cx: &mut Context<Self>) {
         self.social.sharing = None;
-        self.social.sharing_redraws = None;
+        self.social.reading_the_shares = None;
         if let Some(together) = together_of(cx) {
             together.watch(None);
         }
         cx.notify();
     }
 
+    pub(crate) fn read_the_shares(&mut self, cx: &mut Context<Self>) {
+        let Some(together) = together_of(cx) else {
+            return;
+        };
+        let sharing = self.social.sharing.as_ref().map(|sharing| sharing.playlist);
+
+        cx.spawn(async move |this, cx| {
+            let read = cx
+                .background_spawn(async move { SharesRead::of(together.as_ref(), sharing) })
+                .await;
+            let _ = this.update(cx, |this, cx| this.land_the_shares(read, cx));
+        })
+        .detach();
+    }
+
+    fn land_the_shares(&mut self, read: SharesRead, cx: &mut Context<Self>) {
+        let mut moved = self.social.shared_lists != read.lists;
+        self.social.shared_lists = read.lists;
+        if let (Some(sharing), Some((playlist, seen))) = (self.social.sharing.as_mut(), read.seen)
+            && sharing.playlist == playlist
+            && sharing.seen != seen
+        {
+            sharing.seen = seen;
+            moved = true;
+        }
+        if moved {
+            cx.notify();
+        }
+    }
+
     pub(crate) fn sharing_sheet(&self, cx: &mut Context<Self>) -> Div {
-        let Some(sharing) = self.social.sharing.clone() else {
+        let Some(sharing) = self.social.sharing.as_ref() else {
             return div();
         };
-        let together = together_of(cx);
-        let seen = together
-            .as_ref()
-            .and_then(|together| together.seen(sharing.playlist));
+        let can_share = together_of(cx).is_some();
 
         let mut card = kit::sheet()
             .id("sharing-sheet")
@@ -107,9 +175,10 @@ impl RootView {
             .overflow_y_scroll()
             .on_mouse_down_out(cx.listener(|this, _, _, cx| this.close_sharing(cx)));
 
-        card = match seen {
-            Some(seen) => card.child(self.shared_body(&sharing, &seen, cx)),
-            None => card.child(self.unshared_body(&sharing, together.is_some(), cx)),
+        card = match &sharing.seen {
+            Seen::Shared(seen) => card.child(self.shared_body(sharing, seen, cx)),
+            Seen::Unshared => card.child(self.unshared_body(sharing, can_share, cx)),
+            Seen::Unread => card.child(heading(words::sharing::share_label())),
         };
 
         kit::over_a_scrim(motion::lifted_in(card, "sharing-sheet-arrives"))
@@ -458,15 +527,15 @@ fn run_it(
 
     cx.spawn(async move |this, cx| {
         let worked = running.await;
-        let told = this.update(cx, |this, cx| {
+        let _ = this.update(cx, |this, cx| {
             if !worked {
                 this.report(Notice::Trouble(refused.to_owned()), cx);
             } else if let Some(done) = done {
                 this.report(Notice::Done(done.to_owned()), cx);
             }
+            this.read_the_shares(cx);
             cx.notify();
         });
-        let _ = told;
     })
     .detach();
 }

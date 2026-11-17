@@ -171,6 +171,7 @@ impl RootView {
             if let Some(track) = arrived {
                 this.play_what_was_downloaded(track, cx);
             }
+            this.read_the_shares(cx);
             if this.typing.waiting_for_the_results && !library.read(cx).is_reading_the_search() {
                 this.typing.waiting_for_the_results = false;
                 this.reach_the_first_result(window, cx);
@@ -422,7 +423,7 @@ impl RootView {
                 reading_wrapped: None,
                 sharing: None,
                 shared_lists: Vec::new(),
-                sharing_redraws: None,
+                reading_the_shares: None,
                 party_offered: None,
                 list_offered: None,
             },

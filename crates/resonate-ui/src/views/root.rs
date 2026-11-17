@@ -581,7 +581,7 @@ pub(crate) struct Social {
     pub(crate) reading_wrapped: Option<Task<()>>,
     pub(crate) sharing: Option<sharing::Sharing>,
     pub(crate) shared_lists: Vec<(PlaylistId, bool)>,
-    pub(crate) sharing_redraws: Option<Task<()>>,
+    pub(crate) reading_the_shares: Option<Task<()>>,
     pub(crate) party_offered: Option<String>,
     pub(crate) list_offered: Option<ListOffered>,
 }

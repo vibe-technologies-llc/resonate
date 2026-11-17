@@ -268,13 +268,6 @@ pub(crate) fn queue_items(entries: &[PlaylistEntry], beside: &QueueRows) -> Vec<
 
 impl RootView {
     pub(crate) fn playlists_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        self.social.shared_lists = cx
-            .global::<ResonateApp>()
-            .together
-            .as_ref()
-            .map(|together| together.shared_playlists())
-            .unwrap_or_default();
-
         match self.library.read(cx).opened() {
             Some(opened) => self.one_playlist(opened, cx),
             None => self.every_playlist(cx),

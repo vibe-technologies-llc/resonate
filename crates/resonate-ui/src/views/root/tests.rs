@@ -373,6 +373,7 @@ mod driven {
             playlists::Held,
             reorder::{Reach, Shift},
             root::{Deleting, Magnified, Pane, RootView},
+            sharing::Seen,
         },
     };
 
@@ -1272,26 +1273,62 @@ mod driven {
     }
 
     #[gpui::test]
-    fn the_sharing_sheet_redraws_the_window_only_while_it_is_open(cx: &mut TestAppContext) {
+    fn the_sharing_sheet_reads_what_is_shared_each_second_while_open_and_never_as_it_draws(
+        cx: &mut TestAppContext,
+    ) {
         let folder = Folder::new();
         let library = catalog();
         let playlist = library.create_playlist("Mix").expect("a playlist");
         let mut driven = Driven::opened_in(cx, library, &folder);
+        let joining = Arc::new(party_offer::joined::Joining::default());
+        let shared = crate::together::SharedSeen {
+            name: "Mix".to_owned(),
+            may_edit: true,
+            edit_link: None,
+            view_link: "resonate://shared/E-ABCDE".to_owned(),
+            people: Vec::new(),
+            unheld: Vec::new(),
+            reach: crate::together::SharedReach::Reached,
+        };
+        *joining.sharing.lock() = Some(shared.clone());
+        together_over(&mut driven, joining.clone());
         let root = driven.root.clone();
+        let asked = || *joining.seen_asked.lock();
 
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| root.open_sharing(playlist, cx));
         });
-        driven.settle();
+        driven.cx.run_until_parked();
+        let on_opening = asked();
+        let seen_on_opening = driven.read(|root, _| {
+            root.social
+                .sharing
+                .as_ref()
+                .map(|sharing| sharing.seen.clone())
+        });
+        for _ in 0..5 {
+            driven.cx.update(|window, _| window.refresh());
+            driven.cx.run_until_parked();
+        }
+        let while_drawn = asked();
+        driven.cx.executor().advance_clock(Duration::from_secs(1));
+        driven.cx.run_until_parked();
+        let a_second_on = asked();
 
-        assert!(driven.read(|root, _| root.social.sharing_redraws.is_some()));
+        assert_eq!(on_opening, 1);
+        assert_eq!(seen_on_opening, Some(Seen::Shared(shared)));
+        assert_eq!(while_drawn, 1);
+        assert_eq!(a_second_on, 2);
+        assert!(driven.read(|root, _| root.social.reading_the_shares.is_some()));
 
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| root.close_sharing(cx));
         });
-        driven.settle();
+        driven.cx.executor().advance_clock(Duration::from_secs(3));
+        driven.cx.run_until_parked();
 
-        assert!(driven.read(|root, _| root.social.sharing_redraws.is_none()));
+        assert_eq!(asked(), 2);
+        assert!(driven.read(|root, _| root.social.reading_the_shares.is_none()));
     }
 
     #[gpui::test]

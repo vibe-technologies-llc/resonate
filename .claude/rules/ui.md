@@ -1586,8 +1586,8 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
 ## Panes
 
 **Listening Party** (`views/party.rs`) and the sharing sheet (`views/sharing.rs`) read through the `Together` seam,
-absent where the build or setting has no sync, so neither sees the sync crate. Both redraw on a timer
-while shown, reading in-memory state only (the party pane's, the driven device's page, the mirror's progress and the analysis progress end with the page being drawn, `Pulse` beating only for as long as each frame draws it; the sharing sheet's ends when it is closed); the sheet asks twice for what cannot be undone (`party.md`,
+absent where the build or setting has no sync, so neither sees the sync crate. The party pane
+redraws on a timer while shown, reading in-memory state only (the party pane's, the driven device's page, the mirror's progress and the analysis progress end with the page being drawn, `Pulse` beating only for as long as each frame draws it). **The sharing sheet never reads as it draws**: opening it starts `Social::reading_the_shares`, which watches the list and then each `SHEET_READ_EVERY` (1 s) reads `Together::seen` and `shared_playlists` on the background executor (`SharesRead`; `seen` reads the catalog's stamp) and lands them on `Social` (`Sharing::seen`, `Seen::Unread` until the first read, and `Social::shared_lists`), notifying only where something moved; closing it drops the task. The playlists pane draws its *Shared* and *Followed* marks from `Social::shared_lists`, which `read_the_shares` refreshes on the background executor whenever the catalog model notifies and after every sharing action, never per render (`the_sharing_sheet_reads_what_is_shared_each_second_while_open_and_never_as_it_draws`); the sheet asks twice for what cannot be undone (`party.md`,
 `shared-playlists.md`).
 
 - **A favourite is a star; the heart is taken; missing is neither.** `Icon::Want`/`Wanted` (heart) are

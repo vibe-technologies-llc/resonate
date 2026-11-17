@@ -160,6 +160,8 @@ pub(crate) mod joined {
         pub(crate) handed: Mutex<Vec<[u8; 16]>>,
         pub(crate) played_next: Mutex<Vec<PartyRequestId>>,
         pub(crate) dismissed: Mutex<Vec<PartyRequestId>>,
+        pub(crate) sharing: Mutex<Option<SharedSeen>>,
+        pub(crate) seen_asked: Mutex<usize>,
     }
 
     impl Joining {
@@ -173,7 +175,8 @@ pub(crate) mod joined {
 
     impl Together for Joining {
         fn seen(&self, _: PlaylistId) -> Option<SharedSeen> {
-            None
+            *self.seen_asked.lock() += 1;
+            self.sharing.lock().clone()
         }
 
         fn shared_playlists(&self) -> Vec<(PlaylistId, bool)> {
