@@ -134,6 +134,7 @@ const AUDD_INTERVAL: Duration = Duration::from_secs(1);
 const LISTENBRAINZ_INTERVAL: Duration = Duration::from_secs(1);
 const BETTER_LYRICS_INTERVAL: Duration = Duration::from_secs(4);
 const RETRY_AFTER_AT_MOST: Duration = Duration::from_secs(10);
+const COOLING_AT_MOST: Duration = Duration::from_secs(24 * 60 * 60);
 const RETRY_AFTER_BY_DEFAULT: Duration = Duration::from_secs(2);
 const BUSY_RETRIES: u32 = 3;
 const REDIRECTS_FOLLOWED: u32 = 10;
@@ -617,7 +618,7 @@ impl Client {
         };
 
         serde_json::from_slice(&bytes).map(Some).map_err(|error| {
-            tracing::debug!(%error, ?host, ?op, url, "an answer was not the document expected");
+            tracing::debug!(%error, ?host, ?op, "an answer was not the document expected");
             Error::Unreadable { host, op }
         })
     }
@@ -657,7 +658,7 @@ impl Client {
                 return Ok(None);
             };
             return serde_json::from_slice(&bytes).map(Some).map_err(|error| {
-                tracing::debug!(%error, ?host, ?op, url, "an answer was not the document expected");
+                tracing::debug!(%error, ?host, ?op, "an answer was not the document expected");
                 Error::Unreadable { host, op }
             });
         }
@@ -703,7 +704,7 @@ impl Client {
             return Ok(None);
         };
         serde_json::from_slice(&bytes).map(Some).map_err(|error| {
-            tracing::debug!(%error, ?host, ?op, url, "an answer was not the document expected");
+            tracing::debug!(%error, ?host, ?op, "an answer was not the document expected");
             Error::Unreadable { host, op }
         })
     }
@@ -864,6 +865,9 @@ impl Client {
                     let request = self
                         .agent
                         .post(url)
+                        .config()
+                        .max_redirects(0)
+                        .build()
                         .header(USER_AGENT, &introduced)
                         .header("Content-Type", posted.content_type.as_str())
                         .header("Content-Language", CONTENT_LANGUAGE);
@@ -899,7 +903,6 @@ impl Client {
             tracing::debug!(
                 ?host,
                 ?op,
-                url,
                 ?wait,
                 retried,
                 "the service is unavailable; trying again"
@@ -1052,7 +1055,7 @@ fn busy(status: StatusCode) -> bool {
 }
 
 fn named_cooling_off(headers: &HeaderMap) -> Option<Duration> {
-    retry_after(headers, SystemTime::now()).map(|asked_for| asked_for.min(RETRY_AFTER_AT_MOST))
+    retry_after(headers, SystemTime::now()).map(|asked_for| asked_for.min(COOLING_AT_MOST))
 }
 
 fn valid_upload_link(link: &str) -> bool {
@@ -1172,6 +1175,12 @@ mod tests {
     }
 
     fn serving_one_post() -> (String, JoinHandle<(String, Vec<u8>)>) {
+        serving_one_post_answered(
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_owned(),
+        )
+    }
+
+    fn serving_one_post_answered(answer: String) -> (String, JoinHandle<(String, Vec<u8>)>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
         let url = format!(
             "http://{}/",
@@ -1194,8 +1203,7 @@ mod tests {
                 .expect("a declared length");
             let mut body = vec![0; length];
             stream.read_exact(&mut body).expect("the body");
-            let _ = stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}");
+            let _ = stream.write_all(answer.as_bytes());
             (head, body)
         });
         (url, served)
@@ -1291,6 +1299,112 @@ mod tests {
             "another host was told the contact: {last}"
         );
         assert_eq!(last.matches("user-agent: ").count(), 1, "{last}");
+    }
+
+    #[test]
+    fn a_contact_is_not_carried_through_a_redirected_post_to_another_host() {
+        let introduction = Introduction::as_(&identity(Some("someone who typed a contact")));
+        let client = Client::on_clock(introduction, Faked::new(), Carried::Plain);
+        let told = "user-agent: resonate/9.9.9 ( someone who typed a contact )\r\n";
+        let elsewhere = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let landing = elsewhere.local_addr().expect("a bound address").port();
+
+        let (asked, asking) = serving_one_post_answered(redirecting_to(&format!(
+            "http://localhost:{landing}/landed"
+        )));
+        let read = client.posted::<Value>(
+            Host::ListenBrainz,
+            LookupOp::Submit,
+            &format!("{asked}1/submit-listens"),
+            &Posted::json(&Value::Null),
+        );
+        let (first, _) = asking.join().expect("the asked host");
+        elsewhere
+            .set_nonblocking(true)
+            .expect("a listener that need not wait");
+        let reached = elsewhere.accept();
+
+        assert!(first.contains(told), "{first}");
+        assert!(
+            matches!(read, Err(Error::Refused { status: 302, .. })),
+            "{read:?}"
+        );
+        assert!(
+            reached
+                .as_ref()
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::WouldBlock),
+            "a post was redirected to another host: {reached:?}"
+        );
+    }
+
+    #[derive(Clone, Default)]
+    struct Logged(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Logged {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl tracing_subscriber::fmt::MakeWriter<'_> for Logged {
+        type Writer = Self;
+
+        fn make_writer(&self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    #[test]
+    fn the_address_asked_is_never_logged_since_a_key_may_ride_in_its_query() {
+        const KEY: &str = "a-key-the-listener-registered";
+
+        let client = Client::on_clock(
+            Introduction::as_(&identity(None)),
+            Faked::new(),
+            Carried::Plain,
+        );
+        let logged = Logged::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_ansi(false)
+            .with_writer(logged.clone())
+            .finish();
+
+        let (url, served) = serving(vec![BUSY, FINE]);
+        let read = tracing::subscriber::with_default(subscriber, || {
+            client.answered::<Value>(
+                Host::LastFm,
+                LookupOp::History,
+                &format!("{url}?method=user.getrecenttracks&api_key={KEY}"),
+                Sending::Get {
+                    authorization: None,
+                },
+                LARGEST_DOCUMENT,
+            )
+        });
+        let served = served.join().expect("the server");
+        let logged = String::from_utf8(logged.0.lock().clone()).expect("logged as text");
+
+        assert_eq!(served, 2);
+        assert!(
+            matches!(
+                read,
+                Err(Error::Unreadable {
+                    host: Host::LastFm,
+                    op: LookupOp::History
+                })
+            ),
+            "{read:?}"
+        );
+        assert!(logged.contains("trying again"), "{logged}");
+        assert!(logged.contains("not the document expected"), "{logged}");
+        assert!(logged.contains("LastFm"), "{logged}");
+        assert!(!logged.contains(KEY), "the key was logged: {logged}");
     }
 
     #[test]
@@ -2076,13 +2190,61 @@ mod tests {
             vec![
                 Duration::from_secs(3),
                 Duration::from_secs(4),
-                RETRY_AFTER_AT_MOST
+                Duration::from_secs(30)
             ]
         );
     }
 
     #[test]
-    fn a_retry_after_is_honoured_in_seconds_or_as_a_date_and_capped_at_ten() {
+    fn a_retry_after_past_the_pacing_deadline_ends_the_call_and_keeps_the_host_cooling() {
+        const AN_HOUR: u64 = 60 * 60;
+
+        let clock = Faked::new();
+        let client = Client::on_clock(
+            Introduction::as_(&identity(None)),
+            clock.clone(),
+            Carried::Plain,
+        );
+        let asked = |url: &str| {
+            client.exchange(
+                Host::MusicBrainz,
+                LookupOp::FindRecording,
+                url,
+                Sending::Get {
+                    authorization: None,
+                },
+            )
+        };
+        let timed_out = |answered: &Result<Response<Body>>| {
+            matches!(
+                answered,
+                Err(Error::Unreachable { source, .. })
+                    if source.kind() == std::io::ErrorKind::TimedOut
+            )
+        };
+
+        let (url, served) = serving(vec![busy_for(AN_HOUR)]);
+        let first = asked(&url);
+        let served = served.join().expect("the server");
+        let cooling = client
+            .pacing
+            .0
+            .turns
+            .lock()
+            .cooling
+            .get(&Host::MusicBrainz)
+            .copied();
+        let later = asked(&url);
+
+        assert_eq!(served, 1);
+        assert!(timed_out(&first), "{first:?}");
+        assert!(clock.slept().is_empty(), "{:?}", clock.slept());
+        assert_eq!(cooling, Some(clock.now() + Duration::from_secs(AN_HOUR)));
+        assert!(timed_out(&later), "{later:?}");
+    }
+
+    #[test]
+    fn a_retry_after_is_honoured_in_seconds_or_as_a_date_and_kept_whole_up_to_a_day() {
         let with = |value: Option<&str>| {
             let mut headers = HeaderMap::new();
             if let Some(value) = value {
@@ -2097,12 +2259,9 @@ mod tests {
         assert_eq!(with(None), RETRY_AFTER_BY_DEFAULT);
         assert_eq!(with(Some("3")), Duration::from_secs(3));
         assert_eq!(with(Some(" 7 ")), Duration::from_secs(7));
-        assert_eq!(with(Some("600")), RETRY_AFTER_AT_MOST);
+        assert_eq!(with(Some("600")), Duration::from_secs(600));
         assert_eq!(with(Some("Wed, 21 Oct 2015 07:28:00 GMT")), Duration::ZERO);
-        assert_eq!(
-            with(Some("Fri, 01 Jan 9999 00:00:00 GMT")),
-            RETRY_AFTER_AT_MOST
-        );
+        assert_eq!(with(Some("Fri, 01 Jan 9999 00:00:00 GMT")), COOLING_AT_MOST);
         assert_eq!(with(Some("whenever")), RETRY_AFTER_BY_DEFAULT);
     }
 

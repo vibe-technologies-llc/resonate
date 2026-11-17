@@ -32,7 +32,9 @@ and not the local network: the catalog offered as a MediaServer (`resonate offer
   `online::identity` fills the contact from `Config::contact` alone. **A redirect carries the contact
   only to the host first asked**: ureq keeps every header but credentials across one, so a GET
   carrying a contact follows redirects itself (`Client::got`, at most `REDIRECTS_FOLLOWED`)
-  (`a_contact_is_not_carried_through_a_redirect_to_another_host`).
+  (`a_contact_is_not_carried_through_a_redirect_to_another_host`) and a POST follows none, its
+  redirect answered as the `Refused` status it is, as an upload's is
+  (`a_contact_is_not_carried_through_a_redirected_post_to_another_host`).
 - **Identity and reachability are read per request.** `Introduction` = User-Agent behind a shared
   `RwLock` (`online::INTRODUCTION`, `online::introduce`): a contact typed in settings is heard by
   every sharing client from the next request. `Introduction::following` carries a `Reintroduction`
@@ -83,8 +85,12 @@ and not the local network: the catalog offered as a MediaServer (`resonate offer
   `Lookups::for_the_pass`, `resonate enrich`, the lookup after `resonate scan`, the MCP server);
   whatever a listener waits on (search, artist page, want, followed link, `share`, `analyse
   --recognise`) asks as the listener.
-- **Busy: three more tries, wait doubling; `Retry-After` in seconds or an HTTP date, capped.**
-  Busy = 503, 429, 502, 504; `BUSY_RETRIES`, `RETRY_AFTER_BY_DEFAULT`, `RETRY_AFTER_AT_MOST`. **The
+- **Busy: three more tries, wait doubling; `Retry-After` in seconds or an HTTP date, kept whole.**
+  Busy = 503, 429, 502, 504; `BUSY_RETRIES`, `RETRY_AFTER_BY_DEFAULT`, the doubling topping out at
+  `RETRY_AFTER_AT_MOST`. A wait the host names is the host's cooldown as named (at most
+  `COOLING_AT_MOST`, a day): within `PACING_WITHIN` the call waits it out, past it the call ends and
+  no call asks the host before it is over
+  (`a_retry_after_past_the_pacing_deadline_ends_the_call_and_keeps_the_host_cooling`). **The
   ladder is the host's, not the thread's**: `Pacing::backed_off` records each wait as the host's
   `cooling` and climbs one doubling step per host, so threads hearing the same busy answer wait out
   the same wait and the next one starts higher; a non-busy answer resets it
@@ -100,6 +106,9 @@ and not the local network: the catalog offered as a MediaServer (`resonate offer
   decoder (ureq's `limit` wraps the socket beneath it:
   `a_cap_bounds_the_body_as_it_is_decoded_rather_than_as_it_arrived`). `Client::json` on a
   non-matching body: `Error::Unreadable`.
+- **An address is never logged**: a key rides in some queries (Last.fm's `api_key`), so the busy
+  retry and an unreadable answer log the host and op alone
+  (`the_address_asked_is_never_logged_since_a_key_may_ride_in_its_query`).
 - **No plain HTTP.** `https_only` (redirect to plain = `Unreachable`); only tests' loopback servers
   are plain (`Carried::Plain`).
 - **`ureq::Error` classified once, into four shapes** (`Error::from_ureq`): status = `Refused`;
