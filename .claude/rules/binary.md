@@ -49,6 +49,13 @@ paths:
   clap cannot say a flag is allowed only beside one value): one song looped, keys `a` `b` `x` `1`
   `2` `q` `?` from `input::strokes`, which reads a byte at a time on a terminal (`KeyAtATime`, none in the background) and a line at a time
   piped, and ends at end of input. It prints through `said!` like `play`.
+- **`tag --lyrics FILE…` writes the lyrics fetched for each file beside it** (`tagging::lyrics_beside`,
+  `lyrics.md`'s *Writing a fetched sheet beside the track*): printed until `--apply`, like the rest
+  of `tag`; `--replace` writes over a sheet already standing there, which is otherwise left alone and
+  said so. Each file is read as `from_here` reads it and found by `Library::track_at`; one not in
+  the catalog, cut from a shared file, with no fetched lyrics kept, already holding them, or beside a
+  richer sheet is said and not counted as failing; a sheet that could not be written is, so the run
+  ends `FilesFailed`. It conflicts with `--root` and `--undo`.
 - **`scan` is incremental and off links unless told** (`--full`, `--follow-links`).
 - **`forget` reads each argument as the first of three**: a root (`Library::remove_root`); a
   path/URI `wants` lists a delivery under (`forget_delivered`, want due again); a folder, whose rows

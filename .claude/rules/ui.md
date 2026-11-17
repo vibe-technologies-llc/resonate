@@ -269,7 +269,10 @@ so `editing` sees it.
   next*, *Add to queue*), what keeps (*Add to playlist…*, the favourite), where to go (*Go to* with
   artist and album, *Other copies*, *Find another version*; an album's or artist's own page, then
   *Show the artist*), what leaves the window (*Share*, *Copy* with title, artist, album and file
-  path, *Show in the file manager*), *Identify* (nesting *Enrich this song*, the ISRC and *Place on
+  path, *Show in the file manager*, *Save the lyrics* nesting *Beside the file* and *Over a sheet
+  already there* for every whole local file among the rows, `Menu::saves_the_lyrics` and
+  `LibraryModel::save_the_lyrics` on the background executor, one toast counting what was saved,
+  already there, left alone and why: `lyrics.md`), *Identify* (nesting *Enrich this song*, the ISRC and *Place on
   a release…*, wherever the reference is reachable), and last what takes something away (*Take out
   of the queue*, *Remove* with hide, forget a delivery and delete; a playlist's *Discard*). The
   shared pieces (`Menu::holds`, `favours`, `reaches`, `shares`, `offers_the_file`,

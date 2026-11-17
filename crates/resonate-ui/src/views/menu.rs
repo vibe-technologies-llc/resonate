@@ -15,6 +15,7 @@ use gpui::{
 use resonate_core::{AlbumId, ArtistId, FrameSpan, MediaLocation, PlaylistId, TrackId};
 use resonate_engine::Placement;
 use resonate_library::{Favoured, Library, PlaylistEntry, Track};
+use resonate_lyrics::Standing;
 
 use crate::{
     ResonateApp, Selection, Syncing, clipboard, format,
@@ -1095,6 +1096,34 @@ impl Menu {
                 move |this, _, cx| {
                     this.library
                         .update(cx, |library, cx| library.share_file(track, cx));
+                },
+            )
+        })
+    }
+
+    pub(crate) fn saves_the_lyrics(self, tracks: Vec<TrackId>) -> Self {
+        if tracks.is_empty() {
+            return self;
+        }
+        let over = tracks.clone();
+
+        self.nests(Icon::Lyrics, words::menu::save_the_lyrics(), move |menu| {
+            menu.does(
+                Icon::Export,
+                words::menu::lyrics_beside_the_file(),
+                move |this, _, cx| {
+                    this.library.update(cx, |library, cx| {
+                        library.save_the_lyrics(tracks.clone(), Standing::LeftAlone, cx);
+                    });
+                },
+            )
+            .does(
+                Icon::Export,
+                words::menu::lyrics_over_the_sheet_there(),
+                move |this, _, cx| {
+                    this.library.update(cx, |library, cx| {
+                        library.save_the_lyrics(over.clone(), Standing::Replaced, cx);
+                    });
                 },
             )
         })

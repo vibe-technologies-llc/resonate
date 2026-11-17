@@ -1,7 +1,9 @@
-use std::{io, result};
+use std::{io, path::PathBuf, result};
 
 use resonate_core::SourceId;
 use thiserror::Error;
+
+use crate::SidecarOp;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LyricOp {
@@ -34,6 +36,26 @@ pub enum Error {
 
     #[error("a synced lyric set carries at least one line with the moment it is sung at")]
     NoLineTimed,
+
+    #[error("a lyric sheet already stands beside the track at {}", path.display())]
+    SidecarStands { path: PathBuf },
+
+    #[error("{} is read ahead of any lyric sheet written beside the track", path.display())]
+    SidecarOutranked { path: PathBuf },
+
+    #[error("{} has no name a lyric sheet beside it could be named after", track.display())]
+    SidecarUnnamed { track: PathBuf },
+
+    #[error("a lyric sheet named after {} would be a longer name than a file may have", track.display())]
+    SidecarNameTooLong { track: PathBuf },
+
+    #[error("the lyric sheet at {} could not {op:?}", path.display())]
+    SidecarUnwritten {
+        path: PathBuf,
+        op: SidecarOp,
+        #[source]
+        cause: io::Error,
+    },
 
     #[error(transparent)]
     Domain(#[from] resonate_core::Error),

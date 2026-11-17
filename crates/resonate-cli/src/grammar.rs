@@ -1503,6 +1503,22 @@ pub enum Sub {
             help = words::grammar::sub_tag_undo()
         )]
         undo: bool,
+
+        #[arg(
+            long,
+            value_name = "FILE",
+            num_args = 1..,
+            conflicts_with_all = ["root", "undo"],
+            help = words::grammar::sub_tag_lyrics()
+        )]
+        lyrics: Vec<PathBuf>,
+
+        #[arg(
+            long,
+            requires = "lyrics",
+            help = words::grammar::sub_tag_replace()
+        )]
+        replace: bool,
     },
 
     #[command(

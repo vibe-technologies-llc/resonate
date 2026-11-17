@@ -46,3 +46,6 @@ upload-to-catbox = Upload file to Catbox (public)
 play-the-copy-in = Play the { $kind } copy in { $place }
 play-the-copy = Play the { $kind } copy
 delete-from-every-device = Delete from every device…
+save-the-lyrics = Save the lyrics
+lyrics-beside-the-file = Beside the file
+lyrics-over-the-sheet-there = Over a sheet already there

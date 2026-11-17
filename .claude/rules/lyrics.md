@@ -9,6 +9,8 @@ paths:
   - "crates/resonate-online/src/lyrics.rs"
   - "crates/resonate-library/src/sung.rs"
   - "crates/resonate-mobile/src/lyrics.rs"
+  - "crates/resonate/src/tagging.rs"
+  - "crates/resonate-ui/src/models/saving_lyrics.rs"
 ---
 
 # Lyrics
@@ -170,6 +172,35 @@ dependency (tested without a window).
   names. Reused while the folder's modified time is unchanged, but only if that stamp is more than
   `TIMESTAMPS_SETTLE_IN` older than the walk (a coarse inode clock stamps a folder written in the
   tick it was walked).
+
+## Writing a fetched sheet beside the track
+
+- **Fetched words leave the catalog only when the listener asks, as a sidecar the reader takes
+  back first** (`beside.rs`: `plan_beside`, `write_beside`). The form is what the catalog keeps:
+  a Lyricsfile (`LyricText::lyricsfile` that is not TTML) as `<stem>.lyricsfile.yaml`, the richest
+  ending `BESIDE` ranks; anything else, a TTML's lines included (no sidecar reads TTML), as the kept
+  LRC text in `<stem>.lrc`, since every `.lrc` is read as always where a plain `.txt` might be
+  taken for a document. So `Sidecar` reads back what the catalog holds
+  (`a_synced_sheet_kept_is_written_beside_the_track_and_read_back_as_it_was_kept`,
+  `a_lyricsfile_kept_is_written_as_the_richest_sidecar_and_read_back_word_by_word`). No audio file
+  is touched.
+- **A sheet already there is the listener's.** Any sheet named after the file beside it or in a
+  lyric folder (`WITHIN`), whatever its case or ending, refuses the write (`Error::SidecarStands`)
+  unless `Standing::Replaced` is asked; the one at the same name and ending reading as the very text
+  (through `text::decoded`) is `Beside::AlreadySaid`. Even when replacing, a richer ending standing
+  beside (a `.lyricsfile.yaml` ahead of the `.lrc` to be written) is never hidden behind a plainer
+  one: `Error::SidecarOutranked`
+  (`a_sheet_standing_beside_the_track_is_not_overwritten_unless_the_listener_replaces_it`,
+  `a_richer_sheet_beside_the_track_is_never_hidden_behind_a_plainer_one`). A name past
+  `NAME_BYTES_AT_MOST` is refused (`SidecarNameTooLong`): a cut name would never be read back.
+- **The write is staged and renamed over.** `.<name>.<pid>.resonate-staging` beside the track,
+  `Held` from creation and synced, then renamed onto the sheet (`LeftAlone` looking once more that
+  nothing landed there meanwhile); a dead writer's staging for the same sheet is swept by the next
+  write (`staged_for`, `writer::writer_of`;
+  `a_staged_sheet_a_dead_writer_left_is_swept_by_the_next_write`).
+- **Only a file of its own has a sidecar of its own**: a row cut from a shared file (a span) or
+  any location that is not local is passed over by both callers, the terminal's `tag --lyrics`
+  (`binary.md`) and the window's *Save the lyrics* (`ui.md`).
 
 ## The LRC reader
 

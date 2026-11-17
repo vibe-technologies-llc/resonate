@@ -1,0 +1,9 @@
+would-write = { $file }: would write its lyrics into { $sheet }
+written = { $file }: wrote its lyrics into { $sheet }
+already-said = { $file }: { $sheet } already holds its lyrics
+not-in-the-catalog = { $file }: not in the catalog
+not-a-file-of-its-own = { $file }: a row cut from a shared file or kept in the vault has no lyric sheet of its own
+nothing-kept = { $file }: no fetched lyrics are kept for it
+stands = { $file }: { $sheet } already stands beside it; --replace writes over it
+outranked = { $file }: { $sheet } is read ahead of any sheet written beside it, so nothing was written
+unwritten = { $file }: its lyrics could not be written ({ $error })

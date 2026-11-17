@@ -19,13 +19,13 @@ use crate::{
 };
 
 const SIDECAR: &str = "sidecar";
-const BESIDE: [(&str, Written); 4] = [
+pub(crate) const BESIDE: [(&str, Written); 4] = [
     (".lyricsfile.yaml", Written::Lyricsfile),
     (".lyricsfile.yml", Written::Lyricsfile),
     (".lrc", Written::Lrc),
     (".txt", Written::Text),
 ];
-const WITHIN: [&str; 3] = ["lyrics", "lyric", "lrc"];
+pub(crate) const WITHIN: [&str; 3] = ["lyrics", "lyric", "lrc"];
 const LARGEST_SIDECAR: u64 = lrc::LARGEST_SHEET as u64;
 const LANGUAGE_CODE_LETTERS: usize = 2;
 const FOLDERS_WALKED: usize = 32;
@@ -359,7 +359,7 @@ enum NamedAfter {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Written {
+pub(crate) enum Written {
     Lyricsfile,
     Lrc,
     Text,

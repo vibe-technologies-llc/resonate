@@ -1297,6 +1297,7 @@ impl RootView {
                     .apart()
                     .shares(track.id)
                     .offers_the_file(&track.location, names)
+                    .saves_the_lyrics(lyric_sheet_of(track).into_iter().collect())
                     .when_some(placeable, |menu, track| {
                         menu.apart()
                             .nests(Icon::Globe, words::menu::identify(), move |menu| {
@@ -4227,6 +4228,11 @@ fn summary(listed: Measured, year: Option<i32>) -> String {
     parts.join(" · ")
 }
 
+fn lyric_sheet_of(track: &Track) -> Option<TrackId> {
+    (track.span.is_none() && track.location.is_local() && track.location.as_path().is_some())
+        .then_some(track.id)
+}
+
 fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx: &App) -> Menu {
     let queued = listed(&tracks);
     let cuts: Arc<[Cut]> = tracks.iter().map(Cut::of).collect();
@@ -4241,6 +4247,7 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
         .map(Path::to_path_buf)
         .collect();
     let sharing = ids.clone();
+    let sheeted: Vec<TrackId> = tracks.iter().filter_map(lyric_sheet_of).collect();
     let favoured = tracks.iter().all(|track| {
         this.library
             .read(cx)
@@ -4277,6 +4284,7 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
         .apart()
         .shares_each(sharing)
         .offers_the_files(paths)
+        .saves_the_lyrics(sheeted)
         .apart()
         .nests(Icon::Delete, words::menu::remove(), move |menu| {
             menu.does(

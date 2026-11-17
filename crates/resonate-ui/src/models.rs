@@ -20,6 +20,7 @@ mod polling;
 mod pressings;
 mod reading;
 mod replacing;
+mod saving_lyrics;
 mod scanning;
 mod sharing;
 mod statistics;

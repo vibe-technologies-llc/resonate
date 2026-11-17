@@ -22,7 +22,6 @@ discord = ["dep:resonate-discord"]
 mcp = ["dep:resonate-mcp"]
 online = [
     "dep:resonate-jellyfin",
-    "dep:resonate-lyrics",
     "dep:resonate-monochrome",
     "dep:resonate-musicbrainz",
     "dep:resonate-online",
@@ -32,7 +31,7 @@ online = [
     "dep:resonate-ytmusic"
 ]
 sync = ["dep:resonate-driven", "dep:resonate-sync"]
-ui = ["dep:resonate-lyrics", "dep:resonate-ui"]
+ui = ["dep:resonate-ui"]
 
 [dependencies]
 clap.workspace = true
@@ -50,7 +49,7 @@ resonate-eq.workspace = true
 resonate-inbox.workspace = true
 resonate-library.workspace = true
 resonate-listen.workspace = true
-resonate-lyrics = { workspace = true, optional = true }
+resonate-lyrics.workspace = true
 resonate-mcp = { workspace = true, optional = true }
 resonate-monochrome = { workspace = true, optional = true }
 resonate-mpris.workspace = true

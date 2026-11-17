@@ -162,7 +162,7 @@ use crate::{
     scanning::{enrich, scan},
     served::Served,
     sinks::{Learning, learn_what_it_plays, list_sinks},
-    tagging::{dedupe, tag},
+    tagging::{dedupe, lyrics_beside, tag},
     vocabulary::Meaning,
 };
 
@@ -446,9 +446,17 @@ fn run() -> Result<()> {
             })
         }
         Some(Sub::Forget { roots }) => forget(&open_library(&cli, &config)?, roots),
-        Some(Sub::Tag { root, apply, undo }) => {
-            tag(&open_library(&cli, &config)?, root, *apply, *undo)
+        Some(Sub::Tag {
+            lyrics,
+            apply,
+            replace,
+            ..
+        }) if !lyrics.is_empty() => {
+            lyrics_beside(&open_library(&cli, &config)?, lyrics, *apply, *replace)
         }
+        Some(Sub::Tag {
+            root, apply, undo, ..
+        }) => tag(&open_library(&cli, &config)?, root, *apply, *undo),
         Some(Sub::Dedupe { apply }) => dedupe(&open_library(&cli, &config)?, *apply),
         Some(Sub::Vault(args)) => {
             let held = vault_asked_for(&cli, &config)?;
