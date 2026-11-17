@@ -10,8 +10,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Sync and together
-- [S · 0.12.1] A restart of sync after a settings change still waits for the old run to be let go
-  rather than stopping it (`sync.rs`); `Seat::ended` could stop it as a leave now does
 - [S · 0.12.1] A shared playlist whose state passes one frame is never compacted (`shared/service.rs`
   backs off): the device sync's staged compaction (`Stage`, `Staged`, `CompactStaged`) serves it with
   no server change once the list wraps its parts and reads `Staging` and a `Stale` refusal

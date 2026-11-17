@@ -100,14 +100,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.12.1] Investigate: a party stalls under heavy load: `a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_ahead`
-  (`resonate-server`'s `tests/together.rs`) times out on *the guest to take the queue up* 1 in 30 at
-  32 threads, and a 60 s wait does not save it, so the party itself stalls; `a_guest_taking_the_party_over…`,
-  `a_party_with_no_time_server_weighs_nothing` and `a_guest_takes_up…` stall the same way
-- [S · 0.12.1] Investigate: under 64-thread stress `resonate-engine`'s
-  `a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start` (`transport.rs`)
-  failed once in 30, and `resonate-server`'s `hifi::a_hifi_api_that_is_not_listening_is_a_bad_gateway`
-  and `shared::removing_someone_moves_everyone_else…` each failed once
+- [S · 0.12.1] Investigate: three tests failed under 64-thread stress and have no cause found yet:
+  `resonate-engine`'s `a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start`
+  once (`transport.rs`, then 30 clean runs), `resonate-server`'s
+  `web::a_message_still_arriving_on_one_web_socket_holds_its_bytes_from_every_other_session` 3 in 60
+  (`web.rs`, `None` against `Some(Busy)`, apparently on its 5 s deadline) and
+  `shared::what_is_held_is_shown_the_moment_the_service_starts` once (`shared.rs`, 0 against 1)
 - [S · 0.12.1] The shared-list page's script hashes (`pages.rs`) are checked against the page as
   served, but no browser has enforced the policy; one run in a real browser (the invitation pages
   under a CSP that refuses inline scripts) would prove the page still works
