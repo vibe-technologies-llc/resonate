@@ -19,6 +19,9 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Catalog
+- [S · 0.13.0] Lyrics written into a file holding a timed `SYLT` frame read back from the `SYLT` over the
+  new `USLT`, so the write is told unconfirmed, and its undo puts the `SYLT` text back as `USLT`;
+  write the timed sheet as `SYLT` too, or replace the `SYLT` the read prefers
 - [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
   root runs: `held_open_elsewhere` (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding
   the file except for a process whose `status` names root. A write lease (`F_SETLEASE` with
