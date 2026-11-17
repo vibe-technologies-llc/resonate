@@ -17,6 +17,10 @@ const OPENHOME_VOLUME_KIND: &str = "urn:av-openhome-org:service:Volume:";
 
 const CONNECTION_KIND: &str = ":service:ConnectionManager:";
 
+const SERVER_KIND: &str = ":device:MediaServer:";
+
+const DIRECTORY_KIND: &str = ":service:ContentDirectory:";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Service {
     pub kind: Box<str>,
@@ -33,7 +37,22 @@ pub(crate) struct Described {
     pub connection: Option<Service>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ServerDescribed {
+    pub udn: Udn,
+    pub name: String,
+    pub directory: Service,
+}
+
 pub(crate) fn described(location: &Located) -> Result<Described> {
+    read(location, &fetched(location)?)
+}
+
+pub(crate) fn server_described(location: &Located) -> Result<ServerDescribed> {
+    read_server(location, &fetched(location)?)
+}
+
+fn fetched(location: &Located) -> Result<String> {
     let answer = http::exchange(
         &Asking {
             method: "GET",
@@ -49,10 +68,9 @@ pub(crate) fn described(location: &Located) -> Result<Described> {
             status: answer.status,
         });
     }
-    let text = std::str::from_utf8(&answer.body).map_err(|_| Error::NotText {
+    String::from_utf8(answer.body).map_err(|_| Error::NotText {
         asked: Asked::Description,
-    })?;
-    read(location, text)
+    })
 }
 
 pub(crate) fn document(text: &str, asked: Asked) -> Result<Document<'_>> {
@@ -67,18 +85,56 @@ pub(crate) fn document(text: &str, asked: Asked) -> Result<Document<'_>> {
     })
 }
 
+fn base_of(root: Node<'_, '_>, location: &Located) -> Located {
+    text_of(root, "URLBase")
+        .and_then(|base| Located::parse(base).ok())
+        .filter(|base| base.is_on_host_of(location))
+        .unwrap_or_else(|| location.clone())
+}
+
+fn devices_in<'a, 'input>(root: Node<'a, 'input>) -> Vec<Node<'a, 'input>> {
+    root.descendants()
+        .filter(|node| node.tag_name().name() == "device")
+        .collect()
+}
+
+pub(crate) fn read_server(location: &Located, text: &str) -> Result<ServerDescribed> {
+    let document = document(text, Asked::Description)?;
+    let root = document.root_element();
+    let base = base_of(root, location);
+
+    let devices = devices_in(root);
+    let device = devices
+        .iter()
+        .find(|device| {
+            child_text(**device, "deviceType").is_some_and(|kind| kind.contains(SERVER_KIND))
+                && service_of(**device, location, &base, DIRECTORY_KIND).is_some()
+        })
+        .or_else(|| {
+            devices
+                .iter()
+                .find(|device| service_of(**device, location, &base, DIRECTORY_KIND).is_some())
+        })
+        .ok_or(Error::NotAServer)?;
+
+    let directory =
+        service_of(*device, location, &base, DIRECTORY_KIND).ok_or(Error::NotAServer)?;
+    let udn = child_text(*device, "UDN").ok_or(Error::NotAServer)?;
+    let name = child_text(*device, "friendlyName").unwrap_or(udn);
+
+    Ok(ServerDescribed {
+        udn: Udn::new(udn),
+        name: name.to_owned(),
+        directory,
+    })
+}
+
 pub(crate) fn read(location: &Located, text: &str) -> Result<Described> {
     let document = document(text, Asked::Description)?;
     let root = document.root_element();
-    let base = text_of(root, "URLBase")
-        .and_then(|base| Located::parse(base).ok())
-        .filter(|base| base.is_on_host_of(location))
-        .unwrap_or_else(|| location.clone());
+    let base = base_of(root, location);
 
-    let devices: Vec<Node<'_, '_>> = root
-        .descendants()
-        .filter(|node| node.tag_name().name() == "device")
-        .collect();
+    let devices = devices_in(root);
     let device = devices
         .iter()
         .find(|device| {
@@ -124,7 +180,7 @@ fn service_of(
             }
             let control = base.join(child_text(service, "controlURL")?).ok()?;
             if !control.is_on_host_of(described_at) {
-                tracing::debug!(%control, %described_at, "a renderer's description names a control address on another host");
+                tracing::debug!(%control, %described_at, "a device's description names a control address on another host");
                 return None;
             }
             Some(Service {
@@ -273,6 +329,51 @@ mod tests {
                 .map(|service| service.control.to_string()),
             Some("http://10.0.0.4:1400/rc".to_owned())
         );
+    }
+
+    const MINIDLNA: &str = r#"<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0"><specVersion><major>1</major><minor>0</minor></specVersion>
+<device><deviceType>urn:schemas-upnp-org:device:MediaServer:1</deviceType><friendlyName>nas: minidlna</friendlyName>
+<manufacturer>Justin Maggard</manufacturer><UDN>uuid:4d696e69-444c-164e-9d41-001132a1b2c3</UDN>
+<serviceList>
+<service><serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType><serviceId>urn:upnp-org:serviceId:ContentDirectory</serviceId><controlURL>/ctl/ContentDir</controlURL><eventSubURL>/evt/ContentDir</eventSubURL><SCPDURL>/ContentDir.xml</SCPDURL></service>
+<service><serviceType>urn:schemas-upnp-org:service:ConnectionManager:1</serviceType><serviceId>urn:upnp-org:serviceId:ConnectionManager</serviceId><controlURL>/ctl/ConnectionMgr</controlURL><eventSubURL>/evt/ConnectionMgr</eventSubURL><SCPDURL>/ConnectionMgr.xml</SCPDURL></service>
+</serviceList></device></root>"#;
+
+    #[test]
+    fn a_media_server_is_read_by_its_name_and_the_directory_it_is_browsed_through() {
+        let location = Located::parse("http://192.168.1.4:8200/rootDesc.xml").expect("reads");
+
+        let described = read_server(&location, MINIDLNA).expect("describes a server");
+
+        assert_eq!(
+            described.udn.as_str(),
+            "uuid:4d696e69-444c-164e-9d41-001132a1b2c3"
+        );
+        assert_eq!(described.name, "nas: minidlna");
+        assert_eq!(
+            described.directory.control.to_string(),
+            "http://192.168.1.4:8200/ctl/ContentDir"
+        );
+        assert!(matches!(
+            read(&location, MINIDLNA),
+            Err(Error::NotARenderer)
+        ));
+        assert!(matches!(
+            read_server(&location, EMBEDDED),
+            Err(Error::NotAServer)
+        ));
+    }
+
+    #[test]
+    fn a_server_whose_directory_is_on_another_host_is_no_server_here() {
+        let location = Located::parse("http://192.168.1.4:8200/rootDesc.xml").expect("reads");
+        let elsewhere = MINIDLNA.replace("/ctl/ContentDir", "http://192.168.1.5/ctl/ContentDir");
+
+        assert!(matches!(
+            read_server(&location, &elsewhere),
+            Err(Error::NotAServer)
+        ));
     }
 
     #[test]

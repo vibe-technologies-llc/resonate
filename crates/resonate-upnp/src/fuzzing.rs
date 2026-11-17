@@ -16,8 +16,9 @@ use crate::{
     description,
     directory::{self, Answered, Asking, Service},
     events::{self, Subscribing},
-    http,
+    fetched, http,
     http::HEADERS_AT_MOST,
+    listing::{self, ENTRIES_A_LISTING_AT_MOST, TEXT_CHARS_AT_MOST},
     naming,
     offered::{self, Wanted},
     serve, soap, ssdp,
@@ -140,9 +141,52 @@ const SENDER: IpAddr = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 9));
 
 const DESCRIBED_AT: &str = "http://10.0.0.9:49152/desc.xml";
 
+const SERVED_FROM_AT: &str = "http://10.0.0.9:8200/rootDesc.xml";
+
+pub fn read_a_listing(bytes: &[u8]) {
+    let served_from = Located::parse(SERVED_FROM_AT).expect("a fixed address reads");
+    let Ok(text) = str::from_utf8(bytes) else {
+        return;
+    };
+    let didl = match soap::answered(text, Action::Browse) {
+        Ok(answered) => answered.named("Result").map(str::to_owned),
+        Err(_) => None,
+    };
+    for text in [Some(text.to_owned()), didl].into_iter().flatten() {
+        let Ok(listing) = listing::read(&text, &served_from) else {
+            continue;
+        };
+        assert!(listing.len() <= ENTRIES_A_LISTING_AT_MOST);
+        for container in &listing.containers {
+            assert!(!container.id.as_str().is_empty());
+            assert!(!container.title.is_empty());
+            assert!(container.title.chars().count() <= TEXT_CHARS_AT_MOST);
+            assert!(
+                container
+                    .cover
+                    .as_ref()
+                    .is_none_or(|cover| cover.is_on_host_of(&served_from))
+            );
+        }
+        for item in &listing.items {
+            assert!(!item.id.as_str().is_empty());
+            assert!(!item.title.chars().any(char::is_control));
+            assert!(item.played_from().is_some());
+            for resource in &item.resources {
+                assert!(resource.at.is_on_host_of(&served_from));
+                assert!(Located::parse(&resource.at.to_string()).is_ok());
+            }
+        }
+    }
+    let _ = listing::length_of(text);
+    let _ = fetched::range_of(text);
+}
+
 pub fn read_what_a_network_says(bytes: &[u8]) {
-    if let Some(location) = ssdp::location_answered(bytes, SENDER) {
-        assert!(location.is_at(SENDER));
+    for sought in [ssdp::Sought::Renderers, ssdp::Sought::Servers] {
+        if let Some(location) = ssdp::location_answered(bytes, SENDER, sought) {
+            assert!(location.is_at(SENDER));
+        }
     }
 
     serve::read_a_request_head(bytes);
@@ -160,6 +204,9 @@ pub fn read_what_a_network_says(bytes: &[u8]) {
     };
     read_what_a_control_point_asks(bytes, Some(text));
     let described_at = Located::parse(DESCRIBED_AT).expect("a fixed address reads");
+    if let Ok(server) = description::read_server(&described_at, text) {
+        assert!(server.directory.control.is_on_host_of(&described_at));
+    }
     if let Ok(described) = description::read(&described_at, text) {
         assert!(described.transport.control.is_on_host_of(&described_at));
         for service in [

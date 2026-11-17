@@ -243,6 +243,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "dlna"
+path = "fuzz_targets/dlna.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "cast"
 path = "fuzz_targets/cast.rs"
 test = false

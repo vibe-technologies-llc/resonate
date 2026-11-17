@@ -4,6 +4,8 @@ use resonate_audio::{Error as SinkError, Operation, SinkId};
 use resonate_core::StreamSpec;
 use thiserror::Error;
 
+use crate::Udn;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Action {
     SetAvTransportUri,
@@ -18,6 +20,8 @@ pub enum Action {
     Characteristics,
     SetVolume,
     SetMute,
+    Browse,
+    Search,
 }
 
 impl Action {
@@ -35,6 +39,8 @@ impl Action {
             Self::Characteristics => "Characteristics",
             Self::SetVolume => "SetVolume",
             Self::SetMute => "SetMute",
+            Self::Browse => "Browse",
+            Self::Search => "Search",
         }
     }
 
@@ -44,7 +50,9 @@ impl Action {
             Self::Play => Operation::Start,
             Self::Pause => Operation::Pause,
             Self::Stop => Operation::Close,
-            Self::GetPositionInfo | Self::GetTransportInfo => Operation::Connect,
+            Self::GetPositionInfo | Self::GetTransportInfo | Self::Browse | Self::Search => {
+                Operation::Connect
+            }
             Self::GetVolume
             | Self::Volume
             | Self::Characteristics
@@ -59,12 +67,14 @@ pub enum Asked {
     Description,
     Action(Action),
     Event,
+    Media,
+    Picture,
 }
 
 impl Asked {
     const fn operation(self) -> Operation {
         match self {
-            Self::Description | Self::Event => Operation::Connect,
+            Self::Description | Self::Event | Self::Media | Self::Picture => Operation::Connect,
             Self::Action(action) => action.operation(),
         }
     }
@@ -96,37 +106,43 @@ pub enum FlacOp {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("{asked:?} could not reach the renderer")]
+    #[error("{asked:?} could not reach the device")]
     Network {
         asked: Asked,
         #[source]
         source: io::Error,
     },
-    #[error("the renderer answered {asked:?} with HTTP status {status}")]
+    #[error("the device answered {asked:?} with HTTP status {status}")]
     Status { asked: Asked, status: u16 },
-    #[error("the renderer's answer to {asked:?} is not HTTP")]
+    #[error("the device's answer to {asked:?} is not HTTP")]
     NotHttp { asked: Asked },
-    #[error("the renderer's answer to {asked:?} is longer than {at_most} bytes")]
+    #[error("the device's answer to {asked:?} is longer than {at_most} bytes")]
     TooLong { asked: Asked, at_most: usize },
-    #[error("the renderer's answer to {asked:?} is not UTF-8 text")]
+    #[error("the device's answer to {asked:?} is not UTF-8 text")]
     NotText { asked: Asked },
-    #[error("the renderer's answer to {asked:?} is not an XML document")]
+    #[error("the device's answer to {asked:?} is not an XML document")]
     NotADocument {
         asked: Asked,
         #[source]
         source: Box<roxmltree::Error>,
     },
-    #[error("the renderer's answer to {action:?} does not say what was asked")]
+    #[error("the device's answer to {action:?} does not say what was asked")]
     Unanswered { action: Action },
-    #[error("the renderer refused {action:?} (UPnP error {code:?})")]
+    #[error("the device refused {action:?} (UPnP error {code:?})")]
     Fault { action: Action, code: Option<u32> },
     #[error("the device description names no media renderer with an AVTransport service")]
     NotARenderer,
+    #[error("the device description names no media server with a ContentDirectory service")]
+    NotAServer,
+    #[error("the media server's listing does not read as DIDL-Lite")]
+    NotAListing,
+    #[error("the media server answered a range it was not asked for")]
+    RangeMisanswered,
     #[error("the renderer takes none of FLAC, WAVE or L16, so it cannot be streamed to")]
     TakesNoCarriage,
     #[error("the stream could not be encoded as FLAC at {op:?}")]
     Encoding { op: FlacOp },
-    #[error("the address is not an http address a renderer can be reached at")]
+    #[error("the address is not an http address a device can be reached at")]
     UnreadableAddress,
     #[error("searching the network failed at {op:?}")]
     Search {
@@ -147,6 +163,8 @@ pub enum Error {
     },
     #[error("no renderer is known as {0}")]
     NoSuchRenderer(SinkId),
+    #[error("no media server on the network answers as {0}")]
+    NoSuchServer(Udn),
     #[error("the renderer takes no stream of {0}")]
     FormatRefused(StreamSpec),
     #[error("the renderer known as {0} is playing a stream, so what it plays cannot be learnt now")]
@@ -164,12 +182,16 @@ impl Error {
             | Self::NotADocument { asked, .. } => asked.operation(),
             Self::Unanswered { action } | Self::Fault { action, .. } => action.operation(),
             Self::NotARenderer
+            | Self::NotAServer
+            | Self::NotAListing
+            | Self::RangeMisanswered
             | Self::TakesNoCarriage
             | Self::UnreadableAddress
             | Self::Search { .. }
             | Self::Serve { .. }
             | Self::Announce { .. }
             | Self::NoSuchRenderer(_)
+            | Self::NoSuchServer(_)
             | Self::InUse(_) => Operation::Connect,
             Self::FormatRefused(_) | Self::Encoding { .. } => Operation::Format,
         }

@@ -30,7 +30,7 @@ const COVER: &[u8] = b"\xff\xd8\xff\xe0 a picture";
 
 type Listed = (PlaylistId, &'static str, Vec<TrackId>);
 
-struct Shelves {
+pub(crate) struct Shelves {
     songs: Mutex<Vec<Song>>,
     albums: Vec<(AlbumId, &'static str, ArtistId)>,
     artists: Vec<(ArtistId, &'static str)>,
@@ -46,11 +46,11 @@ fn album(raw: u64) -> AlbumId {
     AlbumId::new(raw).expect("an id")
 }
 
-fn track(raw: u64) -> TrackId {
+pub(crate) fn track(raw: u64) -> TrackId {
     TrackId::new(raw).expect("an id")
 }
 
-fn bytes_of(id: TrackId) -> Vec<u8> {
+pub(crate) fn bytes_of(id: TrackId) -> Vec<u8> {
     (0..1000_u32)
         .map(|at| (at as u64 * 7 + id.get()) as u8)
         .collect()
@@ -424,8 +424,8 @@ impl Catalog for Shelves {
     }
 }
 
-struct Started {
-    server: MediaServer<Shelves>,
+pub(crate) struct Started {
+    pub(crate) server: MediaServer<Shelves>,
     told: UdpSocket,
     shelves: Arc<Shelves>,
 }
@@ -434,7 +434,7 @@ fn started() -> Started {
     started_as(None)
 }
 
-fn started_as(name: Option<ServerName>) -> Started {
+pub(crate) fn started_as(name: Option<ServerName>) -> Started {
     let told = UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of the server");
     told.set_read_timeout(Some(HEARD_WITHIN))
         .expect("a read timeout");

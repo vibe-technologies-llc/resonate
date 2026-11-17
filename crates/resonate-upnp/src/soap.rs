@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use crate::{
     Action, Asked, Error, Result,
     description::{Service, document},
@@ -20,10 +22,19 @@ pub(crate) fn call(
     action: Action,
     arguments: &[(&str, &str)],
 ) -> Result<Answered> {
+    call_within(service, action, arguments, http::ANSWERED_WITHIN)
+}
+
+pub(crate) fn call_within(
+    service: &Service,
+    action: Action,
+    arguments: &[(&str, &str)],
+    within: Duration,
+) -> Result<Answered> {
     let asked = Asked::Action(action);
     let envelope = envelope(&service.kind, action, arguments);
     let soap_action = format!("\"{}#{}\"", service.kind, action.name());
-    let answer = http::exchange(
+    let answer = http::exchange_before(
         &Asking {
             method: "POST",
             to: &service.control,
@@ -34,6 +45,7 @@ pub(crate) fn call(
             body: envelope.as_bytes(),
         },
         asked,
+        Instant::now() + within,
     )?;
 
     let text = std::str::from_utf8(&answer.body).map_err(|_| Error::NotText { asked });

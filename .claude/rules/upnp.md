@@ -15,7 +15,7 @@ paths:
 `resonate-upnp` plays to a UPnP AV / DLNA MediaRenderer on the local network (a streamer, an
 amplifier, upmpdcli in front of an OpenHome player): it finds one, describes it, offers it a stream
 and steers it. It also offers the catalog to the network as a MediaServer (*The catalog offered on
-the network*). It reaches core and `resonate-audio` alone (the `layering` job's `only` line, and a
+the network*), and browses another's (*Media servers on the network, browsed*). It reaches core and `resonate-audio` alone (the `layering` job's `only` line, and a
 `check` that its normal edges hold no PipeWire, gpui, `ureq`, serde, rustls or `rusqlite`); the
 engine is a dev-dependency, for the end-to-end test.
 
@@ -604,6 +604,73 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   path, an object id read back as itself, a UDN, a `Range` span inside its length, a
   `SearchCriteria` reduced for every kind within `RELATIONS_AT_MOST`, and a SOAP request to either
   service answered against an empty catalog, the envelope and its DIDL each reading as XML.
+
+## Media servers on the network, browsed
+
+The client side of ContentDirectory: a NAS running MiniDLNA, Plex's or Jellyfin's DLNA server, or
+another Resonate offering its catalog is found, browsed and fetched from here, since this crate
+already speaks every part of it (SSDP, the description, SOAP, DIDL-Lite, plain HTTP on the local
+network). Nothing here knows the provider seam: `resonate-dlna` (`providers.md`'s *A media server on
+the network played in place*) turns it into a service played in place, so this crate's edges stay
+core and `resonate-audio`.
+
+- **Found as renderers are** (`MediaServers`, `servers.rs`): `ssdp::search` takes what it seeks
+  (`Sought::Renderers`, `Sought::Servers`), so an `M-SEARCH` for `MediaServer:1` (`SERVER_TYPE`)
+  takes only answers whose `ST` names a MediaServer, under the same `Heard` bounds and
+  `Located::is_at`. `MediaServers::found` is one round, run only when asked (no thread, nothing
+  multicast unasked): each location not yet held is described (`description::read_server`: the
+  device whose `deviceType` names a MediaServer and holds ContentDirectory, else the first holding
+  ContentDirectory, its control address on the description's host or `Error::NotAServer`), at most
+  32 a round and 64 held; a server missing two rounds in a row is gone, a known UDN at a new address
+  replaced, and the list answered in name order. `MediaServers::server(udn)` is a held server, else
+  one more round, else `Error::NoSuchServer`: a server queued in an earlier run is found again by its
+  UDN wherever it now answers (`a_server_that_leaves_is_gone_after_two_searches_miss_it_and_then_is_said_not_to_answer`).
+- **Browse is paged** (`ServerFound::page_of_children`, `children`): `BrowseDirectChildren` with
+  `StartingIndex` and `RequestedCount` (`BROWSED_A_PAGE`, 200, or less by `paged_by`), each answer's
+  `NumberReturned` moving the index on and `TotalMatches` saying when it is whole; a server that
+  answers fewer than asked is asked again from where it stopped, one that says no total is asked
+  until it returns nothing, and a listing stops at `ENTRIES_A_LISTING_AT_MOST` (5 000) or
+  `PAGES_AT_MOST` (25) asks. `metadata` is `BrowseMetadata`; `songs_named` is `Search` from the root
+  for audio items whose title, artist or album contains the words, quoted as the criteria grammar
+  asks (`criteria_for`), and a server without `Search` faults it. Each call is given
+  `BROWSE_ANSWERED_WITHIN` (10 s) whole, since a NAS asked for 200 entries is slower than a renderer
+  asked its position (`soap::call_within`)
+  (`a_media_server_answering_the_search_is_listed_by_its_name_and_browsed_page_by_page`).
+- **DIDL-Lite is read, never trusted** (`listing.rs`): the `Result` text through `roxmltree` with no
+  DTD and `NODES_AT_MOST`, a root that is no `DIDL-Lite` `Error::NotAListing`, elements matched by
+  their local name so a server's prefixes do not matter. A `container` needs an id and a title; an
+  `item` an id, a title, a class under `object.item.audioItem` (a picture or a film is passed over)
+  and one `http-get` `res`. An `ObjectId` is the server's own spelling, kept as given and refused only
+  when empty, longer than 1 KiB or holding a control character. Text is cut at
+  `TEXT_CHARS_AT_MOST` (512) letters with control characters made spaces; `upnp:artist` is the
+  performer's (no role or `Performer`) before any other, then `dc:creator`. A `res` or `albumArtURI`
+  is joined against the description's address and **taken only on the description's host**, as a
+  control address is, so a listing cannot point a fetch at another machine or a loopback service.
+  A `res` carries its type, size, `duration` (`H:MM:SS`, a fraction in digits or `F0/F1`,
+  `length_of`), rate, channels and bits; `Item::played_from` is the first not marked
+  `DLNA.ORG_CI=1`, so the original is played before a server's transcode
+  (`the_original_is_played_before_a_converted_copy_and_an_address_on_another_host_is_passed_over`).
+- **A song is fetched as stored, by range** (`Fetched`, `fetched.rs`, hand-written over `httparse`
+  like every exchange here): `GET` with `Range: bytes=N-` and `Accept-Encoding: identity`, a `206`
+  whose `Content-Range` starts where asked (its whole the length), or a `200` with its
+  `Content-Length`, passed over to `N` where it is no more than 64 MiB in; a range answered
+  elsewhere is `Error::RangeMisanswered` and a chunked body is not read. A seek drops the answer and
+  the next read asks from there; reads wait `SILENT_AT_MOST` (15 s) each, a connect
+  `CONNECTED_WITHIN` (3 s). `ServerFound::fetched` and `picture` (a cover, `ANSWER_BYTES_AT_MOST`)
+  refuse an address off the server's host
+  (`a_song_found_on_a_server_is_fetched_as_served_and_seeks_by_range`).
+- **Fuzzed** (`read_a_listing`, the `dlna` target): any text as DIDL-Lite and as a SOAP answer to Browse
+  whose `Result` is read again, holding every entry to an id and a title, every song to a
+  `res` it plays from, and every address to the server's host; with the duration and
+  `Content-Range` readers. Its seeds are listings written by hand in MiniDLNA's, Plex's, Jellyfin's
+  and this crate's own shapes, and
+  `every_servers_listing_a_fuzz_seed_holds_reads_as_songs_played_from_that_server` holds them to
+  reading. `read_what_a_network_says` reads an SSDP answer for either kind and a server's
+  description too.
+- `tests/browsed.rs` browses this crate's own `MediaServer` over loopback: found by its typed name,
+  the root's four shelves, a page of three songs from the third with `TotalMatches` eight, every
+  song read three a page, a song's bytes whole and from a seek, a search, and a server dropped
+  gone after two rounds.
 
 ## On the phones
 

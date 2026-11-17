@@ -11,11 +11,13 @@ mod door;
 mod error;
 mod events;
 mod feed;
+mod fetched;
 mod flac;
 #[cfg(fuzzing)]
 mod fuzzing;
 mod http;
 mod learning;
+mod listing;
 mod located;
 mod naming;
 mod neighbours;
@@ -24,6 +26,7 @@ mod offered;
 mod presented;
 mod renderer;
 mod serve;
+mod servers;
 mod soap;
 mod ssdp;
 mod stream;
@@ -40,7 +43,7 @@ mod words {
 pub use resonate_audio::RENDERER_NODES;
 
 #[cfg(fuzzing)]
-pub use crate::fuzzing::read_what_a_network_says;
+pub use crate::fuzzing::{read_a_listing, read_what_a_network_says};
 pub use crate::{
     beside::{Beside, Neighbours},
     carriage::{Carriage, Wrapping},
@@ -51,16 +54,19 @@ pub use crate::{
     decoded::{AsWave, Pcm, wave_bytes, waves_alike},
     error::{Action, Asked, Error, FlacOp, Result, SearchOp, ServeOp},
     feed::Feed,
+    fetched::Fetched,
     learning::{
         CLOCK_MOVED_AT_LEAST, PULLED_AT_LEAST, SETTLED_BETWEEN_TRIALS, Signals, Silence,
         TRIAL_ASKED_EVERY, TRIAL_LASTS_AT_MOST,
     },
+    listing::{Container, ENTRIES_A_LISTING_AT_MOST, Item, Listing, ObjectId, Resource},
     located::Located,
     network::{FirstSearch, Network, Searching},
     offered::{MediaServer, Offering, ServerName},
     renderer::{Renderer, Udn, Vouched},
     serve::{Server, Token},
-    ssdp::{RENDERER_TYPE, SSDP},
+    servers::{BROWSED_A_PAGE, MediaServers, PageAsked, Paged, ServerFound},
+    ssdp::{RENDERER_TYPE, SERVER_TYPE, SSDP},
 };
 
 #[cfg(test)]

@@ -417,11 +417,13 @@ impl Shared {
     fn round(&self) -> Result<()> {
         let _one_at_a_time = self.round.lock();
         let addresses = self.located();
-        let found = match self
-            .multicasting
-            .load(Ordering::Acquire)
-            .then(|| ssdp::search(self.searching.to, self.searching.within))
-        {
+        let found = match self.multicasting.load(Ordering::Acquire).then(|| {
+            ssdp::search(
+                self.searching.to,
+                self.searching.within,
+                ssdp::Sought::Renderers,
+            )
+        }) {
             None => None,
             Some(Ok(found)) => Some(found),
             Some(Err(error)) if !addresses.is_empty() => {

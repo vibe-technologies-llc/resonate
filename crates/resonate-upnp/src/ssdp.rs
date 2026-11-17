@@ -15,7 +15,33 @@ pub const SSDP: SocketAddr =
 
 pub const RENDERER_TYPE: &str = "urn:schemas-upnp-org:device:MediaRenderer:1";
 
+pub const SERVER_TYPE: &str = "urn:schemas-upnp-org:device:MediaServer:1";
+
 const RENDERER_KIND: &str = ":device:MediaRenderer:";
+
+const SERVER_KIND: &str = ":device:MediaServer:";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Sought {
+    Renderers,
+    Servers,
+}
+
+impl Sought {
+    const fn search_target(self) -> &'static str {
+        match self {
+            Self::Renderers => RENDERER_TYPE,
+            Self::Servers => SERVER_TYPE,
+        }
+    }
+
+    const fn kind(self) -> &'static str {
+        match self {
+            Self::Renderers => RENDERER_KIND,
+            Self::Servers => SERVER_KIND,
+        }
+    }
+}
 
 const SEARCHES_SENT: usize = 2;
 
@@ -53,7 +79,7 @@ impl Heard {
     }
 }
 
-pub(crate) fn search(to: SocketAddr, within: Duration) -> Result<Vec<Located>> {
+pub(crate) fn search(to: SocketAddr, within: Duration, sought: Sought) -> Result<Vec<Located>> {
     let failed = |op| move |source| Error::Search { op, source };
 
     let socket = UdpSocket::bind(answered_on(to)).map_err(failed(SearchOp::Bind))?;
@@ -62,7 +88,7 @@ pub(crate) fn search(to: SocketAddr, within: Duration) -> Result<Vec<Located>> {
             .set_multicast_ttl_v4(SEARCH_HOPS)
             .map_err(failed(SearchOp::Bind))?;
     }
-    let asking = asking(to, within);
+    let asking = asking(to, within, sought);
     for _ in 0..SEARCHES_SENT {
         socket
             .send_to(asking.as_bytes(), to)
@@ -84,7 +110,7 @@ pub(crate) fn search(to: SocketAddr, within: Duration) -> Result<Vec<Located>> {
             Ok((read, sender)) => {
                 if let Some(location) = buffer
                     .get(..read)
-                    .and_then(|answer| location_answered(answer, sender.ip()))
+                    .and_then(|answer| location_answered(answer, sender.ip(), sought))
                 {
                     found.take(location, sender.ip());
                 }
@@ -114,15 +140,16 @@ fn answered_on(to: SocketAddr) -> SocketAddr {
     SocketAddr::new(ip, 0)
 }
 
-fn asking(to: SocketAddr, within: Duration) -> String {
+fn asking(to: SocketAddr, within: Duration, sought: Sought) -> String {
     let wait = within.as_secs().clamp(1, LONGEST_WAIT_ASKED_SECONDS);
     format!(
         "M-SEARCH * HTTP/1.1\r\nHOST: {to}\r\nMAN: \"ssdp:discover\"\r\nMX: {wait}\r\nST: \
-         {RENDERER_TYPE}\r\nUSER-AGENT: {USER_AGENT} UPnP/1.1\r\n\r\n"
+         {}\r\nUSER-AGENT: {USER_AGENT} UPnP/1.1\r\n\r\n",
+        sought.search_target()
     )
 }
 
-pub(crate) fn location_answered(answer: &[u8], sender: IpAddr) -> Option<Located> {
+pub(crate) fn location_answered(answer: &[u8], sender: IpAddr, sought: Sought) -> Option<Located> {
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
     let mut response = httparse::Response::new(&mut headers);
     match response.parse(answer) {
@@ -136,7 +163,7 @@ pub(crate) fn location_answered(answer: &[u8], sender: IpAddr) -> Option<Located
             .find(|header| header.name.eq_ignore_ascii_case(name))
             .and_then(|header| std::str::from_utf8(header.value).ok())
     };
-    if !named("ST").is_some_and(|kind| kind.contains(RENDERER_KIND)) {
+    if !named("ST").is_some_and(|kind| kind.contains(sought.kind())) {
         return None;
     }
     named("LOCATION")
@@ -159,12 +186,13 @@ mod tests {
         let sender: IpAddr = "10.0.0.9".parse().expect("an ip");
 
         assert_eq!(
-            location_answered(renderer, sender).map(|location| location.to_string()),
+            location_answered(renderer, sender, Sought::Renderers)
+                .map(|location| location.to_string()),
             Some("http://10.0.0.9:49152/desc.xml".to_owned())
         );
-        assert_eq!(location_answered(server, sender), None);
+        assert_eq!(location_answered(server, sender, Sought::Renderers), None);
         assert_eq!(
-            location_answered(b"NOTIFY * HTTP/1.1\r\n\r\n", sender),
+            location_answered(b"NOTIFY * HTTP/1.1\r\n\r\n", sender, Sought::Renderers),
             None
         );
     }
@@ -177,8 +205,8 @@ mod tests {
                       urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n";
         let sender: IpAddr = "10.0.0.9".parse().expect("an ip");
 
-        assert_eq!(location_answered(renderer, sender), None);
-        assert_eq!(location_answered(named, sender), None);
+        assert_eq!(location_answered(renderer, sender, Sought::Renderers), None);
+        assert_eq!(location_answered(named, sender, Sought::Renderers), None);
     }
 
     #[test]
@@ -209,11 +237,29 @@ mod tests {
 
     #[test]
     fn the_search_asks_for_media_renderers_at_the_address_it_is_sent_to() {
-        let asked = asking(SSDP, Duration::from_secs(2));
+        let asked = asking(SSDP, Duration::from_secs(2), Sought::Renderers);
 
         assert!(asked.starts_with("M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\n"));
         assert!(asked.contains("ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n"));
         assert!(asked.contains("MX: 2\r\n"));
         assert!(asked.ends_with("\r\n\r\n"));
+    }
+
+    #[test]
+    fn a_search_for_media_servers_asks_for_them_and_takes_only_their_answers() {
+        let renderer = b"HTTP/1.1 200 OK\r\nLOCATION: http://10.0.0.9:49152/desc.xml\r\nST: \
+                         urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n";
+        let server = b"HTTP/1.1 200 OK\r\nLOCATION: http://10.0.0.9:8200/rootDesc.xml\r\nST: \
+                       urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n";
+        let sender: IpAddr = "10.0.0.9".parse().expect("an ip");
+
+        let asked = asking(SSDP, Duration::from_secs(2), Sought::Servers);
+
+        assert!(asked.contains("ST: urn:schemas-upnp-org:device:MediaServer:1\r\n"));
+        assert_eq!(
+            location_answered(server, sender, Sought::Servers).map(|location| location.to_string()),
+            Some("http://10.0.0.9:8200/rootDesc.xml".to_owned())
+        );
+        assert_eq!(location_answered(renderer, sender, Sought::Servers), None);
     }
 }
