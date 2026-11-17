@@ -4,6 +4,9 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android
+- [S · 0.12.1] The phones tell a lookup a metered connection or a switched-off network stopped as
+  unreachable (`failure.rs`'s `of_a_lookup`, `enrichment.rs`): the library's `Stopped::{Offline,
+  Metered}` reach them, and `EnrichmentStop::Offline` covers only a network switched off
 - [S · 0.12.1] A phone whose Keystore key is lost for good (an `AEADBadTagException` on every read)
   keeps sync unset forever: `SyncSettingsReading` answers `null`, and `newSyncGroup` and `saveSync`
   return on a `null` config, so nothing short of clearing the app's data starts sync again; offer
@@ -34,9 +37,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   whole second; interpolate between reports from the clock the stream is paced by
 
 ## Catalog
-- [S · 0.12.1] A whole-library lookup stopped by a metered connection tells "MusicBrainz couldn't be
-  reached": the library's lookup summary says how many were answered and not why the pass stopped,
-  so the window cannot tell a shut gate from an unreachable service
 - [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
   root runs: `held_open_elsewhere` (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding
   the file except for a process whose `status` names root. A write lease (`F_SETLEASE` with
@@ -48,10 +48,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Providers and network
 
 ## The window
-- [S · 0.12.1] Lifted rows dropped into the queue at a row (`LiftedTo::Queue(Placement::At)`) send a
-  plain insert, and a queue drag's carried rows are not checked against the revision they were lifted
-  at, so an edit landing between the lift and the drop places or moves the wrong rows;
-  `send_by_position_at` as the sort and put-back now use
 
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
@@ -70,6 +66,4 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   stopped with nothing playing; clear it only where this owner set it last
 
 ## Equaliser
-- [S · 0.12.1] A binaural pair's stage left by a crash (`write_atomically`'s staged name beside the
-  pair) is never swept: only the settings file's stage has a sweeper
 

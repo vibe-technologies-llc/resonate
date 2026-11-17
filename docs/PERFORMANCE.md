@@ -16,9 +16,6 @@ are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.12.1] A search of one very common word is slower through a trigram index than the scan it
   replaced (one word matching a quarter of 300 000 kept songs: 95 ms against 54 ms), as for every
   `Infix` reader; a word whose trigrams are common could be read by `instr` instead
-- [S · 0.12.1] Opening a playlist's menu still asks `holds_lossy_songs` on the window's thread, against
-  `ui.md`'s *a menu opens at once and never reads the catalog on the window's thread*; read it with
-  the ledger in `PlaylistSynced::read`
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
