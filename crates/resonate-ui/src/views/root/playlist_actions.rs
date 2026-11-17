@@ -150,6 +150,29 @@ impl RootView {
         at: Placement,
         cx: &mut Context<Self>,
     ) {
+        self.queue_under(entries, at, None, cx);
+    }
+
+    pub(crate) fn queue_where_drawn(
+        &mut self,
+        entries: &[PlaylistEntry],
+        row: usize,
+        drawn_at: u64,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.player.read(cx).is_queued_at(drawn_at) {
+            return;
+        }
+        self.queue_under(entries, Placement::At(row), Some(drawn_at), cx);
+    }
+
+    fn queue_under(
+        &mut self,
+        entries: &[PlaylistEntry],
+        at: Placement,
+        drawn_at: Option<u64>,
+        cx: &mut Context<Self>,
+    ) {
         let items = playlists::queue_items(entries, &self.player.read(cx).queue());
         let rows = items.len();
         if rows == 0 {
@@ -164,7 +187,13 @@ impl RootView {
 
         self.library
             .update(cx, |library, _| library.remember(&scanned));
-        self.send(Command::Insert { items, at, play }, cx);
+        match drawn_at {
+            None => self.send(Command::Insert { items, at, play }, cx),
+            Some(drawn_at) => {
+                let items = self.with_the_versions_chosen(items, true, cx);
+                self.send_by_position_at(drawn_at, Command::Insert { items, at, play }, cx);
+            }
+        }
         self.report(Notice::Done(queued(rows, at, play)), cx);
         cx.notify();
     }

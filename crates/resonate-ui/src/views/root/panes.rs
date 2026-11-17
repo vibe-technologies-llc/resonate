@@ -9,7 +9,7 @@ use crate::{
     ResonateApp,
     views::{
         pointed::{self},
-        reorder::{Carried, Chosen, Reach, Shift, Step},
+        reorder::{Carried, CarriedOver, Chosen, Reach, Shift, Step},
         search::SearchShows,
         settings::Category,
     },
@@ -152,10 +152,19 @@ impl RootView {
     }
 
     pub(crate) fn carried_over_what_is_drawn(&self, carried: &Carried, cx: &App) -> bool {
-        carried
-            .over
-            .as_deref()
-            .is_none_or(|over| self.library.read(cx).entries_are(over))
+        match &carried.over {
+            CarriedOver::Queue { drawn_at } => self.player.read(cx).is_queued_at(*drawn_at),
+            CarriedOver::Entries(over) => self.library.read(cx).entries_are(over),
+        }
+    }
+
+    pub(crate) fn shift_carried(&mut self, carried: &Carried, to: usize, cx: &mut Context<Self>) {
+        match (&carried.over, carried.rows.single()) {
+            (&CarriedOver::Queue { drawn_at }, Some(rows)) => {
+                self.send_by_position_at(drawn_at, Command::Move { rows, to }, cx);
+            }
+            _ => self.shift_chosen(carried.shift, &carried.rows, to, cx),
+        }
     }
 
     pub(crate) fn shift_chosen(

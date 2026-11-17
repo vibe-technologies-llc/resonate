@@ -112,6 +112,9 @@ impl RootView {
         }
         match into {
             LiftedTo::Queue(at) => self.queue(&listed(tracks), at, cx),
+            LiftedTo::QueueRow { row, drawn_at } => {
+                self.queue_where_drawn(&listed(tracks), row, drawn_at, cx);
+            }
             LiftedTo::Playlist(playlist) => {
                 let cuts = tracks.iter().map(Cut::of).collect();
                 self.library.update(cx, |library, cx| {

@@ -25,7 +25,7 @@ use crate::{
         listing::{self, Pictured},
         menu::{self, Called, Menu},
         playlists::{Held, ROW_GROUP},
-        reorder::{self, Carried, Chosen, LiftedTo, Shift, Step},
+        reorder::{self, Carried, CarriedOver, Chosen, LiftedTo, Shift, Step},
         root::{Following, PlayingRow, RootView, empty, row},
         scrollbar::Scrollbars,
         sorting::{self, Ordered},
@@ -870,7 +870,7 @@ impl RootView {
                                         shift: Shift::Queue,
                                         rows: Chosen::of(acting_on),
                                         title: drawn.title.clone(),
-                                        over: None,
+                                        over: CarriedOver::Queue { drawn_at },
                                     };
                                     let album = drawn.album;
                                     let artist_id = drawn.artist_id;
@@ -1536,7 +1536,7 @@ mod tests {
     use gpui::{App, TestAppContext};
     use resonate_core::{MediaLocation, Span, TrackId, ZoneId};
     use resonate_engine::Command;
-    use resonate_library::{Direction, Library, NamesMoved, RowOrder};
+    use resonate_library::{Direction, Library, NamesMoved, RowOrder, Track, TrackQuery};
 
     use super::{
         KEPT_GESTURES, Line, Named, Offer, Part, PutInOrder, QueueItem, QueueLength, QueueParts,
@@ -1546,7 +1546,10 @@ mod tests {
     use crate::{
         Pane,
         driven::{Driven, Folder},
-        views::root::RootView,
+        views::{
+            reorder::{Carried, CarriedOver, Chosen, LiftedTo, Shift},
+            root::RootView,
+        },
     };
 
     fn length_at(queue: u64, library: &Library) -> QueueLength {
@@ -2113,6 +2116,69 @@ mod tests {
         assert_eq!(
             named_in_order(&mut driven)[..3],
             ["bravo", "delta", "charlie"]
+        );
+    }
+
+    #[gpui::test]
+    fn rows_lifted_onto_a_queue_row_after_another_reorder_landed_are_refused_rather_than_landing_elsewhere(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _) = queue_of(cx, &folder, &[1, 1, 1, 1]);
+        let drawn_at = driven.read(|root, cx| root.player.read(cx).queued().revision);
+        let lifted: Vec<Track> = driven.read(|root, cx| {
+            root.library
+                .read(cx)
+                .catalog()
+                .tracks(&TrackQuery::default())
+                .expect("the catalog lists its tracks")
+                .into_iter()
+                .filter(|track| track.title == "charlie")
+                .collect()
+        });
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            let drawn = root.library.read(cx).playlist_as_drawn();
+            behind_the_window(root, cx, Command::Order(vec![1, 0, 2, 3]));
+            root.landed(&lifted, LiftedTo::QueueRow { row: 1, drawn_at }, drawn, cx);
+        });
+        one_more_row_landed(&mut driven);
+
+        assert_eq!(lifted.len(), 1);
+        assert_eq!(
+            named_in_order(&mut driven)[..4],
+            ["alpha", "charlie", "delta", "bravo"]
+        );
+        assert_eq!(named_in_order(&mut driven).len(), 5);
+    }
+
+    #[gpui::test]
+    fn queue_rows_carried_before_another_reorder_landed_are_not_moved(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, _) = queue_of(cx, &folder, &[1, 1, 1, 1]);
+        let drawn_at = driven.read(|root, cx| root.player.read(cx).queued().revision);
+        let carried = Carried {
+            shift: Shift::Queue,
+            rows: Chosen::of(Span::one(0)),
+            title: "charlie".into(),
+            over: CarriedOver::Queue { drawn_at },
+        };
+
+        assert!(driven.read(|root, cx| root.carried_over_what_is_drawn(&carried, cx)));
+
+        driven.read(|root, cx| behind_the_window(root, cx, Command::Order(vec![1, 0, 2, 3])));
+        driven.until(|root, cx| !root.player.read(cx).is_queued_at(drawn_at));
+
+        assert!(!driven.read(|root, cx| root.carried_over_what_is_drawn(&carried, cx)));
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.shift_carried(&carried, 3, cx);
+        });
+        one_more_row_landed(&mut driven);
+
+        assert_eq!(
+            named_in_order(&mut driven)[..4],
+            ["alpha", "charlie", "delta", "bravo"]
         );
     }
 

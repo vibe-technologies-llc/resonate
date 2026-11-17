@@ -2353,6 +2353,13 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   row is inside it, else that row alone. Drawn as a 2-unit accent edge plus faint wash; every
   reorderable row reserves the edge in `theme::UNMARKED`; saved queries draw none. A drop does not ask
   `acting_on`: `reorder::movable` takes the row it stands for beside the `Carried` it would hand over.
+  **A carried run is moved only over the list it was lifted from**: `Carried::over` is a
+  `CarriedOver`, the playlist's entries or the queue's revision the row was drawn at
+  (`CarriedOver::Queue { drawn_at }`), so `carried_over_what_is_drawn` refuses a drop once either
+  has moved, and `RootView::shift_carried` sends a queue run's `Command::Move` through
+  `send_by_position_at` under the revision it was lifted at, which the engine refuses once MPRIS,
+  the terminal, another device or a guest moved the queue first
+  (`queue_rows_carried_before_another_reorder_landed_are_not_moved`).
 - **The catalog listings choose rows apart.** Only `Shift::chooses_apart` (Tracks, Albums, Artists,
   the playlists index, Favourites, the Favourites shelves, an opened suggestion, an opened playlist
   and the songs of Top results; not the queue, Missing or the Suggestions and Statistics shelves,
@@ -2432,7 +2439,11 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   `reorder::Run` (or `AlbumRun`): the page's own `Arc<[Track]>` and a `Chosen`, never a copy, so a 2 000-row selection costs a row an `Arc` clone per
   frame, and the ghost's title is worked out only when a drag begins
   (`a_lifted_run_shares_the_page_it_was_lifted_from_and_is_named_by_its_first_song`). `reorder::takes_a_lift` makes targets of
-  a queue row (`Placement::At`), an opened playlist's row (`LiftedTo::PlaylistAt`:
+  a queue row (`LiftedTo::QueueRow`, carrying the revision the row was drawn at:
+  `RootView::queue_where_drawn` does nothing once the queue shown has moved and sends the
+  `Command::Insert` at `Placement::At` through `send_by_position_at`, so the engine refuses it where
+  the queue moved behind the window, as an album read on bg first may let it:
+  `rows_lifted_onto_a_queue_row_after_another_reorder_landed_are_refused_rather_than_landing_elsewhere`), an opened playlist's row (`LiftedTo::PlaylistAt`:
   `Library::insert_into_playlist`, one undoable edit), the queue pane's body and empty queue
   (`Placement::Queued`), the playback bar's queue button, and a list playlist's index row, card and
   pinned sidebar row (a saved search takes none). `RootView::lifted_into` lands tracks at once and

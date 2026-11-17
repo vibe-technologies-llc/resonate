@@ -393,7 +393,13 @@ pub(crate) struct Carried {
     pub(crate) shift: Shift,
     pub(crate) rows: Chosen,
     pub(crate) title: SharedString,
-    pub(crate) over: Option<Arc<[PlaylistEntry]>>,
+    pub(crate) over: CarriedOver,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum CarriedOver {
+    Queue { drawn_at: u64 },
+    Entries(Arc<[PlaylistEntry]>),
 }
 
 #[derive(Clone, Debug)]
@@ -525,6 +531,7 @@ pub(crate) fn takes_a_lift(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LiftedTo {
     Queue(Placement),
+    QueueRow { row: usize, drawn_at: u64 },
     Playlist(PlaylistId),
     PlaylistAt(PlaylistId, usize),
 }
@@ -605,6 +612,7 @@ pub(crate) fn movable(
     cx: &mut Context<RootView>,
 ) -> Stateful<Div> {
     let shift = carried.shift;
+    let into = lifted_onto(&carried, onto);
 
     marked(listed, reached)
         .on_drag(carried, |carried, under, _, cx| {
@@ -617,19 +625,20 @@ pub(crate) fn movable(
         .drag_over::<Carried>(|style, _, _, _| style.bg(rgb(theme::hover())))
         .on_drop(cx.listener(move |this, carried: &Carried, _, cx| {
             if carried.shift == shift && this.carried_over_what_is_drawn(carried, cx) {
-                this.shift_chosen(shift, &carried.rows, onto, cx);
+                this.shift_carried(carried, onto, cx);
             }
         }))
-        .when_some(lifted_onto(shift, onto), |row, into| {
-            takes_a_lift(row, into, cx)
-        })
+        .when_some(into, |row, into| takes_a_lift(row, into, cx))
 }
 
-const fn lifted_onto(shift: Shift, onto: usize) -> Option<LiftedTo> {
-    match shift {
-        Shift::Queue => Some(LiftedTo::Queue(Placement::At(onto))),
-        Shift::Playlist(playlist) => Some(LiftedTo::PlaylistAt(playlist, onto)),
-        Shift::Listing(_) => None,
+const fn lifted_onto(carried: &Carried, onto: usize) -> Option<LiftedTo> {
+    match (carried.shift, &carried.over) {
+        (Shift::Queue, &CarriedOver::Queue { drawn_at }) => Some(LiftedTo::QueueRow {
+            row: onto,
+            drawn_at,
+        }),
+        (Shift::Playlist(playlist), _) => Some(LiftedTo::PlaylistAt(playlist, onto)),
+        (Shift::Queue, CarriedOver::Entries(_)) | (Shift::Listing(_), _) => None,
     }
 }
 

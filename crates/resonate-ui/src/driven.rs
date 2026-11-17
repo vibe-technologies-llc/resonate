@@ -5047,7 +5047,7 @@ mod tests {
             shift: Shift::Playlist(playlist),
             rows: crate::views::reorder::Chosen::of(Span::one(0)),
             title: "Aa".into(),
-            over: Some(root.library.read(cx).entries()),
+            over: crate::views::reorder::CarriedOver::Entries(root.library.read(cx).entries()),
         });
 
         assert!(driven.read(|root, cx| root.carried_over_what_is_drawn(&carried, cx)));

@@ -25,7 +25,7 @@ use crate::{
         menu::{self, Called, Menu, Offers},
         mosaic::{self, Mosaic},
         pointed::{self, LitUnderThePointer as _},
-        reorder::{self, Carried, Chosen, LiftedTo, Listed, Shift, Step},
+        reorder::{self, Carried, CarriedOver, Chosen, LiftedTo, Listed, Shift, Step},
         root::{Pane, RootView, empty, listed, row, somewhere_in, tall_row},
         scrollbar::Scrollbars,
         sheets,
@@ -1231,7 +1231,7 @@ impl RootView {
             shift,
             rows: acting_on.clone(),
             title: drawn.title.clone(),
-            over: Some(Arc::clone(entries)),
+            over: CarriedOver::Entries(Arc::clone(entries)),
         };
         let held = Arc::clone(entries);
         let entries_drawn = Arc::clone(entries);
