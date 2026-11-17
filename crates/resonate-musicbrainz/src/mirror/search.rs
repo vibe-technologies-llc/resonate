@@ -6,7 +6,7 @@ use resonate_library::{
     Release, ReleaseAsked, ReleaseMatch, SongsAsked, Wording,
 };
 
-use super::{At, Mirror};
+use super::Mirror;
 use crate::Result;
 
 pub const RECORDINGS_FOUND_AT_MOST: usize = 25;
@@ -113,6 +113,15 @@ fn words_of_credit(credit: &[Credit]) -> Vec<String> {
         .collect()
 }
 
+pub(crate) fn words_of_names(names: &[String]) -> String {
+    names
+        .iter()
+        .flat_map(|named| words_of_a_name(named))
+        .chain(names.iter().filter_map(|named| bare_title_token(named)))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub(crate) fn words_of_a_credited(title: &str, credit: &[Credit]) -> String {
     let mut words = words_of_a_name(title);
     words.extend(words_of_credit(credit));
@@ -131,36 +140,40 @@ fn any_of(words: &[String]) -> Option<String> {
     })
 }
 
+fn narrowed_first(title: &str, query: String) -> Vec<String> {
+    bare_title_token(title)
+        .map(|token| format!("\"{token}\" {query}"))
+        .into_iter()
+        .chain([query])
+        .collect()
+}
+
+fn words_asked(words: &str) -> Vec<String> {
+    all_of(&words_of_a_name(words))
+        .map(|query| narrowed_first(words, query))
+        .unwrap_or_default()
+}
+
 fn asked_queries(title: &str, artist: Option<&str>, wording: Wording) -> Vec<String> {
     let titled = words_of_a_name(title);
     let credited = artist.map(words_of_a_name).unwrap_or_default();
     let Some(title_alone) = all_of(&titled) else {
         return Vec::new();
     };
-    let narrowed =
-        |query: &str| bare_title_token(title).map(|token| format!("\"{token}\" {query}"));
     match (wording, any_of(&credited)) {
         (Wording::Phrase, _) => {
             let mut every = titled;
             every.extend(credited);
-            let Some(every) = all_of(&every) else {
-                return Vec::new();
-            };
-            narrowed(&every).into_iter().chain([every]).collect()
+            all_of(&every)
+                .map(|every| narrowed_first(title, every))
+                .unwrap_or_default()
         }
         (Wording::Words, Some(any_artist)) => {
-            let with_artist = format!("{title_alone} AND {any_artist}");
-            narrowed(&with_artist)
-                .into_iter()
-                .chain([with_artist])
-                .chain(narrowed(&title_alone))
-                .chain([title_alone])
-                .collect()
+            let mut queries = narrowed_first(title, format!("{title_alone} AND {any_artist}"));
+            queries.extend(narrowed_first(title, title_alone));
+            queries
         }
-        (Wording::Words, None) => narrowed(&title_alone)
-            .into_iter()
-            .chain([title_alone])
-            .collect(),
+        (Wording::Words, None) => narrowed_first(title, title_alone),
     }
 }
 
@@ -181,7 +194,7 @@ impl Mirror {
         let queries = asked_queries(&asked.title, asked.artist.as_deref(), asked.wording);
         let phrase = asked.wording == Wording::Phrase;
         let mut found = Vec::new();
-        for id in self.matched_first(RECORDING_WORDS, &queries)? {
+        for id in self.matched_first(RECORDING_WORDS, &queries, CANDIDATES_WEIGHED)? {
             let Some(recording) = self.recording_at(id)? else {
                 continue;
             };
@@ -227,11 +240,9 @@ impl Mirror {
             }
         }
         let words = words_of_a_name(&asked.words);
-        let Some(query) = all_of(&words) else {
-            return Ok(Vec::new());
-        };
+        let queries = words_asked(&asked.words);
         let mut found = Vec::new();
-        for id in self.matched(RECORDING_WORDS, &query, SONGS_FOUND_AT_MOST)? {
+        for id in self.matched_first(RECORDING_WORDS, &queries, SONGS_FOUND_AT_MOST)? {
             let Some(recording) = self.recording_at(id)? else {
                 continue;
             };
@@ -249,7 +260,7 @@ impl Mirror {
         let queries = asked_queries(&asked.title, asked.artist.as_deref(), asked.wording);
         let phrase = asked.wording == Wording::Phrase;
         let mut found = Vec::new();
-        for id in self.matched_first(RELEASE_WORDS, &queries)? {
+        for id in self.matched_first(RELEASE_WORDS, &queries, CANDIDATES_WEIGHED)? {
             let Some(doc) = self.release_at(id)? else {
                 continue;
             };
@@ -285,7 +296,7 @@ impl Mirror {
         let queries = asked_queries(&asked.title, asked.artist.as_deref(), asked.wording);
         let phrase = asked.wording == Wording::Phrase;
         let mut found = Vec::new();
-        for id in self.matched_first(GROUP_WORDS, &queries)? {
+        for id in self.matched_first(GROUP_WORDS, &queries, CANDIDATES_WEIGHED)? {
             let Some(doc) = self.group_at(id)? else {
                 continue;
             };
@@ -322,11 +333,9 @@ impl Mirror {
 
     pub fn find_albums(&self, words: &str) -> Result<Vec<AlbumMatch>> {
         let asked = words_of_a_name(words);
-        let Some(query) = all_of(&asked) else {
-            return Ok(Vec::new());
-        };
+        let queries = words_asked(words);
         let mut found = Vec::new();
-        for id in self.matched(GROUP_WORDS, &query, CANDIDATES_WEIGHED)? {
+        for id in self.matched_first(GROUP_WORDS, &queries, CANDIDATES_WEIGHED)? {
             let Some(doc) = self.group_at(id)? else {
                 continue;
             };
@@ -351,11 +360,9 @@ impl Mirror {
     }
 
     pub fn find_artist(&self, name: &str) -> Result<Vec<ArtistMatch>> {
-        let Some(query) = all_of(&words_of_a_name(name)) else {
-            return Ok(Vec::new());
-        };
+        let queries = words_asked(name);
         let mut found = Vec::new();
-        for id in self.matched(ARTIST_WORDS, &query, CANDIDATES_WEIGHED)? {
+        for id in self.matched_first(ARTIST_WORDS, &queries, CANDIDATES_WEIGHED)? {
             let Some(doc) = self.artist_at(id)? else {
                 continue;
             };
@@ -380,18 +387,6 @@ impl Mirror {
             ));
         }
         Ok(best_first(&mut found, ARTISTS_FOUND_AT_MOST))
-    }
-}
-
-impl Mirror {
-    fn matched_first(&self, table: &str, queries: &[String]) -> Result<Vec<At>> {
-        for query in queries {
-            let matched = self.matched(table, query, CANDIDATES_WEIGHED)?;
-            if !matched.is_empty() {
-                return Ok(matched);
-            }
-        }
-        Ok(Vec::new())
     }
 }
 

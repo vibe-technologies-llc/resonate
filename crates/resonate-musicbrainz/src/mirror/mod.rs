@@ -213,6 +213,19 @@ pub fn mirror_in(folder: &Path) -> PathBuf {
     folder.join(MIRROR_FILE)
 }
 
+fn first_found(
+    queries: &[String],
+    mut matched: impl FnMut(&str) -> Result<Vec<i64>>,
+) -> Result<Vec<i64>> {
+    for query in queries {
+        let found = matched(query)?;
+        if !found.is_empty() {
+            return Ok(found);
+        }
+    }
+    Ok(Vec::new())
+}
+
 impl Mirror {
     pub fn open(path: &Path) -> Result<Self> {
         if !path.is_file() {
@@ -579,17 +592,21 @@ impl Mirror {
             .map_err(Error::store(Store::Mirror, StoreOp::Read))
     }
 
-    pub(crate) fn matched(&self, table: &str, query: &str, most: usize) -> Result<Vec<At>> {
-        let mut found: Vec<At> = self
-            .built_matched(table, query, most)?
-            .into_iter()
-            .map(At::Built)
-            .collect();
+    pub(crate) fn matched_first(
+        &self,
+        table: &str,
+        queries: &[String],
+        most: usize,
+    ) -> Result<Vec<At>> {
+        let mut found: Vec<At> =
+            first_found(queries, |query| self.built_matched(table, query, most))?
+                .into_iter()
+                .map(At::Built)
+                .collect();
         if let Some(amended) = &self.amended {
+            let amended = amended.lock();
             found.extend(
-                amended
-                    .lock()
-                    .matched(table, query, most)?
+                first_found(queries, |query| amended.matched(table, query, most))?
                     .into_iter()
                     .map(At::Amended),
             );
@@ -599,8 +616,7 @@ impl Mirror {
 
     fn built_matched(&self, table: &str, query: &str, most: usize) -> Result<Vec<i64>> {
         let connection = self.connection.lock();
-        let sql =
-            format!("SELECT rowid FROM {table} WHERE {table} MATCH ?1 ORDER BY rank LIMIT ?2");
+        let sql = format!("SELECT rowid FROM {table} WHERE {table} MATCH ?1 LIMIT ?2");
         let mut statement = connection
             .prepare_cached(&sql)
             .map_err(Error::store(Store::Mirror, StoreOp::Search))?;

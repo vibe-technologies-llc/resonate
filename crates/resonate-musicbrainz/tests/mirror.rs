@@ -148,228 +148,235 @@ fn archive(path: &Path, tables: &[(&str, Vec<String>)]) {
 }
 
 fn dump(into: &Path) -> Archives {
+    dump_beside(into, &[])
+}
+
+fn dump_beside(into: &Path, beside: &[(&str, Vec<String>)]) -> Archives {
     let core = into.join("mbdump.tar.bz2");
     let derived = into.join("mbdump-derived.tar.bz2");
-    archive(
-        &core,
-        &[
-            ("area", vec![line(14, &[(0, "10"), (2, "United Kingdom")])]),
-            (
-                "artist",
-                vec![
-                    line(
-                        19,
-                        &[
-                            (0, "1"),
-                            (1, RADIOHEAD),
-                            (2, "Radiohead"),
-                            (3, "Radiohead"),
-                            (4, "1985"),
-                            (10, "2"),
-                            (11, "10"),
-                            (13, ""),
-                            (16, "f"),
-                        ],
-                    ),
-                    line(
-                        19,
-                        &[
-                            (0, "2"),
-                            (1, THOM),
-                            (2, "Thom Yorke"),
-                            (3, "Yorke, Thom"),
-                            (12, "1"),
-                            (13, ""),
-                            (16, "f"),
-                        ],
-                    ),
-                    line(
-                        19,
-                        &[
-                            (0, "3"),
-                            (1, PROLIFIC),
-                            (2, "Prolific"),
-                            (3, "Prolific"),
-                            (13, ""),
-                            (16, "f"),
-                        ],
-                    ),
-                ],
-            ),
-            (
-                "artist_alias",
-                vec![line(16, &[(1, "1"), (2, "Radio Head")])],
-            ),
-            (
-                "artist_credit_name",
-                vec![
-                    line(
-                        5,
-                        &[(0, "1"), (1, "0"), (2, "1"), (3, "Radiohead"), (4, "")],
-                    ),
-                    line(
-                        5,
-                        &[(0, "2"), (1, "0"), (2, "2"), (3, "Thom Yorke"), (4, "")],
-                    ),
-                    line(5, &[(0, "3"), (1, "0"), (2, "3"), (3, "Prolific"), (4, "")]),
-                ],
-            ),
-            ("artist_type", vec![line(6, &[(0, "2"), (1, "Group")])]),
-            ("gender", vec![line(6, &[(0, "1"), (1, "Male")])]),
-            ("iso_3166_1", vec![line(2, &[(0, "10"), (1, "GB")])]),
-            ("isrc", vec![line(5, &[(1, "1"), (2, CREEP_CODE)])]),
-            (
-                "l_artist_url",
-                vec![line(9, &[(1, "1"), (2, "1"), (3, "1")])],
-            ),
-            ("l_recording_url", vec![]),
-            ("l_release_group_url", vec![]),
-            ("l_release_url", vec![]),
-            ("label", vec![line(16, &[(0, "1"), (2, "Parlophone")])]),
-            ("link", vec![line(11, &[(0, "1"), (1, "1")])]),
-            ("link_type", vec![line(16, &[(0, "1"), (6, "wikidata")])]),
-            (
-                "medium",
-                vec![line(
+    let mut core_tables = vec![
+        ("area", vec![line(14, &[(0, "10"), (2, "United Kingdom")])]),
+        (
+            "artist",
+            vec![
+                line(
+                    19,
+                    &[
+                        (0, "1"),
+                        (1, RADIOHEAD),
+                        (2, "Radiohead"),
+                        (3, "Radiohead"),
+                        (4, "1985"),
+                        (10, "2"),
+                        (11, "10"),
+                        (13, ""),
+                        (16, "f"),
+                    ],
+                ),
+                line(
+                    19,
+                    &[
+                        (0, "2"),
+                        (1, THOM),
+                        (2, "Thom Yorke"),
+                        (3, "Yorke, Thom"),
+                        (12, "1"),
+                        (13, ""),
+                        (16, "f"),
+                    ],
+                ),
+                line(
+                    19,
+                    &[
+                        (0, "3"),
+                        (1, PROLIFIC),
+                        (2, "Prolific"),
+                        (3, "Prolific"),
+                        (13, ""),
+                        (16, "f"),
+                    ],
+                ),
+            ],
+        ),
+        (
+            "artist_alias",
+            vec![line(16, &[(1, "1"), (2, "Radio Head")])],
+        ),
+        (
+            "artist_credit_name",
+            vec![
+                line(
+                    5,
+                    &[(0, "1"), (1, "0"), (2, "1"), (3, "Radiohead"), (4, "")],
+                ),
+                line(
+                    5,
+                    &[(0, "2"), (1, "0"), (2, "2"), (3, "Thom Yorke"), (4, "")],
+                ),
+                line(5, &[(0, "3"), (1, "0"), (2, "3"), (3, "Prolific"), (4, "")]),
+            ],
+        ),
+        ("artist_type", vec![line(6, &[(0, "2"), (1, "Group")])]),
+        ("gender", vec![line(6, &[(0, "1"), (1, "Male")])]),
+        ("iso_3166_1", vec![line(2, &[(0, "10"), (1, "GB")])]),
+        ("isrc", vec![line(5, &[(1, "1"), (2, CREEP_CODE)])]),
+        (
+            "l_artist_url",
+            vec![line(9, &[(1, "1"), (2, "1"), (3, "1")])],
+        ),
+        ("l_recording_url", vec![]),
+        ("l_release_group_url", vec![]),
+        ("l_release_url", vec![]),
+        ("label", vec![line(16, &[(0, "1"), (2, "Parlophone")])]),
+        ("link", vec![line(11, &[(0, "1"), (1, "1")])]),
+        ("link_type", vec![line(16, &[(0, "1"), (6, "wikidata")])]),
+        (
+            "medium",
+            vec![line(
+                9,
+                &[(0, "1"), (1, "1"), (2, "1"), (3, "1"), (4, ""), (7, "2")],
+            )],
+        ),
+        ("medium_format", vec![line(8, &[(0, "1"), (1, "CD")])]),
+        (
+            "recording",
+            vec![
+                line(
                     9,
-                    &[(0, "1"), (1, "1"), (2, "1"), (3, "1"), (4, ""), (7, "2")],
-                )],
-            ),
-            ("medium_format", vec![line(8, &[(0, "1"), (1, "CD")])]),
-            (
-                "recording",
-                vec![
-                    line(
-                        9,
-                        &[(0, "1"), (1, CREEP), (2, "Creep"), (3, "1"), (4, "238000")],
-                    ),
-                    line(
-                        9,
-                        &[
-                            (0, "2"),
-                            (1, ACOUSTIC),
-                            (2, "Creep (Acoustic)"),
-                            (3, "1"),
-                            (4, "260000"),
-                        ],
-                    ),
-                    line(
-                        9,
-                        &[
-                            (0, "3"),
-                            (1, HEARING),
-                            (2, "Hearing Damage"),
-                            (3, "2"),
-                            (4, "300000"),
-                        ],
-                    ),
-                ],
-            ),
-            (
-                "release",
-                [
-                    vec![line(
-                        14,
-                        &[
-                            (0, "1"),
-                            (1, PABLO),
-                            (2, "Pablo Honey"),
-                            (3, "1"),
-                            (4, "1"),
-                            (5, "1"),
-                            (9, PABLO_BARCODE),
-                            (10, ""),
-                        ],
-                    )],
-                    prolific_releases(),
-                ]
-                .concat(),
-            ),
-            (
-                "release_country",
+                    &[(0, "1"), (1, CREEP), (2, "Creep"), (3, "1"), (4, "238000")],
+                ),
+                line(
+                    9,
+                    &[
+                        (0, "2"),
+                        (1, ACOUSTIC),
+                        (2, "Creep (Acoustic)"),
+                        (3, "1"),
+                        (4, "260000"),
+                    ],
+                ),
+                line(
+                    9,
+                    &[
+                        (0, "3"),
+                        (1, HEARING),
+                        (2, "Hearing Damage"),
+                        (3, "2"),
+                        (4, "300000"),
+                    ],
+                ),
+            ],
+        ),
+        (
+            "release",
+            [
                 vec![line(
-                    5,
-                    &[(0, "1"), (1, "10"), (2, "1993"), (3, "2"), (4, "22")],
+                    14,
+                    &[
+                        (0, "1"),
+                        (1, PABLO),
+                        (2, "Pablo Honey"),
+                        (3, "1"),
+                        (4, "1"),
+                        (5, "1"),
+                        (9, PABLO_BARCODE),
+                        (10, ""),
+                    ],
                 )],
-            ),
-            (
-                "release_group",
-                [
-                    vec![line(
-                        8,
-                        &[
-                            (0, "1"),
-                            (1, PABLO_GROUP),
-                            (2, "Pablo Honey"),
-                            (3, "1"),
-                            (4, "1"),
-                            (5, ""),
-                        ],
-                    )],
-                    prolific_groups(),
-                ]
-                .concat(),
-            ),
-            (
-                "release_group_primary_type",
-                vec![line(6, &[(0, "1"), (1, "Album")])],
-            ),
-            (
-                "release_group_secondary_type",
-                vec![line(6, &[(0, "1"), (1, "Live")])],
-            ),
-            ("release_group_secondary_type_join", vec![]),
-            (
-                "release_label",
-                vec![line(5, &[(1, "1"), (2, "1"), (3, "CDPCSD 129")])],
-            ),
-            (
-                "release_status",
-                vec![line(6, &[(0, "1"), (1, "Official")])],
-            ),
-            ("release_unknown_country", vec![]),
-            (
-                "track",
-                vec![
-                    line(
-                        12,
-                        &[
-                            (0, "1"),
-                            (1, TRACK_ONE),
-                            (2, "1"),
-                            (3, "1"),
-                            (4, "1"),
-                            (5, "1"),
-                            (6, "Creep"),
-                            (7, "1"),
-                            (8, "238000"),
-                        ],
-                    ),
-                    line(
-                        12,
-                        &[
-                            (0, "2"),
-                            (1, TRACK_TWO),
-                            (2, "2"),
-                            (3, "1"),
-                            (4, "2"),
-                            (5, "2"),
-                            (6, "Creep (Acoustic)"),
-                            (7, "1"),
-                            (8, "260000"),
-                        ],
-                    ),
-                ],
-            ),
-            (
-                "url",
+                prolific_releases(),
+            ]
+            .concat(),
+        ),
+        (
+            "release_country",
+            vec![line(
+                5,
+                &[(0, "1"), (1, "10"), (2, "1993"), (3, "2"), (4, "22")],
+            )],
+        ),
+        (
+            "release_group",
+            [
                 vec![line(
-                    5,
-                    &[(0, "1"), (2, "https://www.wikidata.org/wiki/Q44190")],
+                    8,
+                    &[
+                        (0, "1"),
+                        (1, PABLO_GROUP),
+                        (2, "Pablo Honey"),
+                        (3, "1"),
+                        (4, "1"),
+                        (5, ""),
+                    ],
                 )],
-            ),
-        ],
-    );
+                prolific_groups(),
+            ]
+            .concat(),
+        ),
+        (
+            "release_group_primary_type",
+            vec![line(6, &[(0, "1"), (1, "Album")])],
+        ),
+        (
+            "release_group_secondary_type",
+            vec![line(6, &[(0, "1"), (1, "Live")])],
+        ),
+        ("release_group_secondary_type_join", vec![]),
+        (
+            "release_label",
+            vec![line(5, &[(1, "1"), (2, "1"), (3, "CDPCSD 129")])],
+        ),
+        (
+            "release_status",
+            vec![line(6, &[(0, "1"), (1, "Official")])],
+        ),
+        ("release_unknown_country", vec![]),
+        (
+            "track",
+            vec![
+                line(
+                    12,
+                    &[
+                        (0, "1"),
+                        (1, TRACK_ONE),
+                        (2, "1"),
+                        (3, "1"),
+                        (4, "1"),
+                        (5, "1"),
+                        (6, "Creep"),
+                        (7, "1"),
+                        (8, "238000"),
+                    ],
+                ),
+                line(
+                    12,
+                    &[
+                        (0, "2"),
+                        (1, TRACK_TWO),
+                        (2, "2"),
+                        (3, "1"),
+                        (4, "2"),
+                        (5, "2"),
+                        (6, "Creep (Acoustic)"),
+                        (7, "1"),
+                        (8, "260000"),
+                    ],
+                ),
+            ],
+        ),
+        (
+            "url",
+            vec![line(
+                5,
+                &[(0, "1"), (2, "https://www.wikidata.org/wiki/Q44190")],
+            )],
+        ),
+    ];
+    for (table, rows) in beside {
+        if let Some((_, held)) = core_tables.iter_mut().find(|(name, _)| name == table) {
+            held.extend(rows.iter().cloned());
+        }
+    }
+    archive(&core, &core_tables);
     archive(
         &derived,
         &[
@@ -394,11 +401,14 @@ fn mbid(text: &str) -> Mbid {
 }
 
 fn built_keeping(scratch: &Scratch, keeping: Keeping) -> Mirror {
-    let archives = dump(&scratch.0);
+    built_from_archives(scratch, &dump(&scratch.0), keeping)
+}
+
+fn built_from_archives(scratch: &Scratch, archives: &Archives, keeping: Keeping) -> Mirror {
     let folder = scratch.0.join("musicbrainz");
     let held = held_for_building(&folder).expect("the building lock");
     let building = Building::default();
-    let built = built_from(&archives, &folder, keeping, &building, &held).expect("a built mirror");
+    let built = built_from(archives, &folder, keeping, &building, &held).expect("a built mirror");
     drop(held);
     let settled = settled(&built, &folder).expect("the mirror settled");
     Mirror::open(&settled).expect("the mirror opens")
@@ -643,6 +653,129 @@ fn a_local_search_scores_whole_agreement_and_nothing_less_at_a_hundred() {
     assert_eq!(artists[0].score, 100);
     assert_eq!(songs[0].recording, mbid(CREEP));
     assert_eq!(albums[0].group, mbid(PABLO_GROUP));
+}
+
+const CROWDED_BY: usize = 110;
+const FIRST_CROWDING_ROW: usize = 1_000;
+const LOVE_ARTIST: &str = "4f3e3e3e-0000-4000-8000-00000000006e";
+const LOVE_GROUP: &str = "5f3e3e3e-0000-4000-8000-00000000006e";
+const LOVE_RECORDING: &str = "6f3e3e3e-0000-4000-8000-00000000006e";
+
+fn crowded_round_love() -> Vec<(&'static str, Vec<String>)> {
+    let row = |at: usize| (FIRST_CROWDING_ROW + at).to_string();
+    let named = |at: usize, crowd: &str| {
+        if at == CROWDED_BY {
+            "Love".to_owned()
+        } else {
+            format!("{crowd} {at}")
+        }
+    };
+    let artists = (0..=CROWDED_BY)
+        .map(|at| {
+            let named = named(at, "Love");
+            line(
+                19,
+                &[
+                    (0, &row(at)),
+                    (1, &prolific_gid(4, at)),
+                    (2, &named),
+                    (3, &named),
+                    (13, ""),
+                    (16, "f"),
+                ],
+            )
+        })
+        .collect();
+    let recordings = (0..=CROWDED_BY)
+        .map(|at| {
+            line(
+                9,
+                &[
+                    (0, &row(at)),
+                    (1, &prolific_gid(6, at)),
+                    (2, &named(at, "Love Song")),
+                    (3, "1"),
+                    (4, "200000"),
+                ],
+            )
+        })
+        .collect();
+    let groups = (0..=CROWDED_BY)
+        .map(|at| {
+            line(
+                8,
+                &[
+                    (0, &row(at)),
+                    (1, &prolific_gid(5, at)),
+                    (2, &named(at, "Love Song")),
+                    (3, "1"),
+                    (4, "1"),
+                    (5, ""),
+                ],
+            )
+        })
+        .collect();
+    vec![
+        ("artist", artists),
+        ("recording", recordings),
+        ("release_group", groups),
+    ]
+}
+
+fn word_table_rows(mirror: &Path, table: &str, query: &str, ranked: bool) -> Vec<i64> {
+    let order = if ranked { "ORDER BY rank" } else { "" };
+    let connection = rusqlite::Connection::open(mirror).expect("the copy opens");
+    let mut statement = connection
+        .prepare(&format!(
+            "SELECT rowid FROM {table} WHERE {table} MATCH ?1 {order} LIMIT 64"
+        ))
+        .expect("a search");
+    statement
+        .query_map([query], |row| row.get(0))
+        .expect("searched")
+        .collect::<rusqlite::Result<Vec<i64>>>()
+        .expect("rows")
+}
+
+#[test]
+fn a_word_table_weighs_every_row_alike_so_its_candidates_are_the_same_unranked() {
+    let scratch = Scratch::new("unranked");
+    let archives = dump_beside(&scratch.0, &crowded_round_love());
+    drop(built_from_archives(&scratch, &archives, Keeping::TheMirror));
+    let copy = mirror_in(&scratch.0.join("musicbrainz"));
+
+    for table in ["artist_words", "recording_words", "group_words"] {
+        let ranked = word_table_rows(&copy, table, "\"love\"", true);
+        let unranked = word_table_rows(&copy, table, "\"love\"", false);
+
+        assert_eq!(ranked.len(), 64);
+        assert_eq!(ranked, unranked, "{table} ranked its rows otherwise");
+    }
+}
+
+#[test]
+fn a_common_word_is_narrowed_to_the_names_alike_once_bare_before_every_row_holding_it() {
+    let scratch = Scratch::new("crowded");
+    let archives = dump_beside(&scratch.0, &crowded_round_love());
+    let mirror = built_from_archives(&scratch, &archives, Keeping::TheMirror);
+
+    let artists = mirror.find_artist("love").expect("a search");
+    let albums = mirror.find_albums("Love").expect("a search");
+    let songs = mirror
+        .find_songs(&SongsAsked {
+            words: "love".to_owned(),
+            typed: "love".to_owned(),
+            by: None,
+        })
+        .expect("a search");
+    let wider = mirror.find_artist("love 7").expect("a search");
+
+    assert_eq!(artists[0].mbid, mbid(LOVE_ARTIST));
+    assert_eq!(artists[0].score, 100);
+    assert_eq!(albums[0].group, mbid(LOVE_GROUP));
+    assert_eq!(songs[0].recording, mbid(LOVE_RECORDING));
+    assert_eq!(wider[0].name, "Love 7");
+    assert_eq!(wider[0].score, 100);
 }
 
 #[test]

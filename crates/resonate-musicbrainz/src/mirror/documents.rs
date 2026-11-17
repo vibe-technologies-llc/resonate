@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, time::Duration};
 
-use resonate_core::{Isrc, Link, Mbid, folded_letters, words_of_a_name};
+use resonate_core::{Isrc, Link, Mbid, folded_letters};
 use resonate_library::{
     ArtistProfile, ArtistRelease, Credit, Genre, GroupRelease, Issued, LifeSpan, Medium, Recording,
     RecordingRelease, Release, ReleaseGroup, ReleaseTrack,
@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, Row, Statement};
 use super::{
     ArtistDoc, DISCOGRAPHY_KINDS, GroupDoc, ReleaseDoc,
     looked_up::{LookedUp, dated, gid_bytes, small, store_read},
-    search::words_of_a_credited,
+    search::{words_of_a_credited, words_of_names},
 };
 use crate::{
     Entity, Result, Store,
@@ -655,14 +655,10 @@ impl<'a> Artists<'a> {
             genres,
             links: links_of(&mut self.links, id)?,
         };
-        let mut words = vec![artist.name.clone()];
-        words.extend(sort_name);
-        words.extend(artist.aliases.iter().cloned());
-        let words = words
-            .iter()
-            .flat_map(|named| words_of_a_name(named))
-            .collect::<Vec<_>>()
-            .join(" ");
+        let mut names = vec![artist.name.clone()];
+        names.extend(sort_name);
+        names.extend(artist.aliases.iter().cloned());
+        let words = words_of_names(&names);
         let doc = ArtistDoc {
             artist,
             groups,

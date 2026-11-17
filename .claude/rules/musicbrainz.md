@@ -155,8 +155,10 @@ backslash escapes are read, octal and hex included (`\x` with no hex digit is an
   ordinal. The ordinal is the rowid of the contentless, `detail=none` FTS5 tables of folded words
   (`recording_words`, `release_words`, `group_words`, `artist_words`). A release's, recording's
   and group's words also carry one token for its folded bare title (`bare_title_token`: `qt` and
-  the FNV-1a of `titles::bare` folded), so a search can ask for the titles that can agree before
-  bm25 weighs anything (*Search*). Each table holds `WORDS_HELD_BEFORE_A_FLUSH` (64 MiB) of terms
+  the FNV-1a of `titles::bare` folded), and an artist's one for each of its names, sort name and
+  aliases (`words_of_names`), so a search can ask for the names that can agree before every row
+  holding a word (*Search*). A copy built before the artists' tokens has none, which only means its
+  artist search is asked without them, so no `FORMAT` step was owed. Each table holds `WORDS_HELD_BEFORE_A_FLUSH` (64 MiB) of terms
   before writing a segment (FTS5's `hashsize`, 1 MiB by default), so 54 million rows leave a few
   hundred segments to merge rather than tens of thousands.
 - **Reading.** A lookup by id is one index probe and one block unpacked. The block's place is read
@@ -170,13 +172,24 @@ backslash escapes are read, octal and hex included (`\x` with no hex digit is an
 
 **Search scores as MusicBrainz's does** (`mirror/search.rs`).
 
-- **Candidates.** Up to `CANDIDATES_WEIGHED` are taken by bm25. `Phrase` requires every title word
-  and, where an artist is asked, every artist word. `Words` requires the title's alone.
+- **Candidates.** Up to `CANDIDATES_WEIGHED` are taken (`SONGS_FOUND_AT_MOST` for songs), in the
+  table's order, never by bm25. FTS5's bm25 is zero for every row of a contentless `detail=none`
+  table, so `ORDER BY rank` gave the rowid's order anyway and only cost a read of the size of
+  every row holding the words; the copy's tables are asked with `LIMIT` alone, the same rows
+  (`a_word_table_weighs_every_row_alike_so_its_candidates_are_the_same_unranked`). The amendments'
+  tables keep their content, so bm25 means something there and they are still asked by rank.
+  `Phrase` requires every title word and, where an artist is asked, every artist word. `Words`
+  requires the title's alone.
 - **Narrowed first.** Each query of `asked_queries` is first asked with the bare title's token
-  added, so only titles alike once bare are weighed (a few rows where the words alone match
-  hundreds of thousands, each costing bm25 a read of its size); the query without it is asked only
-  where that finds nothing. Only titles alike once bare score 96 or more, so the strict rules take
-  what they took before, from every candidate rather than bm25's first 64.
+  added (`narrowed_first`), and so are the songs', albums' and artists' words searches (`find_songs`,
+  `find_albums`, `find_artist` through `words_asked`, the typed words taken as a name), so only
+  names alike once bare are weighed; the query without it is asked only where that finds nothing.
+  The copy and its amendments each take their own first query that finds anything (`first_found`),
+  so a copy without the artists' tokens is still searched whole beside amendments that have them.
+  Only titles alike once bare score 96 or more, so the strict rules take what they took before,
+  from every candidate rather than the table's first 64; a common word asked alone weighs the
+  names it is rather than the first rows holding it
+  (`a_common_word_is_narrowed_to_the_names_alike_once_bare_before_every_row_holding_it`).
 - **The score** is `agreement` of title times `credit_agreement`, out of 100:
   - Folded titles alike are whole.
   - Titles alike once `titles::bare` strips a qualifier are 0.96.
@@ -217,8 +230,11 @@ block-parallel since), 54 million documents written in 40 (releases about 6 000 
 71 minutes in all. The staging peaks at 41 GB beside the 7.5 GB download; the copy kept is 10.3 GB.
 A lookup by id answers in under 3 ms, a strict search with its artist in about 10 to 70 ms. A bare
 common title asked in words alone was the slow case (*love* about 2.5 s, bm25 reading the size of
-every row holding the word), which the bare title's token narrows first (*Narrowed first*); a loose
-search with an artist still requires one of the artist's words before asking the title alone.
+every row holding the word). Asked unranked it stops at the rows it takes: on a synthetic contentless
+`detail=none` table of 4 million rows, 400 000 holding *love* and 8 000 titled so, warm, the word
+alone took 135 ms by rank and 0.02 ms unranked, narrowed 13 ms by rank and 0.04 ms unranked, the rows
+taken the same either way. A loose search with an artist still requires one of the artist's words
+before asking the title alone.
 
 **A mirror is a cache rebuilt from the dump, not stored data.** A file of another `FORMAT` is
 `MirrorFormat`, left serving nothing until the next build replaces it. No migration is owed, since
