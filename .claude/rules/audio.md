@@ -352,7 +352,7 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
 - **Rows of one format play on gaplessly; a boundary that moves the format drains.** Samples are
   untouched, so there is no setting. While the transport plays and the decoder stands within
   `OPENED_AHEAD_BY` (10 s) of a row's end, `open_ahead` opens the row a natural advance lands on
-  (`Queue::follows_naturally`: the next waiting or in-order row, the same row under repeat-track,
+  (`Queue::follows_naturally_after`: the next waiting or in-order row, the same row under repeat-track,
   the first on a wrap only without shuffle) on a `resonate-track-open` thread as an `Ahead`. When
   the decoder ends (`Filled::AtTheEnd`, `Track::ended`), `Engine::hand_on` weighs the landed row's
   plan on the bound sink against the open one (`keeps_its_stream_for`: same stream, packing and ring

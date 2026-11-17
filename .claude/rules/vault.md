@@ -377,7 +377,7 @@ gaining `Vault`, the `vault_objects` and `kept_tags` tables; their schema is in 
   the roots and `--at-most` of an import.
 - **`retag` passes a vaulted row over** (`Unwritten::Vaulted`); **`organise` does not** (vault keyed
   by content).
-- **An album holds a cover where it holds either column**: `ALBUM_COLUMNS` and `asking_albums` read
+- **An album holds a cover where it holds either column**: `album_columns` and `asking_albums` read
   `cover_art IS NOT NULL OR cover_path IS NOT NULL`. `gather`'s fill takes the loser's whole cover
   only where the survivor holds neither.
 - **A cover moves into the vault once per album**: `enriched::vault_the_cover` clears `cover_art` in

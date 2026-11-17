@@ -208,7 +208,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   the bound is the loudest moment's. **The solved bound** (`tones.rs`): the partition is one
   feasible answer of the tone model's dual, so each moment and level is also solved exactly as a
   linear programme, `min sum lambda_S * P_S` subject to `sum lambda_S * B_S(span) >= D(span)` over
-  346 spans (24 an octave from 1 Hz to Nyquist, each span's `B_S` the least of its two edges, a node's
+  346 spans (24 an octave from 1 Hz to Nyquist, each span's `B_S(span)` the least of its two edges, a node's
   response being unimodal, `D` the most `|G_near - c|` reaches inside it), by a revised simplex from
   the slack basis (`Solving`, warm across levels, a row a cover); any dual it stops at is made feasible
   by scaling and so is an answer, it stops within `SETTLED_WITHIN` (0.1 %) of the primal, gives up

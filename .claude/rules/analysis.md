@@ -36,7 +36,8 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   drain a task of one slab (a thread waiting inside a search may steal a drain, so a longer one
   would hold that search's answer back). A slab keeps its pieces, so a stage hears the partition the
   decoder made; those whose answer no partition moves (`hears_any_pieces_alike`, the two with a
-  `stream_noted_in_pieces` test and the meter) take it whole. Memory is held by
+  `a_stream_noted_in_pieces_has_the_figures_it_has_noted_whole` or
+  `a_stream_noted_in_pieces_has_the_peaks_it_has_noted_whole` test and the meter) take it whole. Memory is held by
   `BYTES_QUEUED_AT_MOST` (8 MiB of samples no stage has finished with); past it the decoder waits for
   the slowest stage. **A grid's search and confirmation run across the crew too**
   (`Readers::read_each`), each run on a clone of the grid, cleared and dropped after, since a run is

@@ -129,7 +129,7 @@ A headset, Bluetooth or lock-screen play reaches a service that is gone through 
 its row and place and reloads nothing, so a queue of library and served songs resumed from a headset
 loses no row (`ResumedQueueTest`), and a controller's `seekTo(index, ms)` is one boundary call
 (`jump_to_at`) that seeks at the rate of the row it lands on; `onPlaybackResumption` waits at most 8 s for the engine, the
-queue it resumed paused (`resume_saved`) and its first snapshot, and answers that queue at its row and
+queue it resumed paused (`resume_saved_in`) and its first snapshot, and answers that queue at its row and
 position (the engine's close clears both, so a service made again in a living process never answers the
 last session's queue at row 0), so the key
 plays where the listener left off (checked on the emulator by force-stopping the app and pressing

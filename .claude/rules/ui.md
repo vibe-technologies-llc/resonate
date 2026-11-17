@@ -618,7 +618,7 @@ so `editing` sees it.
     4.5:1 on the panes (it is text: count, key, year, placeholder); ink on an accent fill 4.5:1;
     accent 3:1 against `background`; inks step down `text` > `muted` > `faint`. Where a published
     palette's own step reaches a bar that step is quoted; elsewhere faint is lifted along its hue
-    (`THIRD_INK`); Nord's aurora red is drawn a fifth of the way to `nord6`.
+    (`Ladder::third_ink`); Nord's aurora red is drawn a fifth of the way to `nord6`.
 - **A palette is quoted or ramped; hand-writing twenty is how one drifts.** Quoted = a published
   palette's own hexes. Ramped = `ramp` over a `Recipe` (native accent, hue, chroma, alarm, `LitAt`)
   through a fixed lightness ladder (`Ladder`: `AFTER_DARK`, `BY_DAYLIGHT`, `IN_FULL_LIGHT`; a recipe
@@ -1165,7 +1165,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
     drops an empty part.
   - **A field's caret and selection are a synthetic text run.** `Spoken::read_as_typed` gives the
     field's node one `TextRun` child holding the text (character lengths in bytes) and sets
-    `text_selection` from `Edit::anchor` and `Edit::cursor`, converted to letter counts
+    `set_text_selection` from `Edit::anchor` and `Edit::cursor`, converted to letter counts
     (`Typing`); a masked field exposes none, so a secret's length and caret stay unspoken.
   - **No two nodes share a global id**: gpui panics in a debug build on a duplicate (release drops
     the node), so a role goes only on an element whose id is unique under its parents.
@@ -1194,7 +1194,7 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   window's root holds the focus at rest, so the settings filter stood lit in the accent whenever no
   control held it.
 - **What is drawn at rest wears a soft edge; `outline` is for the two marks that are nothing but
-  their edge.** `outline` (`DRAWN_EDGE`, 3:1) now draws only a switch's track and a radio's ring. A
+  their edge.** `outline` (`Ladder::drawn_edge`, 3:1) now draws only a switch's track and a radio's ring. A
   button's edge is `border`; everything else that once took `outline` (the search field at rest, a
   menu, hint, toast, the record card, the seek and volume rails' and a scan's track, a
   meter's ground, a plot's zero line, a day with no plays) takes `theme::soft_edge()`, `border` a
@@ -1203,12 +1203,12 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   In High Contrast `border` is at its 4.5:1 bar, so the soft edge is too
   (`a_soft_edge_is_quiet_beside_the_outline_and_strong_in_high_contrast`).
 - **Accessibility beyond the tree: the bars and what holds them.** The contrast tests in `theme.rs`
-  also walk every theme x accent for: `outline` (`DRAWN_EDGE`) standing off the panes it is
+  also walk every theme x accent for: `outline` (`Ladder::drawn_edge`) standing off the panes it is
   drawn on at 3:1, `theme::focus_ring()` (`FOCUS_RING_WIDTH` 2 px, full strength, 3:1 against every
   pane; `focus_ring_over(fill)` picks whichever ink stands off a fill), every accent as text on the
   panes, every semantic colour as text on its own `tinted` wash, the inks on every pane they are
   drawn on, text on the selection wash, and High Contrast at the stricter ratio. A colour that fell
-  short was lifted along its hue, as `THIRD_INK` is. A switch thrown off wears its knob in
+  short was lifted along its hue, as `Ladder::third_ink` is. A switch thrown off wears its knob in
   `theme::switch_knob_off` (`ink_over` the `outline` track, 3:1 held by
   `a_switch_knob_thrown_off_stands_off_its_track`), since `faint` on `outline` read at 1.3 to 1.5:1. Fixed heights are measures read through
   `scaled()` (`BUTTON_HEIGHT`, `PILL_HEIGHT`, `WAY_BACK_HEIGHT`, `COLUMN_HEADER_HEIGHT`,
@@ -2080,7 +2080,7 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   cut); `deletion_sheet` (`theme::confirm_width`) names the song, says the file goes to the trash and the
   song leaves the library, that a cut takes its whole file and every cut from it. *Cancel*,
   escape, press outside keep the song; only *Delete* (`Tone::Destructive`) calls
-  `LibraryModel::delete_track` = `Library::delete_tracks` on the edit chain. No key confirms, `enter`
+  `LibraryModel::delete_tracks` = `Library::delete_tracks` on the edit chain. No key confirms, `enter`
   included. While open it is `something_stands_over_the_pane`
   (`deleting_a_track_asks_first_and_takes_its_file_only_once_confirmed`). **Beside it, *Delete from
   every device…*** stands in the same *Remove* submenu, for a track and for a choice of tracks, only

@@ -65,7 +65,7 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   from it as it comes off the socket (the `Budgeted` stream under tungstenite, `Holds::draw`), so a
   message still arriving holds what has arrived, and once it is whole its bytes as framed go with it
   and what was read past it is carried to the next, at most one read (`WEB_READ_AT_ONCE`, 16 KiB,
-  the accepting side's read buffer). The hold is `try_acquire`d, never waited for, and is kept with
+  the accepting side's read buffer). The hold is taken by `try_acquire_many_owned`, never waited for, and is kept with
   the session's permit until the frame is handled. A frame that finds no room, or a web socket's
   read that finds none, is `Error::NoRoom` and the session is refused `Busy`, so 2 048 connections
   each sending `LARGEST_FRAME` hold no more than the budget, not tens of GiB
@@ -247,10 +247,10 @@ hex) and prints it with the digest to list: the file never holds a secret.
   `Retry-After` and body (at most 1 MiB, so no chunking to read) go back. An upstream that is down,
   silent for 30 s or unreadable is 502. Each connection is one request (`Connection: close`).
 - **A seat is taken only by a request that holds a listed key.** At most 64 requests are served at
-  once (`Crowd::seats`), taken with `try_acquire` after the key check, so a stranger can never hold
+  once (`Crowd::seats`), taken with `try_acquire_owned` after the key check, so a stranger can never hold
   one and a key holder finding them all taken is answered `503` with `Retry-After`. Before the key
   is read a connection is a stranger, held in a pool of its own (`Crowd::strangers`, 256, taken
-  with `try_acquire` before a task is spawned, so the accept loop never waits and a connection past
+  with `try_acquire_owned` before a task is spawned, so the accept loop never waits and a connection past
   it is dropped unread), counted per address (`Crowd::strangers_per_address`, 16, an IPv6 `/64` as
   one, through `Guard`), and given one `REQUEST_WITHIN` (10 s) over the TLS handshake and the head
   together. A loopback peer is not counted per address, since behind the tunnel every peer is

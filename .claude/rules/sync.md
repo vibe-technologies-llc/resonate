@@ -1048,7 +1048,7 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   (`a_song_refused_at_landing_is_not_fetched_again_after_a_restart`); an asked fetch (`Work::Fetch`
   with `asked`) tries it at once (`Ledger::asked_again`) and *Sync now* forgets them all
   (`forget_refusals`). **A fetch cut off by the network is no verdict
-  on the song**: it never enters `failed_lately`, and a run whose connection closes stops there
+  on the song**: it is never among the songs `not_failed_lately` passes over, and a run whose connection closes stops there
   (the songs it had not reached are not failed one by one) and sends `Event::CutShort`, which lets
   the next meeting with that device follow at once rather than after `FOLLOW_A_DEVICE_EVERY`.
 - **Covers are asked of every device a connection stands to, at most every

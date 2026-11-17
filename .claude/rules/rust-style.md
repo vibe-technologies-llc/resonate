@@ -59,11 +59,14 @@ minimal profile) an `expect` is unfulfilled. So `regional.rs` carries
 ## Rules name code that exists
 
 **A test refuses a rule that names code that is gone**: `every_function_a_rule_names_is_written_somewhere_in_the_source`
-(`crates/resonate-words-build/tests/rules.rs`) reads every backticked snake_case name in
-`.claude/rules/*.md` (a bare name, `name()` or `Type::name`) and fails when no source under `crates`,
-`fuzz`, `soxr-comparison`, `android`, `ios` or `.github` holds it. A name that belongs to another
-program, a protocol or a crate's feature (`pw_stream_destroy`, `payload_utf8`, `rwh_06`) sits in the
-test's two lists, and a listed name no rule uses fails too. The phones' step numbers are held by
+(`crates/resonate-words-build/tests/rules.rs`) reads every backticked name in `.claude/rules/*.md`
+(a bare name, `name()` or `Type::name`) spelled as code is: snake_case, UPPER_SNAKE or CamelCase of
+two humps or more, and fails when no source under `crates`, `fuzz`, `soxr-comparison`, `android`,
+`ios`, `.github` or `packaging` holds it as a whole identifier or a file's stem (a Swift suite named by
+its file), so a name that is only the start of a longer one is gone. A
+name that belongs to another program, a protocol, a format or a crate's feature (`pw_stream_destroy`,
+`payload_utf8`, `IAudioClient`, `SeekHead`, `rwh_06`) sits in the test's two lists, and a listed name
+no rule uses fails too. The phones' step numbers are held by
 `every_step_the_rules_number_stands_where_the_chain_puts_it` (`resonate-mobile`'s
 `catalog_steps_tests.rs`): a rule citing ``Step N (`NAME`)`` or "the Nth step, `NAME`" must put `NAME`
 at the position `MIGRATIONS` gives it, `V1` being the first; `every_step_of_the_chain_is_named_in_the_rules` asks
