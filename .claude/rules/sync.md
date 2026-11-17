@@ -52,6 +52,15 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
 
 ## The wire
 
+- **A frame an earlier build sent is read as it was sent**: `fuzz/seeds/sync` holds frames earlier
+  builds wrote, and `tests/seeds.rs` reads every one as its kind (`ToServer`, `FromServer`,
+  `ToPeer`, `FromPeer`, a bundle) and writes it back byte for byte
+  (`every_frame_an_earlier_build_wrote_is_read_as_its_kind_and_written_back_byte_for_byte`), every
+  file in the folder having a kind (`every_seed_in_the_folder_is_held_by_a_kind`). A seed is frozen
+  once its frame is sent, pinned by the FNV-1a of its bytes: a changed frame gets a new seed beside
+  it, never an edited one. `records` is the one seed no build since the first reads, its blob shorter
+  than a seal (`records_whose_blob_is_shorter_than_a_seal_are_refused_as_no_build_since_the_first_sends_them`);
+  `records-sealed` is the frame a server sends.
 - **Hand-encoded, no serde** (`wire.rs`): `Writer`/`Reader` with LEB128 lengths and zigzag signed
   numbers; every length is weighed against what is left before anything is allocated, a count
   against the least each item takes (`Reader::count_of`), so a frame read before the token is checked
