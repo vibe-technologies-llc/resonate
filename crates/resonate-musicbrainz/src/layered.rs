@@ -10,7 +10,7 @@ use resonate_library::{
     SongLink, SongsAsked, StreamAsked,
 };
 
-use crate::{Answer, Asked, Kept, Mirror};
+use crate::{Answer, Asked, Heard, Kept, Mirror, kept::now};
 
 pub const MUSICBRAINZ: &str = "musicbrainz";
 
@@ -30,7 +30,7 @@ impl Mirrored {
 }
 
 pub trait Peers: Send + Sync {
-    fn consult(&self, asked: &Asked) -> Option<Answer>;
+    fn consult(&self, asked: &Asked) -> Option<Heard>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,12 +112,12 @@ impl Layered {
             }
         }
         if let Some(peers) = &self.peers
-            && let Some(answer) = peers.consult(asked)
-            && asked.is_answered_by(&answer)
-            && !answer.is_a_miss()
+            && let Some(heard) = peers.consult(asked)
+            && asked.is_answered_by(&heard.answer)
+            && !heard.answer.is_a_miss()
         {
-            self.kept_here(asked, &answer);
-            return Some((Layer::Peer, answer));
+            self.kept_as_told(asked, &heard);
+            return Some((Layer::Peer, heard.answer));
         }
         None
     }
@@ -127,6 +127,15 @@ impl Layered {
             && let Err(error) = kept.keep(asked, answer)
         {
             tracing::warn!(%error, "an answer could not be kept");
+        }
+    }
+
+    fn kept_as_told(&self, asked: &Asked, heard: &Heard) {
+        let at = heard.at.unwrap_or_else(now);
+        if let Some(kept) = &self.kept
+            && let Err(error) = kept.keep_told(asked, &heard.answer, at, &heard.device)
+        {
+            tracing::warn!(%error, "an answer another device gave could not be kept");
         }
     }
 

@@ -18,7 +18,7 @@ use crate::{
         Listen, Platform, PlaylistBody, PlaylistFolded, PlaylistKey, PlaylistNote, QueryBody,
         QueryFolded, QueryNote, ShareNote, Stamp,
     },
-    consulted::{ExportPart, KeptAnswer},
+    consulted::{Dates, ExportPart, KeptAnswer},
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
     remote::{Controlling, RemoteCommand, RemoteZone, Revisions, read_zones, write_zones},
     seal::SEALED_AT_LEAST,
@@ -283,6 +283,7 @@ pub enum ToPeer {
     },
     Consult {
         asked: Vec<u8>,
+        dates: Dates,
     },
     Kept {
         asker: DeviceId,
@@ -335,6 +336,7 @@ pub enum FromPeer {
     },
     Consulted {
         answer: Vec<u8>,
+        at: Option<u64>,
     },
     Unconsulted,
     KeptAnswer(KeptAnswer),
@@ -1675,8 +1677,11 @@ impl ToPeer {
             Self::Watch {
                 revisions: Revisions::Carried,
             } => writer.byte(12),
-            Self::Consult { asked } => {
-                writer.byte(10);
+            Self::Consult { asked, dates } => {
+                writer.byte(match dates {
+                    Dates::Unsaid => 10,
+                    Dates::Carried => 15,
+                });
                 writer.bytes(asked);
             }
             Self::Kept { asker, after, most } => {
@@ -1756,6 +1761,11 @@ impl ToPeer {
             },
             10 => Self::Consult {
                 asked: reader.bytes(LARGEST_CONSULTATION)?.to_vec(),
+                dates: Dates::Unsaid,
+            },
+            15 => Self::Consult {
+                asked: reader.bytes(LARGEST_CONSULTATION)?.to_vec(),
+                dates: Dates::Carried,
             },
             11 => {
                 let asker = reader.device()?;
@@ -1849,8 +1859,16 @@ impl FromPeer {
                 });
                 write_zones(&mut writer, zones, *revisions);
             }
-            Self::Consulted { answer } => {
+            Self::Consulted { answer, at: None } => {
                 writer.byte(15);
+                writer.bytes(answer);
+            }
+            Self::Consulted {
+                answer,
+                at: Some(at),
+            } => {
+                writer.byte(21);
+                writer.number(*at);
                 writer.bytes(answer);
             }
             Self::Unconsulted => writer.byte(16),
@@ -1929,6 +1947,7 @@ impl FromPeer {
             },
             15 => Self::Consulted {
                 answer: reader.bytes(LARGEST_CONSULTED)?.to_vec(),
+                at: None,
             },
             16 => Self::Unconsulted,
             17 => Self::KeptAnswer(KeptAnswer {
@@ -1949,6 +1968,13 @@ impl FromPeer {
                 sequence: reader.number()?,
                 size: reader.number()?,
             },
+            21 => {
+                let at = reader.number()?;
+                Self::Consulted {
+                    answer: reader.bytes(LARGEST_CONSULTED)?.to_vec(),
+                    at: Some(at),
+                }
+            }
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -2828,6 +2854,11 @@ mod tests {
     fn a_lookup_and_the_answers_a_device_kept_read_back_and_too_many_asked_are_refused() {
         let asked = ToPeer::Consult {
             asked: vec![1, 2, 3],
+            dates: Dates::Unsaid,
+        };
+        let dated = ToPeer::Consult {
+            asked: vec![1, 2, 3],
+            dates: Dates::Carried,
         };
         let kept = ToPeer::Kept {
             asker: DeviceId([7; DEVICE_BYTES]),
@@ -2842,6 +2873,11 @@ mod tests {
         let answers = [
             FromPeer::Consulted {
                 answer: vec![9; 300],
+                at: None,
+            },
+            FromPeer::Consulted {
+                answer: vec![9; 300],
+                at: Some(1_790_000_000),
             },
             FromPeer::Unconsulted,
             FromPeer::KeptAnswer(crate::KeptAnswer {
@@ -2854,9 +2890,13 @@ mod tests {
         ];
 
         assert_eq!(ToPeer::decoded(&asked.encoded()).expect("decoded"), asked);
+        assert_eq!(ToPeer::decoded(&dated.encoded()).expect("decoded"), dated);
         assert_eq!(ToPeer::decoded(&kept.encoded()).expect("decoded"), kept);
         assert!(ToPeer::decoded(&too_many.encoded()).is_err());
         assert_eq!(asked.encoded()[0], 10);
+        assert_eq!(dated.encoded()[0], 15);
+        assert_eq!(answers[0].encoded()[0], 15);
+        assert_eq!(answers[1].encoded()[0], 21);
         assert_eq!(kept.encoded()[0], 11);
         for answer in answers {
             assert_eq!(

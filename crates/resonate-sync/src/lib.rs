@@ -38,9 +38,9 @@ pub use crate::{
         QueryFolded, QueryNote, ShareNote, Stamp,
     },
     consulted::{
-        AskedForExport, AskedToConsult, CONSULT_ANSWERED_WITHIN, Consultable, Consulting,
-        ExportFetched, ExportHeld, ExportPart, ExportReceiving, KeptAnswer, OfferedExport,
-        ReadsExport,
+        AskedForExport, AskedToConsult, CONSULT_ANSWERED_WITHIN, Consultable, ConsultedAnswer,
+        Consulting, Dates, ExportFetched, ExportHeld, ExportPart, ExportReceiving, KeptAnswer,
+        OfferedExport, ReadsExport,
     },
     error::{CodeRefused, DeflateOp, Error, FileOp, Malformed, Result, StoreOp, StreamOp, TlsOp},
     key::{DEVICE_BYTES, Derived, DeviceId, PAIRING_LINK, SpaceId, SyncKey, Token},

@@ -28,7 +28,8 @@ is first turned into an `Asked`. Then:
 
 A miss falls through every layer: an empty or `None` answer from the mirror or a device is no
 verdict, since the export is up to a month old and MusicBrainz's own search is fuzzier. An answer a
-later layer gives is kept (`Layered::kept_here`). A local failure (a store that will not read) is
+later layer gives is kept (`Layered::kept_here`; a device's answer through `kept_as_told`, with
+the age and the device it came with, *Between devices*). A local failure (a store that will not read) is
 logged and passed over, never a library error, so only the network's errors steer the pass as
 before. The methods MusicBrainz does not answer are the fallback's alone, or `Ok(None)` without
 one: covers, portraits, lyrics, `streamed_at`, `*_linked`, `share_file`, `artist_at`
@@ -77,8 +78,13 @@ decodes both and requires a decoded value to read back as itself.
   answered by an ISRC answer that held it
   (`an_entity_learnt_inside_another_answer_answers_a_lookup_by_its_id`).
 - **Freshness.** An answer serves for `KEPT_FRESH_FOR` (30 days, the library's refresh). Older ones
-  are deleted when the store opens and never taken from a device. A miss is never kept, so it is
-  always asked again (`a_search_is_kept_under_its_folded_words_and_a_miss_is_never_kept`,
+  are deleted when the store opens and never taken from a device. **A stamp is never later than
+  now**: one a device tells from a clock running ahead is kept as of now (`Kept::take`,
+  `keep_told`), and one kept so before this rule is brought back to now as the store opens, since a
+  row is replaced only by a newer stamp and a future one would pin the answer on every device past
+  the month (`an_answer_a_device_stamped_in_the_future_is_kept_as_of_now_and_ages_as_any_other`,
+  `an_answer_stamped_in_the_future_before_this_build_is_brought_back_to_now_as_the_store_opens`).
+  A miss is never kept, so it is always asked again (`a_search_is_kept_under_its_folded_words_and_a_miss_is_never_kept`,
   `a_kept_answer_older_than_a_month_is_not_served`).
 - **The schema is `V1` plus `MIGRATIONS`**, with `user_version` counting the steps laid; the
   second step is `numbered`, seeded at the store's highest `seq`
@@ -386,7 +392,14 @@ answered from it, one at a time
 - **Consulted.** `Consultation` is what a device serves (`resonate_sync::Consultable`, adapted in the
   binary's `musicbrainz.rs` and the phones' `sync/consulted.rs`). A lookup is answered from the
   mirror, misses included, since a held export's miss is an answer. Without a mirror it is answered
-  from the kept answers, else `Unconsulted`.
+  from the kept answers, else `Unconsulted`. **An answer carries its age** (`Consulted`): a kept
+  one the `at` it was kept with (`Kept::answer_dated`), the mirror's now.
+- **Kept as told.** A device's answer (`Heard`: the answer, the device, its `at`) is kept with that
+  `at` and the device as `came_from` (`Kept::keep_told`), never as this device's own and fresh, so
+  it ages from when it was learnt and is never told back to the device it came from; two devices
+  cannot keep a stale answer alive by telling it to each other
+  (`an_answer_consulted_from_a_device_keeps_its_age_and_the_device_and_is_never_told_back_to_it`).
+  A device of an older build says no `at`, and its answer is kept as of now, from that device.
 - **Asking.** `Consulting` asks the online devices, nearby first. A device that answered
   `Unconsulted` or nothing is passed over for `CONSULTED_AGAIN_AFTER` (10 minutes); only a device
   holding a mirror is worth asking every time.

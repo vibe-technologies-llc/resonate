@@ -990,11 +990,19 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   (`consulted.rs`, `musicbrainz.md`). The seam is `Consultable` (`consult`, `kept_after`,
   `kept_mark`, `take_kept`), handed to a running `Sync` by `consult_with` for the life of the service. The payloads are opaque bytes, since this crate may not see the library's
   vocabulary.
-  - **Asking a lookup.** `ToPeer::Consult` (tag 10, at most `LARGEST_CONSULTATION`) is answered
-    `FromPeer::Consulted` (tag 15, at most `LARGEST_CONSULTED`) or `Unconsulted` (16), the latter
+  - **Asking a lookup.** `ToPeer::Consult` (at most `LARGEST_CONSULTATION`) is answered
+    `FromPeer::Consulted` (at most `LARGEST_CONSULTED`) or `Unconsulted` (16), the latter
     also from a device with no seam or with transfers not allowed. `Sync::ask_to_consult` goes
     through `Work::Consult` and `want()`, as a command does, bounded by `CONSULT_ANSWERED_WITHIN`
-    (5 s) on the stream. A build without the request drops the stream, which reads as `Unanswered`.
+    (5 s) on the stream. **An answer carries when it was learnt**: `Consultable::consult` answers a
+    `ConsultedAnswer` (the bytes and their `at`), asked with `Dates::Carried` (`ToPeer` tag 15) and
+    answered `Consulted` tag 21 (the `at`, then the bytes), read as `Consulting::Answered { at:
+    Some(..) }`. With `Dates::Unsaid` it is the old tag 10 answered by the old tag 15, byte for
+    byte. **Older builds keep working both ways**: an older device fails to decode tag 15 and
+    drops the stream, so `consult` asks again with tag 10 on the same connection (`consulted_as`)
+    and reads `at: None`; an older asker sends tag 10 and is answered as it always was
+    (`a_device_too_old_to_date_its_answers_is_consulted_as_it_always_was`). A build without either
+    request drops the stream, which reads as `Unanswered`.
   - **Pulling kept answers.** `ToPeer::Kept` (tag 11: the asker, the mark, at most
     `KEPT_ASKED_AT_MOST`, 512, the reader refusing more) is answered by `KeptAnswer` frames (tag 17:
     seq, when, key, packed answer) and a `KeptEnd` (tag 18) naming the mark reached.

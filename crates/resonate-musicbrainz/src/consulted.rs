@@ -6,9 +6,22 @@ use std::{
 
 use parking_lot::Mutex;
 
-use crate::{Answer, Asked, CopyPart, Kept, KeptAnswer, Mirrored, Offered, Peers};
+use crate::{Answer, Asked, CopyPart, Kept, KeptAnswer, Mirrored, Offered, Peers, kept::now};
 
 pub const CONSULTED_AGAIN_AFTER: Duration = Duration::from_secs(10 * 60);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Consulted {
+    pub answer: Vec<u8>,
+    pub at: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Heard {
+    pub answer: Answer,
+    pub device: String,
+    pub at: Option<u64>,
+}
 
 pub struct Consultation {
     mirror: Option<Arc<Mirrored>>,
@@ -20,7 +33,7 @@ impl Consultation {
         Self { mirror, kept }
     }
 
-    pub fn consulted(&self, asked: &[u8]) -> Option<Vec<u8>> {
+    pub fn consulted(&self, asked: &[u8]) -> Option<Consulted> {
         let asked = match Asked::decoded(asked) {
             Ok(asked) => asked,
             Err(error) => {
@@ -30,15 +43,23 @@ impl Consultation {
         };
         if let Some(mirror) = self.mirror.as_ref().and_then(|mirror| mirror.held()) {
             match mirror.answer(&asked) {
-                Ok(answer) => return Some(answer.encoded()),
+                Ok(answer) => {
+                    return Some(Consulted {
+                        answer: answer.encoded(),
+                        at: now(),
+                    });
+                }
                 Err(error) => {
                     tracing::warn!(%error, "the mirror could not answer another device");
                 }
             }
         }
         let kept = self.kept.as_ref()?;
-        match kept.answer(&asked) {
-            Ok(Some(answer)) => Some(answer.encoded()),
+        match kept.answer_dated(&asked) {
+            Ok(Some(dated)) => Some(Consulted {
+                answer: dated.answer.encoded(),
+                at: dated.at,
+            }),
             Ok(None) => None,
             Err(error) => {
                 tracing::warn!(%error, "the kept answers could not answer another device");
@@ -85,7 +106,7 @@ impl Consultation {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Asking {
-    Answered(Vec<u8>),
+    Answered { answer: Vec<u8>, at: Option<u64> },
     Unconsulted,
     Unanswered,
 }
@@ -111,7 +132,7 @@ impl<A: Ask> Consulting<A> {
 }
 
 impl<A: Ask> Peers for Consulting<A> {
-    fn consult(&self, asked: &Asked) -> Option<Answer> {
+    fn consult(&self, asked: &Asked) -> Option<Heard> {
         let encoded = asked.encoded();
         for device in self.asking.devices() {
             let lately = self
@@ -123,8 +144,10 @@ impl<A: Ask> Peers for Consulting<A> {
                 continue;
             }
             match self.asking.ask(&device, encoded.clone()) {
-                Asking::Answered(bytes) => match Answer::decoded(&bytes) {
-                    Ok(answer) if asked.is_answered_by(&answer) => return Some(answer),
+                Asking::Answered { answer, at } => match Answer::decoded(&answer) {
+                    Ok(answer) if asked.is_answered_by(&answer) => {
+                        return Some(Heard { answer, device, at });
+                    }
                     Ok(_) | Err(_) => {
                         tracing::debug!(%device, "another device answered otherwise than asked");
                     }

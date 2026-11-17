@@ -26,8 +26,8 @@ use tokio::{
 use crate::{
     Catalog, Change, DeviceId, Error, FileOp, Held, Ledger, Result, SongTags, StreamOp,
     consulted::{
-        CONSULT_ANSWERED_WITHIN, Consultable, Consulting, ExportFetched, ExportHeld, ExportPart,
-        ExportReceiving, KEPT_PAGES_A_MEETING,
+        CONSULT_ANSWERED_WITHIN, Consultable, Consulting, Dates, ExportFetched, ExportHeld,
+        ExportPart, ExportReceiving, KEPT_PAGES_A_MEETING,
     },
     quic::{PEER_NAME, read_frame, send_frame},
     remote::{
@@ -222,8 +222,11 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             send_frame(&mut send, &FromPeer::Controlled(answer).encoded()).await?;
         }
         ToPeer::Watch { revisions } => send_mirror(&mut send, &asked.answering, revisions).await?,
-        ToPeer::Consult { asked: question } => {
-            let answer = consulted_here(&asked.answering, question).await;
+        ToPeer::Consult {
+            asked: question,
+            dates,
+        } => {
+            let answer = consulted_here(&asked.answering, question, dates).await;
             send_frame(&mut send, &answer.encoded()).await?;
         }
         ToPeer::Kept { asker, after, most } => {
@@ -257,12 +260,15 @@ impl Answering {
     }
 }
 
-async fn consulted_here(answering: &Answering, asked: Vec<u8>) -> FromPeer {
+async fn consulted_here(answering: &Answering, asked: Vec<u8>, dates: Dates) -> FromPeer {
     let Some(consulted) = answering.consultable() else {
         return FromPeer::Unconsulted;
     };
     match blocking(move || Ok(consulted.consult(&asked))).await {
-        Ok(Some(answer)) if answer.len() <= LARGEST_CONSULTED => FromPeer::Consulted { answer },
+        Ok(Some(told)) if told.answer.len() <= LARGEST_CONSULTED => FromPeer::Consulted {
+            answer: told.answer,
+            at: (dates == Dates::Carried).then_some(told.at),
+        },
         Ok(_) => FromPeer::Unconsulted,
         Err(error) => {
             tracing::debug!(%error, "another device's lookup could not be answered");
@@ -299,20 +305,19 @@ async fn send_kept(
 
 pub async fn consult(connection: &Connection, asked: Vec<u8>) -> Consulting {
     let asking = timeout(CONSULT_ANSWERED_WITHIN, async {
-        let (mut send, mut recv) = connection
-            .open_bi()
-            .await
-            .map_err(|source| Error::Connection(Box::new(source)))?;
-        send_frame(&mut send, &ToPeer::Consult { asked }.encoded()).await?;
-        send.finish().map_err(|_| Error::StreamClosed)?;
-        Ok::<_, Error>(match read_frame(&mut recv).await? {
-            Some(frame) => match FromPeer::decoded(&frame)? {
-                FromPeer::Consulted { answer } => Consulting::Answered(answer),
-                FromPeer::Unconsulted => Consulting::Unconsulted,
-                _ => Consulting::Unanswered,
-            },
-            None => Consulting::Unanswered,
-        })
+        match consulted_as(connection, asked.clone(), Dates::Carried).await {
+            Ok(Some(consulting)) => return Ok::<_, Error>(consulting),
+            Ok(None) => {}
+            Err(error) => {
+                tracing::debug!(%error, "a device did not date its answer, so it is asked as before");
+            }
+        }
+        if connection.close_reason().is_some() {
+            return Ok(Consulting::Unanswered);
+        }
+        Ok(consulted_as(connection, asked, Dates::Unsaid)
+            .await?
+            .unwrap_or(Consulting::Unanswered))
     })
     .await;
     match asking {
@@ -323,6 +328,27 @@ pub async fn consult(connection: &Connection, asked: Vec<u8>) -> Consulting {
         }
         Err(_) => Consulting::Unanswered,
     }
+}
+
+async fn consulted_as(
+    connection: &Connection,
+    asked: Vec<u8>,
+    dates: Dates,
+) -> Result<Option<Consulting>> {
+    let (mut send, mut recv) = connection
+        .open_bi()
+        .await
+        .map_err(|source| Error::Connection(Box::new(source)))?;
+    send_frame(&mut send, &ToPeer::Consult { asked, dates }.encoded()).await?;
+    send.finish().map_err(|_| Error::StreamClosed)?;
+    let Some(frame) = read_frame(&mut recv).await? else {
+        return Ok(None);
+    };
+    Ok(Some(match FromPeer::decoded(&frame)? {
+        FromPeer::Consulted { answer, at } => Consulting::Answered { answer, at },
+        FromPeer::Unconsulted => Consulting::Unconsulted,
+        _ => Consulting::Unanswered,
+    }))
 }
 
 pub async fn kept_from(
@@ -1506,6 +1532,37 @@ mod tests {
                 .and_then(Watched::mirror)
                 .map(|mirror| mirror.zones.clone()),
             Some(vec![mirrored])
+        );
+    }
+
+    #[tokio::test]
+    async fn a_device_too_old_to_date_its_answers_is_consulted_as_it_always_was() {
+        let a_plain_consult = ToPeer::Consult {
+            asked: b"who sang creep".to_vec(),
+            dates: Dates::Unsaid,
+        }
+        .encoded();
+        let (_older, _newer, connection) = met_answering(move |asked| {
+            (asked == a_plain_consult).then(|| {
+                framed(
+                    &FromPeer::Consulted {
+                        answer: b"radiohead".to_vec(),
+                        at: None,
+                    }
+                    .encoded(),
+                )
+            })
+        })
+        .await;
+
+        let consulted = consult(&connection, b"who sang creep".to_vec()).await;
+
+        assert_eq!(
+            consulted,
+            Consulting::Answered {
+                answer: b"radiohead".to_vec(),
+                at: None,
+            }
         );
     }
 

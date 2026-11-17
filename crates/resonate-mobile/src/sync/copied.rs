@@ -408,8 +408,8 @@ mod tests {
     };
 
     use resonate_sync::{
-        Broadcast, Consultable, Follow, KeptAnswer, Me, Nearby, OfferedExport, Platform, Server,
-        Settings, Sync, SyncKey,
+        Broadcast, Consultable, ConsultedAnswer, Follow, KeptAnswer, Me, Nearby, OfferedExport,
+        Platform, Server, Settings, Sync, SyncKey,
     };
     use rusqlite::Connection;
 
@@ -430,7 +430,7 @@ mod tests {
     struct OffersACopy(Vec<u8>);
 
     impl Consultable for OffersACopy {
-        fn consult(&self, _: &[u8]) -> Option<Vec<u8>> {
+        fn consult(&self, _: &[u8]) -> Option<ConsultedAnswer> {
             None
         }
 

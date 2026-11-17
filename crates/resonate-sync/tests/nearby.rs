@@ -14,10 +14,10 @@ use resonate_core::{
     WholeFile, ZoneId,
 };
 use resonate_sync::{
-    Broadcast, Consultable, Consulting, Controlled, Controlling, DeviceId, ExportFetched,
-    ExportHeld, ExportPart, ExportReceiving, ExportWanted, Follow, KeptAnswer, Me, Nearby,
-    OfferedExport, Permille, Platform, RemoteCommand, RemotePlayback, RemoteRow, RemoteZone,
-    Server, Settings, Standing, Sync, SyncKey, TransferState, Uncontrolled, Watched,
+    Broadcast, Consultable, ConsultedAnswer, Consulting, Controlled, Controlling, DeviceId,
+    ExportFetched, ExportHeld, ExportPart, ExportReceiving, ExportWanted, Follow, KeptAnswer, Me,
+    Nearby, OfferedExport, Permille, Platform, RemoteCommand, RemotePlayback, RemoteRow,
+    RemoteZone, Server, Settings, Standing, Sync, SyncKey, TransferState, Uncontrolled, Watched,
 };
 
 use crate::shelf::{Shelf, song};
@@ -351,6 +351,8 @@ fn a_cover_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_sta
     let _ = fs::remove_dir_all(&folder);
 }
 
+const ANSWERED_AT: u64 = 1_790_000_002;
+
 #[derive(Default)]
 struct Consulted {
     answers: Mutex<Vec<(Vec<u8>, Vec<u8>)>>,
@@ -360,12 +362,15 @@ struct Consulted {
 }
 
 impl Consultable for Consulted {
-    fn consult(&self, asked: &[u8]) -> Option<Vec<u8>> {
+    fn consult(&self, asked: &[u8]) -> Option<ConsultedAnswer> {
         self.answers
             .lock()
             .iter()
             .find(|(question, _)| question == asked)
-            .map(|(_, answer)| answer.clone())
+            .map(|(_, answer)| ConsultedAnswer {
+                answer: answer.clone(),
+                at: ANSWERED_AT,
+            })
     }
 
     fn kept_after(&self, after: u64, most: usize, _: DeviceId) -> Vec<KeptAnswer> {
@@ -570,7 +575,13 @@ fn a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach
         .ask_to_consult(phone.device(), b"who sang creep".to_vec())
         .answer(SETTLES_WITHIN);
 
-    assert_eq!(answered, Consulting::Answered(b"radiohead".to_vec()));
+    assert_eq!(
+        answered,
+        Consulting::Answered {
+            answer: b"radiohead".to_vec(),
+            at: Some(ANSWERED_AT),
+        }
+    );
     assert_eq!(unknown, Consulting::Unconsulted);
     assert_eq!(unasked, Consulting::Unconsulted);
     assert_eq!(phone_answers.kept_mark(desk.device()), 2);

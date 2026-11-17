@@ -36,8 +36,13 @@ impl ConsultedHere {
 }
 
 impl Consultable for ConsultedHere {
-    fn consult(&self, asked: &[u8]) -> Option<Vec<u8>> {
-        self.0.consulted(asked)
+    fn consult(&self, asked: &[u8]) -> Option<resonate_sync::ConsultedAnswer> {
+        self.0
+            .consulted(asked)
+            .map(|told| resonate_sync::ConsultedAnswer {
+                answer: told.answer,
+                at: told.at,
+            })
     }
 
     fn kept_after(
@@ -136,7 +141,7 @@ impl Ask for AskedOfDevices {
             .as_ref()
             .map(|running| running.sync.ask_to_consult(id, asked));
         match asking.map(|asking| asking.answer(ASKED_OF_A_DEVICE_WITHIN)) {
-            Some(Consulting::Answered(answer)) => Asking::Answered(answer),
+            Some(Consulting::Answered { answer, at }) => Asking::Answered { answer, at },
             Some(Consulting::Unconsulted) => Asking::Unconsulted,
             Some(Consulting::Unanswered) | None => Asking::Unanswered,
         }

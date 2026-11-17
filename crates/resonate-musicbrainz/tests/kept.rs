@@ -17,7 +17,7 @@ use resonate_library::{
     ReleaseGroup, ReleaseMatch, SongLink, SongsAsked, StreamAsked, Wording,
 };
 use resonate_musicbrainz::{
-    Answer, Asked, Error, KEPT_FRESH_FOR, Kept, KeptAnswer, Layer, Layered, Peers,
+    Answer, Asked, Error, Heard, KEPT_FRESH_FOR, Kept, KeptAnswer, Layer, Layered, Peers,
 };
 
 const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
@@ -155,6 +155,53 @@ fn a_kept_answer_older_than_a_month_is_not_served() {
 
     assert!(kept.answer(&asked).expect("read").is_some());
     assert_eq!(kept.answer_at(&asked, later).expect("read"), None);
+}
+
+const A_DAY: u64 = 24 * 60 * 60;
+
+#[test]
+fn an_answer_a_device_stamped_in_the_future_is_kept_as_of_now_and_ages_as_any_other() {
+    let desk = Kept::in_memory().expect("a kept store");
+    let phone = Kept::in_memory().expect("a kept store");
+    let asked = Asked::Recording(mbid(ECHOES));
+    desk.keep(&asked, &Answer::Recording(Some(echoes())))
+        .expect("kept");
+    let ahead = KeptAnswer {
+        at: resonate_musicbrainz_now() + 365 * A_DAY,
+        ..desk.after(0, 512, "phone").expect("listed")[0].clone()
+    };
+
+    let taken = phone.take(DESK, &[ahead], 1).expect("taken");
+    let told = phone.after(0, 512, "laptop").expect("listed");
+    let past_a_month = resonate_musicbrainz_now() + KEPT_FRESH_FOR.as_secs() + A_DAY;
+
+    assert_eq!(taken, 1);
+    assert!(told[0].at <= resonate_musicbrainz_now());
+    assert_eq!(phone.answer_at(&asked, past_a_month).expect("read"), None);
+}
+
+#[test]
+fn an_answer_stamped_in_the_future_before_this_build_is_brought_back_to_now_as_the_store_opens() {
+    let folder = scratch("ahead");
+    let path = folder.join("kept.sqlite");
+    let (asked, answer) = recorded(ECHOES);
+    Kept::open(&path)
+        .expect("laid out")
+        .keep(&asked, &answer)
+        .expect("kept");
+    rusqlite::Connection::open(&path)
+        .expect("opened")
+        .execute(
+            "UPDATE answers SET at = ?1",
+            [i64::try_from(resonate_musicbrainz_now() + 365 * A_DAY).expect("a stamp")],
+        )
+        .expect("stamped ahead");
+
+    let kept = Kept::open(&path).expect("opened again");
+    let told = kept.after(0, 512, "phone").expect("listed");
+
+    assert!(told[0].at <= resonate_musicbrainz_now());
+    let _ = fs::remove_dir_all(&folder);
 }
 
 fn resonate_musicbrainz_now() -> u64 {
@@ -433,13 +480,17 @@ impl Reference for Online {
 struct Desk {
     asked: AtomicUsize,
     holds: bool,
+    kept_since: Option<u64>,
 }
 
 impl Peers for Desk {
-    fn consult(&self, asked: &Asked) -> Option<Answer> {
+    fn consult(&self, asked: &Asked) -> Option<Heard> {
         self.asked.fetch_add(1, Ordering::Relaxed);
-        (self.holds && matches!(asked, Asked::Recording(_)))
-            .then(|| Answer::Recording(Some(echoes())))
+        (self.holds && matches!(asked, Asked::Recording(_))).then(|| Heard {
+            answer: Answer::Recording(Some(echoes())),
+            device: DESK.to_owned(),
+            at: self.kept_since,
+        })
     }
 }
 
@@ -463,6 +514,32 @@ fn a_device_holding_the_answer_is_asked_before_the_network_and_what_either_answe
     assert_eq!(again.map(|(layer, _)| layer), Some(Layer::Kept));
     assert_eq!(desk.asked.load(Ordering::Relaxed), 1);
     assert_eq!(online.asked.load(Ordering::Relaxed), 0);
+}
+
+#[test]
+fn an_answer_consulted_from_a_device_keeps_its_age_and_the_device_and_is_never_told_back_to_it() {
+    let kept = Arc::new(Kept::in_memory().expect("a kept store"));
+    let kept_since = resonate_musicbrainz_now() - 29 * A_DAY;
+    let desk = Arc::new(Desk {
+        holds: true,
+        kept_since: Some(kept_since),
+        ..Desk::default()
+    });
+    let layered = Layered::new()
+        .keeping(Some(Arc::clone(&kept)))
+        .consulting(Some(Arc::clone(&desk) as Arc<dyn Peers>));
+    let asked = Asked::Recording(mbid(ECHOES));
+
+    let consulted = layered.answered(&asked);
+    let told_back = kept.after(0, 512, DESK).expect("listed");
+    let told_on = kept.after(0, 512, "laptop").expect("listed");
+    let in_two_days = resonate_musicbrainz_now() + 2 * A_DAY;
+
+    assert_eq!(consulted.map(|(layer, _)| layer), Some(Layer::Peer));
+    assert!(told_back.is_empty());
+    assert_eq!(told_on.len(), 1);
+    assert_eq!(told_on[0].at, kept_since);
+    assert_eq!(kept.answer_at(&asked, in_two_days).expect("read"), None);
 }
 
 #[test]

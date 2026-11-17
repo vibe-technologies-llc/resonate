@@ -21,7 +21,7 @@ use resonate_library::{RecordingAsked, Reference, Wording};
 #[cfg(feature = "sync")]
 use resonate_musicbrainz::Consultation;
 use resonate_musicbrainz::{
-    Answer, Archives, Asked as Lookup, Building, KEPT_FILE, Keeping, Kept, Layered, Mirror,
+    Archives, Asked as Lookup, Building, Heard, KEPT_FILE, Keeping, Kept, Layered, Mirror,
     Mirrored, Peers, Phase, Replicated, built_from,
     download::{self, CORE_ARCHIVE, DERIVED_ARCHIVE},
     held_for_building, mirror_in, removed_beside_the_mirror, replicated, settled,
@@ -181,7 +181,7 @@ fn forget_stopped(folder: &Path) {
 struct Registered;
 
 impl Peers for Registered {
-    fn consult(&self, asked: &Lookup) -> Option<Answer> {
+    fn consult(&self, asked: &Lookup) -> Option<Heard> {
         let peers = PEERS.read().clone()?;
         peers.consult(asked)
     }
@@ -810,8 +810,13 @@ fn offered_unless_withheld(
 
 #[cfg(feature = "sync")]
 impl resonate_sync::Consultable for ConsultedHere {
-    fn consult(&self, asked: &[u8]) -> Option<Vec<u8>> {
-        self.consultation.consulted(asked)
+    fn consult(&self, asked: &[u8]) -> Option<resonate_sync::ConsultedAnswer> {
+        self.consultation
+            .consulted(asked)
+            .map(|told| resonate_sync::ConsultedAnswer {
+                answer: told.answer,
+                at: told.at,
+            })
     }
 
     fn kept_after(
@@ -906,8 +911,8 @@ where
         let mut asking = None;
         (self.0)(&mut |sync| asking = Some(sync.ask_to_consult(id, asked.clone())));
         match asking.map(|asking| asking.answer(ASKED_OF_A_DEVICE_WITHIN)) {
-            Some(resonate_sync::Consulting::Answered(answer)) => {
-                resonate_musicbrainz::Asking::Answered(answer)
+            Some(resonate_sync::Consulting::Answered { answer, at }) => {
+                resonate_musicbrainz::Asking::Answered { answer, at }
             }
             Some(resonate_sync::Consulting::Unconsulted) => {
                 resonate_musicbrainz::Asking::Unconsulted

@@ -20,8 +20,20 @@ pub struct KeptAnswer {
     pub packed: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConsultedAnswer {
+    pub answer: Vec<u8>,
+    pub at: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Dates {
+    Unsaid,
+    Carried,
+}
+
 pub trait Consultable: Send + Sync + 'static {
-    fn consult(&self, asked: &[u8]) -> Option<Vec<u8>>;
+    fn consult(&self, asked: &[u8]) -> Option<ConsultedAnswer>;
 
     fn kept_after(&self, after: u64, most: usize, asker: DeviceId) -> Vec<KeptAnswer>;
 
@@ -120,7 +132,7 @@ impl AskedForExport {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Consulting {
-    Answered(Vec<u8>),
+    Answered { answer: Vec<u8>, at: Option<u64> },
     Unconsulted,
     Unanswered,
 }

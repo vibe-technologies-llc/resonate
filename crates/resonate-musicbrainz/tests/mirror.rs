@@ -686,13 +686,13 @@ fn a_device_holding_a_mirror_answers_what_another_asks_and_a_device_without_answ
     let asked = Asked::Release(mbid(PABLO));
     let answered = serving
         .consulted(&asked.encoded())
-        .map(|bytes| Answer::decoded(&bytes).expect("an answer"));
+        .map(|told| Answer::decoded(&told.answer).expect("an answer"));
     let before = keeping.consulted(&asked.encoded());
     kept.keep(&asked, answered.as_ref().expect("an answer"))
         .expect("kept");
     let after = keeping
         .consulted(&asked.encoded())
-        .map(|bytes| Answer::decoded(&bytes).expect("an answer"));
+        .map(|told| Answer::decoded(&told.answer).expect("an answer"));
 
     assert!(matches!(&answered, Some(Answer::Release(Some(release))) if release.id == mbid(PABLO)));
     assert_eq!(before, None);

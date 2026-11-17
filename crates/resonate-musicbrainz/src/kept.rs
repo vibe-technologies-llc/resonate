@@ -60,6 +60,12 @@ pub struct KeptAnswer {
     pub packed: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Dated {
+    pub answer: Answer,
+    pub at: u64,
+}
+
 pub struct Kept {
     connection: Mutex<Connection>,
 }
@@ -74,8 +80,16 @@ fn signed(seconds: u64) -> i64 {
     i64::try_from(seconds).unwrap_or(i64::MAX)
 }
 
+fn unsigned(stored: i64) -> u64 {
+    u64::try_from(stored).unwrap_or(0)
+}
+
 fn fresh_since(now: u64) -> i64 {
     signed(now.saturating_sub(KEPT_FRESH_FOR.as_secs()))
+}
+
+fn no_later_than(at: u64, now: u64) -> u64 {
+    at.min(now)
 }
 
 impl Kept {
@@ -127,8 +141,12 @@ impl Kept {
                 u32::try_from(MIGRATIONS.len()).unwrap_or(u32::MAX),
             )
             .map_err(Error::store(Store::Kept, StoreOp::LayOut))?;
+        let now = now();
         transaction
-            .execute("DELETE FROM answers WHERE at < ?1", [fresh_since(now())])
+            .execute("DELETE FROM answers WHERE at < ?1", [fresh_since(now)])
+            .map_err(Error::store(Store::Kept, StoreOp::Write))?;
+        transaction
+            .execute("UPDATE answers SET at = ?1 WHERE at > ?1", [signed(now)])
             .map_err(Error::store(Store::Kept, StoreOp::Write))?;
         transaction
             .commit()
@@ -143,39 +161,62 @@ impl Kept {
     }
 
     pub fn answer_at(&self, asked: &Asked, now: u64) -> Result<Option<Answer>> {
+        Ok(self.dated_at(asked, now)?.map(|dated| dated.answer))
+    }
+
+    pub fn answer_dated(&self, asked: &Asked) -> Result<Option<Dated>> {
+        self.dated_at(asked, now())
+    }
+
+    fn dated_at(&self, asked: &Asked, now: u64) -> Result<Option<Dated>> {
         let connection = self.connection.lock();
         let read = Error::store(Store::Kept, StoreOp::Read);
-        let kept: Option<Vec<u8>> = connection
+        let kept: Option<(Vec<u8>, i64)> = connection
             .query_row(
-                "SELECT packed FROM answers WHERE key = ?1 AND at >= ?2",
+                "SELECT packed, at FROM answers WHERE key = ?1 AND at >= ?2",
                 params![asked.key(), fresh_since(now)],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
             .map_err(read)?;
-        if let Some(packed) = kept {
-            return Ok(Some(answer_of(&packed)?));
+        if let Some((packed, at)) = kept {
+            return Ok(Some(Dated {
+                answer: answer_of(&packed)?,
+                at: unsigned(at),
+            }));
         }
         let Some((entity, id)) = asked.names() else {
             return Ok(None);
         };
-        let within: Option<Vec<u8>> = connection
+        let within: Option<(Vec<u8>, i64)> = connection
             .query_row(
-                "SELECT a.packed FROM entities e JOIN answers a ON a.key = e.key \
+                "SELECT a.packed, a.at FROM entities e JOIN answers a ON a.key = e.key \
                  WHERE e.mbid = ?1 AND e.kind = ?2 AND a.at >= ?3",
                 params![mbid_bytes(id).to_vec(), entity.code(), fresh_since(now)],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
             .map_err(Error::store(Store::Kept, StoreOp::Read))?;
-        match within {
-            Some(packed) => Ok(answer_of(&packed)?.entity(entity, id)),
-            None => Ok(None),
-        }
+        let Some((packed, at)) = within else {
+            return Ok(None);
+        };
+        Ok(answer_of(&packed)?.entity(entity, id).map(|answer| Dated {
+            answer,
+            at: unsigned(at),
+        }))
     }
 
     pub fn keep(&self, asked: &Asked, answer: &Answer) -> Result<bool> {
         self.keep_at(asked, answer, now(), None)
+    }
+
+    pub fn keep_told(&self, asked: &Asked, answer: &Answer, at: u64, device: &str) -> Result<bool> {
+        let now = now();
+        let at = no_later_than(at, now);
+        if signed(at) < fresh_since(now) {
+            return Ok(false);
+        }
+        self.keep_at(asked, answer, at, Some(device))
     }
 
     fn keep_at(
@@ -225,8 +266,8 @@ impl Kept {
                 ],
                 |row| {
                     Ok(KeptAnswer {
-                        seq: row.get::<_, i64>(0)?.try_into().unwrap_or(0),
-                        at: row.get::<_, i64>(1)?.try_into().unwrap_or(0),
+                        seq: unsigned(row.get(0)?),
+                        at: unsigned(row.get(1)?),
                         key: row.get(2)?,
                         packed: row.get(3)?,
                     })
@@ -259,14 +300,16 @@ impl Kept {
     }
 
     pub fn take(&self, device: &str, answers: &[KeptAnswer], mark: u64) -> Result<usize> {
-        let since = fresh_since(now());
+        let now = now();
+        let since = fresh_since(now);
         let mut taken = 0;
         let mut connection = self.connection.lock();
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(Error::store(Store::Kept, StoreOp::Write))?;
         for told in answers {
-            if signed(told.at) < since {
+            let at = no_later_than(told.at, now);
+            if signed(at) < since {
                 continue;
             }
             let read =
@@ -285,7 +328,7 @@ impl Kept {
             if written(
                 &transaction,
                 &told.key,
-                told.at,
+                at,
                 Some(device),
                 &told.packed,
                 &answer,
