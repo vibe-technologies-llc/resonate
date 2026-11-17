@@ -1586,7 +1586,8 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   whole-tail renumbering they replaced). Where the head has no layout (a file `Head` does not recognise) lofty writes as
   before.
   **What the rename would lose is kept.** A symlinked track is written where the link points. The
-  staged copy gets the file's owner, mode and extended attributes (`carries_what_the_file_did`:
+  staged copy is made `0600` (`Held::made_closed`), so a private song's bytes are never open to
+  another reader while they are copied, and only once whole gets the file's owner, mode and extended attributes (`carries_what_the_file_did`:
   `chown`, `set_permissions`, every `listxattr` name, via `rustix`). Where any is refused, and
   wherever the file has a second name (`nlink` over one), the whole tagged copy is written back into
   the file's own inode instead (`settled_over`). Before that window the synced copy is renamed
@@ -1668,7 +1669,10 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   picture; a mismatch leaves `Unwritten::Unconfirmed`, catalog unmoved. **A WAV whose ID3v2 tag
   stands before its `RIFF` header has the tag moved into the RIFF** (lofty does not recognise such a
   file): `FileTags::write` stages a copy that is the RIFF plus the tag's bytes as an `id3 ` chunk
-  and settles that copy in the file's place; **a copy that stops short of the size its `RIFF` declares
+  and settles that copy in the file's place, staged beside the file or, where its folder refuses a
+  new file, under `spool::kept_under` and written back into the track's own inode as any other
+  copy kept elsewhere (`Rechunked`,
+  `a_wave_behind_an_id3_tag_in_a_folder_nothing_may_be_created_in_is_written_all_the_same`); **a copy that stops short of the size its `RIFF` declares
   is refused** (`chunked` answers `InvalidData`), since the chunk would land inside the `data` chunk's
   declared span and play as noise (`a_wave_cut_short_behind_an_id3_tag_is_refused_and_never_gets_its_chunk_inside_the_audio`).
 - **`Library::retag` takes the `Walk` guard** (the pass rewrites sizes and mtimes a scan's snapshot

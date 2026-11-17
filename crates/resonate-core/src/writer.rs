@@ -23,14 +23,26 @@ impl Held {
         Ok(Self::over(File::create_new(path)?))
     }
 
+    pub fn made_closed(path: &Path) -> io::Result<Self> {
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create_new(true);
+        Ok(Self::over(closing::to_others(&mut options).open(path)?))
+    }
+
     pub fn taken_over(path: &Path) -> io::Result<Self> {
+        Self::claimed_and_emptied(path, &mut OpenOptions::new())
+    }
+
+    pub fn taken_over_closed(path: &Path) -> io::Result<Self> {
+        let held = Self::claimed_and_emptied(path, closing::to_others(&mut OpenOptions::new()))?;
+        closing::now(&held.0)?;
+        Ok(held)
+    }
+
+    fn claimed_and_emptied(path: &Path, options: &mut OpenOptions) -> io::Result<Self> {
         let file = holding::claimed(
             path,
-            OpenOptions::new()
-                .read(true)
-                .write(true)
-                .create(true)
-                .truncate(false),
+            options.read(true).write(true).create(true).truncate(false),
         )?;
         file.set_len(0)?;
         Ok(Self(file))
@@ -55,6 +67,41 @@ pub fn writer_of(path: &Path, stamped: u32) -> Writer {
         Looked::Held => Writer::Living,
         Looked::Unheld(file) if unheld_long_enough(&file) => Writer::Gone,
         Looked::Unheld(_) | Looked::Unknowable => by_its_stamp(stamped),
+    }
+}
+
+#[cfg(unix)]
+mod closing {
+    use std::{
+        fs::{File, OpenOptions, Permissions},
+        io,
+        os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _},
+    };
+
+    const OURS_ALONE: u32 = 0o600;
+
+    pub(super) fn to_others(options: &mut OpenOptions) -> &mut OpenOptions {
+        options.mode(OURS_ALONE)
+    }
+
+    pub(super) fn now(file: &File) -> io::Result<()> {
+        file.set_permissions(Permissions::from_mode(OURS_ALONE))
+    }
+}
+
+#[cfg(windows)]
+mod closing {
+    use std::{
+        fs::{File, OpenOptions},
+        io,
+    };
+
+    pub(super) const fn to_others(options: &mut OpenOptions) -> &mut OpenOptions {
+        options
+    }
+
+    pub(super) const fn now(_: &File) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -248,6 +295,31 @@ mod tests {
             Err(io::ErrorKind::WouldBlock)
         );
         drop(taken);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_closed_file_is_made_and_taken_over_open_to_nobody_else() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        const OURS_ALONE: u32 = 0o600;
+        const OPEN_TO_READERS: u32 = 0o644;
+
+        let made = Scratch::new("made-closed");
+        let taken = Scratch::new("taken-closed");
+        fs::write(&taken.0, b"what a dead run left").expect("a file");
+        fs::set_permissions(&taken.0, fs::Permissions::from_mode(OPEN_TO_READERS))
+            .expect("a file open to readers");
+
+        let made_held = Held::made_closed(&made.0).expect("made");
+        let taken_held = Held::taken_over_closed(&taken.0).expect("taken over");
+        let mode_of =
+            |path: &Path| fs::metadata(path).expect("a file").permissions().mode() & 0o777;
+
+        assert_eq!(mode_of(&made.0), OURS_ALONE);
+        assert_eq!(mode_of(&taken.0), OURS_ALONE);
+        assert_eq!(fs::read(&taken.0).expect("the file"), b"");
+        drop((made_held, taken_held));
     }
 
     #[test]

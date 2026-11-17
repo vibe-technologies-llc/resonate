@@ -492,34 +492,19 @@ impl TagSink for FileTags {
         if names_a_matroska(named) {
             return written_into_a_matroska(path, location, writing, taken);
         }
-        let rechunked = match tag_in_front_of_a_riff(path) {
-            Ok(Some(riff_at)) => {
-                let staged = Staged::beside(path).map_err(|source| Error::Io {
-                    location: location.clone(),
-                    source,
-                })?;
-                if let Err(source) = chunked(path, staged.held.file(), riff_at) {
-                    let _ = fs::remove_file(&staged.path);
-                    return Err(Error::Io {
-                        location: location.clone(),
-                        source,
-                    });
-                }
-                Some(staged)
-            }
-            Ok(None) => None,
-            Err(source) => {
-                return Err(Error::Io {
-                    location: location.clone(),
-                    source,
-                });
-            }
+        let unstaged = |source| Error::Io {
+            location: location.clone(),
+            source,
+        };
+        let rechunked = match tag_in_front_of_a_riff(path).map_err(unstaged)? {
+            Some(riff_at) => Some(Rechunked::of(path, riff_at).map_err(unstaged)?),
+            None => None,
         };
         let written = self.written(path, rechunked.as_ref(), location, writing, taken);
         if written.is_err()
-            && let Some(staged) = &rechunked
+            && let Some(rechunked) = &rechunked
         {
-            let _ = fs::remove_file(&staged.path);
+            let _ = fs::remove_file(&rechunked.staged().path);
         }
         written
     }
@@ -584,6 +569,49 @@ fn tag_in_front_of_a_riff(path: &Path) -> io::Result<Option<u64>> {
         return Ok(None);
     }
     Ok((header.starts_with(RIFF) && header[8..] == *WAVE).then_some(riff_at))
+}
+
+enum Rechunked {
+    Beside(Staged),
+    Elsewhere(Staged),
+}
+
+impl Rechunked {
+    fn of(path: &Path, riff_at: u64) -> io::Result<Self> {
+        match Staged::beside(path) {
+            Ok(staged) => chunked_into(path, staged, riff_at).map(Self::Beside),
+            Err(refused) if refused.kind() == io::ErrorKind::PermissionDenied => {
+                Self::elsewhere(path, riff_at, refused)
+            }
+            Err(refused) => Err(refused),
+        }
+    }
+
+    fn elsewhere(path: &Path, riff_at: u64, mut refused: io::Error) -> io::Result<Self> {
+        for folder in crate::spool::kept_under() {
+            match Staged::elsewhere(&folder, path) {
+                Ok(staged) => return chunked_into(path, staged, riff_at).map(Self::Elsewhere),
+                Err(source) => refused = source,
+            }
+        }
+        Err(refused)
+    }
+
+    const fn staged(&self) -> &Staged {
+        match self {
+            Self::Beside(staged) | Self::Elsewhere(staged) => staged,
+        }
+    }
+}
+
+fn chunked_into(path: &Path, staged: Staged, riff_at: u64) -> io::Result<Staged> {
+    match chunked(path, staged.held.file(), riff_at) {
+        Ok(()) => Ok(staged),
+        Err(refused) => {
+            let _ = fs::remove_file(&staged.path);
+            Err(refused)
+        }
+    }
 }
 
 fn chunked(path: &Path, staged: &File, riff_at: u64) -> io::Result<()> {
@@ -699,15 +727,16 @@ impl FileTags {
     fn written(
         &self,
         path: &Path,
-        rechunked: Option<&Staged>,
+        rechunked: Option<&Rechunked>,
         location: &MediaLocation,
         writing: Writing<'_>,
         taken: Taken,
     ) -> Result<()> {
-        let mut tagged = opened_in(read_of(rechunked, path, location)?, location)?;
+        let staged = rechunked.map(Rechunked::staged);
+        let mut tagged = opened_in(read_of(staged, path, location)?, location)?;
         let kind = tagged.file_type();
         let options = WriteOptions::default().use_id3v23(Counted::holds_id3v2_3(
-            &mut read_of(rechunked, path, location)?,
+            &mut read_of(staged, path, location)?,
             kind,
         ));
         let others = cleared_elsewhere(&tagged, writing.taken);
@@ -759,7 +788,10 @@ impl FileTags {
             options,
         };
         match rechunked {
-            Some(staged) => landed_through(staged, path, location, &saving),
+            Some(Rechunked::Beside(staged)) => landed_through(staged, path, location, &saving),
+            Some(Rechunked::Elsewhere(staged)) => {
+                landed_by(staged, path, location, &saving, written_back_from_elsewhere)
+            }
             None => landed(path, location, &saving),
         }
     }
@@ -1590,7 +1622,7 @@ impl Staged {
     }
 
     fn named(staged: PathBuf) -> io::Result<Self> {
-        let held = Held::made(&staged)?;
+        let held = Held::made_closed(&staged)?;
         Ok(Self { path: staged, held })
     }
 
@@ -2481,6 +2513,89 @@ mod tests {
             &edits,
             &[],
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_wave_behind_an_id3_tag_in_a_folder_nothing_may_be_created_in_is_written_all_the_same() {
+        use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+
+        let folder = Folder::new();
+        let location = folder.holding("echoes.wav", &a_wave_behind_an_id3_tag(0));
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let before = fs::metadata(&path).expect("a file").ino();
+        fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o555))
+            .expect("a folder made unwritable");
+        let probe = folder.root.join("probe");
+        if File::create_new(&probe).is_ok() {
+            let _ = fs::remove_file(&probe);
+            let _ = fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o755));
+            eprintln!("skipped: this user creates files in an unwritable folder regardless");
+            return;
+        }
+        let tags = FileTags::default();
+        let edits = [edited(TagField::Title, "Echoes")];
+
+        let written = tags.write(&location, just(&edits));
+        let _ = fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o755));
+
+        let ours = format!(".echoes.wav.{}-", process::id());
+        let left: Vec<PathBuf> = crate::spool::mended_under()
+            .iter()
+            .filter_map(|spool| fs::read_dir(spool).ok())
+            .flat_map(|entries| entries.flatten())
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(&ours))
+            .map(|entry| entry.path())
+            .collect();
+        let rewritten = fs::read(&path).expect("the file");
+
+        written.expect("a wave in an unwritable folder written");
+        assert_eq!(fs::metadata(&path).expect("a file").ino(), before);
+        assert!(left.is_empty(), "copies left in the spool: {left:?}");
+        assert!(
+            rewritten.starts_with(RIFF),
+            "the tag still stands before the RIFF"
+        );
+        assert_eq!(
+            TagField::Title
+                .read(
+                    &tags
+                        .read(&location, Picturing::Whether)
+                        .expect("a readable WAVE")
+                        .tags
+                )
+                .as_deref(),
+            Some("Echoes")
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_staged_copy_is_open_to_nobody_else_until_it_carries_the_files_own_mode() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        const OURS_ALONE: u32 = 0o600;
+        const SHARED_WITH_THE_GROUP: u32 = 0o640;
+
+        let folder = Folder::new();
+        let location = folder.holding("echoes.flac", &flac());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        fs::set_permissions(&path, fs::Permissions::from_mode(SHARED_WITH_THE_GROUP))
+            .expect("a file shared with the group");
+        let mode_of =
+            |path: &Path| fs::metadata(path).expect("a file").permissions().mode() & 0o777;
+        let tags = FileTags::default();
+        let edits = [edited(TagField::Title, &"Echoes ".repeat(4096))];
+
+        let staged = Staged::beside(&path).expect("a staged copy");
+        let staged_mode = mode_of(&staged.path);
+        fs::remove_file(&staged.path).expect("the stage taken away");
+        drop(staged);
+        let written = tags.write(&location, just(&edits));
+
+        written.expect("a file written");
+        assert_eq!(staged_mode, OURS_ALONE);
+        assert_eq!(mode_of(&path), SHARED_WITH_THE_GROUP);
     }
 
     #[test]
