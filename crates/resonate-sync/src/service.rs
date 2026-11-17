@@ -523,6 +523,30 @@ fn plain_digest(plain: &[u8]) -> ToldDigest {
     told
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct Oversized {
+    records_since_at: Option<u64>,
+}
+
+impl Oversized {
+    const fn found_at(records_since: u64) -> Self {
+        Self {
+            records_since_at: Some(records_since),
+        }
+    }
+
+    fn waits(self, records_since: u64) -> bool {
+        self.records_since_at
+            .is_some_and(|at| (at..at.saturating_mul(2)).contains(&records_since))
+    }
+}
+
+enum Snapshotted {
+    Unneeded,
+    Oversized { records_since: u64 },
+    Sealed { through: u64, parts: Vec<Vec<u8>> },
+}
+
 fn compacted_by_another(asked: &mut Option<u64>, through: u64) -> bool {
     if *asked == Some(through) {
         *asked = None;
@@ -596,6 +620,7 @@ struct Syncing {
     looked_at: Instant,
     looked_once: bool,
     seen_revision: u64,
+    oversized: Oversized,
 }
 
 impl Sync {
@@ -1658,6 +1683,7 @@ impl Syncing {
             looked_at: now,
             looked_once: false,
             seen_revision: 0,
+            oversized: Oversized::default(),
         }
     }
 
@@ -2273,11 +2299,14 @@ impl Syncing {
             return Ok(());
         }
         let running = Arc::clone(&self.running);
+        let oversized = self.oversized;
         let snapshot = blocking(move || {
             let ledger = running.ledger.lock();
-            let (records, bytes) = ledger.since_snapshot()?;
-            if records < COMPACT_PAST_RECORDS && bytes < COMPACT_PAST_BYTES {
-                return Ok(None);
+            let (records_since, bytes) = ledger.since_snapshot()?;
+            if (records_since < COMPACT_PAST_RECORDS && bytes < COMPACT_PAST_BYTES)
+                || oversized.waits(records_since)
+            {
+                return Ok(Snapshotted::Unneeded);
             }
             let through = ledger.cursor()?;
             let mut parts = Vec::new();
@@ -2290,23 +2319,29 @@ impl Syncing {
                 )?;
                 total += blob.len();
                 parts.push(blob);
+                if total > SNAPSHOT_FRAME_SHARE || parts.len() > BLOBS_A_FRAME_AT_MOST {
+                    tracing::warn!(
+                        records_since,
+                        "the synced state is too large to compact in one frame, so it is tried again once the records since the last snapshot double"
+                    );
+                    return Ok(Snapshotted::Oversized { records_since });
+                }
             }
-            if total > SNAPSHOT_FRAME_SHARE || parts.len() > BLOBS_A_FRAME_AT_MOST {
-                tracing::warn!(
-                    total,
-                    parts = parts.len(),
-                    "the synced state is too large to compact in one frame"
-                );
-                return Ok(None);
-            }
-            Ok(Some((through, parts)))
+            Ok(Snapshotted::Sealed { through, parts })
         })
         .await?;
-        if let Some((through, parts)) = snapshot
-            && let Some(link) = self.server.as_mut()
-        {
-            link.compacting = Some(through);
-            link.say(&ToServer::Compact { through, parts })?;
+        match snapshot {
+            Snapshotted::Unneeded => {}
+            Snapshotted::Oversized { records_since } => {
+                self.oversized = Oversized::found_at(records_since);
+            }
+            Snapshotted::Sealed { through, parts } => {
+                self.oversized = Oversized::default();
+                if let Some(link) = self.server.as_mut() {
+                    link.compacting = Some(through);
+                    link.say(&ToServer::Compact { through, parts })?;
+                }
+            }
         }
         Ok(())
     }
@@ -3611,6 +3646,24 @@ mod tests {
 
         assert_eq!(unanswered.sealed_as(b"bundle"), Some(&vec![7, 7, 7]));
         assert_eq!(unanswered.sealed_as(b"another bundle"), None);
+    }
+
+    #[test]
+    fn a_state_too_large_to_compact_is_sealed_again_only_once_the_records_since_double_or_a_compaction_resets_them()
+     {
+        let found = Oversized::found_at(600);
+
+        let unfound = Oversized::default().waits(600);
+        let next_batch = found.waits(601);
+        let short_of_double = found.waits(1_199);
+        let doubled = found.waits(1_200);
+        let compacted_since = found.waits(512);
+
+        assert!(!unfound);
+        assert!(next_batch);
+        assert!(short_of_double);
+        assert!(!doubled);
+        assert!(!compacted_since);
     }
 
     #[test]

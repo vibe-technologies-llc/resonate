@@ -416,7 +416,13 @@ platforms; the catalog seam stays thin.
   the server's log past `COMPACT_PAST_RECORDS` (512) or `COMPACT_PAST_BYTES` (4 MiB) since the last
   snapshot, and a `Compacted` from any device resets every device's count. A snapshot past half a
   frame (`SNAPSHOT_FRAME_SHARE`) or of more parts than `BLOBS_A_FRAME_AT_MOST` is not sent, and the
-  log stays as it is. An append carries at most `BLOBS_PER_APPEND` (32) bundles.
+  log stays as it is. **One found too large is not sealed again on the next batch**: sealing stops
+  at the first part past either bound, and the service keeps the count it was found at
+  (`Oversized`), building no snapshot again until the records since the last one double, or fall
+  below that count because a compaction reset them
+  (`a_state_too_large_to_compact_is_sealed_again_only_once_the_records_since_double_or_a_compaction_resets_them`);
+  the count is held in memory, so a start seals once more. An append carries at most
+  `BLOBS_PER_APPEND` (32) bundles.
 - **Owed is cleared by the server's `Appended`, or by a look where there is no server.** With no
   server (`Server::Nowhere`), what a look told its neighbours is marked sent, since a device met
   later is told the whole snapshot; `state.serverless` remembers it, and the first start with a
