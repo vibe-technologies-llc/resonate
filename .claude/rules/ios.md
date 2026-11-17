@@ -368,7 +368,9 @@ sync seals its records and talks QUIC (TLS) of its own.
   transfers, and *Options*, each a `Destination`: *Songs* (`SyncSongsPage`: the three follow switches, mobile data, *Keep a copy of MusicBrainz*
   (`SyncConfig.musicbrainz_copy`, on by default, kept as `sync-musicbrainz-copy-chosen`: `mobile.md`'s *Taken by default*; its line `musicbrainzCopyLine` over the
   `musicbrainz_copy()` the sync poll reads, and *Remove the copy*, confirmed; `mobile.md`'s *A copy of
-  MusicBrainz fetched from a desktop*), the folder picker and the landing notice) and *Connection* (`SyncConnectionPage`: *Sync through*
+  MusicBrainz fetched from a desktop*), *Let my other devices delete songs here*
+  (`SyncConfig.takes_deletions`, on by default, kept as `sync-deletions-from-others`; `mobile.md`'s *A
+  song deleted from every device*), the folder picker and the landing notice) and *Connection* (`SyncConnectionPage`: *Sync through*
   Resonate's server, your own server with its address, or *This network only*, which is
   `SyncConfig.nearby_only` and defaults off (`sync-nearby-only`); *Public address*, a STUN server as `SyncConfig.stun` (`sync-stun`) on the hosted and own routes; on the own route *Server certificate*, a PEM chosen with `fileImporter` and read to at most `certificateBytesAtMost` through `Features.keepSyncCertificate` into `sync_keep_certificate`, its file name kept as `SyncConfig.certificate` (`sync-certificate`), with *Forget the certificate*; and the device name). `PairingSheet` shows the code with Copy (on the pasteboard `localOnly` and expiring after two minutes, so Universal Clipboard never hands it on) and Share,
   joins another device's code (confirmed where a code is held), and *Make a new code…* (confirmed)
@@ -1098,7 +1100,11 @@ every route change (a pair of headphones at the same rate included), not from th
   the cover is up (the root cannot present over it). `Library.deleteSongs` removes each file with
   `Folders.deleteSong`, which, unlike `delete`, never counts an unreachable folder's file as gone,
   so a song whose file stays keeps its row; only the songs whose files went are forgotten
-  (`forget_deleted_songs`), and the rest are told as `DeletionFailure.filesKept`. Library tools'
+  (`forget_deleted_songs`), and the rest are told as `DeletionFailure.filesKept`. While sync is on
+  (`Features.syncsWithOtherDevices`) it also offers *Delete from every device*, the same confirmation
+  over `SongsToDelete.everywhere`, forgetting through `forget_songs_deleted_everywhere`; the sync poll
+  first asks `take_deletions_from_other_devices()` and `Library.takeDeletionsFromOtherDevices` removes
+  each deletable file and forgets those that went. Library tools'
   *Identical songs* (`IdenticalSongsView`, `Destination.identicalSongs`) asks `identical_songs` on
   `Work.aside` and lists each set, every file with its folder and name (marked read-only where its
   folder is); a tap chooses the copy kept, and *Delete copies* (confirmed) deletes the others set by

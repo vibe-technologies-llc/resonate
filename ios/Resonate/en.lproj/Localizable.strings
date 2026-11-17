@@ -1396,6 +1396,7 @@
 "song.add-to-queue" = "Add to queue";
 "song.analyse" = "Analyse";
 "song.delete" = "Delete song";
+"song.delete-everywhere" = "Delete from every device";
 "song.details" = "Song details";
 "song.download" = "Download";
 "song.download.cancel" = "Cancel download";
@@ -1567,6 +1568,9 @@
 "sync.songs.kept-playlists.detail" = "Playlists set to keep their songs here";
 "sync.songs.mobile-data" = "Use mobile data";
 "sync.songs.mobile-data.detail" = "Without it, songs move only on Wi-Fi";
+"sync.songs.deletions-from-others" = "Let my other devices delete songs here";
+"sync.songs.deletions-from-others.kept" = "A song deleted from every device elsewhere stays on this iPhone";
+"sync.songs.deletions-from-others.taken" = "A song deleted from every device on another device goes from this iPhone too";
 "sync.musicbrainz.header" = "MusicBrainz";
 "sync.musicbrainz.keep" = "Keep a copy of MusicBrainz";
 "sync.musicbrainz.footer" = "A copy answers lookups on this iPhone without the internet. It is fetched from a desktop that keeps one, about 10 GB, and follows the changes that desktop applies.";

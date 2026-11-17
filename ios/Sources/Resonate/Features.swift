@@ -896,6 +896,8 @@ final class Features {
             await withTaskCancellationHandler { await nap.value } onCancel: { nap.cancel() }
             guard !Task.isCancelled else { return }
             do {
+                let told = try await Work.aside { try native.takeDeletionsFromOtherDevices() }
+                await library.takeDeletionsFromOtherDevices(told)
                 let (status, waiting, handoffs, record, shared, copy) = try await Work.aside {
                     let status = native.syncStatus()
                     let waiting = try native.syncReceived()
@@ -1544,6 +1546,10 @@ final class Features {
 
     func tagsWritable(_ track: Track) -> Bool {
         writableKind(of: track.name) && songDeletable(track)
+    }
+
+    var syncsWithOtherDevices: Bool {
+        syncConfig?.enabled ?? false
     }
 
     func songDeletable(_ track: Track) -> Bool {

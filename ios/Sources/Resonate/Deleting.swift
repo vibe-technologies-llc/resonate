@@ -16,6 +16,7 @@ enum DeletionFailure: LocalizedError {
 struct SongsToDelete: Identifiable {
     let id = UUID()
     let tracks: [Track]
+    var everywhere = false
 
     var title: String {
         tracks.count == 1 ? said("deleting.song.title", tracks[0].shownTitle) : said("deleting.songs.title", tracks.count)
@@ -23,7 +24,7 @@ struct SongsToDelete: Identifiable {
 }
 
 extension Library {
-    func deleteSongs(_ tracks: [Track]) {
+    func deleteSongs(_ tracks: [Track], everywhere: Bool = false) {
         let folders = folders
         let doomed = tracks.map { DoomedFile(id: $0.id, uri: $0.uri) }
         Task { [weak self] in
@@ -31,7 +32,9 @@ extension Library {
             let gone = (try? await Work.aside { doomed.filter { folders.deleteSong($0.uri) }.map(\.id) }) ?? []
             let told: SongsForgotten
             do {
-                told = try await Work.aside { try native.forgetDeletedSongs(ids: gone) }
+                told = try await Work.aside {
+                    everywhere ? try native.forgetSongsDeletedEverywhere(ids: gone) : try native.forgetDeletedSongs(ids: gone)
+                }
             } catch {
                 report(error)
                 return
@@ -42,6 +45,20 @@ extension Library {
             } else {
                 notice(tracks.count == 1 ? said("deleting.song.deleted", tracks[0].shownTitle) : said("deleting.songs.deleted", tracks.count))
             }
+        }
+    }
+
+    func takeDeletionsFromOtherDevices(_ told: [Track]) async {
+        guard !told.isEmpty, let native = try? await player() else { return }
+        let folders = folders
+        let doomed = told.filter(features.songDeletable).map { DoomedFile(id: $0.id, uri: $0.uri) }
+        let gone = (try? await Work.aside { doomed.filter { folders.deleteSong($0.uri) }.map(\.id) }) ?? []
+        guard !gone.isEmpty else { return }
+        do {
+            let forgotten = try await Work.aside { try native.forgetDeletedSongs(ids: gone) }
+            await songsLeft(forgotten)
+        } catch {
+            report(error)
         }
     }
 
@@ -151,10 +168,10 @@ struct DeleteSongsConfirmation: ViewModifier {
             presenting: asked
         ) { asked in
             Button(said("deleting.songs.confirm", asked.tracks.count), role: .destructive) {
-                library.deleteSongs(asked.tracks)
+                library.deleteSongs(asked.tracks, everywhere: asked.everywhere)
             }
         } message: { asked in
-            Text(said("deleting.songs.message", asked.tracks.count))
+            Text(said(asked.everywhere ? "deleting.everywhere.message" : "deleting.songs.message", asked.tracks.count))
         }
     }
 }

@@ -89,6 +89,7 @@ public struct AccountStore: Sendable {
     public static let plainSuite = "provider-accounts"
     static let musicbrainzCopyChosen = "sync-musicbrainz-copy-chosen"
     static let musicbrainzCopyAsFirstSaved = "sync-musicbrainz-copy"
+    static let deletionsFromOthers = "sync-deletions-from-others"
     public static let choicesSuite = "library-features"
 
     private static let providerAccountsKey = "download-accounts"
@@ -187,7 +188,8 @@ public struct AccountStore: Sendable {
             control: SyncControls.of(plain.string(forKey: "sync-control")),
             stun: plain.string(forKey: "sync-stun") ?? "",
             certificate: plain.string(forKey: "sync-certificate") ?? "",
-            musicbrainzCopy: flag(Self.musicbrainzCopyChosen, true)
+            musicbrainzCopy: flag(Self.musicbrainzCopyChosen, true),
+            takesDeletions: flag(Self.deletionsFromOthers, true)
         )
     }
 
@@ -208,5 +210,6 @@ public struct AccountStore: Sendable {
         plain.set(config.certificate, forKey: "sync-certificate")
         plain.set(config.musicbrainzCopy, forKey: Self.musicbrainzCopyChosen)
         plain.removeObject(forKey: Self.musicbrainzCopyAsFirstSaved)
+        plain.set(config.takesDeletions, forKey: Self.deletionsFromOthers)
     }
 }

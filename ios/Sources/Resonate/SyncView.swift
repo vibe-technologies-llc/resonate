@@ -498,6 +498,13 @@ struct SyncSongsPage: View {
             }
             Section {
                 SyncSwitch(
+                    title: said("sync.songs.deletions-from-others"),
+                    detail: said(features.syncConfig?.takesDeletions ?? true ? "sync.songs.deletions-from-others.taken" : "sync.songs.deletions-from-others.kept"),
+                    choice: \.takesDeletions
+                )
+            }
+            Section {
+                SyncSwitch(
                     title: said("sync.musicbrainz.keep"),
                     detail: musicbrainzCopyLine(features.musicbrainzCopy, keeping: features.syncConfig?.musicbrainzCopy ?? false),
                     choice: \.musicbrainzCopy

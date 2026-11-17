@@ -706,6 +706,11 @@ struct SongPages: View {
             Button("song.delete", systemImage: "trash", role: .destructive) {
                 navigation.deleting = SongsToDelete(tracks: [track])
             }
+            if library.features.syncsWithOtherDevices {
+                Button("song.delete-everywhere", systemImage: "trash.slash", role: .destructive) {
+                    navigation.deleting = SongsToDelete(tracks: [track], everywhere: true)
+                }
+            }
         }
     }
 }

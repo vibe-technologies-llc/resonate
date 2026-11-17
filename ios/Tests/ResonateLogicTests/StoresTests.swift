@@ -429,7 +429,8 @@ let interactionNotAllowed: Int32 = -25308
             control: .transport,
             stun: "stun.example.org:3479",
             certificate: "private-ca.pem",
-            musicbrainzCopy: true
+            musicbrainzCopy: true,
+            takesDeletions: false
         )
 
         try store.writeSync(config)

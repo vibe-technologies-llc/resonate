@@ -194,6 +194,22 @@
 			<string>Delete %lld songs</string>
 		</dict>
 	</dict>
+	<key>deleting.everywhere.message</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Its file is deleted from your iPhone, and your other devices that let other devices delete songs delete their copy too.</string>
+			<key>other</key>
+			<string>Their files are deleted from your iPhone, and your other devices that let other devices delete songs delete their copies too.</string>
+		</dict>
+	</dict>
 	<key>deleting.songs.deleted</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
