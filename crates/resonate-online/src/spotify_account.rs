@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     fmt,
     io::{self, ErrorKind, Read as _, Write as _},
     net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream},
@@ -41,6 +42,8 @@ pub(crate) const A_SIGN_IN_LAPSES_AFTER: Duration = Duration::from_secs(10 * 60)
 pub(crate) const LOOKED_AT_EVERY: Duration = Duration::from_millis(100);
 const A_REQUEST_ARRIVES_WITHIN: Duration = Duration::from_secs(2);
 const LONGEST_REQUEST_HEAD: usize = 8 * 1024;
+const REQUESTS_HEARD_AT_ONCE: usize = 8;
+const READ_AT_ONCE: usize = 1024;
 
 pub const SPOTIFY_REDIRECT: &str = "http://127.0.0.1:43879/spotify";
 
@@ -646,6 +649,7 @@ impl SpotifySignIn {
         authorizing: &SpotifyAuthorizing,
         cancelled: &dyn Fn() -> bool,
     ) -> std::result::Result<Option<String>, SpotifySignInError> {
+        let mut asking = VecDeque::new();
         loop {
             if cancelled() {
                 return Ok(None);
@@ -653,33 +657,102 @@ impl SpotifySignIn {
             if authorizing.began.elapsed() >= self.lapses_after {
                 return Err(SpotifySignInError::Lapsed);
             }
-            match authorizing.listener.accept() {
-                Ok((stream, _)) => {
-                    if let Some(code) = heard(stream, &authorizing.state)? {
-                        return Ok(Some(code));
+            arrived(&authorizing.listener, &mut asking);
+            let mut waiting = VecDeque::with_capacity(asking.len());
+            for mut request in asking {
+                match request.read_on() {
+                    Reading::Whole => {
+                        if let Some(code) = heard(request, &authorizing.state)? {
+                            return Ok(Some(code));
+                        }
                     }
+                    Reading::Waiting if request.since.elapsed() < A_REQUEST_ARRIVES_WITHIN => {
+                        waiting.push_back(request);
+                    }
+                    Reading::Waiting | Reading::Lost => {}
                 }
-                Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                    thread::sleep(LOOKED_AT_EVERY);
-                }
+            }
+            asking = waiting;
+            thread::sleep(LOOKED_AT_EVERY);
+        }
+    }
+}
+
+struct Request {
+    stream: TcpStream,
+    head: Vec<u8>,
+    since: Instant,
+}
+
+enum Reading {
+    Whole,
+    Waiting,
+    Lost,
+}
+
+impl Request {
+    fn read_on(&mut self) -> Reading {
+        let mut piece = [0_u8; READ_AT_ONCE];
+        loop {
+            if self.head.windows(4).any(|end| end == b"\r\n\r\n")
+                || self.head.len() >= LONGEST_REQUEST_HEAD
+            {
+                return Reading::Whole;
+            }
+            match self.stream.read(&mut piece) {
+                Ok(0) if self.head.is_empty() => return Reading::Lost,
+                Ok(0) => return Reading::Whole,
+                Ok(read) => self.head.extend_from_slice(&piece[..read]),
+                Err(error) if error.kind() == ErrorKind::WouldBlock => return Reading::Waiting,
+                Err(error) if error.kind() == ErrorKind::Interrupted => {}
                 Err(error) => {
-                    tracing::debug!(%error, "a connection to the sign-in's page was lost");
-                    thread::sleep(LOOKED_AT_EVERY);
+                    tracing::debug!(%error, "a request to the sign-in's page was lost");
+                    return Reading::Lost;
                 }
             }
         }
     }
 }
 
-fn heard(
-    mut stream: TcpStream,
-    state: &str,
-) -> std::result::Result<Option<String>, SpotifySignInError> {
-    let answered = request_head(&mut stream)
-        .inspect_err(|error| tracing::debug!(%error, "a request to the sign-in's page was lost"));
-    let Ok(head) = answered else {
+fn arrived(listener: &TcpListener, asking: &mut VecDeque<Request>) {
+    loop {
+        match listener.accept() {
+            Ok((stream, _)) => {
+                if let Err(error) = stream.set_nonblocking(true) {
+                    tracing::debug!(%error, "a connection to the sign-in's page was lost");
+                    continue;
+                }
+                if asking.len() >= REQUESTS_HEARD_AT_ONCE {
+                    asking.pop_front();
+                }
+                asking.push_back(Request {
+                    stream,
+                    head: Vec::new(),
+                    since: Instant::now(),
+                });
+            }
+            Err(error) if error.kind() == ErrorKind::WouldBlock => return,
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(error) => {
+                tracing::debug!(%error, "a connection to the sign-in's page was lost");
+                return;
+            }
+        }
+    }
+}
+
+fn heard(request: Request, state: &str) -> std::result::Result<Option<String>, SpotifySignInError> {
+    let Request {
+        mut stream, head, ..
+    } = request;
+    let answerable = stream
+        .set_nonblocking(false)
+        .and_then(|()| stream.set_write_timeout(Some(A_REQUEST_ARRIVES_WITHIN)));
+    if let Err(error) = answerable {
+        tracing::debug!(%error, "a request to the sign-in's page was lost");
         return Ok(None);
-    };
+    }
+    let head = String::from_utf8_lossy(&head);
     let Some(query) = redirect_query(&head) else {
         answer(
             &mut stream,
@@ -707,23 +780,6 @@ fn heard(
     answer(&mut stream, "200 OK", words::spotify_account::told_not_to());
 
     Err(SpotifySignInError::Denied)
-}
-
-fn request_head(stream: &mut TcpStream) -> io::Result<String> {
-    stream.set_nonblocking(false)?;
-    stream.set_read_timeout(Some(A_REQUEST_ARRIVES_WITHIN))?;
-    stream.set_write_timeout(Some(A_REQUEST_ARRIVES_WITHIN))?;
-    let mut head = Vec::new();
-    let mut piece = [0_u8; 1024];
-    while !head.windows(4).any(|end| end == b"\r\n\r\n") && head.len() < LONGEST_REQUEST_HEAD {
-        let read = stream.read(&mut piece)?;
-        if read == 0 {
-            break;
-        }
-        head.extend_from_slice(&piece[..read]);
-    }
-
-    Ok(String::from_utf8_lossy(&head).into_owned())
 }
 
 fn redirect_query(head: &str) -> Option<&str> {
@@ -1112,6 +1168,44 @@ mod tests {
                 .contains("authorization:"),
             "a PKCE client has no secret to send"
         );
+    }
+
+    #[test]
+    fn sockets_that_say_nothing_never_hold_the_redirect_back() {
+        let fake = serving(Box::new(|_| (200, TOKEN.to_owned())));
+        let signing = sign_in_over(&fake, Duration::from_secs(60));
+        let authorizing = signing
+            .authorizing("registered")
+            .expect("a place to listen");
+        let redirect = read_back(&authorizing.authorize_at, "redirect_uri").expect("a redirect");
+        let state = read_back(&authorizing.authorize_at, "state").expect("a state");
+        let at = redirect
+            .strip_prefix("http://")
+            .and_then(|rest| rest.split('/').next())
+            .expect("a loopback address")
+            .to_owned();
+
+        let silent: Vec<TcpStream> = (0..3)
+            .map(|_| TcpStream::connect(&at).expect("the sign-in listens"))
+            .collect();
+        let browser = thread::spawn(move || {
+            let began = Instant::now();
+            let answered = browse_to(&redirect, &format!("state={state}&code=given"));
+            (answered, began.elapsed())
+        });
+        let signed_in = signing
+            .authorized(&authorizing, &|| false)
+            .expect("a sign-in")
+            .expect("not cancelled");
+        let (answered, waited) = browser.join().expect("a browser");
+
+        assert_eq!(signed_in.refresh_token, "first-refresh");
+        assert!(answered.starts_with("HTTP/1.1 200"), "{answered}");
+        assert!(
+            waited < A_REQUEST_ARRIVES_WITHIN,
+            "the redirect waited {waited:?} behind sockets that said nothing"
+        );
+        drop(silent);
     }
 
     #[test]

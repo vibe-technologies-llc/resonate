@@ -377,7 +377,12 @@ nothing asked** (`no_account_asks_nothing_of_the_api_and_a_pasted_link_keeps_its
   user-library-read`), and `authorized` answers the browser's one request and posts the code with its
   verifier to `/api/token` (no secret, no `Authorization`). A request of any other path or `state` is
   answered and waited past, so another page cannot end or feed the sign-in
-  (`a_sign_in_asks_with_pkce_catches_the_redirect_and_keeps_the_refresh_token`). A cancel is heard
+  (`a_sign_in_asks_with_pkce_catches_the_redirect_and_keeps_the_refresh_token`). **No socket holds
+  the redirect back**: every connection is read without blocking, each head given
+  `A_REQUEST_ARRIVES_WITHIN` (2 s) over all to be whole, at most `REQUESTS_HEARD_AT_ONCE` (8) at once
+  (the oldest let go for a new one), all read again every `LOOKED_AT_EVERY` beside the cancel and the
+  lapse, so a local process or a browser's idle pre-opened socket delays the redirect by no more
+  than one look (`sockets_that_say_nothing_never_hold_the_redirect_back`). A cancel is heard
   within `LOOKED_AT_EVERY`; `A_SIGN_IN_LAPSES_AFTER` (10 min) of silence is `Lapsed`, `error=` with
   the right state `Denied`
   (`a_sign_in_refused_cancelled_or_left_alone_ends_with_no_token`).
