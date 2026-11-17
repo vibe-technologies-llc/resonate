@@ -147,7 +147,7 @@ pub(crate) mod joined {
     use parking_lot::Mutex;
     use resonate_core::{PlaylistId, ZoneId};
 
-    use crate::together::{PartyReaction, PartySeen, SharedSeen, Together};
+    use crate::together::{PartyReaction, PartyRequestId, PartySeen, SharedSeen, Together};
 
     #[derive(Default)]
     pub(crate) struct Joining {
@@ -158,6 +158,8 @@ pub(crate) mod joined {
         pub(crate) said: Mutex<Vec<String>>,
         pub(crate) reacted: Mutex<Vec<PartyReaction>>,
         pub(crate) handed: Mutex<Vec<[u8; 16]>>,
+        pub(crate) played_next: Mutex<Vec<PartyRequestId>>,
+        pub(crate) dismissed: Mutex<Vec<PartyRequestId>>,
     }
 
     impl Joining {
@@ -216,11 +218,14 @@ pub(crate) mod joined {
 
         fn turn_out(&self, _: [u8; 16]) {}
 
-        fn play_request_next(&self, _: usize) -> bool {
-            false
+        fn play_request_next(&self, request: PartyRequestId) -> bool {
+            self.played_next.lock().push(request);
+            true
         }
 
-        fn dismiss_request(&self, _: usize) {}
+        fn dismiss_request(&self, request: PartyRequestId) {
+            self.dismissed.lock().push(request);
+        }
 
         fn following(&self, _: ZoneId) -> bool {
             false

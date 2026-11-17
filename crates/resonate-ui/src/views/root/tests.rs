@@ -824,6 +824,66 @@ mod driven {
         );
     }
 
+    fn hosting_with_requests(
+        asked_for: Vec<crate::together::PartyRequestSeen>,
+    ) -> crate::together::PartySeen {
+        crate::together::PartySeen {
+            zone: resonate_core::ZoneId::FIRST,
+            hosting: true,
+            link: "resonate://party/ABCDE".to_owned(),
+            reach: crate::together::PartyReached::Here,
+            people: Vec::new(),
+            standing: crate::together::PartyStanding::InStep,
+            song: None,
+            asked_for,
+            round_trip: None,
+            apart: None,
+            chat: Vec::new(),
+            handing: None,
+        }
+    }
+
+    fn requested(id: u8, title: &str) -> crate::together::PartyRequestSeen {
+        crate::together::PartyRequestSeen {
+            id: crate::together::PartyRequestId([id; 32]),
+            title: title.to_owned(),
+            artist: "Artist".to_owned(),
+        }
+    }
+
+    #[gpui::test]
+    fn a_request_pressed_is_named_by_its_id_and_not_by_the_row_it_was_drawn_at(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = queue_open(cx, &folder, &["one"]);
+        let joining = Arc::new(party_offer::joined::Joining::default());
+        *joining.at.lock() = Some(hosting_with_requests(vec![
+            requested(1, "Echoes"),
+            requested(2, "Meddle"),
+            requested(3, "Time"),
+        ]));
+        together_over(&mut driven, joining.clone());
+
+        driven
+            .root
+            .update(&mut driven.cx, |root, cx| root.set_pane(Pane::Party, cx));
+        driven.settle();
+        driven.click("party-play-next-1");
+        driven.settle();
+        driven.click("party-dismiss-2");
+        driven.settle();
+
+        assert_eq!(
+            *joining.played_next.lock(),
+            vec![crate::together::PartyRequestId([2; 32])]
+        );
+        assert_eq!(
+            *joining.dismissed.lock(),
+            vec![crate::together::PartyRequestId([3; 32])]
+        );
+    }
+
     #[gpui::test]
     fn a_party_link_from_outside_asks_first_and_focus_lands_on_the_control_that_declines(
         cx: &mut TestAppContext,

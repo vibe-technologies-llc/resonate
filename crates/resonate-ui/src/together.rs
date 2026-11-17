@@ -111,11 +111,21 @@ pub struct PartySeen {
     pub people: Vec<SharedPerson>,
     pub standing: PartyStanding,
     pub song: Option<(String, String)>,
-    pub asked_for: Vec<(String, String)>,
+    pub asked_for: Vec<PartyRequestSeen>,
     pub round_trip: Option<Duration>,
     pub apart: Option<PartyApartSeen>,
     pub chat: Vec<PartyLineSeen>,
     pub handing: Option<PartyHandingSeen>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PartyRequestId(pub [u8; 32]);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PartyRequestSeen {
+    pub id: PartyRequestId,
+    pub title: String,
+    pub artist: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,9 +161,9 @@ pub trait Together: Send + Sync {
 
     fn turn_out(&self, person: [u8; 16]);
 
-    fn play_request_next(&self, at: usize) -> bool;
+    fn play_request_next(&self, request: PartyRequestId) -> bool;
 
-    fn dismiss_request(&self, at: usize);
+    fn dismiss_request(&self, request: PartyRequestId);
 
     fn following(&self, zone: ZoneId) -> bool;
 

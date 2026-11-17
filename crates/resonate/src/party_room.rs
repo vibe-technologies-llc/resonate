@@ -11,10 +11,13 @@ use resonate_engine::{Command, Placement, Player, QueueItem, Seat, ZoneId, Zones
 use resonate_library::Library;
 use resonate_sync::{
     DeviceId, Server,
-    party::{Going, Party, PartyChat, PartyFinder as _, PartyFollowed, PartyShown},
+    party::{
+        Going, Party, PartyChat, PartyFinder as _, PartyFollowed, PartyShown, PartyWantingASong,
+        RequestId,
+    },
     shared::{Invitation, Invited, invitation_in},
 };
-use resonate_ui::{Followed, ListOffered};
+use resonate_ui::{Followed, ListOffered, PartyRequestId};
 
 use crate::{
     error::{Error, Result},
@@ -256,17 +259,29 @@ pub(crate) fn turn_out(member: [u8; 16]) {
     }
 }
 
-pub(crate) fn dismiss_a_request(at: usize) {
+fn request_named(
+    asked_for: &[PartyWantingASong],
+    request: PartyRequestId,
+) -> Option<PartyWantingASong> {
+    let request = RequestId::from_bytes(&request.0)?;
+
+    asked_for
+        .iter()
+        .find(|asked| asked.id() == request)
+        .cloned()
+}
+
+pub(crate) fn dismiss_a_request(request: PartyRequestId) {
     if let Some(room) = ROOM.lock().as_ref()
-        && let Some(request) = room.going.shown().asked_for.get(at).cloned()
+        && let Some(request) = request_named(&room.going.shown().asked_for, request)
     {
         room.going.party().take_a_request(request);
     }
 }
 
-pub(crate) fn play_a_request_next(at: usize) -> bool {
+pub(crate) fn play_a_request_next(request: PartyRequestId) -> bool {
     let Some((party, player, finder, wanted)) = ROOM.lock().as_ref().and_then(|room| {
-        let wanted = room.going.shown().asked_for.get(at).cloned()?;
+        let wanted = request_named(&room.going.shown().asked_for, request)?;
 
         Some((
             Arc::clone(room.going.party()),
@@ -308,6 +323,8 @@ pub(crate) fn following(zone: ZoneId) -> bool {
 #[cfg(test)]
 mod tests {
     use crossbeam_channel::{Receiver, unbounded};
+    use resonate_core::Recording;
+    use resonate_sync::party::PartySong;
 
     use super::*;
 
@@ -396,5 +413,55 @@ mod tests {
                 server: "wss://stranger.example/".to_owned(),
             })]
         );
+    }
+
+    fn asked_by(guest: u8, title: &str) -> PartyWantingASong {
+        PartyWantingASong {
+            from: DeviceId([guest; 16]),
+            song: PartySong {
+                row: 1,
+                recording: Recording {
+                    mbid: None,
+                    title: title.to_owned(),
+                    artist: "Artist".to_owned(),
+                    album: "Album".to_owned(),
+                    length: None,
+                },
+                isrc: None,
+            },
+        }
+    }
+
+    fn drawn(asked: &PartyWantingASong) -> PartyRequestId {
+        PartyRequestId(asked.id().to_bytes())
+    }
+
+    #[test]
+    fn a_request_pressed_is_the_one_drawn_whatever_has_come_and_gone_before_it_is_settled() {
+        let first = asked_by(1, "Echoes");
+        let second = asked_by(2, "Meddle");
+        let third = asked_by(3, "Time");
+        let pressed = drawn(&second);
+        let gone = drawn(&first);
+
+        let after_the_first_was_taken = vec![second.clone(), third.clone()];
+        let after_another_came_first = vec![third, first, second.clone()];
+
+        assert_eq!(
+            request_named(&after_the_first_was_taken, pressed),
+            Some(second.clone())
+        );
+        assert_eq!(
+            request_named(&after_another_came_first, pressed),
+            Some(second)
+        );
+        assert_eq!(request_named(&after_the_first_was_taken, gone), None);
+    }
+
+    #[test]
+    fn a_request_named_by_bytes_that_name_no_request_settles_nothing() {
+        let shown = vec![asked_by(1, "Echoes")];
+
+        assert_eq!(request_named(&shown, PartyRequestId([0; 32])), None);
     }
 }

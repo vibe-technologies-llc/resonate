@@ -10,8 +10,8 @@ use crate::{
     icons::{self, Icon},
     theme,
     together::{
-        PartyHandingSeen, PartyLineSeen, PartyReached, PartyReaction, PartySaying, PartySeen,
-        PartyStanding, SharedPerson,
+        PartyHandingSeen, PartyLineSeen, PartyReached, PartyReaction, PartyRequestId, PartySaying,
+        PartySeen, PartyStanding, SharedPerson,
     },
     views::{
         field::{Field, Submitted},
@@ -887,7 +887,8 @@ impl RootView {
 
     fn party_requests(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
         let mut asked = div().flex().flex_col().gap_1().p_2();
-        for (at, (title, artist)) in seen.asked_for.iter().enumerate() {
+        for (at, request) in seen.asked_for.iter().enumerate() {
+            let id = request.id;
             asked = asked.child(
                 div()
                     .flex()
@@ -895,7 +896,7 @@ impl RootView {
                     .gap_2()
                     .px_2()
                     .py_1p5()
-                    .child(song_lines(title.clone(), artist.clone()))
+                    .child(song_lines(request.title.clone(), request.artist.clone()))
                     .child(self.in_the_pane_ring(
                         kit::button(
                             ("party-play-next", at),
@@ -904,7 +905,7 @@ impl RootView {
                             words::party::play_next_hint(),
                             Tone::Outlined,
                         ),
-                        move |this, _, cx| this.play_a_request_next(at, cx),
+                        move |this, _, cx| this.play_a_request_next(id, cx),
                         cx,
                     ))
                     .child(self.in_the_pane_ring(
@@ -913,7 +914,7 @@ impl RootView {
                             Icon::Close,
                             words::party::dismiss_hint(),
                         ),
-                        move |this, _, cx| this.dismiss_a_request(at, cx),
+                        move |this, _, cx| this.dismiss_a_request(id, cx),
                         cx,
                     )),
             );
@@ -970,11 +971,11 @@ impl RootView {
         cx.notify();
     }
 
-    fn play_a_request_next(&mut self, at: usize, cx: &mut Context<Self>) {
+    fn play_a_request_next(&mut self, request: PartyRequestId, cx: &mut Context<Self>) {
         let Some(together) = cx.global::<ResonateApp>().together.clone() else {
             return;
         };
-        let running = cx.background_spawn(async move { together.play_request_next(at) });
+        let running = cx.background_spawn(async move { together.play_request_next(request) });
 
         cx.spawn(async move |this, cx| {
             let worked = running.await;
@@ -992,9 +993,9 @@ impl RootView {
         .detach();
     }
 
-    fn dismiss_a_request(&mut self, at: usize, cx: &mut Context<Self>) {
+    fn dismiss_a_request(&mut self, request: PartyRequestId, cx: &mut Context<Self>) {
         if let Some(together) = cx.global::<ResonateApp>().together.clone() {
-            together.dismiss_request(at);
+            together.dismiss_request(request);
         }
         cx.notify();
     }

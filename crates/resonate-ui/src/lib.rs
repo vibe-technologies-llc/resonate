@@ -70,8 +70,9 @@ pub use crate::{
         YoutubeMusicConnection, YoutubeMusicSignIn,
     },
     together::{
-        PartyApartSeen, PartyHandingSeen, PartyLineSeen, PartyReached, PartyReaction, PartySaying,
-        PartySeen, PartyStanding, SharedPerson, SharedReach, SharedSeen, Together,
+        PartyApartSeen, PartyHandingSeen, PartyLineSeen, PartyReached, PartyReaction,
+        PartyRequestId, PartyRequestSeen, PartySaying, PartySeen, PartyStanding, SharedPerson,
+        SharedReach, SharedSeen, Together,
     },
     views::{Pane, RootView},
 };

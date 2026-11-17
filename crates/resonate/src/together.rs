@@ -401,7 +401,11 @@ impl resonate_ui::Together for Seen {
             asked_for: shown
                 .asked_for
                 .into_iter()
-                .map(|asked| (asked.song.recording.title, asked.song.recording.artist))
+                .map(|asked| resonate_ui::PartyRequestSeen {
+                    id: resonate_ui::PartyRequestId(asked.id().to_bytes()),
+                    title: asked.song.recording.title,
+                    artist: asked.song.recording.artist,
+                })
                 .collect(),
             round_trip: shown.round_trip,
             apart: shown.apart.map(|apart| resonate_ui::PartyApartSeen {
@@ -440,12 +444,12 @@ impl resonate_ui::Together for Seen {
         crate::party_room::turn_out(person);
     }
 
-    fn play_request_next(&self, at: usize) -> bool {
-        crate::party_room::play_a_request_next(at)
+    fn play_request_next(&self, request: resonate_ui::PartyRequestId) -> bool {
+        crate::party_room::play_a_request_next(request)
     }
 
-    fn dismiss_request(&self, at: usize) {
-        crate::party_room::dismiss_a_request(at);
+    fn dismiss_request(&self, request: resonate_ui::PartyRequestId) {
+        crate::party_room::dismiss_a_request(request);
     }
 
     fn following(&self, zone: ZoneId) -> bool {
