@@ -107,7 +107,9 @@ pub enum MoveOp {
 pub enum TrashOp {
     Stat,
     MakeFolder,
+    KeepAlone,
     Record,
+    Settle,
     Rename,
 }
 

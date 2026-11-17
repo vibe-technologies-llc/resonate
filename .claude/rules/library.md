@@ -1736,9 +1736,18 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   (`Error::Trash`, `Error::NoTrashFor`) is kept with its rows, never removed for good. The bin is
   `$XDG_DATA_HOME/Trash` (else `~/.local/share/Trash`; `Library::trash_into` overrides the data
   home, which tests set) where it is on the file's device, else `$topdir/.Trash-$uid` at the
-  file's mount point (the shared `$topdir/.Trash` is not used); folders `0700`; a name is
+  file's mount point (the shared `$topdir/.Trash` is not used); folders `0700`. **A volume's
+  `.Trash-$uid` is used only where it and its `files` and `info` are real folders (never a link)
+  owned by the uid and closed to group and others** (`Owner::keeps_alone`, as the spool's,
+  `trash::kept_alone`), else `TrashOp::KeepAlone` and the file is kept, since on a shared or second
+  disk another user may have made that folder first
+  (`a_volumes_trash_that_is_a_link_or_open_to_others_is_refused`). A name is
   `named_within`-cut to leave room for `.trashinfo` and a discriminator (`name`, `name.1`, ...),
-  its `info/<name>.trashinfo` created `create_new` first and removed if the rename fails; `Path=`
+  its `info/<name>.trashinfo` created `create_new` first, written, synced and its folder synced,
+  then the file moved by `unreplacing::renamed_over_nothing`, which never replaces a file trashed
+  meanwhile (that name's record is taken back and the next discriminator tried:
+  `a_name_taken_in_the_trash_meanwhile_is_never_moved_over_and_its_record_is_taken_back`), the
+  record removed if the rename fails, and `files` and the folder the file left synced after; `Path=`
   percent-encoded (relative to `$topdir` there), `DeletionDate` the listener's local time.
   **Sidecars go with the file that was removed** (`deleted::sidecars_of`): a `<stem>.lrc`
   (any case) unless another audio file in the folder shares the stem, and a `.cue` in the same
