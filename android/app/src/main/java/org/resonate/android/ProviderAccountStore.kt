@@ -141,6 +141,13 @@ class ProviderAccountStore(context: Context) {
         check(edit.commit()) { resources.getString(R.string.provider_sync_not_saved) }
     }
 
+    @Synchronized
+    fun forgetSyncKey() {
+        check(storage.edit().remove("sync-key").commit()) {
+            resources.getString(R.string.provider_sync_not_saved)
+        }
+    }
+
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey(alias, null) as? SecretKey)?.let {

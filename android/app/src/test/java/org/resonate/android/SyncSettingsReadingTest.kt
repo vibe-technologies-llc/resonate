@@ -3,7 +3,9 @@ package org.resonate.android
 import java.security.KeyStoreException
 import javax.crypto.AEADBadTagException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.resonate.android.nativecore.SyncConfig
 import org.resonate.android.nativecore.SyncControl
@@ -15,7 +17,7 @@ class SyncSettingsReadingTest {
     @Test
     fun aKeystoreThatThrowsLeavesSyncUnsetAndNeverABlankCodeThatWouldMintANewGroup() {
         val said = mutableListOf<Exception>()
-        val reading = SyncSettingsReading({ throw KeyStoreException() }, { said += it })
+        val reading = SyncSettingsReading({ throw KeyStoreException() }, { said += it }, {})
 
         val read = reading.read()
 
@@ -28,7 +30,7 @@ class SyncSettingsReadingTest {
         val said = mutableListOf<Exception>()
         var readable = false
         val reading =
-            SyncSettingsReading({ if (readable) kept else throw AEADBadTagException() }, { said += it })
+            SyncSettingsReading({ if (readable) kept else throw AEADBadTagException() }, { said += it }, {})
 
         val first = reading.read()
         val again = reading.read()
@@ -46,7 +48,7 @@ class SyncSettingsReadingTest {
         val said = mutableListOf<Exception>()
         var readable = false
         val reading =
-            SyncSettingsReading({ if (readable) kept else throw KeyStoreException() }, { said += it })
+            SyncSettingsReading({ if (readable) kept else throw KeyStoreException() }, { said += it }, {})
 
         reading.read()
         readable = true
@@ -55,5 +57,40 @@ class SyncSettingsReadingTest {
         reading.read()
 
         assertEquals(2, said.size)
+    }
+
+    @Test
+    fun aKeyLostForGoodStartsOverWithItsSealedCodeForgottenAndANewOneMinted() {
+        val said = mutableListOf<Exception>()
+        var sealed = true
+        val reading =
+            SyncSettingsReading(
+                { if (sealed) throw AEADBadTagException() else kept.copy(key = "") },
+                { said += it },
+                { sealed = false },
+            )
+
+        val first = reading.read()
+        val unreadableFirst = reading.unreadable.value
+        val started = reading.startOver("NEW-CODE")
+
+        assertNull(first)
+        assertTrue(unreadableFirst)
+        assertEquals("NEW-CODE", started?.key)
+        assertEquals(true, started?.enabled)
+        assertFalse(reading.unreadable.value)
+        assertEquals(1, said.size)
+    }
+
+    @Test
+    fun aStoreThatStillCannotBeReadAfterForgettingStartsNothing() {
+        var forgotten = 0
+        val reading = SyncSettingsReading({ throw KeyStoreException() }, {}, { forgotten += 1 })
+
+        val started = reading.startOver("NEW-CODE")
+
+        assertNull(started)
+        assertEquals(1, forgotten)
+        assertTrue(reading.unreadable.value)
     }
 }

@@ -91,6 +91,7 @@ import org.resonate.android.nativecore.SyncedDevice
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.SYNC_ASKED_SHOWS_FOR_MS
 import org.resonate.android.ui.SyncActivity
+import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
@@ -104,6 +105,7 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
     private val features = resonate.features
 
     val config = features.syncConfig
+    val unreadable = features.syncUnreadable
     val status = features.syncStatus
     val musicbrainzCopy = features.musicbrainzCopy
     val folder = features.syncFolder
@@ -138,6 +140,8 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
     fun join(code: String) = features.joinSync(code)
 
     fun newGroup() = features.newSyncGroup()
+
+    fun startOver() = features.startSyncOver()
 
     fun choose(folder: MusicFolder) = features.chooseSyncFolder(folder)
 
@@ -194,6 +198,7 @@ private val CERTIFICATE_DOCUMENTS =
 private enum class Asking {
     JOIN,
     NEW_GROUP,
+    START_OVER,
 }
 
 @Composable
@@ -201,6 +206,7 @@ fun SyncScreen() {
     val model = resonateViewModel { SyncViewModel(it) }
     val navigator = LocalNavigator.current
     val stored by model.config.collectAsStateWithLifecycle()
+    val unreadable by model.unreadable.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
     val chosen by model.folder.collectAsStateWithLifecycle()
     val folders by model.folders.collectAsStateWithLifecycle()
@@ -228,6 +234,17 @@ fun SyncScreen() {
     LaunchedEffect(Unit) { model.refreshFolders() }
     Page(stringResource(R.string.sync_title)) { padding ->
         val config = stored
+        if (config == null && unreadable) {
+            EmptyState(
+                Icons.Rounded.ErrorOutline,
+                stringResource(R.string.sync_unreadable),
+                Modifier.padding(padding).testTag("sync-unreadable"),
+                detail = stringResource(R.string.sync_unreadable_told),
+                action = stringResource(R.string.sync_start_over),
+                onAction = { asking = Asking.START_OVER },
+            )
+            return@Page
+        }
         if (config == null) {
             Loading(padding)
             return@Page
@@ -646,6 +663,15 @@ fun SyncScreen() {
                 confirm = stringResource(R.string.sync_new_group_confirm),
                 icon = Icons.Rounded.GroupAdd,
                 onConfirm = model::newGroup,
+                onDismiss = { asking = null },
+            )
+        Asking.START_OVER ->
+            ConfirmDialog(
+                title = stringResource(R.string.sync_start_over_title),
+                text = stringResource(R.string.sync_start_over_text),
+                confirm = stringResource(R.string.sync_start_over_confirm),
+                icon = Icons.Rounded.GroupAdd,
+                onConfirm = model::startOver,
                 onDismiss = { asking = null },
             )
         null -> Unit

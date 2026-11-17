@@ -284,11 +284,16 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private var visualization: Job? = null
     val syncConfig = MutableStateFlow<SyncConfig?>(null)
     private val syncSettings =
-        SyncSettingsReading(accounts::readSync) { failure ->
-            library.report(
-                SyncSettingsUnread(library.words.string(R.string.features_sync_settings_unread), failure)
-            )
-        }
+        SyncSettingsReading(
+            accounts::readSync,
+            { failure ->
+                library.report(
+                    SyncSettingsUnread(library.words.string(R.string.features_sync_settings_unread), failure)
+                )
+            },
+            accounts::forgetSyncKey,
+        )
+    val syncUnreadable = syncSettings.unreadable
     val syncStatus = MutableStateFlow<SyncStatus?>(null)
     val musicbrainzCopy = MutableStateFlow<MusicbrainzCopy?>(null)
     val syncHandoffs = MutableStateFlow<List<HandedOff>>(emptyList())
@@ -736,6 +741,15 @@ class LibraryFeatures(private val context: Context, private val library: Library
         accounts.writeSync(fresh)
         syncConfig.value = fresh
         applySync(native)
+    }
+
+    fun startSyncOver() = work { native ->
+        if (syncConfig.value != null) return@work
+        val fresh = syncSettings.startOver(syncNewCode()) ?: return@work
+        accounts.writeSync(fresh)
+        syncConfig.value = fresh
+        val waiting = joinWaiting
+        if (waiting != null) joinSync(waiting) else applySync(native)
     }
 
     fun chooseSyncFolder(folder: MusicFolder) {

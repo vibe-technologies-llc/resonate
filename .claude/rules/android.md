@@ -1602,7 +1602,13 @@ unset** (`SyncSettingsReading`): a `KeyStoreException` or `AEADBadTagException` 
 key that would mint a new group and be written over the kept one, as iOS refuses (`ios.md`); sync is
 neither started nor written back, the failure is said once, and the settings are read again each
 time the app comes to the foreground until they read (`LibraryFeatures.readSyncAgain`,
-`SyncSettingsReadingTest`). Sync is on unless switched off and runs
+`SyncSettingsReadingTest`). **A key lost for good is started over by the listener, never on its
+own**: while the settings cannot be read the sync screen says so in place of its list and offers
+*Start over with a new group* (`sync_start_over`), whose confirmation says plainly that every device
+it synced with must be paired again. `LibraryFeatures.startSyncOver` asks
+`SyncSettingsReading.startOver`, which forgets the sealed code (`ProviderAccountStore.forgetSyncKey`),
+reads the plain choices again and takes a code minted by `syncNewCode`, as *Start a new group* does;
+the result is written and applied (a join waiting for the settings is taken then). Sync is on unless switched off and runs
 only while online is, unless `nearby_only` (*Only this network*: `Server::Nowhere`, no server
 dialled, which runs with online off); `sync-nearby-only` defaults off, so the hosted server is dialled. A setting change restarts it; `sync_start` with a blank key
 reuses the code of the sync it replaces, so two starts in a row never mint two codes.

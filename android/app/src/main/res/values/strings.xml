@@ -1766,6 +1766,12 @@
     <string name="sync_new_group_title">Start a new group?</string>
     <string name="sync_new_group_text">This device leaves its current group and gets a new pairing code. Your other devices will need the new code to sync with it.</string>
     <string name="sync_new_group_confirm">Start new group</string>
+    <string name="sync_unreadable">Sync settings can\'t be read</string>
+    <string name="sync_unreadable_told">This device\'s pairing code can\'t be read, so it can\'t sync with its group. If it stays this way, start over with a new group.</string>
+    <string name="sync_start_over">Start over with a new group</string>
+    <string name="sync_start_over_title">Start over with a new group?</string>
+    <string name="sync_start_over_text">The settings that can\'t be read are cleared and this device gets a new pairing code. Every device it synced with must be paired again with the new code.</string>
+    <string name="sync_start_over_confirm">Start over</string>
     <string name="sync_forget_title">Forget %1$s?</string>
     <string name="sync_forget_text">It leaves your list of devices. If it syncs again with your pairing code, it comes back.</string>
     <string name="sync_forget">Forget</string>
