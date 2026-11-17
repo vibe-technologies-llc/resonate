@@ -282,6 +282,7 @@ pub struct Restore {
     envelope: Vec<f64>,
     filled: usize,
     hops: u64,
+    hops_before_a_window_is_whole: u64,
     wall_bin: Option<usize>,
     moving_to: Option<usize>,
     wall_locked: bool,
@@ -325,6 +326,7 @@ impl Restore {
             envelope: Vec::new(),
             filled: 0,
             hops: 0,
+            hops_before_a_window_is_whole: HOPS_BEFORE_A_WINDOW_IS_WHOLE,
             wall_bin: None,
             moving_to: None,
             wall_locked: false,
@@ -455,7 +457,7 @@ impl Restore {
     }
 
     fn whole_windows_heard(&self) -> u64 {
-        self.hops.saturating_sub(HOPS_BEFORE_A_WINDOW_IS_WHOLE)
+        self.hops.saturating_sub(self.hops_before_a_window_is_whole)
     }
 
     fn note(&mut self) {
@@ -1333,6 +1335,8 @@ impl Processor for Restore {
         self.recent.fill(0.0);
         self.following = None;
         self.hops = 0;
+        self.hops_before_a_window_is_whole =
+            HOPS_BEFORE_A_WINDOW_IS_WHOLE + u64::from(self.filled > 0);
         self.wall_bin = self.studied_wall();
         self.moving_to = None;
         self.wall_locked = self.wall_bin.is_some();
@@ -1536,6 +1540,41 @@ mod tests {
         assert_eq!(learnt.wall(), None);
         let wall = f64::from(kept.wall().expect("the studied wall").centihertz()) / 100.0;
         assert!((17_900.0..=18_100.0).contains(&wall), "{wall} Hz was kept");
+    }
+
+    #[test]
+    fn the_next_source_is_read_for_its_wall_without_the_window_that_still_held_the_last() {
+        const PAST_A_HOP: usize = 204;
+        const HEARD_AFTER_THE_TURN: usize = 44_100 * 6 / 10;
+
+        let wide = tones(3 * 44_100 + PAST_A_HOP, 100.0, 20_000.0, 300);
+        let narrow = tones(HEARD_AFTER_THE_TURN, 100.0, 16_000.0, 300);
+        let mut stage = Restore::new(restored(Restoration::Extend));
+        let most = stage
+            .prepare(
+                StreamSpec::new(
+                    SampleRate::HZ_44100,
+                    ChannelLayout::Stereo,
+                    SampleFormat::F32,
+                ),
+                BLOCK,
+            )
+            .expect("the stage prepares");
+        let mut scratch = vec![0.0; most * 2];
+        for block in wide.chunks(BLOCK * 2) {
+            stage.process(block, &mut scratch);
+        }
+
+        stage.forget_the_source_heard();
+        for block in narrow.chunks(BLOCK * 2) {
+            stage.process(block, &mut scratch);
+        }
+
+        let wall = f64::from(stage.wall().expect("a wall of its own").centihertz()) / 100.0;
+        assert!(
+            (15_900.0..=16_300.0).contains(&wall),
+            "the wall was read at {wall} Hz"
+        );
     }
 
     #[test]

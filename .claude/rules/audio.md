@@ -1345,7 +1345,12 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   quarter second rather than extended from the last row's until the follow agrees
   (`a_row_heard_on_without_a_gap_under_restoration_finds_its_own_wall_rather_than_the_last_rows`,
   `a_wall_learnt_from_one_source_is_forgotten_for_the_next_and_a_studied_one_kept`). The windows
-  it overlaps and adds are left alone, so the turn stays gapless. The short memory finds a wall that rose within a fraction
+  it overlaps and adds are left alone, so the turn stays gapless; but where the turn falls inside a
+  hop, the first window read after it still holds the leaving row's last frames, so it waits one hop
+  more before its running spectra read a window (`hops_before_a_window_is_whole`): noted at a
+  running mean's full weight, that one window's band above the entering row's wall kept the wall
+  from being found for seconds
+  (`the_next_source_is_read_for_its_wall_without_the_window_that_still_held_the_last`). The short memory finds a wall that rose within a fraction
   of a second and one that fell after seconds (thirty decibels at a half-second time constant), and
   a dip that comes back within the count, or fades the high frequencies by less than a cliff, is
   never followed (`a_wall_that_moves_up_late_in_a_song_is_followed_without_a_step`,

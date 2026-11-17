@@ -12653,15 +12653,23 @@ const NOISE_SECONDS: usize = 3;
 const NOISE_AMPLITUDE: f64 = 0.3;
 const WINDOW_FRAMES: usize = 2_048;
 
-fn noise_in_an_mp3(tree: &Tree, name: &str, bitrate: &str, cutoff_hz: u32) -> Option<PathBuf> {
-    let path = tree.root.join(name);
+struct Encoded<'a> {
+    name: &'a str,
+    bitrate: &'a str,
+    cutoff_hz: u32,
+    seed: u32,
+}
+
+fn noise_in_an_mp3(tree: &Tree, encoded: &Encoded) -> Option<PathBuf> {
+    let path = tree.root.join(encoded.name);
     let noise = format!(
-        "anoisesrc=color=white:amplitude={NOISE_AMPLITUDE}:sample_rate={RATE}:duration={NOISE_SECONDS}"
+        "anoisesrc=color=white:amplitude={NOISE_AMPLITUDE}:sample_rate={RATE}:duration={NOISE_SECONDS}:seed={}",
+        encoded.seed
     );
     let made = process::Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-f", "lavfi", "-i", &noise, "-ac", "2"])
-        .args(["-c:a", "libmp3lame", "-b:a", bitrate, "-cutoff"])
-        .arg(cutoff_hz.to_string())
+        .args(["-c:a", "libmp3lame", "-b:a", encoded.bitrate, "-cutoff"])
+        .arg(encoded.cutoff_hz.to_string())
         .args(["-id3v2_version", "0"])
         .arg(&path)
         .stdout(process::Stdio::null())
@@ -12716,8 +12724,24 @@ fn a_row_heard_on_without_a_gap_under_restoration_finds_its_own_wall_rather_than
 
     let tree = Tree::new();
     let (Some(wide), Some(narrow)) = (
-        noise_in_an_mp3(&tree, "wide.mp3", "320k", 20_000),
-        noise_in_an_mp3(&tree, "narrow.mp3", "128k", 16_000),
+        noise_in_an_mp3(
+            &tree,
+            &Encoded {
+                name: "wide.mp3",
+                bitrate: "320k",
+                cutoff_hz: 20_000,
+                seed: 1,
+            },
+        ),
+        noise_in_an_mp3(
+            &tree,
+            &Encoded {
+                name: "narrow.mp3",
+                bitrate: "128k",
+                cutoff_hz: 16_000,
+                seed: 2,
+            },
+        ),
     ) else {
         return Ok(());
     };
