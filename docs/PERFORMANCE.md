@@ -4,15 +4,13 @@ Cost: work done more often, in more memory or on a thread it should not be on. F
 are in [ROADMAP.md](ROADMAP.md).
 
 ## Startup and idle
-- [S · 0.12.1] Four channels are polled every `QUIT_POLL` (100 ms) while the window is idle:
-  `follow_the_desktop_when_told`, `follow_when_told` and `raise_when_asked` wake the foreground ten
-  times a second for a `try_recv`, and `close_when_asked` the background executor (`app.rs`), some
-  forty wake-ups a second beside the resting 64 ms poll; one thread blocking on the receivers, or an
-  async channel awaited, wakes only when something comes
 
 ## Android
 
 ## Performance and scale
+- [S · 0.12.1] Opening a playlist's menu still asks `holds_lossy_songs` on the window's thread, against
+  `ui.md`'s *a menu opens at once and never reads the catalog on the window's thread*; read it with
+  the ledger in `PlaylistSynced::read`
 - [S · 0.12.1] Every sync look scans `track_studies` twice and `lyrics_kept` whole: `studies_after`,
   `band_peaks_after` and `lyrics_after` (`answers.rs`) filter and order by `studied` and `taken`, which
   no index holds (`track_studies` is indexed on `verdict` and `agreement` alone, `lyrics_kept` on its
@@ -34,21 +32,6 @@ are in [ROADMAP.md](ROADMAP.md).
   read while Online is on, where `library.md` says a piece of a word is looked up in a trigram index and
   `albums_kept_for` goes through `Infix`; a trigram table kept by triggers (the table is `WITHOUT
   ROWID`) and `Infix::holding`
-- [M · 0.12.1] Opening a playlist's menu reads the sync ledger on the window's thread: `synced_entries`
-  (`views/playlists.rs`) asks `missing_from` and `keeps_songs_of`, which take the ledger's lock and
-  decode every synced playlist's entries to find one (`ledger.rs`), and wait on the lock while the
-  worker merges, against `ui.md`'s *a menu opens at once and never reads the catalog on the window's
-  thread*; read it on the background executor as `open_once_the_copies_are_read` does, and ask the
-  ledger by `local_id`
-- [S · 0.12.1] The sharing sheet reads the catalog on every render: `together.seen(playlist)`
-  (`views/sharing.rs`) does a `playlist_stamp` read and clones the whole `Vec<SharedShown>` each frame
-  the root draws, the root notified every second while it is open, and the playlists pane clones the
-  same snapshot each render for `(id, may_edit)` pairs; keep what the 1 s tick read on `Social`
-- [M · 0.12.1] A pane's own pulse redraws all four regions: the root observes each pane entity with
-  `cx.notify()` and every `Part` observes the root, so the party pane's and the driven zones' 500 ms
-  pulses and the mirror's 1 s one rebuild the header, the sidebar and the bar too, against `ui.md`'s
-  *a frame asked inside a region notifies it alone*; a `Parts::the_pane_moved` beside
-  `the_clock_moved`
 - [M · 0.12.1] A paired phone offers every answer it does not hold to its catalog again on each
   revision: `settle_answers` (`ledger.rs`) reads every `here = 0` row into one `Vec`, decoding each
   blob, and calls `take_answer` for each, skipped only where `answers_tried_at` (held in memory, so
