@@ -317,6 +317,7 @@ impl Output {
             .map_or(0, |written| self.staged.frames().saturating_sub(written));
         self.chain
             .frames_held_after_the_gain()
+            .saturating_add(self.chain.frames_before_the_gain_settles())
             .saturating_add(staged_unwritten)
     }
 

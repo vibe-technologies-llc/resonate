@@ -63,6 +63,16 @@ impl Arms {
         self.other.chain.set_gain(volume, replay_gain);
     }
 
+    pub(super) fn set_gain_of_the_other_after_what_it_holds(
+        &mut self,
+        volume: Volume,
+        replay_gain: AppliedGain,
+    ) {
+        self.other
+            .chain
+            .set_gain_after_what_it_holds(volume, replay_gain);
+    }
+
     pub(super) fn set_equalisation_of_the_other(&mut self, profile: &Arc<Profile>) {
         self.other.chain.set_equalisation(profile);
     }

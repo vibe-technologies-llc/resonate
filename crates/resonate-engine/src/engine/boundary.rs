@@ -203,7 +203,12 @@ impl Engine {
             self.retune_for_the_entering(wanted);
             Ok(())
         } else {
-            self.swap_chain(wanted)
+            let leaving_gain = replay_gain_as_planned(
+                leaving.decoded().packing,
+                &self.config,
+                leaving.replay_gain,
+            );
+            self.swap_chain_turning(wanted, Some(leaving_gain))
         };
         if let (Some(due), Some(entering)) = (leaving.decoding.marker_due(), self.track.as_mut()) {
             entering.decoding.mark_next_with(due);
@@ -241,9 +246,9 @@ impl Engine {
         let volume = output.attenuator.leaves(self.config.volume);
         let planned =
             replay_gain_as_planned(track.decoded().packing, &self.config, track.replay_gain);
-        output.chain.set_gain(volume, planned);
+        output.chain.set_gain_after_what_it_holds(volume, planned);
         if let Some(arms) = output.arms.as_mut() {
-            arms.set_gain_of_the_other(volume, planned);
+            arms.set_gain_of_the_other_after_what_it_holds(volume, planned);
         }
         let delivery = wanted.delivery();
         track.decoding.deliver(delivery);

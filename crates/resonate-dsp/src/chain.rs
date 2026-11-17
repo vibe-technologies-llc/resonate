@@ -149,6 +149,22 @@ impl Chain {
         }
     }
 
+    pub fn set_gain_after_what_it_holds(&mut self, volume: Volume, replay_gain: AppliedGain) {
+        let held = (self.latency.round().max(0.0) as usize)
+            .saturating_sub(self.frames_held_after_the_gain());
+        for stage in &mut self.stages {
+            stage.set_gain_after(volume, replay_gain, held);
+        }
+    }
+
+    pub fn frames_before_the_gain_settles(&self) -> usize {
+        self.stages
+            .iter()
+            .map(|stage| stage.frames_before_the_gain_settles())
+            .max()
+            .unwrap_or(0)
+    }
+
     pub fn set_equalisation(&mut self, profile: &Arc<Profile>) {
         for stage in &mut self.stages {
             stage.set_equalisation(profile);

@@ -79,6 +79,19 @@ pub trait Processor: Send {
     ) {
     }
 
+    fn set_gain_after(
+        &mut self,
+        volume: resonate_core::Volume,
+        replay_gain: resonate_core::AppliedGain,
+        _frames: usize,
+    ) {
+        self.set_gain(volume, replay_gain);
+    }
+
+    fn frames_before_the_gain_settles(&self) -> usize {
+        0
+    }
+
     fn set_equalisation(&mut self, _profile: &std::sync::Arc<resonate_core::eq::Profile>) {}
 
     fn gain_amplitude(&self) -> Option<f32> {

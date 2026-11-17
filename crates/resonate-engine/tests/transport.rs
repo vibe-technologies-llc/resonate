@@ -6242,6 +6242,138 @@ fn a_mute_asked_while_a_boundary_waits_silences_the_leaving_tail_and_the_enterin
     a_level_asked_while_a_boundary_waits_reaches_each_row_at_its_own_gain(Volume::MUTE, 0, 0)
 }
 
+const LEAVING_LEVEL: i16 = 8_000;
+const ENTERING_LEVEL: i16 = 12_000;
+
+fn steady_in_twenty_four_bits(level: i16, frames: usize) -> Vec<u8> {
+    let word = (i32::from(level) << 8).to_le_bytes();
+    let data: Vec<u8> = (0..frames * usize::from(CHANNELS))
+        .flat_map(|_| [word[0], word[1], word[2]])
+        .collect();
+    wave(24, CHANNELS, &data)
+}
+
+#[test]
+fn the_leaving_tail_a_resampler_still_holds_at_a_gapless_turn_is_heard_at_its_own_gain()
+-> Result<()> {
+    the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
+        &steady(ENTERING_LEVEL, FRAMES),
+        Volume::MAX,
+        [4_000, ENTERING_LEVEL],
+    )
+}
+
+#[test]
+fn a_volume_asked_while_a_boundary_waits_behind_a_resampler_reaches_each_row_at_its_own_gain()
+-> Result<()> {
+    the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
+        &steady(ENTERING_LEVEL, FRAMES),
+        Volume::new(0.5).expect("half volume"),
+        [500, 1_500],
+    )
+}
+
+#[test]
+fn the_leaving_tail_a_carried_resampler_holds_at_a_gapless_turn_is_heard_at_its_own_gain()
+-> Result<()> {
+    the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
+        &steady_in_twenty_four_bits(ENTERING_LEVEL, FRAMES),
+        Volume::MAX,
+        [4_000, ENTERING_LEVEL],
+    )
+}
+
+fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
+    entering: &[u8],
+    asked: Volume,
+    [leaving_heard, entering_heard]: [i16; 2],
+) -> Result<()> {
+    const PULLED_BEFORE_THE_ASK: usize = 14_000;
+    const RAMP_AND_MARGIN: usize = 1_000;
+    const TURNING_WITHIN: usize = 1_500;
+    const MEASURED_OVER: usize = 4_500;
+    const TOLERANCE: i16 = 16;
+
+    let tree = Tree::new();
+    let first = tree.write("first.wav", &steady(LEAVING_LEVEL, FRAMES));
+    let second = tree.write("second.wav", entering);
+    let sources = Arc::new(Sources::local().hinted_by(Arc::new(QuieterOnOneRow {
+        quiet: MediaLocation::local(&first),
+        gain: -6.0206,
+    })));
+    let frame = frame_bytes(SampleFormat::S16);
+    let resampled = |frames: usize| frames * 48_000 / RATE as usize;
+
+    let (player, graph) = settled_over(
+        vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S16])],
+        sources,
+        EngineConfig {
+            replay_gain: ReplayGainMode::Track,
+            quality: Quality::VeryHigh,
+            ..ring_deep()
+        },
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    if asked != Volume::MAX {
+        play_until(
+            &player,
+            &graph,
+            SHORT_PULL_FRAMES * frame,
+            |_, graph| graph.played.len() >= PULLED_BEFORE_THE_ASK * frame,
+            "the leaving row to play until its end is in the ring",
+        );
+        thread::sleep(Duration::from_millis(300));
+        assert!(plays(&player, 1), "the boundary was reached before the ask");
+        player
+            .request(Command::SetVolume(asked))?
+            .wait_for(PATIENCE)?;
+    }
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame,
+        |_, graph| graph.played.len() >= resampled(FRAMES + FRAMES / 2) * frame,
+        "the entering row to play",
+    );
+
+    let graph = graph.lock();
+    let heard = left_words(&graph.played);
+    let searched_from = PULLED_BEFORE_THE_ASK + RAMP_AND_MARGIN;
+    let turned = heard
+        .iter()
+        .skip(searched_from)
+        .position(|word| *word > (leaving_heard * 2 + entering_heard) / 2)
+        .map(|at| at + searched_from)
+        .expect("the entering row is heard");
+    let tail = &heard[turned - TURNING_WITHIN - MEASURED_OVER..turned - TURNING_WITHIN];
+    let entering = &heard[turned + TURNING_WITHIN..turned + TURNING_WITHIN + MEASURED_OVER];
+    assert!(
+        tail.iter()
+            .all(|word| (word - leaving_heard).abs() <= TOLERANCE),
+        "the leaving tail was heard at another row's gain: {:?}",
+        tail.iter()
+            .position(|word| (word - leaving_heard).abs() > TOLERANCE)
+            .map(|at| (at, &tail[at..at + 8]))
+    );
+    assert!(
+        entering
+            .iter()
+            .all(|word| (word - entering_heard).abs() <= TOLERANCE),
+        "the entering row was heard at another row's gain: {:?}",
+        entering
+            .iter()
+            .position(|word| (word - entering_heard).abs() > TOLERANCE)
+            .map(|at| (at, &entering[at..at + 8]))
+    );
+    assert_eq!(graph.opens, 1);
+    assert_eq!(graph.drains, 0);
+    Ok(())
+}
+
 fn a_seek_refused_while_a_boundary_waits_leaves_the_handover_gapless(
     sources: Arc<Sources>,
     items: Vec<QueueItem>,

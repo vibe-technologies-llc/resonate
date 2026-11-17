@@ -359,7 +359,23 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   depth): kept, the entering `Track` replaces the leaving one with no flush and no drain. A plan
   `same_shape_as` the open one keeps the chain and only sets its gain
   (`retune_for_the_entering`); any other goes through `swap_chain`, which hands the old chain's held
-  frames on and carries the resampler or convolver across where it can. The ring is told the frame
+  frames on and carries the resampler or convolver across where it can. **The entering row's gain
+  steps on its own first frame, not on the leaving row's last one in.** What the chain still holds
+  ahead of its gain stage (a resampler's or convolver's latency, about 300 ms at Very high) is the
+  leaving row's, so the gain is set after it (`Chain::set_gain_after_what_it_holds`: the chain's
+  rounded latency, the boundary's own offset, less what stages behind the gain hold), and a carried
+  front's new back is built at the leaving row's gain and set the same way (`swap_chain_turning`).
+  `GainStage` keeps up to `STEPS_WAITING_AT_MOST` steps, each on its own frame, so short rows
+  behind one another each step where they begin; `gain_amplitude` answers the last step's
+  amplitude and `frames_before_the_gain_settles` how far off it lands, which
+  `frames_rendered_ahead_of_the_ring` counts, so the announced step and the boundary are one
+  frame. A gain asked while a step waits joins that step and leaves the frames before it as they
+  were rendered, their trim heard through the ring; a reset (a seek) takes every step at once
+  (`the_leaving_tail_a_resampler_still_holds_at_a_gapless_turn_is_heard_at_its_own_gain`,
+  `the_leaving_tail_a_carried_resampler_holds_at_a_gapless_turn_is_heard_at_its_own_gain`,
+  `a_volume_asked_while_a_boundary_waits_behind_a_resampler_reaches_each_row_at_its_own_gain`,
+  `a_volume_asked_while_a_step_waits_joins_the_step_and_leaves_the_frames_before_it`).
+  The ring is told the frame
   (`RingProducer::turn_at`: the rendered and heard amplitude together, announced like `render_at`,
   so the consumer steps both on that frame and leaves the frames either side untouched; a
   `hear_at` asked after the announcement outranks the step, through the ring's turn count; the

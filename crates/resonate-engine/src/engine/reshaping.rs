@@ -1,3 +1,4 @@
+use resonate_core::AppliedGain;
 use resonate_dsp::Easing;
 use smallvec::SmallVec;
 
@@ -157,6 +158,14 @@ impl Engine {
     }
 
     pub(super) fn swap_chain(&mut self, wanted: OutputPlan) -> Result<()> {
+        self.swap_chain_turning(wanted, None)
+    }
+
+    pub(super) fn swap_chain_turning(
+        &mut self,
+        wanted: OutputPlan,
+        leaving_gain: Option<AppliedGain>,
+    ) -> Result<()> {
         let (Some(track), Some(output)) = (self.track.as_mut(), self.output.as_mut()) else {
             return Ok(());
         };
@@ -181,6 +190,13 @@ impl Engine {
             sink_spec: wanted.stream,
             source: error,
         })?;
+        if let Some(leaving_gain) = leaving_gain.filter(|_| carries) {
+            let volume = output.attenuator.leaves(self.config.volume);
+            let entering_gain =
+                replay_gain_as_planned(track.decoded().packing, &self.config, track.replay_gain);
+            chain.set_gain(volume, leaving_gain);
+            chain.set_gain_after_what_it_holds(volume, entering_gain);
+        }
         let brings_the_equaliser =
             wanted.equalisation.is_some() && output.plan.equalisation.is_none();
         if brings_the_equaliser && self.playing {
