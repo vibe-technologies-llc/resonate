@@ -1972,6 +1972,12 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   (`counted_on_the_network`). No server answering is *No media server answered* with *Search again*
   (`server-search-again`, `read_again`), never *Search to begin*
   (`the_media_servers_are_looked_for_only_once_the_pane_opens_and_a_folder_opens_to_its_folders_and_songs`).
+  **A server that cannot be reached is not told the accounts' advice**, since a server found on the
+  network has no setting to check: `Failure::advises` says it may be switched off, asleep or on
+  another network where the service lists the network, and the page offers *Search again*
+  (`server-search-again`, `ServerModel::search_again`: back to the servers and a fresh search) in
+  place of *Try again* (`Failure::is_searched_away`,
+  `a_media_server_that_cannot_be_reached_is_said_to_be_away_and_the_network_searched_again`).
 - **A served song's cover is its service's.** A cover cell for a row whose location any service
   names (`ServerModel::names`) draws `ServerModel::cover` from the service that names it (keyed by
   scheme and cover name), not `Player::art`, in `drawn_cover` and

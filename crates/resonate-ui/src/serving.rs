@@ -194,12 +194,17 @@ impl Failure {
         }
     }
 
-    pub(crate) fn advises(self) -> &'static str {
+    pub(crate) fn advises(self, on_the_network: bool) -> &'static str {
         match self {
             Self::Unwelcome => words::serving::unwelcome_advice(),
+            Self::Unreached if on_the_network => words::serving::unreached_on_the_network_advice(),
             Self::Unreached => words::serving::unreached_advice(),
             Self::Unreadable => words::serving::unreadable_advice(),
         }
+    }
+
+    pub(crate) const fn is_searched_away(self, on_the_network: bool) -> bool {
+        on_the_network && matches!(self, Self::Unreached)
     }
 }
 
@@ -413,6 +418,11 @@ impl ServerModel {
     }
 
     pub(crate) fn read_again(&mut self, cx: &mut Context<Self>) {
+        self.read(cx);
+    }
+
+    pub(crate) fn search_again(&mut self, cx: &mut Context<Self>) {
+        self.trail = vec![Place::Artists];
         self.read(cx);
     }
 

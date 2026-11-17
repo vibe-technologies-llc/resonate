@@ -739,7 +739,8 @@ seam.
   (`MediaServers::server`), wherever the server now answers.
 - **Failures say what happened**: a server that answers no search is `Error::Io` with
   `io::ErrorKind::NotFound` around `NoSuchServer`, a connection that fails `Io`, both away (the
-  window's *The server could not be reached*); a SOAP fault `TurnedAway` with the UPnP code (701, no
+  window's *The server could not be reached*, with a network server's own advice and *Search
+  again*, `ui.md`); a SOAP fault `TurnedAway` with the UPnP code (701, no
   such object), an HTTP status `Refused`, anything unreadable `Unreadable`, an address off the server
   `Unaddressable` (`a_server_gone_is_the_provider_away_and_a_fault_is_the_servers_refusal`).
 - **The window draws it as the network** (`PlaysInPlace::lists_the_network`, true here alone, which
