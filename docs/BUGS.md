@@ -37,52 +37,23 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`IsBusy`) the session stays active and the audio Resonate interrupted is never told to resume
 
 ## Security
-- [S · 0.12.1] One `Append` of many tiny blobs stalls the sync server for everyone: `Reader::blobs`
-  (`wire.rs`) admits a count up to the frame over `SEALED_AT_LEAST + 1`, about 1.15 million in one
-  32 MiB frame, and `Store::append` runs a `SELECT` and a linear `fresh.iter().any` per blob (O(n²))
-  inside `spawn_blocking` holding the one `Mutex<Store>`, before `space_bytes` or `totals_in` is
-  weighed; anyone may claim a space, so a stranger holds every other space's claim, catch-up and
-  append for minutes. A blob count cap in decoding, a set for the repeats and the caps weighed
-  first
 - [M · 0.12.1] The web socket path, the one the hosted server is reached by, keeps no `--frame-bytes`
   budget before a message is whole: tungstenite assembles up to `LARGEST_FRAME` (`web.rs`'s
   `limits`) before `hold(length)` is asked, and a text, ping or pong message is read and passed over
   uncounted by the budget and by `--frames-per-minute`, so 2 048 sessions may each hold 32 MiB where
   `server.md` says the budget bounds them; draw on `FrameBytes` as bytes come off the socket, count
   every message, and say in `server.md` what the web path holds
-- [S · 0.12.1] The server's QUIC transport keeps quinn's default stream counts and windows
-  (`quic.rs`'s `transport()` sets keep-alive and the idle timeout alone): the server takes one bidi
-  stream a connection, but a client may open the other streams and fill each one's receive window,
-  bytes quinn buffers for streams never accepted and the frame budget never weighs; a server transport
-  of one bidi stream, no uni streams and a window just over `LARGEST_FRAME` (check quinn-proto's
-  defaults at the pinned version)
-- [S · 0.12.1] A space's `Close` word is not weighed against the byte caps: `Store::close` writes up
-  to `--record-bytes` into `spaces.closed` without touching `spaces.bytes`, so 10 000 spaces hold
-  about 2.5 GiB beyond `--total-bytes` and `--space-bytes`
 - [M · 0.12.1] One routed IPv6 prefix or a few IPv4 addresses fill the server-wide caps: `guard.rs`
   counts a /64 as one address with 5 spaces, 50 shared spaces and 50 rooms a day, against 10 000
   spaces and 1 024 rooms in all, and a space holding one record outlives the one-day unused sweep
   for `--idle-days`, so a /48 fills the spaces in a day for a year and about 21 IPv4 addresses hold
   every room; aggregate allowances at /56 and /48 (and /24) beside the /64's
-- [S · 0.12.1] A device queues every frame the server sends without bound: `service.rs` reads into an
-  `mpsc::unbounded_channel()` (`read_frames`) and never waits on the loop applying them, so a hostile
-  or third-party server sending `Records` faster than the ledger takes them grows a phone's memory
-  without end; a bounded channel lets flow control hold the server back
 - [S · 0.12.1] A volume's `.Trash-$uid` is used as found: `trash.rs`'s `made()` creates it with
   `DirBuilder::recursive(true).mode(0o700)`, which follows a symlink standing there and takes an
   existing folder without asking its owner or mode, so on a shared or second disk another user who
   made the folder first receives every song deleted from that volume and its `.trashinfo`; refuse
   unless it and its `files` and `info` are real folders owned by the uid with no group or other bits
   (`Owner::keeps_alone`, as the spool does), which the *no trash is no deletion* rule then keeps
-- [S · 0.12.1] The Last.fm API key is logged: `LastfmHistory::asked` (`history.rs`) puts `api_key` in
-  the query, and `json_within` and the busy retry log the whole URL at debug (`client.rs`), so a log
-  shared with a bug report carries it, where `online.md` withholds every `lastfm-` key; log the host
-  and op alone
-- [S · 0.12.1] A redirected POST carries the contact to another host: `Sending::Post` (`client.rs`)
-  sends the introduced User-Agent (the contact, for MetaBrainz hosts such as ListenBrainz) with the
-  agent's own redirects on, while only `got` follows redirects by hand and drops the contact off the
-  host; `max_redirects(0)` on a post, as `upload_file_to` has, and a POST twin of
-  `a_contact_is_not_carried_through_a_redirect_to_another_host`
 - [S · 0.12.1] A staged copy holds a private file's bytes under the umask until its mode is copied
   over: `copied_into` (`writing.rs`) and organise's `copied_whole` write the whole track into a
   `Held::made` file made `0644` and only then `set_permissions`, so a `0600` song in a folder others
@@ -92,9 +63,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   or `?` as the host, so `http://localhost:1@other.example/` reads as localhost and would send the
   bearer key in the clear to another host; latent while `with_secret` is handed only `OWN_SERVER`.
   Parse with `http::Uri`, refuse userinfo, compare the host exactly
-- [S · 0.12.1] Investigate: the MusicBrainz export's download agent (`download.rs`) is not
-  `https_only`, and `SHA256SUMS` comes over the same agent as the archives, so a redirect to
-  `http://` would let the network replace both; the online client is `https_only` already
 - [S · 0.12.1] Investigate: the shared-list page's CSP is `script-src 'unsafe-inline'` with no
   `frame-ancestors` (`pages.rs`), while the page holds the list's read key in `location.hash`; every
   output is `textContent` today, so nothing runs, but hashes of the fixed scripts and
@@ -124,9 +92,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   29-day-old answer becomes new here and is told back to the device it came from, whose older copy it
   replaces; two devices keep a stale answer alive for good, and the never-tell-back rule fails on this
   path. `consult` should answer the original `at` and the device
-- [S · 0.12.1] The server's gateway cache drops a fill on a short first read: `gateway.rs` clears
-  `source.fill` where `at == 0` and the chunk does not start with `FLAC_MARKER`, so a first read of one
-  to three bytes leaves a valid FLAC uncached and fetched again on every ask
 - [S · 0.12.1] Investigate: restarting sync can leave it off with nothing said: `released` waits
   `RELEASED_WITHIN` (5 s) for its own handle while `AskedOfDevices` and the window's `with` calls hold
   clones, so the old `Running` still holds `sync.lock`, the new start's `alone()` meets `WouldBlock`
@@ -204,20 +169,9 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   listener's to grant
 
 ## Providers and network
-- [S · 0.12.1] A long `Retry-After` is cut to 10 s before the pacer sees it: `named_cooling_off`
-  (`client.rs`) caps it at `RETRY_AFTER_AT_MOST` before `heard` and `backed_off` record it, so the
-  branch ending a call past `PACING_WITHIN` and keeping the host's cooldown (`online.md`'s *a later
-  call never asks early*) is reached by its test alone, and a 429 asking for an hour is asked again
-  every 10 s; keep the uncapped cooldown for the host and cap only the sleep in the call
-- [S · 0.12.1] ListenBrainz history paging drops listens at a page's edge: `history.rs` sends a full
-  page's earliest `listened_at` back as `max_ts`, which ListenBrainz reads as exclusive, so listens
-  sharing that second past the 1 000th (a bulk import) are skipped
 - [S · 0.12.1] TIDAL's device sign-in panics on a huge `interval`: `sign_in.rs` makes
   `Duration::from_secs(interval)` unchecked and `every += self.slowed_by` on `slow_down` overflows,
   against `providers.md`'s *a number the service gives is checked before it is added to*
-- [S · 0.12.1] A MusicBrainz replication packet is read whole and cut silently: `download.rs` reads
-  `take(LARGEST_PACKET)` (1 GiB) into a `Vec` with no read one byte past, so a packet too large
-  surfaces as a bzip2 or parse error, after up to a gigabyte is held on the follow thread
 - [S · 0.12.1] Investigate: a resumed or seeking download counts decoded bytes and asks for encoded
   ranges: every agent has ureq's `gzip`, and `ranged.rs` and `seeking.rs` send `Range: bytes=<read>-`
   from what was decoded, so a Subsonic or Jellyfin server (or a proxy) that gzips audio resumes at the
