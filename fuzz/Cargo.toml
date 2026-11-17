@@ -220,6 +220,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "replication"
+path = "fuzz_targets/replication.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "upnp"
 path = "fuzz_targets/upnp.rs"
 test = false

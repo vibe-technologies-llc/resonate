@@ -3135,6 +3135,7 @@ dependencies = [
 name = "resonate-server"
 version = "0.13.0"
 dependencies = [
+ "base64",
  "clap",
  "httparse",
  "parking_lot 0.13.0",

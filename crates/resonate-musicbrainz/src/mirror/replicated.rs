@@ -316,6 +316,14 @@ fn pending_in(rows: impl BufRead, sequence: u64) -> Result<Vec<Change>> {
     Ok(pending.into_iter().map(|(_, _, change)| change).collect())
 }
 
+#[cfg(fuzzing)]
+pub(crate) fn read_pending_changes(rows: &[u8]) {
+    let _ = pending_in(rows, 0);
+    if let Ok(text) = std::str::from_utf8(rows) {
+        let _ = object_of(text);
+    }
+}
+
 pub fn packet_read(packed: impl Read, asked: u64) -> Result<Packet> {
     let decoded = mibz2::BzReader::new(packed);
     let mut archive = tar::Archive::new(decoded);

@@ -41,6 +41,7 @@ pub fn read_a_shared_page(page: &str) {
     let _ = crate::youtube::read_listed(page);
     let _ = crate::tidal::read_embedded(page);
     let _ = crate::linked::read_pages(page);
+    let _ = crate::apple::read_served(page);
 }
 
 pub use crate::{

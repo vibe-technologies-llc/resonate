@@ -186,9 +186,13 @@ Linux sound server or GUI libraries are needed.
   indexing and the reader, and the vault's `standing::of_a_flac` and `of_a_packed_wave`), `padding` (the tag writer's padded heads and its Matroska rewrite, then a picture attached to what the rewrite laid, as a keep writes them, kind 5), `journal` (an undo journal,
   sealed by the seam so the checksum is not the fuzzer's to guess, and a whole copy's trailer and record read off a file), `overlay` (the write overlay
   driven against a byte-vector model, then landed), `cover` (`Drawing::of` and its scalings), `transcode` (the vault's JPEG-to-JXL transcode and its reconstruction),
-  `pages` (the shared-page, Spotify, YouTube, TIDAL embed and song.link readers), `manifest` (TIDAL's BTS and
+  `pages` (the shared-page, Spotify, YouTube, TIDAL embed, song.link and Apple Music readers), `manifest` (TIDAL's BTS and
   DASH documents), `kept` (the analysis cache reader), `sofa` (an HRIR set through `hdf5-reader`, whole and streamed from a held source), `musicbrainz`
-  (a lookup and an answer read back as themselves, and a line of the export's COPY text), `upnp` (an SSDP
+  (a lookup and an answer read back as themselves, and a line of the export's COPY text), `replication`
+  (an input opening as bzip2 read whole as a replication packet through `packet_read`, bzip2 and
+  tar, holding that one read is the sequence asked, and every input as `pending_data` rows and their
+  JSON alone, seeded with the packets `tests/mirror.rs` replicates; `mibz2` sets up its decoder for
+  each packet, so a packet runs at about a dozen inputs a second), `upnp` (an SSDP
   answer, a renderer's description, a chunked body, a SOAP answer, an address and the stream server's request head (`serve::read_a_request_head`), holding that no
   control address leaves the host that described the renderer; and what a control point asks the
   media server: an `M-SEARCH`, a request head and path, a GENA head, a `SearchCriteria`, an object

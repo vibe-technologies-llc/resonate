@@ -6,6 +6,7 @@ paths:
   - "crates/resonate-mobile/src/enrichment.rs"
   - "crates/resonate-mobile/src/sync/consulted.rs"
   - "fuzz/fuzz_targets/musicbrainz.rs"
+  - "fuzz/fuzz_targets/replication.rs"
 ---
 
 # MusicBrainz kept here, asked of a device, and the answers kept
@@ -367,7 +368,11 @@ then their own. `REPLICATION_SEQUENCE` naming another number than the one asked 
   (`a_replication_packet_rewrites_the_documents_its_changes_touch_and_nothing_is_built_again`,
   `a_packet_of_another_schema_stops_replication_where_it_stood_and_a_new_build_lets_the_changes_go`,
   `a_mirror_built_without_its_tables_cannot_follow_the_changes`,
-  `a_packet_naming_another_number_than_the_one_asked_for_is_refused`).
+  `a_packet_naming_another_number_than_the_one_asked_for_is_refused`). A packet is read off the
+  network every hour, so `fuzz/fuzz_targets/replication.rs` reads one whole (`packet_read`) and its
+  `pending_data` rows alone (`read_pending_changes`, the hand-written JSON `Parser`); its seeds are
+  the packets this suite replicates
+  (`the_replication_seeds_hold_the_packets_this_suite_replicates`).
 - **The binary follows hourly.** `musicbrainz::follow_the_changes` (started by `keep_fresh`, and by
   the settings pane when the token is given) runs a `resonate-musicbrainz-follow` thread while the
   mirror, Online and the token are on: every `FOLLOWED_EVERY` (an hour) it calls `replicate`, never

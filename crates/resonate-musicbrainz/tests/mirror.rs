@@ -853,9 +853,14 @@ fn pending(seq: u64, table: &str, xid: u64, old: Option<&str>, new: Option<&str>
     )
 }
 
-fn packet(sequence: u64, schema: u32, changes: &[String]) -> Packet {
+fn pending_data(changes: &[String]) -> String {
     let mut body = changes.join("\n");
     body.push('\n');
+    body
+}
+
+fn packet(sequence: u64, schema: u32, changes: &[String]) -> Packet {
+    let body = pending_data(changes);
     let mut packed = Vec::new();
     archived(
         &mut packed,
@@ -881,85 +886,85 @@ fn recording_json(id: u32, gid: &str, name: &str, length: u32) -> String {
 }
 
 fn first_packet() -> Packet {
-    packet(
-        DUMPED_AT_SEQUENCE + 1,
-        SCHEMA,
-        &[
-            pending(
+    packet(DUMPED_AT_SEQUENCE + 1, SCHEMA, &first_changes())
+}
+
+fn first_changes() -> Vec<String> {
+    vec![
+        pending(
+            1,
+            "recording",
+            7,
+            Some(&recording_json(1, CREEP, "Creep", 238_000)),
+            Some(&recording_json(
                 1,
-                "recording",
-                7,
-                Some(&recording_json(1, CREEP, "Creep", 238_000)),
-                Some(&recording_json(
-                    1,
-                    CREEP,
-                    "Creep (Remastered 2009)",
-                    238_000,
-                )),
+                CREEP,
+                "Creep (Remastered 2009)",
+                238_000,
+            )),
+        ),
+        pending(
+            2,
+            "recording",
+            8,
+            None,
+            Some(&recording_json(4, REMASTERED, "Stop Whispering", 326_000)),
+        ),
+        pending(
+            3,
+            "isrc",
+            8,
+            None,
+            Some(&format!(
+                r#"{{"id":9,"recording":4,"isrc":"{REMASTERED_CODE}","source":null,"edits_pending":0,"created":null}}"#
+            )),
+        ),
+        pending(
+            4,
+            "track",
+            8,
+            None,
+            Some(&format!(
+                r#"{{"id":3,"gid":"{TRACK_THREE}","recording":4,"medium":1,"position":3,"number":"3","name":"Stop Whispering","artist_credit":1,"length":326000,"edits_pending":0,"last_updated":null,"is_data_track":false}}"#
+            )),
+        ),
+        pending(
+            5,
+            "medium",
+            8,
+            Some(
+                r#"{"id":1,"release":1,"position":1,"format":1,"name":"","edits_pending":0,"last_updated":null,"track_count":2,"gid":"9d9d9d9d-0000-4000-8000-000000000001"}"#,
             ),
-            pending(
-                2,
-                "recording",
-                8,
-                None,
-                Some(&recording_json(4, REMASTERED, "Stop Whispering", 326_000)),
+            Some(
+                r#"{"id":1,"release":1,"position":1,"format":1,"name":"","edits_pending":0,"last_updated":null,"track_count":3,"gid":"9d9d9d9d-0000-4000-8000-000000000001"}"#,
             ),
-            pending(
-                3,
-                "isrc",
-                8,
-                None,
-                Some(&format!(
-                    r#"{{"id":9,"recording":4,"isrc":"{REMASTERED_CODE}","source":null,"edits_pending":0,"created":null}}"#
-                )),
+        ),
+        pending(
+            6,
+            "recording",
+            9,
+            Some(&recording_json(3, HEARING, "Hearing Damage", 300_000)),
+            None,
+        ),
+        pending(
+            7,
+            "release_country",
+            10,
+            Some(r#"{"release":1,"country":10,"date_year":1993,"date_month":2,"date_day":22}"#),
+            Some(r#"{"release":1,"country":10,"date_year":1993,"date_month":4,"date_day":20}"#),
+        ),
+        pending(
+            8,
+            "url",
+            11,
+            Some(
+                r#"{"id":1,"gid":"5e5e5e5e-0000-4000-8000-000000000001","url":"https://www.wikidata.org/wiki/Q44190","edits_pending":0,"last_updated":null}"#,
             ),
-            pending(
-                4,
-                "track",
-                8,
-                None,
-                Some(&format!(
-                    r#"{{"id":3,"gid":"{TRACK_THREE}","recording":4,"medium":1,"position":3,"number":"3","name":"Stop Whispering","artist_credit":1,"length":326000,"edits_pending":0,"last_updated":null,"is_data_track":false}}"#
-                )),
+            Some(
+                r#"{"id":1,"gid":"5e5e5e5e-0000-4000-8000-000000000001","url":"https://www.wikidata.org/wiki/Q44191","edits_pending":0,"last_updated":null}"#,
             ),
-            pending(
-                5,
-                "medium",
-                8,
-                Some(
-                    r#"{"id":1,"release":1,"position":1,"format":1,"name":"","edits_pending":0,"last_updated":null,"track_count":2,"gid":"9d9d9d9d-0000-4000-8000-000000000001"}"#,
-                ),
-                Some(
-                    r#"{"id":1,"release":1,"position":1,"format":1,"name":"","edits_pending":0,"last_updated":null,"track_count":3,"gid":"9d9d9d9d-0000-4000-8000-000000000001"}"#,
-                ),
-            ),
-            pending(
-                6,
-                "recording",
-                9,
-                Some(&recording_json(3, HEARING, "Hearing Damage", 300_000)),
-                None,
-            ),
-            pending(
-                7,
-                "release_country",
-                10,
-                Some(r#"{"release":1,"country":10,"date_year":1993,"date_month":2,"date_day":22}"#),
-                Some(r#"{"release":1,"country":10,"date_year":1993,"date_month":4,"date_day":20}"#),
-            ),
-            pending(
-                8,
-                "url",
-                11,
-                Some(
-                    r#"{"id":1,"gid":"5e5e5e5e-0000-4000-8000-000000000001","url":"https://www.wikidata.org/wiki/Q44190","edits_pending":0,"last_updated":null}"#,
-                ),
-                Some(
-                    r#"{"id":1,"gid":"5e5e5e5e-0000-4000-8000-000000000001","url":"https://www.wikidata.org/wiki/Q44191","edits_pending":0,"last_updated":null}"#,
-                ),
-            ),
-        ],
-    )
+        ),
+    ]
 }
 
 fn replicated_through(
@@ -1244,4 +1249,40 @@ fn a_received_file_that_is_no_copy_is_refused_and_the_copy_held_stays() {
     removed_copy(&phone).expect("the copy removed");
 
     assert!(!mirror_in(&phone).exists());
+}
+
+fn replication_seed(name: &str) -> Vec<u8> {
+    fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fuzz/seeds/replication")
+            .join(name),
+    )
+    .expect("a replication seed")
+}
+
+#[test]
+fn the_replication_seeds_hold_the_packets_this_suite_replicates() {
+    let asked = DUMPED_AT_SEQUENCE + 1;
+
+    let read = packet_read(replication_seed("packet").as_slice(), asked).expect("a packet read");
+    let another = packet_read(replication_seed("packet-another-number").as_slice(), asked).err();
+    let first_form = packet_read(replication_seed("packet-first-form").as_slice(), asked).err();
+
+    assert_eq!(
+        String::from_utf8(replication_seed("pending-data")).expect("text"),
+        pending_data(&first_changes())
+    );
+    assert_eq!((read.sequence, read.schema), (asked, SCHEMA));
+    assert_eq!(read.changes(), first_packet().changes());
+    assert!(matches!(
+        another,
+        Some(Error::PacketSequence {
+            asked: 101,
+            found: 7
+        })
+    ));
+    assert!(matches!(
+        first_form,
+        Some(Error::PacketForm { sequence: 101 })
+    ));
 }

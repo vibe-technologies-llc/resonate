@@ -31,3 +31,8 @@ pub const KEPT_FILE: &str = "kept.sqlite";
 pub fn read_a_copy_line(line: &[u8]) {
     mirror::read_a_copy_line(line);
 }
+
+#[cfg(fuzzing)]
+pub fn read_pending_changes(rows: &[u8]) {
+    mirror::replicated::read_pending_changes(rows);
+}

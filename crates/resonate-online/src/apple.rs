@@ -42,6 +42,11 @@ pub(crate) fn playlist_named(
     Ok(held.and_then(|held| served(&String::from_utf8_lossy(&held))))
 }
 
+#[cfg(fuzzing)]
+pub(crate) fn read_served(page: &str) -> Option<LinkedPlaylist> {
+    served(page)
+}
+
 fn served(page: &str) -> Option<LinkedPlaylist> {
     let from = page.find(SERVER_DATA_OPENS)? + SERVER_DATA_OPENS.len();
     let rest = page.get(from..)?;
