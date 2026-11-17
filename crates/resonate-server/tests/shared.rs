@@ -298,7 +298,10 @@ struct Person {
 
 impl Hosted {
     fn person(&self, name: &str, shelf: Shelf) -> Person {
-        let shelf = Arc::new(shelf);
+        self.person_on(name, Arc::new(shelf))
+    }
+
+    fn person_on(&self, name: &str, shelf: Arc<Shelf>) -> Person {
         let shared = Shared::start(
             SharedSettings {
                 server: Reached::At(format!("ws://{}/", self.address)),
@@ -784,14 +787,22 @@ fn what_is_held_is_shown_the_moment_the_service_starts() {
     let list = ada.shelf.made("Mix", &["One"]);
     ada.shared.share(list).expect("shared");
 
-    drop(ada);
-    let again = hosted.person("Ada", Shelf::default());
+    let Person { shelf, shared } = ada;
+    drop(shared);
+    let again = hosted.person_on("Ada", shelf);
 
     assert_eq!(
         again.shared.shown().len(),
         1,
         "the terminal reads this straight after starting, with no wait to lean on"
     );
+
+    eventually("the restarted service reaching the server", &again, || {
+        shown_on(&again)
+            .first()
+            .is_some_and(|shown| shown.standing == SharedStanding::Reached)
+    });
+    assert_eq!(shown_on(&again).len(), 1);
 }
 
 fn the_page_of(hosted: &Hosted) -> String {
