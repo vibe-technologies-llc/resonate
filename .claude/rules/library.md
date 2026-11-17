@@ -1667,7 +1667,10 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   (`a_tag_run_written_into_a_sheet_is_put_back_after_organise_moved_the_sheet_and_its_file`,
   `a_tag_run_written_into_a_sheet_is_put_back_after_a_hand_move_the_scan_followed`).
 - **The catalog follows the file, which the next scan reads.** A write changes size and mtime, so
-  `files_retagged` writes both back (next walk: row unchanged) and `tagged_title`, `tagged_artist`,
+  `files_retagged` writes both back (next walk: row unchanged), stamped as `TagSink::write` returns
+  and before the read-back, so another program's edit landing while the write is read back leaves
+  the row behind the file and the next scan reads it
+  (`an_edit_another_program_lands_while_a_write_is_read_back_is_read_by_the_next_scan`), and `tagged_title`, `tagged_artist`,
   `title_sort`, `artist_sort`, only for fields it wrote (an unrecorded corrected title would read as
   the tagger moving it and null `answered`). A written file's `track_studies` and `unstudied` rows
   are held across the follow (`analysis.md`).

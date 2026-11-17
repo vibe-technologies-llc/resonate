@@ -861,6 +861,14 @@ fn written(tags: &dyn TagSink, write: &Written) -> std::result::Result<Followed,
         );
         return Err(Unwritten::Refused);
     }
+    let landed = fs::metadata(&write.path).map_err(|source| {
+        tracing::warn!(
+            path = %write.path.display(),
+            %source,
+            "a file could not be stamped after its tags were written"
+        );
+        Unwritten::Unconfirmed
+    })?;
 
     let picturing = match write.picture {
         Some(_) => Picturing::Copied,
@@ -925,23 +933,14 @@ fn written(tags: &dyn TagSink, write: &Written) -> std::result::Result<Followed,
         }
     }
 
-    let stamped = fs::metadata(&write.path).map_err(|source| {
-        tracing::warn!(
-            path = %write.path.display(),
-            %source,
-            "a file could not be stamped after its tags were written"
-        );
-        Unwritten::Unconfirmed
-    })?;
-
     Ok(Followed {
         track: write.track,
         title: wrote(write, TagField::Title),
         artist: wrote(write, TagField::Artist),
         title_sort: wrote(write, TagField::TitleSort),
         artist_sort: wrote(write, TagField::ArtistSort),
-        file_size: stamped.len(),
-        modified: stamped.modified().unwrap_or_else(|_| SystemTime::now()),
+        file_size: landed.len(),
+        modified: landed.modified().unwrap_or_else(|_| SystemTime::now()),
     })
 }
 

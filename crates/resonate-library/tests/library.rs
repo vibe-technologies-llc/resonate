@@ -21506,6 +21506,116 @@ fn a_write_that_lands_but_reads_back_otherwise_can_still_be_put_back() -> Result
     Ok(())
 }
 
+struct EditedDuringTheReadBack {
+    tags: FileTags,
+    written: AtomicBool,
+}
+
+impl EditedDuringTheReadBack {
+    fn edited_by_another_program(&self, location: &MediaLocation) -> resonate_codec::Result<()> {
+        let path = location.as_path().expect("a local file");
+        let genre = [TagEdit {
+            field: TagField::Genre,
+            value: "Ambient".to_owned(),
+        }];
+
+        self.tags.write(
+            location,
+            resonate_codec::Writing {
+                edits: &genre,
+                taken: &[],
+                picture: None,
+                unpictured: false,
+                popularity: None,
+            },
+        )?;
+        let touched = fs::metadata(path).and_then(|held| held.modified());
+        let later = touched.expect("a written file's time") + Duration::from_secs(3_600);
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .and_then(|file| file.set_modified(later))
+            .expect("another program's edit lands later");
+        Ok(())
+    }
+}
+
+impl TagSource for EditedDuringTheReadBack {
+    fn read(
+        &self,
+        location: &MediaLocation,
+        picturing: Picturing,
+    ) -> resonate_codec::Result<resonate_library::Tagged> {
+        if self.written.swap(false, Ordering::SeqCst) {
+            self.edited_by_another_program(location)?;
+        }
+        self.tags.read(location, picturing)
+    }
+}
+
+impl TagSink for EditedDuringTheReadBack {
+    fn writes(&self, location: &MediaLocation) -> bool {
+        self.tags.writes(location)
+    }
+
+    fn write(
+        &self,
+        location: &MediaLocation,
+        writing: resonate_codec::Writing<'_>,
+    ) -> resonate_codec::Result<()> {
+        self.tags.write(location, writing)?;
+        self.written.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+
+    fn rated(&self, location: &MediaLocation) -> resonate_codec::Result<Rated> {
+        self.tags.rated(location)
+    }
+}
+
+#[test]
+fn an_edit_another_program_lands_while_a_write_is_read_back_is_read_by_the_next_scan() -> Result<()>
+{
+    let tree = Tree::new();
+    let file = tree.write(
+        "1.aiff",
+        &Aiff::new()
+            .text(TITLE, "Echos")
+            .text(ARTIST, "The Orbiters")
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+
+    let retagged = library
+        .retag(
+            Arc::new(EditedDuringTheReadBack {
+                tags: FileTags::default(),
+                written: AtomicBool::new(false),
+            }),
+            RetagOptions {
+                roots: Vec::new(),
+                apply: true,
+                undo: false,
+            },
+        )?
+        .join()?;
+    scan(&library, &options(&tree))?;
+    let tracks = library.tracks(&TrackQuery::default())?;
+
+    assert_eq!(retagged.stats.written, 1);
+    assert_eq!(tags_of(&file).genre.as_deref(), Some("Ambient"));
+    assert_eq!(tracks.len(), 1);
+    assert_eq!(
+        tracks[0].genre.as_deref(),
+        Some("Ambient"),
+        "an edit landing between the write and its read-back was taken for the write's own"
+    );
+    Ok(())
+}
+
 #[test]
 fn a_tag_run_the_catalog_cannot_note_writes_no_file() -> Result<()> {
     let tree = Tree::new();
