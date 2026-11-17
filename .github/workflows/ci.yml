@@ -296,10 +296,12 @@ jobs:
               *) echo "::error::resonate-win32 is reached by $by"; failed=1 ;;
             esac
           done
+          only resonate-linux
+          reached_directly_on x86_64-unknown-linux-gnu resonate-linux resonate-codec
           check "resonate-listen on Windows" "$(held_by -p resonate-listen --target x86_64-pc-windows-msvc -e normal)" \
             resonate-pipewire resonate-wasapi pipewire libspa gpui ureq
           check "resonate on Windows" "$(held_by -p resonate --target x86_64-pc-windows-msvc)" \
-            resonate-pipewire pipewire libspa wayland-client wayland-protocols rustix
+            resonate-pipewire pipewire libspa wayland-client wayland-protocols rustix resonate-linux
           check "resonate-mobile on iOS" "$(held_by -p resonate-mobile --target aarch64-apple-ios)" \
             resonate-pipewire pipewire libspa gpui resonate-mpris resonate-discord oboe
           refuse resonate-coreaudio resonate-codec resonate-dsp resonate-pipewire resonate-wasapi pipewire libspa gpui
@@ -313,7 +315,7 @@ jobs:
           check "resonate-listen on macOS" "$(held_by -p resonate-listen --target aarch64-apple-darwin -e normal)" \
             resonate-pipewire resonate-wasapi resonate-coreaudio pipewire libspa gpui ureq
           check "resonate on macOS" "$(held_by -p resonate --target aarch64-apple-darwin)" \
-            resonate-pipewire resonate-wasapi resonate-win32 pipewire libspa wayland-client wayland-protocols wasapi windows
+            resonate-pipewire resonate-wasapi resonate-win32 resonate-linux pipewire libspa wayland-client wayland-protocols wasapi windows
           exit "$failed"
 
   windows:

@@ -18,6 +18,7 @@ members = [
     "crates/resonate-pipewire",
     "crates/resonate-wasapi",
     "crates/resonate-win32",
+    "crates/resonate-linux",
     "crates/resonate-engine",
     "crates/resonate-eq",
     "crates/resonate-fetch",
@@ -179,6 +180,7 @@ jxl-oxide = { version = "0.12.6", default-features = false }
 
 pipewire = { version = "0.10.1", default-features = false, features = ["v0_3_50"] }
 libspa = { version = "0.10.1", default-features = false }
+libc = { version = "0.2.191", default-features = false }
 
 rustix = {
     version = "1.1.6",
@@ -298,6 +300,7 @@ resonate-dsp = { version = "0.13.0", path = "crates/resonate-dsp" }
 resonate-pipewire = { version = "0.13.0", path = "crates/resonate-pipewire" }
 resonate-wasapi = { version = "0.13.0", path = "crates/resonate-wasapi" }
 resonate-win32 = { version = "0.13.0", path = "crates/resonate-win32" }
+resonate-linux = { version = "0.13.0", path = "crates/resonate-linux" }
 resonate-engine = { version = "0.13.0", path = "crates/resonate-engine" }
 resonate-eq = { version = "0.13.0", path = "crates/resonate-eq" }
 resonate-fetch = { version = "0.13.0", path = "crates/resonate-fetch" }

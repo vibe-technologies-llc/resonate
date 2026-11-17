@@ -6,7 +6,11 @@ use crate::journal::{Change, Undo};
 
 pub(crate) trait Shifting {
     fn block_of(&self, file: &File) -> Option<u64>;
-    fn read_elsewhere(&self, file: &File) -> bool;
+    fn while_alone(
+        &self,
+        file: &File,
+        work: &mut dyn FnMut() -> io::Result<bool>,
+    ) -> Option<io::Result<bool>>;
     fn inserted(&self, file: &File, bytes: u64) -> io::Result<()>;
     fn collapsed(&self, file: &File, bytes: u64) -> io::Result<()>;
 }
@@ -23,6 +27,7 @@ mod fallocating {
         process,
     };
 
+    use resonate_linux::{Error as LeaseError, Lease};
     use rustix::fs::{FallocateFlags, fallocate, fstatfs, fstatvfs};
 
     use super::{Fallocate, Shifting};
@@ -94,8 +99,23 @@ mod fallocating {
             Some(fstatvfs(file).ok()?.f_bsize).filter(|block| *block > 0)
         }
 
-        fn read_elsewhere(&self, file: &File) -> bool {
-            held_open_elsewhere(file)
+        fn while_alone(
+            &self,
+            file: &File,
+            work: &mut dyn FnMut() -> io::Result<bool>,
+        ) -> Option<io::Result<bool>> {
+            match Lease::taken(file) {
+                Ok(lease) => {
+                    let worked = work();
+                    drop(lease);
+                    Some(worked)
+                }
+                Err(LeaseError::OpenElsewhere) => None,
+                Err(error) => {
+                    tracing::debug!(%error, "no write lease could be taken on the track, so the processes holding it are looked for instead");
+                    (!held_open_elsewhere(file)).then(work)
+                }
+            }
         }
 
         fn inserted(&self, file: &File, bytes: u64) -> io::Result<()> {
@@ -116,8 +136,12 @@ impl Shifting for Fallocate {
         None
     }
 
-    fn read_elsewhere(&self, _: &File) -> bool {
-        true
+    fn while_alone(
+        &self,
+        _: &File,
+        _: &mut dyn FnMut() -> io::Result<bool>,
+    ) -> Option<io::Result<bool>> {
+        None
     }
 
     fn inserted(&self, _: &File, _: u64) -> io::Result<()> {
@@ -215,8 +239,12 @@ impl Shifting for Copying {
         Some(self.block)
     }
 
-    fn read_elsewhere(&self, _: &File) -> bool {
-        false
+    fn while_alone(
+        &self,
+        _: &File,
+        work: &mut dyn FnMut() -> io::Result<bool>,
+    ) -> Option<io::Result<bool>> {
+        Some(work())
     }
 
     fn inserted(&self, file: &File, bytes: u64) -> io::Result<()> {
@@ -241,8 +269,12 @@ impl Shifting for Refusing {
         Some(4096)
     }
 
-    fn read_elsewhere(&self, _: &File) -> bool {
-        false
+    fn while_alone(
+        &self,
+        _: &File,
+        work: &mut dyn FnMut() -> io::Result<bool>,
+    ) -> Option<io::Result<bool>> {
+        Some(work())
     }
 
     fn inserted(&self, _: &File, _: u64) -> io::Result<()> {
@@ -322,6 +354,21 @@ mod tests {
         drop(reader);
 
         assert!(while_read);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[test]
+    fn a_track_is_worked_on_alone_only_while_no_other_handle_holds_it() {
+        let track = Scratch::holding("leased", &counted(64));
+        let writing = track.opened();
+
+        let reader = File::open(&track.0).expect("a reader");
+        let while_read = Fallocate.while_alone(&writing, &mut || Ok(true));
+        drop(reader);
+        let alone = Fallocate.while_alone(&writing, &mut || Ok(true));
+
+        assert!(while_read.is_none());
+        assert!(matches!(alone, Some(Ok(true))));
     }
 
     #[cfg(any(target_os = "linux", target_os = "android"))]

@@ -11,7 +11,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `android.md` | Android Gradle project, the mobile boundary and binding tool | Compose, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
 | `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target, the phones' zones |
 | `ios.md` | `ios/**`, the RemoteIO output, resonate-apple's unit | the xtool toolchain, the native library and bindings, the App Intents metadata, hardening, the shape of the SwiftUI app, Siri |
-| `dependencies.md` | `**/Cargo.toml` | version pinning, crate layering, feature flags that are not optional |
+| `dependencies.md` | `**/Cargo.toml`, resonate-linux | version pinning, crate layering, the `unsafe` exceptions and `resonate-linux`'s lease, feature flags that are not optional |
 | `binary.md` | the binary, its grammar (`resonate-cli`), the settings pane | the CLI grammar, file arguments and URIs, the MIME list, signals, the terminal, the settings decisions, the settings file |
 | `realtime.md` | engine, pipewire, the Oboe and AudioUnit callbacks, the Core Audio fill, dsp, `listen::recording`, `core::rt` | the audio-callback contract |
 | `audio.md` | engine, codec, dsp, pipewire | decode, the prescan guards, transport, queue, zones, sleep, resumption, what is published, DSP, sink |
@@ -80,7 +80,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Forty-four crates. `resonate-core` is the only universal dependency, beside `resonate-words`, the
+Forty-five crates. `resonate-core` is the only universal dependency, beside `resonate-words`, the
 leaf every crate that says words reaches; `resonate-codec`, `resonate-dsp` and `resonate-pipewire`
 never depend on each other; `resonate-engine` joins them.
 
@@ -120,6 +120,7 @@ resonate            bin: CLI, tracing, wiring
   ├── providers/tidal     resonate-tidal, the listener's subscription  [`online`]
   ├── providers/ytmusic   resonate-ytmusic, songs kept from a YouTube Music account through yt-dlp  [`online`]
   ├── resonate-win32      the Win32 and COM calls no safe crate wraps, safe API  (Windows; also under wasapi, codec, mpris)
+  ├── resonate-linux      the Linux calls neither rustix nor nix wraps (a file's write lease), safe API  (Linux and Android; under codec)
   ├── resonate-apple      the Core Audio, AudioToolbox, MediaPlayer, Network and `clonefile` calls no safe crate wraps, safe API  (macOS and iOS; under coreaudio, listen, mpris, codec, mobile)
   ├── resonate-core       domain vocabulary
   └── resonate-words      the word catalogs, the language spoken  (`resonate-words-build` writes each crate's functions from its `.ftl`)
@@ -146,7 +147,8 @@ alone on Linux (its own PipeWire client per recording) and core, `resonate-audio
 feature, so `wry`, `tao` and WebKitGTK stay out of the binary's tree;
 `resonate-win32` reaches no workspace crate and is reached by `resonate-wasapi`, `resonate-codec`,
 `resonate-mpris` and the binary alone; `resonate-apple` reaches none either and is reached by `resonate-coreaudio`, `resonate-listen`,
-`resonate-mpris` and `resonate-codec` on macOS and by `resonate-coreaudio` and `resonate-mobile` on iOS; those two and
+`resonate-mpris` and `resonate-codec` on macOS and by `resonate-coreaudio` and `resonate-mobile` on iOS; `resonate-linux`
+reaches none either and is reached by `resonate-codec` alone, on Linux and Android; those three and
 `resonate-mobile` are the only crates where `unsafe_code` is allowed.
 
 Invariants the layering protects (the rules files have the rest):

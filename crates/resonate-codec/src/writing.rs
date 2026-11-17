@@ -1316,24 +1316,25 @@ impl Saving<'_> {
                 location: location.clone(),
             });
         }
-        if shifting.read_elsewhere(file) {
-            tracing::debug!(path = %path.display(), "a track another reader holds open is not lengthened under it, so its tags land on a copy");
-            return Ok(false);
-        }
 
         let stood = file.metadata().map_err(|source| Error::Io {
             location: location.clone(),
             source,
         })?;
-        lengthened(
-            shifting,
-            file,
-            path,
-            stood.len(),
-            head.length,
-            &rebuilt.head,
-        )
-        .map_err(|source| Error::Io {
+        let Some(landed) = shifting.while_alone(file, &mut || {
+            lengthened(
+                shifting,
+                file,
+                path,
+                stood.len(),
+                head.length,
+                &rebuilt.head,
+            )
+        }) else {
+            tracing::debug!(path = %path.display(), "a track another reader holds open is not lengthened under it, so its tags land on a copy");
+            return Ok(false);
+        };
+        landed.map_err(|source| Error::Io {
             location: location.clone(),
             source,
         })

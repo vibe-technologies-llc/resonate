@@ -1,0 +1,18 @@
+[package]
+name = "resonate-linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+doctest = false
+
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+libc.workspace = true
+thiserror.workspace = true
+
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+result_large_err = "deny"

@@ -62,7 +62,7 @@ exists (*The Win32 exception*, below).
 
 ## The Win32 exception
 
-`resonate-win32` is the one crate besides `resonate-mobile` whose lints allow `unsafe_code`
+`resonate-win32` is one of the four crates whose lints allow `unsafe_code`
 (approved by the listener, `dependencies.md`). It is empty on every other target (each module is
 `cfg(windows)`, or `cfg(any(windows, test))` for the sequencing the next bullet describes), reaches
 no workspace crate, and hands out a safe API over the `windows` crate:

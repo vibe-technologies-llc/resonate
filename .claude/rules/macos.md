@@ -68,13 +68,13 @@ builds it and runs its tests, with no display and no output device. It is checke
 - `stat` is BSD's: a test reading a mode asks `stat -c %a`, then `stat -f %Lp`.
 
 `docs/FEATURES.md`'s *macOS parity* lists what is not built and what only a Mac can settle.
-`unsafe_code = "forbid"` holds everywhere but `resonate-apple` (and the two crates
+`unsafe_code = "forbid"` holds everywhere but `resonate-apple` (and the three crates
 `dependencies.md` names): an Apple framework is reached through a safe wrapper crate (`keepawake`,
 `trash`, `sys-locale`, `notify`'s FSEvents, gpui, `wry`) or through that crate's safe API.
 
 ## The Apple exception
 
-`resonate-apple` is the third crate whose lints allow `unsafe_code` (approved by the listener;
+`resonate-apple` is one of the four crates whose lints allow `unsafe_code` (approved by the listener;
 `dependencies.md` has its shape, crates and features). It is empty off Apple targets, reaches no
 workspace crate and is reached by `resonate-coreaudio`, `resonate-listen`, `resonate-mpris` and
 `resonate-codec` on macOS and by `resonate-coreaudio` and `resonate-mobile` on iOS, which the layering job holds.

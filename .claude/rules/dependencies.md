@@ -1,6 +1,7 @@
 ---
 paths:
   - "**/Cargo.toml"
+  - "crates/resonate-linux/**/*.rs"
 ---
 
 # Dependencies and manifests
@@ -15,12 +16,26 @@ paths:
   `result_large_err = "deny"` do not apply. `forbid` is never downgraded locally; a binding needing
   `unsafe` is raised (it ruled out `pipewire::thread_loop`, whose constructors are `unsafe fn`).
 
-The listener approved three exceptions, each one crate whose explicit lints allow `unsafe_code` and
+The listener approved four exceptions, each one crate whose explicit lints allow `unsafe_code` and
 keep `result_large_err` denied: `resonate-mobile` admits UniFFI scaffolding and the owned-descriptor
 bridge at the native boundary (`mobile.md`), `resonate-win32` holds the Win32 and COM calls no
-reviewed safe crate wraps, behind a safe API (`windows.md`'s *The Win32 exception*), and
+reviewed safe crate wraps, behind a safe API (`windows.md`'s *The Win32 exception*),
 `resonate-apple` holds the Core Audio and AudioToolbox calls of iOS and macOS, behind a safe API
-(below). No other crate weakens `unsafe_code = "forbid"`.
+(below), and `resonate-linux` holds the Linux calls neither `rustix` nor `nix` wraps (below). No
+other crate weakens `unsafe_code = "forbid"`.
+
+`resonate-linux` is shaped as the other two are: empty off Linux and Android (each module
+`cfg(any(target_os = "linux", target_os = "android"))`), reaching no workspace crate, reached by
+`resonate-codec` alone, and every `unsafe` block one call whose preconditions its types make true.
+It holds `Lease`, a write lease on an open file (`fcntl`'s `F_SETLEASE` with `F_WRLCK`, released on
+drop with `F_UNLCK`), borrowed for the file's life so it can never name a closed descriptor.
+Taking a lease makes this process the file's owner, and a lease broken by another opener would
+send it `SIGIO`, whose default ends the process, so `Lease::taken` first sets the file's signal to
+`SIGURG` (`F_SETSIG`, ignored unless something handles it, and nothing here does), then clears the
+owner (`F_SETOWN` to none) once the lease is held, so no signal is sent at all. `F_SETSIG` is
+declared by hand, since `libc` 0.2.191 carries it on no Linux target; it is 10 on every
+architecture `linux-raw-sys` lists. It takes `libc` (no default features, the calls and constants
+alone, no C built) and `thiserror`, both only on those targets.
 
 `resonate-apple` is shaped as `resonate-win32` is: it is empty on every target that is not Apple's
 (each module is `cfg(target_vendor = "apple")` or narrower, the sequencing and pointer-handling

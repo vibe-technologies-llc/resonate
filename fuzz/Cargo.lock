@@ -2864,6 +2864,7 @@ dependencies = [
  "parking_lot 0.13.0",
  "resonate-apple",
  "resonate-core",
+ "resonate-linux",
  "resonate-win32",
  "rustfft",
  "rustix",
@@ -3008,6 +3009,14 @@ dependencies = [
  "thiserror",
  "tracing",
  "unicode-normalization",
+]
+
+[[package]]
+name = "resonate-linux"
+version = "0.13.0"
+dependencies = [
+ "libc",
+ "thiserror",
 ]
 
 [[package]]

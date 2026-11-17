@@ -73,7 +73,9 @@ stay its own, since the headless one is archived once and partitioned.
   `reached_directly_on` (the workspace crates that may name a crate, in one target's tree), and one `cargo tree --target x86_64-pc-windows-msvc`
   refusal that holds PipeWire, Wayland and `rustix` out of the binary's Windows tree; `resonate-mpris`'s direct normal edges are checked
   for `resonate-codec`, and `resonate-win32`'s Windows tree reaches no workspace crate while only the
-  binary, `resonate-wasapi`, `resonate-codec` and `resonate-mpris` reach it directly. The macOS lines read
+  binary, `resonate-wasapi`, `resonate-codec` and `resonate-mpris` reach it directly; `resonate-linux`
+  reaches no workspace crate and only `resonate-codec` reaches it directly, and it stays out of the
+  binary's Windows and macOS trees. The macOS lines read
   `cargo tree --target aarch64-apple-darwin`: PipeWire, Wayland, WASAPI, `resonate-win32` and the
   `windows` crate stay out of the binary's tree; `resonate-apple` reaches no workspace crate there
   or on iOS, and is named by `resonate-coreaudio`, `resonate-listen`, `resonate-mpris` and `resonate-codec` (on iOS by

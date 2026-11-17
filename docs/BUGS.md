@@ -14,13 +14,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Catalog
-- [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
-  root runs: `held_open_elsewhere` (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding
-  the file except for a process whose `status` names root. A write lease (`F_SETLEASE` with
-  `F_WRLCK`, then `F_GETLEASE` after the insert to see whether a break released it) would see it, but
-  neither `rustix` nor `nix` wraps leases and the codec forbids `unsafe`, so it wants a small crate
-  under an exception of its own beside `resonate-win32` and `resonate-apple`, which is the
-  listener's to grant
+- [S · blocked: CAP_LEASE] Lengthening in place a track another account owns (one this account may
+  write through its group) still cannot see a reader root runs: the kernel grants a write lease only
+  to the file's owner or a holder of `CAP_LEASE`, so such a track falls back to `held_open_elsewhere`
+  (`insert.rs`), which counts an unreadable `/proc/<pid>/fd` as holding the file except for a
+  process whose `status` names root
 
 ## Providers and network
 
