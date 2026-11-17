@@ -3491,9 +3491,12 @@ impl Ledger {
 
     pub fn missing_from(&self, at: LocalPlaylistId) -> Result<Vec<Recording>> {
         let stored = self
-            .stored_playlists()?
+            .stored_playlists_query(
+                "local_id = ?1 AND local_created = ?2",
+                params![at.id, at.created],
+            )?
             .into_iter()
-            .find(|stored| stored.local == Some(at));
+            .next();
         Ok(stored
             .map(|stored| {
                 stored

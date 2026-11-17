@@ -85,7 +85,7 @@ use crate::{
         missing::MissingPane,
         part::Parts,
         party::PartyPane,
-        playlists::{Held, Naming, PlaylistsDrawn},
+        playlists::{Held, Naming, PlaylistSynced, PlaylistsDrawn},
         queue::QueuePane,
         reorder::{Creeping, Reach, Step},
         replacing::ReplacingSheet,
@@ -676,6 +676,7 @@ pub struct RootView {
     pub(crate) dropped: Dropped,
     pub(crate) typed: Typed,
     pub(crate) social: Social,
+    pub(crate) synced_read: Option<(PlaylistId, PlaylistSynced)>,
     pub(crate) shows: Shows,
     pub(crate) typing: TypedAhead,
 }

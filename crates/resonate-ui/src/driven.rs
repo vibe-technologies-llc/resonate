@@ -1946,6 +1946,7 @@ mod tests {
 
         driven.root.update(&mut driven.cx, |root, cx| {
             let menu = crate::views::playlists::playlist_menu(
+                root,
                 point(px(200.0), px(200.0)),
                 playlist,
                 false,
@@ -1957,6 +1958,95 @@ mod tests {
         driven.click("menu-entry-0");
 
         driven.until(|root, cx| !root.player.read(cx).state().shuffle);
+    }
+
+    #[derive(Default)]
+    struct Ledger {
+        asked: parking_lot::Mutex<usize>,
+    }
+
+    impl crate::Syncing for Ledger {
+        fn shown(&self) -> crate::SyncShown {
+            crate::SyncShown {
+                devices: vec![crate::SyncedDevice {
+                    id: "desk".to_owned(),
+                    name: "Desk".to_owned(),
+                    platform: crate::SyncedPlatform::Linux,
+                    online: true,
+                    nearby: false,
+                    this: false,
+                }],
+                ..crate::SyncShown::default()
+            }
+        }
+
+        fn force(&self) {}
+
+        fn forget(&self, _: &str) -> bool {
+            false
+        }
+
+        fn missing_from(&self, _: resonate_core::PlaylistId) -> usize {
+            *self.asked.lock() += 1;
+            2
+        }
+
+        fn fetch_missing(&self, _: resonate_core::PlaylistId, _: &str) {}
+
+        fn keeps_songs_of(&self, _: resonate_core::PlaylistId) -> bool {
+            *self.asked.lock() += 1;
+            true
+        }
+
+        fn keep_songs_of(&self, _: resonate_core::PlaylistId, _: bool) {}
+
+        fn handed_off(&self) -> Vec<crate::HandedOff> {
+            Vec::new()
+        }
+
+        fn continue_from(&self, _: &str) -> crate::Continuing {
+            crate::Continuing::default()
+        }
+    }
+
+    #[gpui::test]
+    fn a_playlists_menu_reads_the_ledger_off_the_windows_thread_and_opens_once_it_is_read(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = catalog();
+        let playlist = library.create_playlist("Meddle").expect("a playlist");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let ledger = Arc::new(Ledger::default());
+        let seam = Arc::clone(&ledger) as Arc<dyn crate::Syncing>;
+        driven.cx.update(|_, cx| {
+            cx.update_global::<ResonateApp, _>(|app, _| app.syncing = Some(seam));
+        });
+
+        let asked_as_it_was_pressed = driven.root.update(&mut driven.cx, |root, cx| {
+            let offers: std::rc::Rc<crate::views::menu::Offers> =
+                std::rc::Rc::new(move |root, at, cx| {
+                    crate::views::playlists::playlist_menu(root, at, playlist, false, false, cx)
+                });
+            root.open_what_is_offered(offers, point(px(200.0), px(200.0)), None, cx);
+            (*ledger.asked.lock(), root.menu.is_some())
+        });
+        driven.settle();
+        let labels = driven.read(|root, _| root.menu.as_ref().map(Menu::labels));
+
+        assert_eq!(asked_as_it_was_pressed, (0, false));
+        assert_eq!(*ledger.asked.lock(), 2);
+        let labels = labels.expect("the menu opened once the ledger was read");
+        assert!(
+            labels.iter().any(|label| label.contains("Desk")),
+            "{labels:?}"
+        );
+        assert!(
+            labels
+                .iter()
+                .any(|label| label == words::playlists::stop_keeping_its_songs()),
+            "{labels:?}"
+        );
     }
 
     fn playlist_holding_the_first_song(library: &Library) -> resonate_core::PlaylistId {
@@ -1980,6 +2070,7 @@ mod tests {
 
         driven.root.update(&mut driven.cx, |root, cx| {
             let menu = crate::views::playlists::playlist_menu(
+                root,
                 point(px(200.0), px(200.0)),
                 playlist,
                 false,

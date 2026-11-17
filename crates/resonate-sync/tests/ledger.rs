@@ -192,6 +192,41 @@ fn songs_a_device_lacks_survive_its_edit_in_their_places() {
 }
 
 #[test]
+fn the_songs_missing_from_a_playlist_are_its_own_and_none_for_one_the_ledger_does_not_hold() {
+    let mut desk = Device::new("Desk", &["A", "B", "C"]);
+    let mut phone = Device::new("Phone", &["A"]);
+    desk.shelf.make_playlist("Summer", &["A", "B"]);
+    desk.shelf.make_playlist("Winter", &["A", "C"]);
+    sync(&mut desk, &mut phone);
+    let missing = |name: &str| {
+        let (id, _) = phone.shelf.playlist_named(name).expect("arrived");
+        phone
+            .ledger
+            .missing_from(LocalPlaylistId {
+                id,
+                created: id * 1000,
+            })
+            .expect("missing")
+            .into_iter()
+            .map(|recording| recording.title)
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(missing("Summer"), ["B"]);
+    assert_eq!(missing("Winter"), ["C"]);
+    assert!(
+        phone
+            .ledger
+            .missing_from(LocalPlaylistId {
+                id: 9_999,
+                created: 9_999_000,
+            })
+            .expect("nothing missing")
+            .is_empty()
+    );
+}
+
+#[test]
 fn a_song_arriving_later_takes_its_place_in_the_playlist() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A"]);

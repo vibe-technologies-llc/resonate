@@ -13,7 +13,7 @@ use resonate_library::{
 use smallvec::smallvec;
 
 use crate::{
-    Drawn, Notice, ResonateApp, Selection, format,
+    Drawn, Notice, ResonateApp, Selection, Syncing, format,
     icons::{self, Icon},
     models::Picture,
     motion, theme,
@@ -22,7 +22,7 @@ use crate::{
         hint::{self, Names},
         kit::{self, Casts as _, EndsInAnEllipsis, Tone},
         listing::{self, Pictured},
-        menu::{self, Called, Menu},
+        menu::{self, Called, Menu, Offers},
         mosaic::{self, Mosaic},
         pointed::{self, LitUnderThePointer as _},
         reorder::{self, Carried, Chosen, LiftedTo, Listed, Shift, Step},
@@ -1010,8 +1010,11 @@ impl RootView {
                         words::playlists::more_hint(),
                     ),
                     move |this, at, cx| {
-                        let lossy = this.library.read(cx).holds_lossy_songs(opened);
-                        this.open_a_menu(playlist_menu(at, opened, pinned, lossy, cx), cx);
+                        let offers: Rc<Offers> = Rc::new(move |this, at, cx| {
+                            let lossy = this.library.read(cx).holds_lossy_songs(opened);
+                            playlist_menu(this, at, opened, pinned, lossy, cx)
+                        });
+                        this.open_what_is_offered(offers, at, None, cx);
                     },
                     cx,
                 ))
@@ -2150,7 +2153,7 @@ fn playlist_menu_among_the_chosen(
         return chosen_playlists_menu(at, playlists);
     }
     let lossy = this.library.read(cx).holds_lossy_songs(id);
-    playlist_menu(at, id, pinned, lossy, cx)
+    playlist_menu(this, at, id, pinned, lossy, cx)
 }
 
 fn chosen_playlists_menu(at: Point<Pixels>, playlists: Vec<PlaylistId>) -> Menu {
@@ -2177,6 +2180,7 @@ fn chosen_playlists_menu(at: Point<Pixels>, playlists: Vec<PlaylistId>) -> Menu 
 }
 
 pub(crate) fn playlist_menu(
+    this: &RootView,
     at: Point<Pixels>,
     id: PlaylistId,
     pinned: bool,
@@ -2240,7 +2244,7 @@ pub(crate) fn playlist_menu(
             this.export_playlist(id, cx);
         });
 
-    synced_entries(menu, id, cx).apart().does(
+    synced_entries(menu, id, this, cx).apart().does(
         Icon::Discard,
         words::menu::discard(),
         move |this, _, cx| {
@@ -2250,30 +2254,62 @@ pub(crate) fn playlist_menu(
     )
 }
 
-fn synced_entries(menu: Menu, id: PlaylistId, cx: &App) -> Menu {
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PlaylistSynced {
+    missing: usize,
+    kept: bool,
+    fetched_from: Vec<String>,
+}
+
+impl PlaylistSynced {
+    pub(crate) fn read(syncing: &dyn Syncing, playlist: PlaylistId) -> Self {
+        let missing = syncing.missing_from(playlist);
+        let fetched_from = match missing {
+            0 => Vec::new(),
+            _ => syncing
+                .shown()
+                .devices
+                .into_iter()
+                .filter(|device| device.online && !device.this)
+                .map(|device| device.name)
+                .collect(),
+        };
+
+        Self {
+            missing,
+            kept: syncing.keeps_songs_of(playlist),
+            fetched_from,
+        }
+    }
+}
+
+fn synced_entries(menu: Menu, id: PlaylistId, this: &RootView, cx: &App) -> Menu {
     let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
         return menu;
     };
-    let missing = syncing.missing_from(id);
-    let kept = syncing.keeps_songs_of(id);
+    let Some(synced) = this
+        .synced_read
+        .as_ref()
+        .filter(|(read, _)| *read == id)
+        .map(|(_, synced)| synced.clone())
+    else {
+        return menu.awaiting_what_is_synced_of(id);
+    };
+    let kept = synced.kept;
     let mut menu = menu.apart();
-    if missing > 0 {
-        for device in syncing
-            .shown()
-            .devices
-            .into_iter()
-            .filter(|device| device.online && !device.this)
-        {
-            let fetching = Arc::clone(&syncing);
-            let label = words::playlists::fetch_missing(device.name.as_str(), missing);
-            menu = menu.does(Icon::Download, label, move |this, _, cx| {
-                fetching.fetch_missing(id, &device.name);
-                this.report(
-                    Notice::Noted(words::playlists::on_their_way(device.name.as_str())),
-                    cx,
-                );
-            });
-        }
+    for device in synced.fetched_from {
+        let fetching = Arc::clone(&syncing);
+        let label = words::playlists::fetch_missing(device.as_str(), synced.missing);
+        menu = menu.does(Icon::Download, label, move |this, _, cx| {
+            let fetching = Arc::clone(&fetching);
+            let from = device.clone();
+            cx.background_spawn(async move { fetching.fetch_missing(id, &from) })
+                .detach();
+            this.report(
+                Notice::Noted(words::playlists::on_their_way(device.as_str())),
+                cx,
+            );
+        });
     }
     let label = if kept {
         words::playlists::stop_keeping_its_songs()
@@ -2281,7 +2317,9 @@ fn synced_entries(menu: Menu, id: PlaylistId, cx: &App) -> Menu {
         words::playlists::keep_its_songs_here()
     };
     menu.does(Icon::Download, label, move |this, _, cx| {
-        syncing.keep_songs_of(id, !kept);
+        let keeping = Arc::clone(&syncing);
+        cx.background_spawn(async move { keeping.keep_songs_of(id, !kept) })
+            .detach();
         let said = if kept {
             words::playlists::songs_no_longer_fetched()
         } else {

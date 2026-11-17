@@ -407,6 +407,7 @@ impl RootView {
                 zone_name,
                 search,
             },
+            synced_read: None,
             social: Social {
                 wrapped: None,
                 reading_wrapped: None,

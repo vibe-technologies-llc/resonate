@@ -12,18 +12,18 @@ use gpui::{
     MouseDownEvent, Pixels, Point, Role, SharedString, Size, Stateful, Task, Window, anchored,
     canvas, deferred, div, point, prelude::*, px, rgb,
 };
-use resonate_core::{AlbumId, ArtistId, FrameSpan, MediaLocation, TrackId};
+use resonate_core::{AlbumId, ArtistId, FrameSpan, MediaLocation, PlaylistId, TrackId};
 use resonate_engine::Placement;
-use resonate_library::{Favoured, PlaylistEntry, Track};
+use resonate_library::{Favoured, Library, PlaylistEntry, Track};
 
 use crate::{
-    Selection, clipboard, format,
+    ResonateApp, Selection, Syncing, clipboard, format,
     icons::{self, Icon},
     motion, theme,
     views::{
         better,
         kit::{self, EndsInAnEllipsis as _},
-        playlists::Held,
+        playlists::{Held, PlaylistSynced},
         reorder::Shift,
         root::RootView,
         spoken::{self, Placed, Spoken},
@@ -39,7 +39,7 @@ const STAYS_OPEN_FOR_THE_POINTER_CROSSING: Duration = Duration::from_millis(250)
 
 type Doing = dyn Fn(&mut RootView, &mut Window, &mut Context<RootView>);
 
-type Offers = dyn Fn(&mut RootView, Point<Pixels>, &mut Context<RootView>) -> Menu;
+pub(crate) type Offers = dyn Fn(&mut RootView, Point<Pixels>, &mut Context<RootView>) -> Menu;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct AtTheReach {
@@ -73,7 +73,38 @@ pub(crate) struct Menu {
     reached: Option<usize>,
     beneath: Option<Beneath>,
     owner: Option<ElementId>,
-    awaiting: Option<TrackId>,
+    awaiting: Option<Awaited>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Awaited {
+    CopiesOf(TrackId),
+    SyncedOf(PlaylistId),
+}
+
+pub(crate) enum MenuRead {
+    Copies(TrackId, Vec<Track>),
+    Synced(PlaylistId, PlaylistSynced),
+}
+
+impl Awaited {
+    fn read(self, library: &Library, syncing: Option<&dyn Syncing>) -> MenuRead {
+        match self {
+            Self::CopiesOf(track) => {
+                let copies = library.alternatives_of(track).unwrap_or_else(|error| {
+                    tracing::warn!(%error, "the other copies of a track could not be read");
+                    Vec::new()
+                });
+                MenuRead::Copies(track, copies)
+            }
+            Self::SyncedOf(playlist) => MenuRead::Synced(
+                playlist,
+                syncing.map_or_else(PlaylistSynced::default, |syncing| {
+                    PlaylistSynced::read(syncing, playlist)
+                }),
+            ),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,11 +207,16 @@ impl Menu {
     }
 
     pub(crate) const fn awaiting_the_copies_of(mut self, track: TrackId) -> Self {
-        self.awaiting = Some(track);
+        self.awaiting = Some(Awaited::CopiesOf(track));
         self
     }
 
-    pub(crate) const fn awaited(&self) -> Option<TrackId> {
+    pub(crate) const fn awaiting_what_is_synced_of(mut self, playlist: PlaylistId) -> Self {
+        self.awaiting = Some(Awaited::SyncedOf(playlist));
+        self
+    }
+
+    pub(crate) const fn awaited(&self) -> Option<Awaited> {
         self.awaiting
     }
 
@@ -835,11 +871,10 @@ pub(crate) fn offered_at_the_reach(
         drawn.left() + px(OPENED_IN_FROM_THE_ROWS_EDGE),
         drawn.center().y,
     );
-    this.library
-        .update(cx, |library, _| library.forget_the_copies());
+    this.forget_what_menus_read(cx);
     let mut menu = offers(this, at, cx);
-    if let Some(track) = menu.awaited() {
-        this.open_once_the_copies_are_read(track, offers, at, None, 1, cx);
+    if let Some(awaited) = menu.awaited() {
+        this.open_once_read(awaited, offers, at, None, 1, cx);
         return None;
     }
     menu.steps(1);
@@ -862,28 +897,45 @@ pub(crate) fn opens_a_menu(
             MouseButton::Right,
             cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                 cx.stop_propagation();
-                this.library
-                    .update(cx, |library, _| library.forget_the_copies());
-                let menu = offers(this, event.position, cx).opened_on(owner.clone());
-                match menu.awaited() {
-                    Some(track) => this.open_once_the_copies_are_read(
-                        track,
-                        Rc::clone(&offers),
-                        event.position,
-                        owner.clone(),
-                        0,
-                        cx,
-                    ),
-                    None => this.open_a_menu(menu, cx),
-                }
+                this.open_what_is_offered(Rc::clone(&offers), event.position, owner.clone(), cx);
             }),
         )
 }
 
 impl RootView {
-    fn open_once_the_copies_are_read(
+    pub(crate) fn open_what_is_offered(
         &mut self,
-        track: TrackId,
+        offers: Rc<Offers>,
+        at: Point<Pixels>,
+        owner: Option<ElementId>,
+        cx: &mut Context<Self>,
+    ) {
+        self.forget_what_menus_read(cx);
+        let menu = offers(self, at, cx).opened_on(owner.clone());
+        match menu.awaited() {
+            Some(awaited) => self.open_once_read(awaited, offers, at, owner, 0, cx),
+            None => self.open_a_menu(menu, cx),
+        }
+    }
+
+    fn forget_what_menus_read(&mut self, cx: &mut Context<Self>) {
+        self.library
+            .update(cx, |library, _| library.forget_the_copies());
+        self.synced_read = None;
+    }
+
+    fn keep_what_a_menu_read(&mut self, read: MenuRead, cx: &mut Context<Self>) {
+        match read {
+            MenuRead::Copies(track, copies) => self
+                .library
+                .update(cx, |library, _| library.keep_the_copies(track, copies)),
+            MenuRead::Synced(playlist, synced) => self.synced_read = Some((playlist, synced)),
+        }
+    }
+
+    fn open_once_read(
+        &mut self,
+        awaited: Awaited,
         offers: Rc<Offers>,
         at: Point<Pixels>,
         owner: Option<ElementId>,
@@ -892,18 +944,14 @@ impl RootView {
     ) {
         let pressed = self.press_a_lookup();
         let library = self.library.read(cx).catalog();
+        let syncing = cx.global::<ResonateApp>().syncing.clone();
         let reading = cx
             .background_executor()
-            .spawn(async move { library.alternatives_of(track) });
+            .spawn(async move { awaited.read(&library, syncing.as_deref()) });
         cx.spawn(async move |this, cx| {
             let read = reading.await;
             let _ = this.update(cx, |this, cx| {
-                let copies = read.unwrap_or_else(|error| {
-                    tracing::warn!(%error, "the other copies of a track could not be read");
-                    Vec::new()
-                });
-                this.library
-                    .update(cx, |library, _| library.keep_the_copies(track, copies));
+                this.keep_what_a_menu_read(read, cx);
                 if this.window_has_moved_on_from(pressed, cx) {
                     return;
                 }
