@@ -616,8 +616,21 @@ core and `resonate-audio`.
 
 - **Found as renderers are** (`MediaServers`, `servers.rs`): `ssdp::search` takes what it seeks
   (`Sought::Renderers`, `Sought::Servers`), so an `M-SEARCH` for `MediaServer:1` (`SERVER_TYPE`)
-  takes only answers whose `ST` names a MediaServer, under the same `Heard` bounds and
-  `Located::is_at`. `MediaServers::found` is one round, run only when asked (no thread, nothing
+  takes only answers whose `ST` names a MediaServer, under the same `Heard` bounds, each an
+  `ssdp::Answered` (the `LOCATION`, the sender, the UDN its `USN` names).
+- **A server may name another of its own addresses, never this machine** (`Sought::admits`): a
+  renderer's `LOCATION` must be the sender's IP (`Located::is_at`), a server's may be any literal IP
+  that could be another address of the sender (`Located::could_be_another_address_beside`: not
+  unspecified, multicast or broadcast, and loopback only where the sender is), as a NAS on two
+  networks or a server in Docker (its container's address named, the host's answering) gives.
+  `ServerFound::reached` describes such a server first at the sender, with the `LOCATION`'s port
+  and path (`Located::at_ip`), and takes that where its UDN is the one the `USN` named; else at the
+  `LOCATION`, taken only where the answer named a UDN (`Error::LocationUnvouched`) and the
+  description names the same (`Error::DescribedAsAnother`), so nothing is posted to an address that
+  does not describe itself as the device that answered
+  (`a_location_that_cannot_be_reached_is_asked_for_on_the_address_that_answered_the_search`,
+  `a_server_whose_location_names_another_of_its_addresses_is_described_there_once_its_udn_agrees`).
+- `MediaServers::found` is one round, run only when asked (no thread, nothing
   multicast unasked): each location not yet held is described (`description::read_server`: the
   device whose `deviceType` names a MediaServer and holds ContentDirectory, else the first holding
   ContentDirectory, its control address on the description's host or `Error::NotAServer`), at most
@@ -644,8 +657,15 @@ core and `resonate-audio`.
   when empty, longer than 1 KiB or holding a control character. Text is cut at
   `TEXT_CHARS_AT_MOST` (512) letters with control characters made spaces; `upnp:artist` is the
   performer's (no role or `Performer`) before any other, then `dc:creator`. A `res` or `albumArtURI`
-  is joined against the description's address and **taken only on the description's host**, as a
-  control address is, so a listing cannot point a fetch at another machine or a loopback service.
+  is joined against the description's address and **taken only on one of the server's own
+  addresses**, so a listing cannot point a fetch at another machine or a loopback service: the host
+  the description was read from and the one that answered the search, else another address the
+  listing names that could be the server's (as above) and whose description, asked for at the
+  description's port and path, names the same UDN (`Addresses::admit`, each such host asked once a
+  server and at most `OTHER_ADDRESSES_TRIED_AT_MOST` (4) of them, each answer kept, shared by every
+  clone of the `ServerFound`); the reader itself is pure (`listing::read_from` takes the
+  `Origin`, whose `also_serving` asks)
+  (`a_song_on_another_address_describing_the_same_server_is_played_and_one_describing_another_is_not`).
   A `res` carries its type, size, `duration` (`H:MM:SS`, a fraction in digits or `F0/F1`,
   `length_of`), rate, channels and bits; `Item::played_from` is the first not marked
   `DLNA.ORG_CI=1`, so the original is played before a server's transcode
@@ -654,14 +674,20 @@ core and `resonate-audio`.
   like every exchange here): `GET` with `Range: bytes=N-` and `Accept-Encoding: identity`, a `206`
   whose `Content-Range` starts where asked (its whole the length), or a `200` with its
   `Content-Length`, passed over to `N` where it is no more than 64 MiB in; a range answered
-  elsewhere is `Error::RangeMisanswered` and a chunked body is not read. A seek drops the answer and
+  elsewhere is `Error::RangeMisanswered`. **A chunked body is read through its chunks** (`Chunk`,
+  a size line at most 1 KiB, a malformed one `InvalidData`, one closed before its last chunk
+  `UnexpectedEof`), and since it declares no length a server answering chunked and ignoring the range
+  knows no `length` (a seek from the end is `Unsupported`) and every seek reads through from the
+  start, the same 64 MiB bound
+  (`a_chunked_song_is_read_whole_and_a_seek_reads_through_to_where_it_lands`). A seek drops the answer and
   the next read asks from there; reads wait `SILENT_AT_MOST` (15 s) each, a connect
   `CONNECTED_WITHIN` (3 s). `ServerFound::fetched` and `picture` (a cover, `ANSWER_BYTES_AT_MOST`)
   refuse an address off the server's host
   (`a_song_found_on_a_server_is_fetched_as_served_and_seeks_by_range`).
 - **Fuzzed** (`read_a_listing`, the `dlna` target): any text as DIDL-Lite and as a SOAP answer to Browse
   whose `Result` is read again, holding every entry to an id and a title, every song to a
-  `res` it plays from, and every address to the server's host; with the duration and
+  `res` it plays from, and every address to the server's host or the one other host its `Origin`
+  admits; with the duration and
   `Content-Range` readers. Its seeds are listings written by hand in MiniDLNA's, Plex's, Jellyfin's
   and this crate's own shapes, and
   `every_servers_listing_a_fuzz_seed_holds_reads_as_songs_played_from_that_server` holds them to
@@ -670,7 +696,9 @@ core and `resonate-audio`.
 - `tests/browsed.rs` browses this crate's own `MediaServer` over loopback: found by its typed name,
   the root's four shelves, a page of three songs from the third with `TotalMatches` eight, every
   song read three a page, a song's bytes whole and from a seek, a search, and a server dropped
-  gone after two rounds.
+  gone after two rounds. `tests/elsewhere.rs` serves a hand-written one on `127.0.0.1` and `::1`
+  (two addresses every host's loopback holds) to hold a `LOCATION` on the other address, a song on
+  the other address, a host describing another device, and a chunked song.
 
 ## On the phones
 

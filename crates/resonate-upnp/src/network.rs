@@ -432,7 +432,11 @@ impl Shared {
             }
             Some(Err(error)) => return Err(error),
         };
-        let heard: &[Located] = found.as_deref().unwrap_or_default();
+        let heard: Vec<Located> = found
+            .iter()
+            .flatten()
+            .map(|answered| answered.location.clone())
+            .collect();
 
         let mut seen: Vec<(SinkId, bool)> = Vec::new();
         let mut reached = Vec::new();

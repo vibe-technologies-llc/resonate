@@ -1,5 +1,5 @@
 use std::{
-    io::{self, Read, Seek, SeekFrom, Write},
+    io::{self, BufRead, BufReader, Chain, Cursor, Read, Seek, SeekFrom, Write},
     net::TcpStream,
     time::Duration,
 };
@@ -17,6 +17,10 @@ const PASSED_OVER_AT_MOST: u64 = 64 << 20;
 
 const DISCARDED_IN: usize = 64 << 10;
 
+const CHUNK_LINE_BYTES_AT_MOST: u64 = 1 << 10;
+
+const LINE_END: &[u8] = b"\r\n";
+
 pub struct Fetched {
     at: Located,
     length: Option<u64>,
@@ -26,9 +30,21 @@ pub struct Fetched {
 }
 
 struct Answer {
-    stream: TcpStream,
-    held: Vec<u8>,
-    left: Option<u64>,
+    body: BufReader<Chain<Cursor<Vec<u8>>, TcpStream>>,
+    framing: Framing,
+}
+
+enum Framing {
+    Declared { left: u64 },
+    UntilClosed,
+    Chunked(Chunk),
+}
+
+#[derive(Clone, Copy)]
+enum Chunk {
+    SizeNext,
+    Within { left: u64 },
+    Ended,
 }
 
 struct Head {
@@ -98,19 +114,18 @@ impl Fetched {
             asked: Asked::Media,
         })?;
         let held = held.split_off(ends);
-        if head.chunked {
-            return Err(Error::NotHttp {
-                asked: Asked::Media,
-            });
-        }
         if self.media_type.is_none() {
             self.media_type = head.media_type;
         }
 
+        let framing = match (head.chunked, head.length) {
+            (true, _) => Framing::Chunked(Chunk::SizeNext),
+            (false, Some(left)) => Framing::Declared { left },
+            (false, None) => Framing::UntilClosed,
+        };
         let mut answer = Answer {
-            stream,
-            held,
-            left: head.length,
+            body: BufReader::new(Cursor::new(held).chain(stream)),
+            framing,
         };
         match (head.status, head.range) {
             (206, Some((start, total))) if start == from => {
@@ -156,28 +171,84 @@ impl Answer {
     }
 }
 
+impl Answer {
+    fn read_chunked(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        loop {
+            let Framing::Chunked(chunk) = &mut self.framing else {
+                return Ok(0);
+            };
+            match *chunk {
+                Chunk::Ended => return Ok(0),
+                Chunk::SizeNext => {
+                    *chunk = match chunk_size(&mut self.body)? {
+                        0 => Chunk::Ended,
+                        left => Chunk::Within { left },
+                    };
+                }
+                Chunk::Within { left: 0 } => {
+                    let mut end = [0; LINE_END.len()];
+                    self.body.read_exact(&mut end)?;
+                    if end != LINE_END {
+                        return Err(io::ErrorKind::InvalidData.into());
+                    }
+                    *chunk = Chunk::SizeNext;
+                }
+                Chunk::Within { left } => {
+                    let room = usize::try_from(left).unwrap_or(usize::MAX).min(buf.len());
+                    let read = self.body.read(&mut buf[..room])?;
+                    if read == 0 {
+                        return Err(io::ErrorKind::UnexpectedEof.into());
+                    }
+                    *chunk = Chunk::Within {
+                        left: left - read as u64,
+                    };
+                    return Ok(read);
+                }
+            }
+        }
+    }
+}
+
+fn chunk_size(body: &mut impl BufRead) -> io::Result<u64> {
+    let mut line = Vec::new();
+    body.take(CHUNK_LINE_BYTES_AT_MOST)
+        .read_until(b'\n', &mut line)?;
+    let Some(line) = line.strip_suffix(LINE_END) else {
+        return Err(if line.is_empty() {
+            io::ErrorKind::UnexpectedEof
+        } else {
+            io::ErrorKind::InvalidData
+        }
+        .into());
+    };
+    let size = line
+        .split(|byte| *byte == b';')
+        .next()
+        .and_then(|size| std::str::from_utf8(size).ok())
+        .map(str::trim)
+        .filter(|size| !size.is_empty())
+        .and_then(|size| u64::from_str_radix(size, 16).ok());
+    size.ok_or_else(|| io::ErrorKind::InvalidData.into())
+}
+
 impl Read for Answer {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let room = match self.left {
-            Some(0) => return Ok(0),
-            Some(left) => usize::try_from(left).unwrap_or(usize::MAX).min(buf.len()),
-            None => buf.len(),
-        };
-        let Some(into) = buf.get_mut(..room) else {
+        if buf.is_empty() {
             return Ok(0);
-        };
-        let read = if self.held.is_empty() {
-            self.stream.read(into)?
-        } else {
-            let taken = self.held.len().min(into.len());
-            into[..taken].copy_from_slice(&self.held[..taken]);
-            self.held.drain(..taken);
-            taken
-        };
-        if let Some(left) = &mut self.left {
-            *left -= read as u64;
         }
-        Ok(read)
+        match self.framing {
+            Framing::Chunked(_) => self.read_chunked(buf),
+            Framing::UntilClosed => self.body.read(buf),
+            Framing::Declared { left: 0 } => Ok(0),
+            Framing::Declared { left } => {
+                let room = usize::try_from(left).unwrap_or(usize::MAX).min(buf.len());
+                let read = self.body.read(&mut buf[..room])?;
+                self.framing = Framing::Declared {
+                    left: left - read as u64,
+                };
+                Ok(read)
+            }
+        }
     }
 }
 
@@ -236,15 +307,18 @@ fn head_of(bytes: &[u8]) -> Option<Head> {
             .and_then(|header| std::str::from_utf8(header.value).ok())
             .map(str::trim)
     };
+    let chunked =
+        named("Transfer-Encoding").is_some_and(|coding| coding.eq_ignore_ascii_case("chunked"));
     Some(Head {
         status: response.code?,
-        length: named("Content-Length").and_then(|length| length.parse().ok()),
+        length: named("Content-Length")
+            .filter(|_| !chunked)
+            .and_then(|length| length.parse().ok()),
         range: named("Content-Range").and_then(range_of),
         media_type: named("Content-Type")
             .map(|kind| kind.split(';').next().unwrap_or_default().trim().to_owned())
             .filter(|kind| !kind.is_empty()),
-        chunked: named("Transfer-Encoding")
-            .is_some_and(|coding| coding.eq_ignore_ascii_case("chunked")),
+        chunked,
     })
 }
 
@@ -267,6 +341,53 @@ pub(crate) fn range_of(header: &str) -> Option<(u64, Option<u64>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn answer_of(served: &[u8]) -> Answer {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bound");
+        let stream =
+            TcpStream::connect(listener.local_addr().expect("an address")).expect("connected");
+        let (mut serving, _) = listener.accept().expect("accepted");
+        serving.write_all(served).expect("written");
+        drop(serving);
+        Answer {
+            body: BufReader::new(Cursor::new(Vec::new()).chain(stream)),
+            framing: Framing::Chunked(Chunk::SizeNext),
+        }
+    }
+
+    #[test]
+    fn a_chunked_body_is_read_as_its_chunks_and_a_cut_or_malformed_one_is_refused() {
+        let mut whole = Vec::new();
+        let read = answer_of(b"5\r\nhello\r\n7;ext=1\r\n, world\r\n0\r\nTrailer: x\r\n\r\n")
+            .read_to_end(&mut whole);
+        let mut cut = Vec::new();
+        let cut_read = answer_of(b"5\r\nhel").read_to_end(&mut cut);
+        let mut unended = Vec::new();
+        let unended_read = answer_of(b"5\r\nhello\r\n").read_to_end(&mut unended);
+        let mut malformed = Vec::new();
+        let malformed_read = answer_of(b"zz\r\nhello\r\n0\r\n\r\n").read_to_end(&mut malformed);
+        let mut overlong = Vec::new();
+        let overlong_read = answer_of(b"5\r\nhelloXX0\r\n\r\n").read_to_end(&mut overlong);
+
+        assert_eq!(read.expect("read whole"), 12);
+        assert_eq!(whole, b"hello, world");
+        assert_eq!(
+            cut_read.expect_err("cut").kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+        assert_eq!(
+            unended_read.expect_err("unended").kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+        assert_eq!(
+            malformed_read.expect_err("malformed").kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(
+            overlong_read.expect_err("overlong").kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
 
     #[test]
     fn a_content_range_is_read_for_its_start_and_whole_and_a_wrong_one_is_not() {

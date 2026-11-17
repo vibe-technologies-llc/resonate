@@ -91,9 +91,39 @@ impl Located {
     }
 
     pub(crate) fn is_at(&self, ip: IpAddr) -> bool {
+        self.ip().is_some_and(|named| named == ip.to_canonical())
+    }
+
+    pub(crate) fn ip(&self) -> Option<IpAddr> {
         let host = self.host.split('%').next().unwrap_or_default();
         host.parse::<IpAddr>()
-            .is_ok_and(|named| named.to_canonical() == ip.to_canonical())
+            .ok()
+            .map(|named| named.to_canonical())
+    }
+
+    pub(crate) fn could_be_another_address_beside(&self, known: IpAddr) -> bool {
+        let Some(ip) = self.ip() else {
+            return false;
+        };
+        let addresses_no_one_host = ip.is_unspecified()
+            || ip.is_multicast()
+            || matches!(ip, IpAddr::V4(four) if four.is_broadcast());
+        let reaches_into_this_machine = ip.is_loopback() && !known.to_canonical().is_loopback();
+        !addresses_no_one_host && !reaches_into_this_machine
+    }
+
+    pub(crate) fn at_ip(&self, ip: IpAddr) -> Self {
+        Self {
+            host: ip.to_canonical().to_string().into(),
+            ..self.clone()
+        }
+    }
+
+    pub(crate) fn on_host_of(&self, other: &Self) -> Self {
+        Self {
+            host: other.host.clone(),
+            ..self.clone()
+        }
     }
 
     pub fn authority(&self) -> String {
@@ -214,6 +244,45 @@ mod tests {
             !Located::parse("http://127.0.0.1/d.xml")
                 .expect("reads")
                 .is_at(ip)
+        );
+    }
+
+    #[test]
+    fn another_address_of_a_device_is_one_it_could_hold_and_never_this_machine_unless_it_is_this_machine()
+     {
+        let lan: IpAddr = "192.168.1.20".parse().expect("an ip");
+        let loopback: IpAddr = "127.0.0.1".parse().expect("an ip");
+        let beside = |address: &str, known: IpAddr| {
+            Located::parse(address)
+                .expect("reads")
+                .could_be_another_address_beside(known)
+        };
+
+        assert!(beside("http://172.17.0.2:8200/d.xml", lan));
+        assert!(beside("http://[fe80::2]:8200/d.xml", lan));
+        assert!(beside("http://[::1]:8200/d.xml", loopback));
+        assert!(!beside("http://127.0.0.1:631/", lan));
+        assert!(!beside("http://[::1]:631/", lan));
+        assert!(!beside("http://[::ffff:127.0.0.1]:631/", lan));
+        assert!(!beside("http://0.0.0.0:80/", lan));
+        assert!(!beside("http://239.255.255.250:1900/", lan));
+        assert!(!beside("http://255.255.255.255/", lan));
+        assert!(!beside("http://nas.local:8200/d.xml", lan));
+    }
+
+    #[test]
+    fn an_address_moved_to_another_host_keeps_its_port_and_path() {
+        let described = Located::parse("http://172.17.0.2:8200/rootDesc.xml").expect("reads");
+        let sender: IpAddr = "::ffff:192.168.1.5".parse().expect("an ip");
+        let other = Located::parse("http://[fe80::5]:9000/song").expect("reads");
+
+        assert_eq!(
+            described.at_ip(sender).to_string(),
+            "http://192.168.1.5:8200/rootDesc.xml"
+        );
+        assert_eq!(
+            described.on_host_of(&other).to_string(),
+            "http://[fe80::5]:8200/rootDesc.xml"
         );
     }
 

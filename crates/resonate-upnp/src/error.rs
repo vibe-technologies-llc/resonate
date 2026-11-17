@@ -165,6 +165,10 @@ pub enum Error {
     NoSuchRenderer(SinkId),
     #[error("no media server on the network answers as {0}")]
     NoSuchServer(Udn),
+    #[error("the search answer names a description on another address and no UDN to check it by")]
+    LocationUnvouched,
+    #[error("the search was answered as {heard} and the description names {described}")]
+    DescribedAsAnother { heard: Udn, described: Udn },
     #[error("the renderer takes no stream of {0}")]
     FormatRefused(StreamSpec),
     #[error("the renderer known as {0} is playing a stream, so what it plays cannot be learnt now")]
@@ -192,6 +196,8 @@ impl Error {
             | Self::Announce { .. }
             | Self::NoSuchRenderer(_)
             | Self::NoSuchServer(_)
+            | Self::LocationUnvouched
+            | Self::DescribedAsAnother { .. }
             | Self::InUse(_) => Operation::Connect,
             Self::FormatRefused(_) | Self::Encoding { .. } => Operation::Format,
         }

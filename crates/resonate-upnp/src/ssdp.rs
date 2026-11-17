@@ -1,12 +1,12 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, UdpSocket},
     time::{Duration, Instant},
 };
 
 use crate::{
-    Error, Located, Result, SearchOp,
+    Error, Located, Result, SearchOp, Udn,
     http::{HEADERS_AT_MOST, USER_AGENT},
 };
 
@@ -41,6 +41,26 @@ impl Sought {
             Self::Servers => SERVER_KIND,
         }
     }
+
+    pub(crate) fn admits(self, answered: &Answered) -> bool {
+        let at_the_sender = answered.location.is_at(answered.sender);
+        match self {
+            Self::Renderers => at_the_sender,
+            Self::Servers => {
+                at_the_sender
+                    || answered
+                        .location
+                        .could_be_another_address_beside(answered.sender)
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Answered {
+    pub location: Located,
+    pub sender: IpAddr,
+    pub udn: Option<Udn>,
 }
 
 const SEARCHES_SENT: usize = 2;
@@ -57,29 +77,32 @@ pub(crate) const LOCATIONS_AT_MOST: usize = 128;
 
 #[derive(Default)]
 pub(crate) struct Heard {
-    locations: BTreeSet<Located>,
+    answers: BTreeMap<Located, Answered>,
     per_sender: BTreeMap<IpAddr, usize>,
 }
 
 impl Heard {
-    pub(crate) fn take(&mut self, location: Located, sender: IpAddr) -> bool {
-        if self.locations.len() >= LOCATIONS_AT_MOST || self.locations.contains(&location) {
+    pub(crate) fn take(&mut self, answered: Answered) -> bool {
+        if self.answers.len() >= LOCATIONS_AT_MOST || self.answers.contains_key(&answered.location)
+        {
             return false;
         }
-        let from_sender = self.per_sender.entry(sender).or_default();
+        let from_sender = self.per_sender.entry(answered.sender).or_default();
         if *from_sender >= LOCATIONS_PER_SENDER_AT_MOST {
             return false;
         }
         *from_sender += 1;
-        self.locations.insert(location)
+        self.answers
+            .insert(answered.location.clone(), answered)
+            .is_none()
     }
 
-    pub(crate) fn into_locations(self) -> Vec<Located> {
-        self.locations.into_iter().collect()
+    pub(crate) fn into_answers(self) -> Vec<Answered> {
+        self.answers.into_values().collect()
     }
 }
 
-pub(crate) fn search(to: SocketAddr, within: Duration, sought: Sought) -> Result<Vec<Located>> {
+pub(crate) fn search(to: SocketAddr, within: Duration, sought: Sought) -> Result<Vec<Answered>> {
     let failed = |op| move |source| Error::Search { op, source };
 
     let socket = UdpSocket::bind(answered_on(to)).map_err(failed(SearchOp::Bind))?;
@@ -108,11 +131,11 @@ pub(crate) fn search(to: SocketAddr, within: Duration, sought: Sought) -> Result
             .map_err(failed(SearchOp::Receive))?;
         match socket.recv_from(&mut buffer) {
             Ok((read, sender)) => {
-                if let Some(location) = buffer
+                if let Some(answered) = buffer
                     .get(..read)
                     .and_then(|answer| location_answered(answer, sender.ip(), sought))
                 {
-                    found.take(location, sender.ip());
+                    found.take(answered);
                 }
             }
             Err(error)
@@ -127,7 +150,7 @@ pub(crate) fn search(to: SocketAddr, within: Duration, sought: Sought) -> Result
             Err(error) => return Err(failed(SearchOp::Receive)(error)),
         }
     }
-    Ok(found.into_locations())
+    Ok(found.into_answers())
 }
 
 fn answered_on(to: SocketAddr) -> SocketAddr {
@@ -149,7 +172,7 @@ fn asking(to: SocketAddr, within: Duration, sought: Sought) -> String {
     )
 }
 
-pub(crate) fn location_answered(answer: &[u8], sender: IpAddr, sought: Sought) -> Option<Located> {
+pub(crate) fn location_answered(answer: &[u8], sender: IpAddr, sought: Sought) -> Option<Answered> {
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
     let mut response = httparse::Response::new(&mut headers);
     match response.parse(answer) {
@@ -166,9 +189,19 @@ pub(crate) fn location_answered(answer: &[u8], sender: IpAddr, sought: Sought) -
     if !named("ST").is_some_and(|kind| kind.contains(sought.kind())) {
         return None;
     }
-    named("LOCATION")
-        .and_then(|location| Located::parse(location).ok())
-        .filter(|location| location.is_at(sender))
+    let location = named("LOCATION").and_then(|location| Located::parse(location).ok())?;
+    let answered = Answered {
+        location,
+        sender: sender.to_canonical(),
+        udn: named("USN").and_then(udn_of_usn),
+    };
+    sought.admits(&answered).then_some(answered)
+}
+
+fn udn_of_usn(usn: &str) -> Option<Udn> {
+    let udn = usn.split("::").next()?.trim();
+    let readable = !udn.is_empty() && !udn.chars().any(char::is_control);
+    readable.then(|| Udn::new(udn))
 }
 
 #[cfg(test)]
@@ -187,7 +220,7 @@ mod tests {
 
         assert_eq!(
             location_answered(renderer, sender, Sought::Renderers)
-                .map(|location| location.to_string()),
+                .map(|answered| answered.location.to_string()),
             Some("http://10.0.0.9:49152/desc.xml".to_owned())
         );
         assert_eq!(location_answered(server, sender, Sought::Renderers), None);
@@ -216,11 +249,17 @@ mod tests {
         };
         let sender = |host: u8| -> IpAddr { format!("10.0.{host}.9").parse().expect("an ip") };
 
+        let answered = |location: Located, sender: IpAddr| Answered {
+            location,
+            sender,
+            udn: None,
+        };
+
         let mut heard = Heard::default();
         let from_one: Vec<bool> = (0..50)
-            .map(|port| heard.take(at(0, 1000 + port), sender(0)))
+            .map(|port| heard.take(answered(at(0, 1000 + port), sender(0))))
             .collect();
-        let again = heard.take(at(0, 1000), sender(0));
+        let again = heard.take(answered(at(0, 1000), sender(0)));
 
         assert_eq!(
             from_one.iter().filter(|taken| **taken).count(),
@@ -229,10 +268,10 @@ mod tests {
         assert!(!again);
 
         for host in 1..=255 {
-            heard.take(at(host, 80), sender(host));
+            heard.take(answered(at(host, 80), sender(host)));
         }
 
-        assert_eq!(heard.into_locations().len(), LOCATIONS_AT_MOST);
+        assert_eq!(heard.into_answers().len(), LOCATIONS_AT_MOST);
     }
 
     #[test]
@@ -257,9 +296,36 @@ mod tests {
 
         assert!(asked.contains("ST: urn:schemas-upnp-org:device:MediaServer:1\r\n"));
         assert_eq!(
-            location_answered(server, sender, Sought::Servers).map(|location| location.to_string()),
+            location_answered(server, sender, Sought::Servers)
+                .map(|answered| answered.location.to_string()),
             Some("http://10.0.0.9:8200/rootDesc.xml".to_owned())
         );
         assert_eq!(location_answered(renderer, sender, Sought::Servers), None);
+    }
+
+    #[test]
+    fn a_media_server_may_name_another_of_its_addresses_with_its_udn_but_never_this_machine() {
+        let docker = b"HTTP/1.1 200 OK\r\nLOCATION: http://172.17.0.2:8200/rootDesc.xml\r\nST: \
+                       urn:schemas-upnp-org:device:MediaServer:1\r\nUSN: \
+                       uuid:4d696e69-444c::urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n";
+        let inward = b"HTTP/1.1 200 OK\r\nLOCATION: http://127.0.0.1:631/\r\nST: \
+                       urn:schemas-upnp-org:device:MediaServer:1\r\nUSN: uuid:x\r\n\r\n";
+        let named = b"HTTP/1.1 200 OK\r\nLOCATION: http://nas.local:8200/d.xml\r\nST: \
+                      urn:schemas-upnp-org:device:MediaServer:1\r\nUSN: uuid:x\r\n\r\n";
+        let renderer = b"HTTP/1.1 200 OK\r\nLOCATION: http://172.17.0.2:49152/desc.xml\r\nST: \
+                         urn:schemas-upnp-org:device:MediaRenderer:1\r\n\r\n";
+        let sender: IpAddr = "192.168.1.5".parse().expect("an ip");
+
+        let answered = location_answered(docker, sender, Sought::Servers).expect("admitted");
+
+        assert_eq!(
+            answered.location.to_string(),
+            "http://172.17.0.2:8200/rootDesc.xml"
+        );
+        assert_eq!(answered.sender, sender);
+        assert_eq!(answered.udn, Some(Udn::new("uuid:4d696e69-444c")));
+        assert_eq!(location_answered(inward, sender, Sought::Servers), None);
+        assert_eq!(location_answered(named, sender, Sought::Servers), None);
+        assert_eq!(location_answered(renderer, sender, Sought::Renderers), None);
     }
 }

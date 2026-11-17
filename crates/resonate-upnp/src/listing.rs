@@ -128,7 +128,18 @@ pub struct Resource {
     pub bits: Option<u16>,
 }
 
-pub fn read(text: &str, served_from: &Located) -> Result<Listing> {
+pub(crate) struct Origin<'a> {
+    pub served_from: &'a Located,
+    pub also_serving: &'a dyn Fn(&Located) -> bool,
+}
+
+impl Origin<'_> {
+    fn admits(&self, at: &Located) -> bool {
+        at.is_on_host_of(self.served_from) || (self.also_serving)(at)
+    }
+}
+
+pub(crate) fn read_from(text: &str, origin: &Origin<'_>) -> Result<Listing> {
     let document = document(text, Asked::Action(crate::Action::Browse))?;
     let root = document.root_element();
     if root.tag_name().name() != "DIDL-Lite" {
@@ -142,12 +153,12 @@ pub fn read(text: &str, served_from: &Located) -> Result<Listing> {
         }
         match entry.tag_name().name() {
             "container" => {
-                if let Some(container) = container_of(entry, served_from) {
+                if let Some(container) = container_of(entry, origin) {
                     listing.containers.push(container);
                 }
             }
             "item" => {
-                if let Some(item) = item_of(entry, served_from) {
+                if let Some(item) = item_of(entry, origin) {
                     listing.items.push(item);
                 }
             }
@@ -157,7 +168,7 @@ pub fn read(text: &str, served_from: &Located) -> Result<Listing> {
     Ok(listing)
 }
 
-fn container_of(node: Node<'_, '_>, served_from: &Located) -> Option<Container> {
+fn container_of(node: Node<'_, '_>, origin: &Origin<'_>) -> Option<Container> {
     let id = ObjectId::new(node.attribute("id")?)?;
     let title = said(node, "title")?;
     Some(Container {
@@ -168,11 +179,11 @@ fn container_of(node: Node<'_, '_>, served_from: &Located) -> Option<Container> 
             .attribute("childCount")
             .and_then(|count| count.trim().parse().ok()),
         artist: artist_of(node),
-        cover: cover_of(node, served_from),
+        cover: cover_of(node, origin),
     })
 }
 
-fn item_of(node: Node<'_, '_>, served_from: &Located) -> Option<Item> {
+fn item_of(node: Node<'_, '_>, origin: &Origin<'_>) -> Option<Item> {
     let class = said(node, "class")?;
     if !class.starts_with(AUDIO_CLASS) {
         return None;
@@ -182,7 +193,7 @@ fn item_of(node: Node<'_, '_>, served_from: &Located) -> Option<Item> {
     let resources: Vec<Resource> = node
         .children()
         .filter(|child| child.tag_name().name() == "res")
-        .filter_map(|res| resource_of(res, served_from))
+        .filter_map(|res| resource_of(res, origin))
         .take(RESOURCES_AN_ITEM_AT_MOST)
         .collect();
     if resources.is_empty() {
@@ -195,7 +206,7 @@ fn item_of(node: Node<'_, '_>, served_from: &Located) -> Option<Item> {
         album: said(node, "album"),
         genre: said(node, "genre"),
         track: said(node, "originalTrackNumber").and_then(|number| number.parse().ok()),
-        cover: cover_of(node, served_from),
+        cover: cover_of(node, origin),
         resources,
     })
 }
@@ -216,14 +227,14 @@ fn artist_of(node: Node<'_, '_>) -> Option<String> {
     readable_text(*performing)
 }
 
-fn cover_of(node: Node<'_, '_>, served_from: &Located) -> Option<Located> {
+fn cover_of(node: Node<'_, '_>, origin: &Origin<'_>) -> Option<Located> {
     node.children()
         .filter(|child| child.tag_name().name() == "albumArtURI")
         .filter_map(readable_text)
-        .find_map(|address| on_the_server(&address, served_from))
+        .find_map(|address| on_the_server(&address, origin))
 }
 
-fn resource_of(node: Node<'_, '_>, served_from: &Located) -> Option<Resource> {
+fn resource_of(node: Node<'_, '_>, origin: &Origin<'_>) -> Option<Resource> {
     let protocol = node.attribute("protocolInfo").unwrap_or_default();
     let mut fields = protocol.split(':');
     let transport = fields.next().unwrap_or_default().trim();
@@ -238,7 +249,7 @@ fn resource_of(node: Node<'_, '_>, served_from: &Located) -> Option<Resource> {
         .map(str::to_owned);
     let converted = fields.next().is_some_and(|flags| flags.contains(CONVERTED));
 
-    let at = on_the_server(&readable_text(node)?, served_from)?;
+    let at = on_the_server(&readable_text(node)?, origin)?;
     let number = |name: &str| node.attribute(name).map(str::trim);
     Some(Resource {
         at,
@@ -252,10 +263,10 @@ fn resource_of(node: Node<'_, '_>, served_from: &Located) -> Option<Resource> {
     })
 }
 
-fn on_the_server(address: &str, served_from: &Located) -> Option<Located> {
-    let at = served_from.join(address).ok()?;
-    if !at.is_on_host_of(served_from) {
-        tracing::debug!(%at, %served_from, "a media server's listing names an address on another host");
+fn on_the_server(address: &str, origin: &Origin<'_>) -> Option<Located> {
+    let at = origin.served_from.join(address).ok()?;
+    if !origin.admits(&at) {
+        tracing::debug!(%at, served_from = %origin.served_from, "a media server's listing names an address that is not the server's");
         return None;
     }
     Some(at)
@@ -324,6 +335,16 @@ fn readable_text(node: Node<'_, '_>) -> Option<String> {
 mod tests {
     use super::*;
 
+    fn read(text: &str, served_from: &Located) -> Result<Listing> {
+        read_from(
+            text,
+            &Origin {
+                served_from,
+                also_serving: &|_| false,
+            },
+        )
+    }
+
     fn served_from() -> Located {
         Located::parse("http://192.168.1.4:8200/rootDesc.xml").expect("an address")
     }
@@ -389,6 +410,36 @@ mod tests {
             Some("http://192.168.1.4:8200/MediaItems/a.flac".to_owned())
         );
         assert_eq!(song.cover, None);
+    }
+
+    #[test]
+    fn an_address_on_another_host_is_taken_only_where_that_host_is_vouched_for_as_the_servers() {
+        let listing = r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="a" parentID="0"><dc:title>Song</dc:title><upnp:class>object.item.audioItem.musicTrack</upnp:class>
+            <res protocolInfo="http-get:*:audio/flac:*">http://10.9.9.9/a.flac</res>
+            <res protocolInfo="http-get:*:audio/flac:*">http://192.168.7.4:8200/a.flac</res>
+            <upnp:albumArtURI>http://192.168.7.4:8200/a.jpg</upnp:albumArtURI></item></DIDL-Lite>"#;
+        let other = Located::parse("http://192.168.7.4/").expect("an address");
+        let also_serving = |at: &Located| at.is_on_host_of(&other);
+
+        let read = read_from(
+            listing,
+            &Origin {
+                served_from: &served_from(),
+                also_serving: &also_serving,
+            },
+        )
+        .expect("reads");
+        let song = &read.items[0];
+
+        assert_eq!(song.resources.len(), 1);
+        assert_eq!(
+            song.played_from().map(|res| res.at.to_string()),
+            Some("http://192.168.7.4:8200/a.flac".to_owned())
+        );
+        assert_eq!(
+            song.cover.as_ref().map(ToString::to_string),
+            Some("http://192.168.7.4:8200/a.jpg".to_owned())
+        );
     }
 
     #[test]

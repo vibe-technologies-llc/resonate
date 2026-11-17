@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, net::SocketAddr, time::Duration};
+use std::{collections::BTreeMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use parking_lot::Mutex;
 
@@ -7,8 +7,9 @@ use crate::{
     description::{self, Service},
     fetched::Fetched,
     http::{self, Asking},
-    listing::{self, ENTRIES_A_LISTING_AT_MOST, Listing, ObjectId},
-    soap, ssdp,
+    listing::{self, ENTRIES_A_LISTING_AT_MOST, Listing, ObjectId, Origin},
+    soap,
+    ssdp::{self, Answered},
 };
 
 pub const BROWSED_A_PAGE: u32 = 200;
@@ -23,6 +24,8 @@ const DESCRIBED_FROM_A_SEARCH_AT_MOST: usize = 32;
 
 const SEARCHES_MISSED_BEFORE_GONE: u8 = 2;
 
+const OTHER_ADDRESSES_TRIED_AT_MOST: usize = 4;
+
 const DIRECT_CHILDREN: &str = "BrowseDirectChildren";
 
 const METADATA: &str = "BrowseMetadata";
@@ -31,13 +34,68 @@ const EVERYTHING: &str = "*";
 
 const AUDIO_CLASS: &str = "object.item.audioItem";
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct ServerFound {
     udn: Udn,
     name: String,
     located: Located,
     directory: Service,
     a_page: u32,
+    addresses: Arc<Addresses>,
+}
+
+#[derive(Debug)]
+struct Addresses {
+    udn: Udn,
+    described_at: Located,
+    own: Vec<Located>,
+    tried: Mutex<BTreeMap<Box<str>, bool>>,
+}
+
+impl Addresses {
+    fn admit(&self, at: &Located) -> bool {
+        if self.own.iter().any(|own| at.is_on_host_of(own)) {
+            return true;
+        }
+        let Some(beside) = self.described_at.ip() else {
+            return false;
+        };
+        if !at.could_be_another_address_beside(beside) {
+            return false;
+        }
+
+        let host: Box<str> = at.host().to_ascii_lowercase().into();
+        let mut tried = self.tried.lock();
+        if let Some(admitted) = tried.get(&host) {
+            return *admitted;
+        }
+        if tried.len() >= OTHER_ADDRESSES_TRIED_AT_MOST {
+            tracing::debug!(%at, udn = %self.udn, "a media server names more addresses of its own than are tried");
+            return false;
+        }
+        let admitted = self.describes_itself_at(at);
+        tried.insert(host, admitted);
+        admitted
+    }
+
+    fn describes_itself_at(&self, at: &Located) -> bool {
+        let asked_at = self.described_at.on_host_of(at);
+        match description::server_described(&asked_at) {
+            Ok(described) if is_the_same_device(&described.udn, &self.udn) => true,
+            Ok(described) => {
+                tracing::debug!(%asked_at, udn = %self.udn, other = %described.udn, "another address a media server names describes another device");
+                false
+            }
+            Err(error) => {
+                tracing::debug!(%error, %asked_at, udn = %self.udn, "another address a media server names does not describe it");
+                false
+            }
+        }
+    }
+}
+
+fn is_the_same_device(one: &Udn, other: &Udn) -> bool {
+    one.as_str().eq_ignore_ascii_case(other.as_str())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,14 +112,56 @@ pub struct Paged {
 }
 
 impl ServerFound {
-    pub(crate) fn reached(located: Located) -> Result<Self> {
+    pub(crate) fn reached(heard: &Answered) -> Result<Self> {
+        let sender = heard.location.at_ip(heard.sender);
+        if heard.location.is_at(heard.sender) {
+            return Self::described_at(heard.location.clone(), vec![sender]);
+        }
+
+        match Self::described_at(sender.clone(), vec![sender.clone()]) {
+            Ok(server)
+                if heard
+                    .udn
+                    .as_ref()
+                    .is_none_or(|udn| is_the_same_device(udn, &server.udn)) =>
+            {
+                return Ok(server);
+            }
+            Ok(server) => {
+                tracing::debug!(at = %sender, udn = %server.udn, "the address that answered the search describes another media server than it named");
+            }
+            Err(error) => {
+                tracing::debug!(%error, at = %sender, "a media server naming another address does not describe itself where it answered");
+            }
+        }
+
+        let heard_as = heard.udn.clone().ok_or(Error::LocationUnvouched)?;
+        let server =
+            Self::described_at(heard.location.clone(), vec![heard.location.clone(), sender])?;
+        if !is_the_same_device(&server.udn, &heard_as) {
+            return Err(Error::DescribedAsAnother {
+                heard: heard_as,
+                described: server.udn,
+            });
+        }
+        Ok(server)
+    }
+
+    fn described_at(located: Located, own: Vec<Located>) -> Result<Self> {
         let described = description::server_described(&located)?;
+        let addresses = Arc::new(Addresses {
+            udn: described.udn.clone(),
+            described_at: located.clone(),
+            own,
+            tried: Mutex::new(BTreeMap::new()),
+        });
         Ok(Self {
             udn: described.udn,
             name: described.name,
             located,
             directory: described.directory,
             a_page: BROWSED_A_PAGE,
+            addresses,
         })
     }
 
@@ -165,7 +265,7 @@ impl ServerFound {
     }
 
     fn on_this_server(&self, at: &Located) -> Result<()> {
-        if at.is_on_host_of(&self.located) {
+        if self.addresses.admit(at) {
             Ok(())
         } else {
             Err(Error::UnreadableAddress)
@@ -199,7 +299,14 @@ impl ServerFound {
         let didl = answered
             .named("Result")
             .ok_or(Error::Unanswered { action })?;
-        let listing = listing::read(didl, &self.located)?;
+        let also_serving = |at: &Located| self.addresses.admit(at);
+        let listing = listing::read_from(
+            didl,
+            &Origin {
+                served_from: &self.located,
+                also_serving: &also_serving,
+            },
+        )?;
         let count = |name: &str| {
             answered
                 .named(name)
@@ -239,6 +346,7 @@ pub struct MediaServers {
 
 struct Held {
     server: ServerFound,
+    heard: Located,
     missed: u8,
 }
 
@@ -262,8 +370,9 @@ impl MediaServers {
 
         let mut seen = Vec::new();
         let mut reached = Vec::new();
-        for location in heard {
-            if let Some(udn) = self.held_at(&location) {
+        for answered in heard {
+            let location = &answered.location;
+            if let Some(udn) = self.held_at(location) {
                 seen.push(udn);
                 continue;
             }
@@ -272,8 +381,8 @@ impl MediaServers {
                 tracing::debug!(%location, "a media server answering the search was not described: enough are held");
                 continue;
             }
-            match ServerFound::reached(location.clone()) {
-                Ok(server) => reached.push(server),
+            match ServerFound::reached(&answered) {
+                Ok(server) => reached.push((server, answered.location)),
                 Err(error) => {
                     tracing::debug!(%error, %location, "a device answering the search for media servers is not one");
                 }
@@ -289,8 +398,15 @@ impl MediaServers {
                 held.missed = 0;
             }
         }
-        for server in reached {
-            known.insert(server.udn.clone(), Held { server, missed: 0 });
+        for (server, heard) in reached {
+            known.insert(
+                server.udn.clone(),
+                Held {
+                    server,
+                    heard,
+                    missed: 0,
+                },
+            );
         }
         known.retain(|udn, held| {
             let kept = held.missed < SEARCHES_MISSED_BEFORE_GONE;
@@ -328,7 +444,7 @@ impl MediaServers {
         self.known
             .lock()
             .values()
-            .find(|held| held.server.located == *location)
+            .find(|held| held.heard == *location)
             .map(|held| held.server.udn.clone())
     }
 }
