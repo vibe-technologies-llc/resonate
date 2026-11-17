@@ -615,6 +615,10 @@ impl Processor for TruePeak {
         self.taken.min(self.delay as u64) as usize
     }
 
+    fn frames_short_of_its_latency(&self) -> usize {
+        self.delay.saturating_sub(self.frames_held())
+    }
+
     fn is_transparent(&self) -> bool {
         false
     }

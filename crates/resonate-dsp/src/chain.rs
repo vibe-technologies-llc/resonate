@@ -155,8 +155,18 @@ impl Chain {
         }
     }
 
+    pub fn frames_it_holds(&self) -> usize {
+        let short = self
+            .stages
+            .iter()
+            .map(|stage| stage.frames_short_of_its_latency())
+            .sum();
+        (self.latency.round().max(0.0) as usize).saturating_sub(short)
+    }
+
     pub fn set_gain_after_what_it_holds(&mut self, volume: Volume, replay_gain: AppliedGain) {
-        let held = (self.latency.round().max(0.0) as usize)
+        let held = self
+            .frames_it_holds()
             .saturating_sub(self.frames_held_after_the_gain());
         for stage in &mut self.stages {
             stage.set_gain_after(volume, replay_gain, held);
@@ -647,6 +657,53 @@ mod tests {
             after,
             straight[before.len()..],
             "the carried resampler did not pick up where it left off"
+        );
+    }
+
+    #[test]
+    fn a_fresh_guard_behind_a_carried_front_holds_none_of_its_delay_so_the_gain_steps_where_the_front_ends()
+     {
+        let fronted = || {
+            Chain::builder(spec(SampleRate::HZ_44100))
+                .max_frames_in(BLOCK)
+                .push(resampler(SampleRate::HZ_44100, SampleRate::HZ_48000))
+        };
+        let backed = |builder: ChainBuilder| {
+            builder
+                .then_the_back()
+                .push(attenuator())
+                .push(Box::new(TruePeak::new()))
+                .build()
+                .expect("a resampler, a gain and a guard build")
+        };
+        let front_holds = fronted()
+            .build()
+            .expect("a resampler builds")
+            .latency_frames()
+            .round() as usize;
+        let mut whole = backed(fronted());
+        let mut output = vec![0.0; whole.max_output_frames() * 2];
+
+        for _ in 0..4 {
+            whole.process(&[0.25; BLOCK * 2], &mut output);
+        }
+        let warmed = whole.frames_it_holds();
+        let whole_latency = whole.latency_frames().round() as usize;
+        let front = whole.take_the_front().expect("a resampler is carried");
+        let mut carried = backed(Chain::builder_after(front).max_frames_in(BLOCK));
+        carried.set_gain_after_what_it_holds(Volume::MAX, AppliedGain::default());
+
+        assert_eq!(warmed, whole_latency);
+        assert!(carried.latency_frames().round() as usize > front_holds);
+        assert_eq!(
+            carried.frames_it_holds(),
+            front_holds,
+            "a guard that has taken nothing yet was counted as holding its delay"
+        );
+        assert_eq!(
+            carried.frames_before_the_gain_settles(),
+            front_holds,
+            "the entering gain waits past the last frame the carried front holds"
         );
     }
 

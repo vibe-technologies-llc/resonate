@@ -6283,6 +6283,95 @@ fn the_leaving_tail_a_carried_resampler_holds_at_a_gapless_turn_is_heard_at_its_
     )
 }
 
+fn hushed_for_its_last(level: i16, frames: usize, hushed: usize) -> Vec<u8> {
+    let data: Vec<u8> = (0..frames)
+        .flat_map(|at| {
+            let heard = if at + hushed < frames { level } else { 0 };
+            [heard; CHANNELS as usize]
+        })
+        .flat_map(i16::to_le_bytes)
+        .collect();
+    wave(16, CHANNELS, &data)
+}
+
+#[test]
+fn a_carried_resampler_steps_the_entering_gain_where_the_leaving_row_ends_though_its_guard_is_new()
+-> Result<()> {
+    const HUSHED_FOR: usize = 2_205;
+    const HUSHED_FOR_AS_RESAMPLED: usize = 2_400;
+    const STEPPED_WITHIN: usize = 4;
+    const LEAVING_HEARD: i16 = LEAVING_LEVEL / 2;
+
+    let tree = Tree::new();
+    let first = tree.write(
+        "first.wav",
+        &hushed_for_its_last(LEAVING_LEVEL, FRAMES, HUSHED_FOR),
+    );
+    let second = tree.write(
+        "second.wav",
+        &steady_in_twenty_four_bits(LEAVING_LEVEL, FRAMES),
+    );
+    let sources = Arc::new(Sources::local().hinted_by(Arc::new(QuieterOnOneRow {
+        quiet: MediaLocation::local(&first),
+        gain: -6.0206,
+    })));
+    let frame = frame_bytes(SampleFormat::S16);
+    let resampled = |frames: usize| frames * 48_000 / RATE as usize;
+
+    let (player, graph) = settled_over(
+        vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S16])],
+        sources,
+        EngineConfig {
+            replay_gain: ReplayGainMode::Track,
+            quality: Quality::VeryHigh,
+            true_peak: true,
+            dither: DitherKind::None,
+            ..ring_deep()
+        },
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame,
+        |_, graph| graph.played.len() >= resampled(FRAMES + FRAMES / 2) * frame,
+        "the entering row to play",
+    );
+
+    let graph = graph.lock();
+    let heard = left_words(&graph.played);
+    let sounding = heard
+        .iter()
+        .position(|word| *word > LEAVING_HEARD * 3 / 4)
+        .expect("the leaving row is heard");
+    let hushed = heard
+        .iter()
+        .skip(sounding)
+        .position(|word| *word < LEAVING_HEARD / 4)
+        .map(|at| at + sounding)
+        .expect("the leaving row's end is hushed");
+    let entered = heard
+        .iter()
+        .skip(hushed)
+        .position(|word| *word > LEAVING_LEVEL * 3 / 4)
+        .map(|at| at + hushed)
+        .expect("the entering row is heard at its own gain");
+
+    assert!(
+        (entered - hushed).abs_diff(HUSHED_FOR_AS_RESAMPLED) <= STEPPED_WITHIN,
+        "the entering row reached its own gain {} frames after the leaving row's hush began, not {}",
+        entered - hushed,
+        HUSHED_FOR_AS_RESAMPLED
+    );
+    assert_eq!(graph.opens, 1);
+    assert_eq!(graph.drains, 0);
+    Ok(())
+}
+
 fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
     entering: &[u8],
     asked: Volume,

@@ -228,7 +228,7 @@ impl Engine {
             .producer
             .turn_at(rendered, heard_amplitude(&output.plan, muted), ahead);
         let held = if holds_the_leaving {
-            output.chain.latency_frames().round() as u64
+            output.chain.frames_it_holds() as u64
         } else {
             0
         };

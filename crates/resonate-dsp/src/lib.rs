@@ -66,6 +66,10 @@ pub trait Processor: Send {
         0
     }
 
+    fn frames_short_of_its_latency(&self) -> usize {
+        0
+    }
+
     fn is_transparent(&self) -> bool;
 
     fn is_carried_across_a_reshape(&self) -> bool {

@@ -362,9 +362,15 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   frames on and carries the resampler or convolver across where it can. **The entering row's gain
   steps on its own first frame, not on the leaving row's last one in.** What the chain still holds
   ahead of its gain stage (a resampler's or convolver's latency, about 300 ms at Very high) is the
-  leaving row's, so the gain is set after it (`Chain::set_gain_after_what_it_holds`: the chain's
-  rounded latency, the boundary's own offset, less what stages behind the gain hold), and a carried
+  leaving row's, so the gain is set after it (`Chain::set_gain_after_what_it_holds`: what the
+  chain holds, the boundary's own offset, less what stages behind the gain hold), and a carried
   front's new back is built at the leaving row's gain and set the same way (`swap_chain_turning`).
+  **What a chain holds is its rounded latency less what a stage has yet to fill**
+  (`Chain::frames_it_holds`, `Processor::frames_short_of_its_latency`): a true-peak guard built
+  behind a carried front swallows its first `delay` frames rather than holding the leaving row's,
+  so the boundary and the step land where the front's held frames end, not a guard delay later
+  (`a_carried_resampler_steps_the_entering_gain_where_the_leaving_row_ends_though_its_guard_is_new`,
+  `a_fresh_guard_behind_a_carried_front_holds_none_of_its_delay_so_the_gain_steps_where_the_front_ends`).
   `GainStage` keeps up to `STEPS_WAITING_AT_MOST` steps, each on its own frame, so short rows
   behind one another each step where they begin; `gain_amplitude` answers the last step's
   amplitude and `frames_before_the_gain_settles` how far off it lands, which
