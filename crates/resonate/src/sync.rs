@@ -4,10 +4,7 @@ use std::{
     collections::BTreeSet,
     fs::{self, File},
     path::{Path, PathBuf},
-    sync::{
-        Weak,
-        atomic::{AtomicU64, Ordering as Atomically},
-    },
+    sync::atomic::{AtomicU64, Ordering as Atomically},
     thread,
     time::{Duration, Instant, SystemTime},
 };
@@ -74,11 +71,6 @@ const SYNCING_ALONE: &str = "sync.lock";
 
 #[cfg(feature = "sync")]
 const SETTINGS_LOOKED_AT_EVERY: Duration = Duration::from_secs(2);
-#[cfg(feature = "sync")]
-const RELEASED_WITHIN: Duration = Duration::from_secs(5);
-#[cfg(feature = "sync")]
-const RELEASE_LOOKED_AT_EVERY: Duration = Duration::from_millis(50);
-
 pub(crate) struct Syncing {
     #[cfg(feature = "sync")]
     service: Arc<Service>,
@@ -112,10 +104,6 @@ impl<T> Seat<T> {
         self.held.lock().running.clone()
     }
 
-    fn vacated(&self) -> Option<Arc<T>> {
-        self.held.lock().running.take()
-    }
-
     fn seated(&self, running: T) -> Option<Arc<T>> {
         let running = Arc::new(running);
         let taken = {
@@ -147,18 +135,18 @@ impl<T: Ends> Seat<T> {
             running.end();
         }
     }
-}
 
-#[cfg(feature = "sync")]
-struct Arranged {
-    arrangement: Arrangement,
-    waits_for_the_last_run: bool,
+    fn emptied(&self) {
+        let running = self.held.lock().running.take();
+        if let Some(running) = running {
+            running.end();
+        }
+    }
 }
 
 #[cfg(feature = "sync")]
 struct Service {
     running: Seat<Running>,
-    lingering: Mutex<Weak<Running>>,
     driven: Mutex<Option<Arc<dyn Controlled>>>,
     trust: Mutex<RemoteTrust>,
     filed_as: Arc<FiledAs>,
@@ -263,16 +251,9 @@ impl Service {
         config: &Config,
         settings: Option<&Path>,
         library: &Arc<Library>,
-    ) -> Arranged {
+    ) -> Arrangement {
         let arrangement = Arrangement::of(config);
-        if let Some(previous) = self.running.vacated()
-            && let Some(lingering) = released(previous, RELEASED_WITHIN)
-        {
-            tracing::warn!(
-                "the last sync run is still held elsewhere, so the next one starts once it lets go"
-            );
-            *self.lingering.lock() = lingering;
-        }
+        self.running.emptied();
 
         *self.trust.lock() = arrangement.trust;
         self.filed_as.told_by(config);
@@ -292,46 +273,14 @@ impl Service {
                 if self.running.seated(running).is_none() {
                     tracing::debug!("sync was left while it started, so the run is let go");
                 }
-                Arranged::settled(arrangement.keyed(&code))
+                arrangement.keyed(&code)
             }
-            Ok(None) => {
-                let lingers = self.lingering.lock().strong_count() > 0;
-                Arranged {
-                    waits_for_the_last_run: arrangement.syncs && lingers,
-                    arrangement,
-                }
-            }
+            Ok(None) => arrangement,
             Err(error) => {
                 tracing::warn!(%error, "devices are not synchronised");
-                Arranged::settled(arrangement)
+                arrangement
             }
         }
-    }
-}
-
-#[cfg(feature = "sync")]
-impl Arranged {
-    const fn settled(arrangement: Arrangement) -> Self {
-        Self {
-            arrangement,
-            waits_for_the_last_run: false,
-        }
-    }
-}
-
-#[cfg(feature = "sync")]
-fn released<T>(mut running: Arc<T>, within: Duration) -> Option<Weak<T>> {
-    let deadline = Instant::now() + within;
-    loop {
-        match Arc::try_unwrap(running) {
-            Ok(running) => {
-                drop(running);
-                return None;
-            }
-            Err(again) if Instant::now() >= deadline => return Some(Arc::downgrade(&again)),
-            Err(again) => running = again,
-        }
-        thread::sleep(RELEASE_LOOKED_AT_EVERY);
     }
 }
 
@@ -377,7 +326,7 @@ fn watching(
     arranged: Arrangement,
     every: Duration,
     filed_as: Arc<FiledAs>,
-    mut arrange: impl FnMut(&Config) -> Arranged + Send + 'static,
+    mut arrange: impl FnMut(&Config) -> Arrangement + Send + 'static,
 ) -> Option<Sender<()>> {
     let (stop, stopped) = bounded(1);
     let started = thread::Builder::new()
@@ -385,20 +334,17 @@ fn watching(
         .spawn(move || {
             let mut stamps = Settling::from(seen);
             let mut arranged = arranged;
-            let mut waiting = false;
             loop {
                 match stopped.recv_timeout(every) {
                     Err(RecvTimeoutError::Timeout) => {}
                     Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
                 }
-                if !stamps.settled_at(modified(&settings)) && !waiting {
+                if !stamps.settled_at(modified(&settings)) {
                     continue;
                 }
                 match config::load(Some(&settings)) {
-                    Ok(config) if waiting || Arrangement::of(&config) != arranged => {
-                        let tried = arrange(&config);
-                        arranged = tried.arrangement;
-                        waiting = tried.waits_for_the_last_run;
+                    Ok(config) if Arrangement::of(&config) != arranged => {
+                        arranged = arrange(&config);
                     }
                     Ok(config) => filed_as.told_by(&config),
                     Err(error) => tracing::warn!(
@@ -479,12 +425,11 @@ pub(crate) fn start(config: &Config, settings: Option<&Path>, library: &Arc<Libr
     let seen = settings.and_then(modified);
     let service = Arc::new(Service {
         running: Seat::empty(),
-        lingering: Mutex::new(Weak::new()),
         driven: Mutex::new(None),
         trust: Mutex::new(RemoteTrust::default()),
         filed_as: Arc::default(),
     });
-    let arranged = service.arranged(config, settings, library).arrangement;
+    let arranged = service.arranged(config, settings, library);
     #[cfg(feature = "online")]
     {
         let reached = Arc::downgrade(&service);
@@ -2119,7 +2064,7 @@ mod tests {
             Arc::clone(&filed_as),
             move |config| {
                 counting.fetch_add(1, Ordering::AcqRel);
-                Arranged::settled(Arrangement::of(config))
+                Arrangement::of(config)
             },
         )
         .expect("a thread follows the settings");
@@ -2165,61 +2110,6 @@ mod tests {
     }
 
     #[test]
-    fn a_restart_held_up_by_the_last_run_is_tried_again_until_it_starts() {
-        const TRIES_HELD_UP: usize = 2;
-
-        let folder = crate::fixtures::scratch("sync-waiting");
-        let settings = folder.join("config.toml");
-        let held = key();
-        let joined = key();
-        fs::write(&settings, format!("sync-key = \"{}\"\n", held.code())).expect("a file");
-        let tried = Arc::new(AtomicUsize::new(0));
-        let counting = Arc::clone(&tried);
-
-        let stop = watching(
-            settings.clone(),
-            modified(&settings),
-            Arrangement::of(&syncing_with(&held)),
-            Duration::from_millis(20),
-            Arc::default(),
-            move |config| {
-                let tries = counting.fetch_add(1, Ordering::AcqRel) + 1;
-                Arranged {
-                    arrangement: Arrangement::of(config),
-                    waits_for_the_last_run: tries <= TRIES_HELD_UP,
-                }
-            },
-        )
-        .expect("a thread follows the settings");
-
-        thread::sleep(Duration::from_millis(100));
-        written_whole(&settings, &format!("sync-key = \"{}\"\n", joined.code()));
-        let started = wait_for(&tried, TRIES_HELD_UP + 1);
-        thread::sleep(Duration::from_millis(300));
-        let tries = tried.load(Ordering::Acquire);
-
-        let _ = stop.try_send(());
-        let _ = fs::remove_dir_all(&folder);
-        assert!(started);
-        assert_eq!(tries, TRIES_HELD_UP + 1);
-    }
-
-    #[test]
-    fn a_run_still_held_elsewhere_lingers_until_it_is_let_go() {
-        let running = Arc::new(());
-        let elsewhere = Arc::clone(&running);
-
-        let lingering = released(running, Duration::from_millis(20)).expect("still held");
-        let lingered = lingering.strong_count();
-        drop(elsewhere);
-        let alone = released(Arc::new(()), Duration::from_millis(20));
-
-        assert_eq!(lingered, 1);
-        assert_eq!(lingering.strong_count(), 0);
-        assert!(alone.is_none());
-    }
-
-    #[test]
     fn a_run_started_after_sync_was_left_is_let_go_and_one_seated_before_is_taken_by_the_leave() {
         let witness = Arc::new(());
         let seat = Seat::empty();
@@ -2236,19 +2126,19 @@ mod tests {
         assert_eq!(Arc::strong_count(&witness), 1);
     }
 
+    #[derive(Default)]
+    struct Witness {
+        ended: AtomicUsize,
+    }
+
+    impl Ends for Witness {
+        fn end(&self) {
+            self.ended.fetch_add(1, Ordering::AcqRel);
+        }
+    }
+
     #[test]
     fn a_leave_ends_the_run_it_takes_though_a_clone_is_still_held_elsewhere() {
-        #[derive(Default)]
-        struct Witness {
-            ended: AtomicUsize,
-        }
-
-        impl Ends for Witness {
-            fn end(&self) {
-                self.ended.fetch_add(1, Ordering::AcqRel);
-            }
-        }
-
         let seat = Seat::empty();
 
         let elsewhere = seat.seated(Witness::default()).expect("seated");
@@ -2260,6 +2150,25 @@ mod tests {
         assert_eq!(ended_while_held, 1);
         assert_eq!(ended_again, 1);
         assert!(seat.cloned().is_none());
+    }
+
+    #[test]
+    fn a_restart_ends_the_run_it_replaces_though_a_clone_is_still_held_elsewhere() {
+        let seat = Seat::empty();
+
+        let elsewhere = seat.seated(Witness::default()).expect("seated");
+        seat.emptied();
+        let ended_while_held = elsewhere.ended.load(Ordering::Acquire);
+        let held_after = seat.cloned().is_some();
+        let next = seat.seated(Witness::default());
+
+        assert_eq!(ended_while_held, 1);
+        assert!(!held_after);
+        assert!(
+            next.is_some(),
+            "a restart leaves the seat open for the next run"
+        );
+        assert_eq!(next.map(|next| next.ended.load(Ordering::Acquire)), Some(0));
     }
 
     fn heard(title: &str) -> Recording {
