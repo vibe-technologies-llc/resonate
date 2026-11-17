@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use resonate_sync::{Incoming as Reader, wire::ToServer};
+use resonate_sync::{Heard, Holds, Incoming as Reader, wire::ToServer};
 use tokio::{
     sync::{
         OwnedSemaphorePermit, Semaphore,
@@ -28,12 +28,15 @@ pub struct FrameBytes {
 
 pub struct Held {
     _read_ahead: Option<OwnedSemaphorePermit>,
-    _across_sessions: OwnedSemaphorePermit,
+    _across_sessions: Option<OwnedSemaphorePermit>,
 }
 
-pub struct Read {
-    pub frame: Result<ToServer>,
-    pub held: Option<Held>,
+pub enum Read {
+    Frame {
+        frame: Result<ToServer>,
+        held: Option<Held>,
+    },
+    PassedOver,
 }
 
 impl FrameBytes {
@@ -44,10 +47,18 @@ impl FrameBytes {
             total,
         }
     }
+}
 
-    pub fn hold(&self, length: usize) -> Option<OwnedSemaphorePermit> {
+impl Holds for FrameBytes {
+    fn hold(&self, length: usize) -> Option<OwnedSemaphorePermit> {
         let weight = length.clamp(A_FRAME_WEIGHS_AT_LEAST.min(self.total), self.total);
         let weight = u32::try_from(weight).unwrap_or(u32::MAX);
+
+        Arc::clone(&self.bytes).try_acquire_many_owned(weight).ok()
+    }
+
+    fn draw(&self, bytes: usize) -> Option<OwnedSemaphorePermit> {
+        let weight = u32::try_from(bytes).ok()?;
 
         Arc::clone(&self.bytes).try_acquire_many_owned(weight).ok()
     }
@@ -83,6 +94,7 @@ pub fn read_ahead(
 ) -> (Receiver<Read>, JoinHandle<()>) {
     let (frames_in, frames) = channel(READ_AHEAD_BYTES_AT_MOST / A_FRAME_WEIGHS_AT_LEAST);
     let budget = Budget::of(READ_AHEAD_BYTES_AT_MOST);
+    let across_sessions: Arc<dyn Holds> = Arc::new(across_sessions);
     let reading = tokio::spawn(read_frames(recv, frames_in, most, budget, across_sessions));
 
     (frames, reading)
@@ -93,28 +105,26 @@ async fn read_frames(
     frames: Sender<Read>,
     most: usize,
     budget: Budget,
-    across_sessions: FrameBytes,
+    across_sessions: Arc<dyn Holds>,
 ) {
     loop {
         budget.has_room().await;
-        let read = match recv
-            .read_held(most, |length| across_sessions.hold(length))
-            .await
-        {
-            Ok(Some((bytes, across))) => Read {
+        let read = match recv.read_heard(most, &across_sessions).await {
+            Ok(Some(Heard::Frame { payload, held })) => Read::Frame {
                 held: Some(Held {
-                    _read_ahead: budget.weigh(bytes.len()).await,
-                    _across_sessions: across,
+                    _read_ahead: budget.weigh(payload.len()).await,
+                    _across_sessions: held,
                 }),
-                frame: ToServer::decoded(&bytes).map_err(Error::from),
+                frame: ToServer::decoded(&payload).map_err(Error::from),
             },
+            Ok(Some(Heard::PassedOver)) => Read::PassedOver,
             Ok(None) => return,
-            Err(error) => Read {
+            Err(error) => Read::Frame {
                 frame: Err(Error::from(error)),
                 held: None,
             },
         };
-        let failed = read.frame.is_err();
+        let failed = matches!(read, Read::Frame { frame: Err(_), .. });
         if frames.send(read).await.is_err() || failed {
             return;
         }

@@ -60,8 +60,8 @@ pub use crate::{
     },
     stun::{Reflector, STUN_PORT},
     web::{
-        Accepted, Duplex, Incoming, Outgoing, WEB_SERVER_PORT, WebAddress, accepted, connect,
-        to_the_web, web_address,
+        Accepted, Duplex, Heard, Holds, Incoming, Outgoing, WEB_SERVER_PORT, WebAddress, accepted,
+        connect, to_the_web, web_address,
     },
 };
 

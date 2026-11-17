@@ -607,15 +607,21 @@ impl Server {
             .await?;
 
         let (mut frames, reading) = read_ahead(recv, ROOM_FRAME_AT_MOST, self.frames.clone());
-        let mut window = Instant::now();
-        let mut counted = 0_u32;
+        let mut pace = Pace::of(self.limits.frames_per_minute);
         let mut allowance = Bucket::new(self.limits.room_bytes_per_second);
         let mut keeping = interval(KEEP_EVERY);
         let ended = loop {
             tokio::select! {
                 frame = frames.recv() => {
-                    let Some(Read { frame, held: _held }) = frame else {
-                        break Ok(());
+                    let (frame, _held) = match frame {
+                        None => break Ok(()),
+                        Some(Read::PassedOver) => {
+                            if pace.too_fast() {
+                                break refuse(&mut send, Refusal::TooFast).await;
+                            }
+                            continue;
+                        }
+                        Some(Read::Frame { frame, held }) => (frame, held),
                     };
                     let frame = match frame {
                         Ok(frame) => frame,
@@ -624,12 +630,7 @@ impl Server {
                         }
                         Err(_) => break Ok(()),
                     };
-                    if window.elapsed() >= RATE_WINDOW {
-                        window = Instant::now();
-                        counted = 0;
-                    }
-                    counted += 1;
-                    if counted > self.limits.frames_per_minute {
+                    if pace.too_fast() {
                         break refuse(&mut send, Refusal::TooFast).await;
                     }
                     match frame {
@@ -722,15 +723,21 @@ impl Server {
         }
 
         let (mut frames, reading) = read_ahead(recv, LARGEST_FRAME, self.frames.clone());
-        let mut window = Instant::now();
-        let mut counted = 0_u32;
+        let mut pace = Pace::of(self.limits.frames_per_minute);
         let mut allowance = Bucket::new(self.limits.relay_bytes_per_second);
         let mut keeping = interval(KEEP_EVERY);
         let ended = loop {
             tokio::select! {
                 frame = frames.recv() => {
-                    let Some(Read { frame, held: _held }) = frame else {
-                        break Ok(());
+                    let (frame, _held) = match frame {
+                        None => break Ok(()),
+                        Some(Read::PassedOver) => {
+                            if pace.too_fast() {
+                                break refuse(&mut send, Refusal::TooFast).await;
+                            }
+                            continue;
+                        }
+                        Some(Read::Frame { frame, held }) => (frame, held),
                     };
                     let frame = match frame {
                         Ok(frame) => frame,
@@ -748,12 +755,7 @@ impl Server {
                         }
                         frame => frame,
                     };
-                    if window.elapsed() >= RATE_WINDOW {
-                        window = Instant::now();
-                        counted = 0;
-                    }
-                    counted += 1;
-                    if counted > self.limits.frames_per_minute {
+                    if pace.too_fast() {
                         break refuse(&mut send, Refusal::TooFast).await;
                     }
                     match frame {
@@ -982,6 +984,31 @@ fn header_trusted_from(forwarded_by: Option<&Arc<str>>, peer: IpAddr) -> Option<
     forwarded_by
         .filter(|_| peer.to_canonical().is_loopback())
         .cloned()
+}
+
+struct Pace {
+    window: Instant,
+    counted: u32,
+    most: u32,
+}
+
+impl Pace {
+    fn of(most: u32) -> Self {
+        Self {
+            window: Instant::now(),
+            counted: 0,
+            most,
+        }
+    }
+
+    fn too_fast(&mut self) -> bool {
+        if self.window.elapsed() >= RATE_WINDOW {
+            self.window = Instant::now();
+            self.counted = 0;
+        }
+        self.counted = self.counted.saturating_add(1);
+        self.counted > self.most
+    }
 }
 
 async fn finished_with_nothing_unread(

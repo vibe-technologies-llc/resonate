@@ -2,10 +2,7 @@ use std::{
     io,
     net::{IpAddr, SocketAddr},
     pin::Pin,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
@@ -14,12 +11,14 @@ use futures_util::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
+use parking_lot::Mutex;
 use quinn::{RecvStream, SendStream};
 use rustls::{ClientConfig, RootCertStore, crypto::ring::default_provider, version::TLS13};
 use rustls_pki_types::ServerName;
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
     net::{TcpStream, lookup_host},
+    sync::OwnedSemaphorePermit,
     time::timeout,
 };
 use tokio_rustls::TlsConnector;
@@ -43,6 +42,14 @@ pub const WEB_SERVER_PORT: u16 = 443;
 pub const WEB_SILENT_FOR: Duration = Duration::from_secs(90);
 const WEB_ALPN: &[u8] = b"http/1.1";
 const WEB_FRAMING_AT_MOST: usize = 64;
+const WEB_READ_AT_ONCE: usize = 16 * 1024;
+const A_FRAME_HEADER_AT_LEAST: usize = 2;
+const A_CLIENTS_MASK: usize = 4;
+const SHORT_LENGTH_AT_MOST: usize = 125;
+const SHORT_PAST: usize = SHORT_LENGTH_AT_MOST + 1;
+const MEDIUM_LENGTH_AT_MOST: usize = u16::MAX as usize;
+const MEDIUM_LENGTH_BYTES: usize = 2;
+const LONG_LENGTH_BYTES: usize = 8;
 
 pub trait Duplex: AsyncRead + AsyncWrite + Unpin + Send {}
 
@@ -61,25 +68,114 @@ pub enum Incoming {
     Web(SplitStream<Socket>, Budget),
 }
 
+pub trait Holds: Send + Sync {
+    fn hold(&self, length: usize) -> Option<OwnedSemaphorePermit>;
+    fn draw(&self, bytes: usize) -> Option<OwnedSemaphorePermit>;
+}
+
+pub enum Heard {
+    Frame {
+        payload: Vec<u8>,
+        held: Option<OwnedSemaphorePermit>,
+    },
+    PassedOver,
+}
+
 #[derive(Clone, Default)]
-pub struct Budget(Option<Arc<AtomicUsize>>);
+pub struct Budget(Option<Arc<Mutex<Spending>>>);
+
+struct Spending {
+    left: usize,
+    drawing: Option<Arc<dyn Holds>>,
+    drawn: Option<OwnedSemaphorePermit>,
+    refused_at: Option<usize>,
+}
+
+impl Spending {
+    fn spend(&mut self, read: usize) -> io::Result<()> {
+        self.left = self.left.saturating_sub(read);
+        let Some(drawing) = self.drawing.as_ref().filter(|_| read > 0) else {
+            return Ok(());
+        };
+        let Some(more) = drawing.draw(read) else {
+            let drawn = self
+                .drawn
+                .as_ref()
+                .map_or(0, OwnedSemaphorePermit::num_permits);
+            self.refused_at = Some(drawn.saturating_add(read));
+            return Err(io::Error::from(io::ErrorKind::OutOfMemory));
+        };
+        match &mut self.drawn {
+            Some(drawn) => drawn.merge(more),
+            None => self.drawn = Some(more),
+        }
+        Ok(())
+    }
+
+    fn taken_by(&mut self, weight: usize) -> Option<OwnedSemaphorePermit> {
+        let mut taken = self.drawn.take()?;
+        let past = taken.num_permits().saturating_sub(weight);
+        if let Some(mut carried) = taken.split(past).filter(|_| past > 0) {
+            let unread = carried.num_permits().saturating_sub(WEB_READ_AT_ONCE);
+            drop(carried.split(unread));
+            self.drawn = Some(carried);
+        }
+        Some(taken)
+    }
+}
+
+fn as_framed_by_a_client(payload: usize) -> usize {
+    let length_bytes = match payload {
+        0..=SHORT_LENGTH_AT_MOST => 0,
+        SHORT_PAST..=MEDIUM_LENGTH_AT_MOST => MEDIUM_LENGTH_BYTES,
+        _ => LONG_LENGTH_BYTES,
+    };
+    A_FRAME_HEADER_AT_LEAST + length_bytes + A_CLIENTS_MASK + payload
+}
 
 impl Budget {
-    fn spendable() -> (Self, Arc<AtomicUsize>) {
-        let left = Arc::new(AtomicUsize::new(usize::MAX));
-        (Self(Some(Arc::clone(&left))), left)
+    fn spendable() -> (Self, Arc<Mutex<Spending>>) {
+        let spending = Arc::new(Mutex::new(Spending {
+            left: usize::MAX,
+            drawing: None,
+            drawn: None,
+            refused_at: None,
+        }));
+        (Self(Some(Arc::clone(&spending))), spending)
     }
 
     fn allow(&self, bytes: usize) {
-        if let Some(left) = &self.0 {
-            left.store(bytes, Ordering::Relaxed);
+        if let Some(spending) = &self.0 {
+            spending.lock().left = bytes;
         }
+    }
+
+    fn draw_from(&self, holds: &Arc<dyn Holds>) {
+        if let Some(spending) = &self.0 {
+            spending
+                .lock()
+                .drawing
+                .get_or_insert_with(|| Arc::clone(holds));
+        }
+    }
+
+    fn taken_by(&self, message: &Message) -> Option<OwnedSemaphorePermit> {
+        let weight = as_framed_by_a_client(message.len());
+        self.0
+            .as_ref()
+            .and_then(|spending| spending.lock().taken_by(weight))
+    }
+
+    fn refused_at(&self) -> Option<usize> {
+        self.0
+            .as_ref()
+            .and_then(|spending| spending.lock().refused_at)
     }
 }
 
 struct Budgeted<S> {
     inner: S,
-    left: Arc<AtomicUsize>,
+    spending: Arc<Mutex<Spending>>,
 }
 
 impl<S: AsyncRead + Unpin> AsyncRead for Budgeted<S> {
@@ -88,18 +184,16 @@ impl<S: AsyncRead + Unpin> AsyncRead for Budgeted<S> {
         context: &mut Context<'_>,
         buffer: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        if self.left.load(Ordering::Relaxed) == 0 {
+        if self.spending.lock().left == 0 {
             return Poll::Ready(Err(io::Error::from(io::ErrorKind::InvalidData)));
         }
         let before = buffer.filled().len();
         let polled = Pin::new(&mut self.inner).poll_read(context, buffer);
-        if polled.is_ready() {
+        if let Poll::Ready(Ok(())) = polled {
             let read = buffer.filled().len() - before;
-            let _ = self
-                .left
-                .try_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
-                    Some(left.saturating_sub(read))
-                });
+            if let Err(refused) = self.spending.lock().spend(read) {
+                return Poll::Ready(Err(refused));
+            }
         }
         polled
     }
@@ -187,6 +281,10 @@ fn limits() -> WebSocketConfig {
         .max_frame_size(Some(LARGEST_FRAME))
 }
 
+fn accepting() -> WebSocketConfig {
+    limits().read_buffer_size(WEB_READ_AT_ONCE)
+}
+
 fn halves(socket: Socket, budget: Budget) -> (Outgoing, Incoming) {
     let (sink, stream) = socket.split();
     (Outgoing::Web(sink), Incoming::Web(stream, budget))
@@ -257,12 +355,12 @@ pub async fn accepted(
         header: forwarded_by,
         client: None,
     };
-    let (budget, left) = Budget::spendable();
+    let (budget, spending) = Budget::spendable();
     let tunnel: Tunnel = Box::new(Budgeted {
         inner: stream,
-        left,
+        spending,
     });
-    let socket = accept_hdr_async_with_config(tunnel, &mut forwarding, Some(limits()))
+    let socket = accept_hdr_async_with_config(tunnel, &mut forwarding, Some(accepting()))
         .await
         .map_err(Error::web)?;
     let (outgoing, incoming) = halves(socket, budget);
@@ -337,29 +435,74 @@ impl Incoming {
         };
         budget.allow(most.saturating_add(WEB_FRAMING_AT_MOST));
         loop {
-            let heard = timeout(WEB_SILENT_FOR, stream.next())
-                .await
-                .map_err(|_| Error::ServerSilent)?;
-            match heard {
-                None
-                | Some(Ok(Message::Close(_)))
-                | Some(Err(
-                    tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed,
-                )) => return Ok(None),
-                Some(Ok(Message::Binary(payload))) if payload.len() > most => {
+            match next_message(stream, budget).await? {
+                None => return Ok(None),
+                Some((Message::Binary(payload), _)) if payload.len() > most => {
                     return Err(Error::Oversized {
                         length: payload.len(),
                     });
                 }
-                Some(Ok(Message::Binary(payload))) => {
+                Some((Message::Binary(payload), _)) => {
                     let length = payload.len();
                     let held = hold(length).ok_or(Error::NoRoom { length })?;
                     return Ok(Some((payload.to_vec(), held)));
                 }
-                Some(Ok(_)) => {}
-                Some(Err(error)) => return Err(Error::web(error)),
+                Some(_) => {}
             }
         }
+    }
+
+    pub async fn read_heard(
+        &mut self,
+        most: usize,
+        holds: &Arc<dyn Holds>,
+    ) -> Result<Option<Heard>> {
+        let (stream, budget) = match self {
+            Self::Quic(stream) => {
+                let read = read_frame_held(stream, most, |length| holds.hold(length)).await?;
+                return Ok(read.map(|(payload, held)| Heard::Frame {
+                    payload,
+                    held: Some(held),
+                }));
+            }
+            Self::Web(stream, budget) => (stream, budget),
+        };
+        budget.draw_from(holds);
+        budget.allow(most.saturating_add(WEB_FRAMING_AT_MOST));
+        match next_message(stream, budget).await? {
+            None => Ok(None),
+            Some((Message::Binary(payload), _)) if payload.len() > most => Err(Error::Oversized {
+                length: payload.len(),
+            }),
+            Some((Message::Binary(payload), held)) => Ok(Some(Heard::Frame {
+                payload: payload.to_vec(),
+                held,
+            })),
+            Some(_) => Ok(Some(Heard::PassedOver)),
+        }
+    }
+}
+
+async fn next_message(
+    stream: &mut SplitStream<Socket>,
+    budget: &Budget,
+) -> Result<Option<(Message, Option<OwnedSemaphorePermit>)>> {
+    let heard = timeout(WEB_SILENT_FOR, stream.next())
+        .await
+        .map_err(|_| Error::ServerSilent)?;
+    match heard {
+        None
+        | Some(Ok(Message::Close(_)))
+        | Some(Err(tungstenite::Error::ConnectionClosed | tungstenite::Error::AlreadyClosed)) => {
+            Ok(None)
+        }
+        Some(Ok(message)) => {
+            let held = budget.taken_by(&message);
+            Ok(Some((message, held)))
+        }
+        Some(Err(error)) => Err(budget
+            .refused_at()
+            .map_or_else(|| Error::web(error), |length| Error::NoRoom { length })),
     }
 }
 
@@ -368,11 +511,183 @@ mod tests {
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt, duplex},
         net::TcpListener,
+        sync::Semaphore,
+        task::JoinHandle,
+        time::{Instant, sleep},
     };
 
     use super::*;
 
     const READ_AT_ONCE: usize = 16;
+    const SETTLES_WITHIN: Duration = Duration::from_secs(5);
+    const BINARY_AND_FINAL: u8 = 0x82;
+    const PING_AND_FINAL: u8 = 0x89;
+    const MASKED_WITH_A_LENGTH_OF_EIGHT_BYTES: u8 = 0x80 | 127;
+    const MASKED_WITH_A_SHORT_LENGTH: u8 = 0x80;
+    const UNMASKING_KEY: [u8; 4] = [0; 4];
+
+    struct Pool(Arc<Semaphore>);
+
+    impl Holds for Pool {
+        fn hold(&self, length: usize) -> Option<OwnedSemaphorePermit> {
+            self.draw(length)
+        }
+
+        fn draw(&self, bytes: usize) -> Option<OwnedSemaphorePermit> {
+            let weight = u32::try_from(bytes).ok()?;
+            Arc::clone(&self.0).try_acquire_many_owned(weight).ok()
+        }
+    }
+
+    fn pool_of(bytes: usize) -> (Arc<Semaphore>, Arc<dyn Holds>) {
+        let semaphore = Arc::new(Semaphore::new(bytes));
+        let holds: Arc<dyn Holds> = Arc::new(Pool(Arc::clone(&semaphore)));
+        (semaphore, holds)
+    }
+
+    fn binary_header(length: usize) -> Vec<u8> {
+        let mut header = vec![BINARY_AND_FINAL, MASKED_WITH_A_LENGTH_OF_EIGHT_BYTES];
+        header.extend_from_slice(&u64::try_from(length).expect("a length").to_be_bytes());
+        header.extend_from_slice(&UNMASKING_KEY);
+        header
+    }
+
+    fn ping() -> Vec<u8> {
+        let mut ping = vec![PING_AND_FINAL, MASKED_WITH_A_SHORT_LENGTH];
+        ping.extend_from_slice(&UNMASKING_KEY);
+        ping
+    }
+
+    async fn upgraded_by_hand(port: u16) -> TcpStream {
+        let mut stream = TcpStream::connect(("127.0.0.1", port))
+            .await
+            .expect("connected");
+        stream
+            .write_all(
+                format!(
+                    "GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\n\
+                     Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\
+                     Sec-WebSocket-Version: 13\r\n\r\n"
+                )
+                .as_bytes(),
+            )
+            .await
+            .expect("asked to upgrade");
+        let mut answer = Vec::new();
+        let mut byte = [0; 1];
+        while !answer.ends_with(b"\r\n\r\n") {
+            stream.read_exact(&mut byte).await.expect("an answer");
+            answer.push(byte[0]);
+        }
+        stream
+    }
+
+    async fn reading_with(
+        holds: Arc<dyn Holds>,
+        most: usize,
+    ) -> (u16, JoinHandle<(Vec<Result<Option<Heard>>>, Outgoing)>) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("bound");
+        let port = listener.local_addr().expect("an address").port();
+        let reading = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accepted");
+            let mut accepted = accepted(stream, None).await.expect("upgraded");
+            let mut heard = Vec::new();
+            loop {
+                let read = accepted.incoming.read_heard(most, &holds).await;
+                let ended = !matches!(read, Ok(Some(_)));
+                heard.push(read);
+                if ended {
+                    return (heard, accepted.outgoing);
+                }
+            }
+        });
+        (port, reading)
+    }
+
+    async fn settled(what: &str, done: impl Fn() -> bool) {
+        let deadline = Instant::now() + SETTLES_WITHIN;
+        while !done() {
+            assert!(Instant::now() < deadline, "{what} never happened");
+            sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn the_bytes_of_a_message_not_yet_whole_are_held_from_the_budget_as_they_arrive() {
+        let total = 1024 * 1024;
+        let arrived = 100 * 1024;
+        let (semaphore, holds) = pool_of(total);
+        let (port, reading) = reading_with(holds, total).await;
+        let mut stream = upgraded_by_hand(port).await;
+
+        stream
+            .write_all(&binary_header(512 * 1024))
+            .await
+            .expect("announced");
+        stream.write_all(&vec![7; arrived]).await.expect("sent");
+
+        settled("the arrived bytes being held", || {
+            semaphore.available_permits() <= total - arrived
+        })
+        .await;
+        drop(stream);
+        let (heard, _) = reading.await.expect("the reading task");
+        assert!(matches!(heard.as_slice(), [Err(_)]));
+        assert_eq!(semaphore.available_permits(), total);
+    }
+
+    #[tokio::test]
+    async fn a_message_past_what_the_budget_has_left_is_no_room_before_it_is_whole() {
+        let (_, holds) = pool_of(64 * 1024);
+        let (port, reading) = reading_with(holds, 1024 * 1024).await;
+        let mut stream = upgraded_by_hand(port).await;
+
+        stream
+            .write_all(&binary_header(512 * 1024))
+            .await
+            .expect("announced");
+        let _ = stream.write_all(&vec![7; 128 * 1024]).await;
+
+        let (heard, _) = reading.await.expect("the reading task");
+        assert!(
+            matches!(heard.as_slice(), [Err(Error::NoRoom { .. })]),
+            "{:?}",
+            heard.iter().map(Result::is_ok).collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_ping_is_heard_as_passed_over_and_gives_back_what_it_drew() {
+        let total = 64 * 1024;
+        let (semaphore, holds) = pool_of(total);
+        let (port, reading) = reading_with(holds, total).await;
+        let mut stream = upgraded_by_hand(port).await;
+
+        stream.write_all(&ping()).await.expect("pinged");
+        stream
+            .write_all(&binary_header(3))
+            .await
+            .expect("announced");
+        stream.write_all(&[1, 2, 3]).await.expect("sent");
+        stream.shutdown().await.expect("closed");
+
+        let (heard, _) = reading.await.expect("the reading task");
+        let [
+            Ok(Some(Heard::PassedOver)),
+            Ok(Some(Heard::Frame { payload, held })),
+            ..,
+        ] = heard.as_slice()
+        else {
+            panic!("a ping then a frame were not heard");
+        };
+        assert_eq!(payload, &[1, 2, 3]);
+        assert_eq!(
+            held.as_ref().map(OwnedSemaphorePermit::num_permits),
+            Some(as_framed_by_a_client(3))
+        );
+        drop(heard);
+        assert_eq!(semaphore.available_permits(), total);
+    }
 
     #[tokio::test]
     async fn a_plain_web_socket_is_refused_to_any_host_but_this_machine() {
@@ -423,10 +738,10 @@ mod tests {
     #[tokio::test]
     async fn a_budgeted_stream_stops_reading_once_its_budget_is_spent() {
         let (mut near, mut far) = duplex(4096);
-        let (budget, left) = Budget::spendable();
+        let (budget, spending) = Budget::spendable();
         let mut budgeted = Budgeted {
             inner: &mut near,
-            left,
+            spending,
         };
         budget.allow(40);
         far.write_all(&[1; 1000]).await.expect("written");

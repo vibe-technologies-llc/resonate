@@ -9,16 +9,25 @@ use std::{
 
 use resonate_server::{Allowance, Limits, Server, Store};
 use resonate_sync::{
-    DeviceId, Follow, Me, Platform, Settings, Standing, Sync, SyncKey, connect, sealed, to_the_web,
-    web_address,
+    DeviceId, Follow, Incoming, Me, Outgoing, Platform, Settings, Standing, Sync, SyncKey, connect,
+    sealed, to_the_web, web_address,
     wire::{FromServer, PROTOCOL_VERSION, Refusal, ToServer, encoded_bundle},
 };
 use rustls::RootCertStore;
-use tokio::net::TcpListener;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    time::timeout,
+};
 
 use crate::shelf::Shelf;
 
 const SETTLES_WITHIN: Duration = Duration::from_secs(30);
+const REFUSED_WITHIN: Duration = Duration::from_secs(5);
+const KIBIBYTE: usize = 1024;
+const BINARY_AND_FINAL: u8 = 0x82;
+const MASKED_WITH_A_LENGTH_OF_EIGHT_BYTES: u8 = 0x80 | 127;
+const UNMASKING_KEY: [u8; 4] = [0; 4];
 
 struct Hosted {
     address: SocketAddr,
@@ -274,4 +283,158 @@ fn saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_a
     drop(phone);
     drop(desk);
     let _ = fs::remove_dir_all(&folder);
+}
+
+fn hello(key: &SyncKey) -> Vec<u8> {
+    let derived = key.derived().expect("derived");
+    ToServer::Hello {
+        version: PROTOCOL_VERSION,
+        space: derived.space,
+        token: derived.token,
+        device: DeviceId::minted().expect("a device"),
+        after: 0,
+    }
+    .encoded()
+}
+
+async fn welcomed_over_the_web(hosted: &Hosted, key: &SyncKey) -> (Outgoing, Incoming) {
+    let address = web_address(&format!("ws://{}/", hosted.address)).expect("an address");
+    let tls = to_the_web(RootCertStore::empty()).expect("a configuration");
+    let (mut outgoing, mut incoming) = connect(&address, &tls).await.expect("connected");
+    outgoing.send(&hello(key)).await.expect("said hello");
+    loop {
+        let heard = incoming.read().await.expect("read").expect("a frame");
+        if matches!(
+            FromServer::decoded(&heard).expect("a frame"),
+            FromServer::Welcome { .. }
+        ) {
+            return (outgoing, incoming);
+        }
+    }
+}
+
+async fn refused_over_the_web(incoming: &mut Incoming) -> Option<Refusal> {
+    while let Ok(Some(heard)) = incoming.read().await {
+        if let Ok(FromServer::Refused(refusal)) = FromServer::decoded(&heard) {
+            return Some(refusal);
+        }
+    }
+    None
+}
+
+fn framed_by_hand(payload: &[u8]) -> Vec<u8> {
+    let mut framed = announced_by_hand(payload.len());
+    framed.extend_from_slice(payload);
+    framed
+}
+
+fn announced_by_hand(length: usize) -> Vec<u8> {
+    let mut header = vec![BINARY_AND_FINAL, MASKED_WITH_A_LENGTH_OF_EIGHT_BYTES];
+    header.extend_from_slice(&u64::try_from(length).expect("a length").to_be_bytes());
+    header.extend_from_slice(&UNMASKING_KEY);
+    header
+}
+
+async fn upgraded_by_hand(hosted: &Hosted) -> TcpStream {
+    let mut stream = TcpStream::connect(hosted.address).await.expect("connected");
+    stream
+        .write_all(
+            format!(
+                "GET / HTTP/1.1\r\nHost: {}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+                 Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+                hosted.address
+            )
+            .as_bytes(),
+        )
+        .await
+        .expect("asked to upgrade");
+    let mut answer = Vec::new();
+    let mut byte = [0; 1];
+    while !answer.ends_with(b"\r\n\r\n") {
+        stream.read_exact(&mut byte).await.expect("an answer");
+        answer.push(byte[0]);
+    }
+    stream
+}
+
+#[test]
+fn a_message_still_arriving_on_one_web_socket_holds_its_bytes_from_every_other_session() {
+    let hosted = hosted(
+        Limits {
+            frame_bytes: 256 * KIBIBYTE,
+            ..Limits::default()
+        },
+        None,
+    );
+    let holder = SyncKey::minted().expect("a key");
+    let asker = SyncKey::minted().expect("a key");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime");
+
+    let refused = runtime.block_on(async {
+        let mut holding = upgraded_by_hand(&hosted).await;
+        holding
+            .write_all(&framed_by_hand(&hello(&holder)))
+            .await
+            .expect("said hello");
+        holding
+            .write_all(&announced_by_hand(1024 * KIBIBYTE))
+            .await
+            .expect("announced");
+        holding
+            .write_all(&vec![7; 240 * KIBIBYTE])
+            .await
+            .expect("sent part");
+
+        let deadline = Instant::now() + REFUSED_WITHIN;
+        loop {
+            let (mut outgoing, mut incoming) = welcomed_over_the_web(&hosted, &asker).await;
+            outgoing
+                .send(&vec![0; 64 * KIBIBYTE])
+                .await
+                .expect("sent a frame");
+            let refused = timeout(REFUSED_WITHIN, refused_over_the_web(&mut incoming))
+                .await
+                .ok()
+                .flatten();
+            if refused.is_some() || Instant::now() >= deadline {
+                drop(holding);
+                break refused;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+    });
+
+    assert_eq!(refused, Some(Refusal::Busy));
+}
+
+#[test]
+fn a_ping_counts_toward_the_frames_a_web_socket_may_send_in_a_minute() {
+    let hosted = hosted(
+        Limits {
+            frames_per_minute: 5,
+            ..Limits::default()
+        },
+        None,
+    );
+    let key = SyncKey::minted().expect("a key");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime");
+
+    let refused = runtime.block_on(async {
+        let (mut outgoing, mut incoming) = welcomed_over_the_web(&hosted, &key).await;
+        for _ in 0..10 {
+            outgoing.keep_alive().await.expect("pinged");
+        }
+        timeout(REFUSED_WITHIN, refused_over_the_web(&mut incoming))
+            .await
+            .ok()
+            .flatten()
+    });
+
+    assert_eq!(refused, Some(Refusal::TooFast));
 }

@@ -60,13 +60,22 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   being read, not a count of 32 MiB frames, and QUIC's flow control holds the client back
   (`a_frame_larger_than_the_budget_takes_all_of_it_and_nothing_is_read_until_it_is_handled`).
 - **Every session's frames share one byte budget too** (`reading::FrameBytes`, `--frame-bytes`,
-  256 MiB): on QUIC the announced length is held from it before the body is allocated
-  (`resonate_sync::Incoming::read_held`, `read_frame_held`), on a web socket the message once
-  tungstenite hands it over (it lends no length before); the hold is `try_acquire`d, never waited
-  for, and is kept with the session's permit until the frame is handled. A frame that finds no room
-  is `Error::NoRoom` and the session is refused `Busy`, so 2 048 connections each announcing
-  `LARGEST_FRAME` hold no more than the budget, not tens of GiB
-  (`frames_announced_across_sessions_past_what_the_server_holds_are_refused_as_busy`).
+  256 MiB), through `resonate_sync::Holds` (`Incoming::read_heard`): on QUIC the announced length is
+  held from it before the body is allocated (`read_frame_held`); on a web socket every byte is drawn
+  from it as it comes off the socket (the `Budgeted` stream under tungstenite, `Holds::draw`), so a
+  message still arriving holds what has arrived, and once it is whole its bytes as framed go with it
+  and what was read past it is carried to the next, at most one read (`WEB_READ_AT_ONCE`, 16 KiB,
+  the accepting side's read buffer). The hold is `try_acquire`d, never waited for, and is kept with
+  the session's permit until the frame is handled. A frame that finds no room, or a web socket's
+  read that finds none, is `Error::NoRoom` and the session is refused `Busy`, so 2 048 connections
+  each sending `LARGEST_FRAME` hold no more than the budget, not tens of GiB
+  (`frames_announced_across_sessions_past_what_the_server_holds_are_refused_as_busy`,
+  `a_message_still_arriving_on_one_web_socket_holds_its_bytes_from_every_other_session`,
+  `the_bytes_of_a_message_not_yet_whole_are_held_from_the_budget_as_they_arrive`). **A web socket's
+  every message counts**: a ping, pong or text message is drawn like any other, given back once
+  read and handed to the session as `Read::PassedOver`, which counts toward `--frames-per-minute`
+  (`a_ping_counts_toward_the_frames_a_web_socket_may_send_in_a_minute`). What the web path holds
+  beyond the budget is tungstenite's read buffer, one read a connection.
 - **A QUIC connection to the server carries one stream and nothing beside it**
   (`resonate_sync::server_transport`, the server's alone; devices dial with their own): one
   bidirectional stream at a time, no unidirectional stream, no datagrams, and a receive window of
