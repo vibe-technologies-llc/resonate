@@ -8,11 +8,6 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Performance and scale
-- [L · 0.12.1] A sync state past `SNAPSHOT_FRAME_SHARE` (16 MiB) is never compacted: `compact()`
-  (`service.rs`) now backs off once refused, until the records since the snapshot double, but the
-  server's log still grows for good and a new device replays all of it, and answers are never pruned;
-  a snapshot of several parts (the server's `Compact` taking them across frames) or answers kept out
-  of it, which is a choice of what a newly paired device learns
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)

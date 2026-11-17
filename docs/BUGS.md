@@ -13,8 +13,14 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.12.1] A restart of sync after a settings change still waits for the old run to be let go
   rather than stopping it (`sync.rs`); `Seat::ended` could stop it as a leave now does
 - [S · 0.12.1] A shared playlist whose state passes one frame is never compacted (`shared/service.rs`
-  backs off, as the device sync did): the multi-part compaction the device sync is getting would
-  serve it too
+  backs off): the device sync's staged compaction (`Stage`, `Staged`, `CompactStaged`) serves it with
+  no server change once the list wraps its parts and reads `Staging` and a `Stale` refusal
+- [S · 0.12.1] `Ledger::compacted` resets the records-since count to 0 though the device has read
+  records past that `through`, so where its own `Compacted` lands after a catch-up those records never
+  count toward the next compaction
+- [S · 0.12.1] A compaction refused `SpaceFull` reaches the device as an ordinary refusal: it drops the
+  connection and shows itself refused for 30 minutes, likelier now that large states compact; a full
+  space should back the compaction off and keep the session
 
 ## Playback and output
 
