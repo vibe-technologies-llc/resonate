@@ -280,7 +280,18 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
 - **The renderer's clock is read, not assumed:** every `POSITION_ASKED_EVERY` (500 ms) while it
   streams, `GetPositionInfo`'s `RelTime` (read through `Duration::try_from_secs_f64` and `checked_add`, so a figure no duration holds is no reading, never a panic) against the frames served gives the frames still ahead of
   the ear, published through `StreamClock::note` as a `GraphTime` ticking at the stream's rate,
-  which is what the engine's position, the heard frame and the drain fallback read.
+  which is what the engine's position, the heard frame and the drain fallback read. **A reading in
+  whole seconds is a span, not a point** (`Feed::heard_through`): most renderers truncate `RelTime`
+  to the second, so `0:01:02` says the ear is somewhere in the second after it, and the frames
+  ahead lie between the frames served less the second's end and less its start. The served frames
+  are paced by the renderer's own clock (its buffer full, writes block), so how far it plays behind
+  them holds still while it streams, and each reading's span is intersected with those before; the
+  middle of what is left is published, so lyrics light within a fraction of a second rather than up
+  to one late. A reading with a fraction (a renderer saying `.500`, Cast's `currentTime`) is a point,
+  a span that misses the one kept starts over from that reading (a seek, a renderer that rebuffered),
+  and a new fetch forgets it
+  (`a_renderer_counting_whole_seconds_is_heard_to_well_within_one_once_it_has_said_a_few`,
+  `a_reading_finer_than_a_second_is_taken_as_said_and_a_moved_stream_starts_over`).
   `POSITION_FAILURES_AT_MOST` (6) unanswered in a row is the renderer gone.
 - **A drain ends the answer:** after `Drain`, the first short fill marks the frames served as the
   end and closes the connection, and `Drained` is told once `RelTime` is within

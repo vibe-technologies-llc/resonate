@@ -1553,8 +1553,9 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   clock, Core Audio's device, safety offset, stream and buffer latencies, Oboe's measured latency,
   RemoteIO's output latency and I/O buffer, a renderer's clock against the frames served). The
   seek bar, MPRIS, `Listening` and the lyric panes on every platform read it as it is; none
-  corrects for the output again (`lyrics.md`). A renderer counting `RelTime` in whole seconds
-  leaves it up to a second behind.
+  corrects for the output again (`lyrics.md`). A renderer counting `RelTime` in whole seconds is
+  read to well within one: its feed narrows how far it plays behind the frames served across its
+  readings and publishes the middle (`upnp.md`, *The renderer's clock is read*).
 - **Stream latency is counted in the stream's frames, converted where the graph tick rate is
   known.** `pw_time.delay` is in `pw_time.rate` (graph clock), not the stream's. The `process`
   callback holds the only consistent delay/rate snapshot: it builds a `GraphTime` and publishes

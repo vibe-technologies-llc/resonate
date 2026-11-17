@@ -28,6 +28,29 @@ const NOT_ENDED: u64 = u64::MAX;
 
 const NANOS_A_SECOND: u128 = 1_000_000_000;
 
+const A_WHOLE_SECONDS_READING_SPANS: Duration = Duration::from_secs(1);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Ahead {
+    least: u64,
+    most: u64,
+}
+
+impl Ahead {
+    fn narrowed_by(self, reading: Self) -> Self {
+        let least = self.least.max(reading.least);
+        let most = self.most.min(reading.most);
+        if least > most {
+            return reading;
+        }
+        Self { least, most }
+    }
+
+    const fn middle(self) -> u64 {
+        self.least + (self.most - self.least) / 2
+    }
+}
+
 pub struct Feed {
     spec: StreamSpec,
     carriage: Carriage,
@@ -40,6 +63,7 @@ pub struct Feed {
     pouring: AtomicU64,
     served: AtomicU64,
     ended_at: AtomicU64,
+    ahead: Mutex<Option<Ahead>>,
 }
 
 impl Feed {
@@ -61,6 +85,7 @@ impl Feed {
             pouring: AtomicU64::new(0),
             served: AtomicU64::new(0),
             ended_at: AtomicU64::new(NOT_ENDED),
+            ahead: Mutex::new(None),
         }
     }
 
@@ -99,7 +124,7 @@ impl Feed {
 
     pub fn heard_through(&self, heard: Duration) {
         let served = self.served.load(Ordering::Acquire);
-        let ahead = served.saturating_sub(self.frames_of(heard));
+        let ahead = self.ahead_by(served, heard);
         let rate = NonZeroU32::new(self.spec.rate.hz()).unwrap_or(NonZeroU32::MIN);
         self.clock.note(
             GraphTime {
@@ -113,6 +138,22 @@ impl Feed {
             },
             self.spec.rate,
         );
+    }
+
+    fn ahead_by(&self, served: u64, heard: Duration) -> u64 {
+        let spans = if heard.subsec_nanos() == 0 {
+            A_WHOLE_SECONDS_READING_SPANS
+        } else {
+            Duration::ZERO
+        };
+        let reading = Ahead {
+            least: served.saturating_sub(self.frames_of(heard.saturating_add(spans))),
+            most: served.saturating_sub(self.frames_of(heard)),
+        };
+        let mut kept = self.ahead.lock();
+        let narrowed = kept.map_or(reading, |kept| kept.narrowed_by(reading));
+        *kept = Some(narrowed);
+        narrowed.middle()
     }
 
     pub(crate) fn serve(&self, stream: &mut TcpStream, head_only: bool) -> io::Result<()> {
@@ -133,6 +174,7 @@ impl Feed {
         };
         self.served.store(0, Ordering::Release);
         self.ended_at.store(NOT_ENDED, Ordering::Release);
+        *self.ahead.lock() = None;
         self.pouring.fetch_add(1, Ordering::AcqRel);
         let poured = self.pour(stream, source.as_mut(), &mut wire, mine);
         self.pouring.fetch_sub(1, Ordering::AcqRel);
@@ -321,6 +363,60 @@ mod tests {
         feed.close();
         drop(first);
         second_fetch.join().expect("the second fetch ends");
+    }
+
+    fn heard_by_a_renderer_counting_whole_seconds(feed: &Feed, at: Duration, behind: Duration) {
+        let served = feed.frames_of(at.saturating_add(behind));
+        feed.served.store(served, Ordering::Release);
+        feed.heard_through(Duration::from_secs(at.as_secs()));
+    }
+
+    #[test]
+    fn a_renderer_counting_whole_seconds_is_heard_to_well_within_one_once_it_has_said_a_few() {
+        const BEHIND: Duration = Duration::from_millis(1_300);
+        const HEARD_WITHIN: Duration = Duration::from_millis(100);
+        const ASKED_AT_MILLIS: [u64; 8] = [1_100, 1_620, 2_130, 2_650, 3_170, 3_690, 4_210, 4_730];
+
+        let feed = silent_feed();
+        let behind = feed.frames_of(BEHIND);
+        let within = feed.frames_of(HEARD_WITHIN);
+
+        let first = Duration::from_millis(ASKED_AT_MILLIS[0]);
+        heard_by_a_renderer_counting_whole_seconds(&feed, first, BEHIND);
+        let after_one = feed.clock.latency().get();
+        for at in ASKED_AT_MILLIS
+            .into_iter()
+            .skip(1)
+            .map(Duration::from_millis)
+        {
+            heard_by_a_renderer_counting_whole_seconds(&feed, at, BEHIND);
+        }
+        let after_all = feed.clock.latency().get();
+
+        assert!(
+            after_one.abs_diff(behind) <= feed.frames_of(Duration::from_millis(500)),
+            "one whole second's reading was not taken at its middle: {after_one} against {behind}"
+        );
+        assert!(
+            after_all.abs_diff(behind) <= within,
+            "the renderer was heard {after_all} frames behind, not {behind}"
+        );
+    }
+
+    #[test]
+    fn a_reading_finer_than_a_second_is_taken_as_said_and_a_moved_stream_starts_over() {
+        let feed = silent_feed();
+        let rate = u64::from(feed.spec.rate.hz());
+
+        feed.served.store(10 * rate, Ordering::Release);
+        feed.heard_through(Duration::from_millis(8_250));
+        let finer = feed.clock.latency().get();
+        feed.served.store(20 * rate, Ordering::Release);
+        feed.heard_through(Duration::from_millis(19_500));
+        let moved = feed.clock.latency().get();
+
+        assert_eq!(finer, feed.frames_of(Duration::from_millis(1_750)));
+        assert_eq!(moved, feed.frames_of(Duration::from_millis(500)));
     }
 
     #[test]
