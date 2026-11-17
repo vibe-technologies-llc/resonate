@@ -49,6 +49,8 @@ const PEOPLE_TOLD_AT_MOST_EVERY: Duration = Duration::from_secs(3);
 
 const CLOSES_BEFORE_WELCOME_FOR_TOO_OLD: u32 = 3;
 
+const NO_ROOM_ANSWERS_BEFORE_NO_SUCH_PARTY: u32 = 3;
+
 pub const CHAT_KEPT_AT_MOST: usize = 200;
 
 const CHAT_OWED_AT_MOST: usize = 256;
@@ -344,6 +346,7 @@ impl Party {
             told: None,
             waiting: VecDeque::new(),
             closes_before_welcome: 0,
+            no_room_answers: 0,
             people_told: PeopleTold::default(),
             lines_minted: u64::from_be_bytes(random_bytes()?),
             chat_told: ChatTold::default(),
@@ -461,6 +464,7 @@ struct Running {
     told: Option<PartyNow>,
     waiting: VecDeque<Asked>,
     closes_before_welcome: u32,
+    no_room_answers: u32,
     people_told: PeopleTold,
     lines_minted: u64,
     chat_told: ChatTold,
@@ -746,9 +750,17 @@ impl Running {
                 }
                 self.host_id = Some(host);
                 self.closes_before_welcome = 0;
+                self.no_room_answers = 0;
             }
             Some(FromServer::Refused(Refusal::NoSuchRoom)) => {
-                return Ok(Ended::Over(PartyReach::NoSuchParty));
+                self.no_room_answers += 1;
+                return Ok(
+                    if self.no_room_answers >= NO_ROOM_ANSWERS_BEFORE_NO_SUCH_PARTY {
+                        Ended::Over(PartyReach::NoSuchParty)
+                    } else {
+                        Ended::Lost
+                    },
+                );
             }
             Some(FromServer::Refused(Refusal::Token)) => {
                 return Ok(Ended::Over(PartyReach::TurnedAway));

@@ -979,6 +979,53 @@ async fn a_guest_saying_more_than_its_share_is_heard_only_as_far_as_its_share() 
     .await;
 }
 
+async fn a_door_held_shut_until(server: SocketAddr, open: Arc<AtomicBool>) -> SocketAddr {
+    let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .await
+        .expect("listening");
+    let address = listener.local_addr().expect("an address");
+    tokio::spawn(async move {
+        while let Ok((mut client, _)) = listener.accept().await {
+            let open = Arc::clone(&open);
+            tokio::spawn(async move {
+                while !open.load(Ordering::Acquire) {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                if let Ok(mut upstream) = TcpStream::connect(server).await {
+                    let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
+                }
+            });
+        }
+    });
+
+    address
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_guest_arriving_before_its_host_has_made_the_room_is_let_in_once_the_host_has() {
+    let server = hosted(Limits::default()).await;
+    let open = Arc::new(AtomicBool::new(false));
+    let door = a_door_held_shut_until(server, Arc::clone(&open)).await;
+
+    let host = Party::host(party_settings(door, "Host")).expect("the host starts");
+    let guest =
+        Party::join(party_settings(server, "Guest"), &host.shown().code).expect("the guest starts");
+    until("the guest to be told the room is not there yet", || {
+        guest.shown().reach != PartyReach::Connecting
+    })
+    .await;
+    let before_the_host = guest.shown().reach;
+    open.store(true, Ordering::Release);
+
+    assert_eq!(before_the_host, PartyReach::Reconnecting);
+    until(
+        "the guest to be let in once the host has made the room",
+        || guest.shown().reach == PartyReach::Here,
+    )
+    .await;
+    assert_eq!(host.shown().reach, PartyReach::Here);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn nobody_is_at_a_party_nobody_began() {
     let server = hosted(Limits::default()).await;
