@@ -36,6 +36,7 @@ const DEEPEST_FOLDER: usize = 32;
 const CANDIDATE_NAMES: u32 = 999;
 
 const STAGED_SUFFIX: &str = "resonate-part";
+const STAGED_BY_AND_COUNTED: char = '-';
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Looks {
@@ -658,7 +659,7 @@ fn land(
     }
 
     let staged = staged_beside(&whole);
-    let held = Held::taken_over(&staged).map_err(|error| unwritable(&error))?;
+    let held = Held::made(&staged).map_err(|error| unwritable(&error))?;
     let outcome = content.staged_at(&staged, &held).and_then(|bytes| {
         file_facts::sync_file(&staged).map_err(|_| Passing::Unverified)?;
         place(&staged, content, &whole).map(|stood| (stood, bytes))
@@ -692,21 +693,29 @@ fn refused_copy(error: &io::Error) -> Passing {
 }
 
 fn staged_beside(whole: &Path) -> PathBuf {
+    static STAGINGS_MADE: AtomicU64 = AtomicU64::new(0);
+
     whole.with_file_name(naming::named_within(
         ".",
         whole.file_name().unwrap_or_default(),
-        format!(".{}.{STAGED_SUFFIX}", process::id()),
+        format!(
+            ".{}{STAGED_BY_AND_COUNTED}{}.{STAGED_SUFFIX}",
+            process::id(),
+            STAGINGS_MADE.fetch_add(1, Ordering::Relaxed)
+        ),
     ))
 }
 
 fn stamp_of_staged(name: &str) -> Option<u32> {
-    name.strip_prefix('.')?
+    let (_, stamp) = name
+        .strip_prefix('.')?
         .strip_suffix(STAGED_SUFFIX)?
         .strip_suffix('.')?
-        .rsplit_once('.')?
-        .1
-        .parse()
-        .ok()
+        .rsplit_once('.')?;
+    let writer = stamp
+        .split_once(STAGED_BY_AND_COUNTED)
+        .map_or(stamp, |(writer, _)| writer);
+    writer.parse().ok()
 }
 
 fn sweep_what_a_dead_drop_in_staged(folder: &Path) {
@@ -869,7 +878,28 @@ mod tests {
             "what a living drop-in staged was taken away"
         );
         assert_eq!(stamp_of_staged(".a.b.flac.42.resonate-part"), Some(42));
+        assert_eq!(stamp_of_staged(".a.b.flac.42-7.resonate-part"), Some(42));
         assert_eq!(stamp_of_staged(".a.flac.resonate-part"), None);
+        drop(held);
+    }
+
+    #[test]
+    fn two_drops_of_one_name_into_one_folder_are_staged_apart() {
+        let scratch = Scratch::new("staged-apart");
+        let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+        let song = written(&from, "song.flac", b"song");
+        let first = staged_beside(&into.join("song.flac"));
+        let held = Held::made(&first).expect("the first drop's stage");
+
+        let summary = taken_in(vec![song], &into);
+
+        assert_eq!(summary.stats.copied, 1, "{:?}", summary.passed);
+        assert_eq!(fs::read(into.join("song.flac")).expect("landed"), b"song");
+        assert!(first.exists(), "the first drop's stage was taken");
+        assert_eq!(
+            stamp_of_staged(&first.file_name().expect("a name").to_string_lossy()),
+            Some(process::id())
+        );
         drop(held);
     }
 

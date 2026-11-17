@@ -2005,8 +2005,11 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   else `NotAudio`. Landing is `<into>/<name>`, folders merging: file inside `into`: `AlreadyThere`;
   same bytes: `AlreadyHeld` (neither is a refusal, `Passing::is_a_refusal`); a different file under
   the name: `name (2).ext` and on (to 999, then `Unwritable`).
-- **A copy is whole, read back, then named.** Bytes go to hidden `.<name>.<pid>.resonate-part`, held
-  under `writer::Held` while written; a run sweeps every folder it lands in once, taking
+- **A copy is whole, read back, then named.** Bytes go to hidden `.<name>.<pid>-<n>.resonate-part`
+  (`n` a count the process keeps, so two drops of one name into one folder never share a stage:
+  `two_drops_of_one_name_into_one_folder_are_staged_apart`), created `create_new` under
+  `Held::made` while written, so a filesystem refusing `flock` still never has two writers in one
+  stage; a run sweeps every folder it lands in once, taking
   `.resonate-part` files whose writer `writer::writer_of` reads as gone. Compared in
   `COMPARED_AT_ONCE` (256 KiB) pieces, synced, `hard_link`ed to the name (refuses an existing name
   atomically), `rename` where no links; the staged file is always removed. Not reading back:
