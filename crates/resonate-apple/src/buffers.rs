@@ -41,6 +41,9 @@ pub(crate) unsafe fn rendered(
     let Some(buffers) = (unsafe { buffers.as_mut() }) else {
         return ANSWERED;
     };
+    if buffers.mNumberBuffers < 1 {
+        return ANSWERED;
+    }
     let [buffer] = &mut buffers.mBuffers;
     let Some(data) = NonNull::new(buffer.mData.cast::<u8>()) else {
         return ANSWERED;
@@ -85,8 +88,8 @@ pub(crate) unsafe fn heard<I: Copy>(
     ANSWERED
 }
 
-pub(crate) fn guarded(answered: impl FnOnce() -> i32, aborting: impl FnOnce() -> i32) -> i32 {
-    panic::catch_unwind(AssertUnwindSafe(answered)).unwrap_or_else(|_| aborting())
+pub(crate) fn guarded<T>(answered: impl FnOnce() -> T, otherwise: impl FnOnce() -> T) -> T {
+    panic::catch_unwind(AssertUnwindSafe(answered)).unwrap_or_else(|_| otherwise())
 }
 
 #[cfg(test)]
@@ -138,8 +141,12 @@ mod tests {
     }
 
     fn list_over(data: *mut c_void, bytes: u32) -> AudioBufferList {
+        list_of(1, data, bytes)
+    }
+
+    fn list_of(buffers: u32, data: *mut c_void, bytes: u32) -> AudioBufferList {
         AudioBufferList {
-            mNumberBuffers: 1,
+            mNumberBuffers: buffers,
             mBuffers: [AudioBuffer {
                 mNumberChannels: 2,
                 mDataByteSize: bytes,
@@ -195,6 +202,19 @@ mod tests {
         let answer = unsafe { rendered(handed(&mut rendering), &mut list, &untimed(), 0) };
 
         assert_eq!(answer, ANSWERED);
+        assert_eq!(seen.renders.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn a_list_of_no_buffers_is_answered_and_its_stale_first_buffer_is_never_written() {
+        let (mut rendering, seen) = marking();
+        let mut memory = [0x11_u8; 8];
+        let mut list = list_of(0, memory.as_mut_ptr().cast(), 8);
+
+        let answer = unsafe { rendered(handed(&mut rendering), &mut list, &untimed(), 0) };
+
+        assert_eq!(answer, ANSWERED);
+        assert_eq!(memory, [0x11; 8]);
         assert_eq!(seen.renders.load(Ordering::Acquire), 0);
     }
 
@@ -344,6 +364,14 @@ mod tests {
         let status = guarded(|| panic!("a source that panicked in the callback"), || -1);
 
         assert_eq!(status, -1);
+    }
+
+    #[test]
+    #[allow(clippy::panic)]
+    fn a_guard_answers_a_panic_with_any_type_the_work_returns() {
+        let answer = guarded(|| panic!("a handler that panicked"), || "failed");
+
+        assert_eq!(answer, "failed");
     }
 
     #[test]

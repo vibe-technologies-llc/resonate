@@ -69,7 +69,7 @@ rest on this discipline alone):
 - `resonate-apple/src/render.rs`, `buffers.rs` and `clock.rs`, and `resonate-coreaudio/src/fill.rs`:
   the AudioUnit callbacks, RemoteIO's on iOS and the HAL unit's on macOS. `render` (which catches a
   panic through `guarded` and aborts) reads `mach_absolute_time` (`clock::host_ticks`), hands the
-  system's own interleaved buffer (`rendered`, reading the buffer list) and the host time in
+  system's own interleaved buffer (`rendered`, reading the buffer list, answering a list that declares no buffer without touching its stale first one) and the host time in
   nanoseconds (`HostClock::nanos`, an integer multiply and a `NonZero` divide by the timebase read
   as the unit opened) to a `Render`, which is `Rendering::fill`: it fills the buffer from the
   source, zeroes a short fill, lays a 24-bit word against the top of its 32 bits where the stream

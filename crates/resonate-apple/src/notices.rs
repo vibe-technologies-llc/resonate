@@ -24,7 +24,7 @@ use objc2_user_notifications::{
 };
 use parking_lot::Mutex;
 
-use crate::{Error, Result};
+use crate::{Error, Result, buffers::guarded};
 
 const TRANSPORT_CATEGORY: &str = "resonate.transport";
 const THREAD: &str = "resonate";
@@ -129,7 +129,7 @@ fn asker_of(identifier: &str) -> Option<u64> {
 fn answered(identifier: &str, key: &str) {
     let answer = asker_of(identifier).and_then(|asker| ANSWERING.lock().get(&asker).cloned());
     if let Some(answer) = answer {
-        answer(key);
+        guarded(|| answer(key), || ());
     }
 }
 

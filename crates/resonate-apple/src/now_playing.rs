@@ -1,4 +1,12 @@
-use std::{ptr::NonNull, sync::Arc, time::Duration};
+use std::{
+    cell::RefCell,
+    ptr::NonNull,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 use block2::RcBlock;
 use dispatch2::DispatchQueue;
@@ -14,6 +22,19 @@ use objc2_media_player::{
     MPNowPlayingInfoPropertyPlaybackRate, MPNowPlayingPlaybackState, MPRemoteCommand,
     MPRemoteCommandCenter, MPRemoteCommandEvent, MPRemoteCommandHandlerStatus,
 };
+
+use crate::{buffers::guarded, targets::Targets};
+
+static NEXT_OWNER: AtomicU64 = AtomicU64::new(1);
+
+struct Added {
+    command: Retained<MPRemoteCommand>,
+    token: Retained<AnyObject>,
+}
+
+thread_local! {
+    static ADDED: RefCell<Targets<Added>> = const { RefCell::new(Targets::new()) };
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Shown {
@@ -146,11 +167,22 @@ fn info_center() -> Retained<MPNowPlayingInfoCenter> {
 }
 
 fn answered(
-    command: &MPRemoteCommand,
+    owner: u64,
+    command: Retained<MPRemoteCommand>,
     answer: impl Fn(NonNull<MPRemoteCommandEvent>) -> Answer + 'static,
 ) {
-    let handler = RcBlock::new(move |event: NonNull<MPRemoteCommandEvent>| answer(event).status());
-    let _target = unsafe { command.addTargetWithHandler(&handler) };
+    let handler = RcBlock::new(move |event: NonNull<MPRemoteCommandEvent>| {
+        guarded(|| answer(event), || Answer::Failed).status()
+    });
+    let token = unsafe { command.addTargetWithHandler(&handler) };
+    ADDED.with_borrow_mut(|added| added.add(owner, Added { command, token }));
+}
+
+fn released(owner: u64) {
+    let taken = ADDED.with_borrow_mut(|added| added.take(owner));
+    for Added { command, token } in taken {
+        unsafe { command.removeTarget(Some(&token)) };
+    }
 }
 
 fn position_asked(event: NonNull<MPRemoteCommandEvent>) -> Option<Duration> {
@@ -260,24 +292,33 @@ fn timed(clock: Option<Clock>) {
     unsafe { center.setNowPlayingInfo(Some(&info)) };
 }
 
-pub struct NowPlaying;
+pub struct NowPlaying {
+    owner: u64,
+}
 
 impl NowPlaying {
     pub fn answered_by(asked: impl Fn(Asked) -> Answer + Send + Sync + 'static) -> Self {
         let asked: Asking = Arc::new(asked);
+        let owner = NEXT_OWNER.fetch_add(1, Ordering::Relaxed);
         on_the_main_queue(move || {
             let center = commands();
             for pressed in Pressed::EVERY {
                 let asked = Arc::clone(&asked);
-                answered(&pressed.command(&center), move |_| asked(pressed.asked()));
+                answered(owner, pressed.command(&center), move |_| {
+                    asked(pressed.asked())
+                });
             }
             let seek = unsafe { center.changePlaybackPositionCommand() };
-            answered(&seek, move |event| match position_asked(event) {
-                Some(position) => asked(Asked::Seek(position)),
-                None => Answer::Failed,
-            });
+            answered(
+                owner,
+                seek.into_super(),
+                move |event| match position_asked(event) {
+                    Some(position) => asked(Asked::Seek(position)),
+                    None => Answer::Failed,
+                },
+            );
         });
-        Self
+        Self { owner }
     }
 
     pub fn show(&self, song: Option<&Shown>) {
@@ -318,14 +359,9 @@ impl NowPlaying {
 
 impl Drop for NowPlaying {
     fn drop(&mut self) {
-        on_the_main_queue(|| {
-            let center = commands();
-            for pressed in Pressed::EVERY {
-                let command = pressed.command(&center);
-                unsafe { command.removeTarget(None) };
-            }
-            let seek = unsafe { center.changePlaybackPositionCommand() };
-            unsafe { seek.removeTarget(None) };
+        let owner = self.owner;
+        on_the_main_queue(move || {
+            released(owner);
             let info = info_center();
             unsafe { info.setNowPlayingInfo(None) };
             unsafe { info.setPlaybackState(MPNowPlayingPlaybackState::Stopped) };

@@ -130,6 +130,15 @@ for them.
   waits on the engine. Every request is a `PlayerInterface` method (`play`, `pause`, `play_pause`,
   `stop`, `next`, `previous`, a place asked for to `set_position`), so `mpris.md`'s *A method does
   what the spec says* holds for a media key here too.
+- **A handler never lets a panic into Objective-C.** Each MediaPlayer block and the notification
+  delegate's `did_receive` run the listener's closure through `buffers::guarded` (a press that
+  panics answers `Failed`, a notice's button answers nothing), as `listening.rs` guards its nudge.
+- **A `NowPlaying` removes only the targets it added.** `addTargetWithHandler` returns a token;
+  each is kept with its command in a main-thread table (`targets::Targets`, keyed by the
+  `NowPlaying`'s own number), and the drop, posted after the registration on the same serial queue,
+  removes those alone, so a second `NowPlaying` made before the first one's drop lands keeps its
+  handlers. The table is thread-local to the main thread, so `NowPlaying` itself holds no
+  Objective-C object and stays `Send` and `Sync`.
 - **Every MediaPlayer call is posted to the main queue and none is waited for**: teardown joins
   the transport thread from the main thread as the application ends, and a synchronous call back
   onto it would never return.
