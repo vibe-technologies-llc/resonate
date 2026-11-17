@@ -68,6 +68,9 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [M · 0.12.1] Investigate: a same-length in-place tag write lands with no journal where the folder
   refuses one (`overlay.rs`: only a length change falls back to `TooWide`), so a crash part way leaves a
   torn header nothing mends; keep the journal under the spool as whole copies do, or decide the trade
+- [S · 0.12.1] A whole-library lookup stopped by a metered connection tells "MusicBrainz couldn't be
+  reached": the library's lookup summary says how many were answered and not why the pass stopped,
+  so the window cannot tell a shut gate from an unreachable service
 - [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
   root runs: `held_open_elsewhere` (`insert.rs`) counts an unreadable `/proc/<pid>/fd` as holding
   the file except for a process whose `status` names root. A write lease (`F_SETLEASE` with
