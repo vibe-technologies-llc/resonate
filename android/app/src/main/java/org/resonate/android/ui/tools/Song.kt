@@ -1,8 +1,10 @@
 package org.resonate.android.ui.tools
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicOff
@@ -85,10 +87,15 @@ fun LyricsScreen(track: ULong) {
     ) { padding ->
         if (song == null) MissingSong(padding)
         else
-            LyricsView(
-                song,
-                MaterialTheme.typography.headlineMedium,
-                Modifier.fillMaxSize().padding(padding).padding(horizontal = Sizes.gutter - 8.dp),
-            )
+            Column(Modifier.fillMaxSize().padding(padding)) {
+                LyricsView(
+                    song,
+                    MaterialTheme.typography.headlineMedium,
+                    Modifier.weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = Sizes.gutter - 8.dp),
+                )
+                LyricTiming(song)
+            }
     }
 }

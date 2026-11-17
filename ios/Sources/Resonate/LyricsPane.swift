@@ -223,6 +223,37 @@ struct LyricAttribution: View {
     }
 }
 
+struct LyricTimingControl: View {
+    @Environment(Library.self) private var library
+    let sheet: LyricSheet
+
+    var body: some View {
+        let features = library.features
+        let timing = sheet.timing
+        HStack(spacing: 6) {
+            Button("lyrics.earlier", systemImage: "minus") { features.nudgeLyrics(sheet.trackId, .earlier) }
+                .labelStyle(.iconOnly)
+                .accessibilityHint("lyrics.earlier.hint")
+            Button {
+                features.nudgeLyrics(sheet.trackId, .asWritten)
+            } label: {
+                Text(timing.said)
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .frame(minWidth: 64)
+            }
+            .disabled(!timing.moved)
+            .accessibilityLabel("lyrics.ahead")
+            .accessibilityValue(timing.said)
+            .accessibilityHint("lyrics.as-written.hint")
+            Button("lyrics.later", systemImage: "plus") { features.nudgeLyrics(sheet.trackId, .later) }
+                .labelStyle(.iconOnly)
+                .accessibilityHint("lyrics.later.hint")
+        }
+        .buttonStyle(.glass)
+        .controlSize(.small)
+    }
+}
+
 struct LyricAsk: Sendable {
     let native: MobilePlayer
     let track: UInt64
@@ -944,7 +975,7 @@ final class LyricStage {
             id: index,
             look: look,
             inset: inset(index, at: now, still: cue.still),
-            moment: seekable ? line.atMs : nil,
+            moment: seekable ? line.heardAtMs : nil,
             lit: lead > 0.5
         )
     }

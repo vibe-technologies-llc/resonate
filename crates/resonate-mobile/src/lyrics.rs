@@ -2,12 +2,12 @@ use std::{sync::Arc, time::Duration};
 
 use parking_lot::Mutex;
 use resonate_core::SourceId;
-use resonate_library::{LookupOp, LyricsAsked, Reference};
+use resonate_library::{LookupOp, LyricsAhead, LyricsAsked, Reference};
 use resonate_lyrics::{Detail, LyricLine, Lyrics, Timing, Voice, read_document, read_lyrics};
 
 use crate::{
     Error, MobilePlayer, Result, documents::location, enrichment::FETCHED_LYRICS,
-    features::milliseconds,
+    features::milliseconds, words,
 };
 
 const SHEETS_KEPT: usize = 16;
@@ -31,6 +31,7 @@ pub struct LyricWord {
 pub struct LyricRow {
     pub text: String,
     pub at_ms: Option<u64>,
+    pub heard_at_ms: Option<u64>,
     pub until_ms: Option<u64>,
     pub voice: u32,
     pub words: Vec<LyricWord>,
@@ -48,6 +49,21 @@ pub struct LyricSheet {
     pub end: u32,
     pub written_end: u32,
     pub lines: Vec<LyricRow>,
+    pub timing: LyricTiming,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct LyricTiming {
+    pub ahead_ms: i32,
+    pub moved: bool,
+    pub said: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum LyricNudge {
+    Earlier,
+    Later,
+    AsWritten,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, uniffi::Enum)]
@@ -91,8 +107,14 @@ pub struct LyricFrame {
 }
 
 #[derive(Clone)]
+pub(crate) struct Held {
+    lyrics: Arc<Lyrics>,
+    ahead: LyricsAhead,
+}
+
+#[derive(Clone)]
 pub(crate) enum Kept {
-    Sheet(Arc<Lyrics>),
+    Sheet(Held),
     Wordless,
 }
 
@@ -114,6 +136,13 @@ impl KeptSheets {
         self.0.lock().retain(|(held, _)| *held != id);
     }
 
+    fn moved(&self, id: u64, ahead: LyricsAhead) {
+        if let Some((_, Kept::Sheet(held))) = self.0.lock().iter_mut().find(|(kept, _)| *kept == id)
+        {
+            held.ahead = ahead;
+        }
+    }
+
     fn keep(&self, id: u64, kept: Kept) {
         let mut held = self.0.lock();
         held.retain(|(held, _)| *held != id);
@@ -133,11 +162,11 @@ impl MobilePlayer {
             let previous = self.cached_lyrics(id)?;
             if previous
                 .as_ref()
-                .is_none_or(|held| parsed.detail() > held.detail())
+                .is_none_or(|held| parsed.detail() > held.lyrics.detail())
             {
                 self.catalog
                     .keep_lyrics(id, Some(&text), None, "embedded")?;
-                self.remember_lyrics(id, Some(parsed));
+                self.remember_lyrics(id, Some(parsed))?;
             }
         }
         Ok(())
@@ -157,7 +186,7 @@ impl MobilePlayer {
             let previous = self.cached_lyrics(id)?;
             if previous
                 .as_ref()
-                .is_none_or(|held| lyrics.detail() >= held.detail())
+                .is_none_or(|held| lyrics.detail() >= held.lyrics.detail())
             {
                 self.catalog.keep_lyrics(
                     id,
@@ -165,7 +194,7 @@ impl MobilePlayer {
                     None,
                     "sidecar",
                 )?;
-                self.remember_lyrics(id, Some(lyrics));
+                self.remember_lyrics(id, Some(lyrics))?;
             }
         }
         Ok(())
@@ -195,7 +224,7 @@ impl MobilePlayer {
                     if let Some(parsed) = parsed
                         && cached
                             .as_ref()
-                            .is_none_or(|held| parsed.detail() >= held.detail())
+                            .is_none_or(|held| parsed.detail() >= held.lyrics.detail())
                     {
                         self.catalog.keep_lyrics(
                             id,
@@ -203,7 +232,7 @@ impl MobilePlayer {
                             answer.lyricsfile.as_deref(),
                             FETCHED_LYRICS,
                         )?;
-                        self.remember_lyrics(id, Some(parsed));
+                        self.remember_lyrics(id, Some(parsed))?;
                     }
                 }
                 Ok(None) if cached.is_none() => {
@@ -214,14 +243,26 @@ impl MobilePlayer {
                 Err(error) => tracing::debug!(%error, "cached lyrics cover a refused lookup"),
             }
         }
-        let lyrics = self.cached_lyrics(id)?;
+        let held = self.cached_lyrics(id)?;
 
-        Ok(sheet_of(id, lyrics.as_deref()))
+        Ok(sheet_of(id, held.as_ref()))
+    }
+
+    pub fn nudge_lyrics(&self, id: u64, nudge: LyricNudge) -> Result<LyricSheet> {
+        let ahead = self.catalog.nudge_lyrics(id, |ahead| match nudge {
+            LyricNudge::Earlier => ahead.earlier(),
+            LyricNudge::Later => ahead.later(),
+            LyricNudge::AsWritten => LyricsAhead::ZERO,
+        })?;
+        self.services.lyrics.moved(id, ahead);
+        let held = self.cached_lyrics(id)?;
+
+        Ok(sheet_of(id, held.as_ref()))
     }
 
     pub fn lyric_frame(&self, id: u64, position_ms: u64) -> LyricFrame {
-        let lyrics = match self.services.lyrics.read(id) {
-            Some(Kept::Sheet(lyrics)) => Some(lyrics),
+        let held = match self.services.lyrics.read(id) {
+            Some(Kept::Sheet(held)) => Some(held),
             Some(Kept::Wordless) => None,
             None => self.lyrics_from_the_catalog(id).unwrap_or_else(|error| {
                 tracing::debug!(%error, "kept lyrics could not be read again");
@@ -229,8 +270,8 @@ impl MobilePlayer {
             }),
         };
 
-        lyrics.map_or_else(unlit, |lyrics| {
-            frame_of(&lyrics, Duration::from_millis(position_ms))
+        held.map_or_else(unlit, |held| {
+            frame_of(&held, Duration::from_millis(position_ms))
         })
     }
 
@@ -241,20 +282,20 @@ impl MobilePlayer {
 
 fn kept_frame(sheets: &KeptSheets, id: u64, position_ms: u64) -> Option<LyricFrame> {
     Some(match sheets.read(id)? {
-        Kept::Sheet(lyrics) => frame_of(&lyrics, Duration::from_millis(position_ms)),
+        Kept::Sheet(held) => frame_of(&held, Duration::from_millis(position_ms)),
         Kept::Wordless => unlit(),
     })
 }
 
 impl MobilePlayer {
-    fn cached_lyrics(&self, id: u64) -> Result<Option<Arc<Lyrics>>> {
-        if let Some(Kept::Sheet(lyrics)) = self.services.lyrics.read(id) {
-            return Ok(Some(lyrics));
+    fn cached_lyrics(&self, id: u64) -> Result<Option<Held>> {
+        if let Some(Kept::Sheet(held)) = self.services.lyrics.read(id) {
+            return Ok(Some(held));
         }
         self.lyrics_from_the_catalog(id)
     }
 
-    fn lyrics_from_the_catalog(&self, id: u64) -> Result<Option<Arc<Lyrics>>> {
+    fn lyrics_from_the_catalog(&self, id: u64) -> Result<Option<Held>> {
         let lyrics = match self.catalog.lyric_text(id)? {
             Some((Some(text), document, origin)) => {
                 parse_lyrics(&text, document.as_deref(), &origin)?
@@ -262,15 +303,21 @@ impl MobilePlayer {
             _ => None,
         };
 
-        Ok(self.remember_lyrics(id, lyrics))
+        self.remember_lyrics(id, lyrics)
     }
 
-    fn remember_lyrics(&self, id: u64, lyrics: Option<Lyrics>) -> Option<Arc<Lyrics>> {
-        let lyrics = lyrics.map(Arc::new);
-        let kept = lyrics.clone().map_or(Kept::Wordless, Kept::Sheet);
+    fn remember_lyrics(&self, id: u64, lyrics: Option<Lyrics>) -> Result<Option<Held>> {
+        let held = match lyrics {
+            Some(lyrics) => Some(Held {
+                lyrics: Arc::new(lyrics),
+                ahead: self.catalog.lyrics_ahead(id)?,
+            }),
+            None => None,
+        };
+        let kept = held.clone().map_or(Kept::Wordless, Kept::Sheet);
         self.services.lyrics.keep(id, kept);
 
-        lyrics
+        Ok(held)
     }
 }
 
@@ -302,8 +349,25 @@ fn row(index: usize) -> u32 {
     u32::try_from(index).unwrap_or(u32::MAX)
 }
 
-fn sheet_of(id: u64, lyrics: Option<&Lyrics>) -> LyricSheet {
-    let Some(lyrics) = lyrics else {
+const MILLIS_PER_SECOND: f64 = 1_000.0;
+
+fn timing_of(ahead: LyricsAhead) -> LyricTiming {
+    let seconds = f64::from(ahead.millis()) / MILLIS_PER_SECOND;
+    let sign = match ahead.millis() {
+        0 => "",
+        sooner if sooner > 0 => "\u{2212}",
+        _ => "+",
+    };
+
+    LyricTiming {
+        ahead_ms: ahead.millis(),
+        moved: !ahead.is_zero(),
+        said: words::lyrics::seconds_ahead(format!("{:.1}", seconds.abs()), sign),
+    }
+}
+
+fn sheet_of(id: u64, held: Option<&Held>) -> LyricSheet {
+    let Some(Held { lyrics, ahead }) = held else {
         return LyricSheet {
             track_id: id,
             origin: String::new(),
@@ -312,8 +376,10 @@ fn sheet_of(id: u64, lyrics: Option<&Lyrics>) -> LyricSheet {
             end: 0,
             written_end: 0,
             lines: Vec::new(),
+            timing: timing_of(LyricsAhead::ZERO),
         };
     };
+    let ahead = *ahead;
     let mut written = 0;
     let lines: Vec<LyricRow> = lyrics
         .lines()
@@ -325,7 +391,7 @@ fn sheet_of(id: u64, lyrics: Option<&Lyrics>) -> LyricSheet {
                 written += 1;
             }
 
-            row_of(line, ordinal, lyrics.breathes_before(index))
+            row_of(line, ordinal, lyrics.breathes_before(index), ahead)
         })
         .collect();
 
@@ -341,13 +407,15 @@ fn sheet_of(id: u64, lyrics: Option<&Lyrics>) -> LyricSheet {
         end: row(lines.len()),
         written_end: written,
         lines,
+        timing: timing_of(ahead),
     }
 }
 
-fn row_of(line: &LyricLine, written: u32, breathes: bool) -> LyricRow {
+fn row_of(line: &LyricLine, written: u32, breathes: bool, ahead: LyricsAhead) -> LyricRow {
     LyricRow {
         text: line.text.clone(),
         at_ms: line.at.map(milliseconds),
+        heard_at_ms: line.at.map(|at| milliseconds(ahead.back(at))),
         until_ms: line.until.map(milliseconds),
         voice: row(line.voice.index()),
         words: line
@@ -379,7 +447,9 @@ fn unlit() -> LyricFrame {
     }
 }
 
-fn frame_of(lyrics: &Lyrics, position: Duration) -> LyricFrame {
+fn frame_of(held: &Held, heard: Duration) -> LyricFrame {
+    let lyrics = &held.lyrics;
+    let position = held.ahead.read(heard);
     let line = lyrics.line_at(position);
     let lit = lyrics.voices_in_play(position);
     let waiting = lyrics.waiting_at(position);
@@ -497,7 +567,13 @@ mod tests {
 
         assert_eq!(kept_frame(&sheets, 7, 1_500), None);
 
-        sheets.keep(7, Kept::Sheet(Arc::new(lyrics)));
+        sheets.keep(
+            7,
+            Kept::Sheet(Held {
+                lyrics: Arc::new(lyrics),
+                ahead: LyricsAhead::ZERO,
+            }),
+        );
         sheets.keep(8, Kept::Wordless);
         let held = kept_frame(&sheets, 7, 1_500).expect("a held sheet's frame");
 
@@ -738,10 +814,14 @@ mod tests {
         let player = player();
 
         for id in 1..=16 {
-            player.remember_lyrics(id, Some(sheet(&["a line"])));
+            player
+                .remember_lyrics(id, Some(sheet(&["a line"])))
+                .expect("a sheet remembered");
         }
         let read = player.lyric_frame(1, 500);
-        player.remember_lyrics(17, Some(sheet(&["another line"])));
+        player
+            .remember_lyrics(17, Some(sheet(&["another line"])))
+            .expect("a sheet remembered");
 
         assert_eq!(read.active, vec![0]);
         assert!(matches!(
@@ -761,7 +841,9 @@ mod tests {
         let id = sung(&player, "[00:01.00]one\n[00:30.00]two");
 
         for other in 1_000..1_016 {
-            player.remember_lyrics(other, Some(sheet(&["a line"])));
+            player
+                .remember_lyrics(other, Some(sheet(&["a line"])))
+                .expect("a sheet remembered");
         }
         let forgotten = player.services.lyrics.read(id).is_none();
         let frame = player.lyric_frame(id, 1_500);
@@ -786,6 +868,92 @@ mod tests {
         ));
         assert!(sheet.lines.is_empty());
         assert_eq!((sheet.end, sheet.written_end), (0, 0));
+    }
+
+    #[test]
+    fn a_sheet_moved_earlier_lights_its_lines_sooner_and_seeks_to_where_they_are_heard() {
+        let player = player();
+        let id = sung(&player, "[00:01.00]one\n[00:05.00]two\n[00:30.00]three");
+
+        let before = player.lyric_frame(id, 4_200);
+        for _ in 0..10 {
+            player
+                .nudge_lyrics(id, LyricNudge::Earlier)
+                .expect("a nudge kept");
+        }
+        let sheet = player.lyrics(id, false).expect("the kept sheet");
+        let moved = player.lyric_frame(id, 4_200);
+        let kept = player.kept_lyric_frame(id, 4_200).expect("a held sheet");
+
+        assert_eq!(before.read_at, Some(0));
+        assert_eq!(moved.read_at, Some(1));
+        assert_eq!(kept, moved);
+        assert_eq!(sheet.lines[1].at_ms, Some(5_000));
+        assert_eq!(sheet.lines[1].heard_at_ms, Some(4_000));
+        assert_eq!(sheet.lines[0].heard_at_ms, Some(0));
+        assert_eq!(
+            sheet.timing,
+            LyricTiming {
+                ahead_ms: 1_000,
+                moved: true,
+                said: "\u{2212}1.0 s".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_sheet_moved_later_is_kept_for_its_song_and_put_back_as_written() {
+        let player = player();
+        let id = sung(&player, "[00:01.00]one\n[00:05.00]two\n[00:30.00]three");
+        let other = song(&player, "other");
+        player
+            .keep_lyric_text(
+                other,
+                "[00:01.00]one\n[00:05.00]two\n[00:30.00]three".into(),
+            )
+            .expect("a readable sheet");
+
+        let later = player
+            .nudge_lyrics(id, LyricNudge::Later)
+            .expect("a nudge kept");
+        player.services.lyrics.forget(id);
+        let read_again = player.lyric_frame(id, 5_050);
+        let elsewhere = player.lyric_frame(other, 5_050);
+        let put_back = player
+            .nudge_lyrics(id, LyricNudge::AsWritten)
+            .expect("a nudge kept");
+
+        assert_eq!(later.timing.ahead_ms, -100);
+        assert_eq!(later.timing.said, "+0.1 s");
+        assert_eq!(later.lines[1].heard_at_ms, Some(5_100));
+        assert_eq!(read_again.read_at, Some(0));
+        assert_eq!(elsewhere.read_at, Some(1));
+        assert_eq!(put_back.timing, timing_of(LyricsAhead::ZERO));
+        assert_eq!(put_back.timing.said, "0.0 s");
+        assert_eq!(
+            player.catalog.lyrics_ahead(id).expect("a read"),
+            LyricsAhead::ZERO
+        );
+        assert_eq!(player.lyric_frame(id, 5_050).read_at, Some(1));
+    }
+
+    #[test]
+    fn a_sheet_is_moved_no_further_than_the_desktop_moves_one() {
+        let player = player();
+        let id = sung(&player, "[00:01.00]one\n[00:05.00]two");
+
+        let furthest = (0..400).fold(None, |_, _| {
+            Some(
+                player
+                    .nudge_lyrics(id, LyricNudge::Earlier)
+                    .expect("a nudge kept"),
+            )
+        });
+
+        assert_eq!(
+            furthest.expect("nudged").timing.ahead_ms,
+            LyricsAhead::MOST_MS
+        );
     }
 
     #[test]

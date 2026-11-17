@@ -440,6 +440,22 @@ line, else the end, else, with no wait, `read_at`; else `Spent`); `waiting`; `en
 `LyricWipe` per lit line with words, `Sweep::wiped` turned from UTF-8 bytes into UTF-16 code units,
 how Swift and Kotlin index a string (`a_wipe_counts_both_halves_of_a_surrogate_pair`).
 
+**A sheet that runs early or late is moved for its song, as the desktop's pane moves one.**
+`nudge_lyrics(id, LyricNudge)` steps `resonate-library`'s `LyricsAhead` (`Earlier`, `Later` by
+`STEP_MS`, within `MOST_MS`; `AsWritten` back to none) and answers the sheet again. The phones keep
+it in their own catalog, `lyrics_ahead` (the `LYRICS_KEEP_HOW_FAR_AHEAD_THEY_RUN` step: `track`
+keyed to `documents(id)`, `ahead_ms`; no row is none), read and written in one hold of the
+connection, not synced, as the desktop's `lyrics_ahead` is not. A kept sheet holds its move beside
+it (`Held`), so `lyric_frame` and `kept_lyric_frame` read every line at `LyricsAhead::read` of the
+position heard and stay a lookup; `LyricRow.heard_at_ms` (`LyricsAhead::back` of `at_ms`) is where
+a line pressed seeks, and `LyricSheet.timing` (`LyricTiming`: `ahead_ms`, `moved`, `said` from the
+crate's `lyrics.ftl`, signed as the desktop's reading is, minus for sooner) is what the control
+shows. Android's `LyricTiming` under the lyrics screen and iOS's `LyricTimingControl` above the
+attribution are minus, the reading (pressed to put the timing back, faint at none) and plus, shown
+only for a timed sheet
+(`a_sheet_moved_earlier_lights_its_lines_sooner_and_seeks_to_where_they_are_heard`,
+`a_sheet_moved_later_is_kept_for_its_song_and_put_back_as_written`).
+
 `kept_lyric_frame` is the same frame answered only from a kept sheet (`None` where none is, unlit
 for a `Wordless` song), never the catalog, so a front end may ask it inside a display tick
 (`a_kept_frame_answers_only_from_a_sheet_already_held`).

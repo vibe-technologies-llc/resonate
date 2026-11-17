@@ -60,7 +60,7 @@ class FrameReading(private val sheet: LyricSheet, private val frame: LyricFrame?
     }
 
     fun seekAt(index: Int): Long? =
-        if (!following || unsynced) null else sheet.lines.getOrNull(index)?.atMs?.toLong()
+        if (!following || unsynced) null else sheet.lines.getOrNull(index)?.heardAtMs?.toLong()
 }
 
 fun rightVoice(voice: UInt): Boolean = voice == 2u

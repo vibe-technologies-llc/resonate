@@ -645,6 +645,9 @@
     <string name="lyrics_follow">Follow lyrics</string>
     <string name="lyrics_play_from_line">Play from this line</string>
     <string name="lyrics_current_line">Current line</string>
+    <string name="lyrics_earlier">Earlier: the words come a tenth of a second sooner, for lyrics that run late. Kept for this song.</string>
+    <string name="lyrics_later">Later: the words come a tenth of a second later, for lyrics that run early. Kept for this song.</string>
+    <string name="lyrics_as_written">Put the words back on the lyrics\' own timing</string>
     <string name="sheet_added_to_favourites">Added to favourites</string>
     <string name="sheet_add_to_playlist">Add to playlist</string>
     <string name="sheet_share_unresolved">The share link could not be resolved</string>

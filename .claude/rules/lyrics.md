@@ -80,7 +80,8 @@ dependency (tested without a window).
   and what the device or renderer reports it holds (a Bluetooth sink's included) are taken off once,
   in the engine, for the seek bar, MPRIS and the words alike
   (`a_lyric_line_lights_when_its_words_are_heard_past_the_chain_and_the_device_not_when_rendered`).
-  A sheet's `[offset:]` and the desktop's per-song `LyricsAhead` move the words against that clock,
+  A sheet's `[offset:]` and the per-song `LyricsAhead` (the desktop's pane, the phones'
+  `nudge_lyrics`, `mobile.md`) move the words against that clock,
   for a sheet timed early or late, never for the output.
 
 ## Providers

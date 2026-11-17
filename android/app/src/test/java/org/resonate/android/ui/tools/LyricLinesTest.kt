@@ -11,6 +11,7 @@ import org.resonate.android.nativecore.LyricLetter
 import org.resonate.android.nativecore.LyricReads
 import org.resonate.android.nativecore.LyricRow
 import org.resonate.android.nativecore.LyricSheet
+import org.resonate.android.nativecore.LyricTiming
 import org.resonate.android.nativecore.LyricWait
 import org.resonate.android.nativecore.LyricWipe
 
@@ -19,6 +20,7 @@ class LyricLinesTest {
         LyricRow(
             text = text,
             atMs = at,
+            heardAtMs = at?.let { it - 500uL },
             untilMs = null,
             voice = voice,
             words = emptyList(),
@@ -46,6 +48,7 @@ class LyricLinesTest {
                     row("Seven", 7_000uL),
                     row("Eight", 8_000uL),
                 ),
+            timing = LyricTiming(aheadMs = 500, moved = true, said = "−0.5 s"),
         )
 
     private fun frame(
@@ -144,10 +147,10 @@ class LyricLinesTest {
     }
 
     @Test
-    fun aTimedLineSeeksToItsTime() {
+    fun aTimedLineSeeksToWhereItIsHeard() {
         val reading = FrameReading(sheet(), frame(0u), following = true)
 
-        assertEquals(3_000L, reading.seekAt(2))
+        assertEquals(2_500L, reading.seekAt(2))
         assertNull(reading.seekAt(42))
     }
 

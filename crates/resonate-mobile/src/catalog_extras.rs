@@ -9,8 +9,8 @@ use resonate_analysis::{
 };
 use resonate_codec::{MediaInfo, Scanned};
 use resonate_core::{Calendar, Chromaprint};
-use resonate_library::{Agreement, HeardAs};
-use rusqlite::{OptionalExtension, Transaction, params};
+use resonate_library::{Agreement, HeardAs, LyricsAhead};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::{
     Error, Result, StoreOp,
@@ -163,6 +163,22 @@ fn kilohertz(hertz: i64) -> String {
     words::statistics::kilohertz(figure)
 }
 
+fn held_ahead(connection: &Connection, id: u64) -> Result<LyricsAhead> {
+    let held = connection
+        .query_row(
+            "SELECT ahead_ms FROM lyrics_ahead WHERE track = ?1",
+            [id as i64],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Read, source))?;
+
+    Ok(held
+        .and_then(|millis| i32::try_from(millis).ok())
+        .and_then(LyricsAhead::of_millis)
+        .unwrap_or_default())
+}
+
 fn read_error(source: rusqlite::Error) -> Error {
     Error::store(StoreOp::Read, source)
 }
@@ -276,6 +292,31 @@ impl Catalog {
     ) -> Result<()> {
         self.0.lock().execute("INSERT INTO lyrics(track, text, document, origin) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(track) DO UPDATE SET text = excluded.text, document = excluded.document, origin = excluded.origin, asked = unixepoch()", params![id as i64, text, document, origin]).map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
+    }
+
+    pub(crate) fn lyrics_ahead(&self, id: u64) -> Result<LyricsAhead> {
+        held_ahead(&self.0.lock(), id)
+    }
+
+    pub(crate) fn nudge_lyrics(
+        &self,
+        id: u64,
+        nudged: impl FnOnce(LyricsAhead) -> LyricsAhead,
+    ) -> Result<LyricsAhead> {
+        let connection = self.0.lock();
+        let ahead = nudged(held_ahead(&connection, id)?);
+        let written = if ahead.is_zero() {
+            connection.execute("DELETE FROM lyrics_ahead WHERE track = ?1", [id as i64])
+        } else {
+            connection.execute(
+                "INSERT INTO lyrics_ahead (track, ahead_ms) VALUES (?1, ?2)
+                 ON CONFLICT (track) DO UPDATE SET ahead_ms = excluded.ahead_ms",
+                params![id as i64, i64::from(ahead.millis())],
+            )
+        };
+        written.map_err(|source| Error::store(StoreOp::Write, source))?;
+
+        Ok(ahead)
     }
 
     pub(crate) fn learned(

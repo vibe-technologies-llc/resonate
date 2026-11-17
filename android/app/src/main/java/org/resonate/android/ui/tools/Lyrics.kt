@@ -29,11 +29,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -77,6 +80,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import org.resonate.android.R
+import org.resonate.android.nativecore.LyricDetail
+import org.resonate.android.nativecore.LyricNudge
 import org.resonate.android.nativecore.LyricSheet
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.LocalResonate
@@ -138,6 +143,53 @@ fun LyricsView(track: Track, style: TextStyle, modifier: Modifier = Modifier) {
                     onAction = { features.loadLyrics(track.id, refresh = true) },
                 )
             else -> LyricLines(track, shown, style)
+        }
+    }
+}
+
+@Composable
+fun LyricTiming(track: Track, modifier: Modifier = Modifier) {
+    val features = LocalResonate.current.features
+    val sheet by features.lyrics.collectAsStateWithLifecycle()
+    val shown =
+        sheet?.takeIf {
+            it.trackId == track.id && it.lines.isNotEmpty() && it.detail != LyricDetail.UNSYNCED
+        } ?: return
+    val timing = shown.timing
+    val putBack = stringResource(R.string.lyrics_as_written)
+    Row(
+        modifier.fillMaxWidth().testTag("lyric-timing"),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = { features.nudgeLyrics(track.id, LyricNudge.EARLIER) },
+            modifier = Modifier.testTag("lyrics-earlier"),
+        ) {
+            Icon(Icons.Rounded.Remove, contentDescription = stringResource(R.string.lyrics_earlier))
+        }
+        Text(
+            timing.said,
+            style = MaterialTheme.typography.labelLarge,
+            color =
+                if (timing.moved) MaterialTheme.colorScheme.primary
+                else LocalContentColor.current.copy(alpha = 0.6f),
+            modifier =
+                Modifier.clip(MaterialTheme.shapes.small)
+                    .clickable(
+                        enabled = timing.moved,
+                        role = Role.Button,
+                        onClickLabel = putBack,
+                        onClick = { features.nudgeLyrics(track.id, LyricNudge.AS_WRITTEN) },
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .testTag("lyrics-as-written"),
+        )
+        IconButton(
+            onClick = { features.nudgeLyrics(track.id, LyricNudge.LATER) },
+            modifier = Modifier.testTag("lyrics-later"),
+        ) {
+            Icon(Icons.Rounded.Add, contentDescription = stringResource(R.string.lyrics_later))
         }
     }
 }

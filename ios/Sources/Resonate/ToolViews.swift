@@ -14,7 +14,12 @@ struct LyricsView: View {
         LyricsPane(track: track, compact: false, addLyrics: track.map { song in { writing = LyricWriting(track: song) } })
             .safeAreaInset(edge: .bottom) {
                 if let sheet, !sheet.lines.isEmpty {
-                    LyricAttribution(sheet: sheet)
+                    VStack(spacing: 0) {
+                        if sheet.detail != .unsynced, track?.isServed != true {
+                            LyricTimingControl(sheet: sheet)
+                        }
+                        LyricAttribution(sheet: sheet)
+                    }
                 }
             }
             .background(BackdropView(track: track))

@@ -56,6 +56,7 @@ import org.resonate.android.nativecore.DownloadAccount
 import org.resonate.android.nativecore.HandedOff
 import org.resonate.android.nativecore.LibraryStatistics
 import org.resonate.android.nativecore.LyricFrame
+import org.resonate.android.nativecore.LyricNudge
 import org.resonate.android.nativecore.LyricSheet
 import org.resonate.android.nativecore.MissingSongs
 import org.resonate.android.nativecore.IdenticalSongs
@@ -280,6 +281,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         ArtworkEnrichment(library, settings, scope, { recognitionKey.value }, ::artworkChangedFor)
     val room = RoomCorrectionState(context, library, scope, context.contentResolver)
     private val lyricRequest = AtomicLong()
+    private val lyricNudges = Mutex()
     private val searchRequest = AtomicLong()
     private var visualization: Job? = null
     val syncConfig = MutableStateFlow<SyncConfig?>(null)
@@ -1690,6 +1692,15 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     if (!read) lyricsUnread.value = id
                     lyricsLoading.value = false
                 }
+            }
+        }
+    }
+
+    fun nudgeLyrics(id: ULong, nudge: LyricNudge) {
+        work { native ->
+            lyricNudges.withLock {
+                val sheet = native.nudgeLyrics(id, nudge)
+                if (lyrics.value?.trackId == id) lyrics.value = sheet
             }
         }
     }

@@ -417,6 +417,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     FETCHED_COVERS_ARE_ASKED_FOR_A_LARGER_ONE,
     LOSSY_SONGS_WAIT_TO_BE_REPLACED,
     SONGS_DELETED_EVERYWHERE_ARE_TOLD_AND_TAKEN,
+    LYRICS_KEEP_HOW_FAR_AHEAD_THEY_RUN,
 ];
 
 pub(crate) const SONGS_DELETED_EVERYWHERE_ARE_TOLD_AND_TAKEN: &str = "
@@ -432,6 +433,13 @@ CREATE TABLE songs_deleted_everywhere (
 CREATE TABLE deletions_from_other_devices (
     track INTEGER PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
     told  INTEGER NOT NULL
+) STRICT;
+";
+
+pub(crate) const LYRICS_KEEP_HOW_FAR_AHEAD_THEY_RUN: &str = "
+CREATE TABLE lyrics_ahead (
+    track    INTEGER PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+    ahead_ms INTEGER NOT NULL
 ) STRICT;
 ";
 
@@ -2101,6 +2109,81 @@ mod tests {
         assert!(neither.is_err());
         assert_eq!(count("versions_chosen"), 0);
         drop(connection);
+        drop(opened);
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn a_catalog_of_before_lyrics_were_moved_keeps_its_words_and_holds_a_move_for_each_song() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("a clock")
+            .as_nanos();
+        let path = env::temp_dir().join(format!("resonate-mobile-lyrics-ahead-{unique}.sqlite"));
+        let connection = Connection::open(&path).expect("a database");
+        connection
+            .create_scalar_function(
+                "folded",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+            )
+            .expect("the fold");
+        for step in &MIGRATIONS[..laid_before(LYRICS_KEEP_HOW_FAR_AHEAD_THEY_RUN)] {
+            connection.execute_batch(step).expect("an earlier version");
+        }
+        for (id, uri) in [(1, "content://song/1"), (2, "content://song/2")] {
+            connection
+                .execute(
+                    "INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec)
+                     VALUES (?1, ?2, 'echoes.flac', 'Echoes', 'Pink Floyd', 'Meddle', 1000, 44100, 'FLAC')",
+                    params![id, uri],
+                )
+                .expect("a song of before");
+            connection
+                .execute(
+                    "INSERT INTO lyrics (track, text, origin) VALUES (?1, '[00:01.00]la', 'embedded')",
+                    [id],
+                )
+                .expect("its words");
+        }
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(laid_before(LYRICS_KEEP_HOW_FAR_AHEAD_THEY_RUN)).expect("a count"),
+            )
+            .expect("its stamp");
+        drop(connection);
+
+        let opened = Catalog::open(&path).expect("migrated");
+        let untouched = opened.lyrics_ahead(1).expect("a read");
+        let moved = opened
+            .nudge_lyrics(2, resonate_library::LyricsAhead::earlier)
+            .expect("a move kept");
+        let kept = opened.lyrics_ahead(2).expect("a read");
+        let words = opened.lyric_text(2).expect("a read");
+        opened
+            .0
+            .lock()
+            .execute("DELETE FROM lyrics WHERE track = 2", [])
+            .expect("its words forgotten");
+        opened
+            .0
+            .lock()
+            .execute("DELETE FROM documents WHERE id = 2", [])
+            .expect("the song forgotten");
+        let left: i64 = opened
+            .0
+            .lock()
+            .query_row("SELECT count(*) FROM lyrics_ahead", [], |row| row.get(0))
+            .expect("the table");
+
+        assert_eq!(untouched, resonate_library::LyricsAhead::ZERO);
+        assert_eq!(moved.millis(), resonate_library::LyricsAhead::STEP_MS);
+        assert_eq!(kept, moved);
+        assert!(words.is_some_and(|(text, _, _)| text.as_deref() == Some("[00:01.00]la")));
+        assert_eq!(left, 0);
         drop(opened);
         fs::remove_file(path).ok();
     }

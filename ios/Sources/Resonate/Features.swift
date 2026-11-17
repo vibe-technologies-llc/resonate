@@ -189,6 +189,7 @@ final class Features {
     @ObservationIgnored private var analysisRequest = 0
     @ObservationIgnored private var recognitionRequest = 0
     @ObservationIgnored private var lyricRequest = 0
+    @ObservationIgnored private var lyricNudging: Task<Void, Never>?
     @ObservationIgnored private var playlistRequest = 0
     @ObservationIgnored private var searchRequest = 0
     @ObservationIgnored private var tidalRequest = 0
@@ -1498,6 +1499,22 @@ final class Features {
             lyricsLoading = false
             if lyrics?.trackId != id { lyricsUnread = id }
         })
+    }
+
+    func nudgeLyrics(_ id: UInt64, _ nudge: LyricNudge) {
+        let before = lyricNudging
+        lyricNudging = Task { [weak self] in
+            await before?.value
+            guard let self else { return }
+            do {
+                let native = try await library.player()
+                let sheet = try await Work.inOrder { try native.nudgeLyrics(id: id, nudge: nudge) }
+                if lyrics?.trackId == id { lyrics = sheet }
+            } catch is CancellationError {
+            } catch {
+                library.report(error)
+            }
+        }
     }
 
     func keepLyricText(_ id: UInt64, _ text: String) {
