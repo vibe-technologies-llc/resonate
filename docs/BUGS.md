@@ -15,33 +15,16 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`IsBusy`) the session stays active and the audio Resonate interrupted is never told to resume
 
 ## Security
-- [M · 0.12.1] The web socket path, the one the hosted server is reached by, keeps no `--frame-bytes`
-  budget before a message is whole: tungstenite assembles up to `LARGEST_FRAME` (`web.rs`'s
-  `limits`) before `hold(length)` is asked, and a text, ping or pong message is read and passed over
-  uncounted by the budget and by `--frames-per-minute`, so 2 048 sessions may each hold 32 MiB where
-  `server.md` says the budget bounds them; draw on `FrameBytes` as bytes come off the socket, count
-  every message, and say in `server.md` what the web path holds
-- [M · 0.12.1] One routed IPv6 prefix or a few IPv4 addresses fill the server-wide caps: `guard.rs`
-  counts a /64 as one address with 5 spaces, 50 shared spaces and 50 rooms a day, against 10 000
-  spaces and 1 024 rooms in all, and a space holding one record outlives the one-day unused sweep
-  for `--idle-days`, so a /48 fills the spaces in a day for a year and about 21 IPv4 addresses hold
-  every room; aggregate allowances at /56 and /48 (and /24) beside the /64's
 - [S · 0.12.1] `carries_secret` (`providers/tidal/src/hifi.rs`) takes everything before the first `/`
   or `?` as the host, so `http://localhost:1@other.example/` reads as localhost and would send the
   bearer key in the clear to another host; latent while `with_secret` is handed only `OWN_SERVER`.
   Parse with `http::Uri`, refuse userinfo, compare the host exactly
-- [S · 0.12.1] Investigate: the shared-list page's CSP is `script-src 'unsafe-inline'` with no
-  `frame-ancestors` (`pages.rs`), while the page holds the list's read key in `location.hash`; every
-  output is `textContent` today, so nothing runs, but hashes of the fixed scripts and
-  `frame-ancestors 'none'` would keep one future HTML sink from mattering
-- [S · 0.12.1] Investigate: one host on the network can hold every media-server answer slot:
-  `ANSWERS_AT_MOST` (16) with `A_LISTENER_WAITS_AT_MOST` (120 s) a write and no share a peer
-  (`offered.rs`, `door.rs`), so a control point that asks for 16 songs and never reads leaves the
-  rest `503`
-- [S · 0.12.1] Investigate: the Spotify sign-in's loopback listener (`spotify_account.rs`) answers one
-  connection at a time and waits `A_REQUEST_ARRIVES_WITHIN` (2 s) a read, so a local process or a
-  browser's idle pre-opened socket can hold the redirect back until the sign-in lapses; PKCE keeps the
-  token safe, this only delays it
+- [S · 0.12.1] The server still counts connections and attempts per /64 alone (`guard.rs`), so one /48
+  may open all 2 048 connections; the wider prefixes the daily allowances now weigh, for connections too
+- [S · 0.12.1] The bytes read with a session's first `Hello` are not drawn from the frame budget: bounded
+  by the first frame's ceiling and one 16 KiB read, so 2 048 half-greeted sessions hold that beside it
+- [S · blocked: design] A host on the network may take several addresses and so pass the media server's
+  per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Sync and together
 - [S · 0.12.1] A kept MusicBrainz answer stamped in the future is never replaced: `Kept::take`

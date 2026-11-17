@@ -100,6 +100,13 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.12.1] The shared-list page's script hashes (`pages.rs`) are checked against the page as
+  served, but no browser has enforced the policy; one run in a real browser (the invitation pages
+  under a CSP that refuses inline scripts) would prove the page still works
+- [S · 0.12.1] Investigate: two party tests in `resonate-server`'s `tests/together.rs`
+  (`two_seats_asking_one_time_server_are_shown_apart_by_nothing_worth_hearing`,
+  `a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_ahead`) failed once each on a
+  loaded machine and passed on rerun
 - [S · 0.12.1] Investigate: `two_zones_play_apart_each_steered_alone_while_a_setting_reaches_both`
   (`resonate-engine`'s `transport.rs`) failed once in a full `-p resonate-engine` run and passed alone
   and on rerun; find the timing it leans on
