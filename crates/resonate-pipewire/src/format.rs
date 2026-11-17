@@ -18,7 +18,7 @@ use smallvec::{SmallVec, smallvec};
 
 use crate::{
     CardProfile, HardwareVolume, Plugged, ProfileIndex, SinkPort, StreamEvent, Words,
-    process::Taken,
+    process::{Asked, Taken, Took},
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -258,18 +258,34 @@ impl Negotiated {
         if self.spec == asked {
             return Taken::AsAsked(self.word);
         }
-        let samples = u16::from(self.spec.channel_count().get());
+        Taken::Otherwise {
+            frame: self.frame(),
+        }
+    }
+
+    pub(crate) fn took(self, asked: Asked) -> Took {
+        Took {
+            asking: asked.asking,
+            frame: self.frame(),
+            taken: self.taken_against(asked.spec),
+        }
+    }
+
+    fn frame(self) -> NonZeroU16 {
         let word = match self.word {
             WireWord::Packed => PACKED_WORD_BYTES,
-            WireWord::Padded => u16::from(self.spec.format.bytes_per_sample().get()),
+            WireWord::Padded => NonZeroU16::from(self.spec.format.bytes_per_sample()),
         };
-        NonZeroU16::new(samples.saturating_mul(word)).map_or(Taken::AsAsked(self.word), |frame| {
-            Taken::Otherwise { frame }
-        })
+        NonZeroU16::new(u16::from(self.spec.channel_count().get()))
+            .unwrap_or(NonZeroU16::MIN)
+            .saturating_mul(word)
     }
 }
 
-const PACKED_WORD_BYTES: u16 = 3;
+const PACKED_WORD_BYTES: NonZeroU16 = match NonZeroU16::new(3) {
+    Some(bytes) => bytes,
+    None => NonZeroU16::MIN,
+};
 
 fn placed(info: &AudioInfoRaw, channels: ChannelCount, asked: StreamSpec) -> ChannelLayout {
     let count = usize::from(channels.get());

@@ -604,10 +604,17 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   plus two one-way `rtrb` queues. The loop (`ActiveStream::reshape`) pushes the new `Feed`; the
   callback swaps it in at the head of a cycle and pushes the old one back, so the old ring is freed
   on the loop (each reshape and heartbeat, `Handing::let_go_of_the_spent`), never on the RT thread; WASAPI's and Core Audio's serving loops call it each pass as well, not only inside the reshape, so a replaced ring is freed at once rather than at the next reshape;
-  it takes nothing while the spent queue is full. Where the spec moves, the loop first stores
-  `Taken::Otherwise` against the new spec (silence until the graph settles), points the
-  `param_changed` closure's asked spec (`Rc<Cell<StreamSpec>>`) at it, and calls `update_params`
-  with the new `EnumFormat`s; the settled `Format` then hands the ring over as ever. **A drained
+  it takes nothing while the spent queue is full. Where the spec moves, the loop counts a new
+  `Asking` (`Asked::asking_for`), stores what the graph took against it (`Taken::Otherwise` until
+  the graph settles, so silence), points the `param_changed` closure's asked spec
+  (`Rc<Cell<Asked>>`) at it, and calls `update_params` with the new `EnumFormat`s; the settled
+  `Format` then hands the ring over as ever. Each `Cycle` is built for one `Asking`, and a cycle
+  still in place reads a `Taken::AsAsked` under another as `Otherwise` (`Took::heard_by`), so
+  whichever lands first, the graph's verdict or the data thread's swap, an old ring never reaches a
+  format asked since: a reshape back to the spec the graph still holds stores `AsAsked` before the
+  callback takes its feed, and a callback in flight may load a `param_changed` verdict before its
+  next swap
+  (`a_feed_still_in_place_after_a_reshape_never_writes_its_ring_into_the_format_asked_since`). **A drained
   stream is revived, not reopened:** the loop marks `ActiveStream::drain_asked` on `Drain` and the
   `drained` callback sets `drained`; a reshape after it calls `set_active(true)`, which clears the
   stream's drain state in every libpipewire from 0.3.50 (on an active node nothing else moves). One

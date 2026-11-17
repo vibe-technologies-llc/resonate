@@ -135,9 +135,10 @@ closure `client.rs` registers (else the lints miss it). They cannot reach libspa
 `chunk.size` to exactly what the source filled, so bytes past a short read never reach the graph.
 
 **A ring laid out for one format never reaches buffers of another.** `param_changed` stores what the
-graph settled on against what was asked (`Negotiated::taken_against`) in one `AtomicU32`
-(`process::Taking`, so word and layout cannot tear): `Taken::AsAsked(word)` hands the ring over as
-ever; `Taken::Otherwise { frame }` (the engine's rebuild is owed, up to a poll tick away) writes
+graph settled on against what was asked (`Negotiated::took`) in one `AtomicU64`
+(`process::Taking`: the verdict, the graph's frame and the `Asking` it answers, so none can tear
+from the others): `Taken::AsAsked(word)` under the cycle's own `Asking` hands the ring over as
+ever, and under another is the graph's frame of silence, as below; `Taken::Otherwise { frame }` (the engine's rebuild is owed, up to a poll tick away) writes
 zeros for the quantum at the graph's own frame and stride, never reading the ring. Silence, not a
 map: every `SampleFormat` is signed or float, so zero is silence in all of them; a remix here would
 need the matrix and a scratch buffer on the RT thread, for audio the rebuild discards anyway

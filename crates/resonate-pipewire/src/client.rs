@@ -48,7 +48,7 @@ use crate::{
         parse_profile, parse_rate, parse_route, route_change, running_rate, spa_format,
         spa_position,
     },
-    process::{Cycle, Fed, Feed, Handing, Hearing, Taking, fed_from},
+    process::{Asked, Cycle, Fed, Feed, Handing, Hearing, Taking, fed_from},
     props::StreamLevels,
 };
 
@@ -94,7 +94,7 @@ impl Drop for Steering {
 struct ActiveStream {
     opened: Opened<Fed>,
     handing: Handing,
-    asked: Rc<Cell<StreamSpec>>,
+    asked: Rc<Cell<Asked>>,
     settled: Rc<Cell<Option<Negotiated>>>,
     taking: Arc<Taking>,
     clock: Arc<StreamClock>,
@@ -148,10 +148,10 @@ impl ActiveStream {
             self.drain_asked = false;
             self.drained.set(false);
         }
-        let asked = request.spec;
         let was = self.asked.get();
+        let asked = was.asking_for(request.spec);
         if asked != was {
-            let Ok(formats) = enum_formats(asked) else {
+            let Ok(formats) = enum_formats(asked.spec) else {
                 return Reshaped::Refused {
                     source,
                     because: Unreshapable::FormatUnwritten,
@@ -168,14 +168,14 @@ impl ActiveStream {
                 };
             };
             let settled = self.settled.get().unwrap_or(Negotiated {
-                spec: was,
+                spec: was.spec,
                 word: WireWord::Padded,
             });
-            self.taking.store(settled.taken_against(asked));
+            self.taking.store(settled.took(asked));
             self.asked.set(asked);
             if let Err(error) = self.opened.stream.update_params(&mut params) {
                 tracing::debug!(%error, "the graph would not take the stream's new formats");
-                self.taking.store(settled.taken_against(was));
+                self.taking.store(settled.took(was));
                 self.asked.set(was);
                 return Reshaped::Refused {
                     source,
@@ -1714,11 +1714,16 @@ fn build_stream(
     let stream = StreamRc::new(core.clone(), &request.media_name, properties)
         .map_err(|source| Error::daemon(PwOp::StreamCreate, source))?;
 
-    let taking = Arc::new(Taking::default());
-    let asked = Rc::new(Cell::new(spec));
+    let first = Asked::first(spec);
+    let presumed = Negotiated {
+        spec,
+        word: WireWord::Padded,
+    };
+    let taking = Arc::new(Taking::new(presumed.took(first)));
+    let asked = Rc::new(Cell::new(first));
     let settled = Rc::new(Cell::new(None));
     let drained = Rc::new(Cell::new(false));
-    let cycle = Cycle::new(spec, Arc::clone(&taking), Arc::clone(clock));
+    let cycle = Cycle::new(first, Arc::clone(&taking), Arc::clone(clock));
     let (fed, handing) = fed_from(Feed::new(cycle, source));
     let listener = stream
         .add_local_listener_with_user_data(fed)
@@ -1747,12 +1752,12 @@ fn build_stream(
             let mut levels = StreamLevels::default();
             move |_stream, _fed, id, param| match id {
                 sys::SPA_PARAM_Format => {
-                    let spec = asked.get();
-                    let Some(taken) = param.and_then(|param| negotiated(param, spec)) else {
+                    let asked = asked.get();
+                    let Some(taken) = param.and_then(|param| negotiated(param, asked.spec)) else {
                         return;
                     };
                     settled.set(Some(taken));
-                    taking.store(taken.taken_against(spec));
+                    taking.store(taken.took(asked));
                     let _ = events.try_send(taken.changed());
                 }
                 sys::SPA_PARAM_Props => {

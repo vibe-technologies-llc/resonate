@@ -11,7 +11,7 @@ use std::{
     num::{NonZeroU16, NonZeroU32, NonZeroUsize},
     sync::{
         Arc,
-        atomic::{AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
 };
 
@@ -39,33 +39,102 @@ pub(crate) enum Taken {
     Otherwise { frame: NonZeroU16 },
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct Taking(AtomicU32);
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Asking(u32);
 
-const PADDED_AS_ASKED: u32 = 0;
-const PACKED_AS_ASKED: u32 = 1;
-const FRAME_HELD_ABOVE: u32 = 1;
+impl Asking {
+    const fn next(self) -> Self {
+        Self(self.0.wrapping_add(1))
+    }
+}
 
-impl Taking {
-    pub(crate) fn store(&self, taken: Taken) {
-        let held = match taken {
-            Taken::AsAsked(WireWord::Padded) => PADDED_AS_ASKED,
-            Taken::AsAsked(WireWord::Packed) => PACKED_AS_ASKED,
-            Taken::Otherwise { frame } => u32::from(frame.get()) << FRAME_HELD_ABOVE,
-        };
-        self.0.store(held, Ordering::Release);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Asked {
+    pub(crate) spec: StreamSpec,
+    pub(crate) asking: Asking,
+}
+
+impl Asked {
+    pub(crate) fn first(spec: StreamSpec) -> Self {
+        Self {
+            spec,
+            asking: Asking::default(),
+        }
     }
 
-    fn load(&self) -> Taken {
-        match self.0.load(Ordering::Acquire) {
-            PADDED_AS_ASKED => Taken::AsAsked(WireWord::Padded),
+    pub(crate) fn asking_for(self, spec: StreamSpec) -> Self {
+        if spec == self.spec {
+            return self;
+        }
+        Self {
+            spec,
+            asking: self.asking.next(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Took {
+    pub(crate) asking: Asking,
+    pub(crate) frame: NonZeroU16,
+    pub(crate) taken: Taken,
+}
+
+impl Took {
+    fn heard_by(self, asking: Asking) -> Taken {
+        match self.taken {
+            Taken::AsAsked(_) if self.asking != asking => Taken::Otherwise { frame: self.frame },
+            taken => taken,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Taking(AtomicU64);
+
+const PADDED_AS_ASKED: u64 = 0;
+const PACKED_AS_ASKED: u64 = 1;
+const TAKEN_OTHERWISE: u64 = 2;
+const VERDICT_BITS: u64 = 0xFFFF;
+const FRAME_HELD_ABOVE: u32 = 16;
+const ASKING_HELD_ABOVE: u32 = 32;
+
+impl Taking {
+    pub(crate) fn new(took: Took) -> Self {
+        Self(AtomicU64::new(Self::held(took)))
+    }
+
+    pub(crate) fn store(&self, took: Took) {
+        self.0.store(Self::held(took), Ordering::Release);
+    }
+
+    fn held(took: Took) -> u64 {
+        let verdict = match took.taken {
+            Taken::AsAsked(WireWord::Padded) => PADDED_AS_ASKED,
+            Taken::AsAsked(WireWord::Packed) => PACKED_AS_ASKED,
+            Taken::Otherwise { .. } => TAKEN_OTHERWISE,
+        };
+        verdict
+            | u64::from(took.frame.get()) << FRAME_HELD_ABOVE
+            | u64::from(took.asking.0) << ASKING_HELD_ABOVE
+    }
+
+    fn load(&self) -> Took {
+        let held = self.0.load(Ordering::Acquire);
+        let frame = u16::try_from((held >> FRAME_HELD_ABOVE) & u64::from(u16::MAX))
+            .ok()
+            .and_then(NonZeroU16::new)
+            .unwrap_or(NonZeroU16::MIN);
+        let asking = Asking(u32::try_from(held >> ASKING_HELD_ABOVE).unwrap_or(0));
+        let taken = match held & VERDICT_BITS {
             PACKED_AS_ASKED => Taken::AsAsked(WireWord::Packed),
-            held => u16::try_from(held >> FRAME_HELD_ABOVE)
-                .ok()
-                .and_then(NonZeroU16::new)
-                .map_or(Taken::AsAsked(WireWord::Padded), |frame| Taken::Otherwise {
-                    frame,
-                }),
+            TAKEN_OTHERWISE => Taken::Otherwise { frame },
+            _ => Taken::AsAsked(WireWord::Padded),
+        };
+        Took {
+            asking,
+            frame,
+            taken,
         }
     }
 }
@@ -173,6 +242,7 @@ pub(crate) fn fed_from(feed: Feed) -> (Fed, Handing) {
 
 pub(crate) struct Cycle {
     rate: SampleRate,
+    asking: Asking,
     padded_frame: NonZeroUsize,
     packed_frame: NonZeroUsize,
     taking: Arc<Taking>,
@@ -182,7 +252,8 @@ pub(crate) struct Cycle {
 }
 
 impl Cycle {
-    pub(crate) fn new(spec: StreamSpec, taking: Arc<Taking>, clock: Arc<StreamClock>) -> Self {
+    pub(crate) fn new(asked: Asked, taking: Arc<Taking>, clock: Arc<StreamClock>) -> Self {
+        let spec = asked.spec;
         let bytes_per_frame = spec.bytes_per_frame().get() as usize;
         let packed_stride = packed_stride(spec);
         let widened = if packs_narrower(spec.format) {
@@ -193,6 +264,7 @@ impl Cycle {
 
         Self {
             rate: spec.rate,
+            asking: asked.asking,
             padded_frame: NonZeroUsize::new(bytes_per_frame).unwrap_or(NonZeroUsize::MIN),
             packed_frame: NonZeroUsize::new(packed_stride).unwrap_or(NonZeroUsize::MIN),
             taking,
@@ -214,7 +286,7 @@ impl Cycle {
         let Some(data) = datas.first_mut() else {
             return;
         };
-        let taken = self.taking.load();
+        let taken = self.taken();
         let frame = self.frame_of(taken);
         let filled = match data.data() {
             Some(slice) => self.write(taken, asked, slice, source, stamp),
@@ -226,6 +298,10 @@ impl Cycle {
         *chunk.offset_mut() = 0;
         *chunk.stride_mut() = frame.get() as i32;
         *chunk.size_mut() = filled as u32;
+    }
+
+    fn taken(&self) -> Taken {
+        self.taking.load().heard_by(self.asking)
     }
 
     fn write(
@@ -436,7 +512,7 @@ mod tests {
     use resonate_core::{ChannelLayout, SampleFormat};
 
     use super::*;
-    use crate::Moment;
+    use crate::{Moment, format::Negotiated};
 
     const DOP_MARKERS: [u8; 2] = [0x05, 0xFA];
 
@@ -458,10 +534,19 @@ mod tests {
         StreamSpec::new(SampleRate::HZ_44100, ChannelLayout::Stereo, format)
     }
 
+    fn presumed(spec: StreamSpec) -> Arc<Taking> {
+        let as_asked = Negotiated {
+            spec,
+            word: WireWord::Padded,
+        };
+        Arc::new(Taking::new(as_asked.took(Asked::first(spec))))
+    }
+
     fn cycling(format: SampleFormat) -> Cycle {
+        let spec = stereo(format);
         Cycle::new(
-            stereo(format),
-            Arc::new(Taking::default()),
+            Asked::first(spec),
+            presumed(spec),
             Arc::new(StreamClock::default()),
         )
     }
@@ -558,23 +643,97 @@ mod tests {
 
     #[test]
     fn what_was_taken_reads_back_as_it_was_stored() {
-        let taking = Taking::default();
+        let stereo = stereo(SampleFormat::S16);
+        let first = Asked::first(stereo);
+        let wide = NonZeroU16::new(64 * 4).expect("a wide frame");
+        let far_asking = Asked {
+            spec: stereo,
+            asking: Asking(u32::MAX),
+        };
+        let taking = presumed(stereo);
 
-        assert_eq!(taking.load(), Taken::AsAsked(WireWord::Padded));
+        assert_eq!(
+            taking.load(),
+            Took {
+                asking: first.asking,
+                frame: NonZeroU16::new(4).expect("a stereo frame"),
+                taken: Taken::AsAsked(WireWord::Padded),
+            }
+        );
 
-        for taken in [
-            Taken::AsAsked(WireWord::Packed),
-            Taken::Otherwise {
+        for took in [
+            Took {
+                asking: first.asking.next(),
+                frame: NonZeroU16::new(6).expect("a packed stereo frame"),
+                taken: Taken::AsAsked(WireWord::Packed),
+            },
+            Took {
+                asking: far_asking.asking,
                 frame: NonZeroU16::MIN,
+                taken: Taken::Otherwise {
+                    frame: NonZeroU16::MIN,
+                },
             },
-            Taken::Otherwise {
-                frame: NonZeroU16::new(64 * 4).expect("a wide frame"),
+            Took {
+                asking: first.asking,
+                frame: wide,
+                taken: Taken::Otherwise { frame: wide },
             },
-            Taken::AsAsked(WireWord::Padded),
+            Took {
+                asking: far_asking.asking,
+                frame: NonZeroU16::MAX,
+                taken: Taken::AsAsked(WireWord::Padded),
+            },
         ] {
-            taking.store(taken);
-            assert_eq!(taking.load(), taken);
+            taking.store(took);
+            assert_eq!(taking.load(), took);
         }
+    }
+
+    #[test]
+    fn a_feed_still_in_place_after_a_reshape_never_writes_its_ring_into_the_format_asked_since() {
+        let was = Asked::first(stereo(SampleFormat::S16));
+        let asked = was.asking_for(StreamSpec::new(
+            SampleRate::HZ_48000,
+            ChannelLayout::Surround50,
+            SampleFormat::S24,
+        ));
+        let settled = Negotiated {
+            spec: asked.spec,
+            word: WireWord::Padded,
+        };
+        let taking = presumed(was.spec);
+        let mut still_in_place =
+            Cycle::new(was, Arc::clone(&taking), Arc::new(StreamClock::default()));
+        let handed = Cycle::new(asked, Arc::clone(&taking), Arc::new(StreamClock::default()));
+        let mut source = Counting::of(vec![0x5A; 4_096]);
+        let mut buffer = vec![0xFF; 4_096];
+
+        taking.store(settled.took(asked));
+        let taken = still_in_place.taken();
+        let filled = still_in_place.write(taken, 64, &mut buffer, &mut source, now());
+
+        assert_ne!(asked.asking, was.asking);
+        assert_eq!(handed.taken(), Taken::AsAsked(WireWord::Padded));
+        assert_eq!(
+            taken,
+            Taken::Otherwise {
+                frame: NonZeroU16::new(5 * 4).expect("a five-channel frame")
+            },
+            "a cycle laid out for the format asked before was told the graph took it"
+        );
+        assert_eq!(source.asked, 0, "the old ring was read into the new format");
+        assert_eq!(filled, 64 * 20, "the quantum was not the graph's frames");
+        assert!(buffer[..filled].iter().all(|byte| *byte == 0));
+        assert_eq!(still_in_place.frame_of(taken).get(), 20);
+    }
+
+    #[test]
+    fn a_reshape_to_the_format_already_asked_keeps_its_asking() {
+        let was = Asked::first(stereo(SampleFormat::S24));
+
+        assert_eq!(was.asking_for(was.spec), was);
+        assert_ne!(was.asking_for(stereo(SampleFormat::F32)).asking, was.asking);
     }
 
     #[test]
@@ -729,11 +888,8 @@ mod tests {
     #[test]
     fn the_ring_is_told_how_far_its_quantum_lies_ahead_of_the_device() {
         let clock = Arc::new(StreamClock::default());
-        let mut cycle = Cycle::new(
-            stereo(SampleFormat::S16),
-            Arc::new(Taking::default()),
-            Arc::clone(&clock),
-        );
+        let spec = stereo(SampleFormat::S16);
+        let mut cycle = Cycle::new(Asked::first(spec), presumed(spec), Arc::clone(&clock));
         let mut source = Counting::of(vec![0; 256]);
         let mut buffer = vec![0; 256];
         let ahead = GraphTime {
