@@ -121,6 +121,7 @@ impl LibraryModel {
             as_typed: self.outreach.as_typed,
             album,
             artist,
+            narrows_the_scope: self.typed_on_the_scope,
             opened: self.shelf.opened,
             order: self.shelf.order,
             reading: self.shelf.reading,

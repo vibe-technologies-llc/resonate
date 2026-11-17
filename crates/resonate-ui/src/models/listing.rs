@@ -381,6 +381,10 @@ impl LibraryModel {
         (!self.query.is_empty()).then_some(self.query.as_str())
     }
 
+    pub fn narrows_the_page(&self) -> bool {
+        self.selection == Selection::Everything || self.typed_on_the_scope
+    }
+
     pub const fn meant(&self) -> Option<&Meant> {
         self.outreach.meant.as_ref()
     }
@@ -412,6 +416,7 @@ impl LibraryModel {
         self.outreach.as_typed = false;
         self.search = Search::read(&query);
         self.query = query;
+        self.typed_on_the_scope = self.selection != Selection::Everything;
         self.browse.reach = PAGE;
         self.read_after(SEARCH_SETTLE, Wanted::TheSearch, cx);
         self.ask_elsewhere_after(ASKED_ELSEWHERE_AFTER, cx);
@@ -434,6 +439,7 @@ impl LibraryModel {
             }
         }
         self.selection = selection;
+        self.typed_on_the_scope = false;
         self.unheld.songs = Arc::default();
         self.unheld.albums = Arc::default();
         self.ask_elsewhere_after(Duration::ZERO, cx);

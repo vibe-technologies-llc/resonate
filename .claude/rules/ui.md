@@ -493,7 +493,14 @@ so `editing` sees it.
   type-ahead (`stop_typing`), then `dismiss_search`: close the naming row, clear the query, or (query
   empty) `RootView::step_back`. A scoped search takes two presses, words then scope: typing is not a
   gesture on the scope (`LibraryModel::set_query` leaves `selection` alone); callers meaning the whole
-  library (`revise_search`, `search_instead`) call `show_everything` first.
+  library (`revise_search`, `search_instead`) call `show_everything` first. **Words narrow the page
+  they were typed on.** An album or artist opened while the box holds words typed elsewhere (an
+  album found from the search, an artist reached from a found song) is drawn whole, its held rows
+  read with no text, while the box keeps the words for the search behind it: `select` lets go of
+  `typed_on_the_scope`, `set_query` on a scope takes it, and `Asked::listing` and the *Reads* chips
+  (`narrows_the_page`) read it. Otherwise a missing row, which no words narrow, would become a held
+  row the words hide the moment its download lands
+  (`a_song_downloaded_on_an_album_opened_from_the_search_stays_on_it_as_the_held_row`).
   - A focused field never reaches the match (`editing` returns first); `editing` asks
     `RootView::text_fields`, the one list of every `Field` the window holds, the panes' included
     (`what_is_typed_into_the_listenbrainz_token_stays_out_of_the_library_search`). Each field still

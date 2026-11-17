@@ -336,12 +336,15 @@ impl Asked {
         artist: Option<ArtistId>,
         limit: Option<usize>,
     ) -> TrackQuery {
+        let scoped = album.is_some() || artist.is_some();
         TrackQuery {
             album,
             artist,
             on_an_album: false,
             by_an_artist: false,
-            text: self.searched(),
+            text: self
+                .searched()
+                .filter(|_| !scoped || self.narrows_the_scope),
             sort: self.sorting.tracks,
             reading: self.sorting.tracks_read,
             limit,

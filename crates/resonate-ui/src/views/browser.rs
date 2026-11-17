@@ -1956,7 +1956,10 @@ impl RootView {
 
     fn under_the_heading(&self, heading: Div, cx: &mut Context<Self>) -> Div {
         let library = self.library.read(cx);
-        let reads = library.search().reads();
+        let reads = match library.narrows_the_page() {
+            true => library.search().reads(),
+            false => Vec::new(),
+        };
         let naming = self.naming.filter(|naming| naming.is_a_search());
 
         heading
@@ -4672,6 +4675,9 @@ mod tests {
         const HEROES_TONIGHT_RELEASE: &str = "d96b3b34-e52b-4f6a-bfa2-c52daddd64a1";
         const HEROES_TONIGHT_ISRC: &str = "GB2LD0902006";
         const HEROES_TONIGHT_GROUP: &str = "6c0b1f5e-3a2d-4f7e-9b8c-1d2e3f4a5b6c";
+        const LIGHTS_GROUP: &str = "8e1f2a3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b";
+        const LIGHTS_RELEASE: &str = "2f3a4b5c-6d7e-4f8a-9b0c-1d2e3f4a5b6c";
+        const SKYLINE: &str = "4a5b6c7d-8e9f-4a0b-8c1d-2e3f4a5b6c7d";
         const JANJI: &str = "0b3c6f5d-2e1a-4c8b-9d7e-6f5a4b3c2d1e";
         const NCS_PLAYLIST: u64 = 1_234;
 
@@ -4737,7 +4743,11 @@ mod tests {
             }
 
             fn release(&self, id: &Mbid) -> Result<Option<Release>> {
-                Ok((id.as_str() == HEROES_TONIGHT_RELEASE).then(heroes_tonight_release))
+                Ok(match id.as_str() {
+                    HEROES_TONIGHT_RELEASE => Some(heroes_tonight_release()),
+                    LIGHTS_RELEASE => Some(lights_release()),
+                    _ => None,
+                })
             }
 
             fn releases_by_barcode(&self, _: &Barcode) -> Result<Vec<BarcodeMatch>> {
@@ -4844,13 +4854,14 @@ mod tests {
             }
 
             fn releases_of_group(&self, group: &Mbid) -> Result<Vec<Release>> {
-                Ok((group.as_str() == HEROES_TONIGHT_GROUP)
-                    .then(|| Release {
+                Ok(match group.as_str() {
+                    HEROES_TONIGHT_GROUP => vec![Release {
                         group: Some(mbid(HEROES_TONIGHT_GROUP)),
                         ..heroes_tonight_release()
-                    })
-                    .into_iter()
-                    .collect())
+                    }],
+                    LIGHTS_GROUP => vec![lights_release()],
+                    _ => Vec::new(),
+                })
             }
 
             fn releases_of_artist(&self, _: &Mbid, _: u32) -> Result<ArtistPressings> {
@@ -4939,6 +4950,37 @@ mod tests {
                         links: Vec::new(),
                     }],
                 }],
+            }
+        }
+
+        fn lights_release() -> Release {
+            let song = |position: u32, title: &str, recording: &str| ReleaseTrack {
+                position,
+                number: position.to_string(),
+                title: title.to_owned(),
+                artist: None,
+                recording: Some(mbid(recording)),
+                track: None,
+                length: None,
+                isrcs: Vec::new(),
+                links: Vec::new(),
+            };
+
+            Release {
+                id: mbid(LIGHTS_RELEASE),
+                group: Some(mbid(LIGHTS_GROUP)),
+                title: "Lost in the Lights".to_owned(),
+                kind: Some("EP".to_owned()),
+                media: vec![Medium {
+                    position: 1,
+                    format: None,
+                    title: None,
+                    tracks: vec![
+                        song(1, "Heroes Tonight", HEROES_TONIGHT),
+                        song(2, "Skyline", SKYLINE),
+                    ],
+                }],
+                ..heroes_tonight_release()
             }
         }
 
@@ -5296,6 +5338,71 @@ mod tests {
                 .until(|root, cx| matches!(root.library.read(cx).selection(), Selection::Album(_)));
 
             assert_eq!(driven.read(|root, _| root.pane), Pane::Tracks);
+        }
+
+        #[gpui::test]
+        fn a_song_downloaded_on_an_album_opened_from_the_search_stays_on_it_as_the_held_row(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let music = Folder::new();
+            let file = folder.tone("delivered.wav", 1);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(move |_: &Supplying<'_>| {
+                    Providers::none().and(Arc::new(Delivers {
+                        source: SourceId::new("shop").expect("a source name"),
+                        file: file.clone(),
+                        positions: Arc::default(),
+                    }))
+                }),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
+            let music_folder = music.path().to_path_buf();
+            driven.cx.update(|_, cx| {
+                gpui::BorrowAppContext::update_global::<crate::ResonateApp, _>(cx, |global, _| {
+                    global.music_folder = Some(music_folder);
+                });
+            });
+
+            typed(&mut driven, "Heroes Tonight");
+            driven.until(|root, cx| !root.library.read(cx).found().is_empty());
+            driven.root.update(&mut driven.cx, |root, cx| {
+                root.open_album_not_held(mbid(LIGHTS_GROUP), cx);
+            });
+            driven.until(|root, cx| root.library.read(cx).release_tracks().len() == 2);
+            let opened = driven.read(|root, cx| root.library.read(cx).selection());
+
+            driven.click("unheld-title-1");
+            driven.until(|root, cx| {
+                root.library
+                    .read(cx)
+                    .release_tracks()
+                    .iter()
+                    .any(|row| row.title == "Skyline" && row.track.is_some())
+            });
+
+            let shown = driven.read(|root, cx| {
+                let library = root.library.read(cx);
+                (
+                    library.selection(),
+                    library
+                        .listing()
+                        .iter()
+                        .map(|track| track.title.clone())
+                        .collect::<Vec<_>>(),
+                    library.rows().len(),
+                )
+            });
+            assert_eq!(
+                shown,
+                (opened, vec!["Skyline".to_owned()], 2),
+                "the song downloaded left the album it was pressed on"
+            );
+
+            typed(&mut driven, "Heroes");
+            driven.until(|root, cx| root.library.read(cx).listing().is_empty());
         }
 
         #[gpui::test]
