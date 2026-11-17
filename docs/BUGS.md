@@ -23,15 +23,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Sync and together
-- [S · 0.12.1] A kept MusicBrainz answer stamped in the future is never replaced: `Kept::take`
-  (`kept.rs`) drops only answers too old and `written` refuses to overwrite a row whose `at` is as new,
-  so one device whose clock runs ahead pins every answer it shares on every device, past the 30
-  days `musicbrainz.md` allows and over this device's own fresh lookups; clamp `told.at` to now
-- [M · 0.12.1] An answer consulted from another device is kept as this device's, fresh: `layered.rs`
-  keeps a `peers.consult` answer through `kept_here` (`Kept::keep`, `at = now()`, no `came_from`), so a
-  29-day-old answer becomes new here and is told back to the device it came from, whose older copy it
-  replaces; two devices keep a stale answer alive for good, and the never-tell-back rule fails on this
-  path. `consult` should answer the original `at` and the device
 - [S · 0.12.1] Investigate: restarting sync can leave it off with nothing said: `released` waits
   `RELEASED_WITHIN` (5 s) for its own handle while `AskedOfDevices` and the window's `with` calls hold
   clones, so the old `Running` still holds `sync.lock`, the new start's `alone()` meets `WouldBlock`
@@ -57,17 +48,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   whole second; interpolate between reports from the clock the stream is paced by
 
 ## Catalog
-- [S · 0.12.1] One silent track keeps a whole album from a measured album gain: `album_loudness`
-  (`studies.rs`) answers `None` where any row's `loudness` is NULL, and its `LEFT JOIN` cannot tell a
-  track never studied (`s.track_id IS NULL`) from one studied whose every block was gated out, so a
-  pregap or a hidden-track spacer leaves the album on track gain with nothing said, where `audio.md`
-  asks only that every track be studied
-- [M · 0.12.1] Investigate: a retag's follow takes its size and mtime from an `fs::metadata` after the
-  read-back (`retag.rs`), so another program's edit landing in between is stored as seen and the next
-  scan never reads it; `TagSink::write` could answer the stamp it landed
-- [M · 0.12.1] Investigate: a same-length in-place tag write lands with no journal where the folder
-  refuses one (`overlay.rs`: only a length change falls back to `TooWide`), so a crash part way leaves a
-  torn header nothing mends; keep the journal under the spool as whole copies do, or decide the trade
 - [S · 0.12.1] A whole-library lookup stopped by a metered connection tells "MusicBrainz couldn't be
   reached": the library's lookup summary says how many were answered and not why the pass stopped,
   so the window cannot tell a shut gate from an unreachable service

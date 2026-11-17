@@ -54,11 +54,6 @@ are in [ROADMAP.md](ROADMAP.md).
   blob, and calls `take_answer` for each, skipped only where `answers_tried_at` (held in memory, so
   lost on every start) equals the revision; a phone paired with a large desktop holds most of its
   answers unheld, so every play re-resolves them. Offer only what became held since, in pages
-- [M · 0.12.1] The mirror's song, album and artist searches rank by bm25 over every row holding a common
-  word: `find_songs`, `find_albums` and `find_artist` (`mirror/search.rs`) call `matched` with every
-  word, without the `bare_title_token` narrowing `asked_queries` tries first, though `musicbrainz.md`
-  measured *love* at 2.5 s that way; the local score re-ranks the candidates anyway, so an unranked
-  wider set or the narrowing first
 - [L · 0.12.1] Sync stops compacting once the state passes 16 MiB and rebuilds the snapshot on every
   batch thereafter: `compact()` (`service.rs`) seals the whole `snapshot()` (every answer decoded,
   `answer_notes("1")`) and returns `None` past `SNAPSHOT_FRAME_SHARE`, while `since_snapshot` never

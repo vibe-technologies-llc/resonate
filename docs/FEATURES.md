@@ -148,6 +148,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 ## Equaliser and DSP
 
 ## Search
+- [M · 0.13.0] The local copy of MusicBrainz ranks nothing: its word tables are contentless with
+  `detail=none`, so bm25 scores every row alike and candidates come in row order before the local score
+  re-ranks the few taken; a relevance the copy can afford (a rank column kept at build, or the local
+  score over a wider set) would put the likeliest first
 - [M · blocked: service] A pasted Spotify, TIDAL or Apple Music playlist link lists only the songs its
   public page holds (TIDAL's embed page fifty, the others at most a hundred), since none offers a keyless
   route past it (their APIs want a registered client or the listener's sign-in; a Spotify account signed
