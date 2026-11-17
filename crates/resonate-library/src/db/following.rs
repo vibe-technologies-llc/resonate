@@ -5,7 +5,7 @@ use std::{
 
 use ahash::AHashMap;
 use resonate_core::{AlbumId, ArtistId, TrackId, WantId};
-use rusqlite::{OptionalExtension as _, params, params_from_iter, types::Value};
+use rusqlite::{Connection, OptionalExtension as _, params, params_from_iter, types::Value};
 
 use super::{
     Library,
@@ -657,14 +657,14 @@ impl Library {
             .into_iter()
             .map(|kind| Value::Text(kind.to_owned()))
             .collect();
-        let sought = words
-            .iter()
-            .map(|word| Infix::held_by_a_release_or_its_artist(word, &mut binds))
-            .collect::<Vec<String>>()
-            .join(" AND ");
-        let sql = format!("{UNHELD_ALBUMS_KEPT}{sought}{UNHELD_ALBUMS_KEPT_IN_ORDER}");
 
         let kept = self.inner.read(|connection| {
+            let sought = words
+                .iter()
+                .map(|word| Infix::held_by_a_release_or_its_artist(connection, word, &mut binds))
+                .collect::<Result<Vec<String>>>()?
+                .join(" AND ");
+            let sql = format!("{UNHELD_ALBUMS_KEPT}{sought}{UNHELD_ALBUMS_KEPT_IN_ORDER}");
             rows(connection, &sql, binds, |row| {
                 let group: String = row.get(0)?;
                 let (title, artist, kind, first_released) =
@@ -688,9 +688,8 @@ impl Library {
         if words.is_empty() {
             return Ok(Vec::new());
         }
-        let (sql, binds) = songs_kept_holding(&words);
-
         let found = self.inner.read(|connection| {
+            let (sql, binds) = songs_kept_holding(connection, &words)?;
             rows(connection, &sql, binds, |row| {
                 songs::RawSong::read(row).map(songs::RawSong::into_found)
             })
@@ -772,11 +771,10 @@ impl Library {
         narrowing: Option<&str>,
         at_most: Option<usize>,
     ) -> Result<Vec<UnheldRelease>> {
-        let (held, mut binds) = unheld_holding(narrowing);
-        let sql = format!("{UNHELD_RELEASES}{held}{UNHELD_IN_ORDER}");
-        binds.push(Value::Integer(limit(at_most)));
-
         self.inner.read(|connection| {
+            let (held, mut binds) = unheld_holding(connection, narrowing)?;
+            let sql = format!("{UNHELD_RELEASES}{held}{UNHELD_IN_ORDER}");
+            binds.push(Value::Integer(limit(at_most)));
             rows(connection, &sql, binds, |row| {
                 RawUnheldRelease::read(row).map(RawUnheldRelease::into_unheld)
             })
@@ -794,8 +792,17 @@ impl Library {
             )?,
             None => 0,
         };
-        let (held, binds) = unheld_holding(narrowing);
-        let releases = self.counted(&format!("{UNHELD_COUNTED}{held}"), binds)?;
+        let releases = self.inner.read(|connection| {
+            let (held, binds) = unheld_holding(connection, narrowing)?;
+            connection
+                .query_row(
+                    &format!("{UNHELD_COUNTED}{held}"),
+                    params_from_iter(binds),
+                    |row| row.get::<_, i64>(0),
+                )
+                .map(|rows| rows as u32)
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        })?;
 
         Ok(Missing {
             tracks: u64::from(tracks),
@@ -804,9 +811,12 @@ impl Library {
     }
 }
 
-pub(super) fn songs_kept_holding(words: &[String]) -> (String, Vec<Value>) {
+pub(super) fn songs_kept_holding(
+    connection: &Connection,
+    words: &[String],
+) -> Result<(String, Vec<Value>)> {
     let mut binds = Vec::new();
-    let sought = Infix::OF_A_KEPT_SONG.holding_every(words, &mut binds);
+    let sought = Infix::OF_A_KEPT_SONG.holding_every(connection, words, &mut binds)?;
     let sql = format!(
         "SELECT {} FROM discography_songs s WHERE {sought} AND {SONG_HELD_NOWHERE})
            ORDER BY s.kind IS NOT 'Album', s.released IS NULL, s.released, s.disc, s.position
@@ -814,5 +824,5 @@ pub(super) fn songs_kept_holding(words: &[String]) -> (String, Vec<Value>) {
         songs::SONG_COLUMNS
     );
     binds.push(Value::Integer(SONGS_SOUGHT_AT_MOST));
-    (sql, binds)
+    Ok((sql, binds))
 }

@@ -1321,8 +1321,22 @@ group landing and `forget_the_match` clear it), writes each row's `release_track
   stays a plain `LIKE`. `albums_kept_for` asks the same, a word per `(release OR artist)`.
   `songs_kept_for` asks `discography_songs_fts` (`folded`; the table carries an `id` for it, since
   FTS5 indexes a rowid) through `Infix::holding_every`: every indexed word in one subquery, so FTS5
-  intersects their trigrams itself rather than SQLite materialising a list a word (a common word
-  matched alone costs more than the scan it replaces; joined to a rarer one, a fraction of it).
+  intersects their trigrams itself rather than SQLite materialising a list a word.
+  **A piece most rows hold is scanned for, not looked up**: a trigram lookup costs about ten times
+  a row's scan for each row it finds (the row's text read again to check the `LIKE`), so through
+  the index a word in a quarter of the rows is slower than the scan it replaced. Every connection
+  makes a `fts5vocab` table over each trigram index in `temp` (`configure`,
+  `schema::vocabulary_of`), and `Infix::is_looked_up` reads the document count of the piece's
+  trigrams in turn: one in none, or in fewer than one row in `SCANNED_FROM_ONE_ROW_IN` (16, where
+  index and scan measured even) of the table's (`max` of its key), sends the piece to the index; a
+  piece whose every trigram is that common is matched by `LIKE` on the column. `holding_every`
+  asks its longest piece first and stops at the first rare one, which takes every indexed piece
+  into the index's subquery as before; only where none is rare are they all scanned for. A count
+  costs about a millisecond for a trigram in 75 000 rows and microseconds for a rare one: on
+  300 000 kept songs `songs_kept_for` of a word a quarter hold went from 100 ms to 67 ms, a rare
+  word stayed at 0.33 ms and the two together at 0.40 ms
+  (`a_word_most_kept_songs_hold_is_scanned_for_and_a_rare_one_looked_up_in_the_index`,
+  `every_trigram_index_answers_how_many_rows_a_piece_of_a_word_is_in`).
 - **A cover says where it came from, the file's wins, the archive is asked until it has answered.**
   `albums.cover_source`: `CoverSource::File`/`Archive`/`Vault` (`vault.md`). `land_archive_cover`
   writes under `cover_art IS NULL` (and `cover_path IS NULL`): a file's picture is never

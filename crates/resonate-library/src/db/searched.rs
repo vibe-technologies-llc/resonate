@@ -1,4 +1,5 @@
 use std::{
+    cmp::Reverse,
     sync::LazyLock,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -6,7 +7,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::Likeness;
 use resonate_core::{AlbumId, SampleFormat, TrackId};
-use rusqlite::{OptionalExtension as _, params_from_iter, types::Value};
+use rusqlite::{Connection, OptionalExtension as _, params_from_iter, types::Value};
 
 use super::{
     Inner,
@@ -23,7 +24,7 @@ use crate::{
     MusicFilters, Result, Search, Shape, SortOrder, StoreOp, Term, Track, TrackQuery, Verdict,
     Word, keyed, likeness,
     playlist::{self},
-    search, store,
+    schema, search, store,
     studies::Agreement,
 };
 
@@ -413,16 +414,22 @@ pub(super) struct Infix {
     pub(super) owner: &'static str,
     pub(super) index: &'static str,
     pub(super) indexed_column: &'static str,
+    pub(super) table: &'static str,
+    pub(super) key: &'static str,
 }
 
 impl Infix {
     pub(super) const FEWEST_LETTERS_INDEXED: usize = 3;
+
+    pub(super) const SCANNED_FROM_ONE_ROW_IN: i64 = 16;
 
     pub(super) const OF_A_MISSING_TRACK: Infix = Infix {
         column: "rt.folded",
         owner: "rt.id",
         index: "release_tracks_fts",
         indexed_column: "folded",
+        table: "release_tracks",
+        key: "id",
     };
 
     pub(super) const OF_A_RELEASE: Infix = Infix {
@@ -430,6 +437,8 @@ impl Infix {
         owner: "r.rowid",
         index: "artist_releases_fts",
         indexed_column: "folded",
+        table: "artist_releases",
+        key: "rowid",
     };
 
     pub(super) const OF_AN_ARTIST: Infix = Infix {
@@ -437,6 +446,8 @@ impl Infix {
         owner: "r.artist_id",
         index: "artists_key_fts",
         indexed_column: "key",
+        table: "artists",
+        key: "id",
     };
 
     pub(super) const OF_A_KEPT_SONG: Infix = Infix {
@@ -444,28 +455,45 @@ impl Infix {
         owner: "s.id",
         index: "discography_songs_fts",
         indexed_column: "folded",
+        table: "discography_songs",
+        key: "id",
     };
 
-    pub(super) fn holding(&self, folded: &str, binds: &mut Vec<Value>) -> String {
-        if !Self::is_indexed(folded) {
-            return Self::like(self.column, folded, binds);
+    pub(super) fn holding(
+        &self,
+        connection: &Connection,
+        folded: &str,
+        binds: &mut Vec<Value>,
+    ) -> Result<String> {
+        if !self.is_looked_up(connection, folded)? {
+            return Ok(Self::like(self.column, folded, binds));
         }
 
-        format!(
+        Ok(format!(
             "{} IN (SELECT rowid FROM {} WHERE {})",
             self.owner,
             self.index,
             Self::like(self.indexed_column, folded, binds)
-        )
+        ))
     }
 
-    pub(super) fn holding_every(&self, pieces: &[String], binds: &mut Vec<Value>) -> String {
-        let (indexed, unindexed): (Vec<&String>, Vec<&String>) =
+    pub(super) fn holding_every(
+        &self,
+        connection: &Connection,
+        pieces: &[String],
+        binds: &mut Vec<Value>,
+    ) -> Result<String> {
+        let (mut indexed, unindexed): (Vec<&String>, Vec<&String>) =
             pieces.iter().partition(|piece| Self::is_indexed(piece));
+        indexed.sort_by_key(|piece| Reverse(piece.chars().count()));
+        let (looked_up, scanned) = match self.is_any_looked_up(connection, &indexed)? {
+            true => (indexed, unindexed),
+            false => (Vec::new(), [indexed, unindexed].concat()),
+        };
         let mut held = Vec::new();
 
-        if !indexed.is_empty() {
-            let every = indexed
+        if !looked_up.is_empty() {
+            let every = looked_up
                 .iter()
                 .map(|piece| Self::like(self.indexed_column, piece, binds))
                 .collect::<Vec<String>>()
@@ -476,12 +504,58 @@ impl Infix {
             ));
         }
         held.extend(
-            unindexed
+            scanned
                 .iter()
                 .map(|piece| Self::like(self.column, piece, binds)),
         );
 
-        held.join(" AND ")
+        Ok(held.join(" AND "))
+    }
+
+    fn is_any_looked_up(&self, connection: &Connection, pieces: &[&String]) -> Result<bool> {
+        for piece in pieces {
+            if self.is_looked_up(connection, piece)? {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    pub(super) fn is_looked_up(&self, connection: &Connection, folded: &str) -> Result<bool> {
+        if !Self::is_indexed(folded) {
+            return Ok(false);
+        }
+        let rows = self.rows(connection)?;
+        for trigram in trigrams_of(folded) {
+            let documents = self.documents_holding(connection, &trigram)?;
+            if documents == 0 || documents.saturating_mul(Self::SCANNED_FROM_ONE_ROW_IN) < rows {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    fn rows(&self, connection: &Connection) -> Result<i64> {
+        connection
+            .prepare_cached(&format!(
+                "SELECT coalesce(max({}), 0) FROM {}",
+                self.key, self.table
+            ))
+            .and_then(|mut statement| statement.query_row([], |row| row.get(0)))
+            .map_err(|source| Error::store(StoreOp::Query, source))
+    }
+
+    fn documents_holding(&self, connection: &Connection, trigram: &str) -> Result<i64> {
+        connection
+            .prepare_cached(&format!(
+                "SELECT doc FROM {} WHERE term = ?1",
+                schema::vocabulary_of(self.index)
+            ))
+            .and_then(|mut statement| statement.query_row([trigram], |row| row.get(0)).optional())
+            .map(Option::unwrap_or_default)
+            .map_err(|source| Error::store(StoreOp::Query, source))
     }
 
     fn is_indexed(folded: &str) -> bool {
@@ -498,25 +572,47 @@ impl Infix {
         format!("{column} LIKE ?{escape}")
     }
 
-    pub(super) fn held_by_a_release_or_its_artist(folded: &str, binds: &mut Vec<Value>) -> String {
-        let release = Self::OF_A_RELEASE.holding(folded, binds);
-        let artist = Self::OF_AN_ARTIST.holding(folded, binds);
-        format!("({release} OR {artist})")
+    pub(super) fn held_by_a_release_or_its_artist(
+        connection: &Connection,
+        folded: &str,
+        binds: &mut Vec<Value>,
+    ) -> Result<String> {
+        let release = Self::OF_A_RELEASE.holding(connection, folded, binds)?;
+        let artist = Self::OF_AN_ARTIST.holding(connection, folded, binds)?;
+        Ok(format!("({release} OR {artist})"))
     }
 }
 
-pub(super) fn unheld_holding(narrowing: Option<&str>) -> (String, Vec<Value>) {
+fn trigrams_of(folded: &str) -> Vec<String> {
+    let letters = folded
+        .chars()
+        .flat_map(char::to_lowercase)
+        .collect::<Vec<char>>();
+    let mut trigrams = letters
+        .windows(Infix::FEWEST_LETTERS_INDEXED)
+        .map(|trigram| trigram.iter().collect::<String>())
+        .collect::<Vec<String>>();
+    trigrams.sort_unstable();
+    trigrams.dedup();
+    trigrams
+}
+
+pub(super) fn unheld_holding(
+    connection: &Connection,
+    narrowing: Option<&str>,
+) -> Result<(String, Vec<Value>)> {
     let mut held = String::new();
     let mut binds = Vec::new();
     for word in playlist::words_of(narrowing) {
         held.push_str(" AND ");
         held.push_str(&Infix::held_by_a_release_or_its_artist(
+            connection,
             &store::folded_letters(&word),
             &mut binds,
-        ));
+        )?);
     }
 
-    (held, binds)
+    Ok((held, binds))
 }
 
 pub(super) fn scoped_albums(

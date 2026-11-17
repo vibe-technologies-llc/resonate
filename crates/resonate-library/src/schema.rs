@@ -1453,6 +1453,17 @@ const MEMORY_MAPPED_BYTES: u64 = 256 << 20;
 
 const ROWS_PER_INDEX_SAMPLED: u32 = 400;
 
+const TRIGRAM_INDEXES: [&str; 4] = [
+    "discography_songs_fts",
+    "artist_releases_fts",
+    "artists_key_fts",
+    "release_tracks_fts",
+];
+
+pub(crate) fn vocabulary_of(index: &str) -> String {
+    format!("temp.{index}_vocabulary")
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
     Writing,
@@ -1512,7 +1523,17 @@ pub fn configure(connection: &Connection, role: Role) -> Result<()> {
              PRAGMA cache_size = -{page_cache_kib};
              PRAGMA mmap_size = {MEMORY_MAPPED_BYTES};"
         ))
-        .map_err(|source| Error::store(StoreOp::Open, source))
+        .map_err(|source| Error::store(StoreOp::Open, source))?;
+    for index in TRIGRAM_INDEXES {
+        connection
+            .execute_batch(&format!(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS {} USING fts5vocab(main, {index}, row);",
+                vocabulary_of(index)
+            ))
+            .map_err(|source| Error::store(StoreOp::Open, source))?;
+    }
+
+    Ok(())
 }
 
 pub fn restate_the_statistics(connection: &Connection) -> Result<()> {

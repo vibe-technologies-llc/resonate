@@ -87,20 +87,21 @@ impl Library {
         if words.is_empty() {
             return Ok(Vec::new());
         }
-        let mut sql = format!("{MISSING_TRACKS}{SHORT_OF_WHAT_IS_HELD_OR_WANTED}");
-        let mut binds = Vec::with_capacity(words.len() + 1);
-        for word in &words {
-            for piece in word.split_whitespace() {
-                sql.push_str(" AND ");
-                sql.push_str(
-                    &Infix::OF_A_MISSING_TRACK.holding(&store::folded_letters(piece), &mut binds),
-                );
-            }
-        }
-        sql.push_str(UNHELD_MATCHING_IN_ORDER);
-        binds.push(Value::Integer(limit(at_most)));
-
         self.inner.read(|connection| {
+            let mut sql = format!("{MISSING_TRACKS}{SHORT_OF_WHAT_IS_HELD_OR_WANTED}");
+            let mut binds = Vec::with_capacity(words.len() + 1);
+            for word in &words {
+                for piece in word.split_whitespace() {
+                    sql.push_str(" AND ");
+                    sql.push_str(&Infix::OF_A_MISSING_TRACK.holding(
+                        connection,
+                        &store::folded_letters(piece),
+                        &mut binds,
+                    )?);
+                }
+            }
+            sql.push_str(UNHELD_MATCHING_IN_ORDER);
+            binds.push(Value::Integer(limit(at_most)));
             rows(connection, &sql, binds, |row| {
                 RawMissingTrack::read(row).map(RawMissingTrack::into_missing)
             })

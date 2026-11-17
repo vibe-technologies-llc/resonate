@@ -224,11 +224,18 @@ fn planned(library: &Library, sql: &str, binds: Vec<Value>) -> String {
 #[test]
 fn a_piece_of_a_word_is_looked_up_in_each_trigram_index_and_never_scanned_for() {
     let library = Library::open_in_memory().expect("an in-memory catalog opens");
-    let (held, mut unheld_binds) = searched::unheld_holding(Some("daybreak"));
+    let (held, mut unheld_binds) = library
+        .inner
+        .read(|connection| searched::unheld_holding(connection, Some("daybreak")))
+        .expect("the releases sought");
     unheld_binds.push(Value::Integer(64));
 
-    let (kept_songs, kept_binds) =
-        following::songs_kept_holding(&[" dayb".to_owned(), " ho".to_owned()]);
+    let (kept_songs, kept_binds) = library
+        .inner
+        .read(|connection| {
+            following::songs_kept_holding(connection, &[" dayb".to_owned(), " ho".to_owned()])
+        })
+        .expect("the kept songs sought");
     let unheld = format!("{UNHELD_RELEASES}{held}{UNHELD_IN_ORDER}");
 
     for (sql, binds, lookups) in [
@@ -260,6 +267,91 @@ fn a_piece_of_a_word_is_looked_up_in_each_trigram_index_and_never_scanned_for() 
 }
 
 #[test]
+fn a_word_most_kept_songs_hold_is_scanned_for_and_a_rare_one_looked_up_in_the_index() {
+    const SONGS: i64 = 64;
+
+    let library = Library::open_in_memory().expect("an in-memory catalog opens");
+    library
+        .inner
+        .write(|transaction| {
+            for id in 1..=SONGS {
+                let common = match id % 2 {
+                    0 => " love",
+                    _ => "",
+                };
+                let rare = match id {
+                    7 => " zephyr",
+                    _ => "",
+                };
+                transaction
+                    .execute(
+                        "INSERT INTO discography_songs
+                                (release_group, recording_mbid, release_mbid, release_title, disc,
+                                 position, title, artist, words, folded)
+                         VALUES ('g', ?1, 'm', 'Odes', 1, ?2, 'Song', 'Ada', 'song', ?3)",
+                        params![
+                            format!("r{id}"),
+                            id,
+                            format!(" song{id}{common}{rare} ada odes ")
+                        ],
+                    )
+                    .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            }
+            Ok(())
+        })
+        .expect("the kept songs");
+
+    let looked_up = |pieces: &[&str]| {
+        let pieces: Vec<String> = pieces.iter().map(|piece| (*piece).to_owned()).collect();
+        let (sql, binds) = library
+            .inner
+            .read(|connection| following::songs_kept_holding(connection, &pieces))
+            .expect("the kept songs sought");
+        planned(&library, &sql, binds)
+    };
+    let common = looked_up(&[" love"]);
+    let rare = looked_up(&[" zephyr"]);
+    let both = looked_up(&[" love", " zephyr"]);
+    let absent = looked_up(&[" quartz"]);
+
+    assert!(!common.contains("discography_songs_fts"), "{common}");
+    assert!(common.split("; ").any(|step| step == "SCAN s"), "{common}");
+    for plan in [&rare, &both, &absent] {
+        assert!(
+            plan.contains("discography_songs_fts VIRTUAL TABLE INDEX 0:L0"),
+            "{plan}"
+        );
+        assert!(!plan.split("; ").any(|step| step == "SCAN s"), "{plan}");
+    }
+    assert!(
+        both.contains("0:L0L0"),
+        "the rare word left the common one out of the index: {both}"
+    );
+}
+
+#[test]
+fn every_trigram_index_answers_how_many_rows_a_piece_of_a_word_is_in() {
+    let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
+    let looked_up = library
+        .inner
+        .read(|connection| {
+            [
+                Infix::OF_A_KEPT_SONG,
+                Infix::OF_A_RELEASE,
+                Infix::OF_AN_ARTIST,
+                Infix::OF_A_MISSING_TRACK,
+            ]
+            .iter()
+            .map(|infix| infix.is_looked_up(connection, "daybreak"))
+            .collect::<Result<Vec<bool>>>()
+        })
+        .expect("each index's vocabulary reads");
+
+    assert_eq!(looked_up, [true; 4]);
+}
+
+#[test]
 fn a_word_holding_a_wildcard_is_still_matched_letter_for_letter() {
     let library = Library::open_in_memory().expect("an in-memory catalog opens");
     library
@@ -288,14 +380,16 @@ fn a_word_holding_a_wildcard_is_still_matched_letter_for_letter() {
         (vec![" 1"], vec!["r1", "r2"]),
     ] {
         let pieces: Vec<String> = pieces.into_iter().map(str::to_owned).collect();
-        let mut binds = Vec::new();
-        let holding = Infix::OF_A_KEPT_SONG.holding_every(&pieces, &mut binds);
-        let sql =
-            format!("SELECT s.recording_mbid FROM discography_songs s WHERE {holding} ORDER BY 1");
 
         let found: Vec<String> = library
             .inner
             .read(|connection| {
+                let mut binds = Vec::new();
+                let holding =
+                    Infix::OF_A_KEPT_SONG.holding_every(connection, &pieces, &mut binds)?;
+                let sql = format!(
+                    "SELECT s.recording_mbid FROM discography_songs s WHERE {holding} ORDER BY 1"
+                );
                 let mut statement = connection
                     .prepare(&sql)
                     .map_err(|source| Error::store(StoreOp::Prepare, source))?;
