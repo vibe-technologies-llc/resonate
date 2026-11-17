@@ -33,7 +33,7 @@ struct HomeView: View {
                         NavigationLink(value: Destination.favourites) {
                             FavouritesCard()
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.shortcutCard)
                     }
                 }
                 HomeMixes()
@@ -152,7 +152,7 @@ private struct LibraryCard: View {
                 symbol: "square.stack"
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.shortcutCard)
     }
 }
 

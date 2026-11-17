@@ -92,7 +92,7 @@ struct LibraryView: View {
                         NavigationLink(value: Destination.favourites) {
                             FavouritesCard()
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.shortcutCard)
                         if folded.isEmpty {
                             Button {
                                 if library.filtering { library.setFilter(Library.everything) }
@@ -101,7 +101,7 @@ struct LibraryView: View {
                             } label: {
                                 AllSongsCard()
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.shortcutCard)
                         }
                     }
                 }
@@ -328,6 +328,7 @@ struct ShortcutCards<Cards: View>: View {
             : AnyLayout(HStackLayout(spacing: ShortcutCard.spacing))
         ScrollView(.horizontal) {
             layout { cards }
+                .fixedSize(horizontal: false, vertical: true)
         }
         .scrollDisabled(true)
         .scrollIndicators(.hidden)
@@ -342,15 +343,11 @@ struct ShortcutCard: View {
     static let spacing: CGFloat = 12
     static let belowTheTitle: CGFloat = 16
 
-    @Environment(\.dynamicTypeSize) private var typeSize
-    @Environment(\.isEnabled) private var enabled
-    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 92
     let title: String
     let detail: String
     let symbol: String
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Self.corner, style: .continuous)
         VStack(alignment: .leading, spacing: 2) {
             Image(systemName: symbol)
                 .font(.title3.weight(.medium))
@@ -365,14 +362,36 @@ struct ShortcutCard: View {
                 .foregroundStyle(.secondary)
                 .titleLines()
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
-        .background(Color.cardGround, in: shape)
-        .contentShape(shape)
-        .opacity(enabled ? 1 : 0.5)
-        .containerRelativeFrame(.horizontal, count: typeSize.isAccessibilitySize ? 1 : 2, span: 1, spacing: Self.spacing)
         .accessibilityElement(children: .combine)
     }
+}
+
+struct ShortcutCardStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        ShortcutCardFrame(configuration: configuration)
+    }
+}
+
+private struct ShortcutCardFrame: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.isEnabled) private var enabled
+    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 92
+    let configuration: ButtonStyleConfiguration
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: ShortcutCard.corner, style: .continuous)
+        configuration.label
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: height, maxHeight: .infinity, alignment: .leading)
+            .background(Color.cardGround, in: shape)
+            .contentShape(shape)
+            .opacity(enabled ? (configuration.isPressed ? 0.7 : 1) : 0.5)
+            .containerRelativeFrame(.horizontal, count: typeSize.isAccessibilitySize ? 1 : 2, span: 1, spacing: ShortcutCard.spacing)
+    }
+}
+
+extension ButtonStyle where Self == ShortcutCardStyle {
+    static var shortcutCard: ShortcutCardStyle { ShortcutCardStyle() }
 }
 
 struct FavouritesCard: View {

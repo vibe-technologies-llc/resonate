@@ -921,8 +921,12 @@ every route change (a pair of headphones at the same rate included), not from th
   top and the title and song count at the foot, the count in `.secondary`, at least 92 pt tall,
   scaled, and half as strong while disabled: no gradient, no colour pair of its own and no
   watermark behind the words. Each card is its own `NavigationLink` or `Button` in
-  `.buttonStyle(.plain)`, since a row holding two controls of the default style fires both on any
-  tap, and the pair sits in a horizontal `ScrollView` with scrolling disabled, each card half its
+  `.buttonStyle(.shortcutCard)` (`ShortcutCardStyle`), since a row holding two controls of the default style fires both on any
+  tap. The style, not the card, draws the padding, ground, corners, minimum height, half width and
+  the dimming, and stretches the card to the tallest of its row (`maxHeight: .infinity` under a
+  `fixedSize(horizontal: false, vertical: true)` row), so a card whose words wrap and one whose words
+  do not, or a `Button` beside a `NavigationLink`, are the same size on Home and the Library tab
+  (`test_shortcut_cards.py`). The pair sits in a horizontal `ScrollView` with scrolling disabled, each card half its
   width (`containerRelativeFrame`), as the shelves' links do: a `List` gives a `NavigationLink`
   directly in a row its disclosure chevron whatever the style, which drew an arrow between the cards. The Library tab's *All songs* is a `Button` that clears any filter or mix, shows songs and
   opens the Songs page: a `simultaneousGesture` tap on a `NavigationLink` there left a tap doing
