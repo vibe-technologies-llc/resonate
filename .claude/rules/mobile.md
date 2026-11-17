@@ -1067,6 +1067,27 @@ another version*), choosing and then playing the song, which the swap turns into
 (`a_version_chosen_is_queued_in_place_of_its_song_and_forgotten_with_it`,
 `a_catalog_of_before_versions_were_chosen_keeps_its_songs_and_gains_the_table`).
 
+## A song deleted from every device
+
+**Rust never deletes a phone's file; it names the songs and the front end removes them**
+(`deleting.rs`, `sync/everywhere.rs`, over `sync.md`'s tombstone). `forget_songs_deleted_everywhere(ids)`
+is `forget_deleted_songs` for songs the listener deleted from every device: the same forgetting and
+`songs_deleted` marks, and in the same transaction the recording of each forgotten song goes into
+`songs_deleted_everywhere` (the `SONGS_DELETED_EVERYWHERE_ARE_TOLD_AND_TAKEN` step, which also made
+`deletions_from_other_devices`), which the sync reads (`Catalog::deleted_everywhere`) and empties once
+its ledger holds them. A deletion another device told, while `SyncConfig.takes_deletions` (default on,
+*Let my other devices delete songs here*) lets it, puts each visible document of the recording added
+before the tombstone (`documents.added`, Unix seconds) into `deletions_from_other_devices`;
+`take_deletions_from_other_devices()` hands those `Track`s to the front end and empties the table, and
+the front end removes each file it may (a writable folder's, as its own *Delete*) and forgets those
+through `forget_deleted_songs`; a file it cannot remove keeps its row, and the ledger has settled the
+deletion, so it is not asked again. `added_by_hand_since` answers whether a visible copy was added since
+a moment by anything but a sync landing (no `songs_received` row), which answers the deletion for every
+device
+(`a_song_deleted_from_every_device_waits_to_be_told_and_one_deleted_here_does_not`,
+`a_deletion_another_device_told_waits_for_the_platform_only_for_a_copy_older_than_it`,
+`a_song_one_phone_deletes_from_every_device_waits_for_the_other_unless_it_refuses`).
+
 ## Replacing a playlist's lossy songs
 
 `replacing.rs` is the phones' half of `library.md`'s *Replacing a lossy song*, over the document

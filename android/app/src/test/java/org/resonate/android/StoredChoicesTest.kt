@@ -32,4 +32,11 @@ class StoredChoicesTest {
             ),
         )
     }
+
+    @Test
+    fun otherDevicesMayDeleteSongsHereUnlessTurnedOff() {
+        assertTrue(StoredChoices.deletionsFromOthers(stored()))
+        assertTrue(StoredChoices.deletionsFromOthers(stored("sync-deletions-from-others" to true)))
+        assertFalse(StoredChoices.deletionsFromOthers(stored("sync-deletions-from-others" to false)))
+    }
 }

@@ -143,7 +143,8 @@ class Resonate(val library: LibraryRepository, val playback: Playback, val host:
 
     fun keepListening(keeps: Boolean) = features.listening.keepListening(keeps, host::allowMicrophone)
 
-    fun deleteSongs(tracks: List<Track>) = features.deleteSongs(tracks, host::confirmDelete)
+    fun deleteSongs(tracks: List<Track>, everywhere: Boolean = false) =
+        features.deleteSongs(tracks, host::confirmDelete, everywhere)
 
     fun editTags(tracks: List<Track>, change: org.resonate.android.nativecore.SongTags) =
         features.tags.edit(tracks, change, host::confirmWrite)

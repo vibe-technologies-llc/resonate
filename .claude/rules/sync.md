@@ -843,7 +843,8 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   iPhone suspended in the background answers nothing, so what drives it reads as `Unanswered`.
 - **`sync-deletions-from-others` is *Let my other devices delete songs here*, on by default on every
   front end.** The desktop reads it into `Catalogued::takes_deletions` (part of the `Arrangement`,
-  so a change restarts the service) and draws it in the *Driven by your other devices* group;
+  so a change restarts the service) and draws it in the *Driven by your other devices* group; the
+  phones carry it as `SyncConfig.takes_deletions` (`mobile.md`'s *A song deleted from every device*);
   switched off, a deletion from another device is only recorded (`Catalog::takes_deletions`, *The
   ledger*).
 - **`sync-control` is a choice on every front end, worded alike.** `RemoteTrust::label` and `meaning`

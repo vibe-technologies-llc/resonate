@@ -115,6 +115,7 @@ class ProviderAccountStore(context: Context) {
             stun = storage.getString("sync-stun", "").orEmpty(),
             certificate = storage.getString("sync-certificate", "").orEmpty(),
             musicbrainzCopy = StoredChoices.musicbrainzCopy(storage::storedFlag),
+            takesDeletions = StoredChoices.deletionsFromOthers(storage::storedFlag),
         )
 
     @Synchronized
@@ -136,6 +137,7 @@ class ProviderAccountStore(context: Context) {
                 .putString("sync-certificate", config.certificate)
                 .putBoolean(StoredChoices.MUSICBRAINZ_COPY, config.musicbrainzCopy)
                 .remove(StoredChoices.MUSICBRAINZ_COPY_AS_FIRST_SAVED)
+                .putBoolean(StoredChoices.SYNC_DELETIONS_FROM_OTHERS, config.takesDeletions)
         check(edit.commit()) { resources.getString(R.string.provider_sync_not_saved) }
     }
 

@@ -142,7 +142,21 @@ fun SongSelectionBar(
                                 Icons.Rounded.DeleteOutline,
                                 destructive = true,
                             ) {
-                                sheets.deleting = live
+                                sheets.delete(live)
+                                onClose()
+                            }
+                        else null,
+                        if (deletable && resonate.features.syncsWithOtherDevices())
+                            MenuEntry.Action(
+                                pluralStringResource(
+                                    R.plurals.selection_delete_everywhere,
+                                    live.size,
+                                    live.size,
+                                ),
+                                Icons.Rounded.DeleteOutline,
+                                destructive = true,
+                            ) {
+                                sheets.delete(live, everywhere = true)
                                 onClose()
                             }
                         else null,

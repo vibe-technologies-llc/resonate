@@ -652,6 +652,7 @@ pub(super) mod tests {
                 stun: String::new(),
                 certificate: String::new(),
                 musicbrainz_copy: false,
+                takes_deletions: true,
             })
             .expect("sync started");
         let told = player

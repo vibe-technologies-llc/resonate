@@ -1003,12 +1003,22 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
+    private suspend fun takeDeletionsFromOtherDevices(told: List<Track>) {
+        if (told.isEmpty()) return
+        val deletable = told.filter(::songDeletable)
+        val deleted = SongDeletion(context, library) { false }.delete(deletable)
+        if (deleted.removed > 0) songsLeft()
+    }
+
     private suspend fun pollSync() {
         var arrivals = 0uL
         while (currentCoroutineContext().isActive) {
             val quick = foreground || transferring.value || backgroundSyncs.get() > 0
             withTimeoutOrNull(if (quick) 2000L else 30000L) { pollSoon.receive() }
             try {
+                takeDeletionsFromOtherDevices(
+                    library.holding { native -> native.takeDeletionsFromOtherDevices() }
+                )
                 library.holding { native ->
                     val polledAt = SystemClock.elapsedRealtime()
                     val status = native.syncStatus()
@@ -1496,10 +1506,16 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun deleteSongs(tracks: List<Track>, consent: suspend (List<Uri>) -> Boolean) {
+    fun syncsWithOtherDevices(): Boolean = syncConfig.value?.enabled == true
+
+    fun deleteSongs(
+        tracks: List<Track>,
+        consent: suspend (List<Uri>) -> Boolean,
+        everywhere: Boolean = false,
+    ) {
         scope.launch {
             try {
-                val deleted = SongDeletion(context, library, consent).delete(tracks)
+                val deleted = SongDeletion(context, library, consent).delete(tracks, everywhere)
                 if (deleted.removed > 0) songsLeft()
                 tellDeleted(deleted)
             } catch (cancelled: CancellationException) {

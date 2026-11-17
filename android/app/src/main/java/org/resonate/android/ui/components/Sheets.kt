@@ -105,6 +105,12 @@ class Sheets(val snackbar: SnackbarHostState) {
     var naming by mutableStateOf<NamingRequest?>(null)
     var searching by mutableStateOf<SearchEditing?>(null)
     var deleting by mutableStateOf<List<Track>?>(null)
+    var deletingEverywhere by mutableStateOf(false)
+
+    fun delete(tracks: List<Track>, everywhere: Boolean = false) {
+        deletingEverywhere = everywhere
+        deleting = tracks
+    }
     var editingTags by mutableStateOf<List<Track>?>(null)
     var versions by mutableStateOf<Track?>(null)
     var listening by mutableStateOf(false)
@@ -199,7 +205,12 @@ fun SheetHost() {
         sheets.picker?.let { tracks -> PlaylistPicker(tracks) { sheets.picker = null } }
         sheets.naming?.let { request -> NamePlaylistDialog(request) { sheets.naming = null } }
         sheets.searching?.let { request -> SavedSearchDialog(request) { sheets.searching = null } }
-        sheets.deleting?.let { tracks -> DeleteSongsDialog(tracks) { sheets.deleting = null } }
+        sheets.deleting?.let { tracks ->
+            DeleteSongsDialog(tracks, sheets.deletingEverywhere) {
+                sheets.deleting = null
+                sheets.deletingEverywhere = false
+            }
+        }
         sheets.editingTags?.let { tracks -> TagEditorSheet(tracks) { sheets.editingTags = null } }
         sheets.versions?.let { track -> VersionsSheet(track) { sheets.versions = null } }
         if (sheets.listening) ListenSheet { sheets.listening = false }
@@ -207,7 +218,7 @@ fun SheetHost() {
 }
 
 @Composable
-private fun DeleteSongsDialog(tracks: List<Track>, dismiss: () -> Unit) {
+private fun DeleteSongsDialog(tracks: List<Track>, everywhere: Boolean, dismiss: () -> Unit) {
     val resonate = LocalResonate.current
     AlertDialog(
         onDismissRequest = dismiss,
@@ -216,12 +227,18 @@ private fun DeleteSongsDialog(tracks: List<Track>, dismiss: () -> Unit) {
             Text(DeletionSentences.title(words(), tracks.map { it.shownTitle }))
         },
         text = {
-            Text(pluralStringResource(R.plurals.sheet_delete_explained, tracks.size))
+            Text(
+                pluralStringResource(
+                    if (everywhere) R.plurals.sheet_delete_everywhere_explained
+                    else R.plurals.sheet_delete_explained,
+                    tracks.size,
+                )
+            )
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    resonate.deleteSongs(tracks)
+                    resonate.deleteSongs(tracks, everywhere)
                     dismiss()
                 },
                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
@@ -321,8 +338,17 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
                     words.string(R.string.sheet_delete_song),
                     destructive = true,
                 ) {
-                    sheets.deleting = listOf(track)
+                    sheets.delete(listOf(track))
                 })
+                if (resonate.features.syncsWithOtherDevices()) {
+                    add(SheetAction(
+                        Icons.Rounded.DeleteOutline,
+                        words.string(R.string.sheet_delete_everywhere),
+                        destructive = true,
+                    ) {
+                        sheets.delete(listOf(track), everywhere = true)
+                    })
+                }
             }
         }
         if (request.inPlayer) {

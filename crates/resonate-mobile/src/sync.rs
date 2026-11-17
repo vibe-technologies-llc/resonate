@@ -21,9 +21,9 @@ use resonate_core::{
 use resonate_engine::Command;
 use resonate_library::Layout;
 use resonate_sync::{
-    Catalog, Follow, Handoff, Held, HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId,
-    LocalQuery, Me, Nearby, Opened, Platform, QueryBody, Refused, RemoteListen, Resumed, Server,
-    Settings, SongTags, Standing, Sync, SyncDevice, SyncKey, TransferState,
+    Catalog, DeletedEverywhere, Follow, Handoff, Held, HeldShare, LocalListen, LocalPlaylist,
+    LocalPlaylistId, LocalQuery, Me, Nearby, Opened, Platform, QueryBody, Refused, RemoteListen,
+    Resumed, Server, Settings, SongTags, Standing, Sync, SyncDevice, SyncKey, TransferState,
     shared::{Shared, SharedSettings},
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -49,6 +49,7 @@ mod copied;
 
 pub(crate) use self::consulted::Layers;
 mod driving;
+mod everywhere;
 mod shared;
 mod standing;
 
@@ -197,6 +198,7 @@ struct DocumentCatalog {
     sheets: Arc<KeptSheets>,
     shown: Arc<AtomicU32>,
     filed_as: FiledAs,
+    takes_deletions: bool,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -215,6 +217,8 @@ pub struct SyncConfig {
     pub certificate: String,
     #[uniffi(default = true)]
     pub musicbrainz_copy: bool,
+    #[uniffi(default = true)]
+    pub takes_deletions: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -744,6 +748,7 @@ impl MobilePlayer {
             sheets: Arc::clone(&self.services.lyrics),
             shown: self.playing.shown_zone_cell(),
             filed_as: Arc::clone(&self.syncing.filed_as),
+            takes_deletions: config.takes_deletions,
         });
         let settings = Settings {
             server: if config.nearby_only {
@@ -1641,6 +1646,26 @@ impl Catalog for DocumentCatalog {
             .map_err(unavailable)
     }
 
+    fn deleted_everywhere(&self) -> Answered<Vec<DeletedEverywhere>> {
+        self.waiting_to_be_told()
+    }
+
+    fn deletions_told(&self, told: &[i64]) -> Answered<()> {
+        self.told_to_every_device(told)
+    }
+
+    fn takes_deletions(&self) -> bool {
+        self.takes_deletions
+    }
+
+    fn take_deletion(&self, recording: &Recording, before: i64) -> Answered<u64> {
+        self.deletion_waits_for_the_platform(recording, before)
+    }
+
+    fn added_by_hand_since(&self, recording: &Recording, since: i64) -> Answered<bool> {
+        self.added_here_since(recording, since)
+    }
+
     fn held_as(&self, recording: &Recording) -> Answered<Option<Recording>> {
         let connection = self.catalog.0.lock();
         let Some(id) = self.resolved_in(&connection, recording)? else {
@@ -2219,6 +2244,7 @@ mod tests {
             sheets: Arc::clone(&player.services.lyrics),
             shown: player.playing.shown_zone_cell(),
             filed_as: Arc::clone(&player.syncing.filed_as),
+            takes_deletions: true,
         }
     }
 
@@ -3360,6 +3386,7 @@ mod tests {
                 stun: String::new(),
                 certificate: String::new(),
                 musicbrainz_copy: false,
+                takes_deletions: true,
             })
             .expect("sync started");
         let told = player

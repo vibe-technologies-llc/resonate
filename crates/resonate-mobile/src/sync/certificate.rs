@@ -73,6 +73,7 @@ uRACi1+SkHU377h5XBXccA0ghqVn5cUhYbvxj5+8g3VD/Ak=
             stun: stun.to_owned(),
             certificate: certificate.to_owned(),
             musicbrainz_copy: false,
+            takes_deletions: true,
         }
     }
 

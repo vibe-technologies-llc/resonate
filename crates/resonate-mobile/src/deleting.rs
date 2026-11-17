@@ -5,6 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use resonate_core::{Mbid, Recording};
 use resonate_library::{identical_among, kept_first};
 use rusqlite::{OptionalExtension, Transaction};
 
@@ -92,21 +93,19 @@ impl MobilePlayer {
     }
 
     pub fn forget_deleted_songs(&self, ids: Vec<u64>) -> Result<SongsForgotten> {
-        let gone = self
-            .held_uris(&ids)
-            .into_iter()
-            .filter(|(_, uri)| !self.stands_again(uri))
-            .collect::<BTreeMap<_, _>>();
-        let left_the_queue = self.drop_from_queue(&gone.values().cloned().collect());
+        self.forget_songs(ids, Reach::ThisDevice)
+    }
 
-        let forgotten = self
-            .catalog
-            .forget(&gone.keys().copied().collect::<Vec<_>>())?;
-        self.forget_analyses(gone.keys());
-        Ok(SongsForgotten {
-            forgotten: counted(forgotten),
-            left_the_queue: counted(left_the_queue),
-        })
+    pub fn forget_songs_deleted_everywhere(&self, ids: Vec<u64>) -> Result<SongsForgotten> {
+        self.forget_songs(ids, Reach::EveryDevice)
+    }
+
+    pub fn take_deletions_from_other_devices(&self) -> Result<Vec<Track>> {
+        let ids = self.catalog.deletions_from_other_devices_taken()?;
+        Ok(ids
+            .into_iter()
+            .filter_map(|id| self.catalog.track(id).ok())
+            .collect())
     }
 
     pub fn fold_identical_songs(&self, kept: u64, copies: Vec<u64>) -> Result<SongsForgotten> {
@@ -130,6 +129,24 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
+    fn forget_songs(&self, ids: Vec<u64>, reach: Reach) -> Result<SongsForgotten> {
+        let gone = self
+            .held_uris(&ids)
+            .into_iter()
+            .filter(|(_, uri)| !self.stands_again(uri))
+            .collect::<BTreeMap<_, _>>();
+        let left_the_queue = self.drop_from_queue(&gone.values().cloned().collect());
+
+        let forgotten = self
+            .catalog
+            .forget(&gone.keys().copied().collect::<Vec<_>>(), reach)?;
+        self.forget_analyses(gone.keys());
+        Ok(SongsForgotten {
+            forgotten: counted(forgotten),
+            left_the_queue: counted(left_the_queue),
+        })
+    }
+
     fn songs_sharing_a_size(&self) -> Result<Vec<Vec<Track>>> {
         let mut by_size = BTreeMap::<u64, Vec<Track>>::new();
         for (stamped, track) in self.catalog.held_with_their_sizes()? {
@@ -263,7 +280,7 @@ impl Catalog {
             .map_err(read_error)
     }
 
-    fn forget(&self, ids: &[u64]) -> Result<usize> {
+    fn forget(&self, ids: &[u64], reach: Reach) -> Result<usize> {
         if ids.is_empty() {
             return Ok(0);
         }
@@ -274,7 +291,7 @@ impl Catalog {
         let mut forgotten = 0;
         for id in ids {
             let picture = picture_of(&transaction, *id as i64).map_err(read_error)?;
-            deletion_noted(&transaction, *id as i64, now).map_err(write_error)?;
+            deletion_noted(&transaction, *id as i64, now, reach).map_err(write_error)?;
             forgotten += forgotten_in(&transaction, &referring, *id as i64).map_err(write_error)?;
             if let Some(picture) = picture {
                 unreferenced_picture_dropped(&transaction, picture).map_err(write_error)?;
@@ -282,6 +299,24 @@ impl Catalog {
         }
         transaction.commit().map_err(write_error)?;
         Ok(forgotten)
+    }
+
+    fn deletions_from_other_devices_taken(&self) -> Result<Vec<u64>> {
+        let mut connection = self.0.lock();
+        let transaction = connection.transaction().map_err(write_error)?;
+        let taken = transaction
+            .prepare("SELECT track FROM deletions_from_other_devices ORDER BY told, track")
+            .and_then(|mut query| {
+                query
+                    .query_map([], |row| row.get::<_, i64>(0).map(i64::cast_unsigned))?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(read_error)?;
+        transaction
+            .execute("DELETE FROM deletions_from_other_devices", [])
+            .map_err(write_error)?;
+        transaction.commit().map_err(write_error)?;
+        Ok(taken)
     }
 
     pub(crate) fn fold_into(&self, kept: u64, copies: &[u64]) -> Result<usize> {
@@ -312,7 +347,18 @@ fn nanos_now() -> i64 {
         })
 }
 
-fn deletion_noted(transaction: &Transaction<'_>, id: i64, now: i64) -> rusqlite::Result<()> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reach {
+    ThisDevice,
+    EveryDevice,
+}
+
+fn deletion_noted(
+    transaction: &Transaction<'_>,
+    id: i64,
+    now: i64,
+    reach: Reach,
+) -> rusqlite::Result<()> {
     let recording = transaction
         .query_row(
             &format!("SELECT {RECORDING_COLUMNS} FROM documents d WHERE d.id = ?1"),
@@ -321,6 +367,9 @@ fn deletion_noted(transaction: &Transaction<'_>, id: i64, now: i64) -> rusqlite:
         )
         .optional()?;
     if let Some(recording) = recording {
+        if reach == Reach::EveryDevice {
+            to_be_told(transaction, &recording, now)?;
+        }
         for key in [recording.key(), recording.named_key()] {
             transaction.execute(
                 "INSERT OR REPLACE INTO songs_deleted (recording, deleted) VALUES (?1, ?2)",
@@ -332,6 +381,29 @@ fn deletion_noted(transaction: &Transaction<'_>, id: i64, now: i64) -> rusqlite:
         "INSERT OR REPLACE INTO songs_deleted (recording, deleted)
          SELECT recording, ?2 FROM songs_received WHERE track = ?1",
         [id, now],
+    )?;
+    Ok(())
+}
+
+fn to_be_told(
+    transaction: &Transaction<'_>,
+    recording: &Recording,
+    now: i64,
+) -> rusqlite::Result<()> {
+    let length = recording
+        .length
+        .map(|length| i64::try_from(length.as_millis()).unwrap_or(i64::MAX));
+    transaction.execute(
+        "INSERT INTO songs_deleted_everywhere (title, artist, album, mbid, length, deleted)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            recording.title,
+            recording.artist,
+            recording.album,
+            recording.mbid.as_ref().map(Mbid::as_str),
+            length,
+            now
+        ],
     )?;
     Ok(())
 }
@@ -415,7 +487,9 @@ mod tests {
     fn deleting_a_song_before_the_one_heard_resumes_the_same_song_at_its_place() {
         let (catalog, songs) = queued(&["A", "B", "C"], 1, 90_000);
 
-        catalog.forget(&[songs[0].id]).expect("forgotten");
+        catalog
+            .forget(&[songs[0].id], Reach::ThisDevice)
+            .expect("forgotten");
         let (ids, at, position) = catalog.resume().expect("resumed");
 
         assert_eq!(ids, vec![songs[1].id, songs[2].id]);
@@ -427,7 +501,9 @@ mod tests {
     fn deleting_the_song_heard_resumes_the_next_one_from_its_start() {
         let (catalog, songs) = queued(&["A", "B", "C"], 1, 90_000);
 
-        catalog.forget(&[songs[1].id]).expect("forgotten");
+        catalog
+            .forget(&[songs[1].id], Reach::ThisDevice)
+            .expect("forgotten");
         let (ids, at, position) = catalog.resume().expect("resumed");
 
         assert_eq!(ids, vec![songs[0].id, songs[2].id]);
@@ -439,7 +515,9 @@ mod tests {
     fn deleting_the_last_song_when_it_was_heard_resumes_the_new_last_from_its_start() {
         let (catalog, songs) = queued(&["A", "B", "C"], 2, 90_000);
 
-        catalog.forget(&[songs[2].id]).expect("forgotten");
+        catalog
+            .forget(&[songs[2].id], Reach::ThisDevice)
+            .expect("forgotten");
         let (ids, at, position) = catalog.resume().expect("resumed");
 
         assert_eq!(ids, vec![songs[0].id, songs[1].id]);
@@ -465,7 +543,9 @@ mod tests {
 
         assert_eq!(deletions_remembered(&catalog), 0);
 
-        catalog.forget(&[songs[2].id]).expect("forgotten");
+        catalog
+            .forget(&[songs[2].id], Reach::ThisDevice)
+            .expect("forgotten");
 
         assert!(deletions_remembered(&catalog) > 0);
     }

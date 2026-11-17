@@ -654,6 +654,15 @@
         <item quantity="other">Their files are deleted from your phone, and they leave the queue, your playlists and favourites.</item>
     </plurals>
     <string name="sheet_delete_song">Delete song</string>
+    <string name="sheet_delete_everywhere">Delete from every device</string>
+    <plurals name="sheet_delete_everywhere_explained">
+        <item quantity="one">Its file is deleted from your phone, and your other devices that let other devices delete songs delete their copy too.</item>
+        <item quantity="other">Their files are deleted from your phone, and your other devices that let other devices delete songs delete their copies too.</item>
+    </plurals>
+    <plurals name="selection_delete_everywhere">
+        <item quantity="one">Delete from every device</item>
+        <item quantity="other">Delete %1$d songs from every device</item>
+    </plurals>
     <plurals name="sheet_delete_songs">
         <item quantity="one">Delete %1$d song</item>
         <item quantity="other">Delete %1$d songs</item>
@@ -1708,6 +1717,9 @@
     <string name="sync_everything_detail">Keep every song your other devices hold</string>
     <string name="sync_metered">Use mobile data</string>
     <string name="sync_metered_detail">Without it, songs move only on Wi-Fi</string>
+    <string name="sync_deletions_from_others">Let my other devices delete songs here</string>
+    <string name="sync_deletions_from_others_taken">A song deleted from every device on another device goes from this phone too</string>
+    <string name="sync_deletions_from_others_kept">A song deleted from every device elsewhere stays on this phone</string>
     <string name="sync_background">Sync in the background</string>
     <string name="sync_musicbrainz_header">MusicBrainz</string>
     <string name="sync_musicbrainz_copy">Keep a copy of MusicBrainz</string>

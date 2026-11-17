@@ -608,6 +608,19 @@ fun SyncScreen() {
                 }
                 Footnote(offered.told)
             }
+            item(key = "deletions-from-others") {
+                SwitchRow(
+                    title = stringResource(R.string.sync_deletions_from_others),
+                    icon = Icons.Rounded.DeleteOutline,
+                    supporting =
+                        stringResource(
+                            if (config.takesDeletions) R.string.sync_deletions_from_others_taken
+                            else R.string.sync_deletions_from_others_kept
+                        ),
+                    checked = config.takesDeletions,
+                    onCheckedChange = { value -> model.change { it.copy(takesDeletions = value) } },
+                )
+            }
             item(key = "keystore") {
                 Footnote(stringResource(R.string.sync_keystore))
             }

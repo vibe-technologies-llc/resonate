@@ -41,11 +41,15 @@ class SongDeletion(
     private val library: LibraryRepository,
     private val consent: suspend (List<Uri>) -> Boolean,
 ) {
-    suspend fun delete(tracks: List<Track>): Deleted =
+    suspend fun delete(tracks: List<Track>, everywhere: Boolean = false): Deleted =
         withContext(Dispatchers.IO) {
             val removed = removeFiles(tracks)
-            if (removed.gone.isNotEmpty())
-                library.holding { it.forgetDeletedSongs(removed.gone.map { it.id }) }
+            val ids = removed.gone.map { it.id }
+            if (ids.isNotEmpty())
+                library.holding { native ->
+                    if (everywhere) native.forgetSongsDeletedEverywhere(ids)
+                    else native.forgetDeletedSongs(ids)
+                }
             Deleted(
                 removed.gone.size,
                 removed.kept,

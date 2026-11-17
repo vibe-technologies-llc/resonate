@@ -416,7 +416,24 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     QUEUES_MAY_BE_LEFT_BEHIND_AT_OPENING,
     FETCHED_COVERS_ARE_ASKED_FOR_A_LARGER_ONE,
     LOSSY_SONGS_WAIT_TO_BE_REPLACED,
+    SONGS_DELETED_EVERYWHERE_ARE_TOLD_AND_TAKEN,
 ];
+
+pub(crate) const SONGS_DELETED_EVERYWHERE_ARE_TOLD_AND_TAKEN: &str = "
+CREATE TABLE songs_deleted_everywhere (
+    id      INTEGER PRIMARY KEY,
+    title   TEXT NOT NULL,
+    artist  TEXT NOT NULL,
+    album   TEXT NOT NULL,
+    mbid    TEXT,
+    length  INTEGER,
+    deleted INTEGER NOT NULL
+) STRICT;
+CREATE TABLE deletions_from_other_devices (
+    track INTEGER PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+    told  INTEGER NOT NULL
+) STRICT;
+";
 
 #[cfg(test)]
 pub(crate) const FIRST_VERSION: &str = V1;
