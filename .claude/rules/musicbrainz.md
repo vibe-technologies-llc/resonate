@@ -158,8 +158,9 @@ backslash escapes are read, octal and hex included (`\x` with no hex digit is an
   112 KiB dictionary at that level costs about what packing the block does. Replication's
   amendments do the same (`prepared_for_amending`, once a replication).
 - **Indexes.** An MBID (`entities`), an ISRC (`isrcs`) or a barcode (`barcodes`) leads to an
-  ordinal. The ordinal is the rowid of the contentless, `detail=none` FTS5 tables of folded words
-  (`recording_words`, `release_words`, `group_words`, `artist_words`). A release's, recording's
+  ordinal. The contentless, `detail=none` FTS5 tables of folded words (`recording_words`,
+  `release_words`, `group_words`, `artist_words`) lead to it too, through a rowid that places the
+  document by its weight (*Weighed*, below). A release's, recording's
   and group's words also carry one token for its folded bare title (`bare_title_token`: `qt` and
   the FNV-1a of `titles::bare` folded), and an artist's one for each of its names, sort name and
   aliases (`words_of_names`), so a search can ask for the names that can agree before every row
@@ -167,6 +168,20 @@ backslash escapes are read, octal and hex included (`\x` with no hex digit is an
   artist search is asked without them, so no `FORMAT` step was owed. Each table holds `WORDS_HELD_BEFORE_A_FLUSH` (64 MiB) of terms
   before writing a segment (FTS5's `hashsize`, 1 MiB by default), so 54 million rows leave a few
   hundred segments to merge rather than tens of thousands.
+- **Weighed.** A document's weight is how likely it is to be the one asked for: a recording's the
+  releases it is on, a group's its pressings, a release's its group's pressings, an artist's the
+  groups credited to it (`Document::weight`, counted before any list is cut). `placed_by_weight`
+  makes the word row's rowid its `heaviness` (the weight counted exactly up to 3, then in quarter
+  octaves, up to 127 steps) above its ordinal's `ORDINAL_BITS` (32), the heaviest lowest, so FTS5,
+  which answers in rowid order, answers heaviest first and, among alike weights, in ordinal order;
+  `ordinal_of` masks the ordinal back out. A build stages each kind's words in the placement file
+  under that rowid while the documents are written and inserts them in its order as the settling
+  begins, since FTS5 writes a segment whenever a rowid is not above the last
+  (`a_heavier_document_is_placed_before_a_lighter_and_alike_ones_keep_their_order`). A copy built
+  before the weights has rowids that are its ordinals, which `ordinal_of` reads as themselves, so it
+  is searched in ordinal order as before and no `FORMAT` step was owed; the next build weighs it
+  (`a_rowid_placed_by_no_weight_is_its_own_ordinal`). An ordinal past `ORDINAL_BITS` is
+  `OrdinalPastWeighing`, a build refused rather than a rowid misread.
 - **Reading.** A lookup by id is one index probe and one block unpacked. The block's place is read
   off `blocks_by_first` alone and its packed bytes only on a miss of the last `BLOCKS_KEPT_UNPACKED`
   blocks, kept most recently used last. Each kind's dictionary is digested once as the copy opens
@@ -179,11 +194,16 @@ backslash escapes are read, octal and hex included (`\x` with no hex digit is an
 **Search scores as MusicBrainz's does** (`mirror/search.rs`).
 
 - **Candidates.** Up to `CANDIDATES_WEIGHED` are taken (`SONGS_FOUND_AT_MOST` for songs), in the
-  table's order, never by bm25. FTS5's bm25 is zero for every row of a contentless `detail=none`
-  table, so `ORDER BY rank` gave the rowid's order anyway and only cost a read of the size of
-  every row holding the words; the copy's tables are asked with `LIMIT` alone, the same rows
-  (`a_word_table_weighs_every_row_alike_so_its_candidates_are_the_same_unranked`). The amendments'
-  tables keep their content, so bm25 means something there and they are still asked by rank.
+  table's order, which is heaviest first (*Weighed*), never by bm25. FTS5's bm25 is zero for every
+  row of a contentless `detail=none` table, so `ORDER BY rank` gave the rowid's order anyway and
+  only cost a read of the size of every row holding the words; the copy's tables are asked with
+  `LIMIT` alone, the same rows
+  (`a_word_table_weighs_every_row_alike_so_its_candidates_are_the_same_unranked`). The score sorts
+  them stably, so of candidates scoring alike the heaviest stays first: the recording on the most
+  releases, the group pressed most, the artist credited most, though numbered later
+  (`of_names_alike_the_one_pressed_or_credited_most_comes_first_though_numbered_later`). The
+  amendments' tables keep their content, so bm25 means something there and they are still asked by
+  rank, after the copy's.
   `Phrase` requires every title word and, where an artist is asked, every artist word. `Words`
   requires the title's alone.
 - **Narrowed first.** Each query of `asked_queries` is first asked with the bare title's token
@@ -241,6 +261,21 @@ every row holding the word). Asked unranked it stops at the rows it takes: on a 
 alone took 135 ms by rank and 0.02 ms unranked, narrowed 13 ms by rank and 0.04 ms unranked, the rows
 taken the same either way. A loose search with an artist still requires one of the artist's words
 before asking the title alone.
+
+**Why the weight is the rowid, measured on the same synthetic table** (weights drawn from a Pareto
+tail, 56 per cent of rows weighing 1; 64 taken, warm): joining a table of weights and ordering by
+it took 6 to 9 ms narrowed to the 8 000 titled *love*, 18 to 24 ms over 100 000 titled *intro*, and
+60 ms over the 408 000 holding *love*, growing with every row holding the words as bm25 did, and
+probing a weight per row at random over a table of 54 million (a copy whose pages the cache does
+not hold reads one page a probe); weighing only the first 4 096 matched cost 0.6 to 3 ms but took
+lighter rows (a mean weight of 110 to 127 where the heaviest 64 weigh 202 to 1 368). Tokens for weight bands asked heaviest band first took 2 to 12 ms, each band an
+`AND` against a doclist of millions. The local score over a wider set unpacks a 64 KiB block a
+candidate (45 to 70 µs each) and still cannot tell apart names that agree alike. The rowid placed by
+weight took 0.01 to 0.03 ms, as unranked did, and its 64 were the heaviest within a quarter octave
+(mean weight 201.6 of an exact 201.8). Its cost is in the copy: the word tables grew from 117 to
+146 MB on the synthetic table, a rowid with its weight above the ordinal taking a varint of 6 bytes
+where an ordinal took 4, and the build writes the words to the placement file once more before
+inserting them.
 
 **A mirror is a cache rebuilt from the dump, not stored data.** A file of another `FORMAT` is
 `MirrorFormat`, left serving nothing until the next build replaces it. No migration is owed, since

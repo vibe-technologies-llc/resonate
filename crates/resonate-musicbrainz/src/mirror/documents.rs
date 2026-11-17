@@ -63,7 +63,12 @@ pub(crate) struct Document {
     pub gid: [u8; MBID_BYTES],
     pub bytes: Vec<u8>,
     pub words: String,
+    pub weight: u64,
     pub codes: Vec<String>,
+}
+
+fn counted(count: usize) -> u64 {
+    u64::try_from(count).unwrap_or(u64::MAX)
 }
 
 fn stated(text: Option<String>) -> Option<String> {
@@ -322,6 +327,7 @@ impl<'a> Releases<'a> {
             media: held_media,
         };
         let words = words_of_a_credited(&release.title, &release.credit);
+        let weight = group.as_ref().map_or(0, |group| u64::from(group.pressings));
         let doc = ReleaseDoc {
             release,
             status: looked_up.status_of(&info),
@@ -332,6 +338,7 @@ impl<'a> Releases<'a> {
             gid: info.gid,
             bytes: writer.finish(),
             words,
+            weight,
             codes: barcode.into_iter().collect(),
         }))
     }
@@ -408,6 +415,7 @@ impl<'a> Recordings<'a> {
                 },
             });
         }
+        let weight = counted(on.len());
         earliest_first(&mut on, |on| (&on.date, &on.title));
         on.truncate(RELEASES_OF_A_RECORDING_KEPT);
         let codes = texts_of(&mut self.isrcs, id)?;
@@ -435,6 +443,7 @@ impl<'a> Recordings<'a> {
             gid,
             bytes: writer.finish(),
             words,
+            weight,
             codes: recording
                 .isrcs
                 .iter()
@@ -493,6 +502,7 @@ impl<'a> Groups<'a> {
                 discs: release.discs.to_vec(),
             });
         }
+        let weight = counted(pressings.len());
         earliest_first(&mut pressings, |pressing| (&pressing.date, &pressing.title));
         let group = ReleaseGroup {
             id: mbid_of(info.gid),
@@ -515,6 +525,7 @@ impl<'a> Groups<'a> {
             gid: info.gid,
             bytes: writer.finish(),
             words,
+            weight,
             codes: Vec::new(),
         }))
     }
@@ -601,6 +612,7 @@ impl<'a> Artists<'a> {
                 .map_err(&failed)?;
             ids.collect::<rusqlite::Result<_>>().map_err(&failed)?
         };
+        let weight = counted(credited_groups.len());
         let mut groups = Vec::new();
         for group in credited_groups {
             let Some(info) = looked_up.group(small(group))? else {
@@ -670,6 +682,7 @@ impl<'a> Artists<'a> {
             gid,
             bytes: writer.finish(),
             words,
+            weight,
             codes: Vec::new(),
         }))
     }

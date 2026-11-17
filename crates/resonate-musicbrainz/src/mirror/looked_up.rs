@@ -37,6 +37,7 @@ pub(crate) struct GroupInfo {
     pub kind: Option<u32>,
     pub secondary: Box<[u32]>,
     pub first_released: Option<Box<str>>,
+    pub pressings: u32,
 }
 
 #[derive(Clone)]
@@ -328,6 +329,7 @@ impl Shared {
                         first_released: first_released
                             .remove(&small(id))
                             .map(String::into_boxed_str),
+                        pressings: 0,
                     },
                 );
             }
@@ -397,6 +399,11 @@ impl Shared {
                             .into_boxed_slice(),
                     },
                 );
+            }
+        }
+        for release in releases.iter().flatten() {
+            if let Some(Some(group)) = groups.get_mut(release.group as usize) {
+                group.pressings = group.pressings.saturating_add(1);
             }
         }
         building.looked_at()?;
@@ -634,11 +641,16 @@ fn asked_group(tables: &Connection, id: u32) -> Result<Option<GroupInfo>> {
         })
         .map_err(&failed)?
         .flatten();
+    let pressings: i64 = tables
+        .prepare_cached("SELECT count(*) FROM release WHERE release_group = ?1")
+        .and_then(|mut statement| statement.query_row([id], |row| row.get(0)))
+        .map_err(&failed)?;
     Ok(Some(GroupInfo {
         gid,
         title: title.unwrap_or_default().into_boxed_str(),
         kind: kind.map(small),
         secondary: sorted(secondary),
         first_released: first_released.map(String::into_boxed_str),
+        pressings: u32::try_from(pressings).unwrap_or(u32::MAX),
     }))
 }

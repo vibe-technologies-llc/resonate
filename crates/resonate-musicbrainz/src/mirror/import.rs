@@ -23,6 +23,7 @@ use super::{
     documents::{Builders, CODES_JOINED_BY, Document, rows_of, table_of, words_of},
     looked_up::{LookedUp, Shared, store_read},
     tables::{Sequenced, TABLES_FILE, kept_beside_the_build},
+    weighed::placed_by_weight,
 };
 use crate::{
     ArchiveOp, Entity, Error, PackOp, Result, Store, StoreOp, bzipped, kept::now, wire::Writer,
@@ -47,7 +48,7 @@ const SCHEMA_SEQUENCE: &str = "SCHEMA_SEQUENCE";
 const LONGEST_SEQUENCE_FILE: u64 = 64;
 const TRACKS_READ_FROM: &str = "track";
 const DOCUMENTS_READ_FROM: [&str; 4] = ["release", "recording", "release_group", "artist"];
-const SETTLING_STEPS: u64 = 9;
+const SETTLING_STEPS: u64 = 13;
 
 const THREADS_THE_READ_KEEPS: usize = 2;
 const IDS_A_CHUNK: i64 = 2048;
@@ -860,6 +861,14 @@ fn written(
              CREATE TABLE placed_barcodes (barcode TEXT NOT NULL, ordinal INTEGER NOT NULL);",
         )
         .map_err(Error::store(Store::Staging, StoreOp::LayOut))?;
+    for kind in Entity::ALL {
+        placed
+            .execute_batch(&format!(
+                "CREATE TABLE {} (placed INTEGER PRIMARY KEY, words TEXT NOT NULL);",
+                words_placed_in(kind)
+            ))
+            .map_err(Error::store(Store::Staging, StoreOp::LayOut))?;
+    }
     for connection in [&mirror, &placed] {
         connection
             .execute_batch("BEGIN")
@@ -953,6 +962,17 @@ fn written(
         let table = words_of(kind);
         mirror
             .execute_batch(&format!(
+                "INSERT INTO {table} (rowid, words) \
+                 SELECT placed, words FROM placed.{} ORDER BY placed;",
+                words_placed_in(kind)
+            ))
+            .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
+        stepped()?;
+    }
+    for kind in Entity::ALL {
+        let table = words_of(kind);
+        mirror
+            .execute_batch(&format!(
                 "INSERT INTO {table}({table}) VALUES ('optimize');"
             ))
             .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
@@ -974,12 +994,21 @@ fn written(
     Ok(())
 }
 
-const fn words_inserted(kind: Entity) -> &'static str {
+const fn words_placed_in(kind: Entity) -> &'static str {
     match kind {
-        Entity::Release => "INSERT INTO release_words (rowid, words) VALUES (?1, ?2)",
-        Entity::Recording => "INSERT INTO recording_words (rowid, words) VALUES (?1, ?2)",
-        Entity::Group => "INSERT INTO group_words (rowid, words) VALUES (?1, ?2)",
-        Entity::Artist => "INSERT INTO artist_words (rowid, words) VALUES (?1, ?2)",
+        Entity::Release => "placed_release_words",
+        Entity::Recording => "placed_recording_words",
+        Entity::Group => "placed_group_words",
+        Entity::Artist => "placed_artist_words",
+    }
+}
+
+const fn words_placed(kind: Entity) -> &'static str {
+    match kind {
+        Entity::Release => "INSERT INTO placed_release_words (placed, words) VALUES (?1, ?2)",
+        Entity::Recording => "INSERT INTO placed_recording_words (placed, words) VALUES (?1, ?2)",
+        Entity::Group => "INSERT INTO placed_group_words (placed, words) VALUES (?1, ?2)",
+        Entity::Artist => "INSERT INTO placed_artist_words (placed, words) VALUES (?1, ?2)",
     }
 }
 
@@ -1027,10 +1056,11 @@ impl Writing<'_> {
                 statement.execute(params![built.gid.to_vec(), kind.code(), ordinal])
             })
             .map_err(write())?;
-        self.mirror
-            .prepare_cached(words_inserted(kind))
-            .and_then(|mut statement| statement.execute(params![ordinal, built.words]))
-            .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
+        let placed_by_weight = placed_by_weight(kind, ordinal, built.weight)?;
+        self.placed
+            .prepare_cached(words_placed(kind))
+            .and_then(|mut statement| statement.execute(params![placed_by_weight, built.words]))
+            .map_err(write())?;
         let coded = match kind {
             Entity::Release => {
                 Some("INSERT INTO placed_barcodes (barcode, ordinal) VALUES (?1, ?2)")

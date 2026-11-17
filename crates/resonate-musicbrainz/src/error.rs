@@ -2,6 +2,8 @@ use std::{io, path::PathBuf, result};
 
 use thiserror::Error;
 
+use crate::Entity;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Malformed {
     Short,
@@ -123,6 +125,9 @@ pub enum Error {
 
     #[error("the threads building the mirror's documents stopped")]
     BuildersStopped,
+
+    #[error("the {kind:?} numbered {ordinal} is past what a word table places beside its weight")]
+    OrdinalPastWeighing { kind: Entity, ordinal: i64 },
 
     #[error("another run is building the mirror")]
     AlreadyBuilding,

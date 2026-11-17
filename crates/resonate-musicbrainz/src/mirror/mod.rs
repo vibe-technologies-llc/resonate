@@ -7,6 +7,7 @@ mod offered;
 pub(crate) mod replicated;
 mod search;
 mod tables;
+mod weighed;
 
 use std::{
     collections::VecDeque,
@@ -35,6 +36,7 @@ pub use self::{
 use self::{
     amended::{Amended, Amendment},
     looked_up::store_read,
+    weighed::ordinal_of,
 };
 use crate::{
     Answer, Asked, Entity, Error, PackOp, Result, Store, StoreOp,
@@ -601,7 +603,7 @@ impl Mirror {
         let mut found: Vec<At> =
             first_found(queries, |query| self.built_matched(table, query, most))?
                 .into_iter()
-                .map(At::Built)
+                .map(|placed| At::Built(ordinal_of(placed)))
                 .collect();
         if let Some(amended) = &self.amended {
             let amended = amended.lock();

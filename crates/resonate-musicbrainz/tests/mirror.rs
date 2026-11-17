@@ -778,6 +778,187 @@ fn a_common_word_is_narrowed_to_the_names_alike_once_bare_before_every_row_holdi
     assert_eq!(wider[0].score, 100);
 }
 
+const OFTEN_PRESSED_CREEP: &str = "7f3e3e3e-0000-4000-8000-000000000001";
+const OFTEN_CREDITED_THOM: &str = "8f3e3e3e-0000-4000-8000-000000000001";
+const LONE_PROLIFIC_GROUP: &str = "9f3e3e3e-0000-4000-8000-000000000001";
+const LONE_PROLIFIC_PRESSING: &str = "af3e3e3e-0000-4000-8000-000000000001";
+const LONE_ROW: &str = "50";
+const PRESSING_ALIKE: usize = 41;
+
+fn alike_but_heavier_later() -> Vec<(&'static str, Vec<String>)> {
+    let track_on = |track: &str, gid: &str, medium: &str| {
+        line(
+            12,
+            &[
+                (0, track),
+                (1, gid),
+                (2, "4"),
+                (3, medium),
+                (4, "1"),
+                (5, "1"),
+                (6, "Creep"),
+                (7, "1"),
+                (8, "238000"),
+            ],
+        )
+    };
+    let medium_of = |medium: &str, release: usize| {
+        line(
+            9,
+            &[
+                (0, medium),
+                (1, &(FIRST_PROLIFIC_ROW + release).to_string()),
+                (2, "1"),
+                (4, ""),
+                (7, "1"),
+            ],
+        )
+    };
+    vec![
+        (
+            "artist",
+            vec![line(
+                19,
+                &[
+                    (0, "4"),
+                    (1, OFTEN_CREDITED_THOM),
+                    (2, "Thom Yorke"),
+                    (3, "Yorke, Thom"),
+                    (13, ""),
+                    (16, "f"),
+                ],
+            )],
+        ),
+        (
+            "artist_credit_name",
+            vec![line(
+                5,
+                &[(0, "4"), (1, "0"), (2, "4"), (3, "Thom Yorke"), (4, "")],
+            )],
+        ),
+        (
+            "recording",
+            vec![line(
+                9,
+                &[
+                    (0, "4"),
+                    (1, OFTEN_PRESSED_CREEP),
+                    (2, "Creep"),
+                    (3, "1"),
+                    (4, "238000"),
+                ],
+            )],
+        ),
+        ("medium", vec![medium_of("2", 0), medium_of("3", 1)]),
+        (
+            "track",
+            vec![
+                track_on("3", "1d1e1f10-0000-4000-8000-000000000003", "2"),
+                track_on("4", "1d1e1f10-0000-4000-8000-000000000004", "3"),
+            ],
+        ),
+        (
+            "release_group",
+            vec![line(
+                8,
+                &[
+                    (0, LONE_ROW),
+                    (1, LONE_PROLIFIC_GROUP),
+                    (2, "Prolific 1"),
+                    (3, "4"),
+                    (4, "1"),
+                    (5, ""),
+                ],
+            )],
+        ),
+        (
+            "release",
+            vec![line(
+                14,
+                &[
+                    (0, LONE_ROW),
+                    (1, LONE_PROLIFIC_PRESSING),
+                    (2, &format!("Prolific 1 pressing {PRESSING_ALIKE}")),
+                    (3, "3"),
+                    (4, LONE_ROW),
+                    (5, "1"),
+                    (10, ""),
+                ],
+            )],
+        ),
+    ]
+}
+
+#[test]
+fn of_names_alike_the_one_pressed_or_credited_most_comes_first_though_numbered_later() {
+    let scratch = Scratch::new("weighed");
+    let archives = dump_beside(&scratch.0, &alike_but_heavier_later());
+    let mirror = built_from_archives(&scratch, &archives, Keeping::TheMirror);
+
+    let recordings = mirror
+        .find_recording(&RecordingAsked {
+            title: "Creep".to_owned(),
+            artist: Some("Radiohead".to_owned()),
+            artist_mbid: None,
+            release: None,
+            length: Some(Duration::from_secs(238)),
+            wording: Wording::Phrase,
+        })
+        .expect("a search");
+    let artists = mirror.find_artist("thom yorke").expect("a search");
+    let groups = mirror
+        .find_release_group(&GroupAsked {
+            title: "Prolific 1".to_owned(),
+            artist: None,
+            artist_mbid: None,
+            year: None,
+            wording: Wording::Words,
+        })
+        .expect("a search");
+    let releases = mirror
+        .find_release(&ReleaseAsked {
+            title: format!("Prolific 1 pressing {PRESSING_ALIKE}"),
+            artist: Some("Prolific".to_owned()),
+            artist_mbid: None,
+            barcode: None,
+            catalog_number: None,
+            wording: Wording::Phrase,
+        })
+        .expect("a search");
+
+    assert_eq!(
+        recordings
+            .iter()
+            .map(|found| (found.recording.clone(), found.score))
+            .collect::<Vec<_>>(),
+        [(mbid(OFTEN_PRESSED_CREEP), 100), (mbid(CREEP), 100)]
+    );
+    assert_eq!(
+        artists
+            .iter()
+            .map(|found| (found.mbid.clone(), found.score))
+            .collect::<Vec<_>>(),
+        [(mbid(OFTEN_CREDITED_THOM), 100), (mbid(THOM), 100)]
+    );
+    assert_eq!(
+        groups
+            .iter()
+            .map(|found| found.group.clone())
+            .collect::<Vec<_>>(),
+        [mbid(&prolific_gid(1, 1)), mbid(LONE_PROLIFIC_GROUP)]
+    );
+    assert_eq!(
+        releases
+            .iter()
+            .map(|found| found.release.clone())
+            .collect::<Vec<_>>(),
+        [
+            mbid(&prolific_gid(2, PRESSING_ALIKE)),
+            mbid(LONE_PROLIFIC_PRESSING)
+        ]
+    );
+}
+
 #[test]
 fn a_layered_reference_keeps_what_the_mirror_answered_and_serves_it_without_the_mirror() {
     let scratch = Scratch::new("layered");
