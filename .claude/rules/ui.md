@@ -2075,7 +2075,13 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   escape, press outside keep the song; only *Delete* (`Tone::Destructive`) calls
   `LibraryModel::delete_track` = `Library::delete_tracks` on the edit chain. No key confirms, `enter`
   included. While open it is `something_stands_over_the_pane`
-  (`deleting_a_track_asks_first_and_takes_its_file_only_once_confirmed`).
+  (`deleting_a_track_asks_first_and_takes_its_file_only_once_confirmed`). **Beside it, *Delete from
+  every device…*** stands in the same *Remove* submenu, for a track and for a choice of tracks, only
+  while sync runs (`syncs_with_other_devices`: a `Syncing` seam and `Synchronised::enabled`); it is
+  the same sheet over `Deleting::on_every_device`, asking *Delete this song from every device?* and
+  saying the listener's other devices that let them move their copy to the trash too, and *Delete*
+  is `LibraryModel::delete_tracks` with `Reach::EveryDevice`, `Library::delete_tracks_everywhere`
+  (`deleting_a_track_from_every_device_takes_its_file_and_waits_to_tell_the_others`, `sync.md`).
 - **A playlist's lossy songs are swapped for lossless copies from a sheet** (`views/replacing.rs`,
   `Sheet::Replacing`, `library.md`). *Replace lossy songs…* stands in `playlist_menu` after
   *Duplicate* only where `LibraryModel::holds_lossy_songs` says so, read from the shelves'
@@ -2583,6 +2589,9 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
     field; `own_server_asked` holds the choice until an address is given) and *This network only*
     (`sync-nearby-only`, off by default), the chosen one's meaning under it, then the device name.
   - *Songs between devices*: the three `sync-songs` switches.
+  - *Driven by your other devices* (`Group::SyncControl`) also holds the `sync-deletions-from-others`
+    switch, *Let my other devices delete songs here* (`let_other_devices_delete`,
+    `Synchronised::takes_deletions`), on by default; its reset puts both back.
   Each writes `ResonateApp::synchronised` and the file, which the binary's sync watcher reads again
   within seconds (`sync.md`); a reset never forgets the code. `SyncStanding::Waiting` is the
   service not yet running (just switched on, or another Resonate holds the catalog's sync). The `Syncing` seam on `Stored` (absent without the `sync` feature) answers the rest: a

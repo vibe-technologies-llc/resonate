@@ -183,7 +183,10 @@ fn differs_but_for_its_switches(group: Group, standing: &Standing) -> bool {
                 || worn.device != built.device
         }
         Group::SyncedSongs => standing.synchronised.songs != AS_BUILT.synchronised.songs,
-        Group::SyncControl => standing.synchronised.control != AS_BUILT.synchronised.control,
+        Group::SyncControl => {
+            let (worn, built) = (&standing.synchronised, &AS_BUILT.synchronised);
+            worn.control != built.control || worn.takes_deletions != built.takes_deletions
+        }
         Group::Contact => standing.contact_given,
         Group::SharedCatalog => standing.offer_name_given,
         Group::Measurers => standing.measurer_given,

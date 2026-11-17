@@ -577,6 +577,7 @@ mod driven {
                     title: "one".to_owned(),
                     artist: None,
                     a_cut: false,
+                    everywhere: false,
                 });
                 window.focus(&root.focus, cx);
                 cx.notify();
@@ -604,6 +605,7 @@ mod driven {
                     title: "one".to_owned(),
                     artist: None,
                     a_cut: false,
+                    everywhere: false,
                 });
                 cx.notify();
             });

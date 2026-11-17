@@ -71,6 +71,7 @@ pub(crate) use self::{
     },
 };
 pub use self::{
+    deleting::Reach,
     passes::{IdenticalSong, Identified},
     pictures::{Drawn, Portrayed, Scale},
 };

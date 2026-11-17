@@ -545,7 +545,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
 - `hifi-secret`: the key the Resonate server (`resonate_core::RESONATE_WEB_ADDRESS`) lists. It
   registers the `resonate` provider on its own, beside `hifi-api` and whatever `hifi-api` and
   `hosted-services` say; it is never sent to a server `hifi-api` names (`providers.md`).
-- **`sync` (on) and the eight `sync-*` keys** (`sync.md`): `sync-nearby-only` (off by default) uses no server at all (`Server::Nowhere`): devices sync only on the same network,
+- **`sync` (on) and the nine `sync-*` keys** (`sync.md`): `sync-nearby-only` (off by default) uses no server at all (`Server::Nowhere`): devices sync only on the same network,
   and sync then runs with `online` off too; off, `sync-server` or the hosted one is dialled.
   `sync-server` blank = the hosted `wss://resonate.tecnio.dev/`; `sync-server-certificate` a PEM trusted
   beside the roots; `sync-stun` a STUN server that tells the device its public address for
@@ -560,7 +560,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   system's name alone: `Linux`, `Windows`, `macOS`); `sync-songs` an array of
   `favourites`, `playlists`, `everything` (empty = only on request). `sync-control` what another
   device may do to this one's zones (`everything`, `transport`, `nothing`; `RemoteTrust`, `sync.md`'s
-  *One device drives another's zones*), chosen in the Sync category's *Your devices* page, its *Driven by your other devices* group, driven from elsewhere by `resonate sync --control <device>`. Off whenever `online` is, unless
+  *One device drives another's zones*), chosen in the Sync category's *Your devices* page, its *Driven by your other devices* group, driven from elsewhere by `resonate sync --control <device>`. `sync-deletions-from-others` (on) lets a song another device deleted from every device go to the trash here (`Catalogued::takes_deletions`, part of the `Arrangement`, so a change restarts the service); off, the deletion is only remembered. The terminal and MCP offer no deletion from every device: it is the window's alone. Off whenever `online` is, unless
   `sync-nearby-only` (`Config::syncs`). The pane writes them and the running service follows the file
   (`sync.md`). **One process syncs a catalog**: `sync.lock` in the data folder is `try_lock`ed; a
   window holding it leaves `resonate play` and `resonate sync` unsynced (`Error::SyncBusy` for the

@@ -1021,7 +1021,7 @@ impl Group {
                 title: resonate_core::remote_trust_title(),
                 hint: words::settings_find::sync_control_hint(),
                 also_called: words::settings_find::drive_driven_remote_control_another_device(),
-                keys: &[ConfigKey::SyncControl],
+                keys: &[ConfigKey::SyncControl, ConfigKey::SyncDeletionsFromOthers],
             },
             Self::SyncConnection => Described {
                 category: Category::Sync,

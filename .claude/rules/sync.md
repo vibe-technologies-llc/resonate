@@ -841,6 +841,11 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   the engine answered sounding with no `activate` asked of it since it last rested (`SessionAsked`).
   As for any peer, a phone on a metered network with mobile data off refuses the connection and an
   iPhone suspended in the background answers nothing, so what drives it reads as `Unanswered`.
+- **`sync-deletions-from-others` is *Let my other devices delete songs here*, on by default on every
+  front end.** The desktop reads it into `Catalogued::takes_deletions` (part of the `Arrangement`,
+  so a change restarts the service) and draws it in the *Driven by your other devices* group;
+  switched off, a deletion from another device is only recorded (`Catalog::takes_deletions`, *The
+  ledger*).
 - **`sync-control` is a choice on every front end, worded alike.** `RemoteTrust::label` and `meaning`
   and `remote_trust_title`, `_asked` and `_told` (core, out of its `zone` catalog; the phones' boundary words its own, `mobile.md`) are the words; the desktop's Device sync
   category has the group of that title (`sync_control_group`, a `kit::segmented`,

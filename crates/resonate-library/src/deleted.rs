@@ -7,11 +7,11 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::the_folder_a_cue_names;
-use resonate_core::TrackId;
+use resonate_core::{Recording, TrackId};
 use rusqlite::{Connection, Transaction, params, params_from_iter};
 
 use crate::{
-    Error, Result, StoreOp,
+    Error, Result, StoreOp, everywhere,
     forgetting::{Forgetting, Rows, forget_rows},
     scan, store, synced,
 };
@@ -44,6 +44,7 @@ pub trait Trashes: Send + Sync {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Why {
     Deleted,
+    DeletedEverywhere,
     Folded,
 }
 
@@ -194,17 +195,26 @@ fn cuts_only(sheet: &Path, folder: &Path, file: &Path, beside: &[PathBuf]) -> bo
 pub(crate) struct Marked {
     by_file: BTreeMap<PathBuf, Vec<String>>,
     already: AHashSet<String>,
+    told_everywhere: BTreeMap<PathBuf, Vec<Recording>>,
 }
 
 pub(crate) fn note_before_removing(
     tx: &Transaction<'_>,
     files: &BTreeSet<PathBuf>,
+    why: Why,
 ) -> Result<Marked> {
     let mut marked = Marked {
         by_file: BTreeMap::new(),
         already: AHashSet::new(),
+        told_everywhere: BTreeMap::new(),
     };
     for path in files {
+        if why == Why::DeletedEverywhere {
+            marked.told_everywhere.insert(
+                path.clone(),
+                synced::recordings_at(tx, &store::path_text(path))?,
+            );
+        }
         let keys = synced::keys_deleted_with(tx, &store::path_text(path))?;
         for key in &keys {
             if !marked.by_file.values().any(|held| held.contains(key))
@@ -221,6 +231,17 @@ pub(crate) fn note_before_removing(
 }
 
 impl Marked {
+    pub(crate) fn tell_every_device(&self, tx: &Transaction<'_>, gone: &[PathBuf]) -> Result<()> {
+        for recording in gone
+            .iter()
+            .filter_map(|path| self.told_everywhere.get(path))
+            .flatten()
+        {
+            everywhere::to_be_told(tx, recording)?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn take_back_for(&self, tx: &Transaction<'_>, kept: &[PathBuf]) -> Result<()> {
         let standing: AHashSet<&String> = self
             .by_file

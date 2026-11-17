@@ -3,6 +3,7 @@ use gpui::{Context, Div, SharedString, div, prelude::*, px, rgb};
 use super::{Deleting, RootView};
 use crate::{
     icons::Icon,
+    models::Reach,
     motion, theme,
     views::{
         kit::{self},
@@ -25,11 +26,23 @@ impl RootView {
     }
 
     pub(super) fn delete_the_track(&mut self, cx: &mut Context<Self>) {
-        let Some(Deleting { tracks, title, .. }) = self.deleting.take() else {
+        let Some(Deleting {
+            tracks,
+            title,
+            everywhere,
+            ..
+        }) = self.deleting.take()
+        else {
             return;
         };
-        self.library
-            .update(cx, |library, cx| library.delete_tracks(tracks, title, cx));
+        let reach = if everywhere {
+            Reach::EveryDevice
+        } else {
+            Reach::ThisDevice
+        };
+        self.library.update(cx, |library, cx| {
+            library.delete_tracks(tracks, title, reach, cx)
+        });
         cx.notify();
     }
 
@@ -58,6 +71,9 @@ impl RootView {
                     .child(SharedString::from(deleting.saying()))
                     .when(deleting.a_cut, |body| {
                         body.child(words::root::a_cut_goes_whole())
+                    })
+                    .when(deleting.everywhere, |body| {
+                        body.child(words::root::goes_from_every_device())
                     })
                     .child(
                         div()

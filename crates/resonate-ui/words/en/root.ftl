@@ -128,3 +128,8 @@ added-to-the-queue = { $count ->
    *[other] { $count } tracks added to the queue
 }
 measured-as-placeholder = measured
+delete-songs-from-every-device = { $count ->
+    [one] Delete this song from every device?
+   *[other] Delete these songs from every device?
+}
+goes-from-every-device = Your other devices that let other devices delete songs move their copy to the trash too.

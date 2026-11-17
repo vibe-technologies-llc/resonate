@@ -1073,6 +1073,7 @@ pub(crate) struct Deleting {
     pub(crate) title: String,
     pub(crate) artist: Option<String>,
     pub(crate) a_cut: bool,
+    pub(crate) everywhere: bool,
 }
 
 impl Deleting {
@@ -1082,6 +1083,14 @@ impl Deleting {
             title: track.title.clone(),
             artist: track.artist.clone().filter(|artist| !artist.is_empty()),
             a_cut: track.span.is_some(),
+            everywhere: false,
+        }
+    }
+
+    pub(crate) fn on_every_device(self) -> Self {
+        Self {
+            everywhere: true,
+            ..self
         }
     }
 
@@ -1095,11 +1104,15 @@ impl Deleting {
                     .map_or_else(String::new, |track| track.title.clone()),
                 artist: None,
                 a_cut: tracks.iter().any(|track| track.span.is_some()),
+                everywhere: false,
             },
         }
     }
 
     fn asking(&self) -> String {
+        if self.everywhere {
+            return words::root::delete_songs_from_every_device(self.tracks.len());
+        }
         words::root::delete_songs(self.tracks.len())
     }
 

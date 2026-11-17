@@ -60,7 +60,20 @@ const MIGRATIONS: &[&str] = &[
     A_LOSSY_SONG_WAITS_TO_BE_REPLACED,
     SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE,
     WHERE_A_LOSSLESS_COPY_WAS_LOOKED_FOR_IS_KEPT,
+    A_SONG_DELETED_EVERYWHERE_WAITS_TO_BE_TOLD,
 ];
+
+const A_SONG_DELETED_EVERYWHERE_WAITS_TO_BE_TOLD: &str = "
+CREATE TABLE songs_deleted_everywhere (
+    id      INTEGER PRIMARY KEY,
+    title   TEXT NOT NULL,
+    artist  TEXT NOT NULL,
+    album   TEXT NOT NULL,
+    mbid    TEXT,
+    length  INTEGER,
+    deleted INTEGER NOT NULL
+) STRICT;
+";
 
 const SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE: &str = "
 CREATE TABLE larger_covers_wanted (
@@ -2267,6 +2280,43 @@ mod tests {
             )
             .contains("replacements_by_release_track")
         );
+    }
+
+    #[test]
+    fn a_catalog_from_before_songs_were_deleted_everywhere_keeps_its_marks_and_tells_nothing() {
+        let connection = opened();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == A_SONG_DELETED_EVERYWHERE_WAITS_TO_BE_TOLD)
+            .expect("the step that makes the table");
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier step");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO songs_deleted (recording, deleted) VALUES ('named:a|b|c', 11);",
+            )
+            .expect("a song deleted here before the step");
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        let marked: i64 = connection
+            .query_row("SELECT deleted FROM songs_deleted", [], |row| row.get(0))
+            .expect("the mark is carried");
+        let waiting: i64 = connection
+            .query_row("SELECT count(*) FROM songs_deleted_everywhere", [], |row| {
+                row.get(0)
+            })
+            .expect("the table stands");
+
+        assert_eq!(marked, 11);
+        assert_eq!(waiting, 0);
     }
 
     #[test]

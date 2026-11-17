@@ -333,6 +333,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
                 shared_name: config.shared_name.clone().unwrap_or_default(),
                 songs: config.sync_songs.unwrap_or_default(),
                 control: config.sync_control.unwrap_or_default(),
+                takes_deletions: config.is_on(Switch::SyncDeletionsFromOthers),
             },
             syncing: syncing_for_the_window,
             together: together_for_the_window,

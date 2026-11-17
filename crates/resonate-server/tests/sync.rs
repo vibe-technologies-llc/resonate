@@ -526,3 +526,52 @@ fn a_device_dialling_directly_still_reaches_one_that_dials_only_through_the_rela
     drop(desk);
     let _ = fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn a_song_deleted_from_every_device_leaves_those_that_let_it_through_the_server() {
+    let folder = scratch("deleted-everywhere");
+    let hosted = hosted(&folder);
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+    let laptop_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+    laptop_shelf.inside.lock().refuses_deletions = true;
+    let joined = |name: &str, shelf: &Arc<Shelf>| {
+        device(
+            &hosted,
+            &folder,
+            &key,
+            name,
+            Arc::clone(shelf),
+            Follow::default(),
+        )
+    };
+    let desk = joined("Desk", &desk_shelf);
+    let phone = joined("Phone", &phone_shelf);
+    let laptop = joined("Laptop", &laptop_shelf);
+    eventually("every device meeting the others", || {
+        [&desk, &phone, &laptop]
+            .iter()
+            .all(|device| device.shown().devices.len() == 3)
+    });
+
+    desk_shelf.inside.lock().deleted_by_hand = vec!["B".into()];
+    desk_shelf.inside.lock().deleted_here = vec!["B".into()];
+    desk_shelf.delete_everywhere("A");
+
+    eventually("the song leaving the phone", || {
+        !phone_shelf.holds_title("A")
+    });
+    eventually("the laptop hearing of it", || {
+        laptop_shelf.inside.lock().deletions_weighed > 0
+    });
+
+    assert!(laptop_shelf.holds_title("A"));
+    assert!(phone_shelf.holds_title("B"));
+    assert!(laptop_shelf.holds_title("B"));
+
+    drop(laptop);
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}

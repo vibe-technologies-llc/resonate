@@ -116,3 +116,6 @@ position-of-length = { $position } of { $length }
 more-zones = { $more } more
 off-the-list = { $name } is off the list of your devices
 not-taken-off-the-list = { $name } could not be taken off the list
+let-other-devices-delete-songs-here = Let my other devices delete songs here
+a-song-deleted-from-every-device-goes-here-too = A song deleted from every device on another of them goes to the trash here too
+a-song-deleted-elsewhere-stays-here = A song deleted from every device elsewhere stays here, and is never fetched back

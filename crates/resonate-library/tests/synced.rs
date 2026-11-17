@@ -1603,6 +1603,111 @@ fn a_song_the_trash_refused_is_not_marked_deleted_and_one_trashed_beside_it_is()
     Ok(())
 }
 
+fn now_in_nanos() -> i64 {
+    i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("after the epoch")
+            .as_nanos(),
+    )
+    .expect("a stamp")
+}
+
+#[test]
+fn a_song_deleted_everywhere_waits_to_be_told_and_one_the_trash_refused_or_deleted_here_does_not()
+-> Result<()> {
+    let tree = Tree::new();
+    let refused = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let taken = tree.song("Fearless.wav", "Fearless", "Pink Floyd", "Meddle");
+    let here = tree.song("Seamus.wav", "Seamus", "Pink Floyd", "Meddle");
+    let library = Library::open_in_memory()?;
+    library.trash_through(Some(Arc::new(TrashesOnlyWhatIsNamedAfter {
+        refused: "Echoes",
+    })));
+    scan(&library, &tree.root)?;
+    let tracks = [&refused, &taken].map(|path| {
+        library
+            .track_at(path, None)
+            .expect("a read")
+            .expect("scanned")
+            .id
+    });
+    let only_here = library.track_at(&here, None)?.expect("scanned").id;
+
+    library.delete_tracks(&[only_here])?;
+    let deleted = library.delete_tracks_everywhere(&tracks)?;
+    let waiting = library.deleted_everywhere_to_tell()?;
+
+    assert_eq!((deleted.files, deleted.kept), (1, 1));
+    assert_eq!(
+        waiting
+            .iter()
+            .map(|told| told.recording.title.as_str())
+            .collect::<Vec<_>>(),
+        ["Fearless"]
+    );
+    assert!(library.deleted_recording(&song("Fearless", "Pink Floyd", "Meddle"))?);
+    assert!(!library.deleted_recording(&song("Echoes", "Pink Floyd", "Meddle"))?);
+
+    library.deletions_told(&waiting.iter().map(|told| told.id).collect::<Vec<_>>())?;
+
+    assert!(library.deleted_everywhere_to_tell()?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_deletion_another_device_told_takes_only_the_copies_older_than_it() -> Result<()> {
+    let tree = Tree::new();
+    let echoes = tree.song("Echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let library = Library::open_in_memory()?;
+    library.trash_through(Some(Arc::new(TakenByTheDesktop)));
+    let before_the_scan = now_in_nanos();
+    scan(&library, &tree.root)?;
+    let after_the_scan = now_in_nanos();
+    let told = song("Echoes", "Pink Floyd", "Meddle");
+
+    let too_old = library.take_deletion(&told, before_the_scan)?;
+
+    assert_eq!(too_old.files, 0);
+    assert!(library.track_at(&echoes, None)?.is_some());
+    assert!(library.added_by_hand_since(&told, before_the_scan)?);
+    assert!(!library.added_by_hand_since(&told, after_the_scan)?);
+
+    let taken = library.take_deletion(&told, after_the_scan)?;
+
+    assert_eq!(taken.files, 1);
+    assert!(!echoes.exists());
+    assert!(library.track_at(&echoes, None)?.is_none());
+    assert!(library.deleted_recording(&told)?);
+    assert!(library.deleted_everywhere_to_tell()?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn a_song_landed_from_another_device_is_never_added_by_hand() -> Result<()> {
+    let tree = Tree::new();
+    let library = Library::open_in_memory()?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.root.clone(),
+        layout: Layout::default(),
+    }));
+    let before = now_in_nanos();
+    let arriving = song("San Tropez", "Pink Floyd", "Meddle");
+    let SongFiled::Filed(_) = library.file_song_from_elsewhere(
+        &arriving,
+        &HeldTags::default(),
+        "wav",
+        &mut Cursor::new(tagged_wav("San Tropez", "Pink Floyd", "Meddle")),
+    )?
+    else {
+        panic!("filed");
+    };
+
+    assert!(library.holds_recording(&arriving)?);
+    assert!(!library.added_by_hand_since(&arriving, before)?);
+    Ok(())
+}
+
 fn answers_of(answered: &[Answered]) -> Vec<(&str, &Answer)> {
     let mut answers = answered
         .iter()

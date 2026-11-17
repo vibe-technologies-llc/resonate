@@ -86,6 +86,7 @@ pub struct Inside {
     pub arrivals: Vec<(Recording, i64, bool)>,
     pub to_tell: Vec<DeletedEverywhere>,
     pub refuses_deletions: bool,
+    pub deletions_weighed: usize,
     pub trash_refuses: bool,
     next_id: i64,
     next_answered: i64,
@@ -144,6 +145,33 @@ impl Shelf {
 
 #[allow(dead_code)]
 impl Shelf {
+    pub fn delete_everywhere(&self, title: &str) {
+        let mut inside = self.inside.lock();
+        let gone = song(title);
+        Self::remove_where(&mut inside, |held, _| held.names_the_same_song_as(&gone));
+        inside.deleted_here.push(title.into());
+        inside.next_id += 1;
+        let id = inside.next_id;
+        inside.to_tell.push(DeletedEverywhere {
+            id,
+            recording: gone,
+        });
+        drop(inside);
+        self.moved();
+    }
+
+    pub fn song_titles(&self) -> Vec<String> {
+        let mut titles = self
+            .inside
+            .lock()
+            .songs
+            .iter()
+            .map(|(recording, _)| recording.title.clone())
+            .collect::<Vec<_>>();
+        titles.sort();
+        titles
+    }
+
     pub fn receive_named_otherwise(&self, asked: Recording, own: Recording) {
         let bytes = own.title.as_bytes().repeat(1000);
         self.inside.lock().received_as.push((asked, own.clone()));
@@ -299,21 +327,6 @@ impl Shelf {
         titles
     }
 
-    pub fn delete_everywhere(&self, title: &str) {
-        let mut inside = self.inside.lock();
-        let gone = song(title);
-        Self::remove_where(&mut inside, |held, _| held.names_the_same_song_as(&gone));
-        inside.deleted_here.push(title.into());
-        inside.next_id += 1;
-        let id = inside.next_id;
-        inside.to_tell.push(DeletedEverywhere {
-            id,
-            recording: gone,
-        });
-        drop(inside);
-        self.moved();
-    }
-
     fn remove_where(inside: &mut Inside, gone: impl Fn(&Recording, i64) -> bool) -> usize {
         let doomed: Vec<bool> = inside
             .arrivals
@@ -331,18 +344,6 @@ impl Shelf {
             !doomed[at - 1]
         });
         doomed.iter().filter(|doomed| **doomed).count()
-    }
-
-    pub fn song_titles(&self) -> Vec<String> {
-        let mut titles = self
-            .inside
-            .lock()
-            .songs
-            .iter()
-            .map(|(recording, _)| recording.title.clone())
-            .collect::<Vec<_>>();
-        titles.sort();
-        titles
     }
 
     fn holds_song(inside: &Inside, recording: &Recording) -> bool {
@@ -631,7 +632,9 @@ impl Catalog for Shelf {
     }
 
     fn takes_deletions(&self) -> bool {
-        !self.inside.lock().refuses_deletions
+        let mut inside = self.inside.lock();
+        inside.deletions_weighed += 1;
+        !inside.refuses_deletions
     }
 
     fn take_deletion(&self, recording: &Recording, before: i64) -> Result<u64, Refused> {

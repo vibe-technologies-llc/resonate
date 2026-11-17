@@ -427,6 +427,12 @@ plays: everything (play, pause, skip, seek, set the volume, jump to, move and re
 transport (all of it but moving and removing rows) or nothing (not even see what plays).
 Default: everything.
 .TP
+.B sync-deletions-from-others
+Boolean. Let the listener's other devices delete songs here: a song deleted from every device on
+another of them goes to the trash here too, where this device held it before the deletion was made.
+Off, the deletion is only remembered, so this device keeps its copy and fetches none back.
+Default: true.
+.TP
 .B party-time-server
 String. A time server (\fBhost\fR or \fBhost:port\fR, port 123 by default) a listening party asks
 the time of over SNTP, so each person's clock can be compared with the host's beyond what the round

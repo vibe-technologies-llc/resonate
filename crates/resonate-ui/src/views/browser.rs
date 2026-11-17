@@ -1273,6 +1273,8 @@ impl RootView {
                 let matched = SharedString::from(track.title.clone());
                 let looked_up = track.title.clone();
                 let deleting = Deleting::of(track);
+                let everywhere =
+                    syncs_with_other_devices(cx).then(|| deleting.clone().on_every_device());
                 let in_the_queue = this
                     .is_in_the_queue(&track.location, track.span, cx)
                     .then(|| (track.location.clone(), track.span));
@@ -1358,6 +1360,15 @@ impl RootView {
                                 this.ask_to_delete(deleting.clone(), cx);
                             },
                         )
+                        .when_some(everywhere, |menu, everywhere| {
+                            menu.does(
+                                Icon::Delete,
+                                words::menu::delete_from_every_device(),
+                                move |this, _, cx| {
+                                    this.ask_to_delete(everywhere.clone(), cx);
+                                },
+                            )
+                        })
                     })
             },
             cx,
@@ -4223,6 +4234,7 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
     let hidden = tracks.iter().all(|track| track.hidden);
     let hiding = ids.clone();
     let deleting = Deleting::each(&tracks);
+    let everywhere = syncs_with_other_devices(cx).then(|| deleting.clone().on_every_device());
     let paths: Vec<PathBuf> = tracks
         .iter()
         .filter_map(|track| track.location.locator().as_path())
@@ -4287,7 +4299,21 @@ fn chosen_tracks_menu(at: Point<Pixels>, tracks: Vec<Track>, this: &RootView, cx
                     this.ask_to_delete(deleting.clone(), cx);
                 },
             )
+            .when_some(everywhere, |menu, everywhere| {
+                menu.does(
+                    Icon::Delete,
+                    words::menu::delete_from_every_device(),
+                    move |this, _, cx| {
+                        this.ask_to_delete(everywhere.clone(), cx);
+                    },
+                )
+            })
         })
+}
+
+fn syncs_with_other_devices(cx: &App) -> bool {
+    let app = cx.global::<ResonateApp>();
+    app.syncing.is_some() && app.synchronised.enabled
 }
 
 fn artists_are_favoured(this: &RootView, shift: Shift, artists: &[ArtistId], cx: &App) -> bool {
@@ -6646,6 +6672,47 @@ mod tests {
             );
             assert!(kept.exists());
             assert!(library.track(track.id).expect("the track reads").is_none());
+            assert!(
+                library
+                    .deleted_everywhere_to_tell()
+                    .expect("the queue reads")
+                    .is_empty()
+            );
+        }
+
+        #[gpui::test]
+        fn deleting_a_track_from_every_device_takes_its_file_and_waits_to_tell_the_others(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let doomed = folder.tone("doomed.wav", 1);
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            Driven::scanned(&library, &folder);
+            let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+            let track = library
+                .tracks(&TrackQuery::default())
+                .expect("the tracks read")
+                .into_iter()
+                .next()
+                .expect("the track was scanned");
+            let root = driven.root.clone();
+            let deleting = Deleting::of(&track).on_every_device();
+
+            driven.cx.update(|_, cx| {
+                root.update(cx, |root, cx| root.ask_to_delete(deleting, cx));
+            });
+            driven.settle();
+            driven.click("delete-the-track");
+            driven.until(|_, _| !doomed.exists());
+            driven.until(|root, cx| root.library.read(cx).tracks_counted() == 0);
+
+            assert_eq!(
+                library
+                    .deleted_everywhere_to_tell()
+                    .expect("the queue reads")
+                    .len(),
+                1
+            );
         }
     }
 }

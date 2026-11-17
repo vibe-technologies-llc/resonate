@@ -225,6 +225,7 @@ keys! {
     SharedName = "shared-name";
     SyncSongs = "sync-songs";
     SyncControl = "sync-control";
+    SyncDeletionsFromOthers = "sync-deletions-from-others", on;
     PartyTimeServer = "party-time-server";
 }
 

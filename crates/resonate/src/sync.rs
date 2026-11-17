@@ -31,10 +31,11 @@ use resonate_library::{
 use resonate_mpris::ZoneAsked;
 #[cfg(feature = "sync")]
 use resonate_sync::{
-    Catalog, Controlled, Controlling, DeviceId, Follow, Handoff, Held, HeldShare, LocalListen,
-    LocalPlaylist, LocalPlaylistId, LocalQuery, Me, Mirror, Nearby, Opened, Platform, QueryBody,
-    Refused, RemoteCommand, RemoteListen, RemotePlayback, RemoteRow, RemoteZone, Resumed, Server,
-    Settings, SongTags, Standing, Sync, SyncDevice, SyncKey, TransferState, Watched,
+    Catalog, Controlled, Controlling, DeletedEverywhere, DeviceId, Follow, Handoff, Held,
+    HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Me, Mirror, Nearby, Opened,
+    Platform, QueryBody, Refused, RemoteCommand, RemoteListen, RemotePlayback, RemoteRow,
+    RemoteZone, Resumed, Server, Settings, SongTags, Standing, Sync, SyncDevice, SyncKey,
+    TransferState, Watched,
 };
 
 use crate::config::Config;
@@ -128,6 +129,7 @@ struct Arrangement {
     device: Option<String>,
     follow: Follow,
     trust: RemoteTrust,
+    takes_deletions: bool,
 }
 
 #[cfg(feature = "sync")]
@@ -149,6 +151,7 @@ impl Arrangement {
             device: config.sync_device.clone(),
             follow: follow_of(config.sync_songs),
             trust: config.sync_control.unwrap_or_default(),
+            takes_deletions: config.is_on(Switch::SyncDeletionsFromOthers),
         }
     }
 
@@ -162,6 +165,7 @@ impl Arrangement {
             device: None,
             follow: Follow::default(),
             trust: RemoteTrust::default(),
+            takes_deletions: Switch::SyncDeletionsFromOthers.on_unless_said(),
         }
     }
 
@@ -326,6 +330,7 @@ struct Running {
 struct Catalogued {
     library: Arc<Library>,
     filed_as: Arc<FiledAs>,
+    takes_deletions: bool,
 }
 
 impl Syncing {
@@ -469,6 +474,7 @@ fn started(
     let catalog = Arc::new(Catalogued {
         library: Arc::clone(library),
         filed_as,
+        takes_deletions: config.is_on(Switch::SyncDeletionsFromOthers),
     });
     let sync = Sync::start(settings, catalog).map_err(Error::Sync)?;
     #[cfg(feature = "online")]
@@ -748,6 +754,44 @@ impl Catalog for Catalogued {
     fn forgive_deletions(&self) -> Answered<()> {
         self.library
             .forgive_deleted_recordings()
+            .map_err(|error| refused(&error))
+    }
+
+    fn deleted_everywhere(&self) -> Answered<Vec<DeletedEverywhere>> {
+        self.library
+            .deleted_everywhere_to_tell()
+            .map(|waiting| {
+                waiting
+                    .into_iter()
+                    .map(|told| DeletedEverywhere {
+                        id: told.id,
+                        recording: told.recording,
+                    })
+                    .collect()
+            })
+            .map_err(|error| refused(&error))
+    }
+
+    fn deletions_told(&self, told: &[i64]) -> Answered<()> {
+        self.library
+            .deletions_told(told)
+            .map_err(|error| refused(&error))
+    }
+
+    fn takes_deletions(&self) -> bool {
+        self.takes_deletions
+    }
+
+    fn take_deletion(&self, recording: &Recording, before: i64) -> Answered<u64> {
+        self.library
+            .take_deletion(recording, before)
+            .map(|deleted| deleted.tracks)
+            .map_err(|error| refused(&error))
+    }
+
+    fn added_by_hand_since(&self, recording: &Recording, since: i64) -> Answered<bool> {
+        self.library
+            .added_by_hand_since(recording, since)
             .map_err(|error| refused(&error))
     }
 
@@ -2076,6 +2120,7 @@ mod tests {
         let catalog = Catalogued {
             library: Arc::new(library),
             filed_as: Arc::clone(&filed_as),
+            takes_deletions: true,
         };
         let me = Me {
             name: "Desk".into(),
@@ -2134,6 +2179,7 @@ mod tests {
         let catalog = Catalogued {
             library: Arc::new(library),
             filed_as: Arc::default(),
+            takes_deletions: true,
         };
 
         let hidden = catalog.holds(&heard("Held")).expect("asked");
@@ -2158,6 +2204,7 @@ mod tests {
         let catalog = Catalogued {
             library: Arc::new(library),
             filed_as: Arc::default(),
+            takes_deletions: true,
         };
 
         let before = catalog.deleted_here(&heard("Held")).expect("asked");
@@ -2217,6 +2264,7 @@ mod tests {
         let sender = Catalogued {
             library: Arc::new(there),
             filed_as: Arc::default(),
+            takes_deletions: true,
         };
         let asked = sender.playlists().expect("the playlists")[0].entries[0]
             .clone()
@@ -2244,6 +2292,7 @@ mod tests {
         let receiver = Catalogued {
             library: Arc::new(here),
             filed_as: Arc::default(),
+            takes_deletions: true,
         };
         let me = |name: &str| Me {
             name: name.into(),
@@ -2301,6 +2350,86 @@ mod tests {
         );
     }
 
+    struct TakenAtOnce;
+
+    impl resonate_library::Trashes for TakenAtOnce {
+        fn trash(&self, file: &Path) -> resonate_library::Removal {
+            fs::remove_file(file).expect("the file is taken");
+            resonate_library::Removal::Removed
+        }
+    }
+
+    #[test]
+    fn a_song_deleted_from_every_desktop_goes_from_the_one_that_lets_it_and_stays_on_the_one_that_does_not()
+     {
+        use resonate_sync::{Ledger, SpaceId};
+
+        let desktop = |takes_deletions: bool| {
+            let (folder, library, locations) = kept_songs(&["A", "B"]);
+            library.trash_through(Some(Arc::new(TakenAtOnce)));
+            let catalog = Catalogued {
+                library: Arc::new(library),
+                filed_as: Arc::default(),
+                takes_deletions,
+            };
+            let mut ledger = Ledger::in_memory().expect("a ledger");
+            ledger.enter_space(SpaceId([9; 16])).expect("a space");
+            (folder, catalog, locations, ledger)
+        };
+        let me = Me {
+            name: "Desk".into(),
+            platform: Platform::Linux,
+        };
+        let track_of = |catalog: &Catalogued, location: &resonate_core::MediaLocation| {
+            let path = location.as_path().expect("a file");
+            catalog
+                .library
+                .track_at(path, None)
+                .expect("a read")
+                .map(|track| track.id)
+        };
+        let (desk_folder, desk, desk_songs, mut desk_ledger) = desktop(true);
+        let (laptop_folder, laptop, laptop_songs, mut laptop_ledger) = desktop(true);
+        let (study_folder, study, study_songs, mut study_ledger) = desktop(false);
+
+        let a = track_of(&desk, &desk_songs[0]).expect("scanned");
+        let b = track_of(&desk, &desk_songs[1]).expect("scanned");
+        desk.library.delete_tracks(&[b]).expect("deleted here");
+        desk.library
+            .delete_tracks_everywhere(&[a])
+            .expect("deleted everywhere");
+        desk_ledger.look(&desk, &me).expect("a look");
+        let told = desk_ledger
+            .owed()
+            .expect("owed")
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        laptop_ledger.arrived(&laptop, &told).expect("arrived");
+        study_ledger.arrived(&study, &told).expect("arrived");
+
+        let laptop_a = track_of(&laptop, &laptop_songs[0]);
+        let laptop_b = track_of(&laptop, &laptop_songs[1]);
+        let study_a = track_of(&study, &study_songs[0]);
+        let a_on_disk = [&laptop_songs[0], &study_songs[0]]
+            .map(|location| location.as_path().is_some_and(Path::exists));
+        let refused_marked = study_ledger.deleted_everywhere(&heard("A"));
+        for folder in [desk_folder, laptop_folder, study_folder] {
+            let _ = fs::remove_dir_all(&folder);
+        }
+        assert!(laptop_a.is_none());
+        assert!(laptop_b.is_some());
+        assert!(study_a.is_some());
+        assert_eq!(a_on_disk, [false, true]);
+        assert!(refused_marked.expect("asked"));
+        assert!(
+            laptop
+                .library
+                .deleted_recording(&heard("A"))
+                .expect("asked")
+        );
+    }
+
     fn handed_titles(resumed: &Resumed) -> Vec<&str> {
         resumed.rows.iter().map(|row| row.title.as_str()).collect()
     }
@@ -2332,6 +2461,7 @@ mod tests {
         let catalogued = Catalogued {
             library: Arc::new(library),
             filed_as: Arc::default(),
+            takes_deletions: true,
         };
 
         let resumed = catalogued
@@ -2373,6 +2503,7 @@ mod tests {
         let catalogued = Catalogued {
             library: Arc::new(library),
             filed_as: Arc::default(),
+            takes_deletions: true,
         };
 
         let resumed = catalogued

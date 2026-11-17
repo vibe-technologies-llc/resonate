@@ -853,7 +853,10 @@ impl HeldRow {
     }
 }
 
-fn every_row_holding(connection: &Connection, recording: &Recording) -> Result<Vec<HeldRow>> {
+pub(crate) fn every_row_holding(
+    connection: &Connection,
+    recording: &Recording,
+) -> Result<Vec<HeldRow>> {
     let key = recording.key();
     let named = recording.named_key();
     let mut rows = Vec::new();
@@ -906,7 +909,7 @@ pub(crate) fn holds(inner: &Inner, vault: Option<&Vault>, recording: &Recording)
     })
 }
 
-pub(crate) fn keys_deleted_with(tx: &Transaction<'_>, path: &str) -> Result<Vec<String>> {
+pub(crate) fn recordings_at(tx: &Transaction<'_>, path: &str) -> Result<Vec<Recording>> {
     let mut statement = tx
         .prepare_cached(&format!(
             "SELECT {RECORDING_COLUMNS} FROM tracks t {RECORDING_JOINS} WHERE t.path = ?1"
@@ -916,9 +919,12 @@ pub(crate) fn keys_deleted_with(tx: &Transaction<'_>, path: &str) -> Result<Vec<
         .query_map(params![path], |row| recording_at(row, 0))
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
-    let mut keys: Vec<String> = named
+    Ok(named.into_iter().flatten().collect())
+}
+
+pub(crate) fn keys_deleted_with(tx: &Transaction<'_>, path: &str) -> Result<Vec<String>> {
+    let mut keys: Vec<String> = recordings_at(tx, path)?
         .into_iter()
-        .flatten()
         .flat_map(|recording| [recording.key(), recording.named_key()])
         .map(|key| key.as_str().to_owned())
         .collect();

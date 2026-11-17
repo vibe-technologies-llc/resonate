@@ -1155,6 +1155,7 @@ impl RootView {
 
     pub(super) fn sync_control_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let chosen = cx.global::<ResonateApp>().synchronised.control;
+        let takes_deletions = cx.global::<ResonateApp>().synchronised.takes_deletions;
 
         let mut choices = kit::segmented();
         for (index, trust) in RemoteTrust::ALL.into_iter().enumerate() {
@@ -1178,7 +1179,30 @@ impl RootView {
                     .child(note(chosen.meaning())),
             ))
             .note(remote_trust_told())
+            .child(self.in_the_ring(
+                "sync-deletions-from-others",
+                switch_row(
+                    words::settings_sync::let_other_devices_delete_songs_here(),
+                    if takes_deletions {
+                        words::settings_sync::a_song_deleted_from_every_device_goes_here_too()
+                    } else {
+                        words::settings_sync::a_song_deleted_elsewhere_stays_here()
+                    },
+                    takes_deletions,
+                    "sync-deletions-from-others",
+                ),
+                move |this, _, cx| this.let_other_devices_delete(!takes_deletions, cx),
+                cx,
+            ))
             .note(words::settings_sync::syncing_note())
+    }
+
+    pub(crate) fn let_other_devices_delete(&mut self, takes: bool, cx: &mut Context<Self>) {
+        self.synchronise(
+            |synchronised| synchronised.takes_deletions = takes,
+            &Setting::Switched(Switch::SyncDeletionsFromOthers, takes),
+            cx,
+        );
     }
 
     pub(crate) fn trust_other_devices(&mut self, control: RemoteTrust, cx: &mut Context<Self>) {

@@ -997,6 +997,7 @@ pub struct Synchronised {
     pub shared_name: String,
     pub songs: SyncedSongs,
     pub control: RemoteTrust,
+    pub takes_deletions: bool,
 }
 
 impl Default for Synchronised {
@@ -1009,6 +1010,7 @@ impl Default for Synchronised {
             shared_name: String::new(),
             songs: SyncedSongs::default(),
             control: RemoteTrust::default(),
+            takes_deletions: Switch::SyncDeletionsFromOthers.on_unless_said(),
         }
     }
 }

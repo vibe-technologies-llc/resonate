@@ -9,6 +9,7 @@ mod elsewhere;
 mod enrich;
 mod enriched;
 mod error;
+mod everywhere;
 mod filed;
 mod filters;
 mod fingerprint;
@@ -128,6 +129,7 @@ pub use crate::{
         EncodedColumn, Error, FieldName, KeyColumn, LayoutFault, MoveOp, OrderedColumn,
         PlaylistName, Result, SchemaFingerprint, StoreOp, TagName, TrashOp,
     },
+    everywhere::DeletedEverywhere,
     filed::DeliveryFolder,
     filters::{MinimumLength, MusicExtensions, MusicFilters},
     fingerprint::{Fingerprinters, Fingerprints, NoFingerprints, Printed, Recognition, Sounded},

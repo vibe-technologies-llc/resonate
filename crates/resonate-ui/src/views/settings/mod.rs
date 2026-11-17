@@ -779,6 +779,10 @@ impl RootView {
             Group::SyncedSongs => self.follow_songs(resonate_core::SyncedSongs::default(), cx),
             Group::SyncControl => {
                 self.trust_other_devices(resonate_core::RemoteTrust::default(), cx);
+                self.let_other_devices_delete(
+                    resonate_core::Switch::SyncDeletionsFromOthers.on_unless_said(),
+                    cx,
+                );
             }
             Group::DiscordShows => self.put_discord_shows_back(cx),
             Group::Contact => self.clear_contact(cx),

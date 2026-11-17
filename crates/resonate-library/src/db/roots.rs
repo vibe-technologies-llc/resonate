@@ -4,7 +4,7 @@ use std::{
 };
 
 use ahash::AHashSet;
-use resonate_core::{TrackId, naming};
+use resonate_core::{Recording, TrackId, naming};
 use rusqlite::{OptionalExtension as _, params};
 
 use super::{
@@ -15,6 +15,7 @@ use crate::{
     Error, Result, StoreOp,
     copies::{self, Copies, IdenticalCopy},
     deleted::{self, Deleted, Removal, Why},
+    everywhere::{self, DeletedEverywhere},
     forgetting::{Forgetting, Rows, forget_rows},
     organise::{self},
     sheet, store,
@@ -123,6 +124,36 @@ impl Library {
         self.remove_tracks(tracks, Why::Deleted)
     }
 
+    pub fn delete_tracks_everywhere(&self, tracks: &[TrackId]) -> Result<Deleted> {
+        self.remove_tracks(tracks, Why::DeletedEverywhere)
+    }
+
+    pub fn take_deletion(&self, recording: &Recording, before: i64) -> Result<Deleted> {
+        let older: Vec<TrackId> = everywhere::copies_of(&self.inner, recording)?
+            .into_iter()
+            .filter(|copy| copy.whole_file && copy.added < before)
+            .map(|copy| copy.track)
+            .collect();
+        if older.is_empty() {
+            return Ok(Deleted::default());
+        }
+        self.delete_tracks(&older)
+    }
+
+    pub fn added_by_hand_since(&self, recording: &Recording, since: i64) -> Result<bool> {
+        Ok(everywhere::copies_of(&self.inner, recording)?
+            .iter()
+            .any(|copy| copy.added > since && !copy.received))
+    }
+
+    pub fn deleted_everywhere_to_tell(&self) -> Result<Vec<DeletedEverywhere>> {
+        everywhere::waiting_to_be_told(&self.inner)
+    }
+
+    pub fn deletions_told(&self, ids: &[i64]) -> Result<()> {
+        everywhere::told(&self.inner, ids)
+    }
+
     fn remove_tracks(&self, tracks: &[TrackId], why: Why) -> Result<Deleted> {
         let walk = self.walk_the_tree()?;
         self.remove_tracks_under(&walk, tracks, why)
@@ -139,9 +170,9 @@ impl Library {
             .read(|connection| deleted::files_of(connection, tracks))?;
 
         let marked = match why {
-            Why::Deleted => Some(
+            Why::Deleted | Why::DeletedEverywhere => Some(
                 self.inner
-                    .write(|transaction| deleted::note_before_removing(transaction, &files))?,
+                    .write(|transaction| deleted::note_before_removing(transaction, &files, why))?,
             ),
             Why::Folded => None,
         };
@@ -171,15 +202,18 @@ impl Library {
                 }
             }
         }
-        if let Some(marked) = marked.filter(|_| !refused.is_empty()) {
+        if let Some(marked) = marked.as_ref().filter(|_| !refused.is_empty()) {
             self.inner
                 .write(|transaction| marked.take_back_for(transaction, &refused))?;
         }
         self.prune_the_emptied(&emptied)?;
 
-        let forgotten = self
-            .inner
-            .write(|transaction| deleted::forget_files(transaction, &gone))?;
+        let forgotten = self.inner.write(|transaction| {
+            if let Some(marked) = &marked {
+                marked.tell_every_device(transaction, &gone)?;
+            }
+            deleted::forget_files(transaction, &gone)
+        })?;
         done.tracks = forgotten.tracks;
         if let Some(vault) = self.vault().cloned() {
             for object in self
