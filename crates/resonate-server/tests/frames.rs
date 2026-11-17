@@ -17,7 +17,6 @@ use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio::time::timeout;
 
 const SERVER_ENDS_THE_CONNECTION_WITHIN: Duration = Duration::from_secs(3);
-const THE_FIRST_FRAME_IS_HELD_WITHIN: Duration = Duration::from_millis(300);
 const MEBIBYTE: u32 = 1024 * 1024;
 const A_STREAM_IS_GRANTED_WITHIN: Duration = Duration::from_millis(300);
 
@@ -120,6 +119,13 @@ async fn refused_with(recv: &mut RecvStream) -> Option<Refusal> {
     None
 }
 
+async fn whichever_is_refused(first: &mut RecvStream, second: &mut RecvStream) -> Option<Refusal> {
+    tokio::select! {
+        refused = refused_with(first) => refused,
+        refused = refused_with(second) => refused,
+    }
+}
+
 #[tokio::test]
 async fn frames_announced_across_sessions_past_what_the_server_holds_are_refused_as_busy() {
     let serving = serving_with(Limits {
@@ -131,16 +137,14 @@ async fn frames_announced_across_sessions_past_what_the_server_holds_are_refused
     let announced = MEBIBYTE * 3 / 5;
 
     announce(&mut first.send, announced).await;
-    tokio::time::sleep(THE_FIRST_FRAME_IS_HELD_WITHIN).await;
     announce(&mut second.send, announced).await;
     let refused = timeout(
         SERVER_ENDS_THE_CONNECTION_WITHIN,
-        refused_with(&mut second.recv),
+        whichever_is_refused(&mut first.recv, &mut second.recv),
     )
     .await;
 
     assert_eq!(refused.ok().flatten(), Some(Refusal::Busy));
-    drop(first.recv);
 }
 
 #[tokio::test]
@@ -152,15 +156,14 @@ async fn first_frames_still_arriving_hold_their_bytes_from_every_other_session()
     });
     let (_first_client, first) = connected(&serving).await;
     let (_second_client, second) = connected(&serving).await;
-    let (mut half_greeting, _first_recv) = first.open_bi().await.expect("a stream");
-    let (mut greeting, mut refusing) = second.open_bi().await.expect("a stream");
+    let (mut first_greeting, mut first_answers) = first.open_bi().await.expect("a stream");
+    let (mut second_greeting, mut second_answers) = second.open_bi().await.expect("a stream");
 
-    announce(&mut half_greeting, first_frame).await;
-    tokio::time::sleep(THE_FIRST_FRAME_IS_HELD_WITHIN).await;
-    announce(&mut greeting, first_frame).await;
+    announce(&mut first_greeting, first_frame).await;
+    announce(&mut second_greeting, first_frame).await;
     let refused = timeout(
         SERVER_ENDS_THE_CONNECTION_WITHIN,
-        refused_with(&mut refusing),
+        whichever_is_refused(&mut first_answers, &mut second_answers),
     )
     .await;
 
@@ -169,7 +172,6 @@ async fn first_frames_still_arriving_hold_their_bytes_from_every_other_session()
         Some(Refusal::Busy),
         "a first frame still arriving held nothing from the budget every session shares"
     );
-    drop(half_greeting);
 }
 
 #[tokio::test]
