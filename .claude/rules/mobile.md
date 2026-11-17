@@ -405,8 +405,8 @@ an index of a URI no row holds takes the row already opening its file rather tha
 `listening_detail` takes the phone's IANA zone by name beside its current offset, and cuts each day
 at that zone's own midnight through `resonate_core::Calendar::named`, so a winter day read in summer
 still begins at its winter midnight; the offset is only the fallback for a name no zone database
-holds. iOS passes `TimeZone.current.identifier`; Android's statistics read `statistics(days)` alone
-and call no day-cutting export yet. Which database each target reads, and why the phones bundle one
+holds. iOS passes `TimeZone.current.identifier`; Android's `StatisticsScreen` passes
+`TimeZone.getDefault()`'s id and its offset now, beside `statistics(days)` for the totals. Which database each target reads, and why the phones bundle one
 behind the system's, is `library.md`'s *A day is the listener's*.
 
 ## The listening test
