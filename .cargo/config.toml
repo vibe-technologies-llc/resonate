@@ -1,3 +1,6 @@
+[alias]
+xtask = "run --quiet --package xtask --"
+
 [build]
 rustflags = ["-C", "target-cpu=native"]
 

@@ -43,7 +43,8 @@ members = [
     "crates/resonate-upnp",
     "crates/resonate-vault",
     "crates/resonate-words",
-    "crates/resonate-words-build"
+    "crates/resonate-words-build",
+    "crates/xtask"
 ]
 
 [workspace.package]

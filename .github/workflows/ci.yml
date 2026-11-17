@@ -37,16 +37,7 @@ jobs:
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
-      - run: cargo clippy --locked --workspace --exclude resonate-ui --all-targets --no-default-features -- -D warnings
-      - run: cargo clippy --locked -p resonate --all-targets --no-default-features --features online,mcp,discord,sync -- -D warnings
-      - name: Lint the binary with each feature alone
-        shell: bash
-        run: |
-          set -euo pipefail
-          for feature in ui online mcp discord sync; do
-            cargo clippy --locked -p resonate --all-targets --no-default-features --features "$feature" -- -D warnings
-          done
+      - run: cargo xtask lint --locked --verbose
 
   headless-build:
     name: Build the tests without the window
@@ -336,16 +327,7 @@ jobs:
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --locked --workspace --all-targets --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire -- -D warnings
-      - run: cargo clippy --locked --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets --no-default-features -- -D warnings
-      - run: cargo clippy --locked -p resonate --all-targets --no-default-features --features online,mcp,discord,sync -- -D warnings
-      - name: Lint the binary with each feature alone
-        shell: bash
-        run: |
-          set -euo pipefail
-          for feature in ui online mcp discord sync; do
-            cargo clippy --locked -p resonate --all-targets --no-default-features --features "$feature" -- -D warnings
-          done
+      - run: cargo xtask lint --locked --verbose
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
@@ -364,16 +346,7 @@ jobs:
         run: rustup toolchain install
       - run: rustup target add aarch64-pc-windows-msvc
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --locked --target aarch64-pc-windows-msvc --workspace --all-targets --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire -- -D warnings
-      - run: cargo clippy --locked --target aarch64-pc-windows-msvc --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets --no-default-features -- -D warnings
-      - run: cargo clippy --locked --target aarch64-pc-windows-msvc -p resonate --all-targets --no-default-features --features online,mcp,discord,sync -- -D warnings
-      - name: Lint the binary with each feature alone
-        shell: bash
-        run: |
-          set -euo pipefail
-          for feature in ui online mcp discord sync; do
-            cargo clippy --locked --target aarch64-pc-windows-msvc -p resonate --all-targets --no-default-features --features "$feature" -- -D warnings
-          done
+      - run: cargo xtask lint --locked --verbose --target aarch64-pc-windows-msvc
 
   macos:
     name: macOS
@@ -384,16 +357,7 @@ jobs:
       - name: Install the pinned toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --locked --workspace --all-targets --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire -- -D warnings
-      - run: cargo clippy --locked --workspace --exclude resonate-ui --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets --no-default-features -- -D warnings
-      - run: cargo clippy --locked -p resonate --all-targets --no-default-features --features online,mcp,discord,sync -- -D warnings
-      - name: Lint the binary with each feature alone
-        shell: bash
-        run: |
-          set -euo pipefail
-          for feature in ui online mcp discord sync; do
-            cargo clippy --locked -p resonate --all-targets --no-default-features --features "$feature" -- -D warnings
-          done
+      - run: cargo xtask lint --locked --verbose
       - name: Name the temporary folder by its real path
         run: echo "TMPDIR=$(cd "$TMPDIR" && pwd -P)" >> "$GITHUB_ENV"
       - uses: taiki-e/install-action@v2

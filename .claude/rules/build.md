@@ -7,16 +7,46 @@ paths:
   - "crates/*/benches/**"
   - "soxr-comparison/**"
   - "docs/RESAMPLING.md"
+  - "crates/xtask/**"
 ---
 
 # Build, CI and fuzzing
+
+
+## The check runner
+
+**`cargo xtask` runs the checks the way CI runs them**, so the lines are written once
+(`crates/xtask`, a workspace member reaching no workspace crate and only `thiserror` outside it,
+run through the `xtask` alias in `.cargo/config.toml`). `plan.rs` holds every line: `lint` is the
+default-feature workspace, the headless workspace without `resonate-ui`, and the binary with
+`BINARY_FEATURES_TOGETHER` and each of `BINARY_FEATURES_ALONE`, so a feature added to the binary is
+added there; off desktop Linux (a `--target` that is not one, or a Windows or Mac host) `OFF_LINUX`
+is left out, as CI's Windows and macOS jobs leave it. `test` is `cargo nextest run --workspace`,
+wrapped in `dbus-run-session` on Linux where it is on the path; `check` is `fmt --check`, `lint`
+and `test`; `android` and `ios` call the phones' own steps. CI's four clippy jobs run `cargo xtask
+lint --locked --verbose` (the arm64 one with `--target aarch64-pc-windows-msvc`); its nextest lines
+stay its own, since the headless one is archived once and partitioned.
+
+- **`--changed`** (`changed.rs`) takes the files differing from the merge base with `origin/master`
+  (`--since <rev>`), the working tree and untracked files included, gives each to the member whose
+  folder holds it, adds every workspace package depending on one (`cargo tree --invert`, dev
+  edges included), and lints and tests those; `RULES_AND_COMMENTS` is always tested, since the
+  comment and rules-name checks read the whole tree. A root manifest, the lock,
+  `rust-toolchain.toml` or `.cargo/` is every package. The binary's feature lines come only with
+  the binary.
+- **Output** is one line a step, each kept whole in `target/xtask/NN-<step>.log` (cleared at the
+  start of a run, under `CARGO_TARGET_DIR` where set); a failure shows its last
+  `LINES_SHOWN_OF_A_FAILURE` lines with cargo's and nextest's progress taken out, and a passing
+  nextest its summary line. `--verbose` streams instead; `--keep-going` runs every step though one
+  fails. It speaks to whoever runs the checks, so its words are English literals, as an error's
+  `Display` and a log line are (`language.md`).
 
 ## CI
 
 - **`.github/workflows/ci.yml` runs what `CLAUDE.md`'s command list runs, and nothing it does not**
   (push to `master`, pull requests, `workflow_dispatch`; `archlinux` containers; the token reads
-  the repository and nothing more, `permissions: contents: read`): clippy (default
-  features, the workspace headless, the binary without `ui` and with each feature alone, so code
+  the repository and nothing more, `permissions: contents: read`): clippy through `cargo xtask lint
+  --locked --verbose` (default features, the workspace headless, the binary without `ui` and with each feature alone, so code
   dead without a feature is warned), headless tests of every crate but the window (built once by
   `headless-build`, `cargo nextest archive` of the whole nextest line, then run by four `headless`
   jobs, one a `--partition hash:N/4`, each under `dbus-run-session` so the MPRIS bus tests, which

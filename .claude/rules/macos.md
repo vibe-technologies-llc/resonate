@@ -31,8 +31,8 @@ builds it and runs its tests, with no display and no output device. It is checke
   `xtool setup` builds for iOS holds `MacOSX.sdk` beside `iPhoneOS.sdk`) and clang:
   `RUSTFLAGS= SDKROOT=<MacOSX.sdk> CC_aarch64_apple_darwin=clang AR_aarch64_apple_darwin=llvm-ar
   CFLAGS_aarch64_apple_darwin="--target=arm64-apple-macos13.0 -isysroot <MacOSX.sdk>"
-  cargo clippy --target aarch64-apple-darwin --workspace --exclude resonate-mobile --exclude
-  resonate-bindgen --exclude resonate-pipewire --all-targets -- -D warnings`. `gpui_apple`'s build
+  cargo xtask lint --target aarch64-apple-darwin`, every clippy line with the phones' boundary, its
+  binding tool and PipeWire left out. `gpui_apple`'s build
   script writes its Metal shader source only on a macOS host (its body is gated on the host's
   `cfg`), so the first run stops at `include_str!` of a missing `stitched_shaders.metal`; an empty
   file of that name in `target/aarch64-apple-darwin/debug/build/gpui_apple-*/out/` lets the check

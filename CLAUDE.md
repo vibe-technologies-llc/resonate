@@ -7,7 +7,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, a lint that fires only on some machines, names built around a file's, a file another run may sweep, the check that rules name code that exists |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
 | `language.md` | always | the word catalogs (`resonate-words`, the `.ftl` areas and the build step), what is not translated, choosing the language and the region, adding one, the prose check |
-| `build.md` | `.github`, `.cargo`, `fuzz`, `soxr-comparison`, the root manifest, benches | CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets, the resampler measured against SoXR |
+| `build.md` | `.github`, `.cargo`, `fuzz`, `soxr-comparison`, the root manifest, benches, `crates/xtask` | the check runner (`cargo xtask`), CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets, the resampler measured against SoXR |
 | `android.md` | Android Gradle project, the mobile boundary and binding tool | Compose, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
 | `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target, the phones' zones |
 | `ios.md` | `ios/**`, the RemoteIO output, resonate-apple's unit | the xtool toolchain, the native library and bindings, the App Intents metadata, hardening, the shape of the SwiftUI app, Siri |
@@ -80,7 +80,7 @@ added or a standing rule of how work is done moves.
 
 ## Architecture
 
-Forty-three crates. `resonate-core` is the only universal dependency, beside `resonate-words`, the
+Forty-four crates. `resonate-core` is the only universal dependency, beside `resonate-words`, the
 leaf every crate that says words reaches; `resonate-codec`, `resonate-dsp` and `resonate-pipewire`
 never depend on each other; `resonate-engine` joins them.
 
@@ -128,6 +128,7 @@ resonate-mobile      cdylib/staticlib: the phones' boundary (Kotlin and Swift) a
 resonate-bindgen     bin: host tool generating Kotlin and Swift from native metadata
 resonate-signin      bin: the YouTube Music sign-in window on wry (the only browser engine), writing a cookie jar; its library (no `window` feature) is the binary's
 resonate-server      bin: keeps sealed sync records and introduces devices, over resonate-sync's wire
+xtask                bin: the checks, run as CI runs them (`cargo xtask`); reaches no workspace crate
 ```
 
 `cargo tree` is the authority on edges and the `layering` job in `.github/workflows/ci.yml` holds
@@ -236,13 +237,21 @@ Invariants the layering protects (the rules files have the rest):
   The same with `--target aarch64-pc-windows-msvc` is Windows on ARM64 (`rustup target add` first;
   `windows.md` has the `clang` wrapper `ring` needs under xwin); CI's `windows-arm64` job lints it.
 
-- `RUSTFLAGS= SDKROOT=<MacOSX.sdk> CC_aarch64_apple_darwin=clang AR_aarch64_apple_darwin=llvm-ar CFLAGS_aarch64_apple_darwin="--target=arm64-apple-macos13.0 -isysroot <MacOSX.sdk>" cargo clippy --target aarch64-apple-darwin --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets -- -D warnings`:
-  the macOS build, type-checked from Linux against the SDK `xtool setup` built
+- `RUSTFLAGS= SDKROOT=<MacOSX.sdk> CC_aarch64_apple_darwin=clang AR_aarch64_apple_darwin=llvm-ar CFLAGS_aarch64_apple_darwin="--target=arm64-apple-macos13.0 -isysroot <MacOSX.sdk>" cargo xtask lint --target aarch64-apple-darwin`:
+  the macOS build (every clippy line), type-checked from Linux against the SDK `xtool setup` built
   (`~/.swiftpm/swift-sdks/darwin.artifactbundle/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk`),
   after `rustup target add aarch64-apple-darwin`; gpui's shader source is written on a Mac alone, so an
   empty `stitched_shaders.metal` goes into `gpui_apple`'s `OUT_DIR` once (`macos.md`). CI lints (the headless and per-feature lines too) and
   tests it natively in the `macos` job. `packaging/macos/build.sh` builds the disk image on a Mac.
 
+- **`cargo xtask check` is the gate before a push**: `rust-formatter --check` of the workspace and
+  `fuzz/`, every clippy line below (`cargo xtask lint`) and `cargo nextest run --workspace` under
+  `dbus-run-session` where there is one (`cargo xtask test`). `--changed` narrows lint and test to
+  the packages changed since `origin/master` (`--since <rev>` for another) and those depending on
+  them, `resonate-words-build` always tested; a change to a root manifest, the lock or `.cargo/` is
+  every package. Each step prints one line and keeps its output under `target/xtask/`, a failure
+  showing its last lines (`--verbose` streams instead); `cargo xtask fmt`, `android`, `ios
+  [--build]` and `help` are the rest (`build.md`).
 - **Tests run through `cargo nextest run`, never `cargo test`** (`build.md`): every test is a
   process of its own, run across every binary at once; `cargo-nextest` is a requirement like the
   toolchain (Arch's `cargo-nextest`, or `cargo install cargo-nextest --locked`).
@@ -252,10 +261,11 @@ Invariants the layering protects (the rules files have the rest):
 - `cargo nextest run --workspace`: everything. `cargo nextest run -p <crate> <name> --no-capture`:
   one test; a crate's integration tests are one binary, `suite`, a module a file (`bus::`,
   `library::`), so `-p resonate-mpris bus::` runs one file of them.
-- `cargo clippy --workspace --all-targets -- -D warnings`, and the same with
-  `--workspace --exclude resonate-ui --no-default-features`, with `-p resonate --no-default-features
-  --features online,mcp,discord,sync`, and with `-p resonate --no-default-features --features <f>`
-  for each of `ui`, `online`, `mcp`, `discord`, `sync`: code dead without a feature is warned.
+- `cargo xtask lint` runs every clippy line, each `--all-targets -- -D warnings`: the workspace,
+  the workspace with `--exclude resonate-ui --no-default-features`, and `-p resonate
+  --no-default-features` with `--features online,mcp,discord,sync` and with each of `ui`, `online`,
+  `mcp`, `discord`, `sync` alone, so code dead without a feature is warned; off Linux (`--target`,
+  or a Windows or Mac host) the phones' boundary, its binding tool and PipeWire are left out.
 - `dbus-run-session -- cargo nextest run -p resonate-mpris bus::`: the bus tests on a session bus
   of their own; without one they skip. CI runs the whole headless line under `dbus-run-session`.
 - `rust-formatter` formats, `rust-formatter --check` checks; never `cargo fmt`. CI cannot run it.
@@ -294,7 +304,7 @@ Invariants the layering protects (the rules files have the rest):
   measured against the system libsoxr, the tables of `docs/RESAMPLING.md` on stdout (`build.md`,
   the `compare-resamplers` skill). Not in CI: it needs libsoxr, and an idle machine for its timings.
 
-CI (`ci.yml`) runs the clippy and nextest lines (the headless one built once as a `cargo nextest archive` and run in four `--partition` jobs, the bus tests among them, under `dbus-run-session`), the DSP ceilings bench, the Windows and macOS builds, the fuzz build, the server package and the Android checks of this list; the other benches, the profiling build, `cargo xwin` (CI builds Windows natively), the iOS checks and the SoXR comparison run locally, and `release.yml` runs on tags only. The debug profile is optimised and `target-cpu=native` is set
+CI (`ci.yml`) runs the clippy lines through `cargo xtask lint --locked --verbose` and the nextest lines (the headless one built once as a `cargo nextest archive` and run in four `--partition` jobs, the bus tests among them, under `dbus-run-session`), the DSP ceilings bench, the Windows and macOS builds, the fuzz build, the server package and the Android checks of this list; the other benches, the profiling build, `cargo xwin` (CI builds Windows natively), the iOS checks and the SoXR comparison run locally, and `release.yml` runs on tags only. The debug profile is optimised and `target-cpu=native` is set
 (`build.md`).
 
 `cargo run -- <subcommand> --help` is the grammar (`binary.md`); the binary doubles as the audio

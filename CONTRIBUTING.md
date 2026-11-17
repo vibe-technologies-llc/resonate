@@ -6,9 +6,11 @@ later, the same terms as the program. See [LICENSE](LICENSE).
 The [README](README.md) has the build. Before sending a change:
 
 ```
-cargo nextest run --workspace --exclude resonate-ui --no-default-features
-cargo clippy --workspace --all-targets -- -D warnings
+cargo xtask check
 ```
+
+It checks the formatting, runs every clippy line CI runs and every test; `cargo xtask help` has
+the rest, and `--changed` narrows it to what a branch touched.
 
 Tests run through [cargo-nextest](https://nexte.st), not `cargo test`: each test is a process
 of its own, and a crate's integration tests are one binary, `suite`.

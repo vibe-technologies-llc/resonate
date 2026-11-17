@@ -2,6 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(cargo build:*)",
+      "Bash(cargo xtask:*)",
       "Bash(cargo clippy:*)",
       "Bash(cargo tree:*)",
       "Bash(dbus-run-session -- cargo nextest run:*)",
