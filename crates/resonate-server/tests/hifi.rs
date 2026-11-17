@@ -1,4 +1,11 @@
-use std::{env, fs, net::SocketAddr, path::PathBuf, process, sync::Arc, time::Duration};
+use std::{
+    env, fs,
+    net::{Ipv4Addr, SocketAddr},
+    path::PathBuf,
+    process,
+    sync::Arc,
+    time::Duration,
+};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use parking_lot::Mutex;
@@ -8,7 +15,7 @@ use rustls::{ClientConfig, RootCertStore, crypto::ring::default_provider, versio
 use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer, ServerName};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::{TcpListener, TcpSocket, TcpStream},
 };
 use tokio_rustls::TlsConnector;
 
@@ -271,10 +278,11 @@ async fn a_queued_request_is_looked_at_and_withdrawn_through_the_gateway() {
 
 #[tokio::test]
 async fn a_hifi_api_that_is_not_listening_is_a_bad_gateway() {
-    let closed = {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("a port");
-        listener.local_addr().expect("an address")
-    };
+    let held_unlistened = TcpSocket::new_v4().expect("a socket");
+    held_unlistened
+        .bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .expect("a port held");
+    let closed = held_unlistened.local_addr().expect("an address");
     let gateway = gatewayed(closed, Arc::default()).await;
 
     let reply = gateway.bearing("GET", "/search/?i=GBN9Y1100089").await;
