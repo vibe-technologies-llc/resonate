@@ -31,6 +31,11 @@ pub struct Held {
     _across_sessions: Option<OwnedSemaphorePermit>,
 }
 
+pub struct First {
+    pub payload: Vec<u8>,
+    _across_sessions: Option<OwnedSemaphorePermit>,
+}
+
 pub enum Read {
     Frame {
         frame: Result<ToServer>,
@@ -84,6 +89,26 @@ impl Budget {
             .acquire_many_owned(weight)
             .await
             .ok()
+    }
+}
+
+pub async fn read_the_first(
+    recv: &mut Reader,
+    most: usize,
+    across_sessions: FrameBytes,
+) -> Result<Option<First>> {
+    let across_sessions: Arc<dyn Holds> = Arc::new(across_sessions);
+    loop {
+        match recv.read_heard(most, &across_sessions).await? {
+            None => return Ok(None),
+            Some(Heard::Frame { payload, held }) => {
+                return Ok(Some(First {
+                    payload,
+                    _across_sessions: held,
+                }));
+            }
+            Some(Heard::PassedOver) => {}
+        }
     }
 }
 

@@ -30,7 +30,7 @@ use crate::{
     guard::{Admitted, Allowance, Guard},
     hub::{Hub, Joined, Notice, notice_weight, relayed_weight},
     pages,
-    reading::{FrameBytes, Read, read_ahead},
+    reading::{FrameBytes, Read, read_ahead, read_the_first},
     relay::Bucket,
     rooms::{self, JoinedRoom, Leaving, RoomLimits, RoomNotice, Rooms},
     store::{Appended, CaughtUp, Claim, Closing, Compacted, Store},
@@ -325,11 +325,21 @@ impl Server {
         address: SocketAddr,
         admitted: Arc<Admitted>,
     ) -> Result<()> {
-        let hello = timeout(HELLO_WITHIN, recv.read_at_most(FIRST_FRAME_AT_MOST)).await;
-        let Ok(Ok(Some(hello))) = hello else {
-            return Ok(());
+        let hello = timeout(
+            HELLO_WITHIN,
+            read_the_first(&mut recv, FIRST_FRAME_AT_MOST, self.frames.clone()),
+        )
+        .await;
+        let said = match hello {
+            Ok(Ok(Some(said))) => said,
+            Ok(Err(Error::Sync(resonate_sync::Error::NoRoom { .. }))) => {
+                return refuse(&mut send, Refusal::Busy).await;
+            }
+            Ok(Ok(None) | Err(_)) | Err(_) => return Ok(()),
         };
-        let Ok(first) = ToServer::decoded(&hello) else {
+        let decoded = ToServer::decoded(&said.payload);
+        drop(said);
+        let Ok(first) = decoded else {
             return Ok(());
         };
 

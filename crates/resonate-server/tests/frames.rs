@@ -144,6 +144,35 @@ async fn frames_announced_across_sessions_past_what_the_server_holds_are_refused
 }
 
 #[tokio::test]
+async fn first_frames_still_arriving_hold_their_bytes_from_every_other_session() {
+    let first_frame = u32::try_from(FIRST_FRAME_AT_MOST).expect("a size");
+    let serving = serving_with(Limits {
+        frame_bytes: FIRST_FRAME_AT_MOST * 3 / 2,
+        ..Limits::default()
+    });
+    let (_first_client, first) = connected(&serving).await;
+    let (_second_client, second) = connected(&serving).await;
+    let (mut half_greeting, _first_recv) = first.open_bi().await.expect("a stream");
+    let (mut greeting, mut refusing) = second.open_bi().await.expect("a stream");
+
+    announce(&mut half_greeting, first_frame).await;
+    tokio::time::sleep(THE_FIRST_FRAME_IS_HELD_WITHIN).await;
+    announce(&mut greeting, first_frame).await;
+    let refused = timeout(
+        SERVER_ENDS_THE_CONNECTION_WITHIN,
+        refused_with(&mut refusing),
+    )
+    .await;
+
+    assert_eq!(
+        refused.ok().flatten(),
+        Some(Refusal::Busy),
+        "a first frame still arriving held nothing from the budget every session shares"
+    );
+    drop(half_greeting);
+}
+
+#[tokio::test]
 async fn a_first_frame_announced_past_the_ceiling_ends_the_connection_without_waiting_for_it() {
     let serving = serving_with(Limits::default());
     let (_client, connection) = connected(&serving).await;

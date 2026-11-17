@@ -98,8 +98,12 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 - **A `Hello` within 10 s or nothing**; a wrong version, token or a full space is a `Refused` frame,
   then the stream ends. **The first frame is read to at most `FIRST_FRAME_AT_MOST`** (resonate-sync's
   `wire`: a full `Heads` plus an envelope, about 12 KiB) and a room's frames to `ROOM_FRAME_AT_MOST`
-  (`LARGEST_ROOM_FRAME` plus an envelope), through `Incoming::read_at_most`; a longer one ends the
-  session before its bytes are held. On QUIC the announced length is weighed before anything is
+  (`LARGEST_ROOM_FRAME` plus an envelope), the first through `reading::read_the_first` and a room's
+  through the read-ahead; a longer one ends the session before its bytes are held. **The first frame
+  draws from the frame budget like every other** (`Incoming::read_heard`): its announced length or
+  the bytes arriving are held until it is decoded, and one finding no room is refused `Busy`, so
+  2 048 half-greeted sessions hold no more than the budget
+  (`first_frames_still_arriving_hold_their_bytes_from_every_other_session`). On QUIC the announced length is weighed before anything is
   allocated; on a web socket the transport under tungstenite is a `Budgeted` stream that fails its
   next read once the bytes allowed for this frame are spent, since tungstenite's own message limit is
   fixed at `LARGEST_FRAME` for the life of the socket
