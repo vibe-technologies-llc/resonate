@@ -93,24 +93,25 @@ impl<'f> Overlay<'f> {
             })
             .collect();
 
-        let undo = Undo::kept_beside(track, self.stood, self.length, &changes)
-            .inspect_err(|error| {
-                tracing::debug!(%error, path = %track.display(), "no undo could be kept beside the track, so its tag lands in place without one");
-            })
-            .ok();
-        if undo.is_none() && self.length != self.stood {
-            return Ok(Landing::TooWide);
-        }
-
-        match (self.laid(&changes), undo) {
-            (Ok(()), Some(undo)) => undo.done(),
-            (Ok(()), None) => {}
-            (Err(error), Some(undo)) => {
-                undo.roll_back(self.base, self.stood, &changes);
-                return Err(error);
+        let undo = match Undo::kept_beside_or_away(
+            crate::spool::kept_under,
+            track,
+            self.stood,
+            self.length,
+            &changes,
+        ) {
+            Ok(undo) => undo,
+            Err(error) => {
+                tracing::debug!(%error, path = %track.display(), "no undo could be kept beside the track or under the spool, so its tag lands through a whole copy");
+                return Ok(Landing::TooWide);
             }
-            (Err(error), None) => return Err(error),
+        };
+
+        if let Err(error) = self.laid(&changes) {
+            undo.roll_back(self.base, self.stood, &changes);
+            return Err(error);
         }
+        undo.done();
         Ok(Landing::InPlace)
     }
 

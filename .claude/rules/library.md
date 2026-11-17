@@ -1531,7 +1531,10 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   never held, and a read the file can serve is served in one `pread`. **A tail that grows or
   shrinks lands as it is:** the file is extended by the writes or cut by `set_len` after them,
   and a page the file no longer supplies (a truncation, regrown) is landed as the zeros it reads
-  as. A landing whose length changes while no undo could be kept goes through a whole staged copy.
+  as. **No page lands in place without an undo:** where the track's folder refuses one,
+  `Undo::kept_beside_or_away` keeps it under `spool::kept_under` instead, and where neither will take
+  one the landing (whatever its length) goes through a whole staged copy, which is itself refused
+  where nothing can be staged.
   **A head is rebuilt, not rewritten.** For FLAC, ID3v2 (an untagged MPEG file too: a head of
   length zero), Ogg Vorbis and Opus, `Head` has lofty write into an in-memory copy of the head
   (FLAC and ID3v2 with up to `LEEWAY_PAST_THE_HEAD` of what follows, Ogg the header pages alone) and
@@ -1570,8 +1573,17 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   writes and syncs a journal (`.<name>.<pid>-<n>.resonate-undo`: the length before and after, how
   far the audio was shifted, each changed page's bytes before and after, which may differ in
   length at a tail, FNV-1a check; `RSUNDO01`), removed once pages sync; a failure rolls back at once (`set_len` back, then the
-  old bytes). A dead writer's journal is mended by the next write to that track and by the scan,
-  which looks in each folder before reading a file there: a length between the two and every byte
+  old bytes). **An undo kept under the spool names its track:** `RSUNDA01` in place of `RSUNDO01`
+  and the track's canonical path in place of its bare name (`Journalled::Away`; a journal beside a
+  track must carry the bare name and one in the spool the path, each refused read as the other); it
+  is mended with the spool's whole copies by `mend_what_was_written_back_from_elsewhere`, under the
+  same owner check, and only where the track it names carries the name the journal's own name does
+  (`a_page_landed_where_the_folder_refuses_an_undo_keeps_one_under_the_spool`,
+  `a_write_cut_short_whose_undo_was_kept_under_the_spool_is_rolled_back_whole`,
+  `an_undo_kept_under_the_spool_by_another_user_is_not_rolled_back`,
+  `an_undo_kept_under_the_spool_naming_another_track_than_its_name_writes_nothing`). A dead
+  writer's journal is mended by the next write to that track and by the scan, which looks in each
+  folder before reading a file there: a length between the two and every byte
   the journal's before or after (a byte past the file's end is not counted) → rolled back, unless
   all after; other length or bytes is another program's, left alone. **A shifted journal is
   carried on, not rolled back:** at the old length with the old head the file is untouched; at the

@@ -16,6 +16,7 @@ use resonate_core::{
 };
 
 const MAGIC: &[u8; 8] = b"RSUNDO01";
+const AWAY_UNDO_MAGIC: &[u8; 8] = b"RSUNDA01";
 const JOURNAL_SUFFIX: &str = ".resonate-undo";
 const WHOLE_SUFFIX: &str = ".resonate-whole";
 const TORN_SUFFIX: &str = ".resonate-torn";
@@ -64,6 +65,46 @@ impl Undo {
         Self::kept(track, stood, stood + shifted, shifted, changes)
     }
 
+    pub(crate) fn kept_beside_or_away(
+        away: impl FnOnce() -> Vec<PathBuf>,
+        track: &Path,
+        stood: u64,
+        lands: u64,
+        changes: &[Change<'_>],
+    ) -> io::Result<Self> {
+        Self::kept_beside(track, stood, lands, changes).or_else(|beside| {
+            tracing::debug!(error = %beside, path = %track.display(), "no undo could be kept beside the track, so it is kept under the spool");
+            Self::kept_away_in(&away(), track, stood, lands, changes)
+        })
+    }
+
+    fn kept_away_in(
+        folders: &[PathBuf],
+        track: &Path,
+        stood: u64,
+        lands: u64,
+        changes: &[Change<'_>],
+    ) -> io::Result<Self> {
+        let track = fs::canonicalize(track)?;
+        let name = track
+            .file_name()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+        let named = os_bytes::bytes_of(track.as_os_str());
+        if named.len() as u64 > TRACK_PATH_BYTES_AT_MOST {
+            return Err(io::Error::from(io::ErrorKind::InvalidFilename));
+        }
+        let bytes = encoded_as(AWAY_UNDO_MAGIC, &named, stood, lands, 0, changes);
+
+        let mut refused = io::Error::from(io::ErrorKind::PermissionDenied);
+        for folder in folders {
+            match Self::written_into(folder, folder.join(journal_name(name)), &bytes) {
+                Ok(undo) => return Ok(undo),
+                Err(error) => refused = error,
+            }
+        }
+        Err(refused)
+    }
+
     fn kept(
         track: &Path,
         stood: u64,
@@ -75,11 +116,17 @@ impl Undo {
             .file_name()
             .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
         let folder = folder_of(track);
-        let journal = folder.join(journal_name(name));
+        Self::written_into(
+            folder,
+            folder.join(journal_name(name)),
+            &encoded(name, stood, lands, shifted, changes),
+        )
+    }
 
+    fn written_into(folder: &Path, journal: PathBuf, bytes: &[u8]) -> io::Result<Self> {
         let written = Held::made(&journal).and_then(|held| {
             let mut file = held.file();
-            file.write_all(&encoded(name, stood, lands, shifted, changes))?;
+            file.write_all(bytes)?;
             file.sync_all()?;
             file_facts::sync_directory(folder)?;
             Ok(held)
@@ -617,9 +664,25 @@ pub(crate) fn hashed(bytes: &[u8]) -> u64 {
 }
 
 fn encoded(track: &OsStr, stood: u64, lands: u64, shifted: u64, changes: &[Change<'_>]) -> Vec<u8> {
-    let name = os_bytes::bytes_of(track);
-    let name = name.as_ref();
-    let mut bytes = MAGIC.to_vec();
+    encoded_as(
+        MAGIC,
+        &os_bytes::bytes_of(track),
+        stood,
+        lands,
+        shifted,
+        changes,
+    )
+}
+
+fn encoded_as(
+    magic: &[u8; 8],
+    name: &[u8],
+    stood: u64,
+    lands: u64,
+    shifted: u64,
+    changes: &[Change<'_>],
+) -> Vec<u8> {
+    let mut bytes = magic.to_vec();
     bytes.extend_from_slice(&(name.len() as u64).to_le_bytes());
     bytes.extend_from_slice(name);
     bytes.extend_from_slice(&stood.to_le_bytes());
@@ -669,22 +732,47 @@ impl<'b> Reader<'b> {
     }
 }
 
-pub(crate) fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Journalled<'f> {
+    Beside(&'f Path),
+    Away,
+}
+
+impl Journalled<'_> {
+    const fn magic(self) -> &'static [u8; 8] {
+        match self {
+            Self::Beside(_) => MAGIC,
+            Self::Away => AWAY_UNDO_MAGIC,
+        }
+    }
+
+    fn track_named(self, named: &[u8]) -> Option<PathBuf> {
+        let named = PathBuf::from(os_bytes::os_string_from(named.to_vec()));
+        match self {
+            Self::Beside(folder) => {
+                let name = named.as_os_str();
+                (Path::new(name).file_name() == Some(name)).then(|| folder.join(name))
+            }
+            Self::Away => named.is_absolute().then_some(named),
+        }
+    }
+}
+
+pub(crate) fn decoded(journalled: Journalled<'_>, bytes: &[u8]) -> Option<Kept> {
     let (body, check) = bytes.split_last_chunk::<8>()?;
     if hashed(body) != u64::from_le_bytes(*check) {
         return None;
     }
 
     let mut reader = Reader { bytes: body };
-    if reader.taken(MAGIC.len())? != MAGIC {
+    if reader.taken(MAGIC.len())? != journalled.magic() {
         return None;
     }
     let length = reader.counted()?;
-    let name = os_bytes::os_string_from(reader.taken(length)?.to_vec());
-    let name = name.as_os_str();
-    if Path::new(name).file_name() != Some(name) {
+    if length as u64 > TRACK_PATH_BYTES_AT_MOST {
         return None;
     }
+    let track = journalled.track_named(reader.taken(length)?)?;
     let stood = reader.number()?;
     let lands = reader.number()?;
     let shifted = reader.number()?;
@@ -699,8 +787,8 @@ pub(crate) fn decoded(folder: &Path, bytes: &[u8]) -> Option<Kept> {
         let after = reader.taken(after_length)?.to_vec();
         changes.push((start, before, after));
     }
-    reader.bytes.is_empty().then(|| Kept {
-        track: folder.join(name),
+    reader.bytes.is_empty().then_some(Kept {
+        track,
         stood,
         lands,
         shifted,
@@ -733,7 +821,7 @@ pub fn mend_a_cut_short_write(journal: &Path) -> io::Result<Mended> {
     }
 
     let bytes = fs::read(journal)?;
-    let mended = match decoded(folder_of(journal), &bytes) {
+    let mended = match decoded(Journalled::Beside(folder_of(journal)), &bytes) {
         Some(kept) => rolled_back(&kept)?,
         None => Mended::Unreadable,
     };
@@ -912,6 +1000,24 @@ fn finished_from_elsewhere(whole: &Path, kept: &KeptBy<'_>) -> io::Result<Mended
     Ok(mended)
 }
 
+fn rolled_back_from_elsewhere(journal: &Path, kept_by: &KeptBy<'_>) -> io::Result<Mended> {
+    let bytes = fs::read(journal)?;
+    let mended = match decoded(Journalled::Away, &bytes) {
+        Some(kept)
+            if kept
+                .track
+                .file_name()
+                .is_some_and(|name| kept_by.names(name)) =>
+        {
+            rolled_back(&kept)?
+        }
+        Some(_) | None => Mended::Unreadable,
+    };
+    fs::remove_file(journal)?;
+    tracing::info!(path = %journal.display(), ?mended, "mended a tag write cut short whose undo was kept outside the track's folder");
+    Ok(mended)
+}
+
 pub fn mend_what_was_written_back_from_elsewhere() {
     mend_what_was_left_in(&crate::spool::mended_under());
 }
@@ -935,14 +1041,18 @@ fn mend_what_was_left_by(folders: &[PathBuf], owner: Owner) {
                 swept_unless_living(&path, writer);
                 continue;
             }
-            let Some(kept) = kept_by(&name).filter(|kept| kept.left != Left::Undo) else {
+            let Some(kept) = kept_by(&name) else {
                 continue;
             };
             if !names_a_cut_short_write(&path) {
                 continue;
             }
-            if let Err(error) = finished_from_elsewhere(&path, &kept) {
-                tracing::warn!(%error, path = %path.display(), "a tag write cut short could not be mended from its copy outside the track's folder");
+            let mended = match kept.left {
+                Left::Undo => rolled_back_from_elsewhere(&path, &kept),
+                Left::WholeCopy | Left::TornWholeCopy => finished_from_elsewhere(&path, &kept),
+            };
+            if let Err(error) = mended {
+                tracing::warn!(%error, path = %path.display(), "a tag write cut short could not be mended from what it kept outside the track's folder");
             }
         }
     }
@@ -1421,6 +1531,129 @@ mod tests {
         assert!(living.exists(), "a living writer's staged copy was swept");
         assert!(beside.exists(), "a copy naming no track was taken away");
         assert!(foreign.exists(), "a file this build never names was swept");
+    }
+
+    fn kept_away_by_a_dead_writer(folder: &Folder, was: &[u8]) -> (PathBuf, PathBuf, PathBuf) {
+        let spool = folder.0.join("spool");
+        let music = folder.0.join("music");
+        let track = music.join("Echoes.flac");
+        fs::create_dir_all(&spool).expect("a spool folder");
+        fs::create_dir_all(&music).expect("a music folder");
+        fs::write(&track, was).expect("a track");
+
+        let changes = [Change {
+            start: 0,
+            before: was[..8].to_vec(),
+            after: &[2; 8],
+        }];
+        let undo = Undo::kept_away_in(
+            slice::from_ref(&spool),
+            &track,
+            was.len() as u64,
+            was.len() as u64,
+            &changes,
+        )
+        .expect("an undo kept under the spool");
+        let dead = spool.join(format!(
+            ".Echoes.flac.{NEVER_A_PROCESS}{KEPT_BY_AND_COUNTED}0{JOURNAL_SUFFIX}"
+        ));
+        fs::rename(&undo.journal, &dead).expect("an undo a dead writer left");
+        drop(undo);
+        left_long_ago(&dead);
+
+        let mut torn = was.to_vec();
+        torn[..4].fill(2);
+        fs::write(&track, &torn).expect("a write cut short");
+        (spool, track, dead)
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_page_landed_where_the_folder_refuses_an_undo_keeps_one_under_the_spool() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let folder = Folder::new("refused-beside");
+        let spool = folder.0.join("spool");
+        let music = folder.0.join("music");
+        let track = music.join("Echoes.flac");
+        fs::create_dir_all(&spool).expect("a spool folder");
+        fs::create_dir_all(&music).expect("a music folder");
+        fs::write(&track, [1_u8; 64]).expect("a track");
+        fs::set_permissions(&music, fs::Permissions::from_mode(0o555))
+            .expect("a folder made unwritable");
+        let probe = music.join("probe");
+        if File::create_new(&probe).is_ok() {
+            let _ = fs::remove_file(&probe);
+            let _ = fs::set_permissions(&music, fs::Permissions::from_mode(0o755));
+            eprintln!("skipped: this user creates files in an unwritable folder regardless");
+            return;
+        }
+
+        let changes = [Change {
+            start: 0,
+            before: vec![1; 8],
+            after: &[2; 8],
+        }];
+        let undo = Undo::kept_beside_or_away(|| vec![spool.clone()], &track, 64, 64, &changes);
+        let _ = fs::set_permissions(&music, fs::Permissions::from_mode(0o755));
+        let undo = undo.expect("an undo kept where the track's folder refused one");
+        let kept = fs::read(&undo.journal).expect("the undo");
+
+        assert_eq!(undo.journal.parent(), Some(spool.as_path()));
+        assert_eq!(
+            decoded(Journalled::Away, &kept).map(|kept| kept.track),
+            Some(fs::canonicalize(&track).expect("the track"))
+        );
+        assert!(decoded(Journalled::Beside(&spool), &kept).is_none());
+        undo.done();
+    }
+
+    #[test]
+    fn a_write_cut_short_whose_undo_was_kept_under_the_spool_is_rolled_back_whole() {
+        let folder = Folder::new("rolled-back-elsewhere");
+        let was = vec![1_u8; 64];
+        let (spool, track, journal) = kept_away_by_a_dead_writer(&folder, &was);
+
+        assert!(names_a_cut_short_write(&journal));
+        mend_what_was_left_in(slice::from_ref(&spool));
+
+        assert_eq!(fs::read(&track).expect("the track"), was);
+        assert!(!journal.exists(), "the undo was left");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn an_undo_kept_under_the_spool_by_another_user_is_not_rolled_back() {
+        let folder = Folder::new("another-users-undo");
+        let was = vec![1_u8; 64];
+        let (spool, track, journal) = kept_away_by_a_dead_writer(&folder, &was);
+        let torn = fs::read(&track).expect("the torn track");
+
+        mend_what_was_left_by(
+            slice::from_ref(&spool),
+            Owner::user(Owner::this_user().id().wrapping_add(1)),
+        );
+
+        assert_eq!(fs::read(&track).expect("the track"), torn);
+        assert!(journal.exists(), "another user's undo was taken away");
+    }
+
+    #[test]
+    fn an_undo_kept_under_the_spool_naming_another_track_than_its_name_writes_nothing() {
+        let folder = Folder::new("misnamed-undo");
+        let was = vec![1_u8; 64];
+        let (spool, track, journal) = kept_away_by_a_dead_writer(&folder, &was);
+        let torn = fs::read(&track).expect("the torn track");
+        let misnamed = spool.join(format!(
+            ".Time.flac.{NEVER_A_PROCESS}{KEPT_BY_AND_COUNTED}0{JOURNAL_SUFFIX}"
+        ));
+        fs::rename(&journal, &misnamed).expect("an undo renamed");
+        left_long_ago(&misnamed);
+
+        mend_what_was_left_in(slice::from_ref(&spool));
+
+        assert_eq!(fs::read(&track).expect("the track"), torn);
+        assert!(!misnamed.exists(), "the misnamed undo was left");
     }
 
     #[test]

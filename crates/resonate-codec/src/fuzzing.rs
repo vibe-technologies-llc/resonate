@@ -108,7 +108,8 @@ pub fn rate_a_file(bytes: &[u8]) {
 pub fn read_an_undo_journal(bytes: &[u8]) {
     let mut sealed = bytes.to_vec();
     sealed.extend_from_slice(&journal::hashed(bytes).to_le_bytes());
-    let _ = journal::decoded(Path::new("/music"), &sealed);
+    let _ = journal::decoded(journal::Journalled::Beside(Path::new("/music")), &sealed);
+    let _ = journal::decoded(journal::Journalled::Away, &sealed);
 }
 
 struct Scratch(PathBuf);
