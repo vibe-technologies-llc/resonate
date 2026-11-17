@@ -295,8 +295,16 @@ impl Zones {
         let (row, at) = (resumption.landing(), resumption.at);
         let before = Before::of(&incoming.player);
 
-        self.send(to, Command::SetRepeat(state.repeat))?;
-        let resumed = incoming.player.request(Command::Resume(resumption))?;
+        let installed = self
+            .send(to, Command::SetRepeat(state.repeat))
+            .and_then(|()| incoming.player.request(Command::Resume(resumption)));
+        let resumed = match installed {
+            Ok(resumed) => resumed,
+            Err(error) => {
+                self.put_back(to, before, None);
+                return Err(error);
+            }
+        };
         let following = Command::KeepInStepWith(outgoing.player.heard_clock());
         if sounding && let Err(error) = self.send(to, following) {
             self.put_back(to, before, None);

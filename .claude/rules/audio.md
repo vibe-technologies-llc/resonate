@@ -924,8 +924,8 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   an output (within `HANDED_OVER_WITHIN`, 10 s), and only then sends the outgoing zone `Stop`,
   which retires its output with the ordinary fade, and takes its queue away with one `Remove` of
   every row under the revision it was read at (`Zones::send_if_the_queue_is_still`: an edit made
-  meanwhile keeps its queue). Unheard or refused (the `Resume` or `Play` refused, the thread not
-  spawned, nothing published within the wait), the incoming zone is stopped and put back as it
+  meanwhile keeps its queue). Unheard or refused (the `SetRepeat` or `Resume` not taken, the `Play`
+  refused, the thread not spawned, nothing published within the wait), the incoming zone is stopped and put back as it
   stood before the handover (`Before`: its own repeat and `resumption_of` its queue and place, read
   before any send), the restoring `Resume` sent under the revision the handed `Resume` installed so
   an edit made to the handed queue meanwhile is left in place; the outgoing one plays on
