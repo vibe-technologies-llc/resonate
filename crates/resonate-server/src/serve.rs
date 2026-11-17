@@ -15,6 +15,7 @@ use resonate_sync::{
         ROOM_FRAME_AT_MOST, Record, Refusal, SERVER_ALPN, SpaceAsked, ToServer,
     },
 };
+use ring::rand::{SecureRandom, SystemRandom};
 use rustls::{crypto::ring::default_provider, version::TLS13};
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use tokio::{
@@ -33,7 +34,7 @@ use crate::{
     reading::{FrameBytes, Read, read_ahead, read_the_first},
     relay::Bucket,
     rooms::{self, JoinedRoom, Leaving, RoomLimits, RoomNotice, Rooms},
-    store::{Appended, CaughtUp, Claim, Closing, Compacted, Store},
+    store::{Appended, CaughtUp, Claim, Closing, Compacted, Reading, Staged, StagingId, Store},
 };
 
 const HELLO_WITHIN: Duration = Duration::from_secs(10);
@@ -49,6 +50,7 @@ const LONGEST_SWEEP_WAIT: Duration = Duration::from_secs(60 * 60);
 const UNUSED_SPACE_KEPT_FOR: i64 = 24 * 60 * 60;
 const WEB_HANDSHAKES_AT_ONCE: usize = 256;
 const WHAT_WAS_SAID_LEAVES_WITHIN: Duration = Duration::from_secs(1);
+const A_STAGING_UNTOUCHED_IS_KEPT_FOR: i64 = 60 * 60;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
@@ -88,6 +90,20 @@ struct Seat {
     device: DeviceId,
     after: u64,
     seen: SocketAddr,
+}
+
+struct Sent {
+    through: u64,
+    reading: Option<Reading>,
+}
+
+impl Sent {
+    const fn after(through: u64) -> Self {
+        Self {
+            through,
+            reading: None,
+        }
+    }
 }
 
 pub struct Server {
@@ -267,6 +283,13 @@ impl Server {
             })
             .await;
             self.guard.forget_quiet_addresses();
+            let staged = Arc::clone(&self.store);
+            let _ = in_the_store(move || {
+                staged
+                    .lock()
+                    .sweep_staged(now().saturating_sub(A_STAGING_UNTOUCHED_IS_KEPT_FOR))
+            })
+            .await;
             let swept = in_the_store(move || store.lock().sweep(now().saturating_sub(idle))).await;
             match swept {
                 Ok(0) => {}
@@ -419,6 +442,9 @@ impl Server {
             }
             ToServer::Append { .. }
             | ToServer::Compact { .. }
+            | ToServer::Stage
+            | ToServer::Staged { .. }
+            | ToServer::CompactStaged { .. }
             | ToServer::Punch { .. }
             | ToServer::Bye
             | ToServer::Relaying
@@ -484,8 +510,13 @@ impl Server {
             after,
             seen: address,
         };
-        let served = self.session(send, recv, seat, joined).await;
+        let mut staging = None;
+        let served = self.session(send, recv, seat, joined, &mut staging).await;
         self.hub.leave(space, device, session);
+        if let Some(id) = staging {
+            let store = Arc::clone(&self.store);
+            in_the_store(move || store.lock().unstage(space, id)).await?;
+        }
         served
     }
 
@@ -523,8 +554,8 @@ impl Server {
             head,
         };
         send.send(&welcome.encoded()).await?;
-        let mut sent_through = after;
-        self.send_records(&mut send, space, device, &mut sent_through)
+        let mut sent = Sent::after(after);
+        self.send_records(&mut send, space, device, &mut sent)
             .await?;
         if let Some(sealed) = closed {
             send.send(&FromServer::Closed { sealed }.encoded()).await?;
@@ -666,6 +697,9 @@ impl Server {
                         | ToServer::Room { .. }
                         | ToServer::Append { .. }
                         | ToServer::Compact { .. }
+                        | ToServer::Stage
+                        | ToServer::Staged { .. }
+                        | ToServer::CompactStaged { .. }
                         | ToServer::Punch { .. }
                         | ToServer::Relaying
                         | ToServer::Relay { .. } => {}
@@ -702,6 +736,7 @@ impl Server {
         recv: Reader,
         seat: Seat,
         joined: Joined,
+        staging: &mut Option<StagingId>,
     ) -> Result<()> {
         let Seat {
             space,
@@ -724,8 +759,8 @@ impl Server {
         };
         send.send(&welcome.encoded()).await?;
 
-        let mut sent_through = after;
-        self.send_records(&mut send, space, device, &mut sent_through)
+        let mut sent = Sent::after(after);
+        self.send_records(&mut send, space, device, &mut sent)
             .await?;
         let store = Arc::clone(&self.store);
         if let Some(sealed) = in_the_store(move || store.lock().closed(space)).await? {
@@ -787,6 +822,11 @@ impl Server {
                         ToServer::Close { sealed } => self.close(&mut send, space, sealed).await?,
                         ToServer::Append { blobs } => self.append(&mut send, space, device, blobs).await?,
                         ToServer::Compact { through, parts } => self.compact(&mut send, space, through, parts).await?,
+                        ToServer::Stage => self.stage(&mut send, space, staging).await?,
+                        ToServer::Staged { parts } => self.staged(&mut send, space, staging, parts).await?,
+                        ToServer::CompactStaged { through, parts } => {
+                            self.compact_staged(&mut send, space, staging.take(), through, parts).await?;
+                        }
                         ToServer::Punch { to, sealed } => {
                             if !self.hub.punch(space, device, to, sealed) {
                                 tracing::debug!("a punch named a device that is not here");
@@ -802,7 +842,7 @@ impl Server {
                     backlog.fetch_sub(notice_weight(&notice), Ordering::Relaxed);
                     match notice {
                         Notice::Replaced | Notice::FellBehind => break Ok(()),
-                        Notice::Appended => self.send_records(&mut send, space, device, &mut sent_through).await?,
+                        Notice::Appended => self.send_records(&mut send, space, device, &mut sent).await?,
                         Notice::Arrived(other) => send.send(&FromServer::Arrived { device: other }.encoded()).await?,
                         Notice::Left(other) => send.send(&FromServer::Left { device: other }.encoded()).await?,
                         Notice::Relayed { from, datagram } => {
@@ -816,7 +856,7 @@ impl Server {
                             send.send(&FromServer::Closed { sealed }.encoded()).await?;
                         }
                         Notice::Compacted(through) => {
-                            self.send_records(&mut send, space, device, &mut sent_through).await?;
+                            self.send_records(&mut send, space, device, &mut sent).await?;
                             send.send(&FromServer::Compacted { through }.encoded()).await?;
                         }
                     }
@@ -867,6 +907,15 @@ impl Server {
         let space_bytes = self.limits.space_bytes;
         let compacted =
             in_the_store(move || store.lock().compact(space, through, &parts, space_bytes)).await?;
+        self.told_compacted(send, space, compacted).await
+    }
+
+    async fn told_compacted(
+        &self,
+        send: &mut Writer,
+        space: SpaceId,
+        compacted: Compacted,
+    ) -> Result<()> {
         match compacted {
             Compacted::Through(through) => {
                 self.hub.tell_all(space, &Notice::Compacted(through));
@@ -876,6 +925,71 @@ impl Server {
             Compacted::Full => refuse(send, Refusal::SpaceFull).await,
             Compacted::Closed => self.told_it_closed(send, space).await,
         }
+    }
+
+    async fn stage(
+        &self,
+        send: &mut Writer,
+        space: SpaceId,
+        staging: &mut Option<StagingId>,
+    ) -> Result<()> {
+        let id = StagingId(staging_id()?);
+        let store = Arc::clone(&self.store);
+        in_the_store(move || store.lock().stage(space, id, now())).await?;
+        *staging = Some(id);
+        send.send(&FromServer::Staging.encoded()).await?;
+
+        Ok(())
+    }
+
+    async fn staged(
+        &self,
+        send: &mut Writer,
+        space: SpaceId,
+        staging: &mut Option<StagingId>,
+        parts: Vec<Vec<u8>>,
+    ) -> Result<()> {
+        let Some(id) = *staging else {
+            return Ok(());
+        };
+        let store = Arc::clone(&self.store);
+        let space_bytes = self.limits.space_bytes;
+        let staged =
+            in_the_store(move || store.lock().staged(space, id, &parts, space_bytes, now()))
+                .await?;
+        match staged {
+            Staged::Taken => Ok(()),
+            Staged::Unstaged => {
+                *staging = None;
+                Ok(())
+            }
+            Staged::Full => {
+                *staging = None;
+                refuse(send, Refusal::SpaceFull).await
+            }
+        }
+    }
+
+    async fn compact_staged(
+        &self,
+        send: &mut Writer,
+        space: SpaceId,
+        staging: Option<StagingId>,
+        through: u64,
+        parts: Vec<Vec<u8>>,
+    ) -> Result<()> {
+        let Some(id) = staging else {
+            return refuse(send, Refusal::Stale).await;
+        };
+        let store = Arc::clone(&self.store);
+        let space_bytes = self.limits.space_bytes;
+        let compacted = in_the_store(move || {
+            store
+                .lock()
+                .compact_staged(space, id, through, &parts, space_bytes)
+        })
+        .await?;
+        self.told_compacted(send, space, compacted).await
     }
 
     async fn close(&self, send: &mut Writer, space: SpaceId, sealed: Vec<u8>) -> Result<()> {
@@ -910,26 +1024,43 @@ impl Server {
         send: &mut Writer,
         space: SpaceId,
         device: DeviceId,
-        sent_through: &mut u64,
+        sent: &mut Sent,
     ) -> Result<()> {
         loop {
             let store = Arc::clone(&self.store);
-            let after = *sent_through;
+            let after = sent.through;
+            let reading = sent.reading;
             let caught = in_the_store(move || {
-                store
-                    .lock()
-                    .catch_up(space, after, RECORDS_PER_FRAME, RECORD_BYTES_PER_FRAME)
+                store.lock().catch_up(
+                    space,
+                    after,
+                    reading,
+                    RECORDS_PER_FRAME,
+                    RECORD_BYTES_PER_FRAME,
+                )
             })
             .await?;
             match caught {
                 CaughtUp::Snapshot(snapshot) => {
-                    let through = snapshot.through;
+                    let told_through = match snapshot.next {
+                        Some(next) => {
+                            sent.reading = Some(Reading {
+                                through: snapshot.through,
+                                next,
+                            });
+                            sent.through
+                        }
+                        None => {
+                            sent.reading = None;
+                            snapshot.through
+                        }
+                    };
                     let frame = FromServer::Snapshot {
-                        through,
+                        through: told_through,
                         parts: snapshot.parts,
                     };
                     send.send(&frame.encoded()).await?;
-                    *sent_through = through;
+                    sent.through = told_through;
                 }
                 CaughtUp::Records(stored) => {
                     let Some(last) = stored.last().map(|record| record.seq) else {
@@ -944,7 +1075,7 @@ impl Server {
                         .collect();
                     send.send(&FromServer::Records { entries }.encoded())
                         .await?;
-                    *sent_through = last;
+                    sent.through = last;
                 }
             }
         }
@@ -1045,6 +1176,14 @@ async fn in_the_store<T: Send + 'static>(
     tokio::task::spawn_blocking(work)
         .await
         .map_err(|_| Error::Worker)?
+}
+
+fn staging_id() -> Result<u64> {
+    let mut id = [0; 8];
+    SystemRandom::new()
+        .fill(&mut id)
+        .map_err(|_| Error::Random)?;
+    Ok(u64::from_le_bytes(id))
 }
 
 fn now() -> i64 {

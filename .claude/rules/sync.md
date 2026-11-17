@@ -119,11 +119,12 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   (`a_device_reads_no_further_from_the_server_than_the_frames_it_has_room_for`). A web link has no observed UDP address,
   so the server's `Welcome` and `Punched` carry `0.0.0.0:0`, which a device skips as a candidate.
 - **To the server**: `Hello` (version, space, token, device, cursor), `Append` (sealed blobs),
-  `Compact` (through, snapshot parts), `Punch` (to a device, sealed candidates), `Relaying`,
+  `Compact` (through, snapshot parts), `Stage` (written as a `Compact` through 0 with no parts),
+  `Staged` (tag 15, parts), `CompactStaged` (tag 16, through, the last parts), `Punch` (to a device, sealed candidates), `Relaying`,
   `Relay` (to a device, one datagram of at most `LARGEST_DATAGRAM`, 2048 bytes), `Bye`. **From
   it**: `Welcome` (devices online, the address it saw, head), `Snapshot`, `Records` (a device's
   own records come back as a seq with no blob, so its cursor moves without the bytes), `Appended`,
-  `Arrived`/`Left`, `Punched`, `Compacted`, `Refused`, `Relayed` (from a device, one datagram). ALPN `resonate-sync/1` to the server,
+  `Arrived`/`Left`, `Punched`, `Compacted`, `Staging` (tag 18), `Refused`, `Relayed` (from a device, one datagram). ALPN `resonate-sync/1` to the server,
   `resonate-peer/1` between devices.
 - **Between devices**, one request per stream: `Holdings` (answered `Held`… `HeldEnd`), `Fetch`
   (`Sending` then the bytes, or `Missing`), `Meet` (device, whether records travel; answered `Met`
@@ -424,15 +425,32 @@ platforms; the catalog seam stays thin.
   `a_ledger_of_before_deletions_travelled_keeps_its_layouts_and_knows_no_deletion`).
 - **A snapshot is the merged state**, cut into bundles of at most `BUNDLE_BYTES`; a device compacts
   the server's log past `COMPACT_PAST_RECORDS` (512) or `COMPACT_PAST_BYTES` (4 MiB) since the last
-  snapshot, and a `Compacted` from any device resets every device's count. A snapshot past half a
-  frame (`SNAPSHOT_FRAME_SHARE`) or of more parts than `BLOBS_A_FRAME_AT_MOST` is not sent, and the
-  log stays as it is. **One found too large is not sealed again on the next batch**: sealing stops
-  at the first part past either bound, and the service keeps the count it was found at
-  (`Oversized`), building no snapshot again until the records since the last one double, or fall
-  below that count because a compaction reset them
-  (`a_state_too_large_to_compact_is_sealed_again_only_once_the_records_since_double_or_a_compaction_resets_them`);
-  the count is held in memory, so a start seals once more. An append carries at most
-  `BLOBS_PER_APPEND` (32) bundles.
+  snapshot, and a `Compacted` from any device resets every device's count. Its sealed parts are cut
+  into frames (`Pieces`) of at most half a frame (`SNAPSHOT_FRAME_SHARE`) and `BLOBS_A_FRAME_AT_MOST`
+  parts each. **A snapshot of one frame is one `Compact`**, as every server takes it
+  (`a_snapshot_within_a_frame_is_one_compaction_as_an_older_server_takes_it`). **A larger one is
+  staged** (`InParts`): the device asks `Stage` and waits; on the server's `Staging` it sends a
+  `Staged` for every frame but the last and a `CompactStaged` naming `through` with the last, which
+  the server swaps in as one compaction (`server.md`), answered `Compacted` as a `Compact` is
+  (`a_snapshot_of_several_frames_is_staged_once_the_server_takes_it_and_named_through_its_last`).
+  **`Stage` is written as a `Compact` through 0 with no parts**, which a server before staging
+  refuses `Stale` (no `through` of 0 is past a snapshot), so an older server is never sent a tag it
+  cannot read and never ends the session over one
+  (`asking_to_stage_a_compaction_is_written_as_the_compaction_through_nothing_an_older_server_refuses_as_stale`).
+  **A `Stale` answering `Stage` is a server that takes no parts**: the link remembers it, and the
+  service keeps the count the state was found at (`Oversized`), building no snapshot again until the
+  records since the last one double, or fall below that count because a compaction reset them
+  (`a_server_refusing_to_stage_as_stale_takes_no_parts_and_the_state_waits_until_the_records_double`,
+  `a_state_too_large_to_compact_is_sealed_again_only_once_the_records_since_double_or_a_compaction_resets_them`);
+  on such a link sealing stops at the first part past one frame. The count is held in memory and the
+  refusal on the link, so a start or a new link seals once more. A `Stale` answering a
+  `CompactStaged` or a `Compact` is a compaction another device's overtook, as before. **A snapshot
+  of several frames reaches a device as several `Snapshot` frames**: every one but the last names the
+  `through` the device was already sent, so applying it moves no cursor, and only the last names the
+  snapshot's own, so a device cut off part way reads the whole snapshot again and a device of any
+  build reads it as it reads one frame (`a_state_past_a_frames_share_is_compacted_in_parts_and_a_third_device_catches_up_from_it`).
+  A shared playlist's compaction stays one `Compact`; `InParts` and `Pieces` are the seam it would
+  take to stage too. An append carries at most `BLOBS_PER_APPEND` (32) bundles.
 - **Owed is cleared by the server's `Appended`, or by a look where there is no server.** With no
   server (`Server::Nowhere`), what a look told its neighbours is marked sent, since a device met
   later is told the whole snapshot; `state.serverless` remembers it, and the first start with a

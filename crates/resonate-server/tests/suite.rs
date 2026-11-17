@@ -1,3 +1,4 @@
+mod compaction;
 mod frames;
 mod hifi;
 mod shared;

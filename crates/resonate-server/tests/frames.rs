@@ -21,16 +21,16 @@ const THE_FIRST_FRAME_IS_HELD_WITHIN: Duration = Duration::from_millis(300);
 const MEBIBYTE: u32 = 1024 * 1024;
 const A_STREAM_IS_GRANTED_WITHIN: Duration = Duration::from_millis(300);
 
-struct Serving {
+pub struct Serving {
     address: SocketAddr,
     certificate: CertificateDer<'static>,
 }
 
-struct Session {
+pub struct Session {
     _client: Endpoint,
-    connection: Connection,
-    send: SendStream,
-    recv: RecvStream,
+    pub connection: Connection,
+    pub send: SendStream,
+    pub recv: RecvStream,
 }
 
 fn client_trusting(certificate: CertificateDer<'static>) -> ClientConfig {
@@ -47,7 +47,7 @@ fn client_trusting(certificate: CertificateDer<'static>) -> ClientConfig {
     ClientConfig::new(Arc::new(crypto))
 }
 
-fn serving_with(limits: Limits) -> Serving {
+pub fn serving_with(limits: Limits) -> Serving {
     let signing = rcgen::KeyPair::generate().expect("a key");
     let certificate = rcgen::CertificateParams::new(vec!["localhost".to_owned()])
         .and_then(|params| params.self_signed(&signing))
@@ -78,7 +78,7 @@ async fn connected(serving: &Serving) -> (Endpoint, Connection) {
     (client, connection)
 }
 
-async fn welcomed(serving: &Serving, device: u8) -> Session {
+pub async fn welcomed(serving: &Serving, device: u8) -> Session {
     let (client, connection) = connected(serving).await;
     let (mut send, mut recv) = connection.open_bi().await.expect("a stream");
     let hello = ToServer::Hello {

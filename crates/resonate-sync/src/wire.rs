@@ -83,6 +83,8 @@ const SPACE_ASKED_AT_LEAST: usize = SPACE_BYTES + TOKEN_BYTES;
 
 const SPACE_HEAD_AT_LEAST: usize = SPACE_BYTES + 2;
 
+const STAGING_ASKED_THROUGH: u64 = 0;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ToServer {
     Hello {
@@ -96,6 +98,14 @@ pub enum ToServer {
         blobs: Vec<Vec<u8>>,
     },
     Compact {
+        through: u64,
+        parts: Vec<Vec<u8>>,
+    },
+    Stage,
+    Staged {
+        parts: Vec<Vec<u8>>,
+    },
+    CompactStaged {
         through: u64,
         parts: Vec<Vec<u8>>,
     },
@@ -214,6 +224,7 @@ pub enum FromServer {
     Compacted {
         through: u64,
     },
+    Staging,
     Refused(Refusal),
     Relayed {
         from: DeviceId,
@@ -1165,6 +1176,20 @@ impl ToServer {
                 writer.number(*through);
                 writer.blobs(parts);
             }
+            Self::Stage => {
+                writer.byte(2);
+                writer.number(STAGING_ASKED_THROUGH);
+                writer.blobs(&[]);
+            }
+            Self::Staged { parts } => {
+                writer.byte(15);
+                writer.blobs(parts);
+            }
+            Self::CompactStaged { through, parts } => {
+                writer.byte(16);
+                writer.number(*through);
+                writer.blobs(parts);
+            }
             Self::Punch { to, sealed } => {
                 writer.byte(3);
                 writer.device(*to);
@@ -1275,10 +1300,15 @@ impl ToServer {
             1 => Self::Append {
                 blobs: reader.blobs()?,
             },
-            2 => Self::Compact {
-                through: reader.number()?,
-                parts: reader.blobs()?,
-            },
+            2 => {
+                let through = reader.number()?;
+                let parts = reader.blobs()?;
+                if through == STAGING_ASKED_THROUGH && parts.is_empty() {
+                    Self::Stage
+                } else {
+                    Self::Compact { through, parts }
+                }
+            }
             3 => Self::Punch {
                 to: reader.device()?,
                 sealed: reader.bytes(LONGEST_TEXT)?.to_vec(),
@@ -1351,6 +1381,13 @@ impl ToServer {
             },
             14 => Self::RoomKick {
                 member: reader.device()?,
+            },
+            15 => Self::Staged {
+                parts: reader.blobs()?,
+            },
+            16 => Self::CompactStaged {
+                through: reader.number()?,
+                parts: reader.blobs()?,
             },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
@@ -1500,6 +1537,7 @@ impl FromServer {
                 writer.number(*at_nanos);
             }
             Self::RoomEnded => writer.byte(17),
+            Self::Staging => writer.byte(18),
         }
         writer.finish()
     }
@@ -1600,6 +1638,7 @@ impl FromServer {
                 at_nanos: reader.number()?,
             },
             17 => Self::RoomEnded,
+            18 => Self::Staging,
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
         reader.done()?;
@@ -2659,6 +2698,18 @@ mod tests {
                 through: u64::MAX,
                 parts: vec![vec![9; 300]],
             },
+            ToServer::Compact {
+                through: 4,
+                parts: Vec::new(),
+            },
+            ToServer::Stage,
+            ToServer::Staged {
+                parts: vec![vec![3; SEALED_AT_LEAST], vec![4; 300]],
+            },
+            ToServer::CompactStaged {
+                through: 600,
+                parts: vec![vec![5; 300]],
+            },
             ToServer::Punch {
                 to: DeviceId([4; DEVICE_BYTES]),
                 sealed: vec![5; 40],
@@ -2672,6 +2723,30 @@ mod tests {
         ] {
             assert_eq!(ToServer::decoded(&frame.encoded()).expect("decoded"), frame);
         }
+    }
+
+    #[test]
+    fn asking_to_stage_a_compaction_is_written_as_the_compaction_through_nothing_an_older_server_refuses_as_stale()
+     {
+        let through_nothing = ToServer::Compact {
+            through: STAGING_ASKED_THROUGH,
+            parts: Vec::new(),
+        };
+        let staged_past = ToServer::Staged {
+            parts: (0..=BLOBS_A_FRAME_AT_MOST)
+                .map(|_| vec![1; SEALED_AT_LEAST])
+                .collect(),
+        };
+
+        assert_eq!(ToServer::Stage.encoded(), through_nothing.encoded());
+        assert_eq!(
+            ToServer::decoded(&through_nothing.encoded()).expect("decoded"),
+            ToServer::Stage
+        );
+        assert!(matches!(
+            ToServer::decoded(&staged_past.encoded()),
+            Err(Error::Malformed(Malformed::Overlong { .. }))
+        ));
     }
 
     #[test]
@@ -2769,6 +2844,7 @@ mod tests {
                 sealed: vec![8; 12],
             },
             FromServer::Compacted { through: 7 },
+            FromServer::Staging,
             FromServer::Refused(Refusal::SpaceFull),
             FromServer::Relayed {
                 from: DeviceId([5; DEVICE_BYTES]),

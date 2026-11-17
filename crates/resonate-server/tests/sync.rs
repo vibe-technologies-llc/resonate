@@ -8,8 +8,11 @@ use std::{
 };
 
 use base64::{Engine, engine::general_purpose::STANDARD};
+use resonate_core::{Answer, LONGEST_SHARED_LYRICS, SharedLyrics};
 use resonate_server::{Limits, Server, Store, listening, serving};
-use resonate_sync::{Follow, Me, Platform, Settings, SongTags, Standing, Sync, SyncKey};
+use resonate_sync::{
+    Follow, Me, Platform, Settings, SongTags, Standing, Sync, SyncKey, wire::LARGEST_FRAME,
+};
 use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 
 use crate::shelf::{Shelf, song};
@@ -60,6 +63,10 @@ fn scratch(name: &str) -> PathBuf {
 }
 
 fn hosted(folder: &Path) -> Hosted {
+    hosted_over(folder, Store::in_memory().expect("a store"))
+}
+
+fn hosted_over(folder: &Path, store: Store) -> Hosted {
     let signing = rcgen::KeyPair::generate().expect("a key");
     let certificate = rcgen::CertificateParams::new(vec!["localhost".to_owned()])
         .and_then(|params| params.self_signed(&signing))
@@ -82,7 +89,7 @@ fn hosted(folder: &Path) -> Hosted {
         listening(config, SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("listening")
     };
     let address = endpoint.local_addr().expect("an address");
-    let server = Server::new(Store::in_memory().expect("a store"), Limits::default());
+    let server = Server::new(store, Limits::default());
     runtime.spawn(server.serve(endpoint));
     Hosted {
         address,
@@ -571,6 +578,100 @@ fn a_song_deleted_from_every_device_leaves_those_that_let_it_through_the_server(
     assert!(laptop_shelf.holds_title("B"));
 
     drop(laptop);
+    drop(phone);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+}
+
+const SONGS_WHOSE_LYRICS_PASS_A_FRAMES_SHARE: usize = 760;
+
+fn words_deflate_hardly_shortens(seed: u64) -> String {
+    const LETTERS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
+    let mut state = seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
+    (0..LONGEST_SHARED_LYRICS)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let at = usize::try_from(state % LETTERS.len() as u64).expect("an index");
+            char::from(LETTERS[at])
+        })
+        .collect()
+}
+
+fn lyrics_of(at: usize) -> Answer {
+    Answer::Lyrics(SharedLyrics {
+        text: words_deflate_hardly_shortens(u64::try_from(at).expect("a seed")),
+        synced: false,
+    })
+}
+
+#[test]
+fn a_state_past_a_frames_share_is_compacted_in_parts_and_a_third_device_catches_up_from_it() {
+    let folder = scratch("compacted-in-parts");
+    let kept_at = folder.join("server.sqlite");
+    let hosted = hosted_over(&folder, Store::open(&kept_at).expect("a store"));
+    let key = SyncKey::minted().expect("a key");
+    let space = key.derived().expect("derived").space;
+    let titles = (0..SONGS_WHOSE_LYRICS_PASS_A_FRAMES_SHARE)
+        .map(|at| format!("Song {at}"))
+        .collect::<Vec<_>>();
+    let held = titles.iter().map(String::as_str).collect::<Vec<_>>();
+    let desk_shelf = Arc::new(Shelf::holding(&held));
+    for (at, title) in titles.iter().enumerate() {
+        desk_shelf.answer_here(title, lyrics_of(at));
+    }
+    let watching = Store::open(&kept_at).expect("the server's store, read beside it");
+
+    let desk = device(
+        &hosted,
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        Follow::default(),
+    );
+    eventually("every lyric reaching the server", || {
+        let shown = desk.shown();
+        shown.settled && shown.owed == 0 && watching.head(space).is_ok_and(|(head, _)| head > 0)
+    });
+    let phone_shelf = Arc::new(Shelf::holding(&held));
+    let phone = device(
+        &hosted,
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Follow::default(),
+    );
+    eventually("the server holding a snapshot past a frame's share", || {
+        watching
+            .snapshot(space)
+            .ok()
+            .flatten()
+            .is_some_and(|snapshot| {
+                snapshot.parts.iter().map(Vec::len).sum::<usize>() > LARGEST_FRAME / 2
+            })
+    });
+    let tablet_shelf = Arc::new(Shelf::holding(&held));
+    let tablet = device(
+        &hosted,
+        &folder,
+        &key,
+        "Tablet",
+        Arc::clone(&tablet_shelf),
+        Follow::default(),
+    );
+    eventually("every lyric reaching the tablet", || {
+        tablet_shelf.inside.lock().answers.len() == SONGS_WHOSE_LYRICS_PASS_A_FRAMES_SHARE
+    });
+
+    let (_, through) = watching.head(space).expect("the head");
+    let last = SONGS_WHOSE_LYRICS_PASS_A_FRAMES_SHARE - 1;
+    assert!(through > 0);
+    assert_eq!(tablet_shelf.answers_of(&titles[last]), [lyrics_of(last)]);
+
+    drop(tablet);
     drop(phone);
     drop(desk);
     let _ = fs::remove_dir_all(&folder);

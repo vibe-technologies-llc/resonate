@@ -475,6 +475,7 @@ struct Link {
     caught_up: bool,
     in_flight: VecDeque<Vec<Pushed>>,
     compacting: Option<u64>,
+    in_parts: InParts,
 }
 
 impl Link {
@@ -543,8 +544,98 @@ impl Oversized {
 
 enum Snapshotted {
     Unneeded,
-    Oversized { records_since: u64 },
-    Sealed { through: u64, parts: Vec<Vec<u8>> },
+    Oversized {
+        records_since: u64,
+    },
+    Sealed {
+        through: u64,
+        records_since: u64,
+        pieces: Pieces,
+    },
+}
+
+#[derive(Debug, Default)]
+struct Pieces {
+    frames: Vec<Vec<Vec<u8>>>,
+    last_bytes: usize,
+}
+
+impl Pieces {
+    fn push(&mut self, part: Vec<u8>) {
+        let fits = self.frames.last().is_some_and(|last| {
+            last.len() < BLOBS_A_FRAME_AT_MOST
+                && self.last_bytes + part.len() <= SNAPSHOT_FRAME_SHARE
+        });
+        if !fits {
+            self.frames.push(Vec::new());
+            self.last_bytes = 0;
+        }
+        self.last_bytes += part.len();
+        if let Some(last) = self.frames.last_mut() {
+            last.push(part);
+        }
+    }
+
+    const fn more_than_a_frame(&self) -> bool {
+        self.frames.len() > 1
+    }
+}
+
+#[derive(Debug)]
+struct Staging {
+    through: u64,
+    records_since: u64,
+    frames: Vec<Vec<Vec<u8>>>,
+}
+
+#[derive(Debug, Default)]
+struct InParts {
+    waiting: Option<Staging>,
+    refused: bool,
+}
+
+impl InParts {
+    fn asked(&mut self, through: u64, records_since: u64, pieces: Pieces) -> ToServer {
+        let mut frames = pieces.frames;
+        if frames.len() <= 1 {
+            return ToServer::Compact {
+                through,
+                parts: frames.pop().unwrap_or_default(),
+            };
+        }
+        self.waiting = Some(Staging {
+            through,
+            records_since,
+            frames,
+        });
+        ToServer::Stage
+    }
+
+    fn taken(&mut self) -> Vec<ToServer> {
+        let Some(Staging {
+            through,
+            mut frames,
+            ..
+        }) = self.waiting.take()
+        else {
+            return Vec::new();
+        };
+        let last = frames.pop().unwrap_or_default();
+        frames
+            .into_iter()
+            .map(|parts| ToServer::Staged { parts })
+            .chain([ToServer::CompactStaged {
+                through,
+                parts: last,
+            }])
+            .collect()
+    }
+
+    fn refused_as_stale(&mut self) -> Option<Oversized> {
+        let staging = self.waiting.take()?;
+        self.refused = true;
+        Some(Oversized::found_at(staging.records_since))
+    }
 }
 
 fn compacted_by_another(asked: &mut Option<u64>, through: u64) -> bool {
@@ -1555,6 +1646,7 @@ async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
         caught_up: cursor >= head,
         in_flight: VecDeque::new(),
         compacting: None,
+        in_parts: InParts::default(),
     })
 }
 
@@ -1962,9 +2054,22 @@ impl Syncing {
                     self.push().await?;
                 }
             }
+            FromServer::Staging => {
+                if let Some(link) = self.server.as_mut() {
+                    for frame in link.in_parts.taken() {
+                        link.say(&frame)?;
+                    }
+                }
+            }
             FromServer::Refused(Refusal::Stale) => {
                 if let Some(link) = self.server.as_mut() {
                     link.compacting = None;
+                    if let Some(oversized) = link.in_parts.refused_as_stale() {
+                        tracing::warn!(
+                            "the sync server takes no compaction past one frame, so it is tried again once the records since the last snapshot double"
+                        );
+                        self.oversized = oversized;
+                    }
                 }
             }
             FromServer::Refused(Refusal::TooLarge) => {
@@ -2301,6 +2406,10 @@ impl Syncing {
         }
         let running = Arc::clone(&self.running);
         let oversized = self.oversized;
+        let parts_refused = self
+            .server
+            .as_ref()
+            .is_some_and(|link| link.in_parts.refused);
         let snapshot = blocking(move || {
             let ledger = running.ledger.lock();
             let (records_since, bytes) = ledger.since_snapshot()?;
@@ -2310,25 +2419,26 @@ impl Syncing {
                 return Ok(Snapshotted::Unneeded);
             }
             let through = ledger.cursor()?;
-            let mut parts = Vec::new();
-            let mut total = 0;
+            let mut pieces = Pieces::default();
             for changes in ledger.snapshot()? {
-                let blob = sealed(
+                pieces.push(sealed(
                     &running.derived.sealer,
                     running.derived.space,
                     &encoded_bundle(&changes),
-                )?;
-                total += blob.len();
-                parts.push(blob);
-                if total > SNAPSHOT_FRAME_SHARE || parts.len() > BLOBS_A_FRAME_AT_MOST {
+                )?);
+                if parts_refused && pieces.more_than_a_frame() {
                     tracing::warn!(
                         records_since,
-                        "the synced state is too large to compact in one frame, so it is tried again once the records since the last snapshot double"
+                        "the synced state is too large to compact in one frame on this server, so it is tried again once the records since the last snapshot double"
                     );
                     return Ok(Snapshotted::Oversized { records_since });
                 }
             }
-            Ok(Snapshotted::Sealed { through, parts })
+            Ok(Snapshotted::Sealed {
+                through,
+                records_since,
+                pieces,
+            })
         })
         .await?;
         match snapshot {
@@ -2336,11 +2446,16 @@ impl Syncing {
             Snapshotted::Oversized { records_since } => {
                 self.oversized = Oversized::found_at(records_since);
             }
-            Snapshotted::Sealed { through, parts } => {
+            Snapshotted::Sealed {
+                through,
+                records_since,
+                pieces,
+            } => {
                 self.oversized = Oversized::default();
                 if let Some(link) = self.server.as_mut() {
                     link.compacting = Some(through);
-                    link.say(&ToServer::Compact { through, parts })?;
+                    let asked = link.in_parts.asked(through, records_since, pieces);
+                    link.say(&asked)?;
                 }
             }
         }
@@ -3665,6 +3780,95 @@ mod tests {
         assert!(short_of_double);
         assert!(!doubled);
         assert!(!compacted_since);
+    }
+
+    fn pieces_of(parts: impl IntoIterator<Item = Vec<u8>>) -> Pieces {
+        let mut pieces = Pieces::default();
+        for part in parts {
+            pieces.push(part);
+        }
+        pieces
+    }
+
+    #[test]
+    fn a_snapshot_within_a_frame_is_one_compaction_as_an_older_server_takes_it() {
+        let mut in_parts = InParts::default();
+        let pieces = pieces_of([vec![1; 40], vec![2; 40]]);
+
+        let empty = InParts::default().asked(9, 600, Pieces::default());
+        let asked = in_parts.asked(9, 600, pieces);
+
+        assert_eq!(
+            empty,
+            ToServer::Compact {
+                through: 9,
+                parts: Vec::new()
+            }
+        );
+        assert_eq!(
+            asked,
+            ToServer::Compact {
+                through: 9,
+                parts: vec![vec![1; 40], vec![2; 40]]
+            }
+        );
+        assert!(in_parts.taken().is_empty());
+    }
+
+    #[test]
+    fn a_snapshot_past_a_frames_share_or_its_blobs_is_cut_into_frames_within_both() {
+        let half = SNAPSHOT_FRAME_SHARE / 2;
+
+        let by_bytes = pieces_of([vec![1; half], vec![2; half], vec![3; 1]]);
+        let by_blobs = pieces_of((0..=BLOBS_A_FRAME_AT_MOST).map(|_| vec![4; 40]));
+
+        let lengths = |pieces: &Pieces| pieces.frames.iter().map(Vec::len).collect::<Vec<_>>();
+        assert_eq!(lengths(&by_bytes), [2, 1]);
+        assert_eq!(lengths(&by_blobs), [BLOBS_A_FRAME_AT_MOST, 1]);
+    }
+
+    #[test]
+    fn a_snapshot_of_several_frames_is_staged_once_the_server_takes_it_and_named_through_its_last()
+    {
+        let mut in_parts = InParts::default();
+        let pieces = pieces_of((0..=BLOBS_A_FRAME_AT_MOST).map(|_| vec![4; 40]));
+
+        let asked = in_parts.asked(700, 600, pieces);
+        let sent = in_parts.taken();
+        let again = in_parts.taken();
+        let stale_after = in_parts.refused_as_stale();
+
+        assert_eq!(asked, ToServer::Stage);
+        assert_eq!(
+            sent,
+            [
+                ToServer::Staged {
+                    parts: vec![vec![4; 40]; BLOBS_A_FRAME_AT_MOST]
+                },
+                ToServer::CompactStaged {
+                    through: 700,
+                    parts: vec![vec![4; 40]]
+                },
+            ]
+        );
+        assert!(again.is_empty());
+        assert_eq!(stale_after, None);
+        assert!(!in_parts.refused);
+    }
+
+    #[test]
+    fn a_server_refusing_to_stage_as_stale_takes_no_parts_and_the_state_waits_until_the_records_double()
+     {
+        let mut in_parts = InParts::default();
+        let pieces = pieces_of((0..=BLOBS_A_FRAME_AT_MOST).map(|_| vec![4; 40]));
+        in_parts.asked(700, 600, pieces);
+
+        let refused = in_parts.refused_as_stale();
+        let sent = in_parts.taken();
+
+        assert_eq!(refused, Some(Oversized::found_at(600)));
+        assert!(in_parts.refused);
+        assert!(sent.is_empty());
     }
 
     #[test]

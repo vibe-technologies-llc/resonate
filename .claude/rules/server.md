@@ -12,11 +12,13 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 
 ## What it keeps
 
-- **SQLite, three tables** (`store.rs`, `V1` in `MIGRATIONS`, the 0.1.0 baseline never edited, and
+- **SQLite, five tables** (`store.rs`, `V1` in `MIGRATIONS`, the 0.1.0 baseline never edited, and
   the steps after it, those a release shipped pinned in `store/released.rs`, `release.md`): `spaces` (id, the SHA-256 of
   the token, created, touched, bytes, head, snapshot through), `records` (space, seq, device,
   blob, and the blob's SHA-256 `digest` the second step `RECORDS_ARE_KNOWN_BY_THEIR_DIGEST` added,
-  NULL for a record stored before it), `snapshots` (space, part, blob). Every store call runs on `spawn_blocking` behind one lock.
+  NULL for a record stored before it), `snapshots` (space, part, blob), and the
+  `A_COMPACTION_MAY_BE_STAGED_IN_PARTS` step's `stagings` (space, id, touched, bytes, parts) and
+  `staged` (space, part, blob). Every store call runs on `spawn_blocking` behind one lock.
 - **A record a device sends again is kept once.** `Store::append` passes over a blob whose digest
   that device already has stored in the space (and a repeat inside one append), counting neither its
   bytes nor a seq, and the append is answered `Appended` as if stored: a device resends the very
@@ -45,6 +47,27 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   `totals_in`), so claiming spaces and compacting each to a snapshot near `--space-bytes` cannot
   pass the total; one that shrinks a space is never refused by a full total
   (`a_compaction_that_grows_a_space_is_weighed_against_the_total_cap_as_an_append_is`).
+- **A compaction past one frame is staged and swapped in whole** (`sync.md`): `Stage` opens a
+  staging for the space under a random `StagingId` the session keeps, putting aside any other the
+  space had (`a_later_staging_of_the_space_puts_the_earlier_aside`), and is answered `Staging`;
+  `Staged` appends parts to it; `CompactStaged` moves the staged parts and its own into `snapshots`
+  in the one transaction `Compact` uses, with the same checks (`Store::compact_staged`), and a
+  `CompactStaged` with no staging of the session's is `Stale`
+  (`a_compaction_staged_in_parts_replaces_the_log_only_once_its_last_part_is_taken`). Until then
+  catch-up reads the old log alone, so a session ending part way leaves it whole: the session's
+  staging is dropped as it ends (`Store::unstage`), and one left by a crash goes once untouched for
+  `A_STAGING_UNTOUCHED_IS_KEPT_FOR` (an hour, `Store::sweep_staged` on the sweep's round)
+  (`a_staging_left_unfinished_leaves_the_log_whole_and_holds_nothing_once_unstaged_or_swept`,
+  `a_device_leaving_part_way_through_a_compaction_leaves_the_old_log_whole`). **What is staged is
+  counted toward `--total-bytes`** (`totals_in` adds `stagings.bytes`), so stagings cannot hold
+  bytes past the total, and a staging's own bytes are weighed against `--space-bytes`, since the
+  snapshot alone must fit the space; one past either is put aside and refused `SpaceFull`
+  (`what_is_staged_is_weighed_against_the_space_and_the_total_cap_and_put_aside_past_either`). A
+  space may so hold its log and a staging beside it, each within `--space-bytes`, for as long as the
+  compaction takes. A `Compact` in one frame is taken as before
+  (`a_compaction_in_one_frame_from_an_older_device_still_replaces_the_log`), and a `Compact` through
+  0 with no parts, which is how `Stage` is written, is what a server before staging refuses `Stale`
+  (`the_compaction_through_nothing_a_staging_is_asked_by_is_refused_as_stale_by_the_one_frame_form`).
 - **A space untouched for `--idle-days` (365) is swept** (checked hourly, or every thirtieth of the
   limit if shorter). **A space never written to is swept after a day** (`Store::sweep_unused`:
   `head` and `snapshot_through` both 0), so claims made by a script and abandoned do not pile up.
@@ -109,7 +132,14 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   fixed at `LARGEST_FRAME` for the life of the socket
   (`a_first_frame_announced_past_the_ceiling_ends_the_connection_without_waiting_for_it`,
   `a_budgeted_stream_stops_reading_once_its_budget_is_spent`).
-- **Catch-up is snapshot then records past the cursor**, in frames of at most 256 records or 4 MiB;
+- **Catch-up is snapshot then records past the cursor**, the snapshot in frames of at most
+  `SNAPSHOT_BYTES_A_FRAME` (half a frame) and `BLOBS_A_FRAME_AT_MOST` parts, every one but the last
+  naming the `through` the session last sent and the last the snapshot's own (`sync.md`); a
+  `Reading` remembers the part to go on from and the snapshot it belongs to, so a compaction landing
+  between frames starts the newer snapshot from its first part
+  (`a_snapshot_past_a_frame_is_read_in_frames_and_begun_again_when_another_replaces_it_between`,
+  `a_state_past_a_frames_share_is_compacted_in_parts_and_a_device_joining_reads_it_in_frames`); the
+  records in frames of at most 256 records or 4 MiB;
   a device's own records go back as seqs with no blob. Each frame is read through
   `Store::catch_up`, which under one lock answers the snapshot wherever what was sent lies behind the
   snapshot held, so a compaction landing between frames, or while a session is behind on its
