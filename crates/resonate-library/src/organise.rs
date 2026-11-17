@@ -2279,7 +2279,7 @@ fn batch_landing(
         return Applied { landed, refused };
     }
 
-    settle(&landed);
+    settle(&landed, made);
     if let Err(error) = library.files_moved(&landed, noting) {
         tracing::warn!(
             %error,
@@ -2713,7 +2713,7 @@ fn copied_whole(from: &Path, to: &Path) -> Result<Held> {
         path: from.to_path_buf(),
         source,
     })?;
-    let held = Held::taken_over(to).map_err(copy_failed)?;
+    let held = Held::taken_over_closed(to).map_err(copy_failed)?;
     let mut written = held.file();
     io::copy(&mut source, &mut written)
         .and_then(|_| written.set_permissions(stood.permissions()))
@@ -2894,16 +2894,24 @@ fn put_back(done: &[Renamed]) {
     }
 }
 
-fn settle(landed: &[Move]) {
-    let mut folders: AHashSet<&Path> = AHashSet::new();
-    for (from, to) in landed.iter().flat_map(Move::files) {
-        folders.extend(from.parent());
-        folders.extend(to.parent());
-    }
-
-    for folder in folders {
+fn settle(landed: &[Move], made: &[PathBuf]) {
+    for folder in folders_to_settle(landed, made) {
         settled_folder(folder);
     }
+}
+
+fn folders_to_settle<'a>(landed: &'a [Move], made: &'a [PathBuf]) -> Vec<&'a Path> {
+    let mut folders: Vec<&Path> = landed
+        .iter()
+        .flat_map(Move::files)
+        .flat_map(|(from, to)| [from.parent(), to.parent()])
+        .flatten()
+        .chain(made.iter().filter_map(|folder| folder.parent()))
+        .filter(|folder| !folder.as_os_str().is_empty())
+        .collect();
+    folders.sort_by(|one, other| deepest_first(one, other));
+    folders.dedup();
+    folders
 }
 
 pub(crate) fn settled_folder(folder: &Path) {
@@ -4983,6 +4991,92 @@ mod tests {
         }
 
         drop(held);
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn every_folder_a_move_made_is_settled_into_its_parent_deepest_first_before_the_source_goes() {
+        let folder = a_folder_of_its_own();
+        let inbox = folder.join("Inbox");
+        let archive = folder.join("Archive");
+        let moved = Move {
+            from: inbox.join("echoes.flac"),
+            to: archive.join("Pink Floyd/Meddle/echoes.flac"),
+            rows: 1,
+            companions: Vec::new(),
+            sidecars: Vec::new(),
+        };
+        let made = not_there_yet(&archive.join("Pink Floyd/Meddle"));
+
+        let folders = folders_to_settle(slice::from_ref(&moved), &made);
+
+        assert_eq!(
+            folders,
+            [
+                archive.join("Pink Floyd/Meddle").as_path(),
+                archive.join("Pink Floyd").as_path(),
+                archive.as_path(),
+                inbox.as_path(),
+                folder.as_path(),
+            ]
+        );
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_copy_is_open_to_nobody_else_while_its_bytes_arrive() {
+        use std::{
+            io::Write as _,
+            thread,
+            time::{Duration, Instant},
+        };
+
+        use rustix::fs::{CWD, FileType, Mode, mknodat};
+
+        const OURS_ALONE: u32 = 0o600;
+        const SHARED_WITH_THE_GROUP: u32 = 0o640;
+        const PATIENCE: Duration = Duration::from_secs(20);
+        const POLL_EVERY: Duration = Duration::from_millis(5);
+
+        let folder = a_folder_of_its_own();
+        let from = folder.join("arriving.flac");
+        let to = folder.join("copy.flac");
+        mknodat(
+            CWD,
+            &from,
+            FileType::Fifo,
+            Mode::from_raw_mode(SHARED_WITH_THE_GROUP),
+            0,
+        )
+        .expect("a pipe to copy from");
+
+        let copier = {
+            let (from, to) = (from.clone(), to.clone());
+            thread::spawn(move || copied_whole(&from, &to).map(drop))
+        };
+        let mut arriving = fs::OpenOptions::new()
+            .write(true)
+            .open(&from)
+            .expect("the pipe opened");
+        arriving.write_all(b"fLaC").expect("the first bytes");
+        let deadline = Instant::now() + PATIENCE;
+        while fs::metadata(&to).map_or(true, |copy| copy.len() < 4) {
+            assert!(Instant::now() < deadline, "the first bytes never arrived");
+            thread::sleep(POLL_EVERY);
+        }
+        let while_arriving = fs::metadata(&to).expect("the copy").mode() & 0o777;
+        drop(arriving);
+        let copied = copier.join().expect("the copier finishes");
+
+        assert_eq!(while_arriving, OURS_ALONE);
+        copied.expect("the copy lands");
+        assert_eq!(
+            fs::metadata(&to).expect("the copy").mode() & 0o777,
+            SHARED_WITH_THE_GROUP
+        );
+
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }
 

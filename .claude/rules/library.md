@@ -1901,11 +1901,17 @@ guard and re-keys a sleeve-keyed album after moves land.
   `SharesASheet`, `NamedFromAbove`, `SourceGone`, `Unmoved`.
 - **A rename crossing a filesystem is a copy; the source goes only once the catalog has followed.**
   `landed_onto` reads `io::ErrorKind::CrossesDevices` off `fs::rename` and falls back to `copying`:
-  copy, carry the source's mode, owner and extended attributes (`codec::carries_what_the_file_did`,
+  copy into a stage made `0600` (`Held::taken_over_closed`, so a private song is never open to
+  another reader while its bytes arrive: `a_copy_is_open_to_nobody_else_while_its_bytes_arrive`),
+  then carry the source's mode, owner and extended attributes (`codec::carries_what_the_file_did`,
   refusals logged, never failing the copy) and mtime onto the copy (so the next scan reads the known file), `sync_all`,
   written as destination name plus `STAGED` and renamed into place once whole. Nothing is deleted
   inside the batch: `put_back` undoes a copy by *removing* it; `left_behind` removes sources only
-  after `Library::files_moved` committed. A run killed after the rename, before the commit, leaves
+  after `Library::files_moved` committed, and only once `settle` has synced every folder a file
+  left or landed in and the parent of every folder the batch made, deepest first
+  (`folders_to_settle`), so after a power cut the unlinked source never stands without the
+  `Artist/Album` its copy landed in
+  (`every_folder_a_move_made_is_settled_into_its_parent_deepest_first_before_the_source_goes`). A run killed after the rename, before the commit, leaves
   the whole copy beside its source; `already_copied` reads it next run (another device, same size,
   same mtime, same bytes in `COMPARED_AT_ONCE` pieces once the cheap readings agree) and it lands as
   `Landing::Copied`; hence no `Refusal::AcrossDevices`. `tests/library.rs` holds all three onto a
