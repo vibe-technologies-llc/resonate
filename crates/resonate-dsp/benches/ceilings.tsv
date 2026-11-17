@@ -1,20 +1,20 @@
-0.403	resample low latency 44.1k to 48k
-0.391	resample low latency 48k to 44.1k
+0.378	resample low latency 44.1k to 48k
+0.373	resample low latency 48k to 44.1k
 0.538	resample low latency 96k to 48k
 0.857	resample low latency 192k to 48k
 0.916	resample low latency 176.4k to 48k
-0.806	resample low latency 44.1k to 96k
+0.756	resample low latency 44.1k to 96k
 0.097	resample balanced 44.1k to 48k
 0.092	resample balanced 48k to 44.1k
-0.139	resample balanced 96k to 48k
-0.269	resample balanced 192k to 48k
+0.145	resample balanced 96k to 48k
+0.283	resample balanced 192k to 48k
 0.256	resample balanced 176.4k to 48k
-0.134	resample balanced 44.1k to 96k
-0.097	resample high 44.1k to 48k
-0.092	resample high 48k to 44.1k
-0.147	resample high 96k to 48k
-0.290	resample high 192k to 48k
-0.273	resample high 176.4k to 48k
+0.127	resample balanced 44.1k to 96k
+0.093	resample high 44.1k to 48k
+0.089	resample high 48k to 44.1k
+0.154	resample high 96k to 48k
+0.306	resample high 192k to 48k
+0.289	resample high 176.4k to 48k
 0.147	resample high 44.1k to 96k
 0.143	resample very high 44.1k to 48k
 0.151	resample very high 48k to 44.1k
@@ -22,9 +22,9 @@
 0.349	resample very high 192k to 48k
 0.319	resample very high 176.4k to 48k
 0.172	resample very high 44.1k to 96k
-0.164	resample very high minimum 44.1k to 48k
+0.155	resample very high minimum 44.1k to 48k
 0.181	resample very high minimum 96k to 48k
-0.235	resample very high intermediate 44.1k to 48k
+0.189	resample very high intermediate 44.1k to 48k
 0.189	resample very high intermediate 96k to 48k
 0.312	equalise 10 bands at 48k
 0.976	equalise 32 bands at 48k

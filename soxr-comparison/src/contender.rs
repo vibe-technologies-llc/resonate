@@ -178,11 +178,12 @@ const fn soxr(recipe: QualityRecipe, phase: SoxrPhase, steep: bool) -> Contender
     }
 }
 
-pub const CONTENDERS: [Contender; 18] = [
+pub const CONTENDERS: [Contender; 19] = [
     ours(Quality::LowLatency, FilterPhase::Linear),
     ours(Quality::Balanced, FilterPhase::Linear),
     ours(Quality::High, FilterPhase::Linear),
     ours(Quality::VeryHigh, FilterPhase::Linear),
+    ours(Quality::High, FilterPhase::Intermediate),
     ours(Quality::High, FilterPhase::Minimum),
     ours(Quality::VeryHigh, FilterPhase::Intermediate),
     ours(Quality::VeryHigh, FilterPhase::Minimum),

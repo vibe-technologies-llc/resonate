@@ -233,17 +233,18 @@ Linux sound server or GUI libraries are needed.
   tree` sees libsoxr. It links the system libsoxr through `pkg-config` (the `soxr` crate), the one
   C library wanted anywhere, since that library is what is measured; nothing in the workspace may
   depend on it.
-- **One process, the same buffers**: eighteen settings (Resonate's four levels, High minimum and
-  Very high intermediate and minimum; SoXR's eight recipes, VHQ steep, intermediate and minimum) at
+- **One process, the same buffers**: nineteen settings (Resonate's four levels, High and Very high
+  each intermediate and minimum; SoXR's eight recipes, VHQ steep, intermediate and minimum) at
   seven rate pairs, f64 interleaved in and out, SoXR on one thread. Tones sit on a 1/64 Hz grid so
   every phase reduces exactly (`signal::phase_at`) and the least-squares fit (`fit::Window`) reads
   levels down to the f64 floor, over the settled middle 0.6 s of 1.2 s.
 - **Timing wants an idle machine**: throughput is the best of five runs over 4 s of stereo noise in
   1 024-frame blocks, construction the first build in the process and the best of nine after.
   `--no-timing` measures quality alone (on every core, under any load), `--timing-only` the costs.
-  `--candidates FILE` measures and times a line each of kernels and recipes in one table, a rejection for
-  each pair (`tuning.rs`, a `Contender::Tuned` through `Resampler::with_params`), which is how every
-  preset was chosen. `design_window.py` (numpy alone) prints a level's window as `resample.rs` holds it, to the bit.
+  `--candidates FILE` measures and times a line each of kernels and recipes in one table, a rejection, a
+  ringing, a pre-echo and a latency for each pair (`tuning.rs`, a `Contender::Tuned` through
+  `Resampler::with_params`), which is how every preset was chosen: a window that wins at 44.1 to 48 kHz
+  can lose going up. `design_window.py` (numpy alone) prints a level's window as `resample.rs` holds it, to the bit.
 - **Not in CI**: a hosted runner has no libsoxr and its timings would mean nothing.
   `docs/RESAMPLING.md` is the report and `docs/resampling/` its plots; the `compare-resamplers`
   skill reruns both.

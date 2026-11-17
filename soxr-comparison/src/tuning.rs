@@ -125,7 +125,7 @@ pub fn verdicts(
     costs: &[(Contender, Pair, Cost)],
 ) -> String {
     let mut text = String::from(
-        "| Setting | −0.1 dB (kHz) | −3 dB (kHz) | Worst alias, any pair (dB) | Worst alias by pair (dB) | Worst SNR, any pair (dB) | Null to 10 kHz (dB) | Ringing (ms) | Echo over 1 ms (dB) | Latency 44.1 → 48 (ms) | Latency 96 → 48 (ms) | CPU 44.1 → 48 | CPU 96 → 48 | CPU 192 → 48 | CPU 48 → 96 |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n",
+        "| Setting | −0.1 dB (kHz) | −3 dB (kHz) | Worst alias, any pair (dB) | Worst alias by pair (dB) | Worst SNR, any pair (dB) | Null to 10 kHz (dB) | Ringing by pair (ms) | Echo over 1 ms by pair (dB) | Latency by pair (ms) | CPU 44.1 → 48 | CPU 96 → 48 | CPU 192 → 48 | CPU 48 → 96 |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n",
     );
     let cost_at = |contender: Contender, pair: Pair| {
         costs
@@ -149,35 +149,31 @@ pub fn verdicts(
                 .filter(|value| value.is_finite())
                 .fold(f64::NEG_INFINITY, f64::max)
         };
-        let latency_at = |pair: Pair| {
-            everywhere
+        let by_pair = |read: fn(&Measured) -> f64, digits: usize| {
+            pairs
                 .iter()
-                .find(|measured| measured.pair == pair)
-                .map_or(f64::NAN, |measured| measured.summary.latency_s * 1e3)
+                .filter_map(|pair| everywhere.iter().find(|measured| measured.pair == *pair))
+                .map(|measured| cell(read(measured), digits))
+                .collect::<Vec<_>>()
+                .join(" ")
         };
         let summary = &cd.summary;
         let _ = writeln!(
             text,
-            "| {contender} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+            "| {contender} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
             cell(summary.slight_drop_hz.map_or(f64::NAN, |hz| hz / 1e3), 3),
             cell(summary.half_power_hz.map_or(f64::NAN, |hz| hz / 1e3), 3),
             cell(loudest(|measured| measured.summary.worst_rejection_db), 1),
-            pairs
-                .iter()
-                .filter_map(|pair| everywhere.iter().find(|measured| measured.pair == *pair))
-                .map(|measured| cell(measured.summary.worst_rejection_db, 0))
-                .collect::<Vec<_>>()
-                .join(" "),
+            by_pair(|measured| measured.summary.worst_rejection_db, 0),
             cell(-loudest(|measured| -measured.summary.worst_snr_db), 1),
             cell(summary.null_narrow_db, 1),
-            cell(summary.impulse.after_peak_s * 1e3, 2),
-            cell(summary.impulse.pre_echo_db, 2),
-            cell(latency_at(CD), 2),
-            cell(latency_at(DOWN_BY_TWO), 2),
-            cell(cost_at(contender, CD), 3),
-            cell(cost_at(contender, DOWN_BY_TWO), 3),
-            cell(cost_at(contender, DOWN_BY_FOUR), 3),
-            cell(cost_at(contender, UP_BY_TWO), 3),
+            by_pair(|measured| measured.summary.impulse.after_peak_s * 1e3, 2),
+            by_pair(|measured| measured.summary.impulse.pre_echo_db, 2),
+            by_pair(|measured| measured.summary.latency_s * 1e3, 2),
+            cell(cost_at(contender, CD), 4),
+            cell(cost_at(contender, DOWN_BY_TWO), 4),
+            cell(cost_at(contender, DOWN_BY_FOUR), 4),
+            cell(cost_at(contender, UP_BY_TWO), 4),
         );
     }
     text

@@ -19,8 +19,8 @@ const LONG_KERNEL_FROM_HALF_TAPS: u16 = 512;
 const CEPSTRUM_PADDING: usize = 32;
 const POLYPHASE_LOG_FLOOR_UNDER_THE_STOPBAND: f64 = 0.01;
 const BLOCK_LOG_FLOOR_UNDER_THE_STOPBAND: f64 = 0.1;
-const INTERMEDIATE_LEADS_BY_HALF_WIDTHS: f64 = 1.25;
-const INTERMEDIATE_TRAILS_BY_HALF_WIDTHS: f64 = 2.0;
+const INTERMEDIATE_LEADS_BY_HALF_WIDTHS: f64 = 1.1;
+const INTERMEDIATE_TRAILS_BY_HALF_WIDTHS: f64 = 1.75;
 const INTERMEDIATE_SHARE_OF_LINEAR: f64 = 0.5;
 const STENCIL: usize = 8;
 const STENCIL_REACHES_BACK: usize = STENCIL / 2 - 1;
@@ -118,6 +118,29 @@ fn stopband(params: SincParams) -> f64 {
     10_f64.powf(-f64::from(params.rejects_db) / 20.0)
 }
 
+fn phase_with_every_sign_flip(spectrum: &[Complex<f64>], delay: f64) -> Vec<f64> {
+    let size = spectrum.len();
+    let half = size / 2;
+    let mut flips = 0.0;
+    let mut rose = true;
+    let mut turned = vec![0.0; size];
+
+    for (index, (bin, angle)) in spectrum.iter().zip(&mut turned).take(half + 1).enumerate() {
+        let delayed = 2.0 * PI * index as f64 / size as f64 * delay;
+        let rises = (bin * Complex::cis(delayed)).re >= 0.0;
+        if rises != rose {
+            flips += 1.0;
+        }
+        rose = rises;
+        *angle = PI * flips - delayed;
+    }
+    let (rising, falling) = turned.split_at_mut(half + 1);
+    for (angle, mirrored) in falling.iter_mut().rev().zip(rising.iter().skip(1)) {
+        *angle = -mirrored;
+    }
+    turned
+}
+
 fn design(params: SincParams, phase: FilterPhase) -> Prototype {
     let windowed = WindowedSinc::new(params);
     let per_tap = if params.half_taps >= LONG_KERNEL_FROM_HALF_TAPS {
@@ -142,6 +165,8 @@ fn design(params: SincParams, phase: FilterPhase) -> Prototype {
     let unscaled = (size as f64).recip();
 
     forward.process(&mut spectrum);
+    let linear_phase = (phase == FilterPhase::Intermediate)
+        .then(|| phase_with_every_sign_flip(&spectrum, reach as f64));
     let under_the_stopband = if params.converts_in_blocks() {
         BLOCK_LOG_FLOOR_UNDER_THE_STOPBAND
     } else {
@@ -163,19 +188,12 @@ fn design(params: SincParams, phase: FilterPhase) -> Prototype {
     }
     forward.process(&mut spectrum);
 
-    let delay = reach as f64;
     for (index, bin) in spectrum.iter_mut().enumerate() {
-        let radians = if index <= half {
-            2.0 * PI * index as f64 / size as f64
-        } else {
-            2.0 * PI * (index as f64 - size as f64) / size as f64
-        };
-        let angle = match phase {
-            FilterPhase::Linear | FilterPhase::Minimum => bin.im,
-            FilterPhase::Intermediate => {
-                (1.0 - INTERMEDIATE_SHARE_OF_LINEAR) * bin.im
-                    - INTERMEDIATE_SHARE_OF_LINEAR * radians * delay
+        let angle = match linear_phase.as_deref().and_then(|own| own.get(index)) {
+            Some(own) => {
+                (1.0 - INTERMEDIATE_SHARE_OF_LINEAR) * bin.im + INTERMEDIATE_SHARE_OF_LINEAR * own
             }
+            None => bin.im,
         };
         *bin = Complex::from_polar(bin.re.exp(), angle);
     }
@@ -374,6 +392,59 @@ mod tests {
             assert!(
                 leaked < promised + LEAKS_MORE_BY_AT_MOST_DB,
                 "{phase:?} leaks {leaked:.1} dB against the linear {promised:.1} dB"
+            );
+        }
+    }
+
+    fn loudest_past_nyquist_db(samples: &[f64], per_tap: usize, size: usize) -> f64 {
+        let mut spectrum = vec![Complex::new(0.0, 0.0); size];
+        for (bin, sample) in spectrum.iter_mut().zip(samples) {
+            bin.re = *sample;
+        }
+        FftPlanner::<f64>::new()
+            .plan_fft_forward(size)
+            .process(&mut spectrum);
+
+        let direct = spectrum[0].norm();
+        let bins_a_nyquist = size as f64 / (2.0 * per_tap as f64);
+        let loudest = spectrum
+            .iter()
+            .take(size / 2)
+            .enumerate()
+            .filter(|(bin, _)| *bin as f64 >= bins_a_nyquist)
+            .map(|(_, level)| level.norm() / direct)
+            .fold(0.0, f64::max);
+        decibels(loudest)
+    }
+
+    #[test]
+    fn an_intermediate_filter_rejects_what_the_linear_one_does() {
+        const REJECTS_LESS_BY_AT_MOST_DB: f64 = 1.0;
+
+        for quality in [
+            Quality::LowLatency,
+            Quality::Balanced,
+            Quality::High,
+            Quality::VeryHigh,
+        ] {
+            let params = quality.shaped_params();
+            let windowed = WindowedSinc::new(params);
+            let prototype =
+                designed(params, FilterPhase::Intermediate).expect("a shaped phase is designed");
+            let per_tap = prototype.per_tap;
+            let reach = usize::from(params.half_taps) * per_tap;
+            let linear: Vec<f64> = (0..=2 * reach)
+                .map(|index| windowed.at((index as f64 - reach as f64).abs() / per_tap as f64))
+                .collect();
+
+            let size = (prototype.samples.len() * 4).next_power_of_two();
+
+            let promised = loudest_past_nyquist_db(&linear, per_tap, size);
+            let reached = loudest_past_nyquist_db(&prototype.samples, per_tap, size);
+
+            assert!(
+                reached < promised + REJECTS_LESS_BY_AT_MOST_DB,
+                "{quality:?} reaches {reached:.1} dB past Nyquist against the linear {promised:.1} dB"
             );
         }
     }

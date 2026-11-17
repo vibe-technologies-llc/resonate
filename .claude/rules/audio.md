@@ -1103,9 +1103,13 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   `a_shaped_filter_leaks_hardly_more_into_the_stopband_than_the_linear_one` the polyphase stopband, and
   `every_phase_passes_direct_current_keeps_the_passband_and_rejects_aliases` every level end to end;
   `docs/RESAMPLING.md` measures it against SoXR.
-  Intermediate's window (lead 1.25, trail 2 half-widths) is the whole of its response: trimmed to
-  the stopband's level its rejection falls, so it waits longer than linear at Very high's ratios under
-  2:1. **Reach is two numbers** (shaped kernels are asymmetric):
+  **An intermediate phase is half the minimum phase and half the linear kernel's own phase, sign flips
+  and all** (`phase_with_every_sign_flip`: the delay's ramp plus half a turn at every sign change of the
+  zero-phase amplitude, as SoX counts its pi wraps): halved against a plain delay, every stopband null was left a
+  quarter-turn cusp that leaked once the kernel was trimmed (High −152 dB where linear had −187).
+  `an_intermediate_filter_rejects_what_the_linear_one_does` holds each level within a decibel of its
+  linear kernel. Its window (lead 1.1, trail 1.75 half-widths; shorter cost Very high 3 dB) is the whole
+  of its response, so it waits longer than linear at Very high's ratios under 2:1. **Reach is two numbers** (shaped kernels are asymmetric):
   `Reach { behind, ahead }`, history primed with `behind` zeros and flushed with `ahead` zeros; a
   track keeps its length whatever the phase.
 - **Kernel polyphase, read position exactly rational:** `whole` sample index + `phase` numerator over
@@ -1122,14 +1126,18 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   vectors** (`wide`'s `f64x8`, `ACCUMULATORS` lanes, one AVX-512 register or two AVX ones): left to
   LLVM's SLP vectoriser, every lane stayed a scalar of its own, and whether it packed them changed with
   the optimisation level. **Frames are summed phase by phase** (`emit_by_phase`): `emit` first counts
-  the frames a call can make (`fits`, `after`), then for each phase walks the frames a ratio cycle
-  apart, which share a table row, four at once (`FRAMES_AT_ONCE`, `dot_four`; two, then one, for the
-  rest of a group), so each weight is loaded once for four frames and a channel, and eight sums are in
-  flight. The row is read at its fixed offset (`weights_of`) and the history wherever the frame starts
+  the frames a call can make by arithmetic (`frames_fitting_from`, `after_frames`: a read's instant in
+  phase units against the last that fits; stepping through them was a tenth of the sum's time), then for
+  each phase walks the frames a ratio cycle apart, which share a table row, four at once
+  (`FRAMES_AT_ONCE`, `dot_four`; three, two or one for the rest of a group, `dot_three`: a rest of three
+  summed as two and one left the one a single chain waiting on its own latency, a fifth of the time for a
+  seventh of the frames of a 1 024-frame call), so each weight is loaded once for four frames and a
+  channel, and eight sums are in flight. The row is read at its fixed offset (`weights_of`) and the history wherever the frame starts
   (`first_of`), so every frame of a phase shares one slice of the row; aligning the history instead put
   the row's offset per frame. What was measured (`docs/RESAMPLING.md`): grouping by phase for the
   table's cache alone, more chains for one frame and a fused multiply-add each bought nothing; sharing
-  the weight loads across frames did. A linear-phase kernel's mirrored rows would halve the table,
+  the weight loads across frames did, and consecutive frames summed four at once with a row each (no
+  rest at all) read a quarter slower. A linear-phase kernel's mirrored rows would halve the table,
   not the work, and fold onto themselves only at phase 0. `Kernel`'s rows (`emit_tapering`) are
   tapered frame by frame and summed one at a time.
 - **Low latency is the one level summing a polyphase kernel** (47 taps a side, 1.07 ms, the fewest that
@@ -1145,10 +1153,20 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   sample, so the read position is exact by construction. **A pair of channels shares one complex
   FFT** (`L + iR`, `Lane`): a real kernel filters the two parts apart, so stereo costs one
   transform where SoXR takes two, and odd channel counts leave the last part silent. Overlap-save
-  keeps `trail_units` and `lead_units` of the block out of what is released (`released_from`), and
-  an output frame leaves once the input it is due at has arrived (`Spectral::due`, floor of
-  `heard * unit_out / unit_in`), so `max_output_frames` still holds per call and
-  `latency_frames` is exactly `outputs_held`. A track keeps its length: the flush drives silence
+  keeps the kernel's trail and lead out of what is released, and an output frame leaves once the input
+  it is due at has arrived (`Spectral::due`, floor of `heard * unit_out / unit_in`), so
+  `max_output_frames` still holds per call. **The overlap is rounded up to whole cycles once where that
+  frees a cycle, a side at a time where it does not** (`Blocks::fitting`): High's 440 taps fit three of
+  the 147-sample cycles of 44.1 to 48 kHz where a side at a time kept four. There the block primes
+  `primed_in` frames, just short of whole cycles, releases from `released_from` (the first output frame
+  at or after the primed instant) and turns the response by the fraction of an output sample between the
+  two (`delay_seconds`, a `Response::Turned` for a linear kernel too), so frame 0 is still instant 0.
+  Where no cycle is freed the priming stays whole cycles and a linear kernel its real response: a turned
+  one cost Balanced 5 % at 48 to 44.1 kHz for a sixth of a millisecond
+  (`a_kernel_gives_up_only_the_cycles_its_whole_length_needs`, `a_kernel_that_frees_no_cycle_is_not_delayed`,
+  `a_block_whose_kernel_frees_a_cycle_waits_for_its_hop_and_the_kernels_lead_alone`). `latency_frames`
+  is `latency_outputs`, the hop and the kernel's lead in output frames, a fraction where the kernel is
+  delayed; `outputs_held` is what a flush still owes. A track keeps its length: the flush drives silence
   until `outputs_of(frames)` have left.
 - **A block kernel stops at its reach and its window is designed.** `Design::Even` samples
   `WindowedSinc` (`EVEN_POINTS_OVER_THE_BAND`, 8) and keeps the real part, halving the evaluations by symmetry;
@@ -1164,9 +1182,14 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   `half_taps` is the reach, `kaiser_beta / (pi * half_taps)` the transition's width in cycles a sample, and
   each preset's `cutoff` ends it on Nyquist (`the_preset_cutoffs_end_their_transitions_on_nyquist`), so
   `kaiser_beta` means width alone where `window` is not empty; `rejects_db` is its depth, for the log floor and the interpolator.
-  Very high's 380 Hz (at a 44.1 kHz band) puts its −0.1 dB point a hair past VHQ steep's, High's 1 950 Hz past VHQ's and
-  Balanced's 1 900 Hz past HQ's, each ringing for less than the recipe it answers
-  (`each_level_rings_for_less_than_the_sox_recipe_it_answers`).
+  Very high's 380 Hz (at a 44.1 kHz band) puts its −0.1 dB point a hair past VHQ steep's, High's 1 880 Hz past VHQ's and
+  Balanced's 1 890 Hz past HQ's, each ringing for less than the recipe it answers
+  (`each_level_rings_for_less_than_the_sox_recipe_it_answers`). **A series needs terms enough for its reach**:
+  High's 13 could use no more than 170 taps, and 22 at 220 ripple 29 dB deeper with the −120 dB tap moved in
+  from 108 to 100 (Balanced 16 at 140 for 10 at 110); Very high's 25 are enough, 44 giving the same ripple.
+  The designer holds the envelope's far end 6 dB under its start, since a ripple shallower than −150 dB let
+  the line run level or rise, which rings longer going up; a window is chosen on every pair's ringing and
+  pre-echo, never 44.1 to 48 kHz's alone (`--candidates`, `build.md`).
 - **A block's size is searched, not fixed, against what `rustfft` costs** (`Blocks::fitting`, `transform_weight`): every
   even 7-smooth count of units up to `LONGEST_TRANSFORM` whose hop fits within `hop_at_most_seconds`, the least weight a sample
   wins. A transform is `N log N` plus what was measured: two stages of drag for `5³` in its length
@@ -1175,7 +1198,10 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   (`STEEP_FROM_RATIO`), capped at `SPECTRAL_HOP_SECONDS_AT_MOST` (0.4): a longer hop costs less and waits longer,
   which a player's ring never hears, and each level's pair was chosen from a sweep of cost against latency
   (`docs/RESAMPLING.md`): Very high's steep hop is long because 2:1 was its last row behind SoXR, and the cost
-  stops falling at about that length.
+  stops falling at about that length. The cycle a once-rounded overlap frees under 2:1 went to latency at High
+  (twelve cycles, a hop of nine, 35 ms for 46.67 at the same cost) and to work at Very high (forty, a hop of 23
+  for 22, 5 % cheaper for half a millisecond). A shaped phase takes its level's hops, so its latency is what
+  the search finds under them.
 - **An own FFT was measured and is not worth it**: a split-complex Stockham over `pulp` reached 0.73 to 1.06 times `rustfft`'s time natively and 0.87 to 1.15 on `x86-64-v3` (`docs/RESAMPLING.md`). Its one lesson: planes laid at one page offset put every stream of a radix-4 pass in one L1 set at a power-of-two length.
 - **There is no halving stage before or after the block, on purpose**: a half-band FIR taking 4:1 and beyond down an octave first (or a doubling after, going up) was built and measured, and the block absorbs a doubled input rate for less than the half-band costs. At Very high 192 to 48 kHz the shorter forward transform saved about 240 µs a second and the 20 tap pairs its rejection needs (60 dB under the level's stopband, what keeps the worst landing under 20 kHz) cost about 350, 24 % dearer, 11 % with every load aligned; High was level at best, Balanced 5 to 9 % cheaper at best (`docs/RESAMPLING.md`). A half-band cannot reach 2:1 at all. Its one lesson: a stage ahead of the block must hand it the lead and tail of its own response (output before the first input frame and after the last), or the edges are a hundredth off.
 - **A ratio with a prime past 7 in it cannot be cut into blocks** (44.1 kHz onto 47.993 kHz would need
@@ -1188,7 +1214,7 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
 - **The oracle shares no code with the block path.** `analytic_tap` writes the kernel with its own Legendre
   recurrence and Bessel series, `dc_of_a_block_kernel` gives it the block's one DC gain, and
   `every_frame_is_the_exact_windowed_sinc_normalised_at_its_instant` holds every frame of a direct
-  convolution over it against the block route: within 1e-6 at Balanced, 1e-8 at High and 3e-11 at Very high,
+  convolution over it against the block route: within 2e-7 at Balanced, 2e-10 at High and 3e-11 at Very high,
   each the level's own ripple, since the direct sum keeps the faint images the block path drops; Low latency within 1e-12.
   `docs/RESAMPLING.md` measures all of it against SoXR.
 - **Dither: flat or shaped path, f64; the plan's curve picks.** `Dither::prepare` resolves

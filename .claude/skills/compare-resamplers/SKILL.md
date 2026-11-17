@@ -32,7 +32,7 @@ system libsoxr and its headers (`pkg-config --modversion soxr` answers).
 
 4. **A changed kernel starts from `--candidates`.** `python3 design_window.py NAME WIDTH_HZ REACH RING_TAPS TERMS`
    prints a window (`docs/RESAMPLING.md`, *Reproducing*, has the three held now); write its numbers to a file, one
-   line per try in a candidates file (`very-high 1200 32.4845 0 3300 16000 window.txt`, `soxr-steep` for a recipe),
+   line per try in a candidates file (`very-high 1200 32.4845 0 3400 16000 window.txt`, `soxr-steep` for a recipe),
    and `cargo run --release -- --candidates FILE` tables them side by side.
 
 5. **Look at the plots** with `rsvg-convert docs/resampling/response-44.1-to-48.svg -o /tmp/r.png`

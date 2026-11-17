@@ -1,4 +1,4 @@
-use std::{mem, ops::Range, sync::Arc};
+use std::{f64::consts::TAU, mem, ops::Range, sync::Arc};
 
 use parking_lot::Mutex;
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
@@ -9,6 +9,7 @@ const EVEN_POINTS_OVER_THE_BAND: usize = 8;
 const KEPT_PLAN_BYTES_AT_MOST: usize = 4 << 20;
 const SMOOTH_RADICES: [usize; 4] = [2, 3, 5, 7];
 const BINS_ROUNDED_WITHIN: f64 = 1e-9;
+const FRAMES_ROUNDED_WITHIN: f64 = 1e-9;
 const SILENCE: Complex<f64> = Complex::new(0.0, 0.0);
 const CUBED: u32 = 3;
 const AT_LEAST_FOUR_TWOS: u32 = 2;
@@ -77,8 +78,9 @@ pub(crate) struct Blocks {
     unit_in: usize,
     unit_out: usize,
     units: usize,
-    trail_units: usize,
     hop_units: usize,
+    primed_in: usize,
+    released_from: usize,
 }
 
 impl Blocks {
@@ -93,14 +95,26 @@ impl Blocks {
             return None;
         }
 
-        let unit_seconds = unit_in as f64 / f64::from(conversion.input_hz);
-        let trail_units = (conversion.trail_seconds / unit_seconds).ceil() as usize;
-        let lead_units = (conversion.lead_seconds / unit_seconds).ceil() as usize;
+        let input_hz = f64::from(conversion.input_hz);
+        let unit_seconds = unit_in as f64 / input_hz;
+        let whole_frames =
+            |seconds: f64| (seconds * input_hz - FRAMES_ROUNDED_WITHIN).ceil() as usize;
+        let lead_in = whole_frames(conversion.lead_seconds);
+        let trail_in = whole_frames(conversion.trail_seconds);
+        let trail_units = trail_in.div_ceil(unit_in);
+        let rounded_a_side = trail_units + lead_in.div_ceil(unit_in);
+        let rounded_once = (lead_in + trail_in).div_ceil(unit_in);
+        let (overlap_units, primed_in) = if rounded_once < rounded_a_side {
+            (rounded_once, rounded_once * unit_in - lead_in)
+        } else {
+            (rounded_a_side, trail_units * unit_in)
+        };
+        let released_from = (primed_in * unit_out).div_ceil(unit_in);
         let hop_at_most = ((conversion.hop_at_most_seconds / unit_seconds) as usize).max(1);
         let longest_units = LONGEST_TRANSFORM / unit_in.max(unit_out);
-        let shortest_units = trail_units + lead_units + 1;
+        let shortest_units = overlap_units + 1;
         let weight = |units: usize| {
-            let hop_units = units - trail_units - lead_units;
+            let hop_units = units - overlap_units;
             (transform_weight(units * unit_in) + transform_weight(units * unit_out))
                 / (hop_units * unit_in) as f64
         };
@@ -115,8 +129,9 @@ impl Blocks {
             unit_in,
             unit_out,
             units,
-            trail_units,
-            hop_units: units - trail_units - lead_units,
+            hop_units: units - overlap_units,
+            primed_in,
+            released_from,
         })
     }
 
@@ -136,20 +151,37 @@ impl Blocks {
         self.input_points() - self.hop_in()
     }
 
-    const fn released_from(self) -> usize {
-        self.trail_units * self.unit_out
+    const fn lands_on_an_output_frame(self) -> bool {
+        (self.primed_in * self.unit_out).is_multiple_of(self.unit_in)
+    }
+
+    fn delay_seconds(self, conversion: Conversion) -> f64 {
+        if self.lands_on_an_output_frame() {
+            return 0.0;
+        }
+        self.released_from as f64 / f64::from(conversion.output_hz)
+            - self.primed_in as f64 / f64::from(conversion.input_hz)
     }
 
     pub(crate) const fn outputs_held(self) -> usize {
-        (self.units - self.trail_units) * self.unit_out
+        self.output_points() - self.released_from
+    }
+
+    pub(crate) fn latency_outputs(self) -> f64 {
+        (self.input_points() - self.primed_in) as f64 * self.unit_out as f64 / self.unit_in as f64
     }
 
     pub(crate) const fn unit_out(self) -> usize {
         self.unit_out
     }
 
-    pub(crate) const fn trail_units(self) -> usize {
-        self.trail_units
+    #[cfg(test)]
+    pub(crate) const fn hop_out(self) -> usize {
+        self.hop_units * self.unit_out
+    }
+
+    pub(crate) const fn primed_after(self, units: usize) -> usize {
+        self.primed_in + units * self.unit_in
     }
 
     pub(crate) const fn outputs_of(self, frames_in: usize) -> usize {
@@ -186,6 +218,8 @@ impl Response {
             .min(blocks.output_points() / 2)
             .max(1);
         let unity = (input_points as f64).recip();
+        let turn_a_bin = -TAU * blocks.delay_seconds(conversion) / block_seconds;
+        let lands = blocks.lands_on_an_output_frame();
 
         match design {
             Design::Even(at_seconds) => {
@@ -205,7 +239,17 @@ impl Response {
                 planner.plan_fft_forward(points).process(&mut spectrum);
                 let scale = unity / spectrum.first().map_or(1.0, |bin| bin.re);
                 let held = spectrum.get(..bins).unwrap_or_default();
-                Self::Even(held.iter().map(|bin| bin.re * scale).collect())
+                let gains = held.iter().map(|bin| bin.re * scale);
+                if lands {
+                    Self::Even(gains.collect())
+                } else {
+                    Self::Turned(
+                        gains
+                            .enumerate()
+                            .map(|(bin, gain)| Complex::from_polar(gain, turn_a_bin * bin as f64))
+                            .collect(),
+                    )
+                }
             }
             Design::Turned(at_seconds) => {
                 let points = TURNED_POINTS_OVER_THE_BAND * 2 * bins;
@@ -224,7 +268,12 @@ impl Response {
                 planner.plan_fft_forward(points).process(&mut spectrum);
                 let scale = unity / spectrum.first().map_or(1.0, |bin| bin.re);
                 let held = spectrum.get(..bins).unwrap_or_default();
-                Self::Turned(held.iter().map(|bin| bin * scale).collect())
+                Self::Turned(
+                    held.iter()
+                        .enumerate()
+                        .map(|(bin, turn)| turn * scale * Complex::cis(turn_a_bin * bin as f64))
+                        .collect(),
+                )
             }
         }
     }
@@ -342,9 +391,8 @@ pub(crate) struct Spectral {
 }
 
 impl Spectral {
-    pub(crate) fn new(plan: Arc<Plan>, channels: usize, primed_units: usize) -> Self {
+    pub(crate) fn new(plan: Arc<Plan>, channels: usize, primed: usize) -> Self {
         let blocks = plan.blocks;
-        let primed = primed_units * blocks.unit_in;
         Self {
             lanes: (0..channels.div_ceil(2))
                 .map(|_| Lane::new(blocks))
@@ -440,7 +488,7 @@ impl Spectral {
     }
 
     pub(crate) fn interleaved_into(&self, run: Range<usize>, output: &mut [f64], channels: usize) {
-        let from = self.plan.blocks.released_from();
+        let from = self.plan.blocks.released_from;
         let span = from + run.start..from + run.end;
         if let ([lane], 2) = (self.lanes.as_slice(), channels) {
             let (frames, _) = output.as_chunks_mut::<2>();
@@ -464,7 +512,7 @@ impl Spectral {
     }
 
     pub(crate) fn plane_into(&self, channel: usize, run: Range<usize>, slots: &mut [f64]) {
-        let from = self.plan.blocks.released_from();
+        let from = self.plan.blocks.released_from;
         let heard = self
             .lanes
             .get(channel / 2)
@@ -562,6 +610,85 @@ mod tests {
     }
 
     #[test]
+    fn a_kernel_gives_up_only_the_cycles_its_whole_length_needs() {
+        const REACH_A_SIDE: usize = 220;
+        const CYCLE: usize = 147;
+        let reach_seconds = REACH_A_SIDE as f64 / 44_100.0;
+        let wanted = Conversion {
+            lead_seconds: reach_seconds,
+            trail_seconds: reach_seconds,
+            hop_at_most_seconds: 0.05,
+            ..conversion(44_100, 48_000)
+        };
+
+        let blocks = Blocks::fitting(wanted).expect("common rates are smooth");
+        let overlap_units = blocks.units - blocks.hop_units;
+
+        assert_eq!(overlap_units, (2 * REACH_A_SIDE).div_ceil(CYCLE));
+        assert!(overlap_units < 2 * REACH_A_SIDE.div_ceil(CYCLE));
+    }
+
+    #[test]
+    fn a_kernel_that_frees_no_cycle_is_not_delayed() {
+        for (input_hz, output_hz, reach_in) in [
+            (44_100_u32, 48_000_u32, 140_usize),
+            (48_000, 44_100, 153),
+            (96_000, 48_000, 440),
+            (48_000, 96_000, 220),
+        ] {
+            let reach_seconds = reach_in as f64 / f64::from(input_hz);
+            let wanted = Conversion {
+                lead_seconds: reach_seconds,
+                trail_seconds: reach_seconds,
+                ..conversion(input_hz, output_hz)
+            };
+
+            let blocks = Blocks::fitting(wanted).expect("common rates are smooth");
+
+            assert!(
+                blocks.lands_on_an_output_frame(),
+                "{input_hz} -> {output_hz}"
+            );
+            assert!(blocks.primed_in.is_multiple_of(blocks.unit_in));
+            assert_eq!(blocks.delay_seconds(wanted), 0.0);
+        }
+    }
+
+    #[test]
+    fn a_block_whose_kernel_frees_a_cycle_waits_for_its_hop_and_the_kernels_lead_alone() {
+        for (input_hz, output_hz, lead_in, trail_in) in [
+            (44_100_u32, 48_000_u32, 220_usize, 220_usize),
+            (48_000, 44_100, 240, 240),
+            (96_000, 48_000, 440, 440),
+            (44_100, 96_000, 27, 413),
+            (192_000, 44_100, 5_225, 5_225),
+        ] {
+            let wanted = Conversion {
+                lead_seconds: lead_in as f64 / f64::from(input_hz),
+                trail_seconds: trail_in as f64 / f64::from(input_hz),
+                ..conversion(input_hz, output_hz)
+            };
+
+            let blocks = Blocks::fitting(wanted).expect("common rates are smooth");
+            let hop_in = blocks.hop_units * blocks.unit_in;
+            let waited_in = blocks.input_points() - blocks.primed_in;
+            let delay = blocks.delay_seconds(wanted);
+
+            assert_eq!(waited_in, hop_in + lead_in, "{input_hz} -> {output_hz}");
+            assert!(blocks.primed_in >= trail_in, "{input_hz} -> {output_hz}");
+            assert!(
+                (0.0..f64::from(output_hz).recip()).contains(&delay),
+                "{input_hz} -> {output_hz}: the kernel is delayed by {delay} s"
+            );
+            assert_eq!(
+                blocks.outputs_held(),
+                blocks.latency_outputs().floor() as usize,
+                "{input_hz} -> {output_hz}"
+            );
+        }
+    }
+
+    #[test]
     fn a_rate_with_a_large_prime_in_its_ratio_is_not_cut_into_blocks() {
         assert_eq!(Blocks::fitting(conversion(44_100, 47_993)), None);
     }
@@ -590,8 +717,9 @@ mod tests {
             unit_in: 2,
             unit_out: 1,
             units: 3_136,
-            trail_units: 64,
             hop_units: 3_008,
+            primed_in: 128,
+            released_from: 64,
         };
         let mut planner = FftPlanner::new();
         let response = Response::of(
@@ -639,7 +767,7 @@ mod tests {
             })
             .collect();
 
-        let mut stereo = Spectral::new(plan, 2, blocks.trail_units());
+        let mut stereo = Spectral::new(plan, 2, blocks.primed_after(0));
         let mut output = vec![0.0; 2 * blocks.outputs_of(frames as usize)];
         let mut made = 0;
         let mut taken = 0;

@@ -7,6 +7,7 @@ import numpy as np
 BAND_HZ = 44_100.0
 RING_DB = -120.0
 FAR_ABOVE_RIPPLE_DB = 30.0
+FAR_UNDER_THE_RING_DB = 6.0
 DEEPEST_DB = -280.0
 SHALLOWEST_DB = -110.0
 BISECTIONS = 8
@@ -47,7 +48,7 @@ def ripple_rows(reach, width, terms):
 def design(reach, width, ring_taps, ripple_db, terms, ripple, middle):
     taps = np.arange(ring_taps, reach + 0.5, 1.0)
     falls = (taps - ring_taps) / (reach - ring_taps)
-    far_db = ripple_db + FAR_ABOVE_RIPPLE_DB
+    far_db = min(ripple_db + FAR_ABOVE_RIPPLE_DB, RING_DB - FAR_UNDER_THE_RING_DB)
     allowed = 10 ** ((RING_DB + (far_db - RING_DB) * falls) / 20) * (np.pi * taps)
     rows = np.vstack(
         [even_legendre(taps / reach, terms) / allowed[:, None], ripple / 10 ** (ripple_db / 20)]

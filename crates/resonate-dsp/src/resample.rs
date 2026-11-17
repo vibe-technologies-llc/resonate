@@ -33,6 +33,7 @@ const SPECTRAL_FROM_HALF_TAPS: u16 = 48;
 const STEEP_FROM_RATIO: f64 = 2.0;
 const SHAPED_CLEARS_A_SHARE_OF_THE_REACH: u16 = 8;
 const SPECTRAL_HOP_SECONDS_AT_MOST: f64 = 0.4;
+const FLUSHED_PAST_WHAT_IS_HELD: usize = 3;
 const OVERSAMPLED: usize = 2;
 const INTERPOLATOR_PHASES: u32 = 1_024;
 const INTERPOLATOR_CUTOFF: f32 = 1.0;
@@ -43,33 +44,48 @@ const KAISER_DECIBELS_AT_NO_BETA: f64 = 8.7;
 const KAISER_LENGTH_DECIBELS: f64 = 7.95;
 const KAISER_LENGTH_PER_DECIBEL: f64 = 14.36;
 
-const BALANCED_WINDOW: [f64; 10] = [
-    0.30671382544860293,
-    -0.6376531743318821,
-    0.5584325253254765,
-    -0.3395642911942146,
-    0.15328081311843028,
-    -0.05294841496722559,
-    0.014286134908432835,
-    -0.0030933373788818025,
-    0.0005199393803197172,
-    -9.557476880843463e-05,
+const BALANCED_WINDOW: [f64; 16] = [
+    0.2367026134095198,
+    -0.5329340662427183,
+    0.5621576045946038,
+    -0.4555901212265864,
+    0.2987202015504061,
+    -0.15966690061374225,
+    0.0695262458456254,
+    -0.024718744441587816,
+    0.007207650869764217,
+    -0.0017469644594537014,
+    0.00034882252975355915,
+    -6.344481019454619e-05,
+    6.276947188452177e-06,
+    -2.92451700344143e-06,
+    -9.263048318663982e-07,
+    -3.523385021519943e-07,
 ];
 
-const HIGH_WINDOW: [f64; 13] = [
-    0.24053709856192423,
-    -0.5390856442241267,
-    0.5625869723081898,
-    -0.4488451520698929,
-    0.2895782064941611,
-    -0.15317479422792973,
-    0.0666645101503116,
-    -0.023888384626784803,
-    0.00704207894887969,
-    -0.0017005811900209916,
-    0.0003327233059389617,
-    -5.070433295871479e-05,
-    5.748985880585367e-06,
+const HIGH_WINDOW: [f64; 22] = [
+    0.1742149455102787,
+    -0.41195625025113375,
+    0.48797354724345593,
+    -0.4770355776805456,
+    0.4088495712567538,
+    -0.31240076866432953,
+    0.21348160563071494,
+    -0.13005280984999393,
+    0.07021977174535436,
+    -0.033414474489374776,
+    0.0139620228054811,
+    -0.005116773333295173,
+    0.0016464561443372823,
+    -0.00046646493596709515,
+    0.00011679676375155043,
+    -2.5968550408678175e-05,
+    5.143777091182188e-06,
+    -9.17813208281548e-07,
+    1.4377619907135483e-07,
+    -2.2749368694396914e-08,
+    1.9203536608114465e-09,
+    -6.318403716898401e-10,
 ];
 
 const VERY_HIGH_WINDOW: [f64; 25] = [
@@ -166,25 +182,25 @@ impl Quality {
                 window: &[],
             },
             Self::Balanced => SincParams {
-                half_taps: 110,
+                half_taps: 140,
                 phases: 512,
-                cutoff: 0.956_916,
-                kaiser_beta: 14.888_727,
-                rejects_db: 130.0,
+                cutoff: 0.957_143,
+                kaiser_beta: 18.849_556,
+                rejects_db: 140.0,
                 clear_taps: 0,
                 hop_taps: 870,
                 steep_hop_taps: 1_600,
                 window: &BALANCED_WINDOW,
             },
             Self::High => SincParams {
-                half_taps: 170,
+                half_taps: 220,
                 phases: 1024,
-                cutoff: 0.955_782,
-                kaiser_beta: 23.615_373,
-                rejects_db: 171.0,
+                cutoff: 0.957_370,
+                kaiser_beta: 29.464_007,
+                rejects_db: 200.0,
                 clear_taps: 0,
-                hop_taps: 1_960,
-                steep_hop_taps: 3_600,
+                hop_taps: 1_800,
+                steep_hop_taps: 2_850,
                 window: &HIGH_WINDOW,
             },
             Self::VeryHigh => SincParams {
@@ -194,7 +210,7 @@ impl Quality {
                 kaiser_beta: 32.484_497,
                 rejects_db: 218.0,
                 clear_taps: 0,
-                hop_taps: 3_300,
+                hop_taps: 3_400,
                 steep_hop_taps: 16_000,
                 window: &VERY_HIGH_WINDOW,
             },
@@ -735,10 +751,9 @@ impl Stage {
         let plan = planned(config, params, &shape, blocks, conversion);
         let channels = config.channels.count().get() as usize;
         let prerolled_units = preroll.div_ceil(blocks.unit_out());
-        let primed_units = blocks.trail_units() + prerolled_units;
 
         Some(Self {
-            spectral: Spectral::new(plan, channels, primed_units),
+            spectral: Spectral::new(plan, channels, blocks.primed_after(prerolled_units)),
             up,
             preroll,
             skipping: prerolled_units * blocks.unit_out() - preroll,
@@ -796,7 +811,7 @@ impl Whole {
         let plan = planned(config, params, &shape, blocks, conversion);
         let channels = config.channels.count().get() as usize;
         Some(Self {
-            spectral: Spectral::new(plan, channels, blocks.trail_units()),
+            spectral: Spectral::new(plan, channels, blocks.primed_after(0)),
             channels,
             taken: 0,
             emitted: 0,
@@ -1113,6 +1128,26 @@ impl Polyphase {
         )
     }
 
+    fn dot_three(histories: [&[f64]; 3], weights: &[f64]) -> [f64x8; 3] {
+        let [first, second, third] = histories.map(Self::blocks_of);
+        Self::blocks_of(weights)
+            .iter()
+            .zip(first)
+            .zip(second)
+            .zip(third)
+            .fold(
+                [f64x8::ZERO; 3],
+                |[one, two, three], (((batch, first), second), third)| {
+                    let batch = f64x8::new(*batch);
+                    [
+                        f64x8::new(*first).mul_add(batch, one),
+                        f64x8::new(*second).mul_add(batch, two),
+                        f64x8::new(*third).mul_add(batch, three),
+                    ]
+                },
+            )
+    }
+
     fn dot_four(histories: [&[f64]; FRAMES_AT_ONCE], weights: &[f64]) -> [f64x8; FRAMES_AT_ONCE] {
         let [first, second, third, fourth] = histories.map(Self::blocks_of);
         Self::blocks_of(weights)
@@ -1200,9 +1235,30 @@ impl Polyphase {
         }
     }
 
-    fn fits(&self, read: Read) -> bool {
-        let rising = usize::from(read.phase == 0);
-        read.whole.saturating_add(self.reach.ahead) + (1 - rising) < self.filled
+    fn instant(&self, read: Read) -> u64 {
+        read.whole as u64 * u64::from(self.phases) + u64::from(read.phase)
+    }
+
+    fn advance(&self) -> u64 {
+        self.whole_step as u64 * u64::from(self.phases) + u64::from(self.phase_step)
+    }
+
+    fn after_frames(&self, read: Read, frames: usize) -> Read {
+        let phases = u64::from(self.phases).max(1);
+        let instant = self.instant(read) + frames as u64 * self.advance();
+        Read {
+            whole: (instant / phases) as usize,
+            phase: (instant % phases) as u32,
+        }
+    }
+
+    fn frames_fitting_from(&self, read: Read) -> usize {
+        let Some(last_whole) = self.filled.checked_sub(self.reach.ahead + 1) else {
+            return 0;
+        };
+        let last = last_whole as u64 * u64::from(self.phases);
+        last.checked_sub(self.instant(read))
+            .map_or(0, |room| (room / self.advance().max(1)) as usize + 1)
     }
 
     fn first_of(&self, read: Read) -> usize {
@@ -1225,13 +1281,8 @@ impl Polyphase {
             whole: self.whole,
             phase: self.phase,
         };
-
-        let mut end = start;
-        let mut count = 0;
-        while count < capacity && self.fits(end) {
-            end = self.after(end);
-            count += 1;
-        }
+        let count = self.frames_fitting_from(start).min(capacity);
+        let end = self.after_frames(start, count);
 
         match &self.taps {
             Taps::Tabulated(tabulated) => self.emit_by_phase(tabulated, start, count, output),
@@ -1269,7 +1320,12 @@ impl Polyphase {
                     let firsts = array::from_fn(|frame| first + frame * cycle);
                     self.convolve_many(frames, firsts, weights, Self::dot_four);
                     taken += FRAMES_AT_ONCE;
-                } else if left >= 2 {
+                } else if left == 3 {
+                    let frames = Self::every_cycle(rest, channels, phases);
+                    let firsts = array::from_fn(|frame| first + frame * cycle);
+                    self.convolve_many(frames, firsts, weights, Self::dot_three);
+                    taken += 3;
+                } else if left == 2 {
                     let frames = Self::every_cycle(rest, channels, phases);
                     self.convolve_many(frames, [first, first + cycle], weights, Self::dot_two);
                     taken += 2;
@@ -1486,7 +1542,9 @@ impl Processor for Resampler {
 
     fn max_flush_frames(&self) -> usize {
         match &self.route {
-            Route::Whole(whole) => whole.spectral.blocks().outputs_held() + 2,
+            Route::Whole(whole) => {
+                whole.spectral.blocks().outputs_held() + FLUSHED_PAST_WHAT_IS_HELD
+            }
             Route::Polyphase(polyphase) => polyphase.max_flush_frames(),
         }
     }
@@ -1504,7 +1562,7 @@ impl Processor for Resampler {
 
     fn latency_frames(&self) -> f64 {
         match &self.route {
-            Route::Whole(whole) => whole.spectral.blocks().outputs_held() as f64,
+            Route::Whole(whole) => whole.spectral.blocks().latency_outputs(),
             Route::Polyphase(polyphase) => polyphase.latency_frames(),
         }
     }
@@ -1540,13 +1598,13 @@ mod tests {
 
     const BLOCK: usize = 1_024;
     const LOW_LATENCY_REJECTS_DB: f64 = -85.0;
-    const BALANCED_REJECTS_DB: f64 = -125.0;
+    const BALANCED_REJECTS_DB: f64 = -135.0;
     const TWENTY_FOUR_BIT_FLOOR_DB: f64 = -140.0;
     const UNITY_WITHIN: f64 = 1e-9;
     const FOLDS_TO_THREE_KILOHERTZ_AT_EIGHT: f64 = 21_000.0;
     const AGREES_WITH_THE_EXACT_SUM_WITHIN: f64 = 1e-12;
-    const BALANCED_AGREES_WITHIN: f64 = 1e-6;
-    const HIGH_AGREES_WITHIN: f64 = 1e-8;
+    const BALANCED_AGREES_WITHIN: f64 = 2e-7;
+    const HIGH_AGREES_WITHIN: f64 = 2e-10;
     const VERY_HIGH_AGREES_WITHIN: f64 = 3e-11;
     const HIGH_INTERPOLATED_WITHIN: f64 = 1e-8;
     const VERY_HIGH_INTERPOLATED_WITHIN: f64 = 3e-11;
@@ -1554,7 +1612,7 @@ mod tests {
     const SOX_STEEP_RINGS_MILLISECONDS: f64 = 11.77;
     const SOX_VHQ_RINGS_MILLISECONDS: f64 = 2.52;
     const SOX_HQ_RINGS_MILLISECONDS: f64 = 2.15;
-    const HIGH_REJECTS_DB: f64 = -170.0;
+    const HIGH_REJECTS_DB: f64 = -200.0;
     const VERY_HIGH_REJECTS_DB: f64 = -200.0;
     const SOX_STEEP_PASSBAND_NYQUISTS: f64 = 0.9864;
     const SAMPLED_PER_TAP: u32 = 16;
@@ -1853,13 +1911,13 @@ mod tests {
 
     #[test]
     fn a_minimum_phase_filter_waits_for_a_few_frames_rather_than_half_its_length() {
-        let linear = latency(shaped(
+        let linear = waited_past_the_hop(shaped(
             SampleRate::HZ_44100,
             SampleRate::HZ_48000,
             Quality::VeryHigh,
             FilterPhase::Linear,
         ));
-        let minimum = latency(shaped(
+        let minimum = waited_past_the_hop(shaped(
             SampleRate::HZ_44100,
             SampleRate::HZ_48000,
             Quality::VeryHigh,
@@ -1868,8 +1926,58 @@ mod tests {
         let half_the_kernel = f64::from(Quality::VeryHigh.params().half_taps) * 48_000.0 / 44_100.0;
         assert!(
             minimum < linear - half_the_kernel * 0.75,
-            "minimum phase waits {minimum} frames, linear {linear}"
+            "minimum phase waits {minimum} frames past its hop, linear {linear}"
         );
+    }
+
+    #[test]
+    fn the_frames_that_fit_are_counted_as_stepping_through_them_one_by_one_counts_them() {
+        for (from, to) in ORACLE_PAIRS {
+            let mut resampler = Resampler::new(config(from, to, Quality::LowLatency))
+                .expect("a valid resampler configuration");
+            let Route::Polyphase(polyphase) = &mut resampler.route else {
+                panic!("low latency sums its taps a frame at a time");
+            };
+            let ahead = polyphase.reach.ahead;
+            let phases = polyphase.phases;
+
+            for filled in [0, 1, ahead, ahead + 1, ahead + 2, ahead + 77, 1_024, 5_000] {
+                polyphase.filled = filled;
+                for (whole, phase) in [
+                    (0, 0),
+                    (0, 1 % phases),
+                    (3, phases - 1),
+                    (40, phases / 2),
+                    (999, 0),
+                    (1_023, phases - 1),
+                    (6_000, 0),
+                ] {
+                    let start = Read { whole, phase };
+                    let mut stepped = start;
+                    let mut counted = 0;
+                    while stepped.whole + ahead + usize::from(stepped.phase != 0) < filled {
+                        stepped = polyphase.after(stepped);
+                        counted += 1;
+                    }
+                    let jumped = polyphase.after_frames(start, counted);
+
+                    assert_eq!(
+                        polyphase.frames_fitting_from(start),
+                        counted,
+                        "{from} -> {to} from {whole} and {phase} of {phases} with {filled} filled"
+                    );
+                    assert_eq!((jumped.whole, jumped.phase), (stepped.whole, stepped.phase));
+                }
+            }
+        }
+    }
+
+    fn waited_past_the_hop(config: ResamplerConfig) -> f64 {
+        let resampler = Resampler::new(config).expect("a valid resampler configuration");
+        let Route::Whole(whole) = &resampler.route else {
+            panic!("a common pair at this level converts a block at a time");
+        };
+        resampler.latency_frames() - whole.spectral.blocks().hop_out() as f64
     }
 
     fn an_odd_rate() -> SampleRate {
