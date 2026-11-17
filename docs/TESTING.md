@@ -154,12 +154,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Dependencies
-- [M · 0.12.1] `mibz2`, released three times on 2026-11-16 by one author with some 170 `unsafe`
-  lines and SIMD kernels chosen at run time, now decodes the MusicBrainz export and every hourly
-  packet off the network, beside a workspace that forbids `unsafe_code`; it is declared as a bare
-  `"0.5.2"` against `dependencies.md`'s spelling. Fuzz it (above) and hold it to `libbz2-rs-sys`
-  (already a dev-dependency) on generated archives, or keep it for the whole export alone and read
-  the packets with `bzip2`, and record the decision in `dependencies.md`
 - [S · blocked: gpui] `cargo audit`'s other warnings are other crates' trees: `glib` 0.18.5 unsound
   (RUSTSEC-2024-0429) under `tao`, `webkit2gtk` and wry, for `resonate-signin`'s window alone; zbus
   5 under gpui's accesskit and ashpd, beside `resonate-mpris`'s zbus 6 (two built), with
