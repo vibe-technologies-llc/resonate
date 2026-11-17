@@ -100,6 +100,9 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.12.1] Investigate: `two_zones_play_apart_each_steered_alone_while_a_setting_reaches_both`
+  (`resonate-engine`'s `transport.rs`) failed once in a full `-p resonate-engine` run and passed alone
+  and on rerun; find the timing it leans on
 - [S · 0.12.1] Investigate: `a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it`
   (`resonate-mobile`'s `sync/copied.rs`) fails on the development machine, alone and in the headless run,
   with *the copy kept on the phone never happened* after its 40 s; seen on 2026-11-17 on a tree

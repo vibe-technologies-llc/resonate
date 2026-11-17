@@ -120,6 +120,10 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 - [L · blocked: symphonia] Opus mapping families 2, 3 and 255 are refused by its `OpusHead` reader;
   families 2 and 3 would also need projection decoding
 
+## Lyrics
+- [S · 0.13.0] The phones have no per-song lyric offset: the desktop's *lyrics ahead* (`LyricsAhead`)
+  shifts a song's sheet, and Android and iOS apply only a sheet's own `[offset:]`
+
 ## Tagging
 - [M · 0.13.0] Fetched lyrics stay in the catalog: `TagField` has no lyrics field and LRCLIB's or
   Better Lyrics' sheets live in `lyrics_kept` alone, so another player, a portable one or a phone

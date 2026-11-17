@@ -79,6 +79,9 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.12.1] An equaliser change spliced in while a gain step still waits (`GainStage`'s waiting
   steps, a few milliseconds after a gapless turn) builds the new chain at the entering gain and drops
   the waiting step, so the leaving tail is heard at the entering track's gain
+- [S · 0.12.1] Lyrics on a UPnP renderer light up to a second late: the heard position follows the
+  renderer's `RelTime`, which most renderers report in whole seconds, so a line waits for the next
+  whole second; interpolate between reports from the clock the stream is paced by
 
 ## Catalog
 - [S · 0.12.1] One silent track keeps a whole album from a measured album gain: `album_loudness`
