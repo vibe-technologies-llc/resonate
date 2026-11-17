@@ -1235,6 +1235,7 @@ impl RootView {
             shift,
             rows: acting_on.clone(),
             title: drawn.title.clone(),
+            over: Some(Arc::clone(entries)),
         };
         let held = Arc::clone(entries);
         let entries_drawn = Arc::clone(entries);

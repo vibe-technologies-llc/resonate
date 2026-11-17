@@ -1007,7 +1007,13 @@ impl Library {
             .iter()
             .position(|row| places.get(&row.path).is_some_and(|other| *other > place));
         if let Some(to) = ahead_of_it {
-            playlist::move_rows(self.inner(), id, resonate_core::Span::between(at, at), to)?;
+            playlist::move_rows(
+                self.inner(),
+                id,
+                resonate_core::Span::between(at, at),
+                to,
+                None,
+            )?;
         }
         Ok(())
     }

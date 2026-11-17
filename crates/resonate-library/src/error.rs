@@ -284,6 +284,9 @@ pub enum Error {
     )]
     KeptInOrder { playlist: PlaylistId },
 
+    #[error("playlist {playlist} has changed since the rows an edit names were drawn")]
+    PlaylistMovedSinceDrawn { playlist: PlaylistId },
+
     #[error("playlist {playlist} came from a link this build cannot read back")]
     UnreadablePlaylistSource { playlist: PlaylistId },
 

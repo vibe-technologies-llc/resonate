@@ -362,6 +362,7 @@ fn standing_in_the_way(error: &resonate_library::Error) -> Option<String> {
         Library::DestinationNotADirectory { .. } => words::toast::no_music_folder(),
         Library::DuplicatePlaylist { .. } => words::toast::duplicate_playlist(),
         Library::UnnamedPlaylist => words::toast::unnamed_playlist(),
+        Library::PlaylistMovedSinceDrawn { .. } => words::toast::playlist_moved_since_drawn(),
         Library::RootNotADirectory { .. } => words::toast::not_a_folder(),
         Library::RootInsideRoot { .. } => words::toast::root_inside_root(),
         Library::NotARoot { .. } => words::toast::not_a_root(),

@@ -17,9 +17,9 @@ use rusqlite::{
 use unicode_normalization::UnicodeNormalization as _;
 
 use crate::{
-    Clause, Cut, Direction, Error, Exported, Imported, Kept, Library, NamedPlaylist, OrderedColumn,
-    Playlist, PlaylistEntry, PlaylistName, PlaylistOrder, Result, RowOrder, SavedQuery, Search,
-    Sources, StoreOp, Track, TrackQuery,
+    AsDrawn, Clause, Cut, Direction, Error, Exported, Imported, Kept, Library, NamedPlaylist,
+    OrderedColumn, Playlist, PlaylistEntry, PlaylistName, PlaylistOrder, Result, RowOrder,
+    SavedQuery, Search, Sources, StoreOp, Track, TrackQuery,
     db::{self, BESIDE_A_TRACK, Inner, Narrowed, RawTrack, TRACK_COLUMNS},
     sheet::{self, Listed},
     sourced, store, synced,
@@ -912,10 +912,17 @@ pub fn add(inner: &Inner, id: PlaylistId, cuts: &[Cut]) -> Result<usize> {
     add_as(inner, id, Edit::Added, cuts)
 }
 
-pub fn insert_at(inner: &Inner, id: PlaylistId, cuts: &[Cut], at: usize) -> Result<usize> {
+pub fn insert_at(
+    inner: &Inner,
+    id: PlaylistId,
+    cuts: &[Cut],
+    at: usize,
+    drawn: Option<&AsDrawn>,
+) -> Result<usize> {
     let wanted = Adding::of(cuts)?;
     let added = undo::edited(inner, id, Edit::Added, Reach::From(at), |transaction| {
         only_a_list(transaction, id)?;
+        stands_as_drawn(transaction, id, drawn)?;
         if wanted.rows.is_empty() {
             return Ok(Change::Nothing(0));
         }
@@ -1009,10 +1016,16 @@ pub fn copy(
     add_as(inner, into, Edit::Copied, &taken)
 }
 
-pub fn remove_rows(inner: &Inner, id: PlaylistId, rows: Span) -> Result<bool> {
+pub fn remove_rows(
+    inner: &Inner,
+    id: PlaylistId,
+    rows: Span,
+    drawn: Option<&AsDrawn>,
+) -> Result<bool> {
     let reach = Reach::Emptied(rows);
     let changed = undo::edited(inner, id, Edit::Removed, reach, |transaction| {
         only_a_list(transaction, id)?;
+        stands_as_drawn(transaction, id, drawn)?;
         let held = length(transaction, id)?;
         let Some(rows) = up_to_the_end(rows, held) else {
             return Ok(Change::Nothing(false));
@@ -1040,13 +1053,25 @@ pub fn remove_rows(inner: &Inner, id: PlaylistId, rows: Span) -> Result<bool> {
     Ok(changed)
 }
 
-pub fn remove_runs(inner: &Inner, id: PlaylistId, runs: &[Span]) -> Result<usize> {
-    dropped_where(inner, id, Edit::Removed, Going::Rows(runs))
+pub fn remove_runs(
+    inner: &Inner,
+    id: PlaylistId,
+    runs: &[Span],
+    drawn: Option<&AsDrawn>,
+) -> Result<usize> {
+    dropped_where(inner, id, Edit::Removed, Going::Rows(runs), drawn)
 }
 
-pub fn gather_rows(inner: &Inner, id: PlaylistId, runs: &[Span], onto: usize) -> Result<bool> {
+pub fn gather_rows(
+    inner: &Inner,
+    id: PlaylistId,
+    runs: &[Span],
+    onto: usize,
+    drawn: Option<&AsDrawn>,
+) -> Result<bool> {
     let changed = undo::edited(inner, id, Edit::Moved, Reach::Whole, |transaction| {
         only_a_list(transaction, id)?;
+        stands_as_drawn(transaction, id, drawn)?;
         refuse_a_kept_order(transaction, id)?;
         let held = numbered(transaction, id)?;
         let Some(order) = Span::gathered(runs, held.len(), onto) else {
@@ -1080,10 +1105,17 @@ pub fn gather_rows(inner: &Inner, id: PlaylistId, runs: &[Span], onto: usize) ->
     Ok(changed)
 }
 
-pub fn move_rows(inner: &Inner, id: PlaylistId, rows: Span, to: usize) -> Result<bool> {
+pub fn move_rows(
+    inner: &Inner,
+    id: PlaylistId,
+    rows: Span,
+    to: usize,
+    drawn: Option<&AsDrawn>,
+) -> Result<bool> {
     let reach = Reach::Shuffled(Span::between(rows.first().min(to), rows.last().max(to)));
     let changed = undo::edited(inner, id, Edit::Moved, reach, |transaction| {
         only_a_list(transaction, id)?;
+        stands_as_drawn(transaction, id, drawn)?;
         refuse_a_kept_order(transaction, id)?;
         let held = length(transaction, id)?;
         if rows.holds(to) || rows.last() >= held || to >= held {
@@ -1210,20 +1242,20 @@ fn moved_from(held: &[Row], wanted: &[Row]) -> usize {
 
 pub fn prune(inner: &Inner, id: PlaylistId) -> Result<usize> {
     let gone = gone_from(inner, id)?;
-    dropped_where(inner, id, Edit::Tidied, Going::Gone(&gone))
+    dropped_where(inner, id, Edit::Tidied, Going::Gone(&gone), None)
 }
 
 pub fn tidy(inner: &Inner, id: PlaylistId) -> Result<usize> {
     let gone = gone_from(inner, id)?;
-    dropped_where(inner, id, Edit::Tidied, Going::Unwanted(&gone))
+    dropped_where(inner, id, Edit::Tidied, Going::Unwanted(&gone), None)
 }
 
 pub fn fold_doubles(inner: &Inner, id: PlaylistId) -> Result<usize> {
-    dropped_where(inner, id, Edit::Folded, Going::Doubled)
+    dropped_where(inner, id, Edit::Folded, Going::Doubled, None)
 }
 
 pub fn remove_matching(inner: &Inner, id: PlaylistId, matching: &str) -> Result<usize> {
-    dropped_where(inner, id, Edit::Dropped, Going::Matching(matching))
+    dropped_where(inner, id, Edit::Dropped, Going::Matching(matching), None)
 }
 
 enum Going<'a> {
@@ -1288,10 +1320,19 @@ fn matched_in(transaction: &Transaction<'_>, id: PlaylistId, text: &str) -> Resu
         .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
-fn dropped_where(inner: &Inner, id: PlaylistId, edit: Edit, question: Going<'_>) -> Result<usize> {
+fn dropped_where(
+    inner: &Inner,
+    id: PlaylistId,
+    edit: Edit,
+    question: Going<'_>,
+    drawn: Option<&AsDrawn>,
+) -> Result<usize> {
     let dropped = undo::edited(inner, id, edit, Reach::Whole, |transaction| {
         only_a_list(transaction, id)?;
         let held = numbered(transaction, id)?;
+        if let Some(drawn) = drawn {
+            held_as_drawn(&held, id, drawn)?;
+        }
         let going = asked_of(transaction, id, &held, question)?;
         let Some(first) = going.iter().position(|going| *going) else {
             return Ok(Change::Nothing(0));
@@ -1784,6 +1825,35 @@ fn only_a_list(transaction: &Transaction<'_>, id: PlaylistId) -> Result<()> {
     match asked_in(transaction, id)? {
         Some(_) => Err(Error::NotAList { playlist: id }),
         None => Ok(()),
+    }
+}
+
+fn stands_as_drawn(
+    transaction: &Transaction<'_>,
+    id: PlaylistId,
+    drawn: Option<&AsDrawn>,
+) -> Result<()> {
+    match drawn {
+        Some(drawn) => held_as_drawn(&numbered(transaction, id)?, id, drawn),
+        None => Ok(()),
+    }
+}
+
+fn held_as_drawn(held: &[(i64, Row)], id: PlaylistId, drawn: &AsDrawn) -> Result<()> {
+    let moved = Error::PlaylistMovedSinceDrawn { playlist: id };
+    if drawn.is_whole() && held.len() != drawn.entries().len() {
+        return Err(moved);
+    }
+    let stands = |entry: &PlaylistEntry| {
+        let standing = held
+            .binary_search_by_key(&(entry.position as i64), |(position, _)| *position)
+            .ok()
+            .map(|at| &held[at].1);
+        standing.is_some_and(|row| Row::of(&entry.cut).is_ok_and(|drawn| drawn == *row))
+    };
+    match drawn.entries().iter().all(stands) {
+        true => Ok(()),
+        false => Err(moved),
     }
 }
 
@@ -2437,12 +2507,12 @@ mod tests {
             for shuffle in shuffling {
                 let (answered, expected) = match shuffle {
                     Shuffle::Move { rows, to } => (
-                        move_rows(library.inner(), id, rows, to)
+                        move_rows(library.inner(), id, rows, to, None)
                             .expect("the catalog answers a move"),
                         dropped_on(&mut model, rows, to),
                     ),
                     Shuffle::Take { rows } => (
-                        remove_rows(library.inner(), id, rows)
+                        remove_rows(library.inner(), id, rows, None)
                             .expect("the catalog answers a removal"),
                         taken_out(&mut model, rows),
                     ),
@@ -2468,10 +2538,10 @@ mod tests {
                 rows.last()
             };
 
-            prop_assert!(move_rows(library.inner(), id, rows, to)
+            prop_assert!(move_rows(library.inner(), id, rows, to, None)
                 .expect("the catalog answers a move"));
             prop_assert_ne!(positions(&library, id), as_listed(&before));
-            prop_assert!(move_rows(library.inner(), id, back, onto)
+            prop_assert!(move_rows(library.inner(), id, back, onto, None)
                 .expect("the catalog answers the move back"));
             prop_assert_eq!(positions(&library, id), as_listed(&before));
         });

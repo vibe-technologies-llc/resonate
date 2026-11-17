@@ -4838,6 +4838,132 @@ mod tests {
         assert_eq!(driven.queue(), ids);
     }
 
+    fn opened_playlist(driven: &mut Driven) -> resonate_core::PlaylistId {
+        driven
+            .read(|root, cx| root.library.read(cx).opened())
+            .expect("a playlist is open")
+    }
+
+    fn moved_behind_the_window(
+        root: &RootView,
+        playlist: resonate_core::PlaylistId,
+        cx: &gpui::App,
+    ) {
+        root.library
+            .read(cx)
+            .catalog()
+            .move_in_playlist(playlist, Span::one(4), 0)
+            .expect("another edit lands first");
+    }
+
+    fn refusal_told_and_the_other_edit_drawn(driven: &mut Driven, last: TrackId) {
+        driven.until(|_, cx| {
+            crate::toast::showing_text(cx).is_some_and(|said| said.contains("changed first"))
+        });
+        driven.until(|root, cx| {
+            root.library
+                .read(cx)
+                .entries()
+                .first()
+                .and_then(|entry| entry.track.as_ref())
+                .is_some_and(|track| track.id == last)
+        });
+    }
+
+    #[gpui::test]
+    fn a_playlist_row_taken_out_after_another_edit_landed_first_is_refused_and_said(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
+        let playlist = opened_playlist(&mut driven);
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            moved_behind_the_window(root, playlist, cx);
+            root.drop_rows(Shift::Playlist(playlist), Span::one(0), cx);
+        });
+        refusal_told_and_the_other_edit_drawn(&mut driven, ids[4]);
+
+        assert_eq!(
+            entries_held(&mut driven),
+            [ids[4], ids[0], ids[1], ids[2], ids[3]]
+        );
+    }
+
+    #[gpui::test]
+    fn a_playlist_row_moved_after_another_edit_landed_first_is_refused_and_said(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
+        let playlist = opened_playlist(&mut driven);
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            moved_behind_the_window(root, playlist, cx);
+            root.shift_rows(Shift::Playlist(playlist), Span::one(0), 2, cx);
+        });
+        refusal_told_and_the_other_edit_drawn(&mut driven, ids[4]);
+
+        assert_eq!(
+            entries_held(&mut driven),
+            [ids[4], ids[0], ids[1], ids[2], ids[3]]
+        );
+    }
+
+    #[gpui::test]
+    fn rows_dropped_into_a_playlist_after_another_edit_landed_first_are_refused_and_said(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
+        let playlist = opened_playlist(&mut driven);
+        let dropped = driven.read(|root, cx| root.library.read(cx).held_tracks(&ids[..1]));
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            let drawn = root.library.read(cx).playlist_as_drawn();
+            moved_behind_the_window(root, playlist, cx);
+            root.landed(
+                &dropped,
+                crate::views::reorder::LiftedTo::PlaylistAt(playlist, 1),
+                drawn,
+                cx,
+            );
+        });
+        refusal_told_and_the_other_edit_drawn(&mut driven, ids[4]);
+
+        assert_eq!(
+            entries_held(&mut driven),
+            [ids[4], ids[0], ids[1], ids[2], ids[3]]
+        );
+    }
+
+    #[gpui::test]
+    fn rows_carried_over_a_playlist_that_has_since_moved_are_not_dropped(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
+        let playlist = opened_playlist(&mut driven);
+        let carried = driven.read(|root, cx| crate::views::reorder::Carried {
+            shift: Shift::Playlist(playlist),
+            rows: crate::views::reorder::Chosen::of(Span::one(0)),
+            title: "Aa".into(),
+            over: Some(root.library.read(cx).entries()),
+        });
+
+        assert!(driven.read(|root, cx| root.carried_over_what_is_drawn(&carried, cx)));
+
+        driven.read(|root, cx| moved_behind_the_window(root, playlist, cx));
+        driven.until(|root, cx| {
+            root.library
+                .read(cx)
+                .entries()
+                .first()
+                .and_then(|entry| entry.track.as_ref())
+                .is_some_and(|track| track.id == ids[4])
+        });
+
+        assert!(!driven.read(|root, cx| root.carried_over_what_is_drawn(&carried, cx)));
+    }
+
     #[gpui::test]
     fn taking_out_playlist_rows_chosen_apart_is_one_edit_and_one_undo(cx: &mut TestAppContext) {
         let folder = Folder::new();

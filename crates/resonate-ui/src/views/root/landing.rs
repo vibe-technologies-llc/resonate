@@ -1,6 +1,6 @@
 use gpui::{App, Context, ScrollStrategy, Window};
 use resonate_core::{AlbumId, ArtistsDrawn};
-use resonate_library::{Cut, Track};
+use resonate_library::{AsDrawn, Cut, Track};
 
 use super::{Pane, RootView, listed, read_each};
 use crate::{
@@ -66,10 +66,11 @@ impl RootView {
     }
 
     pub(crate) fn lifted_into(&mut self, lifted: &Lifted, into: LiftedTo, cx: &mut Context<Self>) {
+        let drawn = self.library.read(cx).playlist_as_drawn();
         match &lifted.lift {
-            Lift::Tracks(run) => self.landed(&run.tracks(), into, cx),
-            Lift::Album(album, _) => self.landed_albums(vec![*album], into, cx),
-            Lift::Albums(run) => self.landed_albums(run.albums(), into, cx),
+            Lift::Tracks(run) => self.landed(&run.tracks(), into, drawn, cx),
+            Lift::Album(album, _) => self.landed_albums(vec![*album], into, drawn, cx),
+            Lift::Albums(run) => self.landed_albums(run.albums(), into, drawn, cx),
         }
     }
 
@@ -77,6 +78,7 @@ impl RootView {
         &mut self,
         albums: Vec<AlbumId>,
         into: LiftedTo,
+        drawn: AsDrawn,
         cx: &mut Context<Self>,
     ) {
         let library = self.library.read(cx).catalog();
@@ -88,7 +90,7 @@ impl RootView {
                 .spawn(async move { read_each(&library, scopes) })
                 .await;
             let _ = this.update(cx, |this, cx| match read {
-                Ok(tracks) => this.landed(&tracks, into, cx),
+                Ok(tracks) => this.landed(&tracks, into, drawn, cx),
                 Err(error) => {
                     tracing::error!(%error, "a dragged album could not be read");
                     toast::tell(toast::could_not(words::root::read_that_album(), &error), cx);
@@ -98,7 +100,13 @@ impl RootView {
         .detach();
     }
 
-    pub(super) fn landed(&mut self, tracks: &[Track], into: LiftedTo, cx: &mut Context<Self>) {
+    pub(crate) fn landed(
+        &mut self,
+        tracks: &[Track],
+        into: LiftedTo,
+        drawn: AsDrawn,
+        cx: &mut Context<Self>,
+    ) {
         if tracks.is_empty() {
             return;
         }
@@ -113,7 +121,7 @@ impl RootView {
             LiftedTo::PlaylistAt(playlist, at) => {
                 let cuts = tracks.iter().map(Cut::of).collect();
                 self.library.update(cx, |library, cx| {
-                    library.insert_into_playlist(playlist, cuts, at, cx);
+                    library.insert_into_playlist(playlist, cuts, at, drawn, cx);
                 });
             }
         }

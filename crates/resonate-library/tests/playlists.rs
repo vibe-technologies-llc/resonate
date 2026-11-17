@@ -10,7 +10,7 @@ use std::{
 
 use resonate_core::{FrameSpan, Frames, MediaLocation, PlaylistId, Span};
 use resonate_library::{
-    Cut, Direction, Error, Library, PlaylistOrder, Result, ScanOptions, ScanStats,
+    AsDrawn, Cut, Direction, Error, Library, PlaylistOrder, Result, ScanOptions, ScanStats,
 };
 use support::link_to_directory;
 
@@ -194,6 +194,78 @@ fn an_undo_refuses_a_playlist_another_catalog_changed_since_the_edit() -> Result
         "an undo destroyed the row the other catalog added"
     );
     assert_eq!(ours.redoable(), None);
+    Ok(())
+}
+
+fn as_drawn_now(library: &Library, id: PlaylistId) -> Result<AsDrawn> {
+    Ok(AsDrawn::whole(library.playlist_entries(id, None)?.into()))
+}
+
+fn refused_as_moved(edited: Result<impl std::fmt::Debug>, id: PlaylistId) -> bool {
+    matches!(edited, Err(Error::PlaylistMovedSinceDrawn { playlist }) if playlist == id)
+}
+
+#[test]
+fn an_edit_by_position_is_refused_once_the_playlist_has_moved_since_it_was_drawn() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let id = library.start_playlist(
+        "Evening",
+        &["a", "b", "c", "d"].map(|name| whole(format!("/music/{name}.wav"))),
+    )?;
+    let drawn = as_drawn_now(&library, id)?;
+
+    library.move_in_playlist(id, Span::one(0), 3)?;
+    let moved = library.playlist_cuts(id)?;
+    let gathered =
+        library.gather_in_playlist_as_drawn(id, &[Span::one(0), Span::one(2)], 3, &drawn);
+    let shifted = library.move_in_playlist_as_drawn(id, Span::one(1), 3, &drawn);
+    let removed = library.remove_from_playlist_as_drawn(id, Span::one(0), &drawn);
+    let dropped =
+        library.remove_runs_from_playlist_as_drawn(id, &[Span::one(0), Span::one(2)], &drawn);
+    let inserted = library.insert_into_playlist_as_drawn(id, &[whole("/music/e.wav")], 1, &drawn);
+
+    assert!(refused_as_moved(gathered, id));
+    assert!(refused_as_moved(shifted, id));
+    assert!(refused_as_moved(removed, id));
+    assert!(refused_as_moved(dropped, id));
+    assert!(refused_as_moved(inserted, id));
+    assert_eq!(
+        library.playlist_cuts(id)?,
+        moved,
+        "a refused edit changed nothing"
+    );
+    Ok(())
+}
+
+#[test]
+fn an_edit_by_position_lands_where_the_playlist_still_stands_as_drawn() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let id = library.start_playlist(
+        "Evening",
+        &["a", "b", "c", "d"].map(|name| whole(format!("/music/{name}.wav"))),
+    )?;
+
+    library.move_in_playlist_as_drawn(id, Span::one(0), 3, &as_drawn_now(&library, id)?)?;
+    library.remove_from_playlist_as_drawn(id, Span::one(0), &as_drawn_now(&library, id)?)?;
+    let narrowed = AsDrawn::narrowed(
+        library
+            .playlist_entries(id, None)?
+            .into_iter()
+            .filter(|entry| entry.position == 1)
+            .collect(),
+    );
+    library.add_to_playlist(id, &[whole("/music/e.wav")])?;
+    library.remove_runs_from_playlist_as_drawn(id, &[Span::one(1)], &narrowed)?;
+
+    assert_eq!(
+        paths(&library, id)?,
+        ["/music/c.wav", "/music/a.wav", "/music/e.wav"].map(PathBuf::from),
+        "a narrowed stamp stands while the rows it drew stand where they were"
+    );
+    assert!(refused_as_moved(
+        library.remove_runs_from_playlist_as_drawn(id, &[Span::one(1)], &narrowed),
+        id
+    ));
     Ok(())
 }
 

@@ -1,6 +1,7 @@
 use std::{
     ffi::OsStr,
     path::{Path, PathBuf},
+    sync::Arc,
     time::{Duration, SystemTime},
 };
 
@@ -421,6 +422,36 @@ impl PlaylistEntry {
 
     pub const fn span(&self) -> Option<FrameSpan> {
         self.cut.span
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AsDrawn {
+    entries: Arc<[PlaylistEntry]>,
+    whole: bool,
+}
+
+impl AsDrawn {
+    pub const fn whole(entries: Arc<[PlaylistEntry]>) -> Self {
+        Self {
+            entries,
+            whole: true,
+        }
+    }
+
+    pub const fn narrowed(entries: Arc<[PlaylistEntry]>) -> Self {
+        Self {
+            entries,
+            whole: false,
+        }
+    }
+
+    pub fn entries(&self) -> &[PlaylistEntry] {
+        &self.entries
+    }
+
+    pub const fn is_whole(&self) -> bool {
+        self.whole
     }
 }
 

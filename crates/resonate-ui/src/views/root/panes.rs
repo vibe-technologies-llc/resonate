@@ -9,7 +9,7 @@ use crate::{
     ResonateApp,
     views::{
         pointed::{self},
-        reorder::{Chosen, Reach, Shift, Step},
+        reorder::{Carried, Chosen, Reach, Shift, Step},
         search::SearchShows,
         settings::Category,
     },
@@ -145,9 +145,17 @@ impl RootView {
             Shift::Listing(_) => {}
             Shift::Queue => self.send_by_position(Command::Move { rows, to }, cx),
             Shift::Playlist(playlist) => self.library.update(cx, |library, cx| {
-                library.move_in_playlist(playlist, rows, to, cx);
+                let drawn = library.playlist_as_drawn();
+                library.move_in_playlist(playlist, rows, to, drawn, cx);
             }),
         }
+    }
+
+    pub(crate) fn carried_over_what_is_drawn(&self, carried: &Carried, cx: &App) -> bool {
+        carried
+            .over
+            .as_deref()
+            .is_none_or(|over| self.library.read(cx).entries_are(over))
     }
 
     pub(crate) fn shift_chosen(
@@ -169,7 +177,8 @@ impl RootView {
         let landed = chosen.gathered_by(to, held);
         let runs = chosen.runs().to_vec();
         self.library.update(cx, |library, cx| {
-            library.gather_in_playlist(playlist, runs, to, cx);
+            let drawn = library.playlist_as_drawn();
+            library.gather_in_playlist(playlist, runs, to, drawn, cx);
         });
         if let Some(landed) = landed {
             self.set_reach(

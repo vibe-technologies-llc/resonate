@@ -148,8 +148,8 @@ pub use crate::{
     },
     meant::{ByArtist, Meant},
     model::{
-        Album, AlbumToAsk, Artist, ArtistDetail, ArtistToAsk, ArtistTotals, Compacted, Counted,
-        CoverSource, Cut, Exported, Favoured, HeldMedium, HeldReleaseTrack, Imported,
+        Album, AlbumToAsk, Artist, ArtistDetail, ArtistToAsk, ArtistTotals, AsDrawn, Compacted,
+        Counted, CoverSource, Cut, Exported, Favoured, HeldMedium, HeldReleaseTrack, Imported,
         KeptCorrection, KeptIndex, KeptLyrics, Listen, Measured, Missing, MissingTrack,
         NamedPlaylist, Playing, Playlist, PlaylistEntry, PlaylistFormat, PortraitWanted, Pruned,
         ReleaseDetail, Released, Track, TrackToAsk, Unfinished, UnheldRelease, VaultObject, Want,

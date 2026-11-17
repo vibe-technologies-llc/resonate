@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use gpui::{
     AnyElement, Bounds, Context, Div, DragMoveEvent, IntoElement, Pixels, Point, Render,
@@ -7,7 +7,7 @@ use gpui::{
 };
 use resonate_core::{AlbumId, PlaylistId, Span};
 use resonate_engine::Placement;
-use resonate_library::{Album, Track};
+use resonate_library::{Album, PlaylistEntry, Track};
 
 use crate::{
     held::Rows,
@@ -393,6 +393,7 @@ pub(crate) struct Carried {
     pub(crate) shift: Shift,
     pub(crate) rows: Chosen,
     pub(crate) title: SharedString,
+    pub(crate) over: Option<Arc<[PlaylistEntry]>>,
 }
 
 #[derive(Clone, Debug)]
@@ -615,7 +616,7 @@ pub(crate) fn movable(
         })
         .drag_over::<Carried>(|style, _, _, _| style.bg(rgb(theme::hover())))
         .on_drop(cx.listener(move |this, carried: &Carried, _, cx| {
-            if carried.shift == shift {
+            if carried.shift == shift && this.carried_over_what_is_drawn(carried, cx) {
                 this.shift_chosen(shift, &carried.rows, onto, cx);
             }
         }))

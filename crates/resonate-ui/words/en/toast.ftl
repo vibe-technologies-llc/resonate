@@ -12,6 +12,7 @@ no-vault = there's no vault yet
 no-music-folder = the music folder isn't there
 duplicate-playlist = a playlist already has that name
 unnamed-playlist = it needs a name
+playlist-moved-since-drawn = the playlist changed first, so nothing was moved or taken out
 not-a-folder = that isn't a folder
 root-inside-root = that folder is already in the library
 not-a-root = that folder isn't in the library

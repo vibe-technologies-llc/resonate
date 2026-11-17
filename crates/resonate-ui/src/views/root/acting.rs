@@ -245,7 +245,8 @@ impl RootView {
                 self.set_reach(Reach::after_dropping_runs(shift, &runs, held), cx);
                 self.typing.landed_by_a_jump = None;
                 self.library.update(cx, |library, cx| {
-                    library.remove_runs_from_playlist(playlist, runs, cx);
+                    let drawn = library.playlist_as_drawn();
+                    library.remove_runs_from_playlist(playlist, runs, drawn, cx);
                 });
                 cx.notify();
             }
@@ -262,7 +263,8 @@ impl RootView {
             Shift::Playlist(playlist) => {
                 let held = self.library.read(cx).entries().len();
                 self.library.update(cx, |library, cx| {
-                    library.remove_from_playlist(playlist, rows, cx);
+                    let drawn = library.playlist_as_drawn();
+                    library.remove_from_playlist(playlist, rows, drawn, cx);
                 });
                 held
             }

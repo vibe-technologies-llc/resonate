@@ -2,7 +2,9 @@ use std::{path::PathBuf, sync::Arc};
 
 use gpui::Context;
 use resonate_core::{PlaylistId, QueueStamp, Span};
-use resonate_library::{Cut, Direction, Kept, Playing, PlaylistEntry, RowOrder, SavedQuery};
+use resonate_library::{
+    AsDrawn, Cut, Direction, Kept, Playing, PlaylistEntry, RowOrder, SavedQuery,
+};
 
 use super::{
     Change, LibraryModel, arranged::read_in, put_it_back, unnamed_playlist, watched::put_into,
@@ -17,6 +19,14 @@ impl LibraryModel {
 
     pub fn entries_are(&self, drawn: &[PlaylistEntry]) -> bool {
         *self.shelf.entries == *drawn
+    }
+
+    pub fn playlist_as_drawn(&self) -> AsDrawn {
+        let entries = Arc::clone(&self.shelf.entries);
+        match self.narrowing() {
+            Some(_) => AsDrawn::narrowed(entries),
+            None => AsDrawn::whole(entries),
+        }
     }
 
     pub fn playing_playlist(&self, queue: QueueStamp) -> Option<PlaylistId> {
@@ -153,22 +163,33 @@ impl LibraryModel {
         id: PlaylistId,
         holding: Vec<Cut>,
         at: usize,
+        drawn: AsDrawn,
         cx: &mut Context<Self>,
     ) {
         self.edit(
             Change::Playlist,
             move |library| {
-                let added = library.insert_into_playlist(id, &holding, at)?;
+                let added = library.insert_into_playlist_as_drawn(id, &holding, at, &drawn)?;
                 put_into(library, id, added).map(Some)
             },
             cx,
         );
     }
 
-    pub fn remove_from_playlist(&mut self, id: PlaylistId, rows: Span, cx: &mut Context<Self>) {
+    pub fn remove_from_playlist(
+        &mut self,
+        id: PlaylistId,
+        rows: Span,
+        drawn: AsDrawn,
+        cx: &mut Context<Self>,
+    ) {
         self.edit(
             Change::Playlist,
-            move |library| library.remove_from_playlist(id, rows).map(|_| None),
+            move |library| {
+                library
+                    .remove_from_playlist_as_drawn(id, rows, &drawn)
+                    .map(|_| None)
+            },
             cx,
         );
     }
@@ -177,11 +198,16 @@ impl LibraryModel {
         &mut self,
         id: PlaylistId,
         runs: Vec<Span>,
+        drawn: AsDrawn,
         cx: &mut Context<Self>,
     ) {
         self.edit(
             Change::Playlist,
-            move |library| library.remove_runs_from_playlist(id, &runs).map(|_| None),
+            move |library| {
+                library
+                    .remove_runs_from_playlist_as_drawn(id, &runs, &drawn)
+                    .map(|_| None)
+            },
             cx,
         );
     }
@@ -191,11 +217,16 @@ impl LibraryModel {
         id: PlaylistId,
         runs: Vec<Span>,
         onto: usize,
+        drawn: AsDrawn,
         cx: &mut Context<Self>,
     ) {
         self.edit(
             Change::Playlist,
-            move |library| library.gather_in_playlist(id, &runs, onto).map(|_| None),
+            move |library| {
+                library
+                    .gather_in_playlist_as_drawn(id, &runs, onto, &drawn)
+                    .map(|_| None)
+            },
             cx,
         );
     }
@@ -221,11 +252,16 @@ impl LibraryModel {
         id: PlaylistId,
         rows: Span,
         to: usize,
+        drawn: AsDrawn,
         cx: &mut Context<Self>,
     ) {
         self.edit(
             Change::Playlist,
-            move |library| library.move_in_playlist(id, rows, to).map(|_| None),
+            move |library| {
+                library
+                    .move_in_playlist_as_drawn(id, rows, to, &drawn)
+                    .map(|_| None)
+            },
             cx,
         );
     }

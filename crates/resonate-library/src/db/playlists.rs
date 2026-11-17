@@ -4,7 +4,7 @@ use resonate_core::{AlbumId, PlaylistId, Span};
 
 use super::Library;
 use crate::{
-    Cut, Direction, Exported, Imported, Kept, NamedPlaylist, Playlist, PlaylistEntry,
+    AsDrawn, Cut, Direction, Exported, Imported, Kept, NamedPlaylist, Playlist, PlaylistEntry,
     PlaylistOrder, Result, RowOrder, SavedQuery, Undoable,
     playlist::{self},
     undo::{self},
@@ -127,7 +127,7 @@ impl Library {
     }
 
     pub fn insert_into_playlist(&self, id: PlaylistId, cuts: &[Cut], at: usize) -> Result<usize> {
-        playlist::insert_at(&self.inner, id, cuts, at)
+        playlist::insert_at(&self.inner, id, cuts, at, None)
     }
 
     pub fn copy_playlist(
@@ -140,15 +140,15 @@ impl Library {
     }
 
     pub fn remove_from_playlist(&self, id: PlaylistId, rows: Span) -> Result<bool> {
-        playlist::remove_rows(&self.inner, id, rows)
+        playlist::remove_rows(&self.inner, id, rows, None)
     }
 
     pub fn remove_runs_from_playlist(&self, id: PlaylistId, runs: &[Span]) -> Result<usize> {
-        playlist::remove_runs(&self.inner, id, runs)
+        playlist::remove_runs(&self.inner, id, runs, None)
     }
 
     pub fn gather_in_playlist(&self, id: PlaylistId, runs: &[Span], onto: usize) -> Result<bool> {
-        playlist::gather_rows(&self.inner, id, runs, onto)
+        playlist::gather_rows(&self.inner, id, runs, onto, None)
     }
 
     pub fn remove_matching(&self, id: PlaylistId, matching: &str) -> Result<usize> {
@@ -156,7 +156,55 @@ impl Library {
     }
 
     pub fn move_in_playlist(&self, id: PlaylistId, rows: Span, to: usize) -> Result<bool> {
-        playlist::move_rows(&self.inner, id, rows, to)
+        playlist::move_rows(&self.inner, id, rows, to, None)
+    }
+
+    pub fn insert_into_playlist_as_drawn(
+        &self,
+        id: PlaylistId,
+        cuts: &[Cut],
+        at: usize,
+        drawn: &AsDrawn,
+    ) -> Result<usize> {
+        playlist::insert_at(&self.inner, id, cuts, at, Some(drawn))
+    }
+
+    pub fn remove_from_playlist_as_drawn(
+        &self,
+        id: PlaylistId,
+        rows: Span,
+        drawn: &AsDrawn,
+    ) -> Result<bool> {
+        playlist::remove_rows(&self.inner, id, rows, Some(drawn))
+    }
+
+    pub fn remove_runs_from_playlist_as_drawn(
+        &self,
+        id: PlaylistId,
+        runs: &[Span],
+        drawn: &AsDrawn,
+    ) -> Result<usize> {
+        playlist::remove_runs(&self.inner, id, runs, Some(drawn))
+    }
+
+    pub fn gather_in_playlist_as_drawn(
+        &self,
+        id: PlaylistId,
+        runs: &[Span],
+        onto: usize,
+        drawn: &AsDrawn,
+    ) -> Result<bool> {
+        playlist::gather_rows(&self.inner, id, runs, onto, Some(drawn))
+    }
+
+    pub fn move_in_playlist_as_drawn(
+        &self,
+        id: PlaylistId,
+        rows: Span,
+        to: usize,
+        drawn: &AsDrawn,
+    ) -> Result<bool> {
+        playlist::move_rows(&self.inner, id, rows, to, Some(drawn))
     }
 
     pub fn sort_playlist(

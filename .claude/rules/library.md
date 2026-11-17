@@ -2368,6 +2368,19 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   stats each distinct path first through a reader (a downed mount holds no write lock). A refused
   edit still pays the restore point. `copy_playlist` reads its source outside its transaction by
   design.
+- **An edit by position names the rows it was drawn over, and the transaction refuses it once they
+  have moved.** `AsDrawn` holds the `PlaylistEntry`s a window drew (`AsDrawn::whole`, or
+  `AsDrawn::narrowed` under a search, whose rows stand at their own positions);
+  `insert_into_playlist_as_drawn`, `remove_from_playlist_as_drawn`,
+  `remove_runs_from_playlist_as_drawn`, `gather_in_playlist_as_drawn` and
+  `move_in_playlist_as_drawn` ask `stands_as_drawn` beside `only_a_list`: every drawn row must
+  still hold its cut at its position (and a whole drawing the whole length), else
+  `Error::PlaylistMovedSinceDrawn` and nothing is written, so a sync merge, another device's edit
+  or one of the window's own landing first never has a position strike the wrong row
+  (`an_edit_by_position_is_refused_once_the_playlist_has_moved_since_it_was_drawn`,
+  `an_edit_by_position_lands_where_the_playlist_still_stands_as_drawn`). No schema step: the
+  stamp is what was drawn, read against `numbered`. The plain forms (MPRIS, MCP, the phones,
+  `keeps.rs`) name no drawing and check nothing.
 - **A playlist holds a list or fills itself from a query; both answer via `playlist_entries`.** A
   `playlist_queries` row = saved query: text, `SortOrder`, reading, row cap.
   `Library::playlist_entries` runs it instead of reading the table (queue, pane, MPRIS, sheet
