@@ -262,6 +262,14 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   `changed_at` (status change on Unix,
   modification time on Windows) and `sync_directory` (a no-op on Windows, where a directory cannot
   be opened to be synced).
+- **A small file written whole goes through `file_facts::write_atomically`**: the caller names the
+  stage and opens it (the settings file `0600` under a numbered name its sweeper knows, the
+  launcher's icon and the binaural pair by plain `File::create`), and the one function writes,
+  `sync_all`s, renames over the target and syncs the folder, removing a stage it opened when any
+  step fails and never one it could not open (another writer's); its `Unwritten` names the
+  `WriteStep` (`Stage`, `Place`) that failed
+  (`a_file_that_cannot_be_put_in_place_leaves_nothing_staged_behind`,
+  `a_stage_that_cannot_be_opened_is_told_as_unstaged_and_another_writers_is_left_alone`).
 - **A volume is named by its GUID where a folder mounts it.** `volume_of` canonicalises the path
   (so a symlink or junction into another drive reads as the drive it reaches), then walks the
   canonical path's ancestors, nearest first, for a reparse point (`FILE_ATTRIBUTE_REPARSE_POINT`

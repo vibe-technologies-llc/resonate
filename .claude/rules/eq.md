@@ -785,7 +785,9 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   then applies `with_headroom` to the whole (scaling each file alone would change their balance), and
   `binaural_wave` writes the result as a four-channel float WAVE, which is how a pair is kept as the one
   file the settings and the phones already name. The desktop's *Room correction* group has *Choose a
-  pair…* (left file, then right), which keeps `binaural-response.wav` beside the equaliser folder and
+  pair…* (left file, then right), which keeps `binaural-response.wav` beside the equaliser folder,
+  written whole through `file_facts::write_atomically` (synced, renamed into place, no stage left on a
+  failure: `a_binaural_pair_is_kept_whole_and_one_that_cannot_be_put_in_place_leaves_no_stage`), and
   corrects by it as by any chosen file; the phones' boundary has `keep_binaural_room_correction`
   (two byte strings and extensions, a refusal `Error::ImpulsePair`), which keeps the joined pair as
   the one `room-correction.*` response. Each phone's *Room correction* page offers *Choose a

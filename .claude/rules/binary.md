@@ -728,7 +728,8 @@ that file made and stays a link: `a_link_to_a_file_not_yet_made_is_written_throu
 `windows.md`); sweeps what a killed writer left
 (`config.toml.<pid>-<n>.new`, older builds' `config.toml.lock`, nothing else); stages under this
 process's own name; creates the staged file `0600` and narrows the standing file to its owner's bits
-before writing (it holds secrets); `sync_all`s file and folder; renames over the target. **On Unix the data folder is `0700` and `shared.sqlite` and `sync.sqlite` (and their `-wal` and `-shm`) are `0600`** (`config::private_data_dir`, `private_store`: the folder narrowed whenever it is made or opened for the library, the sync lock or a store, a store made `0600` before SQLite opens it so its side files take that mode, and a standing one narrowed): they hold shared-playlist edit codes and the member's private key. A value
+before writing (it holds secrets); `sync_all`s file and folder; renames over the target, the
+stage, sync and rename being core's `file_facts::write_atomically` (below). **On Unix the data folder is `0700` and `shared.sqlite` and `sync.sqlite` (and their `-wal` and `-shm`) are `0600`** (`config::private_data_dir`, `private_store`: the folder narrowed whenever it is made or opened for the library, the sync lock or a store, a store made `0600` before SQLite opens it so its side files take that mode, and a standing one narrowed): they hold shared-playlist edit codes and the member's private key. A value
 with a flag is spelled as the flag spells it (`ValueEnum`s from the grammar). `Setting::Theme`,
 `Accent`, `Online`, `Contact` never reach the engine; a cleared contact is `config::clear` on the
 key, not an empty string (`Config::contact` stays `None`, the User-Agent bare).

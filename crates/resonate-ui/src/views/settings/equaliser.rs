@@ -14,6 +14,7 @@ use gpui::{
 use resonate_core::{
     HeadYaw, MediaLocation, SampleRate, SpeakerAngle, SpeakerElevation, Speakers, Switch,
     eq::{Band, BandKind, Preamp, Traced, TracedOn},
+    file_facts::{self, Unwritten},
 };
 use resonate_engine::{
     AnalysisError, Applied, BandGains, Command, DspError, Impulse, Loudest, NodeName,
@@ -2719,10 +2720,11 @@ fn speaker_options(label: &'static str) -> PathPromptOptions {
     }
 }
 
-fn write_beside(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
+fn write_beside(target: &Path, bytes: &[u8]) -> Result<(), Unwritten> {
     let staged = target.with_extension(format!("{}.new", std::process::id()));
-    std::fs::write(&staged, bytes)?;
-    std::fs::rename(&staged, target)
+    file_facts::write_atomically(target, &staged, bytes, |staged| {
+        std::fs::File::create(staged)
+    })
 }
 
 fn side(speaker: Speaker) -> &'static str {
@@ -2779,6 +2781,39 @@ mod tests {
             on,
             decibels: decibels.to_vec(),
         }
+    }
+
+    fn left_in(folder: &Path) -> Vec<std::ffi::OsString> {
+        let mut left: Vec<_> = std::fs::read_dir(folder)
+            .expect("the folder reads")
+            .flatten()
+            .map(|entry| entry.file_name())
+            .collect();
+        left.sort();
+        left
+    }
+
+    #[test]
+    fn a_binaural_pair_is_kept_whole_and_one_that_cannot_be_put_in_place_leaves_no_stage() {
+        let folder = crate::driven::Folder::new();
+        let kept = folder.path().join(BINAURAL_FILE);
+
+        write_beside(&kept, b"first").expect("the pair is kept");
+
+        assert_eq!(std::fs::read(&kept).expect("the pair reads"), b"first");
+        assert_eq!(
+            left_in(folder.path()),
+            vec![std::ffi::OsString::from(BINAURAL_FILE)]
+        );
+
+        std::fs::remove_file(&kept).expect("the pair goes");
+        std::fs::create_dir_all(kept.join("in the way")).expect("a folder in the way");
+
+        assert!(write_beside(&kept, b"second").is_err());
+        assert_eq!(
+            left_in(folder.path()),
+            vec![std::ffi::OsString::from(BINAURAL_FILE)]
+        );
     }
 
     #[test]

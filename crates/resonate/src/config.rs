@@ -4,7 +4,7 @@ use std::{
     ffi::OsString,
     fmt,
     fs::{self, File, OpenOptions},
-    io::{self, Write as _},
+    io,
     ops::RangeInclusive,
     path::{Path, PathBuf},
     process,
@@ -1870,13 +1870,12 @@ fn write(target: &Path, text: &str) -> Result<()> {
             STAGED.fetch_add(1, Ordering::Relaxed)
         ),
     );
-    let written = laid_down(target, &staged, text);
-    if written.is_err() {
-        let _ = fs::remove_file(&staged);
-    }
-    written.map_err(|source| Error::WriteConfig {
+    file_facts::write_atomically(target, &staged, text.as_bytes(), |staged| {
+        staged_for_its_owner_alone(staged, target)
+    })
+    .map_err(|unwritten| Error::WriteConfig {
         path: target.to_path_buf(),
-        source,
+        source: unwritten.source,
     })
 }
 
@@ -1899,17 +1898,6 @@ fn staged_for_its_owner_alone(staged: &Path, target: &Path) -> io::Result<File> 
 #[cfg(windows)]
 fn staged_for_its_owner_alone(staged: &Path, _: &Path) -> io::Result<File> {
     OpenOptions::new().write(true).create_new(true).open(staged)
-}
-
-fn laid_down(target: &Path, staged: &Path, text: &str) -> io::Result<()> {
-    let mut file = staged_for_its_owner_alone(staged, target)?;
-    file.write_all(text.as_bytes())?;
-    file.sync_all()?;
-    fs::rename(staged, target)?;
-    if let Some(parent) = target.parent() {
-        file_facts::sync_directory(parent)?;
-    }
-    Ok(())
 }
 
 fn beside(target: &Path, suffix: &str) -> PathBuf {

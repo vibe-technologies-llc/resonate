@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File},
-    io::{self, Write},
+    io,
     path::{Path, PathBuf},
     process::{self, Command, Stdio},
     thread,
@@ -8,6 +8,7 @@ use std::{
 };
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
+use resonate_core::file_facts::{self, WriteStep};
 use resonate_ui::AppIcon;
 
 use crate::{Error, Result, config, error::IconOp};
@@ -146,27 +147,21 @@ fn written(path: &Path, drawn: &str) -> Result<()> {
     })?;
 
     let staged = folder.join(format!(".{ICON_NAME}.svg.{}", process::id()));
-    let outcome = File::create(&staged)
-        .and_then(|mut file| {
-            file.write_all(drawn.as_bytes())?;
-            file.sync_all()
-        })
-        .map_err(|source| Error::Icon {
+    file_facts::write_atomically(path, &staged, drawn.as_bytes(), |staged| {
+        File::create(staged)
+    })
+    .map_err(|unwritten| match unwritten.step {
+        WriteStep::Stage => Error::Icon {
             op: IconOp::Stage,
-            path: staged.clone(),
-            source,
-        })
-        .and_then(|()| {
-            fs::rename(&staged, path).map_err(|source| Error::Icon {
-                op: IconOp::Place,
-                path: path.to_path_buf(),
-                source,
-            })
-        });
-    if outcome.is_err() {
-        let _ = fs::remove_file(&staged);
-    }
-    outcome
+            path: staged,
+            source: unwritten.source,
+        },
+        WriteStep::Place => Error::Icon {
+            op: IconOp::Place,
+            path: path.to_path_buf(),
+            source: unwritten.source,
+        },
+    })
 }
 
 fn flushed(theme: &Path) {

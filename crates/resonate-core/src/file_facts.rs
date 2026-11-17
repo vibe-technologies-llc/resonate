@@ -1,9 +1,11 @@
 use std::{
-    fs::{self, Metadata},
-    io,
+    fs::{self, File, Metadata},
+    io::{self, Write as _},
     path::Path,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+use thiserror::Error;
 
 #[cfg(windows)]
 use crate::volume_mounts;
@@ -183,6 +185,56 @@ pub fn sync_file(path: &Path) -> io::Result<()> {
     fs::OpenOptions::new().write(true).open(path)?.sync_all()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WriteStep {
+    Stage,
+    Place,
+}
+
+#[derive(Debug, Error)]
+#[error("a file written whole failed at its {step:?} step")]
+pub struct Unwritten {
+    pub step: WriteStep,
+    #[source]
+    pub source: io::Error,
+}
+
+pub fn write_atomically(
+    target: &Path,
+    staged: &Path,
+    bytes: &[u8],
+    opened: impl FnOnce(&Path) -> io::Result<File>,
+) -> Result<(), Unwritten> {
+    let unstaged = |source| Unwritten {
+        step: WriteStep::Stage,
+        source,
+    };
+    let file = opened(staged).map_err(unstaged)?;
+    let written = filled(file, bytes).map_err(unstaged).and_then(|()| {
+        placed(target, staged).map_err(|source| Unwritten {
+            step: WriteStep::Place,
+            source,
+        })
+    });
+    if written.is_err() {
+        let _ = fs::remove_file(staged);
+    }
+    written
+}
+
+fn filled(mut file: File, bytes: &[u8]) -> io::Result<()> {
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+fn placed(target: &Path, staged: &Path) -> io::Result<()> {
+    fs::rename(staged, target)?;
+    match target.parent() {
+        Some(folder) if !folder.as_os_str().is_empty() => sync_directory(folder),
+        _ => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{env, fs, process};
@@ -243,6 +295,69 @@ mod tests {
         let metadata = fs::metadata(&file).expect("metadata");
 
         assert!(changed_at(&metadata).is_some());
+        let _ = fs::remove_dir_all(&folder);
+    }
+
+    fn left_in(folder: &Path) -> Vec<std::ffi::OsString> {
+        let mut left: Vec<_> = fs::read_dir(folder)
+            .expect("the folder reads")
+            .flatten()
+            .map(|entry| entry.file_name())
+            .collect();
+        left.sort();
+        left
+    }
+
+    #[test]
+    fn a_file_written_whole_replaces_the_one_standing_and_leaves_nothing_staged() {
+        let folder = scratch("whole");
+        let target = folder.join("kept");
+        let staged = folder.join("kept.staged");
+        fs::write(&target, b"before").expect("a file standing");
+
+        let written = write_atomically(&target, &staged, b"after", |staged| File::create(staged));
+
+        assert!(written.is_ok());
+        assert_eq!(fs::read(&target).expect("the file reads"), b"after");
+        assert_eq!(left_in(&folder), vec![std::ffi::OsString::from("kept")]);
+        let _ = fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_put_in_place_leaves_nothing_staged_behind() {
+        let folder = scratch("unplaced");
+        let target = folder.join("kept");
+        let staged = folder.join("kept.staged");
+        fs::create_dir_all(target.join("in the way")).expect("a folder in the way");
+
+        let written = write_atomically(&target, &staged, b"after", |staged| File::create(staged));
+
+        assert_eq!(
+            written.map_err(|unwritten| unwritten.step).err(),
+            Some(WriteStep::Place)
+        );
+        assert_eq!(left_in(&folder), vec![std::ffi::OsString::from("kept")]);
+        let _ = fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_stage_that_cannot_be_opened_is_told_as_unstaged_and_another_writers_is_left_alone() {
+        let folder = scratch("unstaged");
+        let target = folder.join("kept");
+        let staged = folder.join("kept.staged");
+        fs::write(&target, b"before").expect("a file standing");
+        fs::write(&staged, b"another's").expect("a stage already taken");
+
+        let written = write_atomically(&target, &staged, b"after", |staged| {
+            File::create_new(staged)
+        });
+
+        assert_eq!(
+            written.map_err(|unwritten| unwritten.step).err(),
+            Some(WriteStep::Stage)
+        );
+        assert_eq!(fs::read(&target).expect("the file reads"), b"before");
+        assert_eq!(fs::read(&staged).expect("the stage reads"), b"another's");
         let _ = fs::remove_dir_all(&folder);
     }
 }
