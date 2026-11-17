@@ -6,19 +6,13 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Security
+- [S · 0.12.1] Firefox's own `/favicon.ico` request is refused and logged as a CSP violation on every
+  visit to the `/s/` and `/p/` pages (`pages.rs`, `default-src 'none'`); a `<link rel="icon"
+  href="data:,">` and a matching `img-src` would keep the console clean
 - [S · blocked: design] A host on the network may take several addresses and so pass the media server's
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Sync and together
-- [S · 0.12.1] A shared playlist whose state passes one frame is never compacted (`shared/service.rs`
-  backs off): the device sync's staged compaction (`Stage`, `Staged`, `CompactStaged`) serves it with
-  no server change once the list wraps its parts and reads `Staging` and a `Stale` refusal
-- [S · 0.12.1] `Ledger::compacted` resets the records-since count to 0 though the device has read
-  records past that `through`, so where its own `Compacted` lands after a catch-up those records never
-  count toward the next compaction
-- [S · 0.12.1] A compaction refused `SpaceFull` reaches the device as an ordinary refusal: it drops the
-  connection and shows itself refused for 30 minutes, likelier now that large states compact; a full
-  space should back the compaction off and keep the session
 
 ## Playback and output
 

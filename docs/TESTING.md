@@ -100,15 +100,15 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.12.1] The server's headless Firefox test (`tests/firefox.rs`) skips without `firefox` but would
+  wait out 60 s and fail under a snap Firefox, whose private `/tmp` hides the port file; detect the
+  snap and skip, or put the profile and port file where a snap can see them, before CI meets one
 - [S · 0.12.1] Investigate: three tests failed under 64-thread stress and have no cause found yet:
   `resonate-engine`'s `a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start`
   once (`transport.rs`, then 30 clean runs), `resonate-server`'s
   `web::a_message_still_arriving_on_one_web_socket_holds_its_bytes_from_every_other_session` 3 in 60
   (`web.rs`, `None` against `Some(Busy)`, apparently on its 5 s deadline) and
   `shared::what_is_held_is_shown_the_moment_the_service_starts` once (`shared.rs`, 0 against 1)
-- [S · 0.12.1] The shared-list page's script hashes (`pages.rs`) are checked against the page as
-  served, but no browser has enforced the policy; one run in a real browser (the invitation pages
-  under a CSP that refuses inline scripts) would prove the page still works
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
