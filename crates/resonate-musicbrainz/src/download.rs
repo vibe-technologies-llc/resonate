@@ -33,8 +33,21 @@ const NOT_YET_PUBLISHED: u16 = 404;
 const TOKEN_REFUSALS: [u16; 3] = [400, 401, 403];
 const TOKEN_LENGTH: usize = 40;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Carried {
+    Encrypted,
+    #[cfg(test)]
+    Plain,
+}
+
 pub fn agent() -> Agent {
-    let config = configured(ANSWERED_WITHIN, Trusted::BuiltInRoots).build();
+    agent_carrying(Carried::Encrypted)
+}
+
+fn agent_carrying(carried: Carried) -> Agent {
+    let config = configured(ANSWERED_WITHIN, Trusted::BuiltInRoots)
+        .https_only(carried == Carried::Encrypted)
+        .build();
     downloading_agent(config, BROKEN_OFF_AFTER)
 }
 
@@ -158,16 +171,32 @@ fn packet_url(sequence: u64) -> String {
 }
 
 pub fn packet(agent: &Agent, token: &str, sequence: u64) -> Result<Option<Packet>> {
-    let url = packet_url(sequence);
+    packet_from(
+        agent,
+        &packet_url(sequence),
+        token,
+        sequence,
+        LARGEST_PACKET,
+    )
+}
+
+fn packet_from(
+    agent: &Agent,
+    url: &str,
+    token: &str,
+    sequence: u64,
+    largest: u64,
+) -> Result<Option<Packet>> {
+    let too_large = Error::PacketTooLarge { sequence, largest };
     let response = agent
-        .get(&url)
+        .get(url)
         .query("token", token)
         .config()
         .http_status_as_error(false)
         .build()
         .call()
         .map_err(|error| Error::Fetch {
-            url: url.clone(),
+            url: url.to_owned(),
             source: resonate_fetch::as_io(error),
         })?;
     let status = response.status().as_u16();
@@ -178,18 +207,31 @@ pub fn packet(agent: &Agent, token: &str, sequence: u64) -> Result<Option<Packet
         return Err(Error::TokenRefused { status });
     }
     if status != 200 {
-        return Err(Error::Refused { url, status });
+        return Err(Error::Refused {
+            url: url.to_owned(),
+            status,
+        });
+    }
+    if response
+        .body()
+        .content_length()
+        .is_some_and(|declared| declared > largest)
+    {
+        return Err(too_large);
     }
     let mut packed = Vec::new();
     response
         .into_body()
         .into_reader()
-        .take(LARGEST_PACKET)
+        .take(largest.saturating_add(1))
         .read_to_end(&mut packed)
         .map_err(|source| Error::Fetch {
-            url: url.clone(),
+            url: url.to_owned(),
             source,
         })?;
+    if packed.len() as u64 > largest {
+        return Err(too_large);
+    }
     packet_read(packed.as_slice(), sequence).map(Some)
 }
 
@@ -389,8 +431,11 @@ mod tests {
 
     const ARCHIVE: &[u8] = b"the whole of an export archive";
 
-    fn served_once_more(listener: &std::net::TcpListener) {
-        let (mut stream, _) = listener.accept().expect("a fetch");
+    fn plain_agent() -> Agent {
+        agent_carrying(Carried::Plain)
+    }
+
+    fn asked_head(stream: &mut std::net::TcpStream) -> String {
         let mut asked = Vec::new();
         let mut byte = [0_u8; 1];
         while !asked.ends_with(b"\r\n\r\n") {
@@ -399,7 +444,84 @@ mod tests {
             }
             asked.push(byte[0]);
         }
-        let asked = String::from_utf8_lossy(&asked).to_ascii_lowercase();
+        String::from_utf8_lossy(&asked).to_ascii_lowercase()
+    }
+
+    #[test]
+    fn the_export_is_never_asked_for_over_plain_http() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let url = format!("http://{}/{LATEST}", listener.local_addr().expect("bound"));
+
+        let asked = listed(&agent(), &url);
+        listener
+            .set_nonblocking(true)
+            .expect("a listener that need not wait");
+        let reached = listener.accept();
+
+        assert!(matches!(asked, Err(Error::Fetch { .. })), "{asked:?}");
+        assert!(
+            reached
+                .as_ref()
+                .is_err_and(|error| error.kind() == io::ErrorKind::WouldBlock),
+            "a plain address was asked: {reached:?}"
+        );
+    }
+
+    fn serving_a_packet(
+        declared: bool,
+        body: Vec<u8>,
+    ) -> (String, std::thread::JoinHandle<String>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let url = format!(
+            "http://{}/replication-8-v2.tar.bz2",
+            listener.local_addr().expect("bound")
+        );
+        let serving = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("a fetch");
+            let asked = asked_head(&mut stream);
+            let length = if declared {
+                format!("Content-Length: {}\r\n", body.len())
+            } else {
+                String::new()
+            };
+            let mut answer =
+                format!("HTTP/1.1 200 OK\r\n{length}Connection: close\r\n\r\n").into_bytes();
+            answer.extend_from_slice(&body);
+            let _ = stream.write_all(&answer);
+            asked
+        });
+        (url, serving)
+    }
+
+    #[test]
+    fn a_packet_larger_than_a_packet_is_read_up_to_is_refused_as_too_large() {
+        const LARGEST: u64 = 64;
+        const TOKEN: &str = "a-token";
+
+        for declared in [true, false] {
+            let (url, serving) = serving_a_packet(declared, vec![b'x'; LARGEST as usize + 1]);
+
+            let fetched = packet_from(&plain_agent(), &url, TOKEN, 8, LARGEST);
+            let asked = serving.join().expect("served");
+
+            assert!(asked.contains("token=a-token"), "{asked}");
+            assert!(
+                matches!(
+                    fetched,
+                    Err(Error::PacketTooLarge {
+                        sequence: 8,
+                        largest: LARGEST
+                    })
+                ),
+                "declared {declared}: {:?}",
+                fetched.err()
+            );
+        }
+    }
+
+    fn served_once_more(listener: &std::net::TcpListener) {
+        let (mut stream, _) = listener.accept().expect("a fetch");
+        let asked = asked_head(&mut stream);
         let from = asked
             .lines()
             .find_map(|line| line.strip_prefix("range: bytes="))
@@ -453,7 +575,7 @@ mod tests {
 
         fs::write(&partial, ARCHIVE).expect("a whole part");
         let verified = downloaded(
-            &agent(),
+            &plain_agent(),
             &url,
             &into,
             CORE_ARCHIVE,
@@ -467,7 +589,7 @@ mod tests {
         fs::remove_file(&verified).expect("removed");
         fs::write(&partial, vec![b'x'; ARCHIVE.len()]).expect("a damaged part");
         let fetched_again = downloaded(
-            &agent(),
+            &plain_agent(),
             &url,
             &into,
             CORE_ARCHIVE,
@@ -529,7 +651,7 @@ mod tests {
 
         fs::write(&partial, &ARCHIVE[..held]).expect("half a part");
         let reached = copied(
-            &agent(),
+            &plain_agent(),
             &url,
             &partial,
             held as u64,

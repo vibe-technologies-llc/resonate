@@ -199,6 +199,12 @@ pub enum Error {
     #[cfg(feature = "download")]
     #[error("the dump server named no latest export")]
     NoLatest,
+
+    #[cfg(feature = "download")]
+    #[error(
+        "replication packet {sequence} is larger than the {largest} bytes a packet is read up to"
+    )]
+    PacketTooLarge { sequence: u64, largest: u64 },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

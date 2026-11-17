@@ -220,7 +220,10 @@ the export it came from is the source.
 
 ## Fetching the export
 
-**The download (`download.rs`, feature `download`).**
+**The download (`download.rs`, feature `download`).** `download::agent` is `https_only`, since
+`SHA256SUMS` comes over the same agent as the archives and a redirect to plain HTTP would let the
+network replace both, and a packet's query carries the token; only the tests' loopback servers are
+asked over plain HTTP (`Carried::Plain`, `the_export_is_never_asked_for_over_plain_http`).
 
 1. `latest` reads `LATEST` under `DUMP_SERVER` (a name of digits and dashes alone).
 2. `fetched` reads `SHA256SUMS`, then downloads both archives into `downloads/<dump>/`.
@@ -285,7 +288,10 @@ build to resume
 them** (`mirror/replicated.rs`, `tables.rs`, `amended.rs`). A packet is
 `replication-<N>-v2.tar.bz2` under `REPLICATION_SERVER`, asked with the listener's MetaBrainz
 token in the query string (`download::packet`; a 404 is a packet not yet published, 400, 401 or 403
-`TokenRefused`). Its `mbdump/pending_data` lines are dbmirror2's JSON, one change a line, read by a
+`TokenRefused`). A packet is read up to `LARGEST_PACKET` (1 GiB): one declaring a larger
+`Content-Length`, or running one byte past it, is `PacketTooLarge`, never cut short into a
+bzip2 or parse error
+(`a_packet_larger_than_a_packet_is_read_up_to_is_refused_as_too_large`). Its `mbdump/pending_data` lines are dbmirror2's JSON, one change a line, read by a
 parser written here (no serde in this crate): `packet_read` keeps only the tables `copy::TABLES`
 projects, maps each row to the projected columns (`projected`: a column missing is `PacketColumn`,
 a boolean is PostgreSQL's `t` or `f`) and orders the changes by their transaction's last change,
