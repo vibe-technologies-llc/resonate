@@ -121,11 +121,21 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   families 2 and 3 would also need projection decoding
 
 ## Tagging
+- [M · 0.13.0] Fetched lyrics stay in the catalog: `TagField` has no lyrics field and LRCLIB's or
+  Better Lyrics' sheets live in `lyrics_kept` alone, so another player, a portable one or a phone
+  without sync never reads them; a sidecar `.lrc` or `.lyricsfile.yaml` first (no file rewritten),
+  then USLT or `LYRICS` through `TagSink` under the retag undo
 - [M · blocked: lofty] `.caf` and the DSD containers have no writer (lofty 0.25.4 has no such file
   type); `.oga` alone could be mapped to Vorbis by hand; `.mka` is written by hand (`library.md`) and
   has no way to take a picture back out
 
 ## Providers and network
+- [L · 0.13.0] A DLNA or UPnP media server on the network cannot be browsed: SSDP answers from a
+  `MediaServer:1` are passed over (`ssdp.rs`), though the crate reads descriptions, speaks SOAP and
+  serves ContentDirectory itself, so a NAS running MiniDLNA or Plex's DLNA server is reached only by
+  mounting its share; a spike settling the layering (a provider may reach only the seam, core and
+  `resonate-fetch`; `resonate-upnp` only core and `resonate-audio`), a DIDL reader with a fuzz target,
+  and Browse paging
 - [L · blocked: Apple] An Apple Music library cannot be synced: reading a listener's library and
   playlists needs a MusicKit developer token, issued only to a paid Apple Developer membership, and
   a user token only Apple's own sign-in hands out, which neither the desktop nor Android can show;
@@ -141,6 +151,13 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   so each of their songs is found by the strict title and artist search
 - [L · blocked: service] A lyric reaches only a row the catalog holds; no keyless service indexes
   lyric text (LRCLIB's text search finds none)
+
+## Listening history
+- [S · 0.13.0] `history --import` reads only a service (`listenbrainz|lastfm`, `online` and an account
+  required) while `--export FILE` writes ListenBrainz's JSON lines with no `online`, so a listener
+  without an account, or a build without `online`, can take the history out and never back in; an
+  `--import FILE` reading the lines the export writes (a fuzz target beside it), landed through
+  `Library::bring_in`
 
 ## Identification
 - [M · blocked: encoders] The quantiser steps are weighed only on the encoders this machine has

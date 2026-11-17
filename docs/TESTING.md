@@ -100,6 +100,34 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.12.1] The desktop catalog's released steps are not pinned as the phones' are: `STAMPS`
+  (`schema.rs`) is hashed from today's `V1` and steps, and the first-release test takes
+  `fingerprint_of(V1)` of today's `V1`, so an edit to a released step passes every test and wipes
+  listens, playlists, favourites and keeps on upgrade (`library.md`'s one case of delete and rescan);
+  a literal `STAMPS_RELEASED` beside `catalog_released_tests.rs`'s `STEPS_RELEASED`, the same for the
+  ledger, the server store and `kept.sqlite` (whose counted `user_version` would leave two schemas
+  apart silently), and a data test for `SONGS_LEARNT_UNTIMED_ARE_LEARNT_AGAIN`
+- [S · 0.12.1] The sync wire is held by round trips alone: `fuzz/seeds/sync` keeps 15 frames earlier
+  builds wrote, and only four (`export`, `exporting`, `prints`, `printed`) are read by a test, so a
+  field reordered or retyped in a frame a released server or phone still sends passes everything; a
+  test decoding every seed as its kind and writing it back byte for byte, the seeds frozen once sent
+- [S · 0.12.1] MusicBrainz replication has no fuzz target: `replicated.rs`'s hand-written JSON `Parser`
+  and `object_of` and `packet_read`'s bzip2 and tar read a packet off the network every hour, and
+  `fuzz_targets/musicbrainz.rs` covers `Asked`, `Answer` and `read_a_copy_line` alone; a
+  `replication` target seeded from `tests/mirror.rs`'s archives, and `apple::served` added to the
+  `pages` target
+- [S · 0.12.1] The metered-download tests sleep, then assert something happened:
+  `THE_POLL_HAS_WAITED` (400 ms) before `is_waiting_on_the_meter` and `refused_a_poll`
+  (`tests/library.rs`), suites that have flaked before, with no retries in `.config/nextest.toml`;
+  a bounded poll for each positive assertion, a sleep kept only before *nothing happened*
+- [S · 0.12.1] The check that rules name real code reads snake_case alone
+  (`is_snake_case_name`, `tests/rules.rs`), and five gone names stand in the rules:
+  `HOLDS_A_BEST_COPY` (`library.md`, now `THE_BEST_COPY`), `ALBUM_COLUMNS` (`vault.md`), `DRAWN_EDGE`
+  and `THIRD_INK` (`ui.md`) and `QueueList` (`ios.md`); extend it to backticked `UPPER_SNAKE` and
+  `CamelCase` with a list of other programs' names, and mend the five
+- [S · 0.12.1] `CLAUDE.md`'s Android command omits `python3 android/check-release.py`, which
+  `AGENTS.md` and CI run after `:app:assembleRelease`, though `AGENTS.md` asks that the lists move
+  together
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
@@ -143,6 +171,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   been held by the contrast tests but not looked at in a window
 
 ## Dependencies
+- [M · 0.12.1] `mibz2`, released three times on 2026-11-16 by one author with some 170 `unsafe`
+  lines and SIMD kernels chosen at run time, now decodes the MusicBrainz export and every hourly
+  packet off the network, beside a workspace that forbids `unsafe_code`; it is declared as a bare
+  `"0.5.2"` against `dependencies.md`'s spelling. Fuzz it (above) and hold it to `libbz2-rs-sys`
+  (already a dev-dependency) on generated archives, or keep it for the whole export alone and read
+  the packets with `bzip2`, and record the decision in `dependencies.md`
 - [S · blocked: gpui] `cargo audit`'s other warnings are other crates' trees: `glib` 0.18.5 unsound
   (RUSTSEC-2024-0429) under `tao`, `webkit2gtk` and wry, for `resonate-signin`'s window alone; zbus
   5 under gpui's accesskit and ashpd, beside `resonate-mpris`'s zbus 6 (two built), with
@@ -158,6 +192,14 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   more in its groups), with `RootView::new` some 400 lines making 27 subscriptions. Each wants a
   driven test pinning it before it moves, as the panes moved so far got, and a pane's drawing stays
   on the root while its controls live in the root's focus ring
+- [M] `crates/resonate-library/tests/library.rs` is 33 623 lines and 804 tests in one module, so
+  `library::` is the narrowest filter and every edit rebuilds it; topic files under `suite` (retag,
+  polls and metering, undo, history, keeps) sharing `support`
+- [M] `resonate-ui`'s `views/browser.rs` (6 424 lines, one `impl RootView` of some 3 000 for the
+  albums and artists grids, track rows, missing rows, the record card, pressings and menus) and the
+  binary's `config.rs` (4 499, folders and permissions, `Config`, parsing and the locked `toml_edit`
+  writer) want splitting as `views/root/` was: `views/browser/` by subject, `config/writing.rs` and
+  `config/places.rs`
 - [M · blocked: jxl-oxide reading jxl-encoder's ANS-coded output] The vault builds two JPEG XL
   encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder` for a JPEG's transcode. Measured on
   600 to 1400 px covers, `jxl-encoder` 0.3.4's lossless effort 7 is about half zune's size (0.6 to
