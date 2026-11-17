@@ -9,11 +9,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   return on a `null` config, so nothing short of clearing the app's data starts sync again; offer
   starting over with a new group where the settings cannot be read
 
-## iOS
-- [S · 0.12.1] Investigate: a refused `setActive(false)` is swallowed (`try?`, `NowPlaying.swift`) and
-  `release.owed(by:)` counts the release done, so where RemoteIO still runs as the transport stops
-  (`IsBusy`) the session stays active and the audio Resonate interrupted is never told to resume
-
 ## Security
 - [S · 0.12.1] The server still counts connections and attempts per /64 alone (`guard.rs`), so one /48
   may open all 2 048 connections; the wider prefixes the daily allowances now weigh, for connections too
@@ -33,16 +28,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   million ops has every append refused; split it as the sync service's compaction is
 
 ## Playback and output
-- [S · 0.12.1] Investigate: PipeWire's reshape stores `taking` and calls `update_params` before
-  `handing.hand(Feed::new(..))` (`client.rs`), so where `param_changed` settles `Taken::AsAsked` before
-  the data thread takes the feed, one quantum of the old ring is written at the old stride into the new
-  format with a wrong `chunk.size`
-- [S · 0.12.1] Under true peak, a gapless turn carrying the resampler or convolver into a new chain lands
-  its boundary a guard delay late: the fresh true-peak guard swallows its delay rather than holding
-  it, so `written + latency` (and the entering gain step that follows it) is late by that delay
-- [S · 0.12.1] An equaliser change spliced in while a gain step still waits (`GainStage`'s waiting
-  steps, a few milliseconds after a gapless turn) builds the new chain at the entering gain and drops
-  the waiting step, so the leaving tail is heard at the entering track's gain
+- [S · 0.12.1] The heard position counts `chain.latency_frames()` (`publishing.rs`, `in_step.rs`), so
+  while a true-peak guard is still filling (a track's start, just after a carried swap) it is ahead by
+  up to the guard's delay (about 2.5 ms); `Chain::frames_it_holds` is what the chain holds then
+- [S · 0.12.1] `audio.md` says a resampler holds about 300 ms at Very high, but 44.1 to 48 kHz measures
+  4 986 frames (about 104 ms); say what it holds by ratio, or the worst case named as such
 - [S · 0.12.1] Lyrics on a UPnP renderer light up to a second late: the heard position follows the
   renderer's `RelTime`, which most renderers report in whole seconds, so a line waits for the next
   whole second; interpolate between reports from the clock the stream is paced by
