@@ -505,7 +505,14 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
 - **One doorway for both servers** (`door.rs`): the stream server's accept loop (non-blocking heads
   under `mio`, `HEADS_AT_MOST` waiting, `HEAD_ENDS_WITHIN`, an answer thread only for a head that
   names something, at most `ANSWERS_AT_MOST` at once, the rest `503`) is generic over a `Door`, and
-  the media server is one more (`resonate-upnp-offer`, answers on `resonate-upnp-offered`). Its door
+  the media server is one more (`resonate-upnp-offer`, answers on `resonate-upnp-offered`). **One
+  peer holds no more than its share of the answers** (`Limits::answers_a_peer_holds_at_most`, counted
+  by the peer's address, a mapped IPv4 one as itself): the media server's is
+  `ANSWERS_A_NEIGHBOUR_HOLDS_AT_MOST`, half of its 16, since a song's answer may wait
+  `A_LISTENER_WAITS_AT_MOST` a write and a control point that asked for 16 songs and read none would
+  otherwise leave every other one `503`; the stream server's is all of `FETCHES_AT_MOST`, since only a
+  renderer handed a token reaches a fetch
+  (`one_peer_holds_no_more_than_its_share_of_the_answers_and_the_rest_stay_for_others`). Its door
   admits only a neighbour (`neighbours::is_a_neighbour`: a private, link-local or loopback IPv4
   address, a unique-local, link-local or loopback IPv6 one, or a mapped IPv4 one of those), reads
   a SOAP body only under a `Content-Length` of at most `BODY_BYTES_AT_MOST` (64 KiB, else 413; none

@@ -38,6 +38,8 @@ const TOLD_AGAIN_EVERY: Duration = Duration::from_secs(600);
 
 const ANSWERS_AT_MOST: usize = 16;
 
+const ANSWERS_A_NEIGHBOUR_HOLDS_AT_MOST: usize = ANSWERS_AT_MOST / 2;
+
 const HEADS_AT_MOST: usize = 32;
 
 const HEAD_ENDS_WITHIN: Duration = Duration::from_secs(5);
@@ -84,6 +86,7 @@ const XML: &str = "text/xml; charset=\"utf-8\"";
 
 const SHIPPED: Limits = Limits {
     answers_at_most: ANSWERS_AT_MOST,
+    answers_a_peer_holds_at_most: ANSWERS_A_NEIGHBOUR_HOLDS_AT_MOST,
     heads_at_most: HEADS_AT_MOST,
     head_ends_within: HEAD_ENDS_WITHIN,
 };

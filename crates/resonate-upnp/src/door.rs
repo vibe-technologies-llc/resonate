@@ -1,11 +1,8 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap, hash_map::Entry},
     io::{self, Write},
     net::{self, IpAddr, Shutdown, SocketAddr},
-    sync::{
-        Arc, Weak,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, Weak},
     thread,
     time::{Duration, Instant},
 };
@@ -14,6 +11,7 @@ use mio::{
     Events, Interest, Poll, Registry, Token as Source, Waker,
     net::{TcpListener, TcpStream},
 };
+use parking_lot::Mutex;
 
 use crate::{
     Error, Result, ServeOp,
@@ -36,6 +34,7 @@ pub(crate) const BUSY: &[u8] =
 #[derive(Clone, Copy)]
 pub(crate) struct Limits {
     pub answers_at_most: usize,
+    pub answers_a_peer_holds_at_most: usize,
     pub heads_at_most: usize,
     pub head_ends_within: Duration,
 }
@@ -100,27 +99,51 @@ impl Doorway {
     }
 }
 
-struct Answering(Arc<AtomicUsize>);
+#[derive(Default)]
+struct Slots {
+    taken: usize,
+    by_peer: HashMap<IpAddr, usize>,
+}
+
+struct Answering {
+    slots: Arc<Mutex<Slots>>,
+    peer: IpAddr,
+}
 
 impl Answering {
-    fn begin(count: &Arc<AtomicUsize>, at_most: usize) -> Option<Self> {
-        let before = count.fetch_add(1, Ordering::AcqRel);
-        if before >= at_most {
-            count.fetch_sub(1, Ordering::AcqRel);
+    fn begin(slots: &Arc<Mutex<Slots>>, peer: IpAddr, limits: &Limits) -> Option<Self> {
+        let peer = peer.to_canonical();
+        let mut held = slots.lock();
+        let peer_holds = held.by_peer.get(&peer).copied().unwrap_or(0);
+        if held.taken >= limits.answers_at_most || peer_holds >= limits.answers_a_peer_holds_at_most
+        {
             return None;
         }
-        Some(Self(Arc::clone(count)))
+        held.taken += 1;
+        *held.by_peer.entry(peer).or_insert(0) += 1;
+        Some(Self {
+            slots: Arc::clone(slots),
+            peer,
+        })
     }
 }
 
 impl Drop for Answering {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::AcqRel);
+        let mut held = self.slots.lock();
+        held.taken = held.taken.saturating_sub(1);
+        if let Entry::Occupied(mut holding) = held.by_peer.entry(self.peer) {
+            *holding.get_mut() = holding.get().saturating_sub(1);
+            if *holding.get() == 0 {
+                holding.remove();
+            }
+        }
     }
 }
 
 struct Pending {
     stream: TcpStream,
+    peer: IpAddr,
     held: Vec<u8>,
     since: Instant,
 }
@@ -133,9 +156,10 @@ enum Next<Task> {
 }
 
 impl Pending {
-    fn new(stream: TcpStream) -> Self {
+    fn new(stream: TcpStream, peer: IpAddr) -> Self {
         Self {
             stream,
+            peer,
             held: Vec::new(),
             since: Instant::now(),
         }
@@ -196,14 +220,19 @@ impl Heads {
         }
     }
 
-    fn admit(&mut self, registry: &Registry, mut stream: TcpStream) -> Option<Source> {
+    fn admit(
+        &mut self,
+        registry: &Registry,
+        mut stream: TcpStream,
+        peer: IpAddr,
+    ) -> Option<Source> {
         let source = Source(self.next);
         if let Err(error) = registry.register(&mut stream, source, Interest::READABLE) {
             tracing::debug!(%error, "a connection could not be read");
             return None;
         }
         self.next = self.next.wrapping_add(1).max(FIRST_HEAD);
-        self.waiting.insert(source, Pending::new(stream));
+        self.waiting.insert(source, Pending::new(stream, peer));
         Some(source)
     }
 
@@ -234,7 +263,7 @@ fn admitted<D: Door>(
     loop {
         match listener.accept() {
             Ok((stream, peer)) if heads.waiting.len() < heads_at_most && door.admits(peer.ip()) => {
-                admitted.extend(heads.admit(registry, stream));
+                admitted.extend(heads.admit(registry, stream, peer.ip()));
             }
             Ok(_) => {}
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Some(admitted),
@@ -248,7 +277,7 @@ fn admitted<D: Door>(
 }
 
 fn accept<D: Door>(mut poll: Poll, listener: &TcpListener, held: &Weak<D>, limits: Limits) {
-    let answering = Arc::new(AtomicUsize::new(0));
+    let answering = Arc::new(Mutex::new(Slots::default()));
     let mut heads = Heads::new();
     let mut events = Events::with_capacity(EVENTS_AT_MOST);
     loop {
@@ -301,12 +330,15 @@ fn accept<D: Door>(mut poll: Poll, listener: &TcpListener, held: &Weak<D>, limit
                 Next::Refused(refusal) => {
                     handed(asking, &poll, |stream, _| refuse(stream, refusal))
                 }
-                Next::Taken(task) => handed(asking, &poll, |stream, held| {
-                    match Answering::begin(&answering, limits.answers_at_most) {
-                        Some(slot) => begin_answer::<D>(stream, task, held, slot),
-                        None => refuse(stream, BUSY),
-                    }
-                }),
+                Next::Taken(task) => {
+                    let peer = asking.peer;
+                    handed(asking, &poll, |stream, held| {
+                        match Answering::begin(&answering, peer, &limits) {
+                            Some(slot) => begin_answer::<D>(stream, task, held, slot),
+                            None => refuse(stream, BUSY),
+                        }
+                    });
+                }
             }
         }
     }
@@ -348,5 +380,60 @@ fn begin_answer<D: Door>(stream: net::TcpStream, task: D::Task, held: Vec<u8>, s
         });
     if let Err(error) = spawned {
         tracing::warn!(%error, "a request could not be answered");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::Ipv4Addr;
+
+    use super::*;
+
+    const SHARED: Limits = Limits {
+        answers_at_most: 4,
+        answers_a_peer_holds_at_most: 2,
+        heads_at_most: 8,
+        head_ends_within: Duration::from_secs(5),
+    };
+
+    fn peer(last: u8) -> IpAddr {
+        IpAddr::from([192, 168, 1, last])
+    }
+
+    #[test]
+    fn one_peer_holds_no_more_than_its_share_of_the_answers_and_the_rest_stay_for_others() {
+        let slots = Arc::new(Mutex::new(Slots::default()));
+
+        let first = Answering::begin(&slots, peer(1), &SHARED);
+        let second = Answering::begin(&slots, peer(1), &SHARED);
+        let past_its_share = Answering::begin(&slots, peer(1), &SHARED);
+        let mapped = Answering::begin(
+            &slots,
+            IpAddr::V6(Ipv4Addr::new(192, 168, 1, 1).to_ipv6_mapped()),
+            &SHARED,
+        );
+        let another = Answering::begin(&slots, peer(2), &SHARED);
+
+        assert!(first.is_some() && second.is_some());
+        assert!(past_its_share.is_none());
+        assert!(mapped.is_none(), "a mapped address escaped its share");
+        assert!(another.is_some());
+        drop(first);
+        assert!(Answering::begin(&slots, peer(1), &SHARED).is_some());
+    }
+
+    #[test]
+    fn every_peer_together_holds_no_more_than_the_answers_at_most() {
+        let slots = Arc::new(Mutex::new(Slots::default()));
+
+        let held: Vec<_> = (1..=4)
+            .map(|last| Answering::begin(&slots, peer(last), &SHARED))
+            .collect();
+
+        assert!(held.iter().all(Option::is_some));
+        assert!(Answering::begin(&slots, peer(5), &SHARED).is_none());
+        drop(held);
+        assert!(slots.lock().by_peer.is_empty());
+        assert_eq!(slots.lock().taken, 0);
     }
 }

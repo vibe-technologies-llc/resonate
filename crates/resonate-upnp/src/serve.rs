@@ -40,6 +40,7 @@ const NOT_ALLOWED: &[u8] =
 
 const SHIPPED: Limits = Limits {
     answers_at_most: FETCHES_AT_MOST,
+    answers_a_peer_holds_at_most: FETCHES_AT_MOST,
     heads_at_most: HEADS_AT_MOST,
     head_ends_within: HEAD_ENDS_WITHIN,
 };
@@ -273,6 +274,7 @@ mod tests {
             LOOPBACK,
             Limits {
                 answers_at_most,
+                answers_a_peer_holds_at_most: answers_at_most,
                 heads_at_most,
                 head_ends_within: within,
             },
