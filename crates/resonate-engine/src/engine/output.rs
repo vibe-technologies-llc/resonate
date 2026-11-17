@@ -295,13 +295,20 @@ impl Output {
         self.status
     }
 
-    pub(super) fn has_room_for_what_the_chain_holds(&self, carrying_the_front: bool) -> bool {
-        let held = if carrying_the_front {
+    fn held_by_the_chain(&self, carrying_the_front: bool) -> usize {
+        if carrying_the_front {
             self.chain.max_flush_frames_behind_the_front()
         } else {
             self.chain.max_flush_frames()
-        };
-        self.producer.free_frames() >= held
+        }
+    }
+
+    pub(super) fn has_room_for_what_the_chain_holds(&self, carrying_the_front: bool) -> bool {
+        self.producer.free_frames() >= self.held_by_the_chain(carrying_the_front)
+    }
+
+    pub(super) fn could_ever_take_what_the_chain_holds(&self, carrying_the_front: bool) -> bool {
+        self.capacity >= self.held_by_the_chain(carrying_the_front)
     }
 
     pub(super) fn frames_rendered_ahead_of_the_ring(&self) -> usize {

@@ -6,7 +6,7 @@ use super::{
     Ahead, CHAIN_BLOCK, Engine, FILLED_IN_ONE_GO, Filled, OPENED_AHEAD_BY, Track, output::Output,
 };
 use crate::{
-    OutputMode, Result, SinkResult, TransportState,
+    OutputMode, OutputPlan, Result, SinkResult, TransportState,
     lending::Block,
     streaming::{Asked, Came, Streaming, close_unwanted},
 };
@@ -48,9 +48,10 @@ impl Engine {
 
     pub(super) fn follow_the_change(&mut self) {
         self.fill_owed = true;
-        let kept = self
-            .plan_wanted_now()
-            .filter(|wanted| self.keeps_its_stream_for(wanted));
+        let kept = self.plan_wanted_now().filter(|wanted| {
+            self.keeps_its_stream_for(wanted)
+                && self.the_ring_could_ever_take_the_chains_tail(wanted)
+        });
         if let Some(wanted) = kept {
             if let Err(error) = self.swap_chain(wanted) {
                 self.fail(error);
@@ -70,6 +71,12 @@ impl Engine {
         }
         output.ends_at_a_change = true;
         Self::flush(output);
+    }
+
+    fn the_ring_could_ever_take_the_chains_tail(&self, wanted: &OutputPlan) -> bool {
+        self.output.as_ref().is_some_and(|output| {
+            output.could_ever_take_what_the_chain_holds(output.plan.carries_the_front_into(wanted))
+        })
     }
 
     pub(super) fn reopen_at_the_change(&mut self) -> Result<()> {

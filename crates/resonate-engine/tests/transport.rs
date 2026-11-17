@@ -11988,6 +11988,53 @@ fn a_stream_turning_from_mono_to_stereo_on_a_stream_that_carries_both_keeps_it_a
 }
 
 #[test]
+fn a_stream_turning_from_mono_to_stereo_under_a_response_longer_than_the_ring_drains_and_plays_on()
+-> Result<()> {
+    const SECONDS_OF_RESPONSE: f64 = 1.0;
+
+    let tree = Tree::new();
+    let links = [MONO_AT_CD_RATE, STEREO_AT_CD_RATE];
+    let Some(path) = joined(&tree, "turning.mp3", &links, &BARE_MP3) else {
+        return Ok(());
+    };
+    let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::F32])]);
+    let player = Player::with_backend(correcting_the_room(SECONDS_OF_RESPONSE), move |_| {
+        Ok(Box::new(backend))
+    })?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+
+    let mut finished = false;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * F32_STEREO_FRAME,
+        |player, graph| {
+            finished |= !graph.played.is_empty() && !plays(player, 1);
+            finished
+        },
+        "the whole row to play past its turn",
+    );
+
+    let graph = graph.lock();
+    let first_link = links[0].frames() * F32_STEREO_FRAME;
+    assert!(graph.played.len() > first_link + links[1].frames() * F32_STEREO_FRAME);
+    assert!(sounds(&graph.played[..first_link]));
+    assert!(sounds(&graph.played[first_link..]));
+    assert!(
+        !player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "the turn failed the row"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_seek_back_across_a_turn_reopens_the_output_for_the_format_it_lands_in() -> Result<()> {
     let tree = Tree::new();
     let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];

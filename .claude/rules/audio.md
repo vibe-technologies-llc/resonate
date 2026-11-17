@@ -432,7 +432,13 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   for the new shape against the open one (`keeps_its_stream_for`, as `keeps_its_stream`). The same
   stream, packing and ring depth: the chain is swapped in place (`swap_chain`; a new source never
   carries the front), the old chain's held frames handed on first, so nothing is lost and no gap
-  opens (a mono MP3 turning stereo on a stereo stream). Otherwise bit-perfect wins as it does
+  opens (a mono MP3 turning stereo on a stereo stream). The swap waits for the ring to free room for
+  those held frames, so where they could never fit it (a convolver's flush is its response and a
+  partition, up to ten seconds, against a ring sized from the buffer alone;
+  `Output::could_ever_take_what_the_chain_holds`) the turn drains as the stream-moving one below
+  does rather than wait for ever
+  (`a_stream_turning_from_mono_to_stereo_under_a_response_longer_than_the_ring_drains_and_plays_on`).
+  Otherwise bit-perfect wins as it does
   between tracks: the old chain is flushed, the ring drains and the graph is asked to drain
   (`Output::ends_at_a_change`), then `settle` rebinds where the decoder stands, with no seek,
   building the new output `Entering::Whole` (`Track::at_a_change`) and handing it the drained
