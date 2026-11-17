@@ -162,7 +162,7 @@ use crate::{
     scanning::{enrich, scan},
     served::Served,
     sinks::{Learning, learn_what_it_plays, list_sinks},
-    tagging::{dedupe, lyrics_beside, tag},
+    tagging::{dedupe, lyrics_beside, lyrics_into_tags, tag},
     vocabulary::Meaning,
 };
 
@@ -446,6 +446,12 @@ fn run() -> Result<()> {
             })
         }
         Some(Sub::Forget { roots }) => forget(&open_library(&cli, &config)?, roots),
+        Some(Sub::Tag {
+            lyrics,
+            apply,
+            into_tags: true,
+            ..
+        }) if !lyrics.is_empty() => lyrics_into_tags(&open_library(&cli, &config)?, lyrics, *apply),
         Some(Sub::Tag {
             lyrics,
             apply,

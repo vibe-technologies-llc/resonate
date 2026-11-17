@@ -1519,6 +1519,14 @@ pub enum Sub {
             help = words::grammar::sub_tag_replace()
         )]
         replace: bool,
+
+        #[arg(
+            long,
+            requires = "lyrics",
+            conflicts_with = "replace",
+            help = words::grammar::sub_tag_into_tags()
+        )]
+        into_tags: bool,
     },
 
     #[command(

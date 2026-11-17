@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use resonate_codec::{CoverArt, Popularity};
+use resonate_codec::{CoverArt, Popularity, TagEdit, TagField};
 use resonate_library::{FileTags, Library, PassKind, RetagOptions, RetagSummary, SheetScope};
 use resonate_lyrics::{Beside, KeptSheet, Standing, plan_beside, write_beside};
 
@@ -20,14 +20,46 @@ use crate::{
 };
 
 pub(crate) fn tag(library: &Library, roots: &[PathBuf], apply: bool, undo: bool) -> Result<()> {
-    let summary = until_told(library.retag(
-        Arc::new(FileTags::default()),
+    retagged(
+        library,
         RetagOptions {
             roots: filed_from(roots),
             apply,
             undo,
+            lyrics: Vec::new(),
         },
-    )?)?;
+    )
+}
+
+pub(crate) fn lyrics_into_tags(library: &Library, files: &[PathBuf], apply: bool) -> Result<()> {
+    let mut tracks = Vec::new();
+    for file in files {
+        let path = from_here(&local_path(file));
+        match library.track_at(&path, None)? {
+            Some(track) => tracks.push(track.id),
+            None => said!(
+                "{}",
+                words::beside::not_in_the_catalog(path.display().to_string())
+            ),
+        }
+    }
+    if tracks.is_empty() {
+        return Ok(());
+    }
+
+    retagged(
+        library,
+        RetagOptions {
+            apply,
+            lyrics: tracks,
+            ..RetagOptions::default()
+        },
+    )
+}
+
+fn retagged(library: &Library, options: RetagOptions) -> Result<()> {
+    let apply = options.apply;
+    let summary = until_told(library.retag(Arc::new(FileTags::default()), options)?)?;
 
     said_on!("{}", tagged(&summary, &library.roots()?, apply));
     finished(PassKind::Retag, summary.cancelled)?;
@@ -165,6 +197,13 @@ fn rated(popularity: Popularity) -> String {
     }
 }
 
+fn shown(edit: &TagEdit) -> String {
+    match edit.field {
+        TagField::Lyrics => words::main::lyric_lines(edit.value.lines().count()),
+        _ => edit.value.clone(),
+    }
+}
+
 fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
     let retagging = &summary.retagging;
     if retagging.writes.is_empty()
@@ -183,7 +222,7 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
                 table.push(vec![
                     mem::take(&mut named),
                     edit.field.to_string(),
-                    edit.value.clone(),
+                    shown(edit),
                 ]);
             }
             for field in &write.taken {
@@ -289,14 +328,16 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, slice};
 
+    use clap::Parser as _;
+    use resonate_codec::{Picturing, TagSource as _};
     use resonate_core::MediaLocation;
     use resonate_library::LyricText;
 
     use super::*;
     use crate::{
-        cli::Sub,
+        cli::{Cli, Sub},
         fixtures::{parsed, scanned, scratch, silent_wave},
     };
 
@@ -369,6 +410,53 @@ mod tests {
 
         assert!(matches!(outside, Sheeted::NotInTheCatalog));
         assert!(!other.with_extension("lrc").exists());
+    }
+
+    #[test]
+    fn the_lyrics_kept_for_a_file_go_into_its_tags_when_asked_and_the_sheet_is_left_unwritten() {
+        let (library, track) = kept_beside("lyrics-into-tags");
+
+        lyrics_into_tags(&library, slice::from_ref(&track), false).expect("a plan");
+        let planned = FileTags::default()
+            .read(&MediaLocation::local(&track), Picturing::Whether)
+            .expect("its tags")
+            .tags
+            .lyrics;
+        lyrics_into_tags(&library, slice::from_ref(&track), true).expect("a write");
+        let written = FileTags::default()
+            .read(&MediaLocation::local(&track), Picturing::Whether)
+            .expect("its tags")
+            .tags
+            .lyrics;
+
+        assert_eq!(planned, None);
+        assert_eq!(written.as_deref(), Some(KEPT.trim_end()));
+        assert!(!track.with_extension("lrc").exists());
+        assert!(library.retag_walks_back().expect("the record"));
+    }
+
+    #[test]
+    fn lyrics_go_into_the_tags_or_beside_the_file_and_never_both_ways_at_once() {
+        let into = parsed(&["resonate", "tag", "--lyrics", "a.flac", "--into-tags"]);
+        let both = Cli::try_parse_from([
+            "resonate",
+            "tag",
+            "--lyrics",
+            "a.flac",
+            "--into-tags",
+            "--replace",
+        ]);
+        let alone = Cli::try_parse_from(["resonate", "tag", "--into-tags"]);
+
+        assert!(matches!(
+            into.command,
+            Some(Sub::Tag {
+                into_tags: true,
+                ..
+            })
+        ));
+        assert!(both.is_err());
+        assert!(alone.is_err());
     }
 
     #[test]

@@ -89,6 +89,7 @@ pub enum TagField {
     AlbumArtistSort,
     TitleSort,
     AlbumSort,
+    Lyrics,
 }
 
 const COMPILED: &str = "1";
@@ -99,7 +100,7 @@ const LISTED_APART: &str = "; ";
 const APE_BEATS: &str = "BPM";
 
 impl TagField {
-    pub const ALL: [Self; 40] = [
+    pub const ALL: [Self; 41] = [
         Self::Title,
         Self::Artist,
         Self::Album,
@@ -140,6 +141,7 @@ impl TagField {
         Self::AlbumArtistSort,
         Self::TitleSort,
         Self::AlbumSort,
+        Self::Lyrics,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -184,6 +186,7 @@ impl TagField {
             Self::AlbumArtistSort => "album artist sort",
             Self::TitleSort => "title sort",
             Self::AlbumSort => "album sort",
+            Self::Lyrics => "lyrics",
         }
     }
 
@@ -233,6 +236,7 @@ impl TagField {
             Self::AlbumArtistSort => tags.album_artist_sort.clone(),
             Self::TitleSort => tags.title_sort.clone(),
             Self::AlbumSort => tags.album_sort.clone(),
+            Self::Lyrics => tags.lyrics.clone(),
         }
     }
 
@@ -280,12 +284,14 @@ impl TagField {
             Self::AlbumArtistSort => tags.album_artist_sort = text,
             Self::TitleSort => tags.title_sort = text,
             Self::AlbumSort => tags.album_sort = text,
+            Self::Lyrics => tags.lyrics = text,
         }
     }
 
     fn key_in(self, kind: TagType) -> Option<ItemKey> {
         match (self, kind) {
             (Self::BeatsPerMinute, TagType::VorbisComments) => Some(ItemKey::Bpm),
+            (Self::Lyrics, TagType::Id3v2) => Some(ItemKey::UnsyncLyrics),
             (Self::BeatsPerMinute, TagType::Ape) | (Self::Performer, TagType::Id3v2) => None,
             (field, _) => Some(field.key()),
         }
@@ -340,6 +346,7 @@ impl TagField {
             Self::AlbumArtistSort => ItemKey::AlbumArtistSortOrder,
             Self::TitleSort => ItemKey::TrackTitleSortOrder,
             Self::AlbumSort => ItemKey::AlbumTitleSortOrder,
+            Self::Lyrics => ItemKey::Lyrics,
         }
     }
 }
@@ -2307,6 +2314,10 @@ mod tests {
             edited(TagField::AlbumArtistSort, "Pink Floyd"),
             edited(TagField::TitleSort, "Echoes"),
             edited(TagField::AlbumSort, "Meddle"),
+            edited(
+                TagField::Lyrics,
+                "[00:01.00]Overhead the albatross\n[00:05.00]Hangs motionless upon the air",
+            ),
         ]
     }
 

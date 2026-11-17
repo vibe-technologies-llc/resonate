@@ -148,6 +148,7 @@ const fn spelling(field: TagField) -> Spelling {
         F::AlbumArtistSort => spelled(Album, "ALBUMARTISTSORT", &[]),
         F::TitleSort => spelled(Album, "TITLESORT", &[]),
         F::AlbumSort => spelled(Album, "ALBUMSORT", &[]),
+        F::Lyrics => spelled(Album, "LYRICS", &["UNSYNCEDLYRICS", "UNSYNCED LYRICS"]),
     }
 }
 

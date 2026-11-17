@@ -49,3 +49,4 @@ delete-from-every-device = Delete from every device…
 save-the-lyrics = Save the lyrics
 lyrics-beside-the-file = Beside the file
 lyrics-over-the-sheet-there = Over a sheet already there
+lyrics-into-the-tags = Into the file's tags

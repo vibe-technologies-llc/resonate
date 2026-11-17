@@ -198,6 +198,9 @@ dependency (tested without a window).
   nothing landed there meanwhile); a dead writer's staging for the same sheet is swept by the next
   write (`staged_for`, `writer::writer_of`;
   `a_staged_sheet_a_dead_writer_left_is_swept_by_the_next_write`).
+- **The tags are the second home, through the retag** (`library.md`'s *Fetched lyrics go into a
+  file's tags only when the listener asks*): the kept LRC or plain text, read back as `Embedded`
+  reads it, put back by `tag --undo` or *Put the last run back*.
 - **Only a file of its own has a sidecar of its own**: a row cut from a shared file (a span) or
   any location that is not local is passed over by both callers, the terminal's `tag --lyrics`
   (`binary.md`) and the window's *Save the lyrics* (`ui.md`).

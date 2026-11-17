@@ -304,7 +304,8 @@ gaining `Vault`, the `vault_objects` and `kept_tags` tables; their schema is in 
   `tracks.lyrics` and `tracks.explicit`. An object that will not open falls back to the row's file. `info`, scan, import
   have no stand-in: they read the file.
 - **What the catalog cannot fill, the import keeps.** `vaulted::FILLED_FROM_THE_CATALOG` names the
-  nineteen `TagField`s the stand-in reads off `tracks`, `albums` and `artists`; every other field
+  twenty `TagField`s the stand-in reads off `tracks`, `albums` and `artists` (`tracks.lyrics` among
+  them, so a song's words are never kept twice); every other field
   `Kept::declared` holds (credits, comment, totals, label, catalogue number, barcode, grouping,
   copyright, BPM, compilation, sort names) goes to `kept_tags (track_id, field, value)` via
   `note_vaulted` and a delivery's row, spelled by `TagField::read`, set back by `TagField::set`

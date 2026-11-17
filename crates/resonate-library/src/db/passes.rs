@@ -7,7 +7,7 @@ use std::{
 use resonate_codec::Sources;
 use resonate_core::TrackId;
 use resonate_providers::Providers;
-use rusqlite::types::Value;
+use rusqlite::{OptionalExtension as _, params, types::Value};
 
 use super::{
     Asking, Library, ReleaseTotals, Source, Walk, asking_across_processes, counted_by_album,
@@ -221,6 +221,35 @@ impl Library {
             .into_iter()
             .map(|raw| raw.into_tagged(&totals.tracks, &totals.discs))
             .collect()
+        })
+    }
+
+    pub(crate) fn lyrics_to_tag(&self, track: TrackId) -> Result<Option<retag::LyricsToTag>> {
+        self.inner.read(|connection| {
+            connection
+                .query_row(
+                    "SELECT t.path,
+                            t.span_frames IS NOT NULL OR t.span_start <> 0
+                                OR EXISTS (SELECT 1 FROM tracks o
+                                            WHERE o.path = t.path AND o.id <> t.id),
+                            t.vault_key IS NOT NULL,
+                            k.text
+                       FROM tracks t
+                       LEFT JOIN lyrics_kept k
+                              ON k.path = t.path AND k.span_start = t.span_start
+                      WHERE t.id = ?1",
+                    params![track.get() as i64],
+                    |row| {
+                        Ok(retag::LyricsToTag {
+                            path: store::path_of(&row.get::<_, String>(0)?),
+                            cut: row.get(1)?,
+                            vaulted: row.get(2)?,
+                            kept: row.get(3)?,
+                        })
+                    },
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))
         })
     }
 

@@ -272,7 +272,9 @@ so `editing` sees it.
   path, *Show in the file manager*, *Save the lyrics* nesting *Beside the file* and *Over a sheet
   already there* for every whole local file among the rows, `Menu::saves_the_lyrics` and
   `LibraryModel::save_the_lyrics` on the background executor, one toast counting what was saved,
-  already there, left alone and why: `lyrics.md`), *Identify* (nesting *Enrich this song*, the ISRC and *Place on
+  already there, left alone and why: `lyrics.md`, and *Into the file's tags*,
+  `LibraryModel::tag_the_lyrics`, an applied tag pass over those songs alone that *Put the last run
+  back* walks back), *Identify* (nesting *Enrich this song*, the ISRC and *Place on
   a release…*, wherever the reference is reachable), and last what takes something away (*Take out
   of the queue*, *Remove* with hide, forget a delivery and delete; a playlist's *Discard*). The
   shared pieces (`Menu::holds`, `favours`, `reaches`, `shares`, `offers_the_file`,

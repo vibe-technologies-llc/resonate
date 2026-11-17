@@ -20847,6 +20847,7 @@ fn retagged(library: &Library, apply: bool) -> Result<RetagSummary> {
                 roots: Vec::new(),
                 apply,
                 undo: false,
+                lyrics: Vec::new(),
             },
         )?
         .join()?;
@@ -20979,11 +20980,109 @@ fn walked_back(library: &Library, apply: bool) -> Result<RetagSummary> {
                 roots: Vec::new(),
                 apply,
                 undo: true,
+                lyrics: Vec::new(),
             },
         )?
         .join()?;
     assert!(!summary.cancelled, "the pass reported itself cancelled");
     Ok(summary)
+}
+
+fn lyrics_tagged(library: &Library, tracks: Vec<TrackId>, apply: bool) -> Result<RetagSummary> {
+    let summary = library
+        .retag(
+            Arc::new(FileTags::default()),
+            RetagOptions {
+                apply,
+                lyrics: tracks,
+                ..RetagOptions::default()
+            },
+        )?
+        .join()?;
+    assert!(!summary.cancelled, "the pass reported itself cancelled");
+    Ok(summary)
+}
+
+#[test]
+fn fetched_lyrics_go_into_a_songs_tags_only_when_asked_and_the_walk_back_takes_them_out()
+-> Result<()> {
+    const SHEET: &str =
+        "[00:01.00]Overhead the albatross\n[00:05.00]Hangs motionless upon the air\n";
+    let tree = Tree::new();
+    let sung = tree.write(
+        "1.aiff",
+        &Aiff::new()
+            .text(TITLE, "Echoes")
+            .text(ARTIST, "Pink Floyd")
+            .build(),
+    );
+    let unsung = tree.write(
+        "2.aiff",
+        &Aiff::new()
+            .text(TITLE, "One of These Days")
+            .text(ARTIST, "Pink Floyd")
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    library.keep_lyrics(
+        &MediaLocation::local(&sung),
+        None,
+        Some(&LyricText {
+            text: SHEET.to_owned(),
+            synced: true,
+            lyricsfile: None,
+        }),
+    )?;
+    let asked = [&sung, &unsung]
+        .into_iter()
+        .map(|file| Ok(library.track_at(file, None)?.expect("a scanned song").id))
+        .collect::<Result<Vec<_>>>()?;
+
+    let everything = retagged(&library, true)?;
+    let planned = lyrics_tagged(&library, asked.clone(), false)?;
+    let untouched = tags_of(&sung).lyrics;
+    let written = lyrics_tagged(&library, asked.clone(), true)?;
+    let tagged = tags_of(&sung).lyrics;
+    let again = lyrics_tagged(&library, asked, true)?;
+    let put_back = walked_back(&library, true)?;
+
+    assert!(
+        everything
+            .retagging
+            .writes
+            .iter()
+            .flat_map(|write| &write.edits)
+            .all(|edit| edit.field != TagField::Lyrics),
+        "a run nobody asked lyrics of wrote them"
+    );
+    assert_eq!(planned.retagging.writes.len(), 1);
+    assert_eq!(
+        planned.retagging.writes[0].edits,
+        [TagEdit {
+            field: TagField::Lyrics,
+            value: SHEET.trim_end().to_owned(),
+        }]
+    );
+    assert_eq!(
+        planned
+            .retagging
+            .passed_over
+            .iter()
+            .map(|over| (over.path.clone(), over.why))
+            .collect::<Vec<_>>(),
+        [(unsung.clone(), Unwritten::NoLyricsKept)]
+    );
+    assert_eq!(untouched, None);
+    assert_eq!(written.stats.written, 1);
+    assert_eq!(tagged.as_deref(), Some(SHEET.trim_end()));
+    assert_eq!(again.stats.written, 0);
+    assert_eq!(again.stats.unchanged, 1);
+    assert_eq!(put_back.stats.written, 1);
+    assert_eq!(tags_of(&sung).lyrics, None);
+    assert_eq!(tags_of(&sung).title.as_deref(), Some("Echoes"));
+    Ok(())
 }
 
 #[test]
@@ -21527,6 +21626,7 @@ fn a_write_that_lands_but_reads_back_otherwise_can_still_be_put_back() -> Result
                 roots: Vec::new(),
                 apply: true,
                 undo: false,
+                lyrics: Vec::new(),
             },
         )?
         .join()?;
@@ -21640,6 +21740,7 @@ fn an_edit_another_program_lands_while_a_write_is_read_back_is_read_by_the_next_
                 roots: Vec::new(),
                 apply: true,
                 undo: false,
+                lyrics: Vec::new(),
             },
         )?
         .join()?;

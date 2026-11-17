@@ -1,6 +1,7 @@
 use std::{mem, path::PathBuf, sync::Arc};
 
 use gpui::{Context, Task};
+use resonate_core::TrackId;
 use resonate_library::{FileTags, Layout, OrganiseOptions, RetagOptions};
 
 use super::{
@@ -48,8 +49,21 @@ impl LibraryModel {
                 roots: Vec::new(),
                 apply: pass.applies(),
                 undo: false,
+                lyrics: Vec::new(),
             },
             pass,
+            cx,
+        );
+    }
+
+    pub fn tag_the_lyrics(&mut self, tracks: Vec<TrackId>, cx: &mut Context<Self>) {
+        self.tag(
+            RetagOptions {
+                apply: true,
+                lyrics: tracks,
+                ..RetagOptions::default()
+            },
+            Pass::Apply,
             cx,
         );
     }
@@ -60,6 +74,7 @@ impl LibraryModel {
                 roots: Vec::new(),
                 apply: true,
                 undo: true,
+                lyrics: Vec::new(),
             },
             Pass::Apply,
             cx,

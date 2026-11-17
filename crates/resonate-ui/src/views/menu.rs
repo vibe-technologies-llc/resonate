@@ -1106,6 +1106,7 @@ impl Menu {
             return self;
         }
         let over = tracks.clone();
+        let tagged = tracks.clone();
 
         self.nests(Icon::Lyrics, words::menu::save_the_lyrics(), move |menu| {
             menu.does(
@@ -1123,6 +1124,15 @@ impl Menu {
                 move |this, _, cx| {
                     this.library.update(cx, |library, cx| {
                         library.save_the_lyrics(over.clone(), Standing::Replaced, cx);
+                    });
+                },
+            )
+            .does(
+                Icon::Rename,
+                words::menu::lyrics_into_the_tags(),
+                move |this, _, cx| {
+                    this.library.update(cx, |library, cx| {
+                        library.tag_the_lyrics(tagged.clone(), cx);
                     });
                 },
             )

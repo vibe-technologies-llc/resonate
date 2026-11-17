@@ -1427,7 +1427,7 @@ preview-then-arm shape as *Organising*.
 
 **Every field the `TagSet` names a writer can reach is a `TagField`** (names, numbers, date, label,
 identifiers, genre, seven credits, comment, BPM, compilation, grouping, copyright, four ReplayGain
-values, four sort names). `TagField::read` spells each as written, so writes compare in the file's
+values, four sort names, lyrics). `TagField::read` spells each as written, so writes compare in the file's
 text (compilation `1`, gain `spelled_gain`'s `+x.xx dB`, peak `spelled_peak`'s six places).
 `TagField::key_in` is the lofty key per tag kind, `None` where lofty has none (APE BPM, ID3
 performer): those are `TagField::unkeyed_in`, written into the concrete tag `saved` converts the
@@ -1453,6 +1453,18 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   *artist's* own `answered` (`land_release` never repoints `albums.artist_id`). Identifiers go
   whatever answered: `tracks.mbid`, `release_track_mbid`, `artist_mbid`, `isrc`, `albums.mbid`,
   `release_group`, what the tags declared about the pressing.
+- **Fetched lyrics go into a file's tags only when the listener asks, never with a run's names.**
+  `offered` never offers `TagField::Lyrics`; `RetagOptions::lyrics` names the songs whose kept
+  `lyrics_kept.text` a run writes and nothing else (`lyrics_planned`, reading
+  `Library::lyrics_to_tag`): trimmed, since the reader trims what it reads back, and passed over as
+  `Unwritten::Cut`, `Vaulted` or `NoLyricsKept` (not a failure) where it has no file of its own or
+  nothing is kept. ID3v2 takes it as `USLT` through `ItemKey::UnsyncLyrics` (lofty refuses
+  `ItemKey::Lyrics` there, since `SYLT` is the timed frame), a Vorbis comment as `LYRICS`, MP4 as
+  `©lyr`, APE as `Lyrics`, Matroska as `LYRICS`. The write is an ordinary retag write: noted before
+  the file, read back, followed by the catalog (`tracks.lyrics` too, so the vault's stand-in and the
+  search read what the file now holds) and put back by the walk back
+  (`fetched_lyrics_go_into_a_songs_tags_only_when_asked_and_the_walk_back_takes_them_out`). A file
+  whose `SYLT` outranks its `USLT` reads back otherwise and stays `Unconfirmed`.
 - **A sort name is the lookup's, only where the file names none.** `ArtistSort`/`AlbumArtistSort`
   come from the artist's `sort_name` where it answered (the track artist only if it is the whole of
   `tracks.artist`); `KEPT_AS_THE_FILE_SPELLS_IT` drops either where the file has one.

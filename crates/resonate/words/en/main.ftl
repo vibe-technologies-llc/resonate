@@ -126,6 +126,10 @@ plays = { $plays ->
 favourite-plays = favourite · { $plays }
 not-favourite-plays = not a favourite · { $plays }
 nothing-to-tag = nothing to tag
+lyric-lines = { $count ->
+    [one] one line of lyrics
+   *[other] { $count } lines of lyrics
+}
 sheet-track = track { $number } { $field }
 written = written { $written } | fields { $fields } | pictures { $pictures } | ratings { $ratings }
 would-write = would write { $written } | fields { $fields } | pictures { $pictures } | ratings { $ratings }

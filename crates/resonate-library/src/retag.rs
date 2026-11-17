@@ -37,6 +37,7 @@ pub enum Unwritten {
     Refused,
     Unconfirmed,
     SheetChanged,
+    NoLyricsKept,
 }
 
 impl Unwritten {
@@ -53,6 +54,7 @@ impl Unwritten {
             Self::Refused => words::retag::refused(),
             Self::Unconfirmed => words::retag::unconfirmed(),
             Self::SheetChanged => words::retag::sheet_changed(),
+            Self::NoLyricsKept => words::retag::no_lyrics_kept(),
         }
     }
 }
@@ -129,6 +131,7 @@ pub struct RetagOptions {
     pub roots: Vec<PathBuf>,
     pub apply: bool,
     pub undo: bool,
+    pub lyrics: Vec<TrackId>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -261,6 +264,18 @@ fn run(
             let landed = apply(library, tags, &mut retagging, progress, &mut noted)?;
             let finished = retagging.passed_over.is_empty() && !progress.is_cancelled();
             library.retag_walked_back(&landed.files, &landed.sheets, finished)?;
+        }
+        return Ok(RetagSummary {
+            stats: progress.snapshot(),
+            retagging,
+            cancelled: progress.is_cancelled(),
+        });
+    }
+
+    if !options.lyrics.is_empty() {
+        let mut retagging = lyrics_planned(library, &options.lyrics, tags, progress)?;
+        if options.apply {
+            apply(library, tags, &mut retagging, progress, &mut noted)?;
         }
         return Ok(RetagSummary {
             stats: progress.snapshot(),
@@ -463,6 +478,80 @@ fn planned(
     retagging
 }
 
+pub(crate) struct LyricsToTag {
+    pub path: PathBuf,
+    pub cut: bool,
+    pub vaulted: bool,
+    pub kept: Option<String>,
+}
+
+fn lyrics_planned(
+    library: &Library,
+    tracks: &[TrackId],
+    tags: &dyn TagSink,
+    progress: &RetagProgress,
+) -> Result<Retagging> {
+    let mut retagging = Retagging::default();
+    for &track in tracks {
+        if progress.is_cancelled() {
+            break;
+        }
+        let Some(row) = library.lyrics_to_tag(track)? else {
+            continue;
+        };
+        RetagProgress::step(&progress.walked);
+
+        let why = match (&row.kept, row.cut, row.vaulted) {
+            (_, true, _) => Some(Unwritten::Cut),
+            (_, _, true) => Some(Unwritten::Vaulted),
+            (None, ..) => Some(Unwritten::NoLyricsKept),
+            (Some(_), false, false) => None,
+        };
+        let location = MediaLocation::local(&row.path);
+        let why = why.or_else(|| (!tags.writes(&location)).then_some(Unwritten::Unsupported));
+        if let Some(why) = why {
+            retagging.pass_over(&row.path, why, progress);
+            continue;
+        }
+        let Some(kept) = row.kept.as_deref().map(str::trim) else {
+            continue;
+        };
+
+        let held = match tags.read(&location, Picturing::Whether) {
+            Ok(held) => held.tags,
+            Err(source) => {
+                tracing::debug!(
+                    path = %row.path.display(),
+                    %source,
+                    "a file's own tags could not be read, so no lyrics are written to it"
+                );
+                retagging.pass_over(&row.path, Unwritten::Unreadable, progress);
+                continue;
+            }
+        };
+        if TagField::Lyrics.read(&held).as_deref() == Some(kept) {
+            RetagProgress::step(&progress.unchanged);
+            continue;
+        }
+
+        retagging.writes.push(Written {
+            track,
+            path: row.path,
+            edits: vec![TagEdit {
+                field: TagField::Lyrics,
+                value: kept.to_owned(),
+            }],
+            taken: Vec::new(),
+            picture: None,
+            unpictured: false,
+            popularity: None,
+            was: Held::of(&held, [TagField::Lyrics], None),
+        });
+    }
+
+    Ok(retagging)
+}
+
 fn sheet_planned(retagging: &mut Retagging, rows: &[TrackToTag], progress: &RetagProgress) {
     match sheeted::planned(rows) {
         sheeted::Planned::Write(write) => retagging.sheets.push(write),
@@ -618,6 +707,7 @@ pub(crate) struct Followed {
     pub artist: Option<Option<String>>,
     pub title_sort: Option<Option<String>>,
     pub artist_sort: Option<Option<String>>,
+    pub lyrics: Option<Option<String>>,
     pub file_size: u64,
     pub modified: SystemTime,
 }
@@ -939,6 +1029,7 @@ fn written(tags: &dyn TagSink, write: &Written) -> std::result::Result<Followed,
         artist: wrote(write, TagField::Artist),
         title_sort: wrote(write, TagField::TitleSort),
         artist_sort: wrote(write, TagField::ArtistSort),
+        lyrics: wrote(write, TagField::Lyrics),
         file_size: landed.len(),
         modified: landed.modified().unwrap_or_else(|_| SystemTime::now()),
     })
@@ -980,6 +1071,7 @@ pub(crate) fn files_retagged(
                     tagged_artist = CASE WHEN ?4 THEN ?5 ELSE tagged_artist END,
                     title_sort = CASE WHEN ?8 THEN ?9 ELSE title_sort END,
                     artist_sort = CASE WHEN ?10 THEN ?11 ELSE artist_sort END,
+                    lyrics = CASE WHEN ?12 THEN ?13 ELSE lyrics END,
                     file_size = ?6,
                     modified = ?7
               WHERE id = ?1",
@@ -1001,7 +1093,9 @@ pub(crate) fn files_retagged(
                 follow.title_sort.is_some(),
                 follow.title_sort.clone().flatten(),
                 follow.artist_sort.is_some(),
-                follow.artist_sort.clone().flatten()
+                follow.artist_sort.clone().flatten(),
+                follow.lyrics.is_some(),
+                follow.lyrics.clone().flatten()
             ])
             .map_err(|source| Error::store(StoreOp::Update, source))?;
         kept.put_back(follow.track)?;

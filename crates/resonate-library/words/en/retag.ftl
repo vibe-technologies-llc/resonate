@@ -5,3 +5,4 @@ unreadable = its tags could not be read
 refused = its tags could not be written
 unconfirmed = what was written did not read back
 sheet-changed = its cue sheet changed since the scan read it
+no-lyrics-kept = no fetched lyrics are kept for it

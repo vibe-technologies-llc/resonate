@@ -55,7 +55,11 @@ paths:
   said so. Each file is read as `from_here` reads it and found by `Library::track_at`; one not in
   the catalog, cut from a shared file, with no fetched lyrics kept, already holding them, or beside a
   richer sheet is said and not counted as failing; a sheet that could not be written is, so the run
-  ends `FilesFailed`. It conflicts with `--root` and `--undo`.
+  ends `FilesFailed`. It conflicts with `--root` and `--undo`. **`--into-tags` writes them into
+  each file's own tags instead** (`tagging::lyrics_into_tags`, a retag run over
+  `RetagOptions::lyrics`, `library.md`), its plan printed as the rest of `tag` prints one with a
+  lyric field shown as its count of lines (`shown`), and `--undo` puts it back like any run; it
+  conflicts with `--replace`.
 - **`scan` is incremental and off links unless told** (`--full`, `--follow-links`).
 - **`forget` reads each argument as the first of three**: a root (`Library::remove_root`); a
   path/URI `wants` lists a delivery under (`forget_delivered`, want due again); a folder, whose rows

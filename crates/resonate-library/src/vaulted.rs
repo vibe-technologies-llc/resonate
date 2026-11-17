@@ -10,7 +10,7 @@ use crate::{
     store::{self, path_text},
 };
 
-const FILLED_FROM_THE_CATALOG: [TagField; 19] = [
+const FILLED_FROM_THE_CATALOG: [TagField; 20] = [
     TagField::Title,
     TagField::Artist,
     TagField::Album,
@@ -30,6 +30,7 @@ const FILLED_FROM_THE_CATALOG: [TagField; 19] = [
     TagField::ReplayGainTrackPeak,
     TagField::ReplayGainAlbumGain,
     TagField::ReplayGainAlbumPeak,
+    TagField::Lyrics,
 ];
 
 const KEPT: &str = "SELECT field, value FROM kept_tags WHERE track_id = ?1";
