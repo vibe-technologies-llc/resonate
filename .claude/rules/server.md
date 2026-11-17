@@ -410,8 +410,12 @@ it off.
   and `/p/` pages a real view link and party key name on loopback, waits for the list to be drawn and
   the code and the `resonate://` link to be written, and reads the browser console in its chrome
   context (`MOZ_REMOTE_ALLOW_SYSTEM_ACCESS`) for any `Content-Security-Policy` message; skipped
-  without `firefox` on the path. Site icons are off in that profile, since Firefox's own request
-  for `/favicon.ico` is the one load `default-src 'none'` refuses.
+  without `firefox` on the path, and skipped under a snap Firefox (the `snapped` check: a `snap`
+  folder in its path or its resolved path, `/snap/` in a wrapper script, or `SNAP` in the
+  environment), which cannot read the profile folder and would wait out the port file. Site icons
+  stay on in that profile: each page names `<link rel="icon" href="data:,">` and the policy's
+  `img-src data:` admits it, so Firefox never asks for `/favicon.ico` and the console holds no
+  violation at all (`a_page_names_an_empty_icon_so_no_browser_asks_for_one_the_policy_refuses`).
 - At most 256 upgrades are in flight at once and the upgrade and `Hello` share the 10 s allowance.
   The server pings every 30 s and a reader silent for 90 s ends the session.
   `a_listener_behind_a_proxy_turns_away_a_connection_the_proxy_did_not_forward`.

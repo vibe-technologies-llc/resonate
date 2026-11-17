@@ -44,6 +44,7 @@ const PAGE: &str = r##"<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+<link rel="icon" href="data:,">
 <title>Resonate</title>
 <style>
 :root{color-scheme:light dark;--ground:#fff;--ink:#17151c;--faint:#5f5a69;--accent:#6d4aa0;--paper:#fff;--line:#e4e1ea}
@@ -262,7 +263,7 @@ fn answered(status: &str, content_type: &str, scripts: &str, body: &str) -> Vec<
     format!(
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n\
          Connection: close\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\n\
-         X-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'none'; script-src \
+         X-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'none'; img-src data:; script-src \
          {scripts}; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; \
          base-uri 'none'; form-action 'none'\r\n\r\n{body}",
         body.len()
@@ -329,6 +330,28 @@ mod tests {
             assert_eq!(named, run, "{kind}");
             assert!(policy.contains("frame-ancestors 'none'"), "{kind}");
             assert!(head.contains("X-Frame-Options: DENY"), "{kind}");
+        }
+    }
+
+    #[test]
+    fn a_page_names_an_empty_icon_so_no_browser_asks_for_one_the_policy_refuses() {
+        for kind in [SHARED_PLAYLIST, PARTY] {
+            let answer = String::from_utf8(answer(Asked::Page(kind), &[])).expect("text");
+            let (head, body) = answer.split_once("\r\n\r\n").expect("a head and a body");
+            let policy = head
+                .lines()
+                .find_map(|line| line.strip_prefix("Content-Security-Policy: "))
+                .expect("a policy");
+
+            assert!(
+                body.contains(r#"<link rel="icon" href="data:,">"#),
+                "{kind}"
+            );
+            assert!(
+                policy
+                    .split("; ")
+                    .any(|directive| directive == "img-src data:")
+            );
         }
     }
 

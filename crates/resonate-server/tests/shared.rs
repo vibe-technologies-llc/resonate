@@ -1085,8 +1085,8 @@ const WHAT_THE_PARTY_PAGE_SHOWS: &str = "return { \
 
 #[test]
 fn firefox_runs_both_pages_under_their_policy_and_shows_the_list_a_real_link_names() {
-    if !Firefox::installed() {
-        eprintln!("skipped: no firefox to enforce the pages' policy");
+    if let Some(reason) = Firefox::unavailable() {
+        eprintln!("skipped: {reason}");
         return;
     }
     let hosted = hosted("firefox");

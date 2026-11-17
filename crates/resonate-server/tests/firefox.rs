@@ -1,8 +1,8 @@
 use std::{
-    fs,
+    env, fs,
     io::{BufRead, BufReader, Read, Write},
     net::{Ipv4Addr, SocketAddr, TcpStream},
-    path::Path,
+    path::{Component, Path, PathBuf},
     process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant},
@@ -18,9 +18,12 @@ const PORT_FILE: &str = "MarionetteActivePort";
 const SYSTEM_ACCESS: &str = "MOZ_REMOTE_ALLOW_SYSTEM_ACCESS";
 const A_COMMAND: u8 = 0;
 const AN_ANSWER: u64 = 1;
-const PREFERENCES: [(&str, &str); 4] = [
+const SNAP_ENVIRONMENT: &str = "SNAP";
+const SNAP_FOLDER: &str = "snap";
+const SNAP_PATH: &str = "/snap/";
+const WRAPPER_AT_MOST: u64 = 4096;
+const PREFERENCES: [(&str, &str); 3] = [
     ("marionette.port", "0"),
-    ("browser.chrome.site_icons", "false"),
     ("browser.shell.checkDefaultBrowser", "false"),
     ("browser.startup.homepage_override.mstone", "\"ignore\""),
 ];
@@ -51,13 +54,20 @@ pub struct Firefox {
 }
 
 impl Firefox {
-    pub fn installed() -> bool {
-        Command::new(FIREFOX)
+    pub fn unavailable() -> Option<&'static str> {
+        let runs = Command::new(FIREFOX)
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
-            .is_ok_and(|status| status.success())
+            .is_ok_and(|status| status.success());
+        if !runs {
+            return Some("no firefox to enforce the pages' policy");
+        }
+        if env::var_os(SNAP_ENVIRONMENT).is_some() || installed_as_a_snap() {
+            return Some("a snap firefox cannot read the test's profile folder");
+        }
+        None
     }
 
     pub fn headless(profile: &Path) -> Self {
@@ -183,5 +193,74 @@ fn port_written_in(profile: &Path) -> u16 {
         }
         assert!(Instant::now() < deadline, "firefox never opened marionette");
         thread::sleep(LOOKED_AT_EVERY);
+    }
+}
+
+fn installed_as_a_snap() -> bool {
+    let Some(location) = located(FIREFOX) else {
+        return false;
+    };
+    let resolved = location.canonicalize().unwrap_or_else(|_| location.clone());
+    let wrapper = fs::File::open(&location)
+        .and_then(|file| {
+            let mut text = String::new();
+            file.take(WRAPPER_AT_MOST).read_to_string(&mut text)?;
+            Ok(text)
+        })
+        .unwrap_or_default();
+
+    snapped(&location, &resolved, &wrapper)
+}
+
+fn located(program: &str) -> Option<PathBuf> {
+    env::split_paths(&env::var_os("PATH")?)
+        .map(|folder| folder.join(program))
+        .find(|candidate| candidate.is_file())
+}
+
+fn snapped(location: &Path, resolved: &Path, wrapper: &str) -> bool {
+    let in_the_snap_folder = |path: &Path| {
+        path.components()
+            .any(|part| part == Component::Normal(SNAP_FOLDER.as_ref()))
+    };
+
+    in_the_snap_folder(location) || in_the_snap_folder(resolved) || wrapper.contains(SNAP_PATH)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_firefox_under_the_snap_folder_or_resolving_to_the_snap_tool_is_a_snap() {
+        assert!(snapped(
+            Path::new("/snap/bin/firefox"),
+            Path::new("/usr/bin/snap"),
+            ""
+        ));
+        assert!(snapped(
+            Path::new("/usr/local/bin/firefox"),
+            Path::new("/snap/firefox/current/firefox"),
+            ""
+        ));
+        assert!(snapped(
+            Path::new("/usr/bin/firefox"),
+            Path::new("/usr/bin/firefox"),
+            "#!/bin/sh\nexec /snap/bin/firefox \"$@\"\n"
+        ));
+    }
+
+    #[test]
+    fn a_firefox_of_the_distribution_is_not_a_snap() {
+        assert!(!snapped(
+            Path::new("/usr/bin/firefox"),
+            Path::new("/usr/lib/firefox/firefox"),
+            "#!/bin/sh\nexec /usr/lib/firefox/firefox \"$@\"\n"
+        ));
+        assert!(!snapped(
+            Path::new("/home/snapper/bin/firefox"),
+            Path::new("/home/snapper/bin/firefox"),
+            ""
+        ));
     }
 }
