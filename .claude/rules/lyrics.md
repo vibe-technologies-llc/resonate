@@ -99,8 +99,9 @@ dependency (tested without a window).
   other codec, or whose content type is not lyrics/transcription. A UTF-16 text with no byte-order
   mark is big-endian, as ID3 says; a mark seen sets the order for the texts after it.
   `MOST_SYLLABLES` bounds the read;
-  of several language frames the first stands. The sidecar wins ties over the file's own (the
-  deliberate one). `read_lyrics(source, text)` is the reader's one public door (`Embedded`,
+  of several language frames the first stands. Written back, a sheet that frame reads as is framed
+  again as one (`sylt::timed`, `library.md`'s tag writing), so the read and the write agree. The
+  sidecar wins ties over the file's own (the deliberate one). `read_lyrics(source, text)` is the reader's one public door (`Embedded`,
   `OnlineLyrics`), so tag and service text share the bounds.
 - **Network providers live in `resonate-online`, keeping results in the library.** `OnlineLyrics`
   (LRCLIB and Better Lyrics, scored per song) is a `LyricProvider` the binary appends via

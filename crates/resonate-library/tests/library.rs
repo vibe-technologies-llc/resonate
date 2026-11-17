@@ -20767,6 +20767,11 @@ impl Aiff {
         }
     }
 
+    fn framed(mut self, id: &[u8; 4], body: &[u8]) -> Self {
+        frame(&mut self.id3, id, body);
+        self
+    }
+
     fn frames(mut self, frames: u32) -> Self {
         self.frames = frames;
         self
@@ -21081,6 +21086,131 @@ fn fetched_lyrics_go_into_a_songs_tags_only_when_asked_and_the_walk_back_takes_t
     assert_eq!(again.stats.unchanged, 1);
     assert_eq!(put_back.stats.written, 1);
     assert_eq!(tags_of(&sung).lyrics, None);
+    assert_eq!(tags_of(&sung).title.as_deref(), Some("Echoes"));
+    Ok(())
+}
+
+const TIMED_LYRICS: &[u8; 4] = b"SYLT";
+const PRIVATE: &[u8; 4] = b"PRIV";
+const HELD_PRIVATELY: &[u8] = b"another tagger\0its own bytes";
+const UNTIMED_LYRICS: &[u8; 4] = b"USLT";
+const STAMPED_IN_MILLISECONDS: u8 = 2;
+const CONTENT_OF_LYRICS: u8 = 1;
+
+fn timed_lyrics(lines: &[(&str, u32)]) -> Vec<u8> {
+    let mut body = vec![UTF8];
+    body.extend_from_slice(b"eng");
+    body.extend_from_slice(&[STAMPED_IN_MILLISECONDS, CONTENT_OF_LYRICS, 0]);
+    for (text, at) in lines {
+        body.extend_from_slice(text.as_bytes());
+        body.push(0);
+        body.extend_from_slice(&at.to_be_bytes());
+    }
+    body
+}
+
+fn untimed_lyrics(text: &str) -> Vec<u8> {
+    let mut body = vec![UTF8];
+    body.extend_from_slice(b"eng");
+    body.push(0);
+    body.extend_from_slice(text.as_bytes());
+    body
+}
+
+fn id3_frames_of(file: &Path) -> Vec<([u8; 4], Vec<u8>)> {
+    let bytes = fs::read(file).expect("a file to read");
+    let at = bytes
+        .windows(4)
+        .position(|window| window == b"ID3 ")
+        .expect("an ID3 chunk");
+    let tag = &bytes[at + 8..];
+    let synchsafe = |held: &[u8]| {
+        held[..4].iter().fold(0_usize, |size, byte| {
+            (size << 7) | usize::from(*byte & 0x7f)
+        })
+    };
+    let whole = synchsafe(&tag[6..10]);
+    let mut frames = Vec::new();
+    let mut rest = &tag[10..10 + whole];
+    while rest.len() >= 10 && rest[0] != 0 {
+        let id: [u8; 4] = rest[..4].try_into().expect("a frame id");
+        let size = synchsafe(&rest[4..8]);
+        frames.push((id, rest[10..10 + size].to_vec()));
+        rest = &rest[10 + size..];
+    }
+    frames
+}
+
+fn lyric_frames_of(file: &Path) -> Vec<([u8; 4], Vec<u8>)> {
+    id3_frames_of(file)
+        .into_iter()
+        .filter(|(id, _)| id == TIMED_LYRICS || id == UNTIMED_LYRICS)
+        .collect()
+}
+
+#[test]
+fn lyrics_written_over_a_timed_frame_read_back_and_the_walk_back_puts_the_timed_frame_back()
+-> Result<()> {
+    const FETCHED: &str = "[00:02.00]Strangers passing in the street\n";
+    const TIMED_AS: &str = "[00:01.000]Overhead the albatross\n[00:05.000]Hangs motionless\n";
+    let tree = Tree::new();
+    let sung = tree.write(
+        "1.aiff",
+        &Aiff::new()
+            .text(TITLE, "Echoes")
+            .text(ARTIST, "Pink Floyd")
+            .framed(
+                TIMED_LYRICS,
+                &timed_lyrics(&[
+                    ("Overhead the albatross", 1_000),
+                    ("Hangs motionless", 5_000),
+                ]),
+            )
+            .framed(
+                UNTIMED_LYRICS,
+                &untimed_lyrics("Overhead the albatross\nHangs motionless"),
+            )
+            .framed(PRIVATE, HELD_PRIVATELY)
+            .build(),
+    );
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    library.keep_lyrics(
+        &MediaLocation::local(&sung),
+        None,
+        Some(&LyricText {
+            text: FETCHED.to_owned(),
+            synced: true,
+            lyricsfile: None,
+        }),
+    )?;
+    let asked = vec![library.track_at(&sung, None)?.expect("a scanned song").id];
+    let before = tags_of(&sung).lyrics;
+    let framed_before = lyric_frames_of(&sung);
+
+    let written = lyrics_tagged(&library, asked, true)?;
+    let tagged = tags_of(&sung).lyrics;
+    let framed_written = lyric_frames_of(&sung);
+    let put_back = walked_back(&library, true)?;
+    let framed_put_back = lyric_frames_of(&sung);
+
+    assert_eq!(before.as_deref(), Some(TIMED_AS));
+    assert_eq!(written.stats.written, 1);
+    assert_eq!(tagged.as_deref(), Some(FETCHED.trim_end()));
+    assert!(
+        framed_written.iter().all(|(id, _)| id != TIMED_LYRICS),
+        "the timed frame the read prefers stayed beside the words written"
+    );
+    assert_eq!(put_back.stats.written, 1);
+    assert_eq!(tags_of(&sung).lyrics.as_deref(), Some(TIMED_AS));
+    assert_eq!(framed_put_back, framed_before);
+    assert!(
+        id3_frames_of(&sung)
+            .iter()
+            .any(|(id, body)| id == PRIVATE && body == HELD_PRIVATELY),
+        "a frame nobody asked to change was lost"
+    );
     assert_eq!(tags_of(&sung).title.as_deref(), Some("Echoes"));
     Ok(())
 }

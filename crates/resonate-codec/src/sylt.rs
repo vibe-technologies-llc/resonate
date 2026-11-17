@@ -5,8 +5,10 @@ use resonate_core::{TextEncoding, text::decoded_as};
 use crate::mpa::FrameClock;
 
 pub(crate) const FRAME_IDS: [&str; 2] = ["SYLT", "SLT"];
+pub(crate) const UNKNOWN_LANGUAGE: [u8; LANGUAGE_BYTES] = *b"XXX";
 
 const LANGUAGE_BYTES: usize = 3;
+const CONTENT_AT: usize = 1 + LANGUAGE_BYTES + 1;
 const MPEG_FRAMES: u8 = 1;
 const MILLISECONDS: u8 = 2;
 const STAMP_BYTES: usize = 4;
@@ -18,6 +20,10 @@ const CONTENT_OF_A_TRANSCRIPTION: u8 = 2;
 
 const UTF16_LE_BOM: [u8; 2] = [0xFF, 0xFE];
 const UTF16_BE_BOM: [u8; 2] = [0xFE, 0xFF];
+const LATIN1: u8 = 0;
+const UTF16_WITH_A_MARK: u8 = 1;
+const UTF16_BE: u8 = 2;
+const UTF8: u8 = 3;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Encoding {
@@ -30,12 +36,29 @@ enum Encoding {
 impl Encoding {
     fn of(byte: u8) -> Option<Self> {
         match byte {
-            0 => Some(Self::Latin1),
-            1 => Some(Self::Utf16 { little: false }),
-            2 => Some(Self::Utf16Be),
-            3 => Some(Self::Utf8),
+            LATIN1 => Some(Self::Latin1),
+            UTF16_WITH_A_MARK => Some(Self::Utf16 { little: false }),
+            UTF16_BE => Some(Self::Utf16Be),
+            UTF8 => Some(Self::Utf8),
             _ => None,
         }
+    }
+
+    fn encoded(self, text: &str) -> Option<Vec<u8>> {
+        let mut bytes = match self {
+            Self::Latin1 => text
+                .chars()
+                .map(|letter| u8::try_from(u32::from(letter)).ok())
+                .collect::<Option<Vec<u8>>>()?,
+            Self::Utf8 => text.as_bytes().to_vec(),
+            Self::Utf16Be => text.encode_utf16().flat_map(u16::to_be_bytes).collect(),
+            Self::Utf16 { .. } => UTF16_LE_BOM
+                .into_iter()
+                .chain(text.encode_utf16().flat_map(u16::to_le_bytes))
+                .collect(),
+        };
+        bytes.extend_from_slice(if self.is_wide() { &[0, 0] } else { &[0] });
+        Some(bytes)
     }
 
     fn is_wide(self) -> bool {
@@ -85,6 +108,131 @@ impl Encoding {
 struct Syllable {
     text: String,
     at: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Voiced {
+    pub language: [u8; LANGUAGE_BYTES],
+    pub encoding: u8,
+}
+
+impl Voiced {
+    pub(crate) const UNSPOKEN: Self = Self {
+        language: UNKNOWN_LANGUAGE,
+        encoding: UTF16_WITH_A_MARK,
+    };
+
+    pub(crate) fn new(language: [u8; LANGUAGE_BYTES], encoding: u8) -> Option<Self> {
+        Encoding::of(encoding)?;
+        let language = if language.iter().all(u8::is_ascii_alphabetic) {
+            language
+        } else {
+            UNKNOWN_LANGUAGE
+        };
+        Some(Self { language, encoding })
+    }
+
+    pub(crate) fn of_a_frame(frame: &[u8]) -> Option<Self> {
+        let (&encoding, rest) = frame.split_first()?;
+        Self::new(rest.get(..LANGUAGE_BYTES)?.try_into().ok()?, encoding)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Timed {
+    pub frame: Vec<u8>,
+    pub words: String,
+}
+
+pub(crate) fn holds_words(frame: &[u8]) -> bool {
+    matches!(
+        frame.get(CONTENT_AT),
+        Some(&(CONTENT_OF_LYRICS | CONTENT_OF_A_TRANSCRIPTION))
+    )
+}
+
+pub(crate) fn timed(sheet: &str, voiced: Voiced) -> Option<Timed> {
+    let syllables = syllables_of_a_sheet(sheet)?;
+    [voiced.encoding, UTF16_WITH_A_MARK]
+        .into_iter()
+        .find_map(|encoding| {
+            let frame = framed(&syllables, voiced.language, encoding)?;
+            (as_lrc(&frame, None).as_deref() == Some(sheet)).then_some(frame)
+        })
+        .map(|frame| Timed {
+            frame,
+            words: words_of(&syllables),
+        })
+}
+
+fn framed(syllables: &[Syllable], language: [u8; LANGUAGE_BYTES], encoding: u8) -> Option<Vec<u8>> {
+    let encoded_as = Encoding::of(encoding)?;
+    let mut frame = vec![encoding];
+    frame.extend_from_slice(&language);
+    frame.extend_from_slice(&[MILLISECONDS, CONTENT_OF_LYRICS]);
+    frame.extend(encoded_as.encoded("")?);
+    for syllable in syllables {
+        frame.extend(encoded_as.encoded(&syllable.text)?);
+        frame.extend_from_slice(&syllable.at.to_be_bytes());
+    }
+    Some(frame)
+}
+
+fn syllables_of_a_sheet(sheet: &str) -> Option<Vec<Syllable>> {
+    let mut read = Vec::new();
+    for line in sheet.lines() {
+        let (at, said) = line.strip_prefix('[')?.split_once(']')?;
+        let Some(marked) = said.strip_prefix('<') else {
+            read.push(Syllable {
+                text: said.to_owned(),
+                at: stamped(at)?,
+            });
+            continue;
+        };
+        for (place, piece) in marked.split('<').enumerate() {
+            let (at, text) = piece.split_once('>')?;
+            let opening = if place == 0 { "\n" } else { "" };
+            read.push(Syllable {
+                text: format!("{opening}{text}"),
+                at: stamped(at)?,
+            });
+        }
+    }
+    (!read.is_empty()).then_some(read)
+}
+
+fn stamped(stamp: &str) -> Option<u32> {
+    let (minutes, rest) = stamp.split_once(':')?;
+    let (seconds, milliseconds) = rest.split_once('.')?;
+    let figure = |figures: &str| {
+        figures
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+            .then(|| figures.parse::<u32>().ok())
+            .flatten()
+    };
+    figure(minutes)?
+        .checked_mul(MILLISECONDS_PER_MINUTE)?
+        .checked_add(figure(seconds)? * MILLISECONDS_PER_SECOND)?
+        .checked_add(figure(milliseconds)?)
+}
+
+fn words_of(syllables: &[Syllable]) -> String {
+    let marked = syllables
+        .iter()
+        .any(|syllable| starts_a_line(&syllable.text));
+    let mut lines: Vec<String> = Vec::new();
+    for syllable in syllables {
+        match lines.last_mut() {
+            Some(line) if marked && !starts_a_line(&syllable.text) => line.push_str(&syllable.text),
+            _ => lines.push(syllable.text.trim_start_matches(['\n', '\r']).to_owned()),
+        }
+    }
+    lines
+        .iter()
+        .map(|line| line.trim())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub(crate) fn as_lrc(frame: &[u8], mpeg: Option<FrameClock>) -> Option<String> {
@@ -367,6 +515,114 @@ mod tests {
             as_lrc(&bytes, None).as_deref(),
             Some("[00:01.000]Overhead\n")
         );
+    }
+
+    const ENGLISH: Voiced = Voiced {
+        language: *b"eng",
+        encoding: UTF8,
+    };
+
+    #[test]
+    fn a_sheet_a_frame_reads_as_is_framed_back_into_the_same_frame() {
+        let lines = frame(
+            UTF8,
+            MILLISECONDS,
+            &[
+                (b"Overhead the albatross", 4_750),
+                (b"Hangs motionless", 71_020),
+            ],
+            &[0],
+        );
+        let syllables = frame(
+            UTF8,
+            MILLISECONDS,
+            &[
+                (b"\nOver", 1_000),
+                (b"head ", 1_400),
+                (b"the albatross", 1_900),
+                (b"\nHangs", 5_000),
+                (b" motionless", 5_600),
+            ],
+            &[0],
+        );
+
+        for (bytes, words) in [
+            (lines, "Overhead the albatross\nHangs motionless"),
+            (syllables, "Overhead the albatross\nHangs motionless"),
+        ] {
+            let sheet = as_lrc(&bytes, None).expect("a sheet");
+            let timed = timed(&sheet, ENGLISH).expect("a sheet a frame can hold");
+
+            assert_eq!(timed.frame, bytes);
+            assert_eq!(timed.words, words);
+        }
+    }
+
+    #[test]
+    fn a_sheet_no_frame_reads_as_is_not_framed() {
+        for sheet in [
+            "[00:01.00]Overhead the albatross\n",
+            "[00:01.000]Overhead the albatross",
+            "[ar:Pink Floyd]\n[00:01.000]Overhead the albatross\n",
+            "Overhead the albatross\n",
+            "",
+        ] {
+            assert_eq!(timed(sheet, ENGLISH), None, "{sheet:?}");
+        }
+    }
+
+    #[test]
+    fn a_sheet_its_frames_text_cannot_hold_is_framed_as_wide_text_with_its_mark() {
+        let latin = Voiced {
+            language: *b"deu",
+            encoding: LATIN1,
+        };
+
+        let plain = timed("[00:00.000]Uberall\n", latin).expect("a sheet");
+        let wide = timed("[00:00.000]Überall ☂\n", latin).expect("a sheet");
+
+        assert_eq!(plain.frame[0], LATIN1);
+        assert_eq!(wide.frame[0], UTF16_WITH_A_MARK);
+        assert_eq!(&wide.frame[1..4], b"deu");
+        assert_eq!(
+            as_lrc(&wide.frame, None).as_deref(),
+            Some("[00:00.000]Überall ☂\n")
+        );
+    }
+
+    #[test]
+    fn a_language_no_frame_may_be_written_in_is_written_unknown() {
+        let spoken = Voiced::of_a_frame(&frame(UTF8, MILLISECONDS, &[], &[0]));
+        let unspelt = Voiced::new([0, b'e', b' '], UTF8);
+
+        assert_eq!(spoken.map(|voiced| voiced.language), Some(*b"eng"));
+        assert_eq!(
+            unspelt.map(|voiced| voiced.language),
+            Some(UNKNOWN_LANGUAGE)
+        );
+        assert_eq!(Voiced::new(*b"eng", 9), None);
+    }
+
+    #[test]
+    fn only_a_frame_of_words_is_one_lyrics_take_the_place_of() {
+        let entries: &[(&[u8], u32)] = &[(b"Overhead", 1_000)];
+
+        assert!(holds_words(&frame(UTF8, MILLISECONDS, entries, &[0])));
+        assert!(holds_words(&framed_as(
+            CONTENT_OF_A_TRANSCRIPTION,
+            UTF8,
+            MILLISECONDS,
+            entries,
+            &[0]
+        )));
+        assert!(!holds_words(&framed_as(
+            5,
+            UTF8,
+            MILLISECONDS,
+            entries,
+            &[0]
+        )));
+        assert!(!holds_words(&[UTF8]));
     }
 
     #[test]

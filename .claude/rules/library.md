@@ -1458,13 +1458,24 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `lyrics_kept.text` a run writes and nothing else (`lyrics_planned`, reading
   `Library::lyrics_to_tag`): trimmed, since the reader trims what it reads back, and passed over as
   `Unwritten::Cut`, `Vaulted` or `NoLyricsKept` (not a failure) where it has no file of its own or
-  nothing is kept. ID3v2 takes it as `USLT` through `ItemKey::UnsyncLyrics` (lofty refuses
-  `ItemKey::Lyrics` there, since `SYLT` is the timed frame), a Vorbis comment as `LYRICS`, MP4 as
-  `©lyr`, APE as `Lyrics`, Matroska as `LYRICS`. The write is an ordinary retag write: noted before
-  the file, read back, followed by the catalog (`tracks.lyrics` too, so the vault's stand-in and the
-  search read what the file now holds) and put back by the walk back
-  (`fetched_lyrics_go_into_a_songs_tags_only_when_asked_and_the_walk_back_takes_them_out`). A file
-  whose `SYLT` outranks its `USLT` reads back otherwise and stays `Unconfirmed`.
+  nothing is kept. A Vorbis comment takes it as `LYRICS`, MP4 as `©lyr`, APE as `Lyrics`, Matroska
+  as `LYRICS`. ID3v2 takes it frame by frame on the concrete tag (`sung_into`, an unkeyed field
+  there like the performers), since the read prefers a `SYLT` of words to every `USLT`: every
+  `USLT` and every `SYLT` holding lyrics or a transcription (`sylt::holds_words`) goes, other
+  `SYLT`s and every other frame stay. A sheet a `SYLT` reads back as itself, byte for byte
+  (`sylt::timed`: the reader's own LRC, stamps of three-figure milliseconds, a newline after every
+  line), is written as a `SYLT` in milliseconds with its words untimed in a `USLT` beside it;
+  anything else, a fetched sheet included, is the `USLT` alone. The frames written take the
+  language of the lyric frame they replace (`Voiced`, the `SYLT`'s before a `USLT`'s, else `XXX`),
+  and the `SYLT` its text encoding, falling back to UTF-16 with its mark where that encoding cannot
+  hold the words. So lyrics written over a `SYLT` read back confirmed, and the walk back, which
+  writes the sheet the `SYLT` read as, puts a `SYLT` back as a `SYLT`; a `USLT` that stood beside
+  it comes back as the sheet's untimed words, which is what it held where a tagger wrote both
+  (`lyrics_written_over_a_timed_frame_read_back_and_the_walk_back_puts_the_timed_frame_back`). The
+  write is an ordinary retag write: noted before the file, read back, followed by the catalog
+  (`tracks.lyrics` too, so the vault's stand-in and the search read what the file now holds) and
+  put back by the walk back
+  (`fetched_lyrics_go_into_a_songs_tags_only_when_asked_and_the_walk_back_takes_them_out`).
 - **A sort name is the lookup's, only where the file names none.** `ArtistSort`/`AlbumArtistSort`
   come from the artist's `sort_name` where it answered (the track artist only if it is the whole of
   `tracks.artist`); `KEPT_AS_THE_FILE_SPELLS_IT` drops either where the file has one.

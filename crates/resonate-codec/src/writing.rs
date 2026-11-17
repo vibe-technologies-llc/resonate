@@ -15,7 +15,7 @@ use lofty::{
     config::{ParseOptions, WriteOptions},
     error::FileEncodingError,
     file::{FileType, TaggedFileExt as _},
-    id3::v2::{Frame, FrameId, Id3v2Tag, KeyValueFrame},
+    id3::v2::{BinaryFrame, Frame, FrameId, Id3v2Tag, KeyValueFrame, UnsynchronizedTextFrame},
     io::FileLike,
     picture::{MimeType, Picture, PictureType},
     probe::Probe,
@@ -44,6 +44,7 @@ use crate::{
     probe::probe_pictured_from,
     probe_pictured,
     source::{FormatHint, Media, Reading, Sources},
+    sylt::{self, Voiced},
     tags::{TagSource, Tagged},
 };
 
@@ -96,6 +97,7 @@ const COMPILED: &str = "1";
 const MATROSKA_AUDIO_EXTENSION: &str = "mka";
 const COVER_FILE_STEM: &str = "cover";
 const MUSICIAN_CREDITS: &str = "TMCL";
+const TIMED_LYRICS: &str = "SYLT";
 const LISTED_APART: &str = "; ";
 const APE_BEATS: &str = "BPM";
 
@@ -291,8 +293,9 @@ impl TagField {
     fn key_in(self, kind: TagType) -> Option<ItemKey> {
         match (self, kind) {
             (Self::BeatsPerMinute, TagType::VorbisComments) => Some(ItemKey::Bpm),
-            (Self::Lyrics, TagType::Id3v2) => Some(ItemKey::UnsyncLyrics),
-            (Self::BeatsPerMinute, TagType::Ape) | (Self::Performer, TagType::Id3v2) => None,
+            (Self::BeatsPerMinute, TagType::Ape)
+            | (Self::Performer, TagType::Id3v2)
+            | (Self::Lyrics, TagType::Id3v2) => None,
             (field, _) => Some(field.key()),
         }
     }
@@ -300,7 +303,9 @@ impl TagField {
     const fn unkeyed_in(self, kind: TagType) -> bool {
         matches!(
             (self, kind),
-            (Self::BeatsPerMinute, TagType::Ape) | (Self::Performer, TagType::Id3v2)
+            (Self::BeatsPerMinute, TagType::Ape)
+                | (Self::Performer, TagType::Id3v2)
+                | (Self::Lyrics, TagType::Id3v2)
         )
     }
 
@@ -962,6 +967,7 @@ fn saved<F: FileLike>(
     for (field, value) in unkeyed {
         match (field, &mut counted) {
             (TagField::Performer, Counted::Framed(frames)) => credit_performers(frames, *value),
+            (TagField::Lyrics, Counted::Framed(frames)) => sung_into(frames, *value),
             (TagField::BeatsPerMinute, Counted::Ape(items)) => beat(items, *value),
             _ => {}
         }
@@ -1005,6 +1011,56 @@ fn credit_performers(frames: &mut Id3v2Tag, performers: Option<&str>) {
         id,
         TextEncoding::UTF8,
         credited,
+    )));
+}
+
+fn timed_words<'a>(frame: &'a Frame<'_>) -> Option<&'a [u8]> {
+    match frame {
+        Frame::Binary(timed)
+            if timed.id().as_str() == TIMED_LYRICS && sylt::holds_words(&timed.data) =>
+        {
+            Some(&timed.data)
+        }
+        _ => None,
+    }
+}
+
+fn voiced_by(frames: &Id3v2Tag) -> Option<Voiced> {
+    let timed = frames
+        .into_iter()
+        .filter_map(timed_words)
+        .find_map(Voiced::of_a_frame);
+    timed.or_else(|| {
+        frames
+            .unsync_text()
+            .find_map(|untimed| Voiced::new(untimed.language, untimed.encoding as u8))
+    })
+}
+
+fn sung_into(frames: &mut Id3v2Tag, lyrics: Option<&str>) {
+    let voiced = voiced_by(frames);
+    frames.retain(|frame| {
+        timed_words(frame).is_none() && !matches!(frame, Frame::UnsynchronizedText(_))
+    });
+    let Some(lyrics) = lyrics else {
+        return;
+    };
+    let language = voiced.map_or(sylt::UNKNOWN_LANGUAGE, |voiced| voiced.language);
+    let words = match sylt::timed(lyrics, voiced.unwrap_or(Voiced::UNSPOKEN)) {
+        Some(timed) => {
+            frames.insert(Frame::Binary(BinaryFrame::new(
+                FrameId::Valid(TIMED_LYRICS.into()),
+                timed.frame,
+            )));
+            timed.words
+        }
+        None => lyrics.to_owned(),
+    };
+    frames.insert(Frame::UnsynchronizedText(UnsynchronizedTextFrame::new(
+        TextEncoding::UTF8,
+        language,
+        String::new(),
+        words,
     )));
 }
 
