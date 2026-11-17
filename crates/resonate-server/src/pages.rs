@@ -1,7 +1,11 @@
+use std::sync::LazyLock;
+
+use base64::{Engine, engine::general_purpose::STANDARD};
 use resonate_sync::{
     shared::{ENTRIES_KEPT_AT_MOST, LARGEST_BUNDLE_OPENED, ROWS_AT_MOST},
     wire::PROTOCOL_VERSION,
 };
+use ring::digest::{SHA256, digest};
 
 use crate::words;
 
@@ -20,6 +24,19 @@ const SHARED_LIST: &str = include_str!("shared_list.html");
 const SHARED_READING: &str = include_str!("shared_reading.html");
 
 const SHARED_READER: &str = include_str!("shared_list.js");
+
+const SCRIPT_OPENS: &str = "<script";
+
+const SCRIPT_CLOSES: &str = "</script>";
+
+const NOT_RUN: &str = "type=\"application/json\"";
+
+const NO_SCRIPT: &str = "'none'";
+
+static SHARED_PLAYLIST_SCRIPTS: LazyLock<String> =
+    LazyLock::new(|| script_hashes(&with_its_scripts(SHARED_PLAYLIST)));
+
+static PARTY_SCRIPTS: LazyLock<String> = LazyLock::new(|| script_hashes(&with_its_scripts(PARTY)));
 
 const PAGE: &str = r##"<!doctype html>
 <html lang="@LANGUAGE@">
@@ -99,43 +116,81 @@ pub const fn reads_at_most() -> usize {
 
 pub fn answer(asked: Asked, android_certificates: &[String]) -> Vec<u8> {
     match asked {
-        Asked::Page(kind) => answered("200 OK", "text/html; charset=utf-8", &page_of(kind)),
+        Asked::Page(kind) => answered(
+            "200 OK",
+            "text/html; charset=utf-8",
+            scripts_of(kind),
+            &page_of(kind),
+        ),
         Asked::AssetLinks if android_certificates.is_empty() => {
-            answered("404 Not Found", "text/plain; charset=utf-8", "")
+            answered("404 Not Found", "text/plain; charset=utf-8", NO_SCRIPT, "")
         }
         Asked::AssetLinks => answered(
             "200 OK",
             "application/json",
+            NO_SCRIPT,
             &asset_links(android_certificates),
         ),
     }
 }
 
-fn page_of(kind: &str) -> String {
-    let (heading, saying, list, reading) = if kind == PARTY {
-        (
-            words::pages::party_heading(),
-            words::pages::party_saying(),
-            String::new(),
-            String::new(),
-        )
+fn scripts_of(kind: &str) -> &'static str {
+    if kind == PARTY {
+        &PARTY_SCRIPTS
     } else {
-        (
-            words::pages::shared_heading(),
-            words::pages::shared_saying(),
-            SHARED_LIST.to_owned(),
-            shared_reading(),
-        )
+        &SHARED_PLAYLIST_SCRIPTS
+    }
+}
+
+fn script_hashes(page: &str) -> String {
+    scripts_run_by(page)
+        .map(|script| {
+            format!(
+                "'sha256-{}'",
+                STANDARD.encode(digest(&SHA256, script.as_bytes()))
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn scripts_run_by(page: &str) -> impl Iterator<Item = &str> {
+    page.split(SCRIPT_OPENS).skip(1).filter_map(|opened| {
+        let (tag, after) = opened.split_once('>')?;
+        let (script, _) = after.split_once(SCRIPT_CLOSES)?;
+        (!tag.contains(NOT_RUN)).then_some(script)
+    })
+}
+
+fn with_its_scripts(kind: &str) -> String {
+    let (list, reading) = if kind == PARTY {
+        (String::new(), String::new())
+    } else {
+        (SHARED_LIST.to_owned(), shared_reading())
     };
 
     PAGE.replace("@LIST@", &list)
         .replace("@READING@", &reading)
+        .replace("@KIND@", kind)
+}
+
+fn page_of(kind: &str) -> String {
+    let (heading, saying) = if kind == PARTY {
+        (words::pages::party_heading(), words::pages::party_saying())
+    } else {
+        (
+            words::pages::shared_heading(),
+            words::pages::shared_saying(),
+        )
+    };
+
+    with_its_scripts(kind)
+        .replace("@WORDS@", &said_to_the_reader())
         .replace("@LANGUAGE@", resonate_words::spoken().tag())
         .replace("@HEADING@", &escaped(heading))
         .replace("@SAYING@", &escaped(saying))
         .replace("@OPEN@", &escaped(words::pages::open()))
         .replace("@NEEDS_SCRIPT@", &escaped(words::pages::needs_script()))
-        .replace("@KIND@", kind)
 }
 
 fn shared_reading() -> String {
@@ -144,6 +199,11 @@ fn shared_reading() -> String {
         .replace("@LARGEST@", &LARGEST_BUNDLE_OPENED.to_string())
         .replace("@ROWS@", &ROWS_AT_MOST.to_string())
         .replace("@ENTRIES@", &ENTRIES_KEPT_AT_MOST.to_string());
+
+    SHARED_READING.replace("@READ@", &reader)
+}
+
+fn said_to_the_reader() -> String {
     let said = [
         ("reading", words::pages::shared_reading()),
         ("unnamed", words::pages::shared_unnamed()),
@@ -159,9 +219,7 @@ fn shared_reading() -> String {
         .collect::<Vec<_>>()
         .join(",");
 
-    SHARED_READING
-        .replace("@WORDS@", &format!("{{{words}}}"))
-        .replace("@READ@", &reader)
+    format!("{{{words}}}")
 }
 
 fn in_json(text: &str) -> String {
@@ -200,12 +258,13 @@ fn asset_links(certificates: &[String]) -> String {
     )
 }
 
-fn answered(status: &str, content_type: &str, body: &str) -> Vec<u8> {
+fn answered(status: &str, content_type: &str, scripts: &str, body: &str) -> Vec<u8> {
     format!(
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n\
          Connection: close\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\n\
-         Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src \
-         'unsafe-inline'; connect-src 'self'\r\n\r\n{body}",
+         X-Frame-Options: DENY\r\nContent-Security-Policy: default-src 'none'; script-src \
+         {scripts}; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; \
+         base-uri 'none'; form-action 'none'\r\n\r\n{body}",
         body.len()
     )
     .into_bytes()
@@ -234,6 +293,43 @@ mod tests {
             in_json("</script> \"said\" \\ \n"),
             "\"\\u003c/script\\u003e \\\"said\\\" \\\\ \\u000a\""
         );
+    }
+
+    fn hashes_of_the_scripts_run_in(body: &str) -> Vec<String> {
+        body.match_indices("<script")
+            .filter(|(at, _)| !body[*at..].starts_with("<script type=\"application/json\""))
+            .map(|(at, _)| {
+                let opened = at + body[at..].find('>').expect("the tag closes") + 1;
+                let closed = opened + body[opened..].find("</script>").expect("the script ends");
+                let hash = digest(&SHA256, &body.as_bytes()[opened..closed]);
+                format!("'sha256-{}'", STANDARD.encode(hash))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_page_runs_only_the_scripts_its_policy_names_by_hash_and_is_framed_nowhere() {
+        for (kind, scripts) in [(SHARED_PLAYLIST, 3), (PARTY, 1)] {
+            let answer = String::from_utf8(answer(Asked::Page(kind), &[])).expect("text");
+            let (head, body) = answer.split_once("\r\n\r\n").expect("a head and a body");
+            let policy = head
+                .lines()
+                .find_map(|line| line.strip_prefix("Content-Security-Policy: "))
+                .expect("a policy");
+            let named: Vec<&str> = policy
+                .split("; ")
+                .find_map(|directive| directive.strip_prefix("script-src "))
+                .expect("the scripts named")
+                .split(' ')
+                .collect();
+
+            let run = hashes_of_the_scripts_run_in(body);
+
+            assert_eq!(run.len(), scripts, "{kind}");
+            assert_eq!(named, run, "{kind}");
+            assert!(policy.contains("frame-ancestors 'none'"), "{kind}");
+            assert!(head.contains("X-Frame-Options: DENY"), "{kind}");
+        }
     }
 
     #[test]

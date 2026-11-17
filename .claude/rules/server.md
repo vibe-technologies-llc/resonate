@@ -349,8 +349,15 @@ it off.
   script beside `PROTOCOL_VERSION` and `LARGEST_BUNDLE_OPENED`) and draws the name and songs as text.
   It settles when the server ends the view, so a `Closed` after the records reads as a list given a
   new link, and a `Refused` as one not held. The code never leaves the page: the server sees a view
-  of a space, as from any follower. The CSP adds `connect-src 'self'` for the socket alone; the
-  page's words are `pages.ftl`'s, handed to the script as a JSON block `in_json` writes with `<`,
+  of a space, as from any follower. **A page runs only the scripts its policy names by hash**: the
+  `Content-Security-Policy` lists the SHA-256 of each inline script (`script_hashes`, worked out once
+  a kind from the page with its scripts filled and its words not, so no word can change a hash;
+  the JSON block of words is not run), never `'unsafe-inline'`, with `connect-src 'self'` for the
+  socket alone and `frame-ancestors 'none'` (and `X-Frame-Options: DENY`; an answer that is no page
+  runs `script-src 'none'`), so the read key the
+  fragment holds stays out of reach of an HTML sink a later change might add and of a page that
+  frames this one (`a_page_runs_only_the_scripts_its_policy_names_by_hash_and_is_framed_nowhere`);
+  the page's words are `pages.ftl`'s, handed to the script as a JSON block `in_json` writes with `<`,
   `>` and `&` escaped, so no word closes the script. The tests run the served script under Node
   against a real shared list, skipped without Node
   (`a_browser_given_either_link_opens_the_list_as_it_stands_and_a_link_nobody_shared_is_not_held`,
