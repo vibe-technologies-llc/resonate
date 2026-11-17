@@ -1,5 +1,5 @@
 #[cfg(feature = "online")]
-use std::sync::OnceLock;
+use std::{fs, sync::OnceLock, time::SystemTime};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -522,6 +522,7 @@ impl Made {
                 settings,
                 rotated: parking_lot::Mutex::new(None),
                 unkept: parking_lot::Mutex::new(None),
+                read_at: parking_lot::Mutex::new(None),
             }),
         }
     }
@@ -537,8 +538,10 @@ impl Made {
             refresh_token: login.refresh_token.clone(),
         };
         let renewed = Arc::clone(&self.renewed);
+        let followed = Arc::clone(&self.renewed);
         let given = account.refresh_token.clone();
         Tidal::signed_in(self.renewed.standing_for(&account))
+            .following(move || followed.heard_elsewhere())
             .telling(move |token| renewed.note(given.clone(), token))
     }
 
@@ -603,6 +606,7 @@ struct Renewed {
     settings: Option<PathBuf>,
     rotated: parking_lot::Mutex<Option<Rotation>>,
     unkept: parking_lot::Mutex<Option<Error>>,
+    read_at: parking_lot::Mutex<Option<SystemTime>>,
 }
 
 #[cfg(feature = "online")]
@@ -614,6 +618,25 @@ struct Rotation {
 
 #[cfg(feature = "online")]
 impl Renewed {
+    fn heard_elsewhere(&self) -> Option<String> {
+        let settings = self.settings.as_ref()?;
+        let moved = fs::metadata(settings).and_then(|file| file.modified()).ok();
+        let mut read_at = self.read_at.lock();
+        if moved == *read_at {
+            return None;
+        }
+        match config::tidal_refresh_token_in(settings) {
+            Ok(token) => {
+                *read_at = moved;
+                token
+            }
+            Err(error) => {
+                tracing::warn!(%error, "the TIDAL refresh token could not be read again");
+                None
+            }
+        }
+    }
+
     fn standing_for(&self, account: &Account) -> Account {
         let rotated = self.rotated.lock();
         match rotated.as_ref() {
@@ -1254,6 +1277,37 @@ mod tests {
             matches!(failed, Some(Error::TidalTokenNotKept { path, .. }) if path == beneath_a_file)
         );
         assert!(succeeded.is_none());
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_refresh_token_written_by_another_process_is_heard_once_the_file_moves() {
+        let folder = std::env::temp_dir().join(format!("resonate-heard-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).expect("a writable temporary directory");
+        let file = folder.join("config.toml");
+
+        let nowhere = Made::new(None);
+        assert_eq!(nowhere.renewed.heard_elsewhere(), None);
+
+        let made = Made::new(Some(file.clone()));
+        assert_eq!(made.renewed.heard_elsewhere(), None);
+
+        std::fs::write(&file, "tidal-refresh-token = \"theirs\"\n")
+            .expect("a writable temporary directory");
+        assert_eq!(made.renewed.heard_elsewhere(), Some("theirs".to_owned()));
+        assert_eq!(made.renewed.heard_elsewhere(), None);
+
+        std::fs::write(&file, "tidal-refresh-token = \"later\"\n")
+            .expect("a writable temporary directory");
+        let moved_on = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+        std::fs::File::options()
+            .write(true)
+            .open(&file)
+            .and_then(|open| open.set_modified(moved_on))
+            .expect("a file whose time can be set");
+        assert_eq!(made.renewed.heard_elsewhere(), Some("later".to_owned()));
+
+        std::fs::remove_dir_all(&folder).expect("the temporary directory removed");
     }
 
     #[cfg(all(feature = "online", feature = "ui"))]

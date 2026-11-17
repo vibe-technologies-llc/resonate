@@ -17,6 +17,7 @@ ureq.workspace = true
 webpki-root-certs.workspace = true
 
 [dev-dependencies]
+flate2.workspace = true
 parking_lot.workspace = true
 
 [lints]

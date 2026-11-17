@@ -579,7 +579,9 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   `TidalTokenHasNoSettings` (no config directory and no `--config`); `resonate poll` ends with it
   as its error after the pass, `resonate mcp` logs it at error, and the window logs it and toasts it
   once when the pass ends (`Sourcing::unkept`, `providers::sourced`'s second half). The settings path
-  is already the default config file, so no further location is tried.
+  is already the default config file, so no further location is tried. The same file is read again
+  before each TIDAL sign-in where its mtime moved (`Renewed::heard_elsewhere`), so a rotation by another
+  process is used, not overwritten (`providers.md`).
 - `equaliser-measurer`: the measurer whose AutoEq correction is preferred where several measured a
   device (for every device without one of its own); `[equaliser-measurer-for]` maps a sink's
   `node.name` to the measurer preferred for it alone (a blank or non-text entry is passed over with a

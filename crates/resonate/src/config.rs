@@ -1028,6 +1028,15 @@ pub fn spotify_in(path: &Path) -> Result<Option<(String, String)>> {
 }
 
 #[cfg(feature = "online")]
+pub fn tidal_refresh_token_in(path: &Path) -> Result<Option<String>> {
+    let key = ConfigKey::TidalRefreshToken;
+    match item_in(path, key)? {
+        Some(value) => Ok(given(At { path, key }.string(&value)?)),
+        None => Ok(None),
+    }
+}
+
+#[cfg(feature = "online")]
 pub fn submitting_in(path: &Path) -> Result<Accounts> {
     let online = ConfigKey::Online;
     let switched_on = match item_in(path, online)? {

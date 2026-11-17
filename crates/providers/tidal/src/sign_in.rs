@@ -286,7 +286,9 @@ impl SignsIn for TidalSignIn {
             match self.asked(client, authorizing).map_err(Passing::of) {
                 Ok(Answered::Granted(token)) => return Ok(Some(token)),
                 Ok(Answered::Pending) => {}
-                Ok(Answered::SlowDown) | Err(Passing::SlowDown) => every += self.slowed_by,
+                Ok(Answered::SlowDown) | Err(Passing::SlowDown) => {
+                    every = every.saturating_add(self.slowed_by)
+                }
                 Err(Passing::Again(error)) => {
                     tracing::debug!(%error, "TIDAL's sign-in did not answer this time; asking again");
                 }

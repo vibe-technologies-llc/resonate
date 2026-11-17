@@ -127,6 +127,7 @@ enum Asked {
 }
 
 type Renewed = Box<dyn Fn(RefreshToken) + Send + Sync>;
+type Followed = Box<dyn Fn() -> Option<String> + Send + Sync>;
 
 pub struct Tidal {
     asker: Asker,
@@ -135,6 +136,7 @@ pub struct Tidal {
     media: Agent,
     session: Mutex<Option<Session>>,
     renewed: Option<Renewed>,
+    followed: Option<Followed>,
 }
 
 pub(crate) fn source() -> SourceId {
@@ -154,6 +156,7 @@ impl Tidal {
             media: media_agent(),
             session: Mutex::new(None),
             renewed: None,
+            followed: None,
         }
     }
 
@@ -163,6 +166,27 @@ impl Tidal {
             renewed: Some(Box::new(renewed)),
             ..self
         }
+    }
+
+    #[must_use]
+    pub fn following(self, followed: impl Fn() -> Option<String> + Send + Sync + 'static) -> Self {
+        Self {
+            followed: Some(Box::new(followed)),
+            ..self
+        }
+    }
+
+    fn standing_account(&self) -> Account {
+        let heard = self
+            .followed
+            .as_ref()
+            .and_then(|followed| followed())
+            .filter(|token| !token.is_empty());
+        let mut account = self.account.lock();
+        if let Some(heard) = heard {
+            account.refresh_token = heard;
+        }
+        account.clone()
     }
 
     fn rotated_to(&self, rotated: String) {
@@ -202,7 +226,7 @@ impl Tidal {
 
     fn sign_in(&self) -> Result<Session> {
         let op = ProviderOp::SignIn;
-        let account = self.account.lock().clone();
+        let account = self.standing_account();
         let mut form = vec![
             ("grant_type", "refresh_token"),
             ("refresh_token", account.refresh_token.as_str()),

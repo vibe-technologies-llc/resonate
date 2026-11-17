@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use flate2::{Compression, write::GzEncoder};
 use parking_lot::Mutex;
 
 use crate::{Ranged, Trusted, configured};
@@ -83,4 +84,51 @@ pub(crate) fn partial_from(at: usize, total: usize, headers: &[&str]) -> Vec<u8>
 
 pub(crate) fn lower(head: &str) -> String {
     head.to_ascii_lowercase()
+}
+
+fn gzipped(body: &[u8]) -> Vec<u8> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(body).expect("writes to memory");
+    encoder.finish().expect("finishes in memory")
+}
+
+fn asked_from(head: &str) -> Option<usize> {
+    head.lines()
+        .find_map(|line| line.strip_prefix("range: bytes="))?
+        .strip_suffix('-')?
+        .parse()
+        .ok()
+}
+
+pub(crate) fn coded_as_asked(head: &str, left_unsent: Option<usize>) -> Vec<u8> {
+    let head = lower(head);
+    let accepts_gzip = head
+        .lines()
+        .any(|line| line.starts_with("accept-encoding:") && line.contains("gzip"));
+    let (representation, coding) = if accepts_gzip {
+        (gzipped(WHOLE_BODY), Some("Content-Encoding: gzip"))
+    } else {
+        (WHOLE_BODY.to_vec(), None)
+    };
+    let total = representation.len();
+    match asked_from(&head) {
+        Some(at) => {
+            let range = format!("Content-Range: bytes {at}-{}/{total}", total - 1);
+            let headers: Vec<&str> = [Some(range.as_str()), coding]
+                .into_iter()
+                .flatten()
+                .collect();
+            answering(
+                "206 Partial Content",
+                &headers,
+                &representation[at..],
+                total - at,
+            )
+        }
+        None => {
+            let sent = total.saturating_sub(left_unsent.unwrap_or(0));
+            let headers: Vec<&str> = coding.into_iter().collect();
+            answering("200 OK", &headers, &representation[..sent], total)
+        }
+    }
 }

@@ -16,7 +16,10 @@ use resonate_providers::{
 };
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
-use ureq::{Agent, http::header::AUTHORIZATION};
+use ureq::{
+    Agent,
+    http::{Uri, header::AUTHORIZATION},
+};
 
 use crate::{
     MediaHosts,
@@ -29,6 +32,7 @@ use crate::{
 pub const OWN_SERVER: &str = resonate_core::RESONATE_WEB_ADDRESS;
 const RELAYED_ANSWERED_WITHIN: Duration = Duration::from_secs(60);
 const RELAYED_AS: &str = "flac";
+const LOOPBACK_HOSTS: [&str; 3] = ["localhost", "127.0.0.1", "[::1]"];
 const HIFI_API: &str = "hifi-api";
 const RESONATE: &str = "resonate";
 const HOSTED_SERVER: &str = "https://hifi.odskyler.com";
@@ -378,19 +382,22 @@ fn relay_agent() -> Agent {
 }
 
 fn carries_secret(server: &str) -> bool {
-    if server.starts_with("https://") {
-        return true;
-    }
-    let Some(authority) = server.strip_prefix("http://") else {
+    let Ok(uri) = server.parse::<Uri>() else {
         return false;
     };
-    let host = authority.split(['/', '?']).next().unwrap_or_default();
-    ["localhost", "127.0.0.1", "[::1]"].iter().any(|loopback| {
-        host == *loopback
-            || host
-                .strip_prefix(loopback)
-                .is_some_and(|port| port.starts_with(':'))
-    })
+    let Some(authority) = uri.authority() else {
+        return false;
+    };
+    if authority.as_str().contains('@') {
+        return false;
+    }
+    match uri.scheme_str() {
+        Some("https") => true,
+        Some("http") => LOOPBACK_HOSTS
+            .iter()
+            .any(|loopback| authority.host().eq_ignore_ascii_case(loopback)),
+        _ => false,
+    }
 }
 
 fn source() -> SourceId {
@@ -942,6 +949,14 @@ mod tests {
         assert!(!carries_secret("http://hifi.home.arpa"));
         assert!(!carries_secret("http://localhost.evil.example"));
         assert!(!carries_secret("ftp://localhost"));
+        assert!(!carries_secret("http://localhost:1@other.example/"));
+        assert!(!carries_secret("http://localhost@other.example"));
+        assert!(!carries_secret("http://user:pass@localhost:8000"));
+        assert!(!carries_secret(
+            "http://other.example/?next=http://localhost"
+        ));
+        assert!(!carries_secret("http://other.example#@localhost"));
+        assert!(!carries_secret("localhost:8000"));
     }
 
     #[test]

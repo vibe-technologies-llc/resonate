@@ -964,6 +964,57 @@ fn a_refresh_token_tidal_rotates_is_handed_back_once_and_signed_in_with_from_the
 }
 
 #[test]
+fn a_refresh_token_another_process_rotated_is_signed_in_with_instead_of_the_one_held() {
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/token" => Canned::json(
+            r#"{"access_token":"fresh-access","refresh_token":"later","expires_in":604800,"user":{"countryCode":"GB"}}"#,
+        ),
+        "/openapi/tracks" => Canned::json(r#"{"data":[]}"#),
+        path if is_a_text_search(path) => nothing_searched(),
+        _ => Canned::refused(500, "{}"),
+    });
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let noted = Arc::clone(&told);
+    let tidal = fake
+        .tidal()
+        .following(|| Some("elsewhere".to_owned()))
+        .telling(move |renewed| noted.lock().push(renewed.into_string()));
+
+    assert!(matches!(tidal.find(&by_isrc()), Ok(Obtained::Nothing)));
+
+    let signed_in = fake
+        .heard()
+        .into_iter()
+        .find(|asked| asked.path == "/auth/token")
+        .expect("a sign-in");
+    assert!(signed_in.body.contains("refresh_token=elsewhere"));
+    assert!(!signed_in.body.contains("sesame"));
+    assert_eq!(*told.lock(), vec!["later".to_owned()]);
+}
+
+#[test]
+fn a_blank_token_heard_from_elsewhere_leaves_the_one_held() {
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/token" => Canned::json(
+            r#"{"access_token":"fresh-access","expires_in":604800,"user":{"countryCode":"GB"}}"#,
+        ),
+        "/openapi/tracks" => Canned::json(r#"{"data":[]}"#),
+        path if is_a_text_search(path) => nothing_searched(),
+        _ => Canned::refused(500, "{}"),
+    });
+    let tidal = fake.tidal().following(|| Some(String::new()));
+
+    assert!(matches!(tidal.find(&by_isrc()), Ok(Obtained::Nothing)));
+
+    let signed_in = fake
+        .heard()
+        .into_iter()
+        .find(|asked| asked.path == "/auth/token")
+        .expect("a sign-in");
+    assert!(signed_in.body.contains("refresh_token=sesame"));
+}
+
+#[test]
 fn a_refresh_token_tidal_keeps_is_never_handed_back() {
     let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
         "/auth/token" => Canned::json(
@@ -1161,6 +1212,45 @@ fn a_device_sign_in_turned_away_for_asking_too_often_waits_longer_before_asking_
     let polls = token_polls_when_told_to_slow_down(|| Canned::refused(429, "{}"));
 
     assert_eq!(polls, 1);
+}
+
+#[test]
+fn a_device_sign_in_told_to_slow_down_by_more_than_any_clock_holds_waits_out_its_code_and_lapses() {
+    const LASTS: Duration = Duration::from_millis(600);
+    const ASKED_EVERY: Duration = Duration::from_millis(50);
+
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/device" => device_code(),
+        _ => Canned::refused(400, r#"{"status":400,"error":"slow_down"}"#),
+    });
+    let signing_in = fake.signing_in().slowing_by(Duration::MAX);
+    let authorizing = Authorizing::new(
+        "ABCDE".to_owned(),
+        "https://link.tidal.com/ABCDE".to_owned(),
+        LASTS,
+        ASKED_EVERY,
+        "device-1".to_owned(),
+    );
+
+    let answer = signing_in.authorized(&client(), &authorizing, &never);
+
+    assert!(matches!(answer, Err(Error::AuthorizationLapsed { .. })));
+}
+
+#[test]
+fn a_device_code_asked_for_at_an_interval_no_clock_holds_waits_out_its_life_and_lapses() {
+    let fake = Fake::serving(|asked, _, _| match asked.path.as_str() {
+        "/auth/device" => Canned::json(
+            r#"{"deviceCode":"device-1","userCode":"ABCDE","verificationUri":"link.tidal.com","expiresIn":1,"interval":18446744073709551615}"#,
+        ),
+        _ => Canned::refused(400, r#"{"status":400,"error":"authorization_pending"}"#),
+    });
+    let signing_in = fake.signing_in();
+    let authorizing = signing_in.authorizing(&client()).expect("a device code");
+
+    let answer = signing_in.authorized(&client(), &authorizing, &never);
+
+    assert!(matches!(answer, Err(Error::AuthorizationLapsed { .. })));
 }
 
 fn wrapped(canned: Canned) -> Canned {

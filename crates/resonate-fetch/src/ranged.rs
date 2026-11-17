@@ -9,7 +9,9 @@ use ureq::{
     Agent, Body, BodyReader, RequestBuilder,
     http::{
         Response,
-        header::{AUTHORIZATION, CONTENT_RANGE, ETAG, IF_RANGE, LAST_MODIFIED, RANGE},
+        header::{
+            ACCEPT_ENCODING, AUTHORIZATION, CONTENT_RANGE, ETAG, IF_RANGE, LAST_MODIFIED, RANGE,
+        },
     },
     typestate::WithoutBody,
 };
@@ -19,6 +21,7 @@ use crate::{failed::as_io, waited::retry_after_of};
 pub const ASKED_LATER: [u16; 4] = [429, 502, 503, 504];
 pub const RESUMES_AT_MOST: u32 = 5;
 const LONGEST_WAIT: Duration = Duration::from_secs(8);
+const UNCODED: &str = "identity";
 const WHOLE: u16 = 200;
 const PARTIAL: u16 = 206;
 const FORBIDDEN: u16 = 403;
@@ -95,6 +98,7 @@ pub fn asking_to_resume(
     request: RequestBuilder<WithoutBody>,
     held: Option<&Held>,
 ) -> RequestBuilder<WithoutBody> {
+    let request = request.header(ACCEPT_ENCODING, UNCODED);
     let Some(held) = held.filter(|held| held.can_be_checked()) else {
         return request;
     };
@@ -148,7 +152,7 @@ fn asked(
     bearer: Option<&str>,
     expecting: Expecting<'_>,
 ) -> Result<Answered, Unfetched> {
-    let mut request = agent.get(url);
+    let mut request = agent.get(url).header(ACCEPT_ENCODING, UNCODED);
     if let Some(bearer) = bearer {
         request = request.header(AUTHORIZATION, bearer);
     }
@@ -447,8 +451,12 @@ impl Read for Ranged {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{
-        CUT_AT, WHOLE_BODY, answering, cut_first_answer, lower, opened, partial_from, serving,
+    use crate::{
+        Trusted, configured,
+        testing::{
+            CUT_AT, WHOLE_BODY, answering, coded_as_asked, cut_first_answer, lower, opened,
+            partial_from, serving,
+        },
     };
 
     #[test]
@@ -527,6 +535,45 @@ mod tests {
             .expect("the whole is read");
         assert_eq!(read, WHOLE_BODY);
         assert!(!lower(&heads.lock()[1]).contains("if-range"));
+    }
+
+    const LEFT_UNSENT: usize = 12;
+
+    #[test]
+    fn a_download_is_asked_for_uncoded_so_a_resume_counts_the_bytes_the_server_ranges_over() {
+        let (url, heads) = serving(vec![
+            Box::new(move |head| coded_as_asked(head, Some(LEFT_UNSENT))),
+            Box::new(|head| coded_as_asked(head, None)),
+        ]);
+        let agent = configured(Duration::from_secs(5), Trusted::BuiltInRoots)
+            .build()
+            .new_agent();
+        let mut ranged =
+            Ranged::opened_from(agent, url, 0, Duration::ZERO).expect("the first answer");
+        let mut read = Vec::new();
+
+        ranged.read_to_end(&mut read).expect("the whole is read");
+
+        assert_eq!(read, WHOLE_BODY);
+        for head in heads.lock().iter() {
+            assert!(lower(head).contains("accept-encoding: identity"), "{head}");
+        }
+    }
+
+    #[test]
+    fn a_request_asking_to_resume_asks_for_uncoded_bytes_held_or_not() {
+        let (url, heads) = serving(vec![Box::new(|_| {
+            answering("200 OK", &[], WHOLE_BODY, WHOLE_BODY.len())
+        })]);
+        let agent = configured(Duration::from_secs(5), Trusted::BuiltInRoots)
+            .build()
+            .new_agent();
+
+        asking_to_resume(agent.get(&url), None)
+            .call()
+            .expect("an answer");
+
+        assert!(lower(&heads.lock()[0]).contains("accept-encoding: identity"));
     }
 
     #[test]
