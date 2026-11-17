@@ -209,7 +209,14 @@ const MIGRATIONS: &[&str] = &[
     SHARED_PLAYLISTS_STAND_APART,
     LAYOUTS_TRAVEL,
     SONGS_DELETED_EVERYWHERE,
+    LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED,
 ];
+
+const LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED: &str = "
+CREATE INDEX listens_told_by_time ON listens(at) WHERE owed = 0;
+";
+
+const AGE_LISTENS: &str = "DELETE FROM listens WHERE at < ?1 AND owed = 0";
 
 const OWE_EVERYTHING: &str = "
 UPDATE devices SET owed = 1;
@@ -1754,10 +1761,7 @@ impl Ledger {
     fn age_listens(&mut self) -> Result<()> {
         let horizon = listens_kept_since();
         self.connection
-            .execute(
-                "DELETE FROM listens WHERE at < ?1 AND owed = 0",
-                params![horizon],
-            )
+            .execute(AGE_LISTENS, params![horizon])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
     }
@@ -4327,6 +4331,61 @@ mod tests {
         assert!(standing.is_empty());
         assert_eq!(joined, 0);
         assert!(!entered_again);
+    }
+
+    #[test]
+    fn listens_age_by_the_index_on_when_they_were_played_and_a_ledger_of_before_gains_it() {
+        let connection = Connection::open_in_memory().expect("a connection");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED)
+            .expect("the step is in the chain");
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("the ledger of before");
+        }
+        connection
+            .execute(
+                "INSERT INTO state (id, device) VALUES (1, ?1)",
+                params![[3_u8; 16].as_slice()],
+            )
+            .expect("a state row");
+        connection
+            .execute(
+                "INSERT INTO listens (device, id, recording, at, heard) VALUES (?1, 1, X'00', 1, 0)",
+                params![[4_u8; 16].as_slice()],
+            )
+            .expect("a listen of long ago");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(before).expect("a count"),
+            )
+            .expect("stamped");
+
+        let mut ledger = Ledger::over(connection).expect("carried forward");
+        let plan = ledger
+            .connection
+            .prepare(&format!("EXPLAIN QUERY PLAN {AGE_LISTENS}"))
+            .expect("a plan")
+            .query_map(params![0_i64], |row| row.get::<_, String>(3))
+            .expect("read")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("every step");
+        ledger.age_listens().expect("aged");
+        let left: i64 = ledger
+            .connection
+            .query_row("SELECT count(*) FROM listens", [], |row| row.get(0))
+            .expect("read");
+
+        assert!(
+            plan.iter()
+                .any(|step| step.contains("USING INDEX listens_told_by_time")),
+            "{plan:?}"
+        );
+        assert_eq!(left, 0);
     }
 
     #[test]

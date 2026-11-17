@@ -156,7 +156,8 @@ recording key and when the catalog refused the song, *The service* below;
 `queries`, a row this ledger stamped last taken as made here, and the `playlist_folds` and
 `query_folds` tables, below; `SHARED_PLAYLISTS_STAND_APART`, `shared-playlists.md`; `LAYOUTS_TRAVEL`:
 the `layouts` table, a device's organise layout, below; `SONGS_DELETED_EVERYWHERE`: the `deletions`
-table and `state.joined`, below); `user_version` counts the steps laid, a change appends a
+table and `state.joined`, below; `LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED`: an index on a told
+listen's `at`, so a look's aging never scans the table); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
 (`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`). All merging lives here, once for both
 platforms; the catalog seam stays thin.
@@ -284,7 +285,8 @@ platforms; the catalog seam stays thin.
   (`an_older_tombstone_under_one_key_never_unfavours_a_song_a_newer_favourite_under_another_keeps`).
 - **Remote listens are credited where the song is held** (`Catalog::credit`), else kept and
   credited when it arrives; they are never sent on to a scrobbling service (the library's
-  `listens.elsewhere`, Android's likewise). The ledger ages listens past `LISTENS_KEPT_FOR`, and a
+  `listens.elsewhere`, Android's likewise). The ledger ages told listens past `LISTENS_KEPT_FOR` on every look, through the index on `at`
+  (`listens_age_by_the_index_on_when_they_were_played_and_a_ledger_of_before_gains_it`), and a
   listen older than that arriving again (an old snapshot) is passed over, never credited twice.
   **A credit is idempotent by the listen's origin**: `RemoteListen` carries the sending device and the
   listen's id, and each catalog keeps them with the row it writes under a unique index
