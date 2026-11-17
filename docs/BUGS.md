@@ -7,16 +7,8 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.12.1] The phones tell a lookup a metered connection or a switched-off network stopped as
   unreachable (`failure.rs`'s `of_a_lookup`, `enrichment.rs`): the library's `Stopped::{Offline,
   Metered}` reach them, and `EnrichmentStop::Offline` covers only a network switched off
-- [S · 0.12.1] A phone whose Keystore key is lost for good (an `AEADBadTagException` on every read)
-  keeps sync unset forever: `SyncSettingsReading` answers `null`, and `newSyncGroup` and `saveSync`
-  return on a `null` config, so nothing short of clearing the app's data starts sync again; offer
-  starting over with a new group where the settings cannot be read
 
 ## Security
-- [S · 0.12.1] The server still counts connections and attempts per /64 alone (`guard.rs`), so one /48
-  may open all 2 048 connections; the wider prefixes the daily allowances now weigh, for connections too
-- [S · 0.12.1] The bytes read with a session's first `Hello` are not drawn from the frame budget: bounded
-  by the first frame's ceiling and one 16 KiB read, so 2 048 half-greeted sessions hold that beside it
 - [S · blocked: design] A host on the network may take several addresses and so pass the media server's
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
@@ -27,14 +19,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   every part in one frame with no blob cap; likely bounded by the list's entry limit, unverified
 
 ## Playback and output
-- [S · 0.12.1] The heard position counts `chain.latency_frames()` (`publishing.rs`, `in_step.rs`), so
-  while a true-peak guard is still filling (a track's start, just after a carried swap) it is ahead by
-  up to the guard's delay (about 2.5 ms); `Chain::frames_it_holds` is what the chain holds then
-- [S · 0.12.1] `audio.md` says a resampler holds about 300 ms at Very high, but 44.1 to 48 kHz measures
-  4 986 frames (about 104 ms); say what it holds by ratio, or the worst case named as such
-- [S · 0.12.1] Lyrics on a UPnP renderer light up to a second late: the heard position follows the
-  renderer's `RelTime`, which most renderers report in whole seconds, so a line waits for the next
-  whole second; interpolate between reports from the clock the stream is paced by
 
 ## Catalog
 - [S · blocked: a Linux unsafe exception] Lengthening a file in place still cannot see a reader
@@ -61,9 +45,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## macOS
-- [S · 0.12.1] `NowPlaying::drop` still clears the process's now-playing information and sets the state
-  stopped (`now_playing.rs`), so a `NowPlaying` made before the last one's drop lands is shown as
-  stopped with nothing playing; clear it only where this owner set it last
 
 ## Equaliser
 
