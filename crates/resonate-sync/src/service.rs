@@ -479,6 +479,10 @@ struct Link {
 }
 
 impl Link {
+    fn answer_awaited(&self) -> bool {
+        !self.in_flight.is_empty() || self.compacting.is_some()
+    }
+
     fn say(&self, message: &ToServer) -> Result<()> {
         let payload = message.encoded();
         if payload.len() > LARGEST_FRAME {
@@ -2016,6 +2020,7 @@ impl Syncing {
                     self.sent(changes).await?;
                 }
                 self.push().await?;
+                self.compact().await?;
                 self.publish_settled();
             }
             FromServer::Arrived { device } => {
@@ -2050,9 +2055,7 @@ impl Syncing {
                     Ok(())
                 })
                 .await?;
-                if by_another {
-                    self.push().await?;
-                }
+                self.push().await?;
             }
             FromServer::Staging => {
                 if let Some(link) = self.server.as_mut() {
@@ -2071,6 +2074,15 @@ impl Syncing {
                         self.oversized = oversized;
                     }
                 }
+                self.push().await?;
+            }
+            FromServer::Refused(Refusal::SpaceFull)
+                if self
+                    .server
+                    .as_ref()
+                    .is_some_and(|link| link.compacting.is_some()) =>
+            {
+                self.compaction_refused_as_full().await?;
             }
             FromServer::Refused(Refusal::TooLarge) => {
                 self.unanswered = Unanswered::default();
@@ -2104,6 +2116,21 @@ impl Syncing {
             | FromServer::RoomEnded => {}
         }
         Ok(())
+    }
+
+    async fn compaction_refused_as_full(&mut self) -> Result<()> {
+        if let Some(link) = self.server.as_mut() {
+            link.compacting = None;
+            link.in_parts.waiting = None;
+        }
+        let ledger = Arc::clone(&self.running.ledger);
+        let (records_since, _) = blocking(move || ledger.lock().since_snapshot()).await?;
+        tracing::warn!(
+            records_since,
+            "the sync server's space is too full to take a compaction, so it is tried again once the records since the last snapshot double"
+        );
+        self.oversized = Oversized::found_at(records_since);
+        self.push().await
     }
 
     fn caught_up_through(&mut self, through: u64) {
@@ -2313,11 +2340,7 @@ impl Syncing {
     }
 
     async fn push(&mut self) -> Result<()> {
-        if self
-            .server
-            .as_ref()
-            .is_none_or(|link| !link.in_flight.is_empty())
-        {
+        if self.server.as_ref().is_none_or(Link::answer_awaited) {
             return Ok(());
         }
         let running = Arc::clone(&self.running);
@@ -2400,7 +2423,7 @@ impl Syncing {
         if self
             .server
             .as_ref()
-            .is_none_or(|link| !link.caught_up || link.compacting.is_some())
+            .is_none_or(|link| !link.caught_up || link.answer_awaited())
         {
             return Ok(());
         }

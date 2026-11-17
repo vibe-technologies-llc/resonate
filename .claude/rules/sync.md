@@ -447,7 +447,14 @@ platforms; the catalog seam stays thin.
   `a_state_too_large_to_compact_is_sealed_again_only_once_the_records_since_double_or_a_compaction_resets_them`);
   on such a link sealing stops at the first part past one frame. The count is held in memory and the
   refusal on the link, so a start or a new link seals once more. A `Stale` answering a
-  `CompactStaged` or a `Compact` is a compaction another device's overtook, as before. **A snapshot
+  `CompactStaged` or a `Compact` is a compaction another device's overtook, as before. **A full
+  space backs a compaction off and keeps the session**: no compaction is asked while an `Append`
+  waits on its `Appended`, and no `Append` is sent while a compaction waits on its answer
+  (`answer_awaited`), so a `SpaceFull` heard while one is asked is that compaction's, of one frame or
+  staged; the service keeps the records since as `Oversized`, as for a server that takes no parts,
+  and stays `Connected`, so the window and the phones show nothing of it
+  (`a_compaction_refused_for_a_full_space_backs_off_and_keeps_the_session`). A `SpaceFull` answering
+  an `Append` still ends the session as `Standing::Refused`. **A snapshot
   of several frames reaches a device as several `Snapshot` frames**: every one but the last names the
   `through` the device was already sent, so applying it moves no cursor, and only the last names the
   snapshot's own, so a device cut off part way reads the whole snapshot again and a device of any

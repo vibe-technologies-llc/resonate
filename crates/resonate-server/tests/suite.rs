@@ -1,6 +1,7 @@
 mod compaction;
 mod frames;
 mod hifi;
+mod scripted;
 mod shared;
 #[path = "../../resonate-sync/tests/shelf/mod.rs"]
 mod shelf;

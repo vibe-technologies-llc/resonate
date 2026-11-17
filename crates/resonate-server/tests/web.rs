@@ -11,7 +11,7 @@ use resonate_server::{Allowance, Limits, Server, Store};
 use resonate_sync::{
     DeviceId, Follow, Incoming, Me, Outgoing, Platform, Settings, Standing, Sync, SyncKey, connect,
     sealed, to_the_web, web_address,
-    wire::{FromServer, PROTOCOL_VERSION, Refusal, ToServer, encoded_bundle},
+    wire::{FromServer, PROTOCOL_VERSION, Record, Refusal, ToServer, encoded_bundle},
 };
 use rustls::RootCertStore;
 use tokio::{
@@ -20,7 +20,7 @@ use tokio::{
     time::timeout,
 };
 
-use crate::shelf::Shelf;
+use crate::{scripted::Scripted, shelf::Shelf};
 
 const SETTLES_WITHIN: Duration = Duration::from_secs(30);
 const REFUSED_WITHIN: Duration = Duration::from_secs(5);
@@ -67,8 +67,18 @@ fn hosted(limits: Limits, forwarded_by: Option<&str>) -> Hosted {
 }
 
 fn device(hosted: &Hosted, folder: &Path, key: &SyncKey, name: &str, shelf: Arc<Shelf>) -> Sync {
+    device_reaching(hosted.address, folder, key, name, shelf)
+}
+
+fn device_reaching(
+    address: SocketAddr,
+    folder: &Path,
+    key: &SyncKey,
+    name: &str,
+    shelf: Arc<Shelf>,
+) -> Sync {
     let settings = Settings {
-        server: resonate_sync::Server::At(format!("ws://{}/", hosted.address)),
+        server: resonate_sync::Server::At(format!("ws://{address}/")),
         trusted: None,
         stun: None,
         key: key.clone(),
@@ -437,4 +447,64 @@ fn a_ping_counts_toward_the_frames_a_web_socket_may_send_in_a_minute() {
     });
 
     assert_eq!(refused, Some(Refusal::TooFast));
+}
+
+const RECORDS_PAST_A_COMPACTION: u64 = 600;
+const A_SESSION_KEPT_FOR: Duration = Duration::from_secs(2);
+
+fn a_full_space(heard: &ToServer) -> Vec<FromServer> {
+    match heard {
+        ToServer::Hello { .. } => vec![
+            FromServer::Welcome {
+                online: Vec::new(),
+                seen_at: SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+                head: RECORDS_PAST_A_COMPACTION,
+            },
+            FromServer::Records {
+                entries: (1..=RECORDS_PAST_A_COMPACTION)
+                    .map(|seq| Record { seq, blob: None })
+                    .collect(),
+            },
+        ],
+        ToServer::Append { blobs } => vec![FromServer::Appended {
+            count: u32::try_from(blobs.len()).expect("a count"),
+        }],
+        ToServer::Compact { .. } | ToServer::Stage => {
+            vec![FromServer::Refused(Refusal::SpaceFull)]
+        }
+        _ => Vec::new(),
+    }
+}
+
+#[test]
+fn a_compaction_refused_for_a_full_space_backs_off_and_keeps_the_session() {
+    let folder = scratch("full");
+    let scripted = Scripted::answering(a_full_space);
+    let key = SyncKey::minted().expect("a key");
+    let shelf = Arc::new(Shelf::holding(&["A"]));
+
+    let desk = device_reaching(scripted.address, &folder, &key, "Desk", shelf);
+    eventually("a compaction asked", || {
+        scripted
+            .heard()
+            .iter()
+            .any(|heard| matches!(heard, ToServer::Compact { .. }))
+    });
+    thread::sleep(A_SESSION_KEPT_FOR);
+    let heard = scripted.heard();
+    let hellos = heard
+        .iter()
+        .filter(|heard| matches!(heard, ToServer::Hello { .. }))
+        .count();
+    let compactions = heard
+        .iter()
+        .filter(|heard| matches!(heard, ToServer::Compact { .. } | ToServer::Stage))
+        .count();
+
+    assert_eq!(desk.shown().standing, Standing::Connected);
+    assert_eq!(hellos, 1);
+    assert_eq!(compactions, 1);
+
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
 }
