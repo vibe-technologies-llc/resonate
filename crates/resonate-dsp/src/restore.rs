@@ -347,6 +347,16 @@ impl Restore {
             .and_then(|bin| Frequency::from_hertz(self.hertz_of(bin)).ok())
     }
 
+    fn studied_wall(&self) -> Option<usize> {
+        self.config.wall.and_then(|wall| {
+            let hertz = f64::from(wall.centihertz()) / 100.0;
+            let (lowest, highest) = self.config.tuning.plausible_walls_hz();
+            (lowest..=highest)
+                .contains(&hertz)
+                .then(|| self.bin_of(hertz))
+        })
+    }
+
     fn hertz_of(&self, bin: usize) -> f64 {
         bin as f64 * self.rate / self.size as f64
     }
@@ -1310,25 +1320,23 @@ impl Processor for Restore {
         for voice in &mut self.voices {
             voice.clear();
         }
-        self.long_term.fill(0.0);
-        self.recent.fill(0.0);
         self.envelope.fill(0.0);
-        self.following = None;
         self.filled = 0;
-        self.hops = 0;
-        self.wall_bin = self.config.wall.and_then(|wall| {
-            let hertz = f64::from(wall.centihertz()) / 100.0;
-            let (lowest, highest) = self.config.tuning.plausible_walls_hz();
-            (lowest..=highest)
-                .contains(&hertz)
-                .then(|| self.bin_of(hertz))
-        });
-        self.moving_to = None;
-        self.wall_locked = self.wall_bin.is_some();
-        self.presence = if self.wall_locked { 1.0 } else { 0.0 };
+        self.forget_the_source_heard();
         self.taken = 0;
         self.emitted = 0;
         self.preroll = (self.size - self.hop) as u64;
+    }
+
+    fn forget_the_source_heard(&mut self) {
+        self.long_term.fill(0.0);
+        self.recent.fill(0.0);
+        self.following = None;
+        self.hops = 0;
+        self.wall_bin = self.studied_wall();
+        self.moving_to = None;
+        self.wall_locked = self.wall_bin.is_some();
+        self.presence = if self.wall_locked { 1.0 } else { 0.0 };
     }
 
     fn latency_frames(&self) -> f64 {
@@ -1509,6 +1517,25 @@ mod tests {
             (15_900.0..=16_300.0).contains(&wall),
             "the wall was read at {wall} Hz"
         );
+    }
+
+    #[test]
+    fn a_wall_learnt_from_one_source_is_forgotten_for_the_next_and_a_studied_one_kept() {
+        let input = tones(3 * 44_100, 100.0, 16_000.0, 300);
+        let (_, mut learnt) = through(restored(Restoration::Extend), &input);
+        let studied = RestoreConfig {
+            wall: Frequency::from_hertz(18_000.0).ok(),
+            ..restored(Restoration::Extend)
+        };
+        let (_, mut kept) = through(studied, &input);
+
+        assert!(learnt.wall().is_some(), "no wall was learnt to forget");
+        learnt.forget_the_source_heard();
+        kept.forget_the_source_heard();
+
+        assert_eq!(learnt.wall(), None);
+        let wall = f64::from(kept.wall().expect("the studied wall").centihertz()) / 100.0;
+        assert!((17_900.0..=18_100.0).contains(&wall), "{wall} Hz was kept");
     }
 
     #[test]

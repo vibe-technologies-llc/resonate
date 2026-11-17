@@ -12648,3 +12648,116 @@ fn restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap() -
     assert_eq!(spliced, 1, "the switch to arm B was not spliced in");
     Ok(())
 }
+
+const NOISE_SECONDS: usize = 3;
+const NOISE_AMPLITUDE: f64 = 0.3;
+const WINDOW_FRAMES: usize = 2_048;
+
+fn noise_in_an_mp3(tree: &Tree, name: &str, bitrate: &str, cutoff_hz: u32) -> Option<PathBuf> {
+    let path = tree.root.join(name);
+    let noise = format!(
+        "anoisesrc=color=white:amplitude={NOISE_AMPLITUDE}:sample_rate={RATE}:duration={NOISE_SECONDS}"
+    );
+    let made = process::Command::new("ffmpeg")
+        .args(["-y", "-v", "error", "-f", "lavfi", "-i", &noise, "-ac", "2"])
+        .args(["-c:a", "libmp3lame", "-b:a", bitrate, "-cutoff"])
+        .arg(cutoff_hz.to_string())
+        .args(["-id3v2_version", "0"])
+        .arg(&path)
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    if !made {
+        eprintln!("skipped: no ffmpeg with libmp3lame to encode the noise");
+        return None;
+    }
+    Some(path)
+}
+
+fn band_power_db(samples: &[f32], frames: Range<usize>, hertz: Range<f64>) -> f64 {
+    let rate = f64::from(RATE);
+    let bin_of = |hz: f64| (hz * WINDOW_FRAMES as f64 / rate) as usize;
+    let windows = (frames.end - frames.start) / WINDOW_FRAMES;
+    let mut power = 0.0;
+    for window in 0..windows {
+        let from = frames.start + window * WINDOW_FRAMES;
+        let left: Vec<f64> = (0..WINDOW_FRAMES)
+            .map(|n| {
+                let hann =
+                    0.5 - 0.5 * (std::f64::consts::TAU * n as f64 / WINDOW_FRAMES as f64).cos();
+                f64::from(samples[(from + n) * 2]) * hann
+            })
+            .collect();
+        for bin in bin_of(hertz.start)..bin_of(hertz.end) {
+            let step = std::f64::consts::TAU * bin as f64 / WINDOW_FRAMES as f64;
+            let (re, im) = left
+                .iter()
+                .enumerate()
+                .fold((0.0, 0.0), |(re, im), (n, sample)| {
+                    let angle = step * n as f64;
+                    (re + sample * angle.cos(), im - sample * angle.sin())
+                });
+            power += re * re + im * im;
+        }
+    }
+    let bins = (bin_of(hertz.end) - bin_of(hertz.start)) * windows.max(1);
+    10.0 * (power / bins as f64).max(1e-30).log10()
+}
+
+#[test]
+fn a_row_heard_on_without_a_gap_under_restoration_finds_its_own_wall_rather_than_the_last_rows()
+-> Result<()> {
+    const ABOVE_THE_NARROW_WALL_HZ: Range<f64> = 16_800.0..19_200.0;
+    const UNDER_EVERY_WALL_HZ: Range<f64> = 8_000.0..12_000.0;
+    const MEASURED_FROM: Duration = Duration::from_millis(600);
+    const MEASURED_FOR: Duration = Duration::from_millis(600);
+    const EXTENDED_WITHIN_DB: f64 = 40.0;
+
+    let tree = Tree::new();
+    let (Some(wide), Some(narrow)) = (
+        noise_in_an_mp3(&tree, "wide.mp3", "320k", 20_000),
+        noise_in_an_mp3(&tree, "narrow.mp3", "128k", 16_000),
+    ) else {
+        return Ok(());
+    };
+    let wide_frames = resonate_codec::probe(&Sources::local(), &MediaLocation::local(&wide))
+        .ok()
+        .and_then(|info| info.duration)
+        .map_or(0, |frames| frames.get() as usize);
+    let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::F32])]);
+    let player = Player::with_backend(
+        EngineConfig {
+            restoration: Restoration::Extend,
+            ..config()
+        },
+        move |_| Ok(Box::new(backend)),
+    )?;
+    let stride = frame_bytes(SampleFormat::F32);
+    let from = wide_frames + frames_in(MEASURED_FROM, SampleRate::HZ_44100);
+    let to = from + frames_in(MEASURED_FOR, SampleRate::HZ_44100);
+    player.send(Command::Load {
+        items: vec![track(&wide, 1), track(&narrow, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * stride,
+        |_, graph| graph.played.len() >= to * stride,
+        "the narrow row to play past its first half second",
+    );
+
+    let graph = graph.lock();
+    let samples = floats_of_the_graph(&graph.played);
+    let above = band_power_db(&samples, from..to, ABOVE_THE_NARROW_WALL_HZ);
+    let under = band_power_db(&samples, from..to, UNDER_EVERY_WALL_HZ);
+    assert_eq!(graph.opens, 1, "the rows were not heard on without a gap");
+    assert!(
+        under - above < EXTENDED_WITHIN_DB,
+        "the narrow row was left {:.1} dB under its music above its wall, held at the wide row's",
+        under - above
+    );
+    Ok(())
+}

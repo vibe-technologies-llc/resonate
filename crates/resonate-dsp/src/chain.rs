@@ -143,6 +143,12 @@ impl Chain {
         }
     }
 
+    pub fn forget_the_source_heard(&mut self) {
+        for stage in &mut self.stages {
+            stage.forget_the_source_heard();
+        }
+    }
+
     pub fn set_gain(&mut self, volume: Volume, replay_gain: AppliedGain) {
         for stage in &mut self.stages {
             stage.set_gain(volume, replay_gain);

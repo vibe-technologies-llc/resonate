@@ -72,6 +72,8 @@ pub trait Processor: Send {
         false
     }
 
+    fn forget_the_source_heard(&mut self) {}
+
     fn set_gain(
         &mut self,
         _volume: resonate_core::Volume,

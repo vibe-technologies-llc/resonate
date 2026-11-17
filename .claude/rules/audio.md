@@ -1336,7 +1336,16 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   (`recent`, `RECENT_SECONDS`) is read for a wall every `LOOK_FOR_A_WALL_EVERY_SECONDS`, and one
   past `WALL_MOVES_PAST_HZ` of the held wall that the last `WALL_FOLLOWED_AFTER_LOOKS` looks
   agree on (`follow_the_wall`; one look disagreeing, or none found, starts the count again) takes
-  the same fade-out, move and fade-in. The short memory finds a wall that rose within a fraction
+  the same fade-out, move and fade-in. **What was learnt belongs to the row it was learnt from:**
+  rows of one codec unstudied plan alike (`wall: None`), so a gapless turn keeps the chain, and
+  `hand_on_to` has every stage forget the source it heard (`Chain::forget_the_source_heard`;
+  `Restore` drops both running spectra, the wall, its lock, the look count and the presence, and
+  starts again from the studied wall where the row has one) as the entering row's first frame
+  enters, so a 128 kbit/s row after a 320 kbit/s one is read for its own wall from its first
+  quarter second rather than extended from the last row's until the follow agrees
+  (`a_row_heard_on_without_a_gap_under_restoration_finds_its_own_wall_rather_than_the_last_rows`,
+  `a_wall_learnt_from_one_source_is_forgotten_for_the_next_and_a_studied_one_kept`). The windows
+  it overlaps and adds are left alone, so the turn stays gapless. The short memory finds a wall that rose within a fraction
   of a second and one that fell after seconds (thirty decibels at a half-second time constant), and
   a dip that comes back within the count, or fades the high frequencies by less than a cliff, is
   never followed (`a_wall_that_moves_up_late_in_a_song_is_followed_without_a_step`,

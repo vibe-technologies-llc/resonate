@@ -73,6 +73,10 @@ impl Arms {
             .set_gain_after_what_it_holds(volume, replay_gain);
     }
 
+    pub(super) fn forget_the_source_the_other_heard(&mut self) {
+        self.other.chain.forget_the_source_heard();
+    }
+
     pub(super) fn set_equalisation_of_the_other(&mut self, profile: &Arc<Profile>) {
         self.other.chain.set_equalisation(profile);
     }

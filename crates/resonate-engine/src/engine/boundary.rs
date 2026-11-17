@@ -218,6 +218,10 @@ impl Engine {
         let Some(output) = self.output.as_mut() else {
             return;
         };
+        output.chain.forget_the_source_heard();
+        if let Some(arms) = output.arms.as_mut() {
+            arms.forget_the_source_the_other_heard();
+        }
         let ahead = output.frames_rendered_ahead_of_the_ring();
         let rendered = output.chain.gain_amplitude().unwrap_or(Gain::UNITY.get());
         let turned = output
