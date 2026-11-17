@@ -666,6 +666,9 @@ fn a_view_link_follows_the_list_and_whatever_is_done_to_the_copy_it_comes_back_a
 fn removing_someone_moves_everyone_else_and_leaves_them_only_the_copy_they_held() {
     let hosted = hosted("removed");
     let (ada, list, ben, theirs) = two_sharing(&hosted, &["One"]);
+    eventually("Ben holding the song before he is removed", &ben, || {
+        ben.shelf.titles_of(theirs) == Some(vec!["One".to_owned()])
+    });
     let cal = hosted.person("Cal", Shelf::default());
     let edit = ada.shared.shown()[0].invites.edit.clone().expect("a link");
     cal.shared.join(&code_in(&edit), None).expect("joined");
