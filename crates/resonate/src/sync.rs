@@ -136,6 +136,20 @@ impl<T> Seat<T> {
 }
 
 #[cfg(feature = "sync")]
+trait Ends {
+    fn end(&self);
+}
+
+#[cfg(feature = "sync")]
+impl<T: Ends> Seat<T> {
+    fn ended(&self) {
+        if let Some(running) = self.left() {
+            running.end();
+        }
+    }
+}
+
+#[cfg(feature = "sync")]
 struct Arranged {
     arrangement: Arrangement,
     waits_for_the_last_run: bool,
@@ -410,7 +424,15 @@ struct Running {
     library: Arc<Library>,
     #[cfg(feature = "ui")]
     handed_off: parking_lot::Mutex<Option<(Instant, Vec<Handoff>)>>,
-    _alone: File,
+    alone: Mutex<Option<File>>,
+}
+
+#[cfg(feature = "sync")]
+impl Ends for Running {
+    fn end(&self) {
+        self.sync.stop();
+        drop(self.alone.lock().take());
+    }
 }
 
 #[cfg(feature = "sync")]
@@ -427,8 +449,7 @@ impl Syncing {
             if let Some(watching) = self.watching {
                 let _ = watching.try_send(());
             }
-            let running = self.service.running.left();
-            drop(running);
+            self.service.running.ended();
         }
     }
 
@@ -573,7 +594,7 @@ fn started(
         library: Arc::clone(library),
         #[cfg(feature = "ui")]
         handed_off: parking_lot::Mutex::new(None),
-        _alone: alone,
+        alone: Mutex::new(Some(alone)),
     }))
 }
 
@@ -2213,6 +2234,32 @@ mod tests {
         assert!(seated_after.is_none());
         assert!(held_after.is_none());
         assert_eq!(Arc::strong_count(&witness), 1);
+    }
+
+    #[test]
+    fn a_leave_ends_the_run_it_takes_though_a_clone_is_still_held_elsewhere() {
+        #[derive(Default)]
+        struct Witness {
+            ended: AtomicUsize,
+        }
+
+        impl Ends for Witness {
+            fn end(&self) {
+                self.ended.fetch_add(1, Ordering::AcqRel);
+            }
+        }
+
+        let seat = Seat::empty();
+
+        let elsewhere = seat.seated(Witness::default()).expect("seated");
+        seat.ended();
+        let ended_while_held = elsewhere.ended.load(Ordering::Acquire);
+        seat.ended();
+        let ended_again = elsewhere.ended.load(Ordering::Acquire);
+
+        assert_eq!(ended_while_held, 1);
+        assert_eq!(ended_again, 1);
+        assert!(seat.cloned().is_none());
     }
 
     fn heard(title: &str) -> Recording {

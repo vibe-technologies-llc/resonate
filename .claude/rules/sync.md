@@ -915,7 +915,11 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   waited on. **A leave is final**: the running one sits in a `Seat`, and `Seat::left` marks it left
   under the same lock `Seat::seated` takes, so a watcher midway through a start when the process
   leaves lets its fresh run go instead of installing it after the leave
-  (`a_run_started_after_sync_was_left_is_let_go_and_one_seated_before_is_taken_by_the_leave`). A device
+  (`a_run_started_after_sync_was_left_is_let_go_and_one_seated_before_is_taken_by_the_leave`), and
+  done when it returns: `Seat::ended` ends the run it takes, `Sync::stop` (through `&self`, so a clone
+  a device consult or a window call still holds cannot keep the run going) and then `sync.lock` let
+  go (`a_leave_ends_the_run_it_takes_though_a_clone_is_still_held_elsewhere`,
+  `a_run_stopped_while_held_elsewhere_is_over_when_the_stop_returns`). A device
   that is off holds one arrangement whatever else is set, and a key minted at start is kept in the
   arrangement (`Arrangement::keyed`), so the write that records it is not a change. A file that will
   not read leaves what runs as it is. So the pane, `resonate sync --join` and `--leave` from another

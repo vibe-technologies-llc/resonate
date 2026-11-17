@@ -321,7 +321,7 @@ pub struct Sync {
     device: DeviceId,
     nearby_port: Option<u16>,
     running: Arc<Running>,
-    thread: Option<thread::JoinHandle<()>>,
+    thread: Mutex<Option<thread::JoinHandle<()>>>,
 }
 
 struct Running {
@@ -768,7 +768,7 @@ impl Sync {
             device,
             nearby_port,
             running,
-            thread: Some(thread),
+            thread: Mutex::new(Some(thread)),
         })
     }
 
@@ -970,13 +970,14 @@ impl Sync {
             .unwrap_or_default()
     }
 
-    pub fn leave(mut self) {
+    pub fn leave(self) {
         self.stop();
     }
 
-    fn stop(&mut self) {
+    pub fn stop(&self) {
+        let mut thread = self.thread.lock();
         let _ = self.commands.send(Command::Stop);
-        if let Some(thread) = self.thread.take() {
+        if let Some(thread) = thread.take() {
             let _ = thread.join();
         }
     }

@@ -706,6 +706,42 @@ fn a_print_and_its_recognition_one_device_holds_reach_another_lacking_them_and_o
 }
 
 #[test]
+fn a_run_stopped_while_held_elsewhere_is_over_when_the_stop_returns() {
+    const WAITED_AT_MOST: Duration = Duration::from_secs(30);
+    const OVER_AT_ONCE: Duration = Duration::from_secs(2);
+
+    let folder = scratch("stopped");
+    let key = SyncKey::minted().expect("a key");
+    let desk = Arc::new(device_through(
+        &folder,
+        &key,
+        "Desk",
+        Arc::new(Shelf::holding(&[])),
+        None,
+        Follow::default(),
+        Server::Nowhere,
+    ));
+    let elsewhere = Arc::clone(&desk);
+    let stranger = DeviceId::minted().expect("a device");
+
+    desk.stop();
+    let asked_at = Instant::now();
+    let answered = elsewhere
+        .ask_to_consult(stranger, Vec::new())
+        .answer(WAITED_AT_MOST);
+    let waited = asked_at.elapsed();
+
+    drop(elsewhere);
+    drop(desk);
+    let _ = fs::remove_dir_all(&folder);
+    assert!(matches!(answered, Consulting::Unanswered));
+    assert!(
+        waited < OVER_AT_ONCE,
+        "a stopped run waited {waited:?} to answer"
+    );
+}
+
+#[test]
 fn two_devices_told_to_use_no_server_stand_nearby_and_owe_nothing_once_they_have_told_each_other() {
     let folder = scratch("serverless");
     let key = SyncKey::minted().expect("a key");
