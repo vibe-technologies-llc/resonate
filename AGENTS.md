@@ -78,7 +78,7 @@ cargo nextest run --workspace                                               # ev
 dbus-run-session -- cargo nextest run -p resonate-mpris bus::              # the session-bus tests, on a bus of their own
 RESONATE_BENCH_CEILINGS=1 cargo bench -p resonate-dsp --bench stages  # DSP costs under ceilings
 RUSTFLAGS= cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets   # Windows; CI's `windows` job runs it natively; `--target aarch64-pc-windows-msvc` is ARM64
-RUSTFLAGS= SDKROOT=<MacOSX.sdk> CC_aarch64_apple_darwin=clang AR_aarch64_apple_darwin=llvm-ar CFLAGS_aarch64_apple_darwin="--target=arm64-apple-macos13.0 -isysroot <MacOSX.sdk>" cargo xtask lint --target aarch64-apple-darwin   # macOS, types alone; CI's `macos` job builds and tests it natively (`macos.md` has the SDK and the shader file)
+RUSTFLAGS= SDKROOT=<MacOSX.sdk> CC_aarch64_apple_darwin=clang AR_aarch64_apple_darwin=llvm-ar CFLAGS_aarch64_apple_darwin="--target=arm64-apple-macos13.0 -isysroot <MacOSX.sdk>" cargo xtask lint --target aarch64-apple-darwin   # macOS, types alone; CI's `macos` jobs build and test it natively (`macos.md` has the SDK and the shader file)
 cargo xtask fmt --check                                               # rust-formatter --check of the workspace and fuzz/; local only, not in CI
 cd fuzz && cargo +nightly fuzz build                                  # the parsers' fuzz targets
 cargo xtask android                                                   # :app:assembleDebug :app:lintDebug :app:testDebugUnitTest, then check-native.py

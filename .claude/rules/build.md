@@ -56,17 +56,16 @@ stay its own, since the headless one is archived once and partitioned.
   feature is a default, is linted by the full clippy and tested by no job); no job runs `cargo build` before `cargo nextest run`,
   which builds what it needs, and library crates set `doctest = false` since none holds a doctest, the DSP
   bench under its ceilings, the layering refusals, the fuzz build, the sync server's package
-  (`server-package`), the `windows` job (`windows-latest`: clippy with `--all-targets` of the workspace but the phones'
+  (`server-package`), on Windows (`windows-latest`) the `windows` job (clippy with `--all-targets` of the workspace but the phones'
   boundary, its binding tool and PipeWire, then the same headless and per-feature clippy lines as
-  Linux, then the tests of every crate but the window, then the
-  binary's `signals` test with `mcp` on, which `--no-default-features` leaves out; the library,
-  codec, vault and MCP integration suites run there, gated per test; `windows.md`)
-  and `windows-arm64` (the same clippy lines for `aarch64-pc-windows-msvc`, never run), and the
-  `macos` job (`macos-latest`, Apple Silicon: the same clippy lines, the headless tests and the `signals` test
-  the `windows` job runs, with its excludes, `resonate-engine`'s tests taken apart and run one at a time (`macos.md`), then the tests of `resonate` and `resonate-ui`, since
-  the window builds for macOS on a Mac alone; its test steps run `--no-fail-fast` and each whatever
-  the one before answered, so one run names every failure of a build no machine here can run;
-  `macos.md`). A command added to `CLAUDE.md` goes into the workflow (iOS and the SoXR comparison aside); a crate added to the
+  Linux) beside `windows-tests` (the tests of every crate but the window, then the
+  binary's `signals` test with `mcp` on, which `--no-default-features` leaves out, whatever the first
+  answered; the library, codec, vault and MCP integration suites run there, gated per test; `windows.md`)
+  and `windows-arm64` (the same clippy lines for `aarch64-pc-windows-msvc`, never run), and on macOS
+  (`macos-latest`, Apple Silicon) the `macos` job (the same clippy lines) beside `macos-tests` (the headless tests and the `signals` test
+  `windows-tests` runs, with its excludes, `resonate-engine`'s tests taken apart and run one at a time, `macos.md`) and `macos-window` (the tests of `resonate` and `resonate-ui`, since
+  the window builds for macOS on a Mac alone), each test step run whatever the one before
+  answered, so one run names every failure of a build no machine here can run (`macos.md`). A command added to `CLAUDE.md` goes into the workflow (iOS and the SoXR comparison aside); a crate added to the
   layering refusals gets a line. The layering job has six shapes: `refuse`, `refuse_headless` (no
   default features), `only` (the workspace crates a crate may reach), `only_on` (the same in one
   target's tree), `reached_by_the_binary_alone` (`cargo tree -i`; `online`, `mcp`, `discord`),
@@ -85,10 +84,30 @@ stay its own, since the headless one is archived once and partitioned.
   Windows jobs cannot empty it, since a variable set to the empty string is removed there and the
   checkout's `target-cpu=native` would apply, so each sets the flags its release asset builds with
   (`windows.md`'s *Release*): `-C target-cpu=x86-64-v3` for `windows` and `-C target-cpu=generic` for
-  `windows-arm64`, both with `-C target-feature=+crt-static`. The `fuzz` job installs `cargo-fuzz`
-  after `rust-cache` so the cache restores it, and `layering` installs `git` and `rustup` alone,
-  the only things `cargo tree` needs, with the cargo caches and no `target`. The formatter is local
+  `windows-arm64`, both with `-C target-feature=+crt-static`. Every Windows job links with
+  `rust-lld.exe` (`CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER`, the host's build scripts included
+  in the ARM64 one), since `link.exe` spent most of a test build linking the sixty-odd test
+  binaries, and works on a Dev Drive (`samypr100/setup-dev-drive`: ReFS, trusted so Defender does
+  not scan each file written, the checkout copied there and every step run in
+  `DEV_DRIVE_WORKSPACE`). The `fuzz` job installs `cargo-fuzz` with `cargo install`, and `layering`
+  installs `git` and `rustup` alone, the only things `cargo tree` needs. The formatter is local
   only: a hosted runner cannot install `rust-formatter`.
+- **A push to `master` never cancels the run before it; a pull request's does**
+  (`cancel-in-progress` only for `pull_request`): GitHub keeps one run going and the newest one
+  waiting, so a run always finishes and saves its cache: a cancelled job saves none, and the
+  Windows, macOS and Android builds, longer than the gap between pushes, would compile cold every
+  time.
+- **The Rust caches fit the repository's 10 GB, which is all GitHub gives without billing**, so
+  only the jobs whose build is the longest keep one, each saved by one job on `master` alone
+  (`save-if`) and whatever the tests answered (`cache-on-failure`), and read by the others of its
+  platform through `shared-key` (the registry, build scripts and proc-macros, which `cargo check`
+  and `cargo build` share): `linux`, saved by `workspace` and read by `clippy`; `headless-build`'s
+  own; `windows`, saved by `windows-tests` and read by `windows`; `macos`, saved by `macos-tests` and
+  read by `macos` and `macos-window`; `android`, saved by `android` (both ABIs, debug) and read by
+  `android-emulator`. `costs`, `layering`, `fuzz`, `windows-arm64` and `android-release` keep none:
+  each builds cold in less time than the slowest job takes warm. Each cache also holds about
+  0.7 GB of registry beside `target`, and CI sets `CARGO_PROFILE_DEV_DEBUG=0`, since line tables
+  only serve a backtrace and cost every link and cache. A new cache job is weighed against this sum.
 - **`release.yml` builds the release assets and runs on a `v*` tag push or a manual run** (input
   `tag`, empty builds artifacts only). The workflow holds `contents: read`; only `release` and `publish` raise it to `contents: write`, and they reach the API through `GH_TOKEN`, so every `actions/checkout` sets `persist-credentials: false` and no build step runs beside a token in `.git/config`. The `release` job holds the tag to
   `v` plus Cargo's version and the recipes' versions, and creates the GitHub release as a draft
@@ -132,9 +151,9 @@ stay its own, since the headless one is archived once and partitioned.
   partitions by test name, so the four runs hold 1 777, 1 658, 1 713 and 1 700 of the 6 848 tests,
   the heavy cases (`resonate-analysis`'s `references::`) scattering among them; `fail-fast` is off
   in the matrix so one failing part does not hide another's. The whole-workspace job (`-p resonate -p resonate-ui`, a
-  few hundred tests behind a build of GPUI) and the Windows and macOS lines (one build each, on
-  runners billed by the minute, the macOS engine tests one at a time) stay one job each: an archive
-  would add a 1 GB upload and as many downloads to save nothing the build does not still cost.
+  few hundred tests behind a build of GPUI) and the Windows and macOS test lines (one build each,
+  the macOS engine tests one at a time) stay one job each: an archive would add a 1 GB upload and
+  as many downloads to save nothing the build does not still cost.
 
 CI and the release jobs install WebKitGTK 4.1 (`webkit2gtk-4.1`, Fedora's `webkit2gtk4.1-devel`,
 Ubuntu's `libwebkit2gtk-4.1-dev`) for `resonate-signin`'s window.
@@ -145,12 +164,14 @@ shaped width.
 
 ## Android
 
-The Android job builds the Compose APK against compile SDK 37, runs Android lint and the JVM tests,
-builds the release variant (R8, ARM64 alone, unsigned there) and holds it to
+Three Android jobs run side by side. `android` builds the Compose APK against compile SDK 37, runs
+Android lint, the JVM tests and `check-native.py`; `android-release` builds the release variant (R8, ARM64 alone, unsigned there) and holds it to
 `android/check-release.py`, which takes the signed `app-release.apk` where it exists and the unsigned
 one otherwise (16 KB zip and ELF alignment, no other ABI, the JNA and boundary classes R8 must keep
-by name), then instruments x86_64 emulators at API 33, the minimum, and API 36, Compose UI tests
-included, each run's report and result XML uploaded as `resonate-android-tests-api-<level>` whether or not it passed, since the log names no failing test. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU settings, NDK
+by name); `android-emulator`, a matrix of two, instruments an x86_64 emulator at API 33, the
+minimum, or API 36, Compose UI tests included, its debug APK built for x86_64 alone
+(`-Presonate.debugAbis=x86_64`, a comma-separated list the debug variant's ABIs default to both
+without), each run's report and result XML uploaded as `resonate-android-tests-api-<level>` whether or not it passed, since the log names no failing test. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU settings, NDK
 28.2 and 16 KB ELF alignment, running the host binding tool against Android ELF metadata, so no
 Linux sound server or GUI libraries are needed.
 

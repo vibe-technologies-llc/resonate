@@ -37,9 +37,9 @@ builds it and runs its tests, with no display and no output device. It is checke
   `cfg`), so the first run stops at `include_str!` of a missing `stitched_shaders.metal`; an empty
   file of that name in `target/aarch64-apple-darwin/debug/build/gpui_apple-*/out/` lets the check
   go on, and is made again after a `cargo clean` or a gpui bump. Nothing links.
-- **On the hosted runner, built and tested.** CI's `macos` job (`macos-latest`, Apple Silicon) runs
-  the Windows job's clippy and tests natively, and `cargo nextest run -p resonate -p resonate-ui`
-  (`build.md`). The Core Audio tests skip where there is no output device
+- **On the hosted runner, built and tested.** CI's `macos`, `macos-tests` and `macos-window` jobs
+  (`macos-latest`, Apple Silicon) run the Windows jobs' clippy and tests natively, and
+  `cargo nextest run -p resonate -p resonate-ui` (`build.md`). The Core Audio tests skip where there is no output device
   (`RESONATE_COREAUDIO_TESTS=required` makes a skip a failure, for a machine that has one).
 
 **What the runner refuses that Linux allows**, each met by its first run:

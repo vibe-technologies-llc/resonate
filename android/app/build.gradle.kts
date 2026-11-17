@@ -19,6 +19,13 @@ fun versionCodeOf(version: String): Int {
     return ((major * 100 + minor) * 100 + patch) * 10 + candidate
 }
 
+val debugAbis: List<String> =
+    (findProperty("resonate.debugAbis") as String?)
+        ?.split(',')
+        ?.map(String::trim)
+        ?.filter(String::isNotEmpty)
+        ?.takeIf { it.isNotEmpty() } ?: listOf("arm64-v8a", "x86_64")
+
 val releaseKeystore = signingValue("resonate.signing.storeFile", "RESONATE_SIGNING_STORE_FILE")
 
 android {
@@ -66,7 +73,7 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+            ndk { abiFilters += debugAbis }
         }
         getByName("release") {
             signingConfig = signingConfigs.findByName("release")
@@ -139,7 +146,7 @@ androidComponents.onVariants { variant ->
             repository.set(rootProject.layout.projectDirectory.dir(".."))
             sdkDirectory.set(androidComponents.sdkComponents.sdkDirectory)
             profile.set(if (release) "release" else "debug")
-            abis.set(if (release) listOf("arm64-v8a") else listOf("arm64-v8a", "x86_64"))
+            abis.set(if (release) listOf("arm64-v8a") else debugAbis)
             inputs.files(
                 fileTree(repository.dir("crates")) {
                     include("**/*.rs", "**/Cargo.toml", "**/uniffi.toml")

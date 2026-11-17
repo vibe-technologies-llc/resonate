@@ -235,7 +235,7 @@ Invariants the layering protects (the rules files have the rest):
 
 - `RUSTFLAGS= cargo xwin check --target x86_64-pc-windows-msvc --workspace --exclude resonate-mobile --exclude resonate-bindgen --exclude resonate-pipewire --all-targets`:
   the Windows build, cross-checked from Linux (`windows.md`); CI lints it natively in the `windows` job
-  with `cargo clippy ... -- -D warnings` and the headless and per-feature lines of the Linux job.
+  with `cargo clippy ... -- -D warnings` and the headless and per-feature lines of the Linux job, and tests it in `windows-tests`.
   The same with `--target aarch64-pc-windows-msvc` is Windows on ARM64 (`rustup target add` first;
   `windows.md` has the `clang` wrapper `ring` needs under xwin); CI's `windows-arm64` job lints it.
 
@@ -244,7 +244,7 @@ Invariants the layering protects (the rules files have the rest):
   (`~/.swiftpm/swift-sdks/darwin.artifactbundle/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk`),
   after `rustup target add aarch64-apple-darwin`; gpui's shader source is written on a Mac alone, so an
   empty `stitched_shaders.metal` goes into `gpui_apple`'s `OUT_DIR` once (`macos.md`). CI lints (the headless and per-feature lines too) and
-  tests it natively in the `macos` job. `packaging/macos/build.sh` builds the disk image on a Mac.
+  tests it natively in the `macos`, `macos-tests` and `macos-window` jobs. `packaging/macos/build.sh` builds the disk image on a Mac.
 
 - **`cargo xtask check` is the gate before a push**: `rust-formatter --check` of the workspace and
   `fuzz/`, every clippy line below (`cargo xtask lint`) and `cargo nextest run --workspace` under
