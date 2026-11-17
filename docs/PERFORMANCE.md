@@ -8,30 +8,15 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Performance and scale
+- [S · 0.12.1] A search of one very common word is slower through a trigram index than the scan it
+  replaced (one word matching a quarter of 300 000 kept songs: 95 ms against 54 ms), as for every
+  `Infix` reader; a word whose trigrams are common could be read by `instr` instead
 - [S · 0.12.1] Opening a playlist's menu still asks `holds_lossy_songs` on the window's thread, against
   `ui.md`'s *a menu opens at once and never reads the catalog on the window's thread*; read it with
   the ledger in `PlaylistSynced::read`
-- [S · 0.12.1] Every sync look scans `track_studies` twice and `lyrics_kept` whole: `studies_after`,
-  `band_peaks_after` and `lyrics_after` (`answers.rs`) filter and order by `studied` and `taken`, which
-  no index holds (`track_studies` is indexed on `verdict` and `agreement` alone, `lyrics_kept` on its
-  key), and `band_peaks` and `taken` sit after the large `print` and `text`; a look follows every
-  revision change by 300 ms, so on a 500 000-song catalog each play costs a read and sort of both
-  tables. A `MIGRATIONS` step indexing the two, with an `EXPLAIN QUERY PLAN` test
-- [S · 0.12.1] `credit_the_unheld` walks every track after a scan that brought one file:
-  `COUNT_THE_CREDITED_AND_LET_THEM_GO` (`history.rs`) is an `UPDATE tracks … WHERE EXISTS` over
-  `unheld_listens`, which SQLite does not turn into a join for an UPDATE, run whenever `arrived > 0`
-  inside the scan's write lock; and `CREDIT_AN_UNHELD` and `NOTE_AN_UNHELD_CREDITED` are prepared
-  once a listen, not through `store::cached` as `library.md` asks. Restrict to the ids the join
-  names
-- [S · 0.12.1] The ledger ages listens and the kept answers sweep their freshness by scanning whole
-  tables: `DELETE FROM listens WHERE at < ?1 AND owed = 0` runs on every look with no index on `at`
-  (`ledger.rs`), and `DELETE FROM answers WHERE at < ?1` at every open of `kept.sqlite` likewise
-  (`kept.rs`); an index on each as a migration step, or aging once a day
-- [M · 0.12.1] The search box's discography lookup scans every `discography_songs` row with `instr`:
-  `songs_kept_for` (`db/following.rs`) matches each word by `instr(s.folded, ?)`, run for every search
-  read while Online is on, where `library.md` says a piece of a word is looked up in a trigram index and
-  `albums_kept_for` goes through `Infix`; a trigram table kept by triggers (the table is `WITHOUT
-  ROWID`) and `Infix::holding`
+- [S · 0.12.1] The ledger ages listens by scanning a whole table: `DELETE FROM listens WHERE at < ?1 AND
+  owed = 0` runs on every look with no index on `at` (`ledger.rs`); an index as a migration step, or
+  aging once a day
 - [M · 0.12.1] A paired phone offers every answer it does not hold to its catalog again on each
   revision: `settle_answers` (`ledger.rs`) reads every `here = 0` row into one `Vec`, decoding each
   blob, and calls `take_answer` for each, skipped only where `answers_tried_at` (held in memory, so
@@ -43,10 +28,6 @@ are in [ROADMAP.md](ROADMAP.md).
   resets, so it runs again after every `Records` frame at `Compression::best()`, the server's log
   grows past `sync.md`'s compaction for good and a new device replays all of it; answers are never
   pruned. Back off once refused, then a snapshot of several parts or answers kept out of it
-- [S · 0.12.1] Investigate: an orphan sweep scans `lyrics_kept`, `lyrics_refused` and `lyrics_ahead`
-  whole (`store.rs`'s `ORPHANS`, a `NOT EXISTS` probe a row) beside the credit rebuild, inside the
-  write lock; measure on a large synthetic catalog, then delete with the track by trigger if it
-  matters
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
