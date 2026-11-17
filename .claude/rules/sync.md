@@ -890,7 +890,16 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   (`a_settings_file_is_read_only_once_its_stamp_has_held_still_for_a_look`). An `Arrangement` (whether it syncs,
   the code as `SyncKey::code` spells it, the server, certificate, device name and `sync-songs`) is
   compared with the one running; only a difference stops the running service (`released`, waiting
-  up to `RELEASED_WITHIN` for a call in flight to let go of `sync.lock`) and starts another. A device
+  up to `RELEASED_WITHIN` for a call in flight to let go of `sync.lock`) and starts another. **A
+  run still held past that wait is never the end of sync**: `released` hands back a `Weak` of it,
+  kept as the service's `lingering`, and while it lives a start that met `sync.lock` taken answers
+  `Arranged::waits_for_the_last_run`, so the watcher tries the arrangement again at each look until
+  it starts (`a_restart_held_up_by_the_last_run_is_tried_again_until_it_starts`,
+  `a_run_still_held_elsewhere_lingers_until_it_is_let_go`); the lock held by another process is not
+  waited on. **A leave is final**: the running one sits in a `Seat`, and `Seat::left` marks it left
+  under the same lock `Seat::seated` takes, so a watcher midway through a start when the process
+  leaves lets its fresh run go instead of installing it after the leave
+  (`a_run_started_after_sync_was_left_is_let_go_and_one_seated_before_is_taken_by_the_leave`). A device
   that is off holds one arrangement whatever else is set, and a key minted at start is kept in the
   arrangement (`Arrangement::keyed`), so the write that records it is not a change. A file that will
   not read leaves what runs as it is. So the pane, `resonate sync --join` and `--leave` from another

@@ -4,7 +4,10 @@ use std::{
     collections::BTreeSet,
     fs::{self, File},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering as Atomically},
+    sync::{
+        Weak,
+        atomic::{AtomicU64, Ordering as Atomically},
+    },
     thread,
     time::{Duration, Instant, SystemTime},
 };
@@ -84,8 +87,64 @@ pub(crate) struct Syncing {
 }
 
 #[cfg(feature = "sync")]
+struct Seat<T> {
+    held: Mutex<Seated<T>>,
+}
+
+#[cfg(feature = "sync")]
+struct Seated<T> {
+    running: Option<Arc<T>>,
+    left: bool,
+}
+
+#[cfg(feature = "sync")]
+impl<T> Seat<T> {
+    const fn empty() -> Self {
+        Self {
+            held: Mutex::new(Seated {
+                running: None,
+                left: false,
+            }),
+        }
+    }
+
+    fn cloned(&self) -> Option<Arc<T>> {
+        self.held.lock().running.clone()
+    }
+
+    fn vacated(&self) -> Option<Arc<T>> {
+        self.held.lock().running.take()
+    }
+
+    fn seated(&self, running: T) -> Option<Arc<T>> {
+        let running = Arc::new(running);
+        let taken = {
+            let mut held = self.held.lock();
+            if !held.left {
+                held.running = Some(Arc::clone(&running));
+            }
+            !held.left
+        };
+        taken.then_some(running)
+    }
+
+    fn left(&self) -> Option<Arc<T>> {
+        let mut held = self.held.lock();
+        held.left = true;
+        held.running.take()
+    }
+}
+
+#[cfg(feature = "sync")]
+struct Arranged {
+    arrangement: Arrangement,
+    waits_for_the_last_run: bool,
+}
+
+#[cfg(feature = "sync")]
 struct Service {
-    running: Mutex<Option<Arc<Running>>>,
+    running: Seat<Running>,
+    lingering: Mutex<Weak<Running>>,
     driven: Mutex<Option<Arc<dyn Controlled>>>,
     trust: Mutex<RemoteTrust>,
     filed_as: Arc<FiledAs>,
@@ -181,7 +240,7 @@ impl Arrangement {
 impl Service {
     #[cfg(feature = "ui")]
     fn with<Answer>(&self, absent: Answer, ask: impl FnOnce(&Running) -> Answer) -> Answer {
-        let running = self.running.lock().clone();
+        let running = self.running.cloned();
         running.as_deref().map_or(absent, ask)
     }
 
@@ -190,11 +249,15 @@ impl Service {
         config: &Config,
         settings: Option<&Path>,
         library: &Arc<Library>,
-    ) -> Arrangement {
+    ) -> Arranged {
         let arrangement = Arrangement::of(config);
-        let previous = self.running.lock().take();
-        if let Some(previous) = previous {
-            released(previous);
+        if let Some(previous) = self.running.vacated()
+            && let Some(lingering) = released(previous, RELEASED_WITHIN)
+        {
+            tracing::warn!(
+                "the last sync run is still held elsewhere, so the next one starts once it lets go"
+            );
+            *self.lingering.lock() = lingering;
         }
 
         *self.trust.lock() = arrangement.trust;
@@ -212,25 +275,46 @@ impl Service {
                 if let Some(driven) = self.driven.lock().clone() {
                     running.sync.control_with(driven, arrangement.trust);
                 }
-                *self.running.lock() = Some(Arc::new(running));
-                arrangement.keyed(&code)
+                if self.running.seated(running).is_none() {
+                    tracing::debug!("sync was left while it started, so the run is let go");
+                }
+                Arranged::settled(arrangement.keyed(&code))
             }
-            Ok(None) => arrangement,
+            Ok(None) => {
+                let lingers = self.lingering.lock().strong_count() > 0;
+                Arranged {
+                    waits_for_the_last_run: arrangement.syncs && lingers,
+                    arrangement,
+                }
+            }
             Err(error) => {
                 tracing::warn!(%error, "devices are not synchronised");
-                arrangement
+                Arranged::settled(arrangement)
             }
         }
     }
 }
 
 #[cfg(feature = "sync")]
-fn released(mut running: Arc<Running>) {
-    let deadline = Instant::now() + RELEASED_WITHIN;
+impl Arranged {
+    const fn settled(arrangement: Arrangement) -> Self {
+        Self {
+            arrangement,
+            waits_for_the_last_run: false,
+        }
+    }
+}
+
+#[cfg(feature = "sync")]
+fn released<T>(mut running: Arc<T>, within: Duration) -> Option<Weak<T>> {
+    let deadline = Instant::now() + within;
     loop {
         match Arc::try_unwrap(running) {
-            Ok(running) => return drop(running),
-            Err(again) if Instant::now() >= deadline => return drop(again),
+            Ok(running) => {
+                drop(running);
+                return None;
+            }
+            Err(again) if Instant::now() >= deadline => return Some(Arc::downgrade(&again)),
             Err(again) => running = again,
         }
         thread::sleep(RELEASE_LOOKED_AT_EVERY);
@@ -279,7 +363,7 @@ fn watching(
     arranged: Arrangement,
     every: Duration,
     filed_as: Arc<FiledAs>,
-    mut arrange: impl FnMut(&Config) -> Arrangement + Send + 'static,
+    mut arrange: impl FnMut(&Config) -> Arranged + Send + 'static,
 ) -> Option<Sender<()>> {
     let (stop, stopped) = bounded(1);
     let started = thread::Builder::new()
@@ -287,17 +371,20 @@ fn watching(
         .spawn(move || {
             let mut stamps = Settling::from(seen);
             let mut arranged = arranged;
+            let mut waiting = false;
             loop {
                 match stopped.recv_timeout(every) {
                     Err(RecvTimeoutError::Timeout) => {}
                     Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
                 }
-                if !stamps.settled_at(modified(&settings)) {
+                if !stamps.settled_at(modified(&settings)) && !waiting {
                     continue;
                 }
                 match config::load(Some(&settings)) {
-                    Ok(config) if Arrangement::of(&config) != arranged => {
-                        arranged = arrange(&config);
+                    Ok(config) if waiting || Arrangement::of(&config) != arranged => {
+                        let tried = arrange(&config);
+                        arranged = tried.arrangement;
+                        waiting = tried.waits_for_the_last_run;
                     }
                     Ok(config) => filed_as.told_by(&config),
                     Err(error) => tracing::warn!(
@@ -340,7 +427,7 @@ impl Syncing {
             if let Some(watching) = self.watching {
                 let _ = watching.try_send(());
             }
-            let running = self.service.running.lock().take();
+            let running = self.service.running.left();
             drop(running);
         }
     }
@@ -350,7 +437,7 @@ impl Syncing {
         let driven = Arc::new(driven) as Arc<dyn Controlled>;
         *self.service.driven.lock() = Some(Arc::clone(&driven));
         let trust = *self.service.trust.lock();
-        if let Some(running) = self.service.running.lock().as_ref() {
+        if let Some(running) = self.service.running.cloned() {
             running.sync.control_with(driven, trust);
         }
     }
@@ -370,19 +457,20 @@ impl Syncing {
 pub(crate) fn start(config: &Config, settings: Option<&Path>, library: &Arc<Library>) -> Syncing {
     let seen = settings.and_then(modified);
     let service = Arc::new(Service {
-        running: Mutex::new(None),
+        running: Seat::empty(),
+        lingering: Mutex::new(Weak::new()),
         driven: Mutex::new(None),
         trust: Mutex::new(RemoteTrust::default()),
         filed_as: Arc::default(),
     });
-    let arranged = service.arranged(config, settings, library);
+    let arranged = service.arranged(config, settings, library).arrangement;
     #[cfg(feature = "online")]
     {
         let reached = Arc::downgrade(&service);
         let asked = crate::musicbrainz::AskedOfDevices(move |reach: &mut dyn FnMut(&Sync)| {
             let running = reached
                 .upgrade()
-                .and_then(|service| service.running.lock().clone());
+                .and_then(|service| service.running.cloned());
             if let Some(running) = running {
                 reach(&running.sync);
             }
@@ -2010,7 +2098,7 @@ mod tests {
             Arc::clone(&filed_as),
             move |config| {
                 counting.fetch_add(1, Ordering::AcqRel);
-                Arrangement::of(config)
+                Arranged::settled(Arrangement::of(config))
             },
         )
         .expect("a thread follows the settings");
@@ -2053,6 +2141,78 @@ mod tests {
         assert_eq!(unmoved_by_the_layout, 0);
         assert!(moved);
         assert_eq!(after_a_bad_file, 1);
+    }
+
+    #[test]
+    fn a_restart_held_up_by_the_last_run_is_tried_again_until_it_starts() {
+        const TRIES_HELD_UP: usize = 2;
+
+        let folder = crate::fixtures::scratch("sync-waiting");
+        let settings = folder.join("config.toml");
+        let held = key();
+        let joined = key();
+        fs::write(&settings, format!("sync-key = \"{}\"\n", held.code())).expect("a file");
+        let tried = Arc::new(AtomicUsize::new(0));
+        let counting = Arc::clone(&tried);
+
+        let stop = watching(
+            settings.clone(),
+            modified(&settings),
+            Arrangement::of(&syncing_with(&held)),
+            Duration::from_millis(20),
+            Arc::default(),
+            move |config| {
+                let tries = counting.fetch_add(1, Ordering::AcqRel) + 1;
+                Arranged {
+                    arrangement: Arrangement::of(config),
+                    waits_for_the_last_run: tries <= TRIES_HELD_UP,
+                }
+            },
+        )
+        .expect("a thread follows the settings");
+
+        thread::sleep(Duration::from_millis(100));
+        written_whole(&settings, &format!("sync-key = \"{}\"\n", joined.code()));
+        let started = wait_for(&tried, TRIES_HELD_UP + 1);
+        thread::sleep(Duration::from_millis(300));
+        let tries = tried.load(Ordering::Acquire);
+
+        let _ = stop.try_send(());
+        let _ = fs::remove_dir_all(&folder);
+        assert!(started);
+        assert_eq!(tries, TRIES_HELD_UP + 1);
+    }
+
+    #[test]
+    fn a_run_still_held_elsewhere_lingers_until_it_is_let_go() {
+        let running = Arc::new(());
+        let elsewhere = Arc::clone(&running);
+
+        let lingering = released(running, Duration::from_millis(20)).expect("still held");
+        let lingered = lingering.strong_count();
+        drop(elsewhere);
+        let alone = released(Arc::new(()), Duration::from_millis(20));
+
+        assert_eq!(lingered, 1);
+        assert_eq!(lingering.strong_count(), 0);
+        assert!(alone.is_none());
+    }
+
+    #[test]
+    fn a_run_started_after_sync_was_left_is_let_go_and_one_seated_before_is_taken_by_the_leave() {
+        let witness = Arc::new(());
+        let seat = Seat::empty();
+
+        let seated_before = seat.seated(Arc::clone(&witness)).is_some();
+        let taken = seat.left();
+        let seated_after = seat.seated(Arc::clone(&witness));
+        let held_after = seat.cloned();
+        drop(taken);
+
+        assert!(seated_before);
+        assert!(seated_after.is_none());
+        assert!(held_after.is_none());
+        assert_eq!(Arc::strong_count(&witness), 1);
     }
 
     fn heard(title: &str) -> Recording {
