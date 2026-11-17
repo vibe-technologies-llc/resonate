@@ -192,6 +192,12 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
   of errand for the catalog's deletes under Flatpak: `trash_through_the_portal` opens the file and
   passes the descriptor to `org.freedesktop.portal.Trash.TrashFile` on a connection of its own
   (`Trashing`: `Unopened`, `Unreached`, `Refused`), asked by the binary, never by this crate's poll.
+  **A song that is a symlink is never handed over** (`Trashing::Linked`, so the deletion is
+  `Kept`): the portal trashes what the descriptor names, so a followed link had the song it names
+  trashed and the link left dangling, and it refuses every `O_PATH | O_NOFOLLOW` descriptor, a
+  plain file's too, so `opened_as_itself` opens `O_PATH` and refuses where the descriptor's
+  device and inode are not those `lstat` reads at the path
+  (`a_link_is_never_handed_to_the_portal_and_a_file_is`).
   `tests/trash.rs` hosts the real `xdg-desktop-portal` binary on a bus of its own
   (`dbus-run-session`, a bus with nothing to activate, `XDG_DATA_HOME` in the test's folder) and
   trashes a file through it, skipping where no portal is installed. The portal trashes with GIO's own

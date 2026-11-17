@@ -1725,7 +1725,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   sidecar, so a sandbox whose own `XDG_DATA_HOME` is not the desktop's trash does not hide a
   deleted song; the binary registers one under Flatpak (`/.flatpak-info`, `trashing.rs`) over
   `resonate_mpris::trash_through_the_portal` (`org.freedesktop.portal.Trash.TrashFile`, the file's
-  descriptor passed; zbus is not a library dependency), a portal that refuses or cannot be
+  descriptor passed, never a symlink's: `mpris.md`; zbus is not a library dependency), a portal that refuses or cannot be
   reached being `Kept` (`a_file_the_desktops_trash_would_not_take_is_kept_with_its_row`).
   **A Mac's is always Finder's Trash** (`trashing::FindersTrash`, the binary's: the `trash` crate
   told `DeleteMethod::NsFileManager`, so `trashItemAtURL` moves the file and no Automation
