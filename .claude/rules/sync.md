@@ -157,7 +157,8 @@ recording key and when the catalog refused the song, *The service* below;
 `query_folds` tables, below; `SHARED_PLAYLISTS_STAND_APART`, `shared-playlists.md`; `LAYOUTS_TRAVEL`:
 the `layouts` table, a device's organise layout, below; `SONGS_DELETED_EVERYWHERE`: the `deletions`
 table and `state.joined`, below; `LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED`: an index on a told
-listen's `at`, so a look's aging never scans the table); `user_version` counts the steps laid, a change appends a
+listen's `at`, so a look's aging never scans the table; `UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS`:
+`answers.named` and `state.held_mark`, below); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
 (`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`). All merging lives here, once for both
 platforms; the catalog seam stays thin.
@@ -339,8 +340,22 @@ platforms; the catalog seam stays thin.
   here): the catalog keeps the richer, so plainer words told later never undo timed ones, and the
   timed ones, re-listed by the catalog that took them, spread with a newer stamp; the row itself is
   last writer wins (`plainer_words_told_later_never_undo_timed_ones_and_the_timed_ones_spread`). An
-  answer for a song not held is kept (`here = 0`) and `settle` offers it again whenever the catalog's
-  revision moved since the last try (`an_answer_for_a_song_not_held_yet_lands_once_the_song_arrives`).
+  answer for a song not held is kept (`here = 0`, under its `named` key too) and offered again only
+  once its song arrives: whenever the catalog's revision moved, `settle` asks
+  `Catalog::songs_held_after(state.held_mark)` (`HELD_LOOKED_AT_ONCE`, 500, a page; `at >= mark`, the
+  mark stepping as the answers' does and kept in the ledger, so a start offers nothing again) and
+  offers only the unheld rows naming each song listed: by its key, its named key, that key with no
+  album, the keys it was received under, or its `WholeFile` for a study or peaks
+  (`an_answer_for_a_song_not_held_yet_lands_once_the_song_arrives`,
+  `an_answer_for_a_song_not_held_is_offered_again_only_once_its_song_arrives`,
+  `an_answer_for_a_song_not_held_is_not_offered_again_by_a_ledger_opened_anew`,
+  `a_song_received_under_the_name_an_answer_was_told_by_takes_the_answer`). The phones list a
+  document from its `added` second with its `songs_received` keys and its file; a catalog that
+  answers `SongsHeldAfter::Untracked` (the default, and the desktop's, whose library keeps no such
+  list) is offered every unheld row in pages of `UNHELD_OFFERED_AT_ONCE` (500) instead
+  (`a_catalog_that_cannot_say_what_it_came_to_hold_is_offered_every_unheld_answer_in_pages`).
+  `UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS` named the rows a ledger held before it
+  (`a_ledger_of_before_unheld_answers_waited_names_them_and_finds_one_by_a_song_held_without_its_mbid`).
   A catalog that `takes_answers` false (the default) neither looks nor takes, and passes
   every note on in its snapshot (`a_catalog_that_takes_no_answers_passes_them_on_untouched`).
 - **Each device tells the layout it files songs by, so a phone landing a song looks where a paired

@@ -23,7 +23,8 @@ use resonate_library::Layout;
 use resonate_sync::{
     Catalog, DeletedEverywhere, Follow, Handoff, Held, HeldShare, LocalListen, LocalPlaylist,
     LocalPlaylistId, LocalQuery, Me, Nearby, Opened, Platform, QueryBody, Refused, RemoteListen,
-    Resumed, Server, Settings, SongTags, Standing, Sync, SyncDevice, SyncKey, TransferState,
+    Resumed, Server, Settings, SongTags, SongsHeldAfter, Standing, Sync, SyncDevice, SyncKey,
+    TransferState,
     shared::{Shared, SharedSettings},
 };
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -1782,6 +1783,11 @@ impl Catalog for DocumentCatalog {
         learnt.sort_by_key(|learnt| learnt.at);
         learnt.truncate(most);
         Ok(learnt)
+    }
+
+    fn songs_held_after(&self, mark: i64, most: usize) -> Answered<SongsHeldAfter> {
+        self.documents_held_after(mark, most)
+            .map(SongsHeldAfter::Listed)
     }
 
     fn take_answer(&self, recording: &Recording, answer: &Answer) -> Answered<bool> {

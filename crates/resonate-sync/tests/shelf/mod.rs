@@ -10,8 +10,9 @@ use std::{
 use parking_lot::{Condvar, Mutex};
 use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile};
 use resonate_sync::{
-    Catalog, DeletedEverywhere, Held, HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId,
-    LocalQuery, Opened, QueryBody, Refused, RemoteListen, Resumed, SongTags,
+    Catalog, DeletedEverywhere, Held, HeldShare, HeldSince, LocalListen, LocalPlaylist,
+    LocalPlaylistId, LocalQuery, Opened, QueryBody, Refused, RemoteListen, Resumed, SongTags,
+    SongsHeldAfter,
 };
 
 #[derive(Default)]
@@ -66,6 +67,8 @@ pub struct Inside {
     pub deleted_after_the_first_look: Vec<String>,
     pub answers: Vec<Answered>,
     pub takes_no_answers: bool,
+    pub answers_offered: usize,
+    pub arrivals_untracked: bool,
     pub covers: BTreeMap<String, Vec<u8>>,
     pub uncovered: Vec<Mbid>,
     pub lyricsfiles: Vec<(Recording, SharedLyricsfile)>,
@@ -754,8 +757,35 @@ impl Catalog for Shelf {
         Ok(answers)
     }
 
+    fn songs_held_after(&self, mark: i64, most: usize) -> Result<SongsHeldAfter, Refused> {
+        let inside = self.inside.lock();
+        if inside.arrivals_untracked {
+            return Ok(SongsHeldAfter::Untracked);
+        }
+        let mut held = inside
+            .arrivals
+            .iter()
+            .filter(|(_, at, _)| *at >= mark)
+            .map(|(recording, at, _)| HeldSince {
+                at: *at,
+                recording: recording.clone(),
+                received_under: inside
+                    .received_as
+                    .iter()
+                    .filter(|(_, own)| own == recording)
+                    .map(|(asked, _)| asked.key().as_str().to_owned())
+                    .collect(),
+                file: None,
+            })
+            .collect::<Vec<_>>();
+        held.sort_by_key(|song| song.at);
+        held.truncate(most);
+        Ok(SongsHeldAfter::Listed(held))
+    }
+
     fn take_answer(&self, recording: &Recording, answer: &Answer) -> Result<bool, Refused> {
         let mut inside = self.inside.lock();
+        inside.answers_offered += 1;
         let Some(own) = inside
             .songs
             .iter()

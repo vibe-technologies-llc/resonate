@@ -97,6 +97,20 @@ pub struct DeletedEverywhere {
     pub recording: Recording,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeldSince {
+    pub at: i64,
+    pub recording: Recording,
+    pub received_under: Vec<String>,
+    pub file: Option<WholeFile>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SongsHeldAfter {
+    Untracked,
+    Listed(Vec<HeldSince>),
+}
+
 pub trait ReadSeek: Read + Seek + Send {}
 
 impl<T: Read + Seek + Send> ReadSeek for T {}
@@ -226,6 +240,11 @@ pub trait Catalog: Send + Sync + 'static {
     fn take_answer(&self, recording: &Recording, answer: &Answer) -> Result<bool, Refused> {
         let _ = (recording, answer);
         Ok(false)
+    }
+
+    fn songs_held_after(&self, mark: i64, most: usize) -> Result<SongsHeldAfter, Refused> {
+        let _ = (mark, most);
+        Ok(SongsHeldAfter::Untracked)
     }
 
     fn covers_wanted(&self, most: usize) -> Result<Vec<Mbid>, Refused> {

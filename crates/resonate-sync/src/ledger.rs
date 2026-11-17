@@ -3,7 +3,10 @@ use std::{collections::BTreeMap, path::Path, time::Duration};
 use resonate_core::{Answer, Answered, Recording, RecordingKey, WholeFile};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
-use self::deletions::SONGS_DELETED_EVERYWHERE;
+use self::{
+    deletions::SONGS_DELETED_EVERYWHERE,
+    unheld::{UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS, name_the_answers},
+};
 use crate::{
     DeviceId, Error, Result, SpaceId, StoreOp,
     catalog::{
@@ -26,6 +29,7 @@ use crate::{
 };
 
 mod deletions;
+mod unheld;
 
 pub const BUNDLE_BYTES: usize = 192 * 1024;
 pub const LISTENS_LOOKED_AT_ONCE: usize = 2_000;
@@ -210,6 +214,7 @@ const MIGRATIONS: &[&str] = &[
     LAYOUTS_TRAVEL,
     SONGS_DELETED_EVERYWHERE,
     LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED,
+    UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS,
 ];
 
 const LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED: &str = "
@@ -477,6 +482,9 @@ impl Ledger {
             transaction
                 .execute_batch(step)
                 .map_err(|source| Error::store(StoreOp::Migrate, source))?;
+            if *step == UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS {
+                name_the_answers(&transaction)?;
+            }
         }
         transaction
             .pragma_update(
@@ -1721,10 +1729,10 @@ impl Ledger {
                 let stamp = self.clock.now(self.device);
                 transaction
                     .execute(
-                        "INSERT INTO answers (key, kind, file, recording, answer, here, nanos, stamped_by, owed)
-                         VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, 1)
+                        "INSERT INTO answers (key, kind, file, recording, answer, here, nanos, stamped_by, owed, named)
+                         VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, 1, ?8)
                          ON CONFLICT (key, kind, file) DO UPDATE SET recording = ?4, answer = ?5, here = 1,
-                             nanos = ?6, stamped_by = ?7, owed = 1",
+                             nanos = ?6, stamped_by = ?7, owed = 1, named = ?8",
                         params![
                             slot.key.as_str(),
                             slot.kind,
@@ -1732,7 +1740,8 @@ impl Ledger {
                             encoded_recording(recording),
                             encoded,
                             stamp.nanos,
-                            self.device.0.as_slice()
+                            self.device.0.as_slice(),
+                            recording.named_key().as_str()
                         ],
                     )
                     .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -3100,10 +3109,10 @@ impl Ledger {
         if newer {
             self.connection
                 .execute(
-                    "INSERT INTO answers (key, kind, file, recording, answer, here, nanos, stamped_by)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                    "INSERT INTO answers (key, kind, file, recording, answer, here, nanos, stamped_by, named)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                      ON CONFLICT (key, kind, file) DO UPDATE SET recording = ?4, answer = ?5, here = ?6,
-                         nanos = ?7, stamped_by = ?8, owed = 0",
+                         nanos = ?7, stamped_by = ?8, owed = 0, named = ?9",
                     params![
                         slot.key.as_str(),
                         slot.kind,
@@ -3112,42 +3121,13 @@ impl Ledger {
                         encoded,
                         taken,
                         note.stamp.nanos,
-                        note.stamp.device.0.as_slice()
+                        note.stamp.device.0.as_slice(),
+                        note.recording.named_key().as_str()
                     ],
                 )
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
         }
         Ok(taken)
-    }
-
-    fn settle_answers(&mut self, catalog: &dyn Catalog) -> Result<usize> {
-        if !catalog.takes_answers() {
-            return Ok(0);
-        }
-        let revision = catalog.revision();
-        if self.answers_tried_at == Some(revision) {
-            return Ok(0);
-        }
-
-        let mut settled = 0;
-        for note in self.answer_notes("here = 0")? {
-            if !catalog
-                .take_answer(&note.recording, &note.answer)
-                .map_err(Error::Catalog)?
-            {
-                continue;
-            }
-            let slot = AnswerSlot::of(&note.recording, &note.answer);
-            self.connection
-                .execute(
-                    "UPDATE answers SET here = 1 WHERE key = ?1 AND kind = ?2 AND file = ?3",
-                    params![slot.key.as_str(), slot.kind, slot.file],
-                )
-                .map_err(|source| Error::store(StoreOp::Write, source))?;
-            settled += 1;
-        }
-        self.answers_tried_at = Some(catalog.revision());
-        Ok(settled)
     }
 
     fn answer_notes(&self, condition: &str) -> Result<Vec<AnswerNote>> {

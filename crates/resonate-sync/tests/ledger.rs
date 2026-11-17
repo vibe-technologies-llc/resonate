@@ -1296,6 +1296,105 @@ fn an_answer_for_a_song_not_held_yet_lands_once_the_song_arrives() {
 }
 
 #[test]
+fn an_answer_for_a_song_not_held_is_offered_again_only_once_its_song_arrives() {
+    let mut desk = Device::new("Desk", &["A", "B", "C"]);
+    let mut phone = Device::new("Phone", &[]);
+    for title in ["A", "B", "C"] {
+        desk.shelf.answer_here(title, sung(title, false));
+    }
+    sync(&mut desk, &mut phone);
+    let offered_on_arrival = phone.shelf.inside.lock().answers_offered;
+
+    phone.shelf.listen_here("Elsewhere", days_ago(0));
+    phone.ledger.settle(&phone.shelf).expect("settled");
+    let offered_after_a_play = phone.shelf.inside.lock().answers_offered;
+    phone.shelf.add_song(song("B"), b"B".repeat(1000));
+    phone.ledger.settle(&phone.shelf).expect("settled");
+    let offered_after_b_arrived = phone.shelf.inside.lock().answers_offered;
+
+    assert_eq!(offered_on_arrival, 3);
+    assert_eq!(offered_after_a_play, offered_on_arrival);
+    assert_eq!(offered_after_b_arrived, offered_on_arrival + 1);
+    assert_eq!(phone.shelf.answers_of("B"), [sung("B", false)]);
+    assert!(phone.shelf.answers_of("A").is_empty());
+}
+
+#[test]
+fn an_answer_for_a_song_not_held_is_not_offered_again_by_a_ledger_opened_anew() {
+    let folder = std::env::temp_dir().join(format!(
+        "resonate-ledger-unheld-{}-{}",
+        std::process::id(),
+        days_ago(0)
+    ));
+    std::fs::create_dir_all(&folder).expect("a scratch folder");
+    let path = folder.join("sync.sqlite");
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &[]);
+    phone.ledger = Ledger::open(&path).expect("a ledger");
+    phone.ledger.enter_space(SPACE).expect("a space");
+    for title in ["A", "B"] {
+        desk.shelf.answer_here(title, sung(title, false));
+    }
+    sync(&mut desk, &mut phone);
+    phone.ledger.settle(&phone.shelf).expect("settled");
+    let offered_before = phone.shelf.inside.lock().answers_offered;
+
+    phone.ledger = Ledger::open(&path).expect("the ledger again");
+    phone.shelf.listen_here("Elsewhere", days_ago(0));
+    phone.ledger.settle(&phone.shelf).expect("settled");
+    let offered = phone.shelf.inside.lock().answers_offered - offered_before;
+    std::fs::remove_dir_all(&folder).expect("cleared");
+
+    assert_eq!(offered, 0);
+}
+
+#[test]
+fn a_song_received_under_the_name_an_answer_was_told_by_takes_the_answer() {
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &[]);
+    desk.shelf.answer_here("A", sung("Words", false));
+    sync(&mut desk, &mut phone);
+
+    let own = Recording {
+        mbid: Some(Mbid::new(ECHOES).expect("an mbid")),
+        album: "Another Album".into(),
+        ..song("A")
+    };
+    phone.shelf.receive_named_otherwise(song("A"), own);
+    let offered_before = phone.shelf.inside.lock().answers_offered;
+    phone.ledger.settle(&phone.shelf).expect("settled");
+    let offered = phone.shelf.inside.lock().answers_offered - offered_before;
+
+    assert_eq!(offered, 1);
+}
+
+#[test]
+fn a_catalog_that_cannot_say_what_it_came_to_hold_is_offered_every_unheld_answer_in_pages() {
+    let titles = (0..1_200)
+        .map(|at| format!("Song {at}"))
+        .collect::<Vec<_>>();
+    let mut desk = Device::new("Desk", &[]);
+    let mut phone = Device::new("Phone", &[]);
+    phone.shelf.inside.lock().arrivals_untracked = true;
+    for title in &titles {
+        desk.shelf.answer_here(title, sung(title, false));
+    }
+    sync(&mut desk, &mut phone);
+    let offered_on_arrival = phone.shelf.inside.lock().answers_offered;
+
+    phone.shelf.add_song(song("Song 1100"), b"S".repeat(1000));
+    phone.ledger.settle(&phone.shelf).expect("settled");
+    let offered = phone.shelf.inside.lock().answers_offered - offered_on_arrival;
+
+    assert_eq!(offered_on_arrival, titles.len());
+    assert_eq!(offered, titles.len());
+    assert_eq!(
+        phone.shelf.answers_of("Song 1100"),
+        [sung("Song 1100", false)]
+    );
+}
+
+#[test]
 fn plainer_words_told_later_never_undo_timed_ones_and_the_timed_ones_spread() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);

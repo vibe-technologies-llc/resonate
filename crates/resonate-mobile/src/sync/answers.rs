@@ -6,6 +6,7 @@ use resonate_core::{
 };
 use resonate_library::{KeptPrint, LyricText, weighed_again};
 use resonate_lyrics::read_lyrics;
+use resonate_sync::HeldSince;
 use rusqlite::{OptionalExtension, Row, params};
 
 use super::{
@@ -29,7 +30,59 @@ struct Alike {
     frames: Option<i64>,
 }
 
+struct ArrivedDocument {
+    id: i64,
+    held: HeldSince,
+}
+
 impl DocumentCatalog {
+    pub(super) fn documents_held_after(&self, mark: i64, most: usize) -> Answered<Vec<HeldSince>> {
+        let most = i64::try_from(most).unwrap_or(i64::MAX);
+        let connection = self.catalog.0.lock();
+        let mut arrived = connection
+            .prepare_cached(&format!(
+                "SELECT d.id, d.added, d.packets, d.frames, d.rate, {RECORDING_COLUMNS}
+                   FROM documents d
+                  WHERE d.missing = 0 AND d.added >= ?1
+                  ORDER BY d.added, d.id LIMIT ?2"
+            ))
+            .and_then(|mut query| {
+                query
+                    .query_map(params![mark, most], |row| {
+                        let file =
+                            match (row.get::<_, Option<i64>>(2)?, row.get::<_, Option<i64>>(3)?) {
+                                (Some(packets), Some(frames)) => Some(WholeFile {
+                                    packets: packets.cast_unsigned(),
+                                    frames: frames.cast_unsigned(),
+                                    rate: row.get(4)?,
+                                }),
+                                _ => None,
+                            };
+                        Ok(ArrivedDocument {
+                            id: row.get(0)?,
+                            held: HeldSince {
+                                at: row.get(1)?,
+                                recording: recording_at(row, 5)?,
+                                received_under: Vec::new(),
+                                file,
+                            },
+                        })
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+            })
+            .map_err(unavailable)?;
+        let mut received = connection
+            .prepare_cached("SELECT recording FROM songs_received WHERE track = ?1")
+            .map_err(unavailable)?;
+        for document in &mut arrived {
+            document.held.received_under = received
+                .query_map(params![document.id], |row| row.get(0))
+                .and_then(Iterator::collect)
+                .map_err(unavailable)?;
+        }
+        Ok(arrived.into_iter().map(|document| document.held).collect())
+    }
+
     pub(super) fn lyrics_to_share(&self, mark: i64, most: usize) -> Answered<Vec<Learnt>> {
         let most = i64::try_from(most).unwrap_or(i64::MAX);
         let rows = {
@@ -688,6 +741,40 @@ mod tests {
         );
         assert!(after_now.is_empty());
         assert!(documents.takes_answers());
+        let _ = fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_song_is_listed_as_held_from_when_it_was_added_with_every_name_it_was_received_under() {
+        let folder = folder("held-after");
+        let player = player(&folder);
+        let documents = documents_of(&player, &folder);
+        let old = song(&player, "content://a/old", "Joga", Some(RECORDING));
+        let new = song(&player, "content://a/new", "Hunter", None);
+        {
+            let connection = player.catalog.0.lock();
+            connection
+                .execute(
+                    "UPDATE documents SET added = CASE id WHEN ?1 THEN 100 ELSE 200 END",
+                    params![old.id as i64],
+                )
+                .expect("dated");
+            connection
+                .execute(
+                    "INSERT INTO songs_received (recording, track) VALUES ('named:asked', ?1)",
+                    params![new.id as i64],
+                )
+                .expect("received");
+        }
+
+        let listed = documents.documents_held_after(150, 10).expect("listed");
+        let every = documents.documents_held_after(0, 10).expect("listed");
+
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].at, 200);
+        assert_eq!(listed[0].recording.title, "Hunter");
+        assert_eq!(listed[0].received_under, ["named:asked"]);
+        assert_eq!(every.len(), 2);
         let _ = fs::remove_dir_all(folder);
     }
 
