@@ -1789,13 +1789,17 @@ fn two_zones_play_apart_each_steered_alone_while_a_setting_reaches_both() -> Res
         |player| player.state().volume == half,
         "the second zone to take its own volume",
     );
+    wait_for(
+        &study.player,
+        |player| player.output_settings().quality == Quality::LowLatency,
+        "the resampler chosen in the second zone to reach it on its own thread",
+    );
 
     assert_eq!(study.name.as_str(), "Zone 2");
     assert!(
         playing(&study.player),
         "pausing one zone stood the other down"
     );
-    assert_eq!(study.player.output_settings().quality, Quality::LowLatency);
     assert_eq!(
         first.state().volume,
         Volume::MAX,
