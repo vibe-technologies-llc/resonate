@@ -238,8 +238,9 @@ where it came back exclusive in that spec, else marks the route's exclusive offe
 no longer, announced, not probed again) and opens mixed; mixed opens shared and lets Oboe convert
 (`SampleRateConversionQuality::Best`), and gives back any bit-perfect preference
 (`clearPreferredMixerAttributes`), as the stream that held it closes (`Routing::closed`, only for the
-stream still current, so a late close of an earlier stream leaves the next one's preference) and as
-the backend shuts down. The callback is typed by the spec (`f32`, `i16`, `i32`, mono or
+stream still current, so a late close of an earlier stream leaves the next one's preference), as
+the backend shuts down, and as an open that was granted one fails (`Routing::give_back`, only while
+that open's `Claim` still holds it, so a preference another open took since is kept). The callback is typed by the spec (`f32`, `i16`, `i32`, mono or
 stereo); 24-bit packed has no Oboe-rs type, so it is never offered. `output_stream()` says what is
 open (`OutputStream`), which the page shows as *Current stream* (`outputStreamWords`,
 `outputPathWords`) under *This output takes* (the route's `AudioDeviceInfo` rates, depths and channel
@@ -252,7 +253,14 @@ each time; the callback stamps each fill from Oboe's own `getTimestamp(CLOCK_MON
 `getFramesWritten` instead, `realtime.md`) and 500 ms otherwise, in which a device error is still noticed. An open waits at most
 `OPEN_WITHIN` (3 s) for the stream thread, so a stalled `open_stream` on a route change is a
 timed-out open the engine parks, not a blocked engine thread, and the late stream closes itself
-(`an_open_that_never_answers_times_out_instead_of_blocking`).
+(`an_open_that_never_answers_times_out_instead_of_blocking`). **An open that timed out moves nothing**:
+each open holds a `Claim` that the wait abandons as it gives up, and the stream thread asks the mixer
+and tells `Routing` the device and the stream only through it (`Routing::answer`, which tells and
+answers under the claim's lock, so an answer either lands before the wait gives up or not at all), so
+a late stream closes itself and gives back what it was granted without overwriting the device,
+the stream told or the next stream's preference
+(`a_stream_that_opens_after_its_open_timed_out_moves_nothing_and_is_not_told`,
+`an_opening_abandoned_before_it_answers_leaves_the_device_the_stream_and_the_mixer_as_the_next_one_set_them`).
 The output pane lists `AudioManager` devices and sends a chosen device id to Oboe before
 rebinding; system default is id zero. **One output is offered a route** (`oneForEachRoute`, `offeredOutputs`), on this pane, in *Add a zone* and when a kept route is bound again: Android lists a USB DAC as a device and a headset, or as several PCM devices, and a Bluetooth headset once a profile, and all of them are one `OutputRoute`. Of such twins the call profile and the safe speaker come last, then the most rates wins. What is playing is still read off the whole list, since a stream can stand on a twin not offered, and a row stands for its twins (`standsFor`).
 The pane shows the actual route in a status card and names a different requested route when one

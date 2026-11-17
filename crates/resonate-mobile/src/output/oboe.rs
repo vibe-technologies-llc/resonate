@@ -31,6 +31,7 @@ use super::{
     oboe_offers::{MIXED, Way, sink_formats},
     oboe_render::Rendering,
     oboe_reshape::{Opened, Order, controlled_by, reshaper},
+    oboe_state::Claim,
     waits::{OPEN_WITHIN, between_commands, opened_within},
 };
 
@@ -115,6 +116,7 @@ struct Opening {
     spec: StreamSpec,
     way: Way,
     routing: Arc<Routing>,
+    claim: Arc<Claim>,
     fed: Fed,
     ready: Sender<Result<Opened>>,
     commands: Receiver<Order>,
@@ -198,24 +200,29 @@ where
         spec,
         mut way,
         routing,
+        claim,
         fed,
         ready,
         commands,
         announced,
         clock,
     } = opening;
+    let Some(format) = OutputFormat::of(spec) else {
+        let _ = ready.send(Err(Error::FormatRefused));
+        return;
+    };
     let requested = routing.requested();
     if way == Way::Exclusive && !opens_as_asked::<T, C>(&Asked::of(way, requested), spec) {
         routing.exclusive_refused();
         way = Way::Mixed;
     }
     if let Way::BitPerfect { device } = way
-        && !routing.prefer_bit_perfect(device, spec)
+        && !routing.prefer_bit_perfect(&claim, device, spec)
     {
         way = Way::Mixed;
     }
     if !matches!(way, Way::BitPerfect { .. }) {
-        routing.mix_freely();
+        routing.mix_freely_for(&claim);
     }
 
     let empty = Arc::new(AtomicBool::new(false));
@@ -242,10 +249,12 @@ where
         }
         Ok(mut stream) => {
             let _ = stream.close();
+            routing.give_back(&claim);
             let _ = ready.send(Err(Error::FormatRefused));
             return;
         }
         Err(source) => {
+            routing.give_back(&claim);
             let _ = ready.send(Err(backend_error(Operation::Open, source)));
             return;
         }
@@ -255,17 +264,27 @@ where
     } else {
         way.path()
     };
-    routing.opened_on(stream.get_device_id());
-    let told = OutputFormat::of(spec).map(|format| routing.opened(OutputStream { format, path }));
-    let _ = announced.send(StreamEvent::FormatChanged {
-        spec,
-        words: Words::Whole,
-    });
-    let _ = ready.send(Ok(Opened {
-        spec,
-        way,
-        requested,
-    }));
+    let told = routing.answer(
+        &claim,
+        stream.get_device_id(),
+        OutputStream { format, path },
+        || {
+            let _ = announced.send(StreamEvent::FormatChanged {
+                spec,
+                words: Words::Whole,
+            });
+            let _ = ready.send(Ok(Opened {
+                spec,
+                way,
+                requested,
+            }));
+        },
+    );
+    let Some(told) = told else {
+        let _ = stream.close();
+        routing.give_back(&claim);
+        return;
+    };
 
     serve(
         &mut stream,
@@ -277,9 +296,7 @@ where
         &failed,
     );
     let _ = stream.close();
-    if let Some(told) = told {
-        routing.closed(told);
-    }
+    routing.closed(told);
 }
 
 fn serve(
@@ -381,10 +398,12 @@ impl Opener for Device {
         let (ready, started) = bounded(1);
         let (fed, handing) = fed_from(source);
         let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
+        let claim = self.0.claim();
         let opening = Opening {
             spec,
             way: self.0.way_for(spec),
             routing: Arc::clone(&self.0),
+            claim: Arc::clone(&claim),
             fed,
             ready,
             commands: asked,
@@ -398,7 +417,7 @@ impl Opener for Device {
                 op: Operation::Open,
                 source,
             })?;
-        let opened = opened_within(&started, OPEN_WITHIN)?;
+        let opened = opened_within(&started, OPEN_WITHIN, &claim)?;
         let reshape = reshaper(opened, Arc::clone(&self.0), handing, commands.clone());
         Ok(SinkStream::new(events, clock, controlled_by(commands)).reshaped_by(reshape))
     }

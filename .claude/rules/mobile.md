@@ -618,8 +618,9 @@ test).
   bit-perfect formats and its probed exclusive one, each its own `SinkFormats` entry so no rate and
   word are crossed; `Way` for a spec), `output/oboe_state.rs` (`Routing`: the requested and actual
   device, the switch, the offers, the probe made once per chosen device and route, the mixer
-  preference held and given back, the stream told by a number so a late close never clears the
-  next) and `output/oboe_frames.rs` (the callback's fill, realtime). The output thread's waits and
+  preference held and given back by the open that holds it, the stream told by a number so a late
+  close never clears the next, and each open's `Claim`, abandoned by a wait that gave up so the
+  late stream moves nothing) and `output/oboe_frames.rs` (the callback's fill, realtime). The output thread's waits and
   the bounded open are `output/waits.rs`. **The stream is kept across a rebind** (`audio.md`):
   `output/oboe_reshape.rs` holds `Order` (what the output thread is sent: a `StreamCommand`, or
   `Reshaped`, which calls off a drain standing from before), `Opened` (the spec, the effective `Way`

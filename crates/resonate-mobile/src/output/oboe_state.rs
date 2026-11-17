@@ -17,6 +17,39 @@ use crate::foreign::{Callback, answered};
 pub(crate) const OUTPUT: SinkId = SinkId::new(1);
 const SYSTEM_DEFAULT: i32 = 0;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Standing {
+    Waiting,
+    Answered,
+    Abandoned,
+}
+
+pub(crate) struct Claim {
+    ticket: u64,
+    standing: Mutex<Standing>,
+}
+
+impl Claim {
+    pub(crate) fn abandon(&self) -> bool {
+        let mut standing = self.standing.lock();
+        if *standing == Standing::Answered {
+            return false;
+        }
+        *standing = Standing::Abandoned;
+        true
+    }
+
+    pub(crate) fn abandoned(&self) -> bool {
+        *self.standing.lock() == Standing::Abandoned
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Preference {
+    device: i32,
+    held_by: u64,
+}
+
 pub(crate) struct Routing {
     requested: AtomicI32,
     actual: AtomicI32,
@@ -25,8 +58,9 @@ pub(crate) struct Routing {
     probed_for: Mutex<Option<i32>>,
     opened: Mutex<Option<(u64, OutputStream)>>,
     streams_opened: AtomicU64,
+    openings_begun: AtomicU64,
     mixer: Mutex<Option<Arc<dyn OutputMixer>>>,
-    preferred: Mutex<Option<i32>>,
+    preferred: Mutex<Option<Preference>>,
     announce: Sender<SinkChange>,
     pub(crate) changes: Receiver<SinkChange>,
     sink: SinkId,
@@ -48,6 +82,7 @@ impl Routing {
             probed_for: Mutex::new(None),
             opened: Mutex::new(None),
             streams_opened: AtomicU64::new(0),
+            openings_begun: AtomicU64::new(0),
             mixer: Mutex::new(None),
             preferred: Mutex::new(None),
             announce,
@@ -132,6 +167,31 @@ impl Routing {
         self.announced();
     }
 
+    pub(crate) fn claim(&self) -> Arc<Claim> {
+        Arc::new(Claim {
+            ticket: self.openings_begun.fetch_add(1, Ordering::Relaxed),
+            standing: Mutex::new(Standing::Waiting),
+        })
+    }
+
+    pub(crate) fn answer(
+        &self,
+        claim: &Claim,
+        device: i32,
+        stream: OutputStream,
+        tell: impl FnOnce(),
+    ) -> Option<u64> {
+        let mut standing = claim.standing.lock();
+        if *standing == Standing::Abandoned {
+            return None;
+        }
+        self.opened_on(device);
+        let which = self.opened(stream);
+        tell();
+        *standing = Standing::Answered;
+        Some(which)
+    }
+
     pub(crate) fn opened(&self, stream: OutputStream) -> u64 {
         let which = self.streams_opened.fetch_add(1, Ordering::Relaxed);
         *self.opened.lock() = Some((which, stream));
@@ -160,36 +220,53 @@ impl Routing {
         *self.mixer.lock() = Some(mixer);
     }
 
-    pub(crate) fn prefer_bit_perfect(&self, device: i32, spec: StreamSpec) -> bool {
+    pub(crate) fn prefer_bit_perfect(&self, claim: &Claim, device: i32, spec: StreamSpec) -> bool {
         let Some(format) = OutputFormat::of(spec) else {
             return false;
         };
         let Some(mixer) = self.mixer.lock().clone() else {
             return false;
         };
+        let mut held = self.preferred.lock();
+        if claim.abandoned() {
+            return false;
+        }
         let preferred = answered(Callback::PreferBitPerfect, || {
             mixer.prefer_bit_perfect(device, format)
         })
         .unwrap_or(false);
-        let given_up = {
-            let mut held = self.preferred.lock();
-            let before = held.take();
-            *held = preferred.then_some(device);
-            before.filter(|before| !preferred || *before != device)
-        };
-        if let Some(before) = given_up {
-            answered(Callback::MixFreely, || mixer.mix_freely(before));
+        let before = held.take();
+        *held = preferred.then_some(Preference {
+            device,
+            held_by: claim.ticket,
+        });
+        if let Some(before) = before.filter(|before| !preferred || before.device != device) {
+            answered(Callback::MixFreely, || mixer.mix_freely(before.device));
         }
         preferred
     }
 
     pub(crate) fn mix_freely(&self) {
-        let Some(device) = self.preferred.lock().take() else {
+        self.given_back(|_| true);
+    }
+
+    pub(crate) fn mix_freely_for(&self, claim: &Claim) {
+        self.given_back(|_| !claim.abandoned());
+    }
+
+    pub(crate) fn give_back(&self, claim: &Claim) {
+        self.given_back(|preference| preference.held_by == claim.ticket);
+    }
+
+    fn given_back(&self, whose: impl FnOnce(Preference) -> bool) {
+        let mut held = self.preferred.lock();
+        let Some(preference) = held.filter(|preference| whose(*preference)) else {
             return;
         };
+        *held = None;
         let mixer = self.mixer.lock().clone();
         if let Some(mixer) = mixer {
-            answered(Callback::MixFreely, || mixer.mix_freely(device));
+            answered(Callback::MixFreely, || mixer.mix_freely(preference.device));
         }
     }
 
@@ -404,20 +481,22 @@ mod tests {
 
         routing.watch_mixer(Arc::new(Throwing));
 
-        assert!(!routing.prefer_bit_perfect(USB, CD));
+        assert!(!routing.prefer_bit_perfect(&routing.claim(), USB, CD));
         routing.mix_freely();
     }
 
     #[test]
     fn the_mixer_is_asked_for_bit_perfect_and_freed_when_a_mixed_stream_follows() {
         let routing = Routing::new();
-        let mixer = Arc::new(Mixer::default());
 
-        assert!(!routing.prefer_bit_perfect(USB, CD));
+        let mixer = Arc::new(Mixer::default());
+        let claim = routing.claim();
+
+        assert!(!routing.prefer_bit_perfect(&claim, USB, CD));
 
         routing.watch_mixer(Arc::new(Arc::clone(&mixer)));
-        assert!(routing.prefer_bit_perfect(USB, CD));
-        assert!(routing.prefer_bit_perfect(USB, CD));
+        assert!(routing.prefer_bit_perfect(&claim, USB, CD));
+        assert!(routing.prefer_bit_perfect(&claim, USB, CD));
         assert!(mixer.freed.lock().is_empty());
 
         routing.mix_freely();
@@ -435,9 +514,11 @@ mod tests {
             ..Mixer::default()
         });
         routing.watch_mixer(Arc::new(Arc::clone(&mixer)));
+        let claim = routing.claim();
 
-        assert!(!routing.prefer_bit_perfect(USB, CD));
+        assert!(!routing.prefer_bit_perfect(&claim, USB, CD));
         assert!(!routing.prefer_bit_perfect(
+            &claim,
             USB,
             StreamSpec::new(
                 SampleRate::HZ_96000,
@@ -485,7 +566,7 @@ mod tests {
             path: OutputPath::BitPerfect,
         };
 
-        assert!(routing.prefer_bit_perfect(USB, CD));
+        assert!(routing.prefer_bit_perfect(&routing.claim(), USB, CD));
         let first = routing.opened(bit_perfect);
         let second = routing.opened(bit_perfect);
         routing.closed(first);
@@ -493,6 +574,100 @@ mod tests {
         assert!(mixer.freed.lock().is_empty());
 
         routing.closed(second);
+
+        assert_eq!(*mixer.freed.lock(), vec![USB]);
+    }
+
+    fn bit_perfect() -> OutputStream {
+        OutputStream {
+            format: cd(),
+            path: OutputPath::BitPerfect,
+        }
+    }
+
+    fn watched(routing: &Routing) -> Arc<Mixer> {
+        let mixer = Arc::new(Mixer::default());
+        routing.watch_mixer(Arc::new(Arc::clone(&mixer)));
+        mixer
+    }
+
+    #[test]
+    fn an_opening_abandoned_before_it_answers_leaves_the_device_the_stream_and_the_mixer_as_the_next_one_set_them()
+     {
+        let routing = Routing::new();
+        let mixer = watched(&routing);
+        let late = routing.claim();
+        let next = routing.claim();
+
+        assert!(late.abandon());
+        assert!(routing.prefer_bit_perfect(&next, USB, CD));
+        let told = routing.answer(&next, USB, bit_perfect(), || ());
+
+        let mut said = false;
+        let late_told = routing.answer(&late, 2, bit_perfect(), || said = true);
+        routing.mix_freely_for(&late);
+        routing.give_back(&late);
+
+        assert!(told.is_some());
+        assert_eq!(late_told, None);
+        assert!(!said);
+        assert_eq!(routing.actual(), USB);
+        assert_eq!(routing.stream(), Some(bit_perfect()));
+        assert!(mixer.freed.lock().is_empty());
+    }
+
+    #[test]
+    fn an_abandoned_opening_never_asks_the_mixer_for_bit_perfect() {
+        let routing = Routing::new();
+        let mixer = watched(&routing);
+        let claim = routing.claim();
+
+        claim.abandon();
+
+        assert!(!routing.prefer_bit_perfect(&claim, USB, CD));
+        assert!(mixer.preferred.lock().is_empty());
+    }
+
+    #[test]
+    fn an_opening_that_answered_is_not_abandoned_by_a_wait_that_ends_after() {
+        let routing = Routing::new();
+        let claim = routing.claim();
+
+        let told = routing.answer(&claim, USB, bit_perfect(), || ());
+
+        assert!(told.is_some());
+        assert!(!claim.abandon());
+        assert!(!claim.abandoned());
+    }
+
+    #[test]
+    fn a_preference_granted_to_an_opening_that_failed_is_given_back() {
+        let routing = Routing::new();
+        let mixer = watched(&routing);
+        let claim = routing.claim();
+
+        assert!(routing.prefer_bit_perfect(&claim, USB, CD));
+        routing.give_back(&claim);
+        routing.give_back(&claim);
+
+        assert_eq!(*mixer.freed.lock(), vec![USB]);
+        assert_eq!(routing.stream(), None);
+    }
+
+    #[test]
+    fn a_preference_another_opening_took_over_is_not_given_back_by_the_one_before() {
+        let routing = Routing::new();
+        let mixer = watched(&routing);
+        let first = routing.claim();
+        let second = routing.claim();
+
+        assert!(routing.prefer_bit_perfect(&first, USB, CD));
+        assert!(routing.prefer_bit_perfect(&second, USB, CD));
+        routing.give_back(&first);
+
+        assert!(mixer.freed.lock().is_empty());
+
+        routing.give_back(&second);
 
         assert_eq!(*mixer.freed.lock(), vec![USB]);
     }
