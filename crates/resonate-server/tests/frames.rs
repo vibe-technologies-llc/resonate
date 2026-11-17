@@ -19,6 +19,7 @@ use tokio::time::timeout;
 const SERVER_ENDS_THE_CONNECTION_WITHIN: Duration = Duration::from_secs(3);
 const THE_FIRST_FRAME_IS_HELD_WITHIN: Duration = Duration::from_millis(300);
 const MEBIBYTE: u32 = 1024 * 1024;
+const A_STREAM_IS_GRANTED_WITHIN: Duration = Duration::from_millis(300);
 
 struct Serving {
     address: SocketAddr,
@@ -27,7 +28,7 @@ struct Serving {
 
 struct Session {
     _client: Endpoint,
-    _connection: Connection,
+    connection: Connection,
     send: SendStream,
     recv: RecvStream,
 }
@@ -97,7 +98,7 @@ async fn welcomed(serving: &Serving, device: u8) -> Session {
     ));
     Session {
         _client: client,
-        _connection: connection,
+        connection,
         send,
         recv,
     }
@@ -158,4 +159,21 @@ async fn a_first_frame_announced_past_the_ceiling_ends_the_connection_without_wa
         ended.is_ok(),
         "the server kept waiting for a first frame it should never read"
     );
+}
+
+#[tokio::test]
+async fn a_client_may_open_no_stream_and_send_no_datagram_beside_the_one_its_session_reads() {
+    let serving = serving_with(Limits::default());
+    let session = welcomed(&serving, 1).await;
+
+    let second = timeout(A_STREAM_IS_GRANTED_WITHIN, session.connection.open_bi()).await;
+    let unidirectional = timeout(A_STREAM_IS_GRANTED_WITHIN, session.connection.open_uni()).await;
+    let datagrams = session.connection.max_datagram_size();
+
+    assert!(second.is_err(), "a second stream was granted");
+    assert!(
+        unidirectional.is_err(),
+        "a unidirectional stream was granted"
+    );
+    assert_eq!(datagrams, None);
 }

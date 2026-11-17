@@ -1,4 +1,4 @@
-use std::{path::Path, time::Duration};
+use std::{collections::HashSet, path::Path, time::Duration};
 
 use resonate_sync::{
     DeviceId, SpaceId,
@@ -44,10 +44,15 @@ ALTER TABLE spaces ADD COLUMN viewer BLOB;
 ALTER TABLE spaces ADD COLUMN closed BLOB;
 ";
 
+const A_CLOSING_WORD_IS_COUNTED_IN_ITS_SPACE: &str = "
+UPDATE spaces SET bytes = bytes + length(closed) WHERE closed IS NOT NULL;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     RECORDS_ARE_KNOWN_BY_THEIR_DIGEST,
     A_SPACE_MAY_BE_SHARED_AND_CLOSED,
+    A_CLOSING_WORD_IS_COUNTED_IN_ITS_SPACE,
 ];
 
 pub struct Store {
@@ -66,6 +71,10 @@ impl Capacity {
         spaces: u64::MAX,
         bytes: u64::MAX,
     };
+
+    fn cannot_hold(self, held: u64, stored: u64, adding: u64, space_bytes: u64) -> bool {
+        held.saturating_add(adding) > space_bytes || stored.saturating_add(adding) > self.bytes
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,6 +90,7 @@ pub enum Claim {
 pub enum Closing {
     Now(Vec<u8>),
     Before(Vec<u8>),
+    Full,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -282,25 +292,41 @@ impl Store {
         Ok(heads)
     }
 
-    pub fn close(&mut self, space: SpaceId, sealed: &[u8]) -> Result<Closing> {
-        let stored = self
+    pub fn close(&mut self, space: SpaceId, sealed: &[u8], space_bytes: u64) -> Result<Closing> {
+        let capacity = self.capacity;
+        let transaction = self
             .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        let (bytes, closed): (i64, Option<Vec<u8>>) = transaction
+            .query_row(
+                "SELECT bytes, closed FROM spaces WHERE id = ?1",
+                params![space.0.as_slice()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        if let Some(first) = closed {
+            return Ok(Closing::Before(first));
+        }
+        let adding = u64::try_from(sealed.len()).unwrap_or(u64::MAX);
+        let (_, stored) = totals_in(&transaction)?;
+        if capacity.cannot_hold(bytes.cast_unsigned(), stored, adding, space_bytes) {
+            return Ok(Closing::Full);
+        }
+        transaction
             .execute(
-                "UPDATE spaces SET closed = ?2 WHERE id = ?1 AND closed IS NULL",
-                params![space.0.as_slice(), sealed],
+                "UPDATE spaces SET closed = ?2, bytes = bytes + ?3 WHERE id = ?1",
+                params![
+                    space.0.as_slice(),
+                    sealed,
+                    i64::try_from(adding).unwrap_or(i64::MAX)
+                ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        if stored > 0 {
-            return Ok(Closing::Now(sealed.to_vec()));
-        }
-        self.connection
-            .query_row(
-                "SELECT closed FROM spaces WHERE id = ?1",
-                params![space.0.as_slice()],
-                |row| row.get(0),
-            )
-            .map(Closing::Before)
-            .map_err(|source| Error::store(StoreOp::Read, source))
+        transaction
+            .commit()
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(Closing::Now(sealed.to_vec()))
     }
 
     pub fn closed(&self, space: SpaceId) -> Result<Option<Vec<u8>>> {
@@ -343,6 +369,7 @@ impl Store {
         blobs: &[Vec<u8>],
         space_bytes: u64,
     ) -> Result<Appended> {
+        let capacity = self.capacity;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -357,34 +384,48 @@ impl Store {
         if closed {
             return Ok(Appended::Closed);
         }
-        let mut fresh: Vec<(Digest, &Vec<u8>)> = Vec::with_capacity(blobs.len());
-        for blob in blobs {
-            let known = digest(&SHA256, blob);
-            let held = transaction
+        let bytes = bytes.cast_unsigned();
+        let mut seen = HashSet::with_capacity(blobs.len());
+        let distinct: Vec<(Digest, &Vec<u8>)> = blobs
+            .iter()
+            .map(|blob| (digest(&SHA256, blob), blob))
+            .filter(|(known, _)| seen.insert(known.as_ref().to_vec()))
+            .collect();
+        let distinct_bytes = summed(distinct.iter().map(|(_, blob)| blob.len()));
+        let (_, stored) = totals_in(&transaction)?;
+        if capacity.cannot_hold(
+            bytes,
+            stored,
+            distinct_bytes.saturating_sub(bytes),
+            space_bytes,
+        ) {
+            return Ok(Appended::Full);
+        }
+        let mut statement = transaction
+            .prepare_cached(
+                "SELECT 1 FROM records WHERE space = ?1 AND device = ?2 AND digest = ?3",
+            )
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let mut fresh = Vec::with_capacity(distinct.len());
+        for (known, blob) in distinct {
+            let held = statement
                 .query_row(
-                    "SELECT 1 FROM records WHERE space = ?1 AND device = ?2 AND digest = ?3",
                     params![space.0.as_slice(), device.0.as_slice(), known.as_ref()],
                     |_| Ok(()),
                 )
                 .optional()
                 .map_err(|source| Error::store(StoreOp::Read, source))?
                 .is_some();
-            let repeated = fresh
-                .iter()
-                .any(|(seen, _)| seen.as_ref() == known.as_ref());
-            if !held && !repeated {
+            if !held {
                 fresh.push((known, blob));
             }
         }
-        let adding = fresh.iter().map(|(_, blob)| blob.len()).sum::<usize>();
+        drop(statement);
+        let adding = summed(fresh.iter().map(|(_, blob)| blob.len()));
+        if capacity.cannot_hold(bytes, stored, adding, space_bytes) {
+            return Ok(Appended::Full);
+        }
         let adding = i64::try_from(adding).unwrap_or(i64::MAX);
-        if bytes.saturating_add(adding).cast_unsigned() > space_bytes {
-            return Ok(Appended::Full);
-        }
-        let (_, stored) = totals_in(&transaction)?;
-        if stored.saturating_add(adding.cast_unsigned()) > self.capacity.bytes {
-            return Ok(Appended::Full);
-        }
         let mut seq = head;
         for (known, blob) in fresh {
             seq += 1;
@@ -583,6 +624,12 @@ impl Store {
     }
 }
 
+fn summed(lengths: impl Iterator<Item = usize>) -> u64 {
+    lengths.fold(0, |sum, length| {
+        sum.saturating_add(u64::try_from(length).unwrap_or(u64::MAX))
+    })
+}
+
 fn totals_in(connection: &rusqlite::Connection) -> Result<(u64, u64)> {
     connection
         .query_row(
@@ -658,12 +705,99 @@ mod tests {
     fn a_space_closed_twice_is_told_to_have_been_closed_by_the_first_word_alone() {
         let mut store = claimed();
 
-        let first = store.close(SPACE, &[7; 32]).expect("closed");
-        let second = store.close(SPACE, &[8; 32]).expect("closed again");
+        let first = store.close(SPACE, &[7; 32], 1 << 20).expect("closed");
+        let second = store.close(SPACE, &[8; 32], 1 << 20).expect("closed again");
 
         assert_eq!(first, Closing::Now(vec![7; 32]));
         assert_eq!(second, Closing::Before(vec![7; 32]));
         assert_eq!(store.closed(SPACE).expect("read"), Some(vec![7; 32]));
+    }
+
+    #[test]
+    fn a_closing_word_is_weighed_against_the_space_and_total_caps_and_counted_once_kept() {
+        let mut store = claimed().limited(Capacity {
+            spaces: u64::MAX,
+            bytes: 100,
+        });
+        let other = SpaceId([9; 16]);
+        store.claim(other, &[3; 32], 1, || true).expect("made");
+        store
+            .append(SPACE, DESK, &[vec![0; 40]], 1 << 20)
+            .expect("appended");
+
+        let past_the_space = store.close(SPACE, &[7; 32], 64).expect("weighed");
+        let kept = store.close(SPACE, &[7; 32], 1 << 20).expect("closed");
+        let (_, stored) = store.totals().expect("totals");
+        let past_the_total = store.close(other, &[8; 32], 1 << 20).expect("weighed");
+
+        assert_eq!(past_the_space, Closing::Full);
+        assert_eq!(kept, Closing::Now(vec![7; 32]));
+        assert_eq!(stored, 72);
+        assert_eq!(past_the_total, Closing::Full);
+        assert_eq!(store.closed(other).expect("read"), None);
+    }
+
+    #[test]
+    fn a_closing_word_kept_before_it_was_counted_is_counted_once_the_store_is_opened() {
+        let connection = Connection::open_in_memory().expect("a connection");
+        for step in &MIGRATIONS[..3] {
+            connection.execute_batch(step).expect("an earlier store");
+        }
+        connection
+            .execute(
+                "INSERT INTO spaces (id, token, created, touched, bytes, closed) VALUES (?1, ?2, 1, 1, 40, ?3)",
+                params![
+                    SPACE.0.as_slice(),
+                    [3_u8; 32].as_slice(),
+                    [7_u8; 32].as_slice()
+                ],
+            )
+            .expect("a closed space");
+        connection
+            .pragma_update(None, "user_version", 3)
+            .expect("stamped");
+
+        let store = Store::over(connection).expect("carried forward");
+
+        assert_eq!(store.totals().expect("totals"), (1, 72));
+        assert_eq!(store.closed(SPACE).expect("read"), Some(vec![7; 32]));
+    }
+
+    #[test]
+    fn many_repeats_inside_one_append_are_kept_once_each() {
+        let mut store = claimed();
+        let repeated: Vec<Vec<u8>> = (0..resonate_sync::wire::BLOBS_A_FRAME_AT_MOST)
+            .map(|at| vec![u8::try_from(at % 7).expect("a byte"); 40])
+            .collect();
+
+        let appended = store
+            .append(SPACE, DESK, &repeated, 1 << 20)
+            .expect("appended");
+        let kept = store.records_after(SPACE, 0, 100, 1 << 20).expect("read");
+
+        assert_eq!(appended, Appended::Through(7));
+        assert_eq!(
+            kept.iter().map(|record| record.blob[0]).collect::<Vec<_>>(),
+            [0, 1, 2, 3, 4, 5, 6]
+        );
+    }
+
+    #[test]
+    fn an_append_no_lookup_could_make_fit_is_refused_and_a_resend_within_the_cap_is_not() {
+        let mut store = claimed();
+        store
+            .append(SPACE, DESK, &[vec![1; 40]], 100)
+            .expect("appended");
+
+        let past = store
+            .append(SPACE, DESK, &[vec![2; 40], vec![3; 40], vec![4; 40]], 100)
+            .expect("weighed");
+        let resent = store
+            .append(SPACE, DESK, &[vec![1; 40]], 100)
+            .expect("resent");
+
+        assert_eq!(past, Appended::Full);
+        assert_eq!(resent, Appended::Through(1));
     }
 
     #[test]

@@ -22,7 +22,13 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   bytes nor a seq, and the append is answered `Appended` as if stored: a device resends the very
   bytes of an append whose `Appended` it lost (`sync.md`), and only a resend can match, since every
   seal takes a fresh nonce (`a_record_sent_again_by_the_device_that_sent_it_is_kept_once`,
-  `a_store_of_the_first_release_is_carried_forward_with_its_records`).
+  `a_store_of_the_first_release_is_carried_forward_with_its_records`). **An append costs the lock
+  time linear in its blobs, at most `BLOBS_A_FRAME_AT_MOST`** (the decoder's bound, `sync.md`): the
+  repeats inside it are told apart by a set of digests, the caps are weighed first against what no
+  lookup could take away (a resend cannot be more than the space already holds, so the frame's
+  distinct bytes less the space's are added for certain), and only then is each digest looked up by
+  the index, once (`many_repeats_inside_one_append_are_kept_once_each`,
+  `an_append_no_lookup_could_make_fit_is_refused_and_a_resend_within_the_cap_is_not`).
 - **The first token claims a space; any other is refused** (`Claim::Refused` → `Refusal::Token`).
   The digest is compared as stored: a digest of a 32-byte random token leaks nothing by timing.
   **A space whose id is marked as committed is made only by the token it commits to**
@@ -61,6 +67,14 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   is `Error::NoRoom` and the session is refused `Busy`, so 2 048 connections each announcing
   `LARGEST_FRAME` hold no more than the budget, not tens of GiB
   (`frames_announced_across_sessions_past_what_the_server_holds_are_refused_as_busy`).
+- **A QUIC connection to the server carries one stream and nothing beside it**
+  (`resonate_sync::server_transport`, the server's alone; devices dial with their own): one
+  bidirectional stream at a time, no unidirectional stream, no datagrams, and a receive window of
+  `A_SERVER_CONNECTION_BUFFERS_AT_MOST` (1.25 MB, quinn's own stream window) for the stream and the
+  whole connection alike, so a client cannot open streams the server never accepts and fill each
+  one's window with bytes quinn holds and the frame budget never weighs; 2 048 connections hold at
+  most that much each
+  (`a_client_may_open_no_stream_and_send_no_datagram_beside_the_one_its_session_reads`).
 - **What a QUIC session said leaves before its connection goes**: dropping a `quinn::Connection`
   closes it at once and discards what its streams had not sent, so `welcome` waits up to
   `WHAT_WAS_SAID_LEAVES_WITHIN` (1 s) for the client to close first, and a `Refused` reaches it.
@@ -125,7 +139,13 @@ holds. The `A_SPACE_MAY_BE_SHARED_AND_CLOSED` step adds two columns.
 - **`Heads` asks after many spaces on one connection** (at most `HEADS_ASKED_AT_MOST`, 256): each
   space whose token or viewer token fits answers its head and whether it is closed, and any other is
   left out, so a client polls with one connection and opens a session only for what moved.
-- **`Close` is first come, kept apart from the log** (`spaces.closed`): compaction cannot reach it
+- **`Close` is first come, kept apart from the log** (`spaces.closed`), **and weighed as an append
+  is**: its bytes join `spaces.bytes`, against `--space-bytes` and `--total-bytes`, and a word that
+  would pass either is refused `SpaceFull` (`Closing::Full`), so closing 10 000 spaces cannot hold
+  gigabytes past the caps; the `A_CLOSING_WORD_IS_COUNTED_IN_ITS_SPACE` step counts the words a store
+  kept before
+  (`a_closing_word_is_weighed_against_the_space_and_total_caps_and_counted_once_kept`,
+  `a_closing_word_kept_before_it_was_counted_is_counted_once_the_store_is_opened`). Compaction cannot reach it
   (a member being removed could otherwise compact the word that moves everyone away), a second one
   is answered to its sender alone with the first (`Store::close` answers `Closing::Now` or
   `Closing::Before`, and only `Now` is told to every session, so the stored blob is sent once, not
@@ -245,8 +265,9 @@ admitted: the key check comes first, so a stranger reads nothing from either.
   up before it takes a download turn and again once it holds it (a download that finished meanwhile is
   served, not repeated). A miss is **teed into a staging file while it is sent**: `<id>.<pid>.part`
   held under `writer::Held`, renamed to `<id>.flac` only after a clean end of the stream (a known
-  `Content-Length` must match, and the first bytes must be `fLaC`, so an empty body is never kept
-  either), so a short or foreign body is never kept (`an_empty_answer_for_a_track_is_never_kept`). Eviction is least recently used (a hit bumps the file's mtime, which orders a
+  `Content-Length` must match, and the first bytes must be `fLaC`, however few each read hands over,
+  so an empty body is never kept either, and a first read of one to three bytes still is
+  (`a_track_whose_first_read_is_shorter_than_its_marker_is_still_kept`)), so a short or foreign body is never kept (`an_empty_answer_for_a_track_is_never_kept`). Eviction is least recently used (a hit bumps the file's mtime, which orders a
   restart); a restart sweeps stale stagings through `writer_of`, leaves foreign files alone and
   trims a lowered limit. **The directory never exceeds the limit**: each chunk reserves its bytes
   before it is written, evicting as needed, and a track may take at most half the limit (a known

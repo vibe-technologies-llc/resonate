@@ -1,7 +1,7 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use quinn::{
-    ClientConfig, IdleTimeout, RecvStream, SendStream, ServerConfig, TransportConfig,
+    ClientConfig, IdleTimeout, RecvStream, SendStream, ServerConfig, TransportConfig, VarInt,
     crypto::rustls::{QuicClientConfig, QuicServerConfig},
 };
 use ring::signature::{ED25519, UnparsedPublicKey};
@@ -29,6 +29,8 @@ pub const SERVER_SILENT_FOR: Duration = Duration::from_secs(90);
 pub const KEEP_A_PEER_EVERY: Duration = Duration::from_secs(10);
 pub const PEER_SILENT_FOR: Duration = Duration::from_secs(60);
 const FRAME_LENGTH_BYTES: usize = 4;
+const A_SERVER_CONNECTION_BUFFERS_AT_MOST: u32 = 1_250_000;
+const STREAMS_A_SERVER_SESSION_TAKES: u32 = 1;
 
 pub struct PeerIdentity {
     certificate: CertificateDer<'static>,
@@ -101,10 +103,21 @@ pub fn to_the_server(roots: RootCertStore) -> Result<ClientConfig> {
     Ok(config)
 }
 
-pub fn transport(keep_alive: Duration, silent_for: Duration) -> TransportConfig {
+fn transport(keep_alive: Duration, silent_for: Duration) -> TransportConfig {
     let mut transport = TransportConfig::default();
     transport.keep_alive_interval(Some(keep_alive));
     transport.max_idle_timeout(IdleTimeout::try_from(silent_for).ok());
+    transport
+}
+
+pub fn server_transport(keep_alive: Duration, silent_for: Duration) -> TransportConfig {
+    let window = VarInt::from_u32(A_SERVER_CONNECTION_BUFFERS_AT_MOST);
+    let mut transport = transport(keep_alive, silent_for);
+    transport.max_concurrent_bidi_streams(VarInt::from_u32(STREAMS_A_SERVER_SESSION_TAKES));
+    transport.max_concurrent_uni_streams(VarInt::from_u32(0));
+    transport.stream_receive_window(window);
+    transport.receive_window(window);
+    transport.datagram_receive_buffer_size(None);
     transport
 }
 

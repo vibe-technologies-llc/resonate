@@ -56,7 +56,11 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   numbers; every length is weighed against what is left before anything is allocated, a count
   against the least each item takes (`Reader::count_of`), so a frame read before the token is checked
   cannot make the server hold many times its size, and a list read off a count reserves at most `RESERVED_AT_MOST` (1 024) items ahead (`wire::reserved`), growing only with what decodes, so a count in a deflated record cannot ask gigabytes of a reader before anything is read; a sealed blob shorter than nonce and tag
-  (`SEALED_AT_LEAST`, 28) is `Malformed::Short`; text is at most `LONGEST_TEXT` (`Writer::text` cuts a longer one on a letter, so what a device writes it can read back); a frame ends exactly
+  (`SEALED_AT_LEAST`, 28) is `Malformed::Short`; **an `Append`'s blobs and a `Compact`'s or a
+  `Snapshot`'s parts are at most `BLOBS_A_FRAME_AT_MOST` (4 096) a frame** (`Malformed::Overlong`
+  past it), so one frame of tiny blobs cannot ask the server for a million digests and lookups under
+  its store's lock (`an_append_of_more_blobs_than_a_frame_carries_is_refused_however_small_each_is`);
+  text is at most `LONGEST_TEXT` (`Writer::text` cuts a longer one on a letter, so what a device writes it can read back); a frame ends exactly
   where it says (`Malformed::Trailing`). Frames are a
   4-byte big-endian length and at most `LARGEST_FRAME` (32 MiB) on one bidirectional QUIC stream.
   `fuzz/fuzz_targets/sync.rs` decodes every frame and bundle and requires a decoded one to read back
@@ -95,7 +99,11 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   elsewhere, an invitation link's `http://` page included, is reached over `wss://` or not at all
   (`a_plain_web_socket_is_refused_to_any_host_but_this_machine`). Any other address is QUIC. The
   link holds a `Carrier` (a QUIC connection, or a numbered web link) in place of a connection; the
-  device pings every 25 s and a link silent for 90 s drops. A web link has no observed UDP address,
+  device pings every 25 s and a link silent for 90 s drops. **What the server sends waits in a
+  channel of `FRAMES_FROM_THE_SERVER_QUEUED_AT_MOST` (4) frames** (`reading_from_the_server`):
+  `read_frames` waits for room before it reads on, so a server sending `Records` faster than the
+  ledger applies them is held back by the stream's flow control, never queued in a phone's memory
+  (`a_device_reads_no_further_from_the_server_than_the_frames_it_has_room_for`). A web link has no observed UDP address,
   so the server's `Welcome` and `Punched` carry `0.0.0.0:0`, which a device skips as a candidate.
 - **To the server**: `Hello` (version, space, token, device, cursor), `Append` (sealed blobs),
   `Compact` (through, snapshot parts), `Punch` (to a device, sealed candidates), `Relaying`,
@@ -346,7 +354,9 @@ platforms; the catalog seam stays thin.
   tells its layout and reads no other device's.
 - **A snapshot is the merged state**, cut into bundles of at most `BUNDLE_BYTES`; a device compacts
   the server's log past `COMPACT_PAST_RECORDS` (512) or `COMPACT_PAST_BYTES` (4 MiB) since the last
-  snapshot, and a `Compacted` from any device resets every device's count.
+  snapshot, and a `Compacted` from any device resets every device's count. A snapshot past half a
+  frame (`SNAPSHOT_FRAME_SHARE`) or of more parts than `BLOBS_A_FRAME_AT_MOST` is not sent, and the
+  log stays as it is. An append carries at most `BLOBS_PER_APPEND` (32) bundles.
 - **Owed is cleared by the server's `Appended`, or by a look where there is no server.** With no
   server (`Server::Nowhere`), what a look told its neighbours is marked sent, since a device met
   later is told the whole snapshot; `state.serverless` remembers it, and the first start with a

@@ -674,7 +674,7 @@ fn pump_source(mut source: Source, window: Span, sender: &mpsc::Sender<io::Resul
                     }
                     break;
                 }
-                if at == 0 && !chunk.starts_with(FLAC_MARKER) {
+                if !still_reads_as_flac(at, &chunk) {
                     source.fill = None;
                 }
                 if let Some(fill) = source.fill.as_mut()
@@ -706,6 +706,17 @@ fn pump_source(mut source: Source, window: Span, sender: &mpsc::Sender<io::Resul
             }
         }
     }
+}
+
+fn still_reads_as_flac(at: u64, chunk: &[u8]) -> bool {
+    let Some(still_owed) = usize::try_from(at)
+        .ok()
+        .and_then(|at| FLAC_MARKER.get(at..))
+    else {
+        return true;
+    };
+    let compared = still_owed.len().min(chunk.len());
+    chunk[..compared] == still_owed[..compared]
 }
 
 fn kept_if_whole(fill: Fill, promised: Option<u64>, read: u64) {
@@ -814,6 +825,58 @@ mod tests {
             SocketAddr::from(([127, 0, 0, 1], 9)),
             keeping,
         )
+    }
+
+    struct Trickle(std::collections::VecDeque<&'static [u8]>);
+
+    impl Read for Trickle {
+        fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
+            let Some(next) = self.0.pop_front() else {
+                return Ok(0);
+            };
+            into[..next.len()].copy_from_slice(next);
+            Ok(next.len())
+        }
+    }
+
+    fn kept_after_reads(name: &str, reads: &[&'static [u8]]) -> bool {
+        let directory =
+            std::env::temp_dir().join(format!("resonate-gateway-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        let cache = Cache::open(&directory, 1 << 20).expect("a cache");
+        let source = Source {
+            reader: Box::new(Trickle(reads.iter().copied().collect())),
+            length: None,
+            begins_at: 0,
+            fill: cache.fill(5, None),
+            _turn: None,
+        };
+        let (sender, _receiver) = mpsc::channel(reads.len() + 1);
+        let whole = Span {
+            first: 0,
+            last: u64::MAX,
+        };
+
+        pump_source(source, whole, &sender);
+        let kept = cache.hit(5).is_some();
+
+        let _ = std::fs::remove_dir_all(&directory);
+        kept
+    }
+
+    #[test]
+    fn a_track_whose_first_read_is_shorter_than_its_marker_is_still_kept() {
+        let one_byte_at_a_time = kept_after_reads("trickled", &[b"f", b"L", b"aC", b"-rest"]);
+        let split = kept_after_reads("split", &[b"fL", b"aC-rest"]);
+        let whole = kept_after_reads("whole", &[b"fLaC-rest"]);
+        let foreign = kept_after_reads("foreign", &[b"fL", b"ac-rest"]);
+        let foreign_later = kept_after_reads("foreign-later", &[b"fLa", b"X", b"-rest"]);
+
+        assert!(one_byte_at_a_time);
+        assert!(split);
+        assert!(whole);
+        assert!(!foreign);
+        assert!(!foreign_later);
     }
 
     #[test]

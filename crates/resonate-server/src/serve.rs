@@ -8,7 +8,8 @@ use std::{
 use parking_lot::Mutex;
 use quinn::{Endpoint, Incoming, ServerConfig};
 use resonate_sync::{
-    DeviceId, Duplex, Incoming as Reader, Outgoing as Writer, SpaceId, Token, accepted, transport,
+    DeviceId, Duplex, Incoming as Reader, Outgoing as Writer, SpaceId, Token, accepted,
+    server_transport,
     wire::{
         FIRST_FRAME_AT_MOST, FromServer, LARGEST_FRAME, LARGEST_RECORD, PROTOCOL_VERSION,
         ROOM_FRAME_AT_MOST, Record, Refusal, SERVER_ALPN, SpaceAsked, ToServer,
@@ -161,7 +162,7 @@ pub fn serving(
     let crypto =
         quinn::crypto::rustls::QuicServerConfig::try_from(tls).map_err(|_| Error::QuicCrypto)?;
     let mut config = ServerConfig::with_crypto(Arc::new(crypto));
-    config.transport_config(Arc::new(transport(KEEP_EVERY, SILENT_FOR)));
+    config.transport_config(Arc::new(server_transport(KEEP_EVERY, SILENT_FOR)));
     Ok(config)
 }
 
@@ -870,12 +871,14 @@ impl Server {
             return refuse(send, Refusal::TooLarge).await;
         }
         let store = Arc::clone(&self.store);
-        match in_the_store(move || store.lock().close(space, &sealed)).await? {
+        let space_bytes = self.limits.space_bytes;
+        match in_the_store(move || store.lock().close(space, &sealed, space_bytes)).await? {
             Closing::Now(kept) => self.hub.tell_all(space, &Notice::Closed(kept)),
             Closing::Before(first) => {
                 send.send(&FromServer::Closed { sealed: first }.encoded())
                     .await?
             }
+            Closing::Full => return refuse(send, Refusal::SpaceFull).await,
         }
 
         Ok(())

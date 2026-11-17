@@ -33,6 +33,7 @@ pub const LONGEST_TEXT: usize = 4096;
 const RESERVED_AT_MOST: usize = 1024;
 pub const LARGEST_BLOB: usize = LARGEST_FRAME;
 pub const LARGEST_RECORD: usize = 256 * 1024;
+pub const BLOBS_A_FRAME_AT_MOST: usize = 4096;
 pub const LARGEST_DATAGRAM: usize = 2048;
 const RECORD_AT_LEAST: usize = 2;
 const CANDIDATES_READ_AS_NONE_BEFORE: u8 = 0;
@@ -1122,7 +1123,7 @@ impl<'a> Reader<'a> {
     }
 
     pub fn blobs(&mut self) -> Result<Vec<Vec<u8>>> {
-        let count = self.count_of(SEALED_AT_LEAST + 1)?;
+        let count = self.at_most(SEALED_AT_LEAST + 1, BLOBS_A_FRAME_AT_MOST)?;
         let mut blobs = reserved(count);
         for _ in 0..count {
             blobs.push(self.sealed()?);
@@ -2669,6 +2670,32 @@ mod tests {
             ToServer::decoded(&writer.0),
             Err(Error::Malformed(Malformed::Overlong { .. }))
         ));
+    }
+
+    #[test]
+    fn an_append_of_more_blobs_than_a_frame_carries_is_refused_however_small_each_is() {
+        let tiny = || vec![1; SEALED_AT_LEAST];
+        let past = ToServer::Append {
+            blobs: (0..=BLOBS_A_FRAME_AT_MOST).map(|_| tiny()).collect(),
+        };
+        let fits = ToServer::Append {
+            blobs: (0..BLOBS_A_FRAME_AT_MOST).map(|_| tiny()).collect(),
+        };
+        let compacted_past = ToServer::Compact {
+            through: 1,
+            parts: (0..=BLOBS_A_FRAME_AT_MOST).map(|_| tiny()).collect(),
+        };
+
+        assert!(past.encoded().len() < LARGEST_FRAME);
+        assert!(matches!(
+            ToServer::decoded(&past.encoded()),
+            Err(Error::Malformed(Malformed::Overlong { .. }))
+        ));
+        assert!(matches!(
+            ToServer::decoded(&compacted_past.encoded()),
+            Err(Error::Malformed(Malformed::Overlong { .. }))
+        ));
+        assert_eq!(ToServer::decoded(&fits.encoded()).expect("decoded"), fits);
     }
 
     #[test]

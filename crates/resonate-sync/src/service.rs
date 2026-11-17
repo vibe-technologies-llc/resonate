@@ -58,9 +58,9 @@ use crate::{
     stun::{Reflector, STUN_PORT},
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
     wire::{
-        Beacon, COVERS_ASKED_AT_MOST, Candidates, FromServer, LARGEST_FRAME, LARGEST_RECORD,
-        LYRICSFILES_ASKED_AT_MOST, PRINTS_ASKED_AT_MOST, PROTOCOL_VERSION, Refusal, ToServer,
-        decoded_bundle, encoded_bundle, encoded_change,
+        BLOBS_A_FRAME_AT_MOST, Beacon, COVERS_ASKED_AT_MOST, Candidates, FromServer, LARGEST_FRAME,
+        LARGEST_RECORD, LYRICSFILES_ASKED_AT_MOST, PRINTS_ASKED_AT_MOST, PROTOCOL_VERSION, Refusal,
+        ToServer, decoded_bundle, encoded_bundle, encoded_change,
     },
 };
 
@@ -102,6 +102,7 @@ const KNOWN_DEVICES_ANSWERED_AT_MOST: usize = 1024;
 const STRANGERS_ANSWERED_AT_MOST: usize = 16;
 const RELAY_DIAL_WITHIN: Duration = Duration::from_secs(20);
 const RELAYED_DATAGRAMS_QUEUED_AT_MOST: usize = 256;
+const FRAMES_FROM_THE_SERVER_QUEUED_AT_MOST: usize = 4;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Server {
@@ -466,7 +467,7 @@ struct Link {
     relay_out: mpsc::Sender<Vec<u8>>,
     outgoing: UnboundedSender<Vec<u8>>,
     writing: JoinHandle<()>,
-    frames: UnboundedReceiver<Result<FromServer>>,
+    frames: mpsc::Receiver<Result<FromServer>>,
     reading: JoinHandle<()>,
     address: Option<SocketAddr>,
     online: Vec<DeviceId>,
@@ -1487,8 +1488,7 @@ async fn reached(
 async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
     let (carrier, mut send, recv, address) = reached(&running, &server).await?;
 
-    let (frames_in, mut frames) = mpsc::unbounded_channel();
-    let reading = tokio::spawn(read_frames(recv, frames_in, Arc::clone(&running.reflector)));
+    let (reading, mut frames) = reading_from_the_server(recv, Arc::clone(&running.reflector));
     let welcomed = within(welcomed(&running, &mut send, &mut frames)).await;
     let (online, head, cursor) = match welcomed {
         Ok(welcomed) => welcomed,
@@ -1535,7 +1535,7 @@ async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
 async fn welcomed(
     running: &Running,
     send: &mut Outgoing,
-    frames: &mut UnboundedReceiver<Result<FromServer>>,
+    frames: &mut mpsc::Receiver<Result<FromServer>>,
 ) -> Result<(Vec<DeviceId>, u64, u64)> {
     let cursor = running.ledger.lock().cursor()?;
     let hello = ToServer::Hello {
@@ -1588,9 +1588,20 @@ async fn write_frames(
     send.finish().await;
 }
 
+fn reading_from_the_server(
+    recv: Incoming,
+    reflector: Arc<Reflector>,
+) -> (JoinHandle<()>, mpsc::Receiver<Result<FromServer>>) {
+    let (frames_in, frames) = mpsc::channel(FRAMES_FROM_THE_SERVER_QUEUED_AT_MOST);
+    (
+        tokio::spawn(read_frames(recv, frames_in, reflector)),
+        frames,
+    )
+}
+
 async fn read_frames(
     mut recv: Incoming,
-    frames: UnboundedSender<Result<FromServer>>,
+    frames: mpsc::Sender<Result<FromServer>>,
     reflector: Arc<Reflector>,
 ) {
     loop {
@@ -1604,7 +1615,7 @@ async fn read_frames(
             continue;
         }
         let failed = frame.is_err();
-        if frames.send(frame).is_err() || failed {
+        if frames.send(frame).await.is_err() || failed {
             return;
         }
     }
@@ -2280,9 +2291,10 @@ impl Syncing {
                 total += blob.len();
                 parts.push(blob);
             }
-            if total > SNAPSHOT_FRAME_SHARE {
+            if total > SNAPSHOT_FRAME_SHARE || parts.len() > BLOBS_A_FRAME_AT_MOST {
                 tracing::warn!(
                     total,
+                    parts = parts.len(),
                     "the synced state is too large to compact in one frame"
                 );
                 return Ok(None);
@@ -3364,6 +3376,41 @@ mod tests {
     use super::*;
 
     const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+    const FRAMES_A_HOSTILE_SERVER_SENDS: u32 = 64;
+    const THE_READER_SETTLES_WITHIN: Duration = Duration::from_millis(300);
+
+    #[tokio::test]
+    async fn a_device_reads_no_further_from_the_server_than_the_frames_it_has_room_for() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bound");
+        let port = listener.local_addr().expect("an address").port();
+        let serving = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accepted");
+            let mut accepted = crate::web::accepted(stream, None).await.expect("upgraded");
+            for count in 0..FRAMES_A_HOSTILE_SERVER_SENDS {
+                let frame = FromServer::Appended { count }.encoded();
+                accepted.outgoing.send(&frame).await.expect("sent");
+            }
+            accepted
+        });
+        let address = web_address(&format!("ws://127.0.0.1:{port}/")).expect("an address");
+        let tls = to_the_web(rustls::RootCertStore::empty()).expect("a configuration");
+        let socket = std::net::UdpSocket::bind(("127.0.0.1", 0)).expect("a socket");
+        let reflector = Reflector::over(TokioRuntime.wrap_udp_socket(socket).expect("wrapped"));
+
+        let (_outgoing, incoming) = connect(&address, &tls).await.expect("connected");
+        let (reading, mut frames) = reading_from_the_server(incoming, reflector);
+        let _server_side = serving.await.expect("the server task");
+        tokio::time::sleep(THE_READER_SETTLES_WITHIN).await;
+        let queued = frames.len();
+        let first = frames.recv().await;
+
+        assert_eq!(queued, FRAMES_FROM_THE_SERVER_QUEUED_AT_MOST);
+        assert!(matches!(first, Some(Ok(FromServer::Appended { count: 0 }))));
+        assert!(!reading.is_finished());
+        reading.abort();
+    }
 
     #[test]
     fn a_device_is_answered_once_in_a_while_and_a_crowd_of_strangers_only_up_to_a_few() {
