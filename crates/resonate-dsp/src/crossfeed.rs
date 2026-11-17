@@ -189,10 +189,10 @@ fn swapped(line: &mut [f64], head: usize, sample: f64) -> f64 {
 
 fn lowpassed(state: f64, sample: f64, smoothing: f64) -> f64 {
     let next = state + smoothing * (sample - state);
-    if next.abs() < DENORMAL_FLOOR {
-        0.0
-    } else {
+    if (DENORMAL_FLOOR..f64::INFINITY).contains(&next.abs()) {
         next
+    } else {
+        0.0
     }
 }
 
@@ -328,6 +328,23 @@ mod tests {
         let refused = Crossfeeder::new(Crossfeed::Light).prepare(mono, 64);
 
         assert!(matches!(refused, Err(Error::ChannelMismatch { .. })));
+    }
+
+    #[test]
+    fn a_sample_that_is_not_a_number_or_infinite_does_not_poison_what_is_fed_across() {
+        for corrupt in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut stage = Crossfeeder::new(Crossfeed::Moderate);
+            stage.prepare(stereo(), 1_000).expect("a stage");
+
+            let mut out = vec![0.0; 2_000];
+            stage.process(&[corrupt; 2_000], &mut out);
+            stage.process(&tone(100.0, 1_000, [1.0, 0.5]), &mut out);
+
+            assert!(
+                out.iter().all(|sample| sample.is_finite()),
+                "{corrupt} outlived the block it arrived in"
+            );
+        }
     }
 
     #[test]

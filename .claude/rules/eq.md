@@ -751,7 +751,12 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   largest input one (`nothing_the_stage_makes_passes_the_largest_sample_it_was_given`). A steady
   mono signal and a low mono tone keep their level (the bass is common to both ears); the treble of
   a mono signal falls by `1 + b`, which is the price of that guarantee. State is a delay line and
-  one lowpass word a side, sized in `prepare`; `process` allocates nothing. `prepare` refuses
+  one lowpass word a side, sized in `prepare`; `process` allocates nothing. **The lowpass word is
+  guarded as the equaliser's `usable` guards its sections**: `lowpassed` keeps a state only between
+  the denormal floor and infinity, so a NaN or an infinity in a float source is heard on its own frame
+  and leaves no state behind; the chain is kept across gapless rows, so a poisoned word would
+  otherwise silence the cross feed until a seek
+  (`a_sample_that_is_not_a_number_or_infinite_does_not_poison_what_is_fed_across`). `prepare` refuses
   anything but stereo (`ChannelMismatch`); `crossfeed_config` plans it only on a stereo stream, after
   the remix, so a mono or 5.1 stream is left alone and a mono source on a stereo sink is crossfed
   (and unchanged, being common to both).
