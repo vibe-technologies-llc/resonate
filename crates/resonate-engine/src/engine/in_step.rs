@@ -179,7 +179,7 @@ impl Engine {
             .saturating_add(output.buffered() as u64);
         let behind = written
             .saturating_sub(ring_frame)
-            .saturating_add(output.chain.latency_frames().round() as u64);
+            .saturating_add(output.chain.frames_it_holds() as u64);
         let on_the_clock = Frames(behind).rescaled(rate, track.clock());
         Some((track, decoded.saturating_sub(on_the_clock)))
     }

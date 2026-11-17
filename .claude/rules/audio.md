@@ -971,7 +971,7 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   (ignored where an output is already bound). Every engine publishes a `HeardAt` each pass
   (`Engine::heard_at`: the row's `QueueStamp`, the frame heard on the opening clock, the `Moment`
   it is heard at, the rate), read off its ring's stamp (realtime.md) through
-  `Engine::frame_of_the_ring` (the decoder's position less chain latency and what lies between
+  `Engine::frame_of_the_ring` (the decoder's position less what the chain holds and what lies between
   the ring frame and the write head, or the leaving row's end while a boundary waits), only while
   playing and the stamp names a flowing frame; `HeardAt::frame_at` extrapolates it to any moment.
   The incoming engine binds its ring `Entering::InStep`: held silent, consuming nothing, while
@@ -1536,7 +1536,10 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   device rounds what it is sent to its own steps (silence matches silence alone). Read as turned
   elsewhere, an echo snapped the slider and cleared the mute. Desktop mute is kept apart from level (`OutputStatus::device_muted`).
 - **`PlayerState`'s position is the frame heard, for every reader.** `Engine::position` takes off
-  what the ring holds, the chain's `latency_frames` and `SinkStream::latency`, which every backend
+  what the ring holds, what the chain holds (`Chain::frames_it_holds`, so a true-peak guard built
+  mid-song and not yet filled counts nothing it has not taken:
+  `a_chain_reshaped_mid_song_behind_a_new_true_peak_guard_is_heard_at_the_frame_it_was`) and
+  `SinkStream::latency`, which every backend
   notes on its `StreamClock` (PipeWire's `pw_time.delay`, a Bluetooth sink's latency within it, WASAPI's
   clock, Core Audio's device, safety offset, stream and buffer latencies, Oboe's measured latency,
   RemoteIO's output latency and I/O buffer, a renderer's clock against the frames served). The

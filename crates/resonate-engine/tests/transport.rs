@@ -10207,6 +10207,61 @@ fn playing_a_resumed_queue_carries_on_from_where_it_was_left() -> Result<()> {
 }
 
 #[test]
+fn a_chain_reshaped_mid_song_behind_a_new_true_peak_guard_is_heard_at_the_frame_it_was()
+-> Result<()> {
+    const PULLED: usize = 256;
+    const PULLS: usize = 4;
+
+    let tree = Tree::new();
+    let path = tree.write("track.wav", &pcm(16, FRAMES).file);
+    let frame = frame_bytes(SampleFormat::S16);
+
+    let (player, graph) = settled_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Arc::new(Sources::local()),
+        EngineConfig {
+            true_peak: true,
+            ..config()
+        },
+    )?;
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    let start = Moment::now();
+    for pulled in 0..PULLS {
+        graph.lock().pull_heard(
+            PULLED * frame,
+            start.after_frames((pulled * PULLED) as f64, SampleRate::HZ_44100),
+        );
+    }
+    wait_for(
+        &player,
+        |player| player.heard_at().is_some(),
+        "the stream to be heard",
+    );
+    player
+        .request(Command::SetVolume(Volume::MAX))?
+        .wait_for(PATIENCE)?;
+    let before = player.heard_at().expect("the stream is heard");
+    let opens = graph.lock().opens;
+
+    player
+        .request(Command::SetVolume(Volume::new(0.5).expect("a volume")))?
+        .wait_for(PATIENCE)?;
+    let after = player.heard_at().expect("the stream is heard");
+
+    assert_eq!(graph.lock().opens, opens, "the volume reopened the stream");
+    assert_eq!(
+        after.frame, before.frame,
+        "a guard that has taken nothing yet was counted as holding its delay"
+    );
+    Ok(())
+}
+
+#[test]
 fn a_queue_loaded_from_the_top_with_nothing_to_play_opens_no_track() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
