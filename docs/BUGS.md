@@ -18,14 +18,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Sync and together
-- [S · 0.12.1] Investigate: restarting sync can leave it off with nothing said: `released` waits
-  `RELEASED_WITHIN` (5 s) for its own handle while `AskedOfDevices` and the window's `with` calls hold
-  clones, so the old `Running` still holds `sync.lock`, the new start's `alone()` meets `WouldBlock`
-  and answers `Ok(None)` logged at debug; `Syncing::leave` can also take the service while the watcher
-  is inside `arranged`, which then installs a fresh `Running` after the leave (`sync.rs`)
-- [S · 0.12.1] A shared playlist's client sends every owed op in one `Append` (`shared/service.rs`)
-  without bounding its blob count by `BLOBS_A_FRAME_AT_MOST` (4 096), so an owner owing about a
-  million ops has every append refused; split it as the sync service's compaction is
+- [S · 0.12.1] `Syncing::leave` drops its handle while a clone held elsewhere (a device consult, a
+  window call) keeps that run going until it lets go, so a leave is not done when it returns
+- [S · 0.12.1] Investigate: a shared playlist's own compaction (`compacted`, `shared/service.rs`) sends
+  every part in one frame with no blob cap; likely bounded by the list's entry limit, unverified
 
 ## Playback and output
 - [S · 0.12.1] The heard position counts `chain.latency_frames()` (`publishing.rs`, `in_step.rs`), so

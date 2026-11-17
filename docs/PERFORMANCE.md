@@ -8,26 +8,17 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Performance and scale
+- [L · 0.12.1] A sync state past `SNAPSHOT_FRAME_SHARE` (16 MiB) is never compacted: `compact()`
+  (`service.rs`) now backs off once refused, until the records since the snapshot double, but the
+  server's log still grows for good and a new device replays all of it, and answers are never pruned;
+  a snapshot of several parts (the server's `Compact` taking them across frames) or answers kept out
+  of it, which is a choice of what a newly paired device learns
 - [S · 0.12.1] A search of one very common word is slower through a trigram index than the scan it
   replaced (one word matching a quarter of 300 000 kept songs: 95 ms against 54 ms), as for every
   `Infix` reader; a word whose trigrams are common could be read by `instr` instead
 - [S · 0.12.1] Opening a playlist's menu still asks `holds_lossy_songs` on the window's thread, against
   `ui.md`'s *a menu opens at once and never reads the catalog on the window's thread*; read it with
   the ledger in `PlaylistSynced::read`
-- [S · 0.12.1] The ledger ages listens by scanning a whole table: `DELETE FROM listens WHERE at < ?1 AND
-  owed = 0` runs on every look with no index on `at` (`ledger.rs`); an index as a migration step, or
-  aging once a day
-- [M · 0.12.1] A paired phone offers every answer it does not hold to its catalog again on each
-  revision: `settle_answers` (`ledger.rs`) reads every `here = 0` row into one `Vec`, decoding each
-  blob, and calls `take_answer` for each, skipped only where `answers_tried_at` (held in memory, so
-  lost on every start) equals the revision; a phone paired with a large desktop holds most of its
-  answers unheld, so every play re-resolves them. Offer only what became held since, in pages
-- [L · 0.12.1] Sync stops compacting once the state passes 16 MiB and rebuilds the snapshot on every
-  batch thereafter: `compact()` (`service.rs`) seals the whole `snapshot()` (every answer decoded,
-  `answer_notes("1")`) and returns `None` past `SNAPSHOT_FRAME_SHARE`, while `since_snapshot` never
-  resets, so it runs again after every `Records` frame at `Compression::best()`, the server's log
-  grows past `sync.md`'s compaction for good and a new device replays all of it; answers are never
-  pruned. Back off once refused, then a snapshot of several parts or answers kept out of it
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
