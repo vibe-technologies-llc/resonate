@@ -109,9 +109,14 @@ are in [ROADMAP.md](ROADMAP.md).
   do now (`analysis.md`), could hide only the mix; not built
 
 ## Later: DSP
-- [M] The resampler's Very high is level with SoXR VHQ at 2:1, not ahead (`docs/RESAMPLING.md`: 0.041 % of a
+- [M] The resampler's Very high is level with SoXR VHQ at 2:1, not ahead (`docs/RESAMPLING.md`: 0.039 % of a
   core against 0.040 % at 96 to 48 kHz, 0.043 % against 0.041 % at 48 to 96 kHz), and pays for it in latency
   (300 ms, against 2.8 ms): the forward transform runs at the input's length and most of its bins are
-  dropped. Pruning the transform to the bins kept was worked through and saves one stage of fourteen; an own
-  FFT was measured at parity; a half-band halving stage cannot reach 2:1, and at 4:1 it was built and cost
-  more than it saved (Very high 192 to 48 kHz 24 % dearer, 11 % with every load aligned)
+  dropped. Pruning the transform to the bins kept was worked through and saves one stage of fourteen; splitting
+  it into its two polyphase branches saves half a stage of fifteen, the join being the radix-2 stage it
+  removes; an own FFT was measured at parity; a half-band halving stage cannot reach 2:1, and at 4:1 it was
+  built and cost more than it saved (Very high 192 to 48 kHz 24 % dearer, 11 % with every load aligned)
+- [S] High and Balanced cost 4 to 5 % more at 2:1 and steeper since their kernels grew (High 9 % at 176.4 to
+  48 kHz, `docs/RESAMPLING.md`'s *Deeper windows*): the overlap is a larger share of a block whose steep hop
+  was held for latency. A hop swept again for each, or a hop of its own for each phase, since a shaped
+  phase's latency moved both ways with the kernels (High minimum 57.89 ms for 34.60 ms at 192 to 48 kHz)
