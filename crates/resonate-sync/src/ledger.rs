@@ -656,7 +656,11 @@ impl Ledger {
     pub fn compacted(&mut self, through: u64) -> Result<()> {
         self.connection
             .execute(
-                "UPDATE state SET cursor = max(cursor, ?1), since_snapshot = 0, bytes_since = 0 WHERE id = 1",
+                "UPDATE state SET cursor = max(cursor, ?1),
+                     since_snapshot = min(since_snapshot, max(cursor - ?1, 0)),
+                     bytes_since = CASE WHEN since_snapshot = 0 THEN 0
+                         ELSE bytes_since * min(since_snapshot, max(cursor - ?1, 0)) / since_snapshot END
+                 WHERE id = 1",
                 params![through.cast_signed()],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;

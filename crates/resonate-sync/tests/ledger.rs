@@ -1902,6 +1902,28 @@ fn a_share_left_on_one_device_is_left_on_the_others_and_nothing_known_says_nothi
 }
 
 #[test]
+fn a_compaction_through_less_than_was_read_still_counts_the_records_read_past_it() {
+    let mut caught_up = Ledger::in_memory().expect("a ledger");
+    let mut fresh = Ledger::in_memory().expect("a ledger");
+
+    for seq in 1..=10 {
+        caught_up.passed(seq, 100).expect("passed");
+    }
+    caught_up.compacted(6).expect("compacted");
+    let past_through = caught_up.since_snapshot().expect("counted");
+    caught_up.compacted(10).expect("compacted");
+    let at_the_cursor = caught_up.since_snapshot().expect("counted");
+    fresh.compacted(40).expect("compacted");
+    let from_a_snapshot = fresh.since_snapshot().expect("counted");
+
+    assert_eq!(past_through, (4, 400));
+    assert_eq!(at_the_cursor, (0, 0));
+    assert_eq!(caught_up.cursor().expect("the cursor"), 10);
+    assert_eq!(from_a_snapshot, (0, 0));
+    assert_eq!(fresh.cursor().expect("the cursor"), 40);
+}
+
+#[test]
 fn a_share_is_told_once_and_a_compaction_elsewhere_owes_it_again() {
     let mut desk = Device::new("Desk", &[]);
     desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);

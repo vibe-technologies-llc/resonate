@@ -425,7 +425,10 @@ platforms; the catalog seam stays thin.
   `a_ledger_of_before_deletions_travelled_keeps_its_layouts_and_knows_no_deletion`).
 - **A snapshot is the merged state**, cut into bundles of at most `BUNDLE_BYTES`; a device compacts
   the server's log past `COMPACT_PAST_RECORDS` (512) or `COMPACT_PAST_BYTES` (4 MiB) since the last
-  snapshot, and a `Compacted` from any device resets every device's count. Its sealed parts are cut
+  snapshot, and a `Compacted` from any device resets every device's count to the records it has
+  read past that `through`: the cursor less `through`, since the server's seqs run without a gap,
+  with the bytes since kept in the same share
+  (`a_compaction_through_less_than_was_read_still_counts_the_records_read_past_it`). Its sealed parts are cut
   into frames (`Pieces`) of at most half a frame (`SNAPSHOT_FRAME_SHARE`) and `BLOBS_A_FRAME_AT_MOST`
   parts each. **A snapshot of one frame is one `Compact`**, as every server takes it
   (`a_snapshot_within_a_frame_is_one_compaction_as_an_older_server_takes_it`). **A larger one is
