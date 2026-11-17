@@ -332,7 +332,15 @@ impl Cancelling for EnrichProgress {
 pub struct EnrichSummary {
     pub stats: EnrichStats,
     pub cancelled: bool,
-    pub stopped_by: Option<LookupOp>,
+    pub stopped_by: Option<Stopped>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stopped {
+    Unreached(LookupOp),
+    RefusedInARow(LookupOp),
+    Offline,
+    Metered,
 }
 
 pub(crate) fn start(
@@ -400,7 +408,15 @@ fn run(
                 ?op,
                 "the reference could not be reached, and the pass ends here"
             );
-            Some(op)
+            Some(Stopped::Unreached(op))
+        }
+        Err(Error::Offline { op }) => {
+            tracing::info!(?op, "the network was switched off, and the pass ends here");
+            Some(Stopped::Offline)
+        }
+        Err(Error::Metered { op }) => {
+            tracing::info!(?op, "the connection is metered, and the pass ends here");
+            Some(Stopped::Metered)
         }
         Err(Error::RefusedInARow { op, refusals }) => {
             tracing::warn!(
@@ -408,7 +424,7 @@ fn run(
                 refusals,
                 "the reference refused every lookup for a while, and the pass ends here"
             );
-            Some(op)
+            Some(Stopped::RefusedInARow(op))
         }
         Err(other) => {
             progress.cancel();
@@ -587,6 +603,13 @@ fn sing(
         Ok(told) => told,
         Err(Error::Unreachable { op, source }) => {
             tracing::warn!(error = %source, ?op, "the lyric service could not be reached, and no more lyrics are asked for");
+            return Sang::Unreachable;
+        }
+        Err(Error::Offline { op } | Error::Metered { op }) => {
+            tracing::info!(
+                ?op,
+                "the lyric service is not to be asked now, and no more lyrics are asked for"
+            );
             return Sang::Unreachable;
         }
         Err(Error::Refused { op, status }) => {

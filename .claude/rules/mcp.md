@@ -183,7 +183,9 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
   `RefCell` (one answering thread). Starting a running pass is `Error::AlreadyRunning`.
   A lookup's `progress` and `stats` hold one count for every `resonate_library::Outcome`
   (`Outcome::key` names it), so the breakdown the window and `resonate enrich` show reaches a client
-  whole (`a_scan_run_to_its_end_hands_over_to_a_lookup_where_the_settings_ask_for_one`).
+  whole (`a_scan_run_to_its_end_hands_over_to_a_lookup_where_the_settings_ask_for_one`). A lookup
+  the reference ended says why as `stopped_by` (`unreached`, `refused_in_a_row`, `offline`,
+  `metered`), the first two with the `stopped_asking_for` they ended on.
 - **Passes start as the CLI starts them.** `start_scan` takes `full` and `follow_links` like
   `resonate scan`. Where `Lookups::after_a_scan` (`enrich-after-scan`) holds and a reference is
   reached, `Passes::carry_on` (asked before every message and on every tick) starts a lookup once the

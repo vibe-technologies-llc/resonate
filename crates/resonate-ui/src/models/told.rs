@@ -6,7 +6,7 @@ use resonate_core::{AlbumId, MediaLocation};
 use resonate_library::{
     Covering, Deleted, Edit, EnrichSummary, Fold, GroupRelease, ImportSummary, Library, Maker,
     OrganiseSummary, PollSummary, Reference, ReleaseMatch, Replacing, RetagSummary, ScanSummary,
-    Shared, Track, Undoable,
+    Shared, Stopped, Track, Undoable,
 };
 
 use super::{
@@ -294,7 +294,14 @@ pub(super) fn looked_up(summary: &EnrichSummary, prompted: Prompted) -> Option<N
     }
 
     Some(match summary.stopped_by {
-        Some(op) => Notice::Trouble(words::models::musicbrainz_unreached(said, op.asked_for())),
+        Some(Stopped::Unreached(op)) => {
+            Notice::Trouble(words::models::musicbrainz_unreached(said, op.asked_for()))
+        }
+        Some(Stopped::RefusedInARow(op)) => Notice::Trouble(
+            words::models::musicbrainz_refused_in_a_row(said, op.asked_for()),
+        ),
+        Some(Stopped::Offline) => Notice::Noted(words::models::lookup_held_offline(said)),
+        Some(Stopped::Metered) => Notice::Noted(words::models::lookup_held_metered(said)),
         None => Notice::Noted(said),
     })
 }
@@ -303,8 +310,13 @@ pub(super) fn song_looked_up(summary: &EnrichSummary, title: &str) -> Notice {
     let stats = summary.stats;
     let matched_alone = stats.by_isrc + stats.by_recording + stats.by_search + stats.by_fingerprint;
 
-    if summary.stopped_by.is_some() {
-        Notice::Trouble(words::models::song_lookup_unreached(title))
+    if let Some(stopped) = summary.stopped_by {
+        match stopped {
+            Stopped::Unreached(_) => Notice::Trouble(words::models::song_lookup_unreached(title)),
+            Stopped::RefusedInARow(_) => Notice::Trouble(words::models::song_lookup_refused(title)),
+            Stopped::Offline => Notice::Noted(words::models::song_not_looked_up_offline(title)),
+            Stopped::Metered => Notice::Noted(words::models::song_not_looked_up_metered(title)),
+        }
     } else if summary.cancelled {
         Notice::Noted(words::models::song_lookup_stopped(title))
     } else if matched_alone > 0 {

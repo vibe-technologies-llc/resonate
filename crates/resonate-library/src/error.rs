@@ -253,6 +253,12 @@ pub enum Error {
         source: io::Error,
     },
 
+    #[error("the reference was not asked for {op:?}, the network being switched off")]
+    Offline { op: LookupOp },
+
+    #[error("the reference was not asked for {op:?}, the connection being metered")]
+    Metered { op: LookupOp },
+
     #[error("the reference refused {op:?} with status {status}")]
     Refused { op: LookupOp, status: u16 },
 

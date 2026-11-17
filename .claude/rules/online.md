@@ -43,13 +43,14 @@ and not the local network: the catalog offered as a MediaServer (`resonate offer
   `exchange` reads before taking a turn: off, `Error::Offline` with nothing sent
   (`Setting::Switched(Switch::Online, _)` calls `online::reach`). The binary also keeps it in `online::REACHING`, set on
   the process client every time it is handed out, so a switch turned off before the client was first
-  made still holds. Every seam's error reads `Offline` as `NetworkDown`.
+  made still holds. Every other seam's error reads `Offline` as `NetworkDown`; the library's keeps
+  `Error::Offline` and `Error::Metered` apart from `Unreachable`.
 - **A metered connection stops the lookups unless the listener allows them.** `Client::gated_by`
   takes a `resonate_core::Gate` (a `Metering` plus a switch), the one the binary builds from
   `enrich-on-metered` (shut while metered by default; `metered.rs` there) and the phones from
   `configure_enrich_on_metered`. `exchange` reads it beside `reach`, before and after taking a
   turn: a shut gate is `Error::Metered { host, op }` with nothing sent, read everywhere `Offline`
-  is (library `Unreachable` on `NetworkDown`, which ends a pass; the lyric, eq and listen
+  is (library `Metered` beside `Offline`, each ending a pass with its own reason; the lyric, eq and listen
   vocabularies' unreachable; `tidal.rs` and `youtube.rs` stop asking further). **`Host::is_an_enrichment`
   draws the line**: every host is gated except ListenBrainz and Last.fm (a counted play is the
   listener's own record, not enrichment), Shazam and AudD (the listener asked to listen) and Spotify's

@@ -206,10 +206,8 @@ impl From<Error> for resonate_library::Error {
     fn from(error: Error) -> Self {
         match error {
             Error::Unreachable { op, source, .. } => Self::Unreachable { op, source },
-            Error::Offline { op, .. } | Error::Metered { op, .. } => Self::Unreachable {
-                op,
-                source: switched_off(),
-            },
+            Error::Offline { op, .. } => Self::Offline { op },
+            Error::Metered { op, .. } => Self::Metered { op },
             Error::Refused { op, status, .. } => Self::Refused { op, status },
             Error::Unreadable { op, .. } => Self::Unreadable { op },
             Error::TooLarge { op, limit, .. } => Self::TooLarge { op, limit },
@@ -327,6 +325,31 @@ mod tests {
             resonate_lyrics::Error::Unreadable {
                 op: LyricOp::Search,
                 ..
+            }
+        ));
+    }
+
+    #[test]
+    fn a_shut_gate_and_a_switched_off_network_reach_the_library_as_themselves_not_unreached() {
+        let metered = Error::Metered {
+            host: Host::MusicBrainz,
+            op: LookupOp::Release,
+        };
+        let offline = Error::Offline {
+            host: Host::MusicBrainz,
+            op: LookupOp::Artist,
+        };
+
+        assert!(matches!(
+            resonate_library::Error::from(metered),
+            resonate_library::Error::Metered {
+                op: LookupOp::Release
+            }
+        ));
+        assert!(matches!(
+            resonate_library::Error::from(offline),
+            resonate_library::Error::Offline {
+                op: LookupOp::Artist
             }
         ));
     }

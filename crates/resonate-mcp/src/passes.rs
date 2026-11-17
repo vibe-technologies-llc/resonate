@@ -10,7 +10,7 @@ use std::{
 use resonate_library::{
     Cancelling, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fingerprinters, Library,
     Outcome, PassHandle, PollOptions, PollProgress, PollStats, PollSummary, Reference, ScanOptions,
-    ScanProgress, ScanStats, ScanSummary,
+    ScanProgress, ScanStats, ScanSummary, Stopped,
 };
 use resonate_providers::Providers;
 use serde::Deserialize;
@@ -164,8 +164,18 @@ impl Ended for EnrichSummary {
 
     fn told(&self) -> Value {
         let mut told = json!({ "stats": self.stats.told(), "cancelled": self.cancelled });
-        if let Some(op) = self.stopped_by {
-            told["stopped_asking_for"] = json!(format!("{op:?}"));
+        match self.stopped_by {
+            Some(Stopped::Unreached(op)) => {
+                told["stopped_by"] = json!("unreached");
+                told["stopped_asking_for"] = json!(format!("{op:?}"));
+            }
+            Some(Stopped::RefusedInARow(op)) => {
+                told["stopped_by"] = json!("refused_in_a_row");
+                told["stopped_asking_for"] = json!(format!("{op:?}"));
+            }
+            Some(Stopped::Offline) => told["stopped_by"] = json!("offline"),
+            Some(Stopped::Metered) => told["stopped_by"] = json!("metered"),
+            None => {}
         }
         told
     }

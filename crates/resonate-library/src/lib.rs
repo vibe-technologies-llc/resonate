@@ -119,10 +119,10 @@ pub use crate::{
     enrich::{
         Breadth, Certainty, EnrichOptions, EnrichProgress, EnrichStats, EnrichSummary, Fit,
         Fruitless, Identified, Pace, RECOGNITIONS_REFUSED_BEFORE_GIVING_UP, REFRESH_AFTER,
-        REFRESH_SPREAD, REFUSALS_THAT_END_A_PASS, REFUSED_AGAIN_AFTER, RETRY_AFTER, Sought, WAITS,
-        Waits, agreement, best_recording, best_release, closest_release, group_asked,
-        needs_its_releases_told, recording_asked, release_asked, the_strict_recording, top_group,
-        top_release, worth_keeping,
+        REFRESH_SPREAD, REFUSALS_THAT_END_A_PASS, REFUSED_AGAIN_AFTER, RETRY_AFTER, Sought,
+        Stopped, WAITS, Waits, agreement, best_recording, best_release, closest_release,
+        group_asked, needs_its_releases_told, recording_asked, release_asked, the_strict_recording,
+        top_group, top_release, worth_keeping,
     },
     enriched::{COVERS_ASKED_AGAIN_AFTER, PORTRAITS_ASKED_AGAIN_AFTER, due_again, due_parameters},
     error::{

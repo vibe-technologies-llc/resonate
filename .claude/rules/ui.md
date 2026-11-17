@@ -721,11 +721,17 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
     no toast unless the reference stopped it; what it found stays in *The last lookup*. One the
     listener asked for (*Look up*, *Refresh all*, a track's lookup, missing covers) shows at once
     and tells what it found (`a_lookup_begun_on_its_own_tells_nothing_unless_the_reference_stopped_it`).
+    **The toast says why a pass ended early**, from the summary's `Stopped`: MusicBrainz unreached
+    or refusing in a row is a `Trouble` naming what it was asking for, a metered connection whose
+    lookups Settings › Online holds or Online turned off is a plain note saying so, never that
+    MusicBrainz could not be reached
+    (`a_lookup_a_metered_connection_stopped_says_so_and_never_that_musicbrainz_was_unreached`).
     **The Library category's *What online knows* group shows the breakdown** (`library.md`): while a
     lookup runs *The lookup so far*, read from `EnrichProgress::snapshot` on the poll, and once it
     ends *The last lookup*, kept in `Enrichment::looked_up` until the next begins (a section a
-    row, only its counted outcomes: `lookup_lines`), with a note where it was stopped or the
-    reference could not be reached (`lookup_ending`). Unlike the other passes' counts it stays
+    row, only its counted outcomes: `lookup_lines`), with a note where it was stopped, the
+    reference could not be reached or kept refusing, Online was turned off or the connection was
+    metered (`lookup_ending`). Unlike the other passes' counts it stays
     after the toast, since the toast says only the albums and artists answered.
 - **New songs always owe a lookup while automatic enrichment is on.** A successful scan that
   brought songs and a provider poll that kept any call `LibraryModel::enrich_new_songs`, gated by
@@ -741,7 +747,8 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   tells *Looking up {title} on MusicBrainz* (or *once the game ends* while Game Mode holds lookups)
   as it starts, then `told::song_looked_up` reads that pass's stats into one plain notice: found
   and filled in, no strict match, offered only on a release the listener turned down, refused,
-  unreached, or stopped. It asks nothing and says why where it cannot run: Online off (or no
+  unreached, or stopped, and where Online was turned off or the gate shut while it ran, the same
+  words as before it starts. It asks nothing and says why where it cannot run: Online off (or no
   reference), or the lookup gate shut on a metered connection (`Consulted::lookups`, the binary's
   `metered::for_lookups`). Asked while another pass runs, the song waits for it (`song_owed`,
   latest press wins) and is told so. A song's pass draws no lookup progress and leaves the last

@@ -175,7 +175,10 @@ impl LastfmApproving {
                         None => return session_of(answer).map(Some),
                     }
                 }
-                Err(error @ resonate_library::Error::Unreachable { .. }) => {
+                Err(
+                    error @ (resonate_library::Error::Unreachable { .. }
+                    | resonate_library::Error::Offline { .. }),
+                ) => {
                     unreached += 1;
                     if unreached >= UNREACHED_POLLS_AT_MOST {
                         return Err(error);

@@ -1565,7 +1565,9 @@ fn a_lookup_begun_on_its_own_tells_nothing_unless_the_reference_stopped_it() {
         stopped_by: None,
     };
     let unreached = resonate_library::EnrichSummary {
-        stopped_by: Some(resonate_library::LookupOp::Release),
+        stopped_by: Some(resonate_library::Stopped::Unreached(
+            resonate_library::LookupOp::Release,
+        )),
         ..answered
     };
 
@@ -1578,4 +1580,55 @@ fn a_lookup_begun_on_its_own_tells_nothing_unless_the_reference_stopped_it() {
         super::told::looked_up(&unreached, super::Prompted::OnItsOwn),
         Some(Notice::Trouble(_))
     ));
+}
+
+#[test]
+fn a_lookup_a_metered_connection_stopped_says_so_and_never_that_musicbrainz_was_unreached() {
+    let answered = resonate_library::EnrichSummary {
+        stats: resonate_library::EnrichStats {
+            releases: 3,
+            artists: 3,
+            ..resonate_library::EnrichStats::default()
+        },
+        cancelled: false,
+        stopped_by: None,
+    };
+    let told = |stopped| {
+        let summary = resonate_library::EnrichSummary {
+            stopped_by: Some(stopped),
+            ..answered
+        };
+        super::told::looked_up(&summary, super::Prompted::ByHand)
+    };
+    let song_told = |stopped| {
+        let summary = resonate_library::EnrichSummary {
+            stopped_by: Some(stopped),
+            ..answered
+        };
+        super::told::song_looked_up(&summary, "Orbit")
+    };
+
+    let metered = told(resonate_library::Stopped::Metered);
+    let offline = told(resonate_library::Stopped::Offline);
+    let refused = told(resonate_library::Stopped::RefusedInARow(
+        resonate_library::LookupOp::Release,
+    ));
+    let song_metered = song_told(resonate_library::Stopped::Metered);
+
+    assert!(
+        matches!(&metered, Some(Notice::Noted(said)) if said.contains("metered") && !said.contains("couldn't be reached")),
+        "{metered:?}"
+    );
+    assert!(
+        matches!(&offline, Some(Notice::Noted(said)) if said.contains("Online") && !said.contains("couldn't be reached")),
+        "{offline:?}"
+    );
+    assert!(
+        matches!(&refused, Some(Notice::Trouble(said)) if !said.contains("couldn't be reached")),
+        "{refused:?}"
+    );
+    assert!(
+        matches!(&song_metered, Notice::Noted(said) if said.contains("metered")),
+        "{song_metered:?}"
+    );
 }

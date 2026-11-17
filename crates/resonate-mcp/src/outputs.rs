@@ -249,6 +249,10 @@ fn pass() -> Value {
             ("progress", counts()),
             ("stats", counts()),
             ("cancelled", flag()),
+            (
+                "stopped_by",
+                json!({ "type": "string", "enum": ["unreached", "refused_in_a_row", "offline", "metered"] }),
+            ),
             ("stopped_asking_for", text()),
             ("error", text()),
         ],

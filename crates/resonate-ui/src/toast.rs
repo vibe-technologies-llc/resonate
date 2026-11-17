@@ -356,6 +356,8 @@ fn standing_in_the_way(error: &resonate_library::Error) -> Option<String> {
         Library::AlreadyWalking => words::toast::already_walking(),
         Library::AlreadyAsking { .. } => words::toast::already_asking(),
         Library::Unreachable { .. } => words::toast::unreachable(),
+        Library::Offline { .. } => words::toast::offline(),
+        Library::Metered { .. } => words::toast::metered(),
         Library::Refused { .. } => words::toast::refused(),
         Library::Io { .. } | Library::Move { .. } => words::toast::unreadable_or_unwritten(),
         Library::NoVault => words::toast::no_vault(),

@@ -11,8 +11,8 @@ use resonate_core::Switch;
 use resonate_engine::{Command, PreviousRestarts, ShuffleStyle, SkipUnderRepeat, SmartShuffle};
 use resonate_library::{
     EnrichStats, EnrichSummary, Failure, Failures, HistoryKept, ImportStats, ImportSummary, Layout,
-    OrganiseStats, OrganiseSummary, PollStats, RetagStats, RetagSummary, ScanStats, Vault, Wanted,
-    Written,
+    OrganiseStats, OrganiseSummary, PollStats, RetagStats, RetagSummary, ScanStats, Stopped, Vault,
+    Wanted, Written,
 };
 
 use crate::{
@@ -688,7 +688,18 @@ fn lookup_lines(stats: &EnrichStats) -> Vec<(&'static str, String)> {
 
 fn lookup_ending(summary: &EnrichSummary) -> Option<String> {
     match (summary.stopped_by, summary.cancelled) {
-        (Some(op), _) => Some(words::settings_library::lookup_ended_early(op.asked_for())),
+        (Some(Stopped::Unreached(op)), _) => {
+            Some(words::settings_library::lookup_ended_early(op.asked_for()))
+        }
+        (Some(Stopped::RefusedInARow(op)), _) => Some(
+            words::settings_library::lookup_refused_in_a_row(op.asked_for()),
+        ),
+        (Some(Stopped::Offline), _) => {
+            Some(words::settings_library::lookup_ended_offline().to_owned())
+        }
+        (Some(Stopped::Metered), _) => {
+            Some(words::settings_library::lookup_ended_metered().to_owned())
+        }
         (None, true) => {
             Some(words::settings_library::the_last_lookup_was_stopped_early().to_owned())
         }
@@ -2205,7 +2216,11 @@ mod tests {
             ..EnrichSummary::default()
         };
         let unreached = EnrichSummary {
-            stopped_by: Some(resonate_library::LookupOp::Release),
+            stopped_by: Some(Stopped::Unreached(resonate_library::LookupOp::Release)),
+            ..EnrichSummary::default()
+        };
+        let metered = EnrichSummary {
+            stopped_by: Some(Stopped::Metered),
             ..EnrichSummary::default()
         };
 
@@ -2217,6 +2232,11 @@ mod tests {
         assert!(
             lookup_ending(&unreached)
                 .is_some_and(|said| said.contains("couldn't be reached while looking up"))
+        );
+        assert!(
+            lookup_ending(&metered).is_some_and(
+                |said| said.contains("metered") && !said.contains("couldn't be reached")
+            )
         );
     }
 }

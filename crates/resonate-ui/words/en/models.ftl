@@ -251,6 +251,9 @@ songs-of-albums-not-held-learnt = { $count ->
    *[other] { $count } songs of albums not held learnt
 }
 musicbrainz-unreached = MusicBrainz couldn't be reached while looking up { $what } · { $said }
+musicbrainz-refused-in-a-row = MusicBrainz kept turning down the lookups, the last { $what } · { $said }
+lookup-held-offline = The lookup stopped when Online was turned off · { $said }
+lookup-held-metered = The lookup stopped on a metered connection, which Settings › Online holds lookups on · { $said }
 links-on-the-clipboard = { $count ->
     [one] { $count } link are on the clipboard
    *[other] { $count } links are on the clipboard

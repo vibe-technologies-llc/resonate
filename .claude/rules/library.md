@@ -942,7 +942,10 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `Vec`s, nothing about how reached; `resonate-online`'s `Online` is the one implementation and only
   the binary reaches it behind `online`. `enrich.rs` is the pass: a `resonate-enrich` thread behind
   an `EnrichHandle`; `EnrichProgress` counts outcome by outcome and answers `is_cancelled` between
-  requests; `EnrichSummary` carries stats, whether cancelled, `stopped_by`. **The pass tells what
+  requests; `EnrichSummary` carries stats, whether cancelled, and `stopped_by`, a `Stopped` saying why the
+  reference ended it (`Unreached` and `RefusedInARow` with the `LookupOp`, `Offline`, `Metered`), so
+  the window, the CLI and MCP tell a shut gate from an unreachable service
+  (`a_pass_a_shut_gate_or_a_switched_off_network_ends_says_so_and_not_unreached`). **The pass tells what
   it did outcome by outcome, one counter each** (`EnrichStats`, snapshotted while it runs and
   carried in the summary): per album asked, matched to a release, to a release group alone, with
   no strict match, left alone as a release the listener refused; per track, identified by each
@@ -955,7 +958,8 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `EnrichStats::of`, `told_by_section`): the CLI, MCP and the window read it, so a counter added
   without an `Outcome` fails the exhaustive `of`, and one with two fails
   `every_counter_is_one_outcome_and_every_outcome_one_counter`. A metered connection is no counter:
-  the gated client answers `Unreachable`, which ends the pass as `stopped_by`. `EnrichOptions`:
+  the gated client answers `Error::Metered` (Online off, `Error::Offline`), which ends the pass as
+  `Stopped::Metered` (`Stopped::Offline`). Game Mode ends nothing: the pass waits for the game. `EnrichOptions`:
   `refresh`, `at_most` (caps albums, tracks, artists each), `sought`, `studies`, `lyrics`,
   `breadth`. **`Breadth::TheSong` is one song's pass**: its album asked again whatever its clocks
   say (`album_to_ask`; a song its album answers for is paired, so not asked alone), then the song
@@ -1005,8 +1009,8 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `REFRESH_AFTER` (30 days) ago and not asked in vain since; or anything under `refresh`. A landing
   zeroes `asks`, `refusals`, so a row carrying either since its answer is due only once
   `waited_its_turn`. `Waits` carries `retry_after`, `refused_again_after`, `refresh_after`; `WAITS`
-  is this build's. Failures, via `Pass::heard`: `Error::Unreachable` ends the pass and stamps
-  nothing (`EnrichSummary::stopped_by` names the `LookupOp`); `Refused`, `Unreadable` count in
+  is this build's. Failures, via `Pass::heard`: `Error::Unreachable`, `Offline` and `Metered` end the pass
+  and stamp nothing (`EnrichSummary::stopped_by` says which, the first naming the `LookupOp`); `Refused`, `Unreadable` count in
   `refusals`, stamp `asked`, carry on **until `REFUSALS_THAT_END_A_PASS` (10) in a row**
   (`Refusing`, `hearing.rs`, which the phones' pass holds too; any answer resets it; the tenth is
   `Error::RefusedInARow`, ending the pass, the row being asked unstamped). `TooLarge` is a refusal not counting toward the streak. An

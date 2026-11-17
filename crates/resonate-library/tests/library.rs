@@ -54,9 +54,9 @@ use resonate_library::{
     Replaceable, Replaced, Result, RetagOptions, RetagSummary, RowOrder, SUBMITTED_AT_ONCE,
     SavedQuery, ScanOptions, ScanStats, Scrobble, Scrobbler, Search, Service, SheetEdit,
     SheetField, SheetScope, Sidecar, SongLink, SongToKeep, SongsAsked, SortOrder, Sought, Sources,
-    StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink, TagSource,
-    TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease, Unwritten, Upkeep, Vault,
-    VaultWeighingStats, Version, Waits, Window, Wording, Written,
+    Stopped, StreamAsked, Suggestion, TRIES_BEFORE_GIVING_UP, TagEdit, TagField, TagSet, TagSink,
+    TagSource, TextEncoding, TokenHeld, Track, TrackQuery, Trashes, UnheldRelease, Unwritten,
+    Upkeep, Vault, VaultWeighingStats, Version, Waits, Window, Wording, Written,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -12612,6 +12612,8 @@ impl Called {
 enum Fault {
     Refused,
     Unreachable,
+    Offline,
+    Metered,
     TooLarge,
 }
 
@@ -12757,6 +12759,8 @@ impl Fake {
                 op,
                 source: io::Error::from(io::ErrorKind::ConnectionRefused),
             }),
+            Some((_, _, Fault::Offline)) => Err(Error::Offline { op }),
+            Some((_, _, Fault::Metered)) => Err(Error::Metered { op }),
             None => Ok(()),
         }
     }
@@ -16018,7 +16022,10 @@ fn a_reference_that_cannot_be_reached_ends_the_pass_and_stamps_nothing() -> Resu
     );
     let summary = enrich(&library, &fake, false)?;
 
-    assert_eq!(summary.stopped_by, Some(LookupOp::Release));
+    assert_eq!(
+        summary.stopped_by,
+        Some(Stopped::Unreached(LookupOp::Release))
+    );
     assert_eq!(fake.called(LookupOp::Release), 2);
     assert_eq!(fake.called(LookupOp::Artist), 0);
     assert_eq!(fake.called(LookupOp::FindArtist), 0);
@@ -16036,6 +16043,37 @@ fn a_reference_that_cannot_be_reached_ends_the_pass_and_stamps_nothing() -> Resu
         }
     }
     assert_eq!((answered, untouched), (1, 1));
+    Ok(())
+}
+
+#[test]
+fn a_pass_a_shut_gate_or_a_switched_off_network_ends_says_so_and_not_unreached() -> Result<()> {
+    for (fault, said) in [
+        (Fault::Metered, Stopped::Metered),
+        (Fault::Offline, Stopped::Offline),
+    ] {
+        let tree = Tree::new();
+        write_orbits(&tree, true);
+        write_hours(&tree, None);
+        let library = Library::open_in_memory()?;
+        scan(&library, &options(&tree))?;
+
+        let fake = Arc::new(
+            Fake::new(Canned {
+                releases: vec![orbits(orbits_rows(), Vec::new()), hours()],
+                ..Canned::default()
+            })
+            .faulting(LookupOp::Release, 1, fault),
+        );
+        let summary = enrich(&library, &fake, false)?;
+
+        assert_eq!(summary.stopped_by, Some(said));
+        assert_eq!(summary.stats.releases, 1);
+        assert!(
+            library.unfinished_enrichment()?.is_some(),
+            "a pass the gate ended is left for the next run"
+        );
+    }
     Ok(())
 }
 
@@ -16259,7 +16297,10 @@ fn a_pass_the_reference_ended_is_left_for_the_next_run_to_pick_up() -> Result<()
     );
     let summary = enrich(&library, &fake, true)?;
 
-    assert_eq!(summary.stopped_by, Some(LookupOp::Release));
+    assert_eq!(
+        summary.stopped_by,
+        Some(Stopped::Unreached(LookupOp::Release))
+    );
     let left = library
         .unfinished_enrichment()?
         .expect("a pass the reference ended is left unfinished");
@@ -30664,7 +30705,10 @@ fn a_reference_refusing_lookup_after_lookup_ends_the_pass() -> Result<()> {
     let fake = Arc::new(fake);
     let summary = enrich(&library, &fake, false)?;
 
-    assert!(summary.stopped_by.is_some(), "the pass refused to the end");
+    assert!(
+        matches!(summary.stopped_by, Some(Stopped::RefusedInARow(_))),
+        "the pass refused to the end"
+    );
     assert_eq!(summary.stats.refused, ENDS_AFTER);
     assert_eq!(fake.calls().len() as u64, ENDS_AFTER);
     Ok(())

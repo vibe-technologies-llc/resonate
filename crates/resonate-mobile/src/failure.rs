@@ -117,7 +117,9 @@ pub(crate) fn of_a_read(read: &resonate_codec::Error) -> &'static str {
 pub(crate) fn of_a_lookup(op: LookupOp, source: &Library) -> String {
     let asked = op.asked_for();
     match source {
-        Library::Unreachable { .. } => said::lookup_unreachable(asked),
+        Library::Unreachable { .. } | Library::Offline { .. } | Library::Metered { .. } => {
+            said::lookup_unreachable(asked)
+        }
         Library::Refused { status, .. } => said::lookup_refused(asked, *status),
         Library::Unreadable { .. } => said::lookup_unreadable(asked),
         Library::TooLarge { .. } => said::lookup_too_large(asked),

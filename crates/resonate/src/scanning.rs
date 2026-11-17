@@ -3,6 +3,7 @@ use std::{num::NonZeroUsize, sync::Arc, thread};
 use resonate_core::Switch;
 use resonate_library::{
     EnrichOptions, EnrichStats, EnrichSummary, Library, LookupOp, Outcome, PassKind, ScanOptions,
+    Stopped,
 };
 
 use crate::{
@@ -121,8 +122,13 @@ fn carrying_on(library: &Library, options: EnrichOptions) -> Result<EnrichOption
 
 fn enriched(summary: &EnrichSummary) -> String {
     let mut told = counted_by_section(&summary.stats);
-    if let Some(op) = summary.stopped_by {
-        told.push_str(&words::main::stopped_unreached(asked_for(op)));
+    if let Some(stopped) = summary.stopped_by {
+        told.push_str(&match stopped {
+            Stopped::Unreached(op) => words::main::stopped_unreached(asked_for(op)),
+            Stopped::RefusedInARow(op) => words::main::stopped_refused_in_a_row(asked_for(op)),
+            Stopped::Offline => words::main::stopped_offline().to_owned(),
+            Stopped::Metered => words::main::stopped_metered().to_owned(),
+        });
         told.push('\n');
     }
     if summary.cancelled {
@@ -230,6 +236,19 @@ mod tests {
         };
 
         assert_eq!(enriched(&summary), "nothing was asked\ncancelled\n");
+    }
+
+    #[test]
+    fn a_pass_a_metered_connection_stopped_says_so_and_not_that_the_reference_was_unreached() {
+        let metered = EnrichSummary {
+            stopped_by: Some(Stopped::Metered),
+            ..EnrichSummary::default()
+        };
+
+        assert_eq!(
+            enriched(&metered),
+            "nothing was asked\nstopped: the connection is metered, and enrich-on-metered is off\n"
+        );
     }
 
     fn scan_of(arguments: &[&str]) -> ScanOptions {
