@@ -23,6 +23,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   listener's to grant
 
 ## Providers and network
+- [S · 0.13.0] Three media servers are passed over when browsed (`resonate-upnp`'s client): one whose SSDP
+  `LOCATION` names another address than the one that answered (as Docker setups give), a song addressed
+  on another of the server's own addresses, and a song served with chunked transfer encoding
+- [S · 0.13.0] A media server that cannot be reached is told with the accounts' advice (*Check the
+  address in Settings…*), which a server found on the network has no setting for
 
 ## The window
 

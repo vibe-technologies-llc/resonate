@@ -126,12 +126,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   has no way to take a picture back out
 
 ## Providers and network
-- [L · 0.13.0] A DLNA or UPnP media server on the network cannot be browsed: SSDP answers from a
-  `MediaServer:1` are passed over (`ssdp.rs`), though the crate reads descriptions, speaks SOAP and
-  serves ContentDirectory itself, so a NAS running MiniDLNA or Plex's DLNA server is reached only by
-  mounting its share; a spike settling the layering (a provider may reach only the seam, core and
-  `resonate-fetch`; `resonate-upnp` only core and `resonate-audio`), a DIDL reader with a fuzz target,
-  and Browse paging
 - [L · blocked: Apple] An Apple Music library cannot be synced: reading a listener's library and
   playlists needs a MusicKit developer token, issued only to a paid Apple Developer membership, and
   a user token only Apple's own sign-in hands out, which neither the desktop nor Android can show;
