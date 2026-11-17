@@ -82,9 +82,14 @@ Each seat then knows `D`, how far its reading of the party's clock stands from U
   guest hearing from a new host, clears the figure, the correction and `apart`
   (`forget_the_hosts_time`). No time server (blank, or `online` off on the desktop, where
   `Config::party_time_server` answers none) leaves `apart` empty and the party as it was.
+- **A figure carries its doubt**: `PartyApart::doubt` is half of each of the four round trips it
+  was read over (both seats' to the party server and to their time servers), the bound past which
+  a difference cannot be the paths' asymmetry, the same sum `plausible` weighs.
 - `crates/resonate-server/tests/together.rs` serves SNTP on loopback: two seats asking one server
-  read apart by under 2 ms, a guest whose server runs 50 ms late is shown -50 ms and not moved, since
-  loopback's path leaves nothing to beat
+  read apart by no more than the doubt, a guest whose server runs 50 ms late is shown -50 ms within
+  the doubt once that doubt is under half the gap and not moved, since loopback's path leaves
+  nothing to beat; neither bound is a figure fixed for an idle machine, so a loaded one passes as an
+  idle one does
   (`two_seats_asking_one_time_server_are_shown_apart_by_nothing_worth_hearing`,
   `a_guest_whose_time_server_runs_late_is_shown_the_gap_and_not_moved_past_what_its_path_allows`,
   `a_party_with_no_time_server_weighs_nothing`). Not yet measured between two real places.

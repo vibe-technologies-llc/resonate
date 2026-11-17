@@ -112,6 +112,7 @@ impl PartyTimed {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PartyApart {
     pub nanos: i64,
+    pub doubt: u64,
     pub corrected: bool,
 }
 
@@ -126,11 +127,13 @@ impl PartyApart {
             .server_round_trip
             .saturating_add(hosts.server_round_trip))
             / 2;
+        let doubt = path_doubt.saturating_add(utc_doubt);
         let both_tight = mine.utc_round_trip <= tight && hosts.utc_round_trip <= tight;
-        let plausible = nanos.unsigned_abs() <= path_doubt.saturating_add(utc_doubt);
+        let plausible = nanos.unsigned_abs() <= doubt;
 
         Self {
             nanos,
+            doubt,
             corrected: both_tight && utc_doubt < path_doubt && plausible,
         }
     }
@@ -331,6 +334,7 @@ mod tests {
         let apart = PartyApart::weighed(timed(500, 60, 4), timed(0, 40, 4));
 
         assert_eq!(apart.nanos, 500_000_000);
+        assert_eq!(apart.doubt, 54_000_000);
         assert!(!apart.corrected);
     }
 

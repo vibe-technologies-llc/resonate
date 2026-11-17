@@ -1731,6 +1731,8 @@ async fn a_guest_taking_the_party_over_plays_on_under_the_rows_everyone_already_
 
 const SECONDS_FROM_1900_TO_1970: u64 = 2_208_988_800;
 
+const THE_GUESTS_TIME_SERVER_RUNS_AHEAD_BY: Duration = Duration::from_millis(50);
+
 fn as_ntp(at: Duration) -> [u8; 8] {
     let seconds = u32::try_from(at.as_secs() + SECONDS_FROM_1900_TO_1970).unwrap_or(u32::MAX);
     let fraction =
@@ -1790,9 +1792,10 @@ async fn two_seats_asking_one_time_server_are_shown_apart_by_nothing_worth_heari
     let apart = guest.shown().apart.expect("weighed");
 
     assert!(
-        apart.nanos.unsigned_abs() < 2_000_000,
-        "apart by {} ns",
-        apart.nanos
+        apart.nanos.unsigned_abs() <= apart.doubt,
+        "apart by {} ns, past the {} ns the round trips leave in doubt",
+        apart.nanos,
+        apart.doubt
     );
     assert_eq!(host.shown().apart, None, "a host is apart from nobody");
 }
@@ -1802,22 +1805,31 @@ async fn a_guest_whose_time_server_runs_late_is_shown_the_gap_and_not_moved_past
  {
     let server = hosted(Limits::default()).await;
     let hosts_time = a_time_server_running_ahead_by(Duration::ZERO).await;
-    let guests_time = a_time_server_running_ahead_by(Duration::from_millis(50)).await;
+    let guests_time = a_time_server_running_ahead_by(THE_GUESTS_TIME_SERVER_RUNS_AHEAD_BY).await;
     let host = Party::host(timed_by(server, "Ada", hosts_time)).expect("hosted");
     let guest =
         Party::join(timed_by(server, "Bo", guests_time), &host.shown().code).expect("joined");
 
-    until("the guest weighing the host's time", || {
-        guest.shown().apart.is_some()
-    })
+    let gap = i64::try_from(THE_GUESTS_TIME_SERVER_RUNS_AHEAD_BY.as_nanos()).expect("a gap");
+    let tight_enough = gap.unsigned_abs() / 2;
+    until(
+        "the guest weighing the host's time over round trips shorter than the gap",
+        || {
+            guest
+                .shown()
+                .apart
+                .is_some_and(|apart| apart.doubt < tight_enough)
+        },
+    )
     .await;
     let apart = guest.shown().apart.expect("weighed");
     let here = 1_000_000_000;
 
     assert!(
-        (-52_000_000..=-48_000_000).contains(&apart.nanos),
-        "apart by {} ns",
-        apart.nanos
+        (apart.nanos + gap).unsigned_abs() <= apart.doubt,
+        "apart by {} ns, past the {} ns the round trips leave in doubt",
+        apart.nanos,
+        apart.doubt
     );
     assert!(!apart.corrected);
     assert_eq!(
