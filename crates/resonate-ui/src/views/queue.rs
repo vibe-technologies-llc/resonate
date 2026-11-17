@@ -324,10 +324,10 @@ impl RootView {
     }
 
     pub(crate) fn queue_put_in_order(&self, ordered: &PutInOrder, cx: &mut Context<Self>) {
-        if self.player.read(cx).queued().revision != ordered.revision {
+        if !self.player.read(cx).is_queued_at(ordered.revision) {
             return;
         }
-        self.send(Command::Order(ordered.rows.clone()), cx);
+        self.send_by_position_at(ordered.revision, Command::Order(ordered.rows.clone()), cx);
         cx.notify();
     }
 }
@@ -870,6 +870,7 @@ impl RootView {
                                         shift: Shift::Queue,
                                         rows: Chosen::of(acting_on),
                                         title: drawn.title.clone(),
+                                        over: None,
                                     };
                                     let album = drawn.album;
                                     let artist_id = drawn.artist_id;
@@ -1227,16 +1228,18 @@ impl RootView {
     }
 
     pub(crate) fn put_the_queue_back(&mut self, cx: &mut Context<Self>) -> bool {
-        let queued = self.player.read(cx).queue();
+        let queued = self.player.read(cx).queued();
         let Some(taken) = self
             .queue
-            .update(cx, |queue, _| queue.took_out.take(&queued))
+            .update(cx, |queue, _| queue.took_out.take(&queued.rows))
         else {
             return false;
         };
-        self.send(
+        let items = self.with_the_versions_chosen(taken.rows, true, cx);
+        self.send_by_position_at(
+            queued.revision,
             Command::Insert {
-                items: taken.rows,
+                items,
                 at: Placement::At(taken.at),
                 play: false,
             },
@@ -1536,8 +1539,9 @@ mod tests {
     use resonate_library::{Direction, Library, NamesMoved, RowOrder};
 
     use super::{
-        KEPT_GESTURES, Line, Named, Offer, Part, QueueItem, QueueLength, QueueParts, QueueRows,
-        Run, Standing, TakenBack, named_again, puts_back, runs_of, takes_out_again, took_out,
+        KEPT_GESTURES, Line, Named, Offer, Part, PutInOrder, QueueItem, QueueLength, QueueParts,
+        QueueRows, Run, Standing, TakenBack, named_again, puts_back, runs_of, takes_out_again,
+        took_out,
     };
     use crate::{
         Pane,
@@ -2037,6 +2041,79 @@ mod tests {
         driven.click("take-the-queue-out-again");
         driven.until(|root, cx| root.player.read(cx).queue().is_empty());
         driven.until_drawn("put-the-queue-back");
+    }
+
+    fn behind_the_window(root: &RootView, cx: &App, command: Command) {
+        root.player
+            .read(cx)
+            .engine()
+            .send(command)
+            .expect("the engine takes a command");
+    }
+
+    fn one_more_row_landed(driven: &mut Driven) {
+        let queued = driven.read(|root, cx| root.player.read(cx).queue());
+        let mut more = QueueItem::clone(queued.first().expect("a queued row"));
+        more.id = resonate_engine::unclaimed_id(queued.iter().map(AsRef::as_ref));
+        let rows = queued.len();
+
+        let more = Command::Insert {
+            items: vec![more],
+            at: resonate_engine::Placement::At(rows),
+            play: false,
+        };
+        driven.read(|root, cx| behind_the_window(root, cx, more));
+        driven.until(|root, cx| root.player.read(cx).queue().len() > rows);
+    }
+
+    #[gpui::test]
+    fn a_sort_keyed_before_another_reorder_landed_is_refused_rather_than_shuffling_the_new_order(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _) = queue_of(cx, &folder, &[1, 1, 1, 1]);
+        let revision = driven.read(|root, cx| root.player.read(cx).queued().revision);
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            behind_the_window(root, cx, Command::Order(vec![1, 0, 2, 3]));
+            root.queue_put_in_order(
+                &PutInOrder {
+                    revision,
+                    rows: vec![3, 2, 1, 0],
+                },
+                cx,
+            );
+        });
+        one_more_row_landed(&mut driven);
+
+        assert_eq!(
+            named_in_order(&mut driven)[..4],
+            ["alpha", "charlie", "delta", "bravo"]
+        );
+    }
+
+    #[gpui::test]
+    fn rows_put_back_after_another_reorder_landed_are_refused_rather_than_landing_elsewhere(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, files) = queue_of(cx, &folder, &[1, 1, 1, 1]);
+        let alpha = MediaLocation::local(&files[1]);
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.take_out_of_the_queue(&alpha, None, cx);
+        });
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 3);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            behind_the_window(root, cx, Command::Order(vec![2, 1, 0]));
+            assert!(root.put_the_queue_back(cx), "a step stood to put back");
+        });
+        one_more_row_landed(&mut driven);
+
+        assert_eq!(
+            named_in_order(&mut driven)[..3],
+            ["bravo", "delta", "charlie"]
+        );
     }
 
     #[gpui::test]

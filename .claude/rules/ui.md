@@ -58,7 +58,9 @@ the root's list:
   keying a sort. Each read is handed what it reads over (`Over`: the zone shown's `Queued` and
   engine, the catalog), since the zone shown is the root's. Two answers are the root's to act on, so
   the pane says them and the root subscribes: `NamesRead` (`jump_where_typed`) and `PutInOrder`
-  (`queue_put_in_order` sends the order only if the queue still stands at the revision it keyed).
+  (`queue_put_in_order` sends the order through `send_by_position_at` under the revision it keyed, so
+  the engine refuses it where MPRIS, the terminal, another device or a guest moved the queue first:
+  `a_sort_keyed_before_another_reorder_landed_is_refused_rather_than_shuffling_the_new_order`).
   Showing another zone lets go of the names and the rows taken out (`QueuePane::another_zone_shown`).
 - `LyricsModel` (`lyrics.rs`): the sheet, its motion and its scroll (the lyrics pane, below), the
   lookup and the read of how far the words run ahead (`read_how_far_ahead`).
@@ -802,7 +804,8 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   so a row's ✕, a reach of thirty rows and backspace all keep what they take; *Clear* is the same
   call over `Span::between(0, last)`. `drop_rows` tells it as a toast (*Took 34 tracks out of the
   queue*); *Put back* stays in the heading and sends the rows as a `Command::Insert` at
-  `Placement::At` the row they came out of. A menu's *Take out of the queue* on a track queued
+  `Placement::At` the row they came out of, under the revision the landing was read at, so a queue
+  moved first refuses it (`rows_put_back_after_another_reorder_landed_are_refused_rather_than_landing_elsewhere`). A menu's *Take out of the queue* on a track queued
   more than once takes every place in one `Command::RemoveAll` (`RootView::drop_queue_runs`): one
   toast for the lot, one step per run of adjacent rows, each put back where it stood. Kept as `QueueItem`s, not ids (`one_id_each` mints new
   ones). `Reach::after_dropping` lands the reach on the first row after the gap, the row now last, or
@@ -2732,7 +2735,7 @@ while shown, reading in-memory state only (the party pane's, the driven device's
   render thread**: `queue_heading`'s total is measured once per queue and library revision in the
   background (`queued_rows`, `QueueMeasure`), reading *at least* it where a row has no scanned length
   (`QueueLength::unmeasured`); a sort keys every row in the background too (`ordered_rows`),
-  sending the order only if the queue is still the revision it keyed.
+  the engine taking the order only if the queue is still the revision it keyed.
 - **A row is keyed by what it holds, not where it stands.** gpui keeps tooltip, hover and drag in
   element state under the id path: an index-keyed row handed row N's tooltip to whatever an edit moved
   into N. Keys: queue row = queue id; track row = `TrackId`; artist row = `ArtistId`; missing row's want
