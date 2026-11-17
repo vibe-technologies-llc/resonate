@@ -76,6 +76,11 @@ const STEPS_RELEASED: &[(&str, u64)] = &[
         0xcf164a7f3b0cb3aa,
     ),
     ("LOSSY_SONGS_WAIT_TO_BE_REPLACED", 0x9f394dc465ffc3b2),
+    (
+        "SONGS_DELETED_EVERYWHERE_ARE_TOLD_AND_TAKEN",
+        0xb7adf00eee24582b,
+    ),
+    ("LYRICS_KEEP_HOW_FAR_AHEAD_THEY_RUN", 0xa37cc5c588536d00),
 ];
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;

@@ -6,6 +6,11 @@ const STEPS_RELEASED: &[(&str, u64)] = &[
     ("V1", 0xace1_f7c1_866f_75de),
     ("RECORDS_ARE_KNOWN_BY_THEIR_DIGEST", 0x4122_55a6_1fcc_5987),
     ("A_SPACE_MAY_BE_SHARED_AND_CLOSED", 0xb3cd_0234_bb4e_f1eb),
+    (
+        "A_CLOSING_WORD_IS_COUNTED_IN_ITS_SPACE",
+        0xa105_fe7c_9bff_e1e2,
+    ),
+    ("A_COMPACTION_MAY_BE_STAGED_IN_PARTS", 0xaacc_78ac_5a4d_8640),
 ];
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;

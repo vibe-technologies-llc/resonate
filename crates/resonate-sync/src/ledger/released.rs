@@ -9,6 +9,12 @@ const STEPS_RELEASED: &[(&str, u64)] = &[
     ("NAMESAKES_MADE_APART_BECOME_ONE", 0xc7ce_4afe_b760_88bf),
     ("SHARED_PLAYLISTS_STAND_APART", 0xfdea_32d2_ad71_4393),
     ("LAYOUTS_TRAVEL", 0x959f_8ed5_dc59_8e42),
+    ("SONGS_DELETED_EVERYWHERE", 0xd739_cce7_90a2_a307),
+    (
+        "LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED",
+        0xa7c5_4a9d_b6d2_081c,
+    ),
+    ("UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS", 0x3c2c_a663_c83b_5864),
 ];
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
