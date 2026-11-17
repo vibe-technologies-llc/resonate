@@ -100,48 +100,17 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [S · 0.12.1] Investigate: a party stalls under heavy load: `a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_ahead`
+  (`resonate-server`'s `tests/together.rs`) times out on *the guest to take the queue up* 1 in 30 at
+  32 threads, and a 60 s wait does not save it, so the party itself stalls; `a_guest_taking_the_party_over…`,
+  `a_party_with_no_time_server_weighs_nothing` and `a_guest_takes_up…` stall the same way
+- [S · 0.12.1] Investigate: under 64-thread stress `resonate-engine`'s
+  `a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start` (`transport.rs`)
+  failed once in 30, and `resonate-server`'s `hifi::a_hifi_api_that_is_not_listening_is_a_bad_gateway`
+  and `shared::removing_someone_moves_everyone_else…` each failed once
 - [S · 0.12.1] The shared-list page's script hashes (`pages.rs`) are checked against the page as
   served, but no browser has enforced the policy; one run in a real browser (the invitation pages
   under a CSP that refuses inline scripts) would prove the page still works
-- [S · 0.12.1] Investigate: two party tests in `resonate-server`'s `tests/together.rs`
-  (`two_seats_asking_one_time_server_are_shown_apart_by_nothing_worth_hearing`,
-  `a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_ahead`) failed once each on a
-  loaded machine and passed on rerun
-- [S · 0.12.1] Investigate: `two_zones_play_apart_each_steered_alone_while_a_setting_reaches_both`
-  (`resonate-engine`'s `transport.rs`) failed once in a full `-p resonate-engine` run and passed alone
-  and on rerun; find the timing it leans on
-- [S · 0.12.1] Investigate: `a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it`
-  (`resonate-mobile`'s `sync/copied.rs`) fails on the development machine, alone and in the headless run,
-  with *the copy kept on the phone never happened* after its 40 s; seen on 2026-11-17 on a tree
-  that touched only the resampler and on the commit before it, cause not looked into
-- [S · 0.12.1] The desktop catalog's released steps are not pinned as the phones' are: `STAMPS`
-  (`schema.rs`) is hashed from today's `V1` and steps, and the first-release test takes
-  `fingerprint_of(V1)` of today's `V1`, so an edit to a released step passes every test and wipes
-  listens, playlists, favourites and keeps on upgrade (`library.md`'s one case of delete and rescan);
-  a literal `STAMPS_RELEASED` beside `catalog_released_tests.rs`'s `STEPS_RELEASED`, the same for the
-  ledger, the server store and `kept.sqlite` (whose counted `user_version` would leave two schemas
-  apart silently), and a data test for `SONGS_LEARNT_UNTIMED_ARE_LEARNT_AGAIN`
-- [S · 0.12.1] The sync wire is held by round trips alone: `fuzz/seeds/sync` keeps 15 frames earlier
-  builds wrote, and only four (`export`, `exporting`, `prints`, `printed`) are read by a test, so a
-  field reordered or retyped in a frame a released server or phone still sends passes everything; a
-  test decoding every seed as its kind and writing it back byte for byte, the seeds frozen once sent
-- [S · 0.12.1] MusicBrainz replication has no fuzz target: `replicated.rs`'s hand-written JSON `Parser`
-  and `object_of` and `packet_read`'s bzip2 and tar read a packet off the network every hour, and
-  `fuzz_targets/musicbrainz.rs` covers `Asked`, `Answer` and `read_a_copy_line` alone; a
-  `replication` target seeded from `tests/mirror.rs`'s archives, and `apple::served` added to the
-  `pages` target
-- [S · 0.12.1] The metered-download tests sleep, then assert something happened:
-  `THE_POLL_HAS_WAITED` (400 ms) before `is_waiting_on_the_meter` and `refused_a_poll`
-  (`tests/library.rs`), suites that have flaked before, with no retries in `.config/nextest.toml`;
-  a bounded poll for each positive assertion, a sleep kept only before *nothing happened*
-- [S · 0.12.1] The check that rules name real code reads snake_case alone
-  (`is_snake_case_name`, `tests/rules.rs`), and five gone names stand in the rules:
-  `HOLDS_A_BEST_COPY` (`library.md`, now `THE_BEST_COPY`), `ALBUM_COLUMNS` (`vault.md`), `DRAWN_EDGE`
-  and `THIRD_INK` (`ui.md`) and `QueueList` (`ios.md`); extend it to backticked `UPPER_SNAKE` and
-  `CamelCase` with a list of other programs' names, and mend the five
-- [S · 0.12.1] `CLAUDE.md`'s Android command omits `python3 android/check-release.py`, which
-  `AGENTS.md` and CI run after `:app:assembleRelease`, though `AGENTS.md` asks that the lists move
-  together
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried

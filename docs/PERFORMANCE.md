@@ -8,6 +8,9 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Performance and scale
+- [S · 0.12.1] The replication fuzz target reads about twelve inputs a second: `mibz2` sets its decoder
+  up again for every packet, which the hourly follow pays once a packet too; measure the set-up and
+  reuse a decoder across packets if it shows
 - [L · 0.12.1] A sync state past `SNAPSHOT_FRAME_SHARE` (16 MiB) is never compacted: `compact()`
   (`service.rs`) now backs off once refused, until the records since the snapshot double, but the
   server's log still grows for good and a new device replays all of it, and answers are never pruned;
