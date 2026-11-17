@@ -3,6 +3,7 @@ use std::{
     time::{Duration, UNIX_EPOCH},
 };
 
+use parking_lot::Mutex;
 use resonate_core::{Mbid, Recording};
 use resonate_fetch::escaped;
 use resonate_library::{HeardElsewhere, HeardPage, History, ListeningService, LookupOp};
@@ -18,11 +19,40 @@ const ANSWERED_AS: &str = "json";
 pub struct ListenBrainzHistory {
     client: Arc<Client>,
     user: String,
+    edge: Mutex<Edge>,
+}
+
+#[derive(Default)]
+struct Edge {
+    second: u64,
+    heard: Vec<HeardElsewhere>,
+}
+
+impl Edge {
+    fn passes_over(
+        &mut self,
+        asked_before: Option<u64>,
+        second: u64,
+        heard: &HeardElsewhere,
+    ) -> bool {
+        if asked_before != Some(self.second + 1) || second != self.second {
+            return false;
+        }
+        let Some(seen) = self.heard.iter().position(|seen| seen == heard) else {
+            return false;
+        };
+        self.heard.swap_remove(seen);
+        true
+    }
 }
 
 impl ListenBrainzHistory {
     pub fn new(client: Arc<Client>, user: String) -> Self {
-        Self { client, user }
+        Self {
+            client,
+            user,
+            edge: Mutex::new(Edge::default()),
+        }
     }
 
     fn asked(&self, before: Option<u64>) -> String {
@@ -49,7 +79,8 @@ impl History for ListenBrainzHistory {
         let answer: Option<ListensAnswer> =
             self.client
                 .json(Host::ListenBrainz, LookupOp::History, &self.asked(from))?;
-        Ok(answer.map_or_else(nothing_more, ListensAnswer::page))
+        let mut edge = self.edge.lock();
+        Ok(answer.map_or_else(nothing_more, |answer| answer.page(from, &mut edge)))
     }
 }
 
@@ -159,13 +190,39 @@ struct MbidMapping {
 }
 
 impl ListensAnswer {
-    fn page(self) -> HeardPage {
+    fn page(self, asked_before: Option<u64>, edge: &mut Edge) -> HeardPage {
         let listens = self.payload.listens;
         let full = listens.len() >= LISTENS_A_PAGE;
-        let earliest = listens.iter().map(|listen| listen.listened_at).min();
+        let Some(earliest) = listens.iter().map(|listen| listen.listened_at).min() else {
+            return nothing_more();
+        };
+
+        let heard = listens
+            .into_iter()
+            .filter_map(|listen| {
+                let second = listen.listened_at;
+                listen.heard().map(|heard| (second, heard))
+            })
+            .filter(|(second, heard)| !edge.passes_over(asked_before, *second, heard))
+            .collect::<Vec<_>>();
+        let including_the_earliest = earliest + 1;
+        let next = if asked_before == Some(including_the_earliest) {
+            earliest
+        } else {
+            including_the_earliest
+        };
+
+        *edge = Edge {
+            second: earliest,
+            heard: heard
+                .iter()
+                .filter(|(second, _)| *second == earliest)
+                .map(|(_, heard)| heard.clone())
+                .collect(),
+        };
         HeardPage {
-            heard: listens.into_iter().filter_map(ListenDoc::heard).collect(),
-            next: earliest.filter(|_| full),
+            heard: heard.into_iter().map(|(_, heard)| heard).collect(),
+            next: full.then_some(next),
         }
     }
 }
@@ -296,7 +353,7 @@ mod tests {
             serde_json::from_str(include_str!("../tests/fixtures/listenbrainz_listens.json"))
                 .expect("the listens read");
 
-        let page = answer.page();
+        let page = answer.page(None, &mut Edge::default());
 
         assert_eq!(page.heard.len(), 2);
         assert_eq!(page.heard[0].recording.title, "Echoes");
@@ -318,6 +375,72 @@ mod tests {
             UNIX_EPOCH + Duration::from_secs(1_700_000_000)
         );
         assert_eq!(page.next, None);
+    }
+
+    fn listen(at: u64, title: &str) -> ListenDoc {
+        ListenDoc {
+            listened_at: at,
+            track_metadata: TrackMetadata {
+                artist_name: "Low".to_owned(),
+                track_name: title.to_owned(),
+                release_name: None,
+                additional_info: None,
+                mbid_mapping: None,
+            },
+        }
+    }
+
+    fn answered(listens: Vec<ListenDoc>) -> ListensAnswer {
+        ListensAnswer {
+            payload: ListensPayload { listens },
+        }
+    }
+
+    fn titles(page: &HeardPage) -> Vec<&str> {
+        page.heard
+            .iter()
+            .map(|heard| heard.recording.title.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn listens_sharing_the_second_a_full_page_ends_on_are_read_once_each_from_the_next() {
+        const EDGE: u64 = 1_700_000_000;
+
+        let mut edge = Edge::default();
+        let mut first = (1..LISTENS_A_PAGE - 1)
+            .map(|later| listen(EDGE + later as u64, "Earlier on the page"))
+            .collect::<Vec<_>>();
+        first.extend([listen(EDGE, "Words"), listen(EDGE, "Lullaby")]);
+        let second = vec![
+            listen(EDGE, "Words"),
+            listen(EDGE, "Lullaby"),
+            listen(EDGE, "Sunflower"),
+            listen(EDGE - 1, "Laser Beam"),
+        ];
+
+        let first = answered(first).page(None, &mut edge);
+        let second = answered(second).page(first.next, &mut edge);
+
+        assert_eq!(first.heard.len(), LISTENS_A_PAGE);
+        assert_eq!(first.next, Some(EDGE + 1));
+        assert_eq!(titles(&second), ["Sunflower", "Laser Beam"]);
+        assert_eq!(second.next, None);
+    }
+
+    #[test]
+    fn a_full_page_all_of_one_second_moves_on_past_it_rather_than_asking_it_again() {
+        const EDGE: u64 = 1_700_000_000;
+
+        let mut edge = Edge::default();
+        let all_at_once = (0..LISTENS_A_PAGE)
+            .map(|_| listen(EDGE, "Imported at once"))
+            .collect::<Vec<_>>();
+
+        let page = answered(all_at_once).page(Some(EDGE + 1), &mut edge);
+
+        assert_eq!(page.heard.len(), LISTENS_A_PAGE);
+        assert_eq!(page.next, Some(EDGE));
     }
 
     #[test]

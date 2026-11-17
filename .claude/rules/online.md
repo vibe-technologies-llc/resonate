@@ -445,8 +445,13 @@ nothing asked** (`no_account_asks_nothing_of_the_api_and_a_pasted_link_keeps_its
   names another.
 
 - **A listener's history is read back, a thousand at a time** (`history.rs`, `ListenBrainzHistory`,
-  `LookupOp::History`): `GET /1/user/<user>/listens?count=1000`, then `max_ts` the earliest
-  `listened_at` of a full page, until a page is short. Each listen's recording MBID is
+  `LookupOp::History`): `GET /1/user/<user>/listens?count=1000`, then, until a page is short, `max_ts`
+  one past the earliest `listened_at` of a full page, since `max_ts` is exclusive and a bulk import
+  puts more listens in one second than a page holds. The listens of that second the page held are
+  kept (`Edge`) and passed over once each on the next page
+  (`listens_sharing_the_second_a_full_page_ends_on_are_read_once_each_from_the_next`); a full page
+  all of the one second it was asked to include moves on past it
+  (`a_full_page_all_of_one_second_moves_on_past_it_rather_than_asking_it_again`). Each listen's recording MBID is
   `additional_info.recording_mbid`, else `mbid_mapping.recording_mbid`, its length `duration_ms`; a
   listen naming no title or artist is passed over. Public: no token is sent, the user being named
   (`a_page_of_listenbrainz_listens_names_each_song_and_where_the_next_page_starts`).
