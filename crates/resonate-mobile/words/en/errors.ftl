@@ -60,6 +60,7 @@ playlist-file-empty = The playlist file lists no songs
 playlist-file-unwritten = The playlist could not be written to a file
 invalid-wanted-song = a saved recording must have a title
 online-off = Online features are switched off. Turn them on in Settings.
+lookups-held-by-the-meter = The connection is metered, so nothing was looked up. Allow lookups on a metered connection in Settings.
 no-served-server = No service to play from is set up
 heard = The clip could not be named: { $source }
 invalid-playlist-name = a playlist name must have between one and 255 bytes

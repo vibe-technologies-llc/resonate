@@ -56,6 +56,10 @@ class SettingsWordsTest {
         )
         assertEquals("Stopped: offline", enrichmentLine(English, enrichment(stopped = EnrichmentStop.OFFLINE)))
         assertEquals(
+            "Stopped: the connection is metered, and lookups are held on it",
+            enrichmentLine(English, enrichment(stopped = EnrichmentStop.METERED)),
+        )
+        assertEquals(
             "Stopped: MusicBrainz could not be reached",
             enrichmentLine(English, enrichment(stopped = EnrichmentStop.UNREACHABLE)),
         )

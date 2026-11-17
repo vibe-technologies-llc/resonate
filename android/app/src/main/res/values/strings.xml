@@ -1470,6 +1470,7 @@
     <string name="enrichment_finished">Artwork and details up to date</string>
     <string name="enrichment_cancelled">Stopped</string>
     <string name="enrichment_offline">Stopped: offline</string>
+    <string name="enrichment_metered">Stopped: the connection is metered, and lookups are held on it</string>
     <string name="enrichment_unreachable">Stopped: MusicBrainz could not be reached</string>
     <string name="enrichment_refused">Stopped: the service refused too many requests</string>
     <string name="enrichment_failed">Stopped: the library could not be read</string>

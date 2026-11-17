@@ -136,7 +136,8 @@ private fun stoppedIcon(status: EnrichmentStatus?): ImageVector =
         EnrichmentStop.UNREACHABLE,
         EnrichmentStop.REFUSED,
         EnrichmentStop.FAILED -> Icons.Rounded.ErrorOutline
-        EnrichmentStop.OFFLINE -> Icons.Rounded.CloudOff
+        EnrichmentStop.OFFLINE,
+        EnrichmentStop.METERED -> Icons.Rounded.CloudOff
         else -> Icons.Rounded.Info
     }
 

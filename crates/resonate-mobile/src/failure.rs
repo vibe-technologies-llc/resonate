@@ -117,9 +117,9 @@ pub(crate) fn of_a_read(read: &resonate_codec::Error) -> &'static str {
 pub(crate) fn of_a_lookup(op: LookupOp, source: &Library) -> String {
     let asked = op.asked_for();
     match source {
-        Library::Unreachable { .. } | Library::Offline { .. } | Library::Metered { .. } => {
-            said::lookup_unreachable(asked)
-        }
+        Library::Unreachable { .. } => said::lookup_unreachable(asked),
+        Library::Offline { .. } => said::lookup_offline(asked),
+        Library::Metered { .. } => said::lookup_metered(asked),
         Library::Refused { status, .. } => said::lookup_refused(asked, *status),
         Library::Unreadable { .. } => said::lookup_unreadable(asked),
         Library::TooLarge { .. } => said::lookup_too_large(asked),
@@ -282,6 +282,25 @@ mod tests {
                 }
             ),
             "The online service's answer about lyrics could not be read"
+        );
+    }
+
+    #[test]
+    fn a_lookup_a_switched_off_network_or_a_metered_connection_held_back_is_not_told_unreachable() {
+        let offline = Library::Offline {
+            op: LookupOp::Cover,
+        };
+        let metered = Library::Metered {
+            op: LookupOp::Lyrics,
+        };
+
+        assert_eq!(
+            of_a_lookup(LookupOp::Cover, &offline),
+            "Online features are switched off, so nothing was asked about a cover"
+        );
+        assert_eq!(
+            of_a_lookup(LookupOp::Lyrics, &metered),
+            "The connection is metered, so nothing was asked about lyrics"
         );
     }
 

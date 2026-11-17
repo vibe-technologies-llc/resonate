@@ -62,7 +62,10 @@ and not the local network: the catalog offered as a MediaServer (`resonate offer
   (`a_metered_connection_stops_a_lookup_before_anything_is_sent`,
   `a_lookup_is_asked_when_metered_lookups_are_allowed_or_the_connection_is_not_metered`,
   `a_metered_connection_leaves_scrobbling_and_listening_alone`). The phones' enrichment pass reads
-  the same gate through `Asking::is_reaching` and ends `Offline`, not unreachable.
+  the same gate through `Asking::held_back` and ends `EnrichmentStop::Metered` (a switched-off network
+  `Offline`), never unreachable, and a lookup failing as the library's `Metered` or `Offline` is told as
+  that by `failure::of_a_lookup` (`a_pass_on_a_connection_the_meter_shuts_stops_metered_not_offline`,
+  `a_lookup_a_switched_off_network_or_a_metered_connection_held_back_is_not_told_unreachable`).
 - **Pacing reserves a slot (no sleep after a call), one queue per process.** `Client::pace`
   reserves from a `Pacing` (`BTreeMap<Host, Instant>` behind a `parking_lot::Mutex`): next slot =
   later of now and last slot + host interval, written back under the lock, slept towards outside

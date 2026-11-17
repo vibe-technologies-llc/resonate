@@ -61,6 +61,7 @@ pub enum EnrichmentStop {
     Finished,
     Cancelled,
     Offline,
+    Metered,
     Unreachable,
     Refused,
     Failed,
@@ -132,7 +133,27 @@ impl Asking {
     }
 
     fn is_reaching(&self) -> bool {
-        self.client.is_reaching() && !self.client.is_lookup_held_by_the_meter()
+        self.held_back().is_none()
+    }
+
+    fn held_back(&self) -> Option<Ended> {
+        if !self.client.is_reaching() {
+            Some(Ended::Offline)
+        } else if self.client.is_lookup_held_by_the_meter() {
+            Some(Ended::Metered)
+        } else {
+            None
+        }
+    }
+
+    fn ended_by(&self, op: LookupOp, source: resonate_library::Error) -> Ended {
+        match source {
+            resonate_library::Error::Offline { .. } => Ended::Offline,
+            resonate_library::Error::Metered { .. } => Ended::Metered,
+            source => self
+                .held_back()
+                .unwrap_or_else(|| Ended::Unreachable(Box::new(Error::reference(op, source)))),
+        }
     }
 }
 
@@ -393,6 +414,7 @@ impl MobilePlayer {
         match asked {
             Ok(()) | Err(Ended::Refused | Ended::Cancelled) => Ok(()),
             Err(Ended::Offline) => Err(Error::OnlineOff),
+            Err(Ended::Metered) => Err(Error::LookupsHeldByTheMeter),
             Err(Ended::Unreachable(error) | Ended::Failed(error)) => Err(*error),
         }
     }
@@ -402,6 +424,7 @@ impl MobilePlayer {
 enum Ended {
     Cancelled,
     Offline,
+    Metered,
     Unreachable(Box<Error>),
     Refused,
     Failed(Box<Error>),
@@ -523,6 +546,7 @@ fn run(
         Ok(()) => EnrichmentStop::Finished,
         Err(Ended::Cancelled) => EnrichmentStop::Cancelled,
         Err(Ended::Offline) => EnrichmentStop::Offline,
+        Err(Ended::Metered) => EnrichmentStop::Metered,
         Err(Ended::Refused) => EnrichmentStop::Refused,
         Err(Ended::Unreachable(error)) => {
             tracing::info!(%error, "the reference could not be reached, so the pass stops");
@@ -857,10 +881,10 @@ impl<'a> Pass<'a> {
         if self.told.is_cancelled() {
             return Err(Ended::Cancelled);
         }
-        if !self.asking.is_reaching() {
-            return Err(Ended::Offline);
+        match self.asking.held_back() {
+            Some(held) => Err(held),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     fn ask<T>(
@@ -876,8 +900,7 @@ impl<'a> Pass<'a> {
         {
             Ok(reply) => Ok(reply),
             Err(resonate_library::Error::RefusedInARow { .. }) => Err(Ended::Refused),
-            Err(_) if !self.asking.is_reaching() => Err(Ended::Offline),
-            Err(source) => Err(Ended::Unreachable(Box::new(Error::reference(op, source)))),
+            Err(source) => Err(self.asking.ended_by(op, source)),
         }
     }
 
@@ -1346,7 +1369,13 @@ fn hear_the_due(
             Err(Ended::Failed(error)) => {
                 tracing::warn!(%error, track, "a track was not heard");
             }
-            Err(Ended::Cancelled | Ended::Offline | Ended::Refused | Ended::Unreachable(_)) => {
+            Err(
+                Ended::Cancelled
+                | Ended::Offline
+                | Ended::Metered
+                | Ended::Refused
+                | Ended::Unreachable(_),
+            ) => {
                 return;
             }
         }
@@ -1368,8 +1397,8 @@ impl Hearer<'_> {
         if self.told.is_cancelled() {
             return Err(Ended::Cancelled);
         }
-        if !self.asking.is_reaching() {
-            return Err(Ended::Offline);
+        if let Some(held) = self.asking.held_back() {
+            return Err(held);
         }
         let held = match self.catalog.track(track) {
             Ok(held) => held,
@@ -1444,8 +1473,7 @@ impl Hearer<'_> {
                 Ok(())
             }
             resonate_library::Error::TooLarge { .. } => Ok(()),
-            _ if !self.asking.is_reaching() => Err(Ended::Offline),
-            source => Err(Ended::Unreachable(Box::new(Error::reference(op, source)))),
+            source => Err(self.asking.ended_by(op, source)),
         }
     }
 }
@@ -1540,9 +1568,13 @@ impl Walker for Singing<'_> {
                     tracing::warn!(%error, track, "a track's lyrics were not kept");
                     Step::On
                 }
-                Err(Ended::Cancelled | Ended::Offline | Ended::Refused | Ended::Unreachable(_)) => {
-                    Step::Stop
-                }
+                Err(
+                    Ended::Cancelled
+                    | Ended::Offline
+                    | Ended::Metered
+                    | Ended::Refused
+                    | Ended::Unreachable(_),
+                ) => Step::Stop,
             },
         )
     }
@@ -1559,8 +1591,8 @@ fn sing(
     if told.is_cancelled() {
         return Err(Ended::Cancelled);
     }
-    if !asking.is_reaching() {
-        return Err(Ended::Offline);
+    if let Some(held) = asking.held_back() {
+        return Err(held);
     }
     let held = catalog.track(track)?;
     let Some(asked) = lyrics_asked(&held) else {
@@ -1583,13 +1615,7 @@ fn sing(
             return Ok(());
         }
         Err(resonate_library::Error::TooLarge { .. }) => return Ok(()),
-        Err(_) if !asking.is_reaching() => return Err(Ended::Offline),
-        Err(source) => {
-            return Err(Ended::Unreachable(Box::new(Error::reference(
-                LookupOp::Lyrics,
-                source,
-            ))));
-        }
+        Err(source) => return Err(asking.ended_by(LookupOp::Lyrics, source)),
     };
 
     let kept = catalog.lyric_text(track)?;
@@ -2571,6 +2597,7 @@ mod tests {
 
     use crossbeam_channel::{Sender, bounded};
     use resonate_codec::Sources;
+    use resonate_core::{Gate, Meter, Metering};
     use resonate_library::{
         AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings, ArtistProfile,
         Barcode, BarcodeMatch, Credit, Discography, GroupAsked, GroupMatch, LinkNames,
@@ -2590,13 +2617,20 @@ mod tests {
 
     const COVER: [u8; 4] = [7, 7, 7, 7];
 
+    #[derive(Clone, Copy)]
+    enum Failing {
+        Unreachable,
+        Offline,
+        Metered,
+    }
+
     #[derive(Default)]
     struct Fake {
         calls: AtomicUsize,
         covers: AtomicUsize,
         covers_drawn_at: AtomicU32,
         each_takes: Duration,
-        unreachable: bool,
+        failing: Option<Failing>,
         asked: Mutex<Vec<String>>,
         lyrics_gate: Mutex<Option<(Sender<()>, crossbeam_channel::Receiver<()>)>>,
     }
@@ -2605,13 +2639,19 @@ mod tests {
         fn answered<T>(&self, answer: T) -> resonate_library::Result<T> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             thread::sleep(self.each_takes);
-            if self.unreachable {
-                return Err(resonate_library::Error::Unreachable {
+            match self.failing {
+                None => Ok(answer),
+                Some(Failing::Unreachable) => Err(resonate_library::Error::Unreachable {
                     op: LookupOp::FindRelease,
                     source: std::io::Error::from(std::io::ErrorKind::TimedOut),
-                });
+                }),
+                Some(Failing::Offline) => Err(resonate_library::Error::Offline {
+                    op: LookupOp::FindRelease,
+                }),
+                Some(Failing::Metered) => Err(resonate_library::Error::Metered {
+                    op: LookupOp::FindRelease,
+                }),
             }
-            Ok(answer)
         }
 
         fn noted(&self, asked: String) {
@@ -2873,13 +2913,21 @@ mod tests {
         fake: &Arc<Fake>,
         told: &Arc<Told>,
     ) -> EnrichmentStatus {
+        passed_asking(catalog, &asking(fake), told)
+    }
+
+    fn passed_asking(
+        catalog: &Arc<Catalog>,
+        asking: &Asking,
+        told: &Arc<Told>,
+    ) -> EnrichmentStatus {
         let tally = Arc::new(Tally::default());
         tally.began();
 
         run(
             catalog,
             &Arc::new(Sources::local()),
-            &asking(fake),
+            asking,
             told,
             &tally,
             EnrichmentOptions::default(),
@@ -3046,10 +3094,53 @@ mod tests {
     }
 
     #[test]
+    fn a_lookup_a_switched_off_network_or_a_metered_connection_held_back_stops_the_pass_as_itself()
+    {
+        let stops = [Failing::Offline, Failing::Metered, Failing::Unreachable].map(|failing| {
+            let catalog = Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog"));
+            let fake = Arc::new(Fake {
+                failing: Some(failing),
+                ..Fake::default()
+            });
+            songs(&catalog, "Unknown", 1);
+            passed_as_told(&catalog, &fake, &Arc::new(Told::default())).stopped
+        });
+
+        assert_eq!(
+            stops,
+            [
+                Some(EnrichmentStop::Offline),
+                Some(EnrichmentStop::Metered),
+                Some(EnrichmentStop::Unreachable)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_pass_on_a_connection_the_meter_shuts_stops_metered_not_offline() {
+        let catalog = Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog"));
+        let fake = Arc::new(Fake::default());
+        let metering = Metering::new();
+        let asking = Asking {
+            client: Arc::new(
+                Client::new(Identity::of_this_build()).gated_by(Gate::new(metering.clone(), true)),
+            ),
+            ..asking(&fake)
+        };
+
+        songs(&catalog, "Unknown", 1);
+        metering.report(Meter::Metered);
+        let status = passed_asking(&catalog, &asking, &Arc::new(Told::default()));
+
+        assert_eq!(status.stopped, Some(EnrichmentStop::Metered));
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
     fn a_failed_metadata_lookup_stops_other_workers_and_keeps_its_resume_mark() {
         let catalog = Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog"));
         let fake = Arc::new(Fake {
-            unreachable: true,
+            failing: Some(Failing::Unreachable),
             ..Fake::default()
         });
         let told = Arc::new(Told::default());

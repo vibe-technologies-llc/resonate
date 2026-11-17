@@ -20,6 +20,7 @@ fun enrichmentLine(words: Words, status: EnrichmentStatus?): String {
         EnrichmentStop.FINISHED -> words.string(R.string.enrichment_finished)
         EnrichmentStop.CANCELLED -> words.string(R.string.enrichment_cancelled)
         EnrichmentStop.OFFLINE -> words.string(R.string.enrichment_offline)
+        EnrichmentStop.METERED -> words.string(R.string.enrichment_metered)
         EnrichmentStop.UNREACHABLE -> words.string(R.string.enrichment_unreachable)
         EnrichmentStop.REFUSED -> words.string(R.string.enrichment_refused)
         EnrichmentStop.FAILED -> words.string(R.string.enrichment_failed)

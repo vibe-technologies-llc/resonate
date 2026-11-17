@@ -285,6 +285,8 @@ pub enum Error {
     InvalidWantedSong,
     #[error("{}", words::errors::online_off())]
     OnlineOff,
+    #[error("{}", words::errors::lookups_held_by_the_meter())]
+    LookupsHeldByTheMeter,
     #[error("{}", words::errors::no_served_server())]
     NoServedServer,
     #[error("{}", words::errors::heard(.0.to_string()))]

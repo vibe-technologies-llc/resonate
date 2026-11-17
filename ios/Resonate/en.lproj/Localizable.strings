@@ -165,6 +165,7 @@
 "enrichment.status.finding" = "Finding artwork and details";
 "enrichment.status.finding.counted" = "Finding artwork and details · %1$@ of %2$@";
 "enrichment.status.finished" = "Artwork and details up to date";
+"enrichment.status.metered" = "Stopped: the connection is metered, and lookups are held on it";
 "enrichment.status.not-yet" = "Not looked up yet";
 "enrichment.status.offline" = "Stopped: offline";
 "enrichment.status.refused" = "Stopped: the service refused too many requests";

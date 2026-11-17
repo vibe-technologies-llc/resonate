@@ -886,7 +886,8 @@ where it cannot tell, which is not metered), `configure_enrich_on_metered(allowe
 so lookups are skipped while metered) and `configure_download_on_metered(allowed)` (default
 on) are the two switches, each meaning allowed while metered as the desktop's do, and `downloads_wait_on_the_meter()` says whether a download is
 waiting. The lookup gate is on the one `Client` (`online.md`) and ends an enrichment pass
-`Offline`; `Downloads::waits_out_the_meter` holds `find` before it searches and `download` before
+`Metered` (each phone saying *Stopped: the connection is metered*), and one song's lookup
+`Error::LookupsHeldByTheMeter`; `Downloads::waits_out_the_meter` holds `find` before it searches and `download` before
 each chunk, ends on a cancel, and leaves the partial for the next job to resume. A song played in
 place is not a download.
 

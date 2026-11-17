@@ -275,6 +275,7 @@ final class Enrichment {
         case .finished: said("enrichment.status.finished")
         case .cancelled: said("enrichment.status.cancelled")
         case .offline: said("enrichment.status.offline")
+        case .metered: said("enrichment.status.metered")
         case .unreachable: said("enrichment.status.unreachable")
         case .refused: said("enrichment.status.refused")
         case .failed: said("enrichment.status.failed")
