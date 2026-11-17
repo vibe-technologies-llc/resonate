@@ -361,8 +361,8 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   (`retune_for_the_entering`); any other goes through `swap_chain`, which hands the old chain's held
   frames on and carries the resampler or convolver across where it can. **The entering row's gain
   steps on its own first frame, not on the leaving row's last one in.** What the chain still holds
-  ahead of its gain stage (a resampler's or convolver's latency, about 300 ms at Very high) is the
-  leaving row's, so the gain is set after it (`Chain::set_gain_after_what_it_holds`: what the
+  ahead of its gain stage (a resampler's or convolver's latency, up to about 390 ms at Very high:
+  *What a resampler holds*, below) is the leaving row's, so the gain is set after it (`Chain::set_gain_after_what_it_holds`: what the
   chain holds, the boundary's own offset, less what stages behind the gain hold), and a carried
   front's new back is built at the leaving row's gain and set the same way (`swap_chain_turning`).
   **What a chain holds is its rounded latency less what a stage has yet to fill**
@@ -1244,6 +1244,15 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   the search finds under them.
 - **An own FFT was measured and is not worth it**: a split-complex Stockham over `pulp` reached 0.73 to 1.06 times `rustfft`'s time natively and 0.87 to 1.15 on `x86-64-v3` (`docs/RESAMPLING.md`). Its one lesson: planes laid at one page offset put every stream of a radix-4 pass in one L1 set at a power-of-two length.
 - **There is no halving stage before or after the block, on purpose**: a half-band FIR taking 4:1 and beyond down an octave first (or a doubling after, going up) was built and measured, and the block absorbs a doubled input rate for less than the half-band costs. At Very high 192 to 48 kHz the shorter forward transform saved about 240 µs a second and the 20 tap pairs its rejection needs (60 dB under the level's stopband, what keeps the worst landing under 20 kHz) cost about 350, 24 % dearer, 11 % with every load aligned; High was level at best, Balanced 5 to 9 % cheaper at best (`docs/RESAMPLING.md`). A half-band cannot reach 2:1 at all. Its one lesson: a stage ahead of the block must hand it the lead and tail of its own response (output before the first input frame and after the last), or the edges are a hundredth off.
+- **What a resampler holds is its `latency_frames`, set by the ratio more than the level.**
+  Measured at the linear phase, in milliseconds of output: 44.1 to 48 kHz either way holds about 1
+  at Low latency, 17 at Balanced, 35 at High and 104 at Very high (4 986 frames at 48 kHz). A steep
+  ratio (2:1 and past, `STEEP_FROM_RATIO`) takes the steep hop and holds far more where 44.1 or
+  48 kHz is one side (44.1 to 88.2, 96 or 176.4 kHz, 192 or 96 to 48 kHz): 30 to 38 at Balanced, 35
+  to 69 at High and 348 to 384 at Very high; between two high rates (88.2 to 176.4, 96 to 192 kHz)
+  it is about half that. The worst case is Very high at 44.1 kHz doubled or quadrupled under the
+  intermediate phase, 393 ms; the minimum phase holds a little less (74 ms at 44.1 to 48 kHz, 360
+  doubled). A chain behind such a resampler holds that much of the leaving row at a turn.
 - **A ratio with a prime past 7 in it cannot be cut into blocks** (44.1 kHz onto 47.993 kHz would need
   a block of a second; every rate a device offers is 7-smooth, `every_rate_pair_is_tabulated_or_converted_in_blocks_at_every_quality`).
   There the same spectral stage runs to `R1`, twice the input rate unless the output is at most half of
