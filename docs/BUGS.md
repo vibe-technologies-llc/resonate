@@ -15,10 +15,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`IsBusy`) the session stays active and the audio Resonate interrupted is never told to resume
 
 ## Security
-- [S · 0.12.1] `carries_secret` (`providers/tidal/src/hifi.rs`) takes everything before the first `/`
-  or `?` as the host, so `http://localhost:1@other.example/` reads as localhost and would send the
-  bearer key in the clear to another host; latent while `with_secret` is handed only `OWN_SERVER`.
-  Parse with `http::Uri`, refuse userinfo, compare the host exactly
 - [S · 0.12.1] The server still counts connections and attempts per /64 alone (`guard.rs`), so one /48
   may open all 2 048 connections; the wider prefixes the daily allowances now weigh, for connections too
 - [S · 0.12.1] The bytes read with a session's first `Hello` are not drawn from the frame budget: bounded
@@ -81,13 +77,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   listener's to grant
 
 ## Providers and network
-- [S · 0.12.1] TIDAL's device sign-in panics on a huge `interval`: `sign_in.rs` makes
-  `Duration::from_secs(interval)` unchecked and `every += self.slowed_by` on `slow_down` overflows,
-  against `providers.md`'s *a number the service gives is checked before it is added to*
-- [S · 0.12.1] Investigate: a resumed or seeking download counts decoded bytes and asks for encoded
-  ranges: every agent has ureq's `gzip`, and `ranged.rs` and `seeking.rs` send `Range: bytes=<read>-`
-  from what was decoded, so a Subsonic or Jellyfin server (or a proxy) that gzips audio resumes at the
-  wrong offset; ask `Accept-Encoding: identity` on a ranged request
 
 ## The window
 - [S · 0.12.1] Lifted rows dropped into the queue at a row (`LiftedTo::Queue(Placement::At)`) send a
@@ -105,12 +94,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono/stereo switch of a low-bitrate podcast; `opus-rs` 0.1.37 refuses a packet whose TOC channel
   bit differs from the decoder's (`Channel count mismatch`) and keeps no stream-channel state a
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
-
-## The binary
-- [S · 0.12.1] Investigate: a rotated TIDAL refresh token is written blind across processes:
-  `Renewed::note` (`providers.rs`) overwrites `tidal-refresh-token` without reading the file again, so
-  the window and `resonate poll` started with one token each rotate it and the last write wins;
-  Spotify's holder reads the file again when its mtime moves (`binary.md`)
 
 ## macOS
 - [S · 0.12.1] `NowPlaying::drop` still clears the process's now-playing information and sets the state
