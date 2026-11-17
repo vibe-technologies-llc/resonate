@@ -44,12 +44,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   token safe, this only delays it
 
 ## Sync and together
-- [S · 0.12.1] The desktop names a party request by its position, not its `RequestId`:
-  `Together::play_request_next(at)` and `dismiss_request(at)` (`resonate-ui`'s `together.rs`) carry
-  the index the row was drawn at, *Play next* runs on the background executor (`party.rs`), and
-  `party_room.rs` looks `asked_for.get(at)` up only then, so a request arriving or taken in between
-  has the host play or dismiss another; `party.md` settles a request by its `RequestId`, never an
-  index, as the phones do
 - [S · 0.12.1] A kept MusicBrainz answer stamped in the future is never replaced: `Kept::take`
   (`kept.rs`) drops only answers too old and `written` refuses to overwrite a row whose `at` is as new,
   so one device whose clock runs ahead pins every answer it shares on every device, past the 30
@@ -113,23 +107,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   wrong offset; ask `Accept-Encoding: identity` on a ranged request
 
 ## The window
-- [M · 0.12.1] Playlist edits by position from the keys and a drag are not checked against what was
-  drawn: key Delete (`acting.rs`), a drag's move and gather (`panes.rs`) and a drop (`landing.rs`) send
-  positions down the `_edit` chain, run later against whatever the catalog then holds, where only the
-  row menu's remove asks `entries_are` (`ui.md`), so a sync merge or an edit landing first moves or
-  deletes the wrong rows; a check at the press, better a stamp the library refuses inside its
-  transaction
-- [S · 0.12.1] Sorting the queue sends its order without the engine's revision guard:
-  `queue_put_in_order` (`queue.rs`) compares the polled revision, then plain `send`s `Command::Order`,
-  so MPRIS, `resonate queue`, a device driving the zone or a party guest editing in between has the
-  sort shuffle the wrong rows; `put_the_queue_back`'s `Insert` likewise; `send_by_position_at` is the
-  guard
-- [S · 0.12.1] A resize within `WINDOW_SIZE_SETTLE` (400 ms) of closing is not kept: the task waiting
-  to store it is dropped with the root, and `on_release` and `on_app_quit` keep only the volume
-  (`made.rs`)
-- [S · 0.12.1] The sleep timer's countdown is `{minutes}:{ss}` (`format::counting_down`), so ninety
-  minutes reads `90:00` where `ui.md` says every clock is `elapsed::clock` (`1:30:00`); the countdown
-  or the rule moves
+- [S · 0.12.1] Lifted rows dropped into the queue at a row (`LiftedTo::Queue(Placement::At)`) send a
+  plain insert, and a queue drag's carried rows are not checked against the revision they were lifted
+  at, so an edit landing between the lift and the drop places or moves the wrong rows;
+  `send_by_position_at` as the sort and put-back now use
 
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
@@ -160,7 +141,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   lands loses its handlers; one transport thread a service keeps it latent
 
 ## Equaliser
-- [S · 0.12.1] A binaural pair is kept by `write_beside` (`views/settings/equaliser.rs`): no fsync, no
-  folder sync and a `binaural.<pid>.new` left on a failed write or rename that nothing sweeps, where
-  `config.rs` and `launcher.rs` hand-write the whole stage, sync and rename each; one
-  `write_atomically` would serve the three
+- [S · 0.12.1] A binaural pair's stage left by a crash (`write_atomically`'s staged name beside the
+  pair) is never swept: only the settings file's stage has a sweeper
+
