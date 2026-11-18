@@ -6,7 +6,7 @@ use super::{
     Ahead, CHAIN_BLOCK, Engine, FILLED_IN_ONE_GO, Filled, OPENED_AHEAD_BY, Track, output::Output,
 };
 use crate::{
-    OutputMode, OutputPlan, Result, SinkResult, TransportState,
+    Error, OutputMode, OutputPlan, Result, SinkResult, TransportState,
     lending::Block,
     streaming::{Asked, Came, Streaming, close_unwanted},
 };
@@ -135,6 +135,13 @@ impl Engine {
                 }
                 track.decoded_at = track.decoded_at.saturating_add(written);
             } else {
+                if output.chain.max_process_frames() > output.capacity {
+                    return Err(Error::BlockOutgrowsTheRing {
+                        track: track.id,
+                        block: output.chain.max_process_frames(),
+                        capacity: output.capacity,
+                    });
+                }
                 if output.producer.free_frames() < output.chain.max_process_frames()
                     || output.waits_for_room_to_reshape()
                 {

@@ -23,6 +23,15 @@ pub enum Error {
         source: resonate_dsp::Error,
     },
 
+    #[error(
+        "track {track}'s chain hands on blocks of {block} frames, more than its ring of {capacity} can ever hold"
+    )]
+    BlockOutgrowsTheRing {
+        track: TrackId,
+        block: usize,
+        capacity: usize,
+    },
+
     #[error(transparent)]
     Sink(#[from] resonate_audio::Error),
 
@@ -136,7 +145,9 @@ impl Error {
     pub const fn cause(&self) -> Cause {
         match self {
             Self::Decode { source, .. } => cause_of_a_read(source),
-            Self::Convert { .. } | Self::Renegotiation { .. } => Cause::DeviceRefused,
+            Self::Convert { .. }
+            | Self::BlockOutgrowsTheRing { .. }
+            | Self::Renegotiation { .. } => Cause::DeviceRefused,
             Self::Sink(sink) => cause_at_the_sink(sink),
             Self::NoSuchRow { .. } | Self::NotAnOrder { .. } | Self::QueueChanged { .. } => {
                 Cause::QueueMoved
@@ -160,6 +171,7 @@ impl Error {
         match self {
             Self::Decode { source, .. } => source.location(),
             Self::Convert { .. }
+            | Self::BlockOutgrowsTheRing { .. }
             | Self::Sink(_)
             | Self::NoSuchRow { .. }
             | Self::NotAnOrder { .. }
@@ -190,6 +202,7 @@ impl Error {
         match self {
             Self::Decode { track, .. }
             | Self::Convert { track, .. }
+            | Self::BlockOutgrowsTheRing { track, .. }
             | Self::SeekOutOfRange { track, .. }
             | Self::Renegotiation { track, .. }
             | Self::OpenerStopped { track }

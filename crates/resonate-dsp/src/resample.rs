@@ -930,7 +930,7 @@ impl Resampler {
             });
         }
 
-        let ratio = f64::from(config.output_rate.hz()) / f64::from(config.input_rate.hz());
+        let ratio = ratio_between(config.input_rate, config.output_rate);
         if ratio < LIMITS.min.as_f64() || ratio > LIMITS.max.as_f64() {
             return Err(Error::RatioOutOfRange {
                 from: config.input_rate,
@@ -956,6 +956,18 @@ impl Resampler {
     pub const fn ratio(&self) -> f64 {
         self.ratio
     }
+
+    pub fn frames_out_at_most(from: SampleRate, to: SampleRate, frames_in: usize) -> usize {
+        frames_out_through(frames_in, ratio_between(from, to))
+    }
+}
+
+fn ratio_between(from: SampleRate, to: SampleRate) -> f64 {
+    f64::from(to.hz()) / f64::from(from.hz())
+}
+
+fn frames_out_through(frames_in: usize, ratio: f64) -> usize {
+    (frames_in as f64 * ratio).ceil() as usize + 1
 }
 
 impl Polyphase {
@@ -1444,7 +1456,7 @@ impl Polyphase {
     }
 
     fn output_frames_at_most(&self, frames_in: usize) -> usize {
-        (frames_in as f64 * self.ratio).ceil() as usize + 1
+        frames_out_through(frames_in, self.ratio)
     }
 
     fn held_behind_the_output(&self) -> usize {
@@ -1537,7 +1549,7 @@ impl Processor for Resampler {
     }
 
     fn max_output_frames(&self, frames_in: usize) -> usize {
-        (frames_in as f64 * self.ratio).ceil() as usize + 1
+        frames_out_through(frames_in, self.ratio)
     }
 
     fn max_flush_frames(&self) -> usize {

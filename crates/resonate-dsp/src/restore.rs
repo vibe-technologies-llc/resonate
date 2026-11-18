@@ -1,6 +1,6 @@
 use std::{f64::consts::PI, ops::Range, sync::Arc};
 
-use resonate_core::{StreamSpec, eq::Frequency};
+use resonate_core::{SampleRate, StreamSpec, eq::Frequency};
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
 
 use crate::{ProcessCount, Processor, Result};
@@ -298,7 +298,17 @@ pub struct Restore {
     silence: Vec<f64>,
 }
 
+fn frame_size_at(rate: SampleRate) -> usize {
+    ((FRAME_AT_48_KHZ as f64 * f64::from(rate.hz()) / 48_000.0).round() as usize)
+        .next_power_of_two()
+        .max(HOPS_A_FRAME * 2)
+}
+
 impl Restore {
+    pub fn frames_out_at_most(rate: SampleRate, frames_in: usize) -> usize {
+        frames_in + frame_size_at(rate) / HOPS_A_FRAME
+    }
+
     pub fn new(config: RestoreConfig) -> Self {
         Self {
             config,
@@ -1230,9 +1240,7 @@ impl Processor for Restore {
     fn prepare(&mut self, spec: StreamSpec, max_frames_in: usize) -> Result<usize> {
         let channels = usize::from(spec.channel_count().get());
         let rate = f64::from(spec.rate.hz());
-        let size = ((FRAME_AT_48_KHZ as f64 * rate / 48_000.0).round() as usize)
-            .next_power_of_two()
-            .max(HOPS_A_FRAME * 2);
+        let size = frame_size_at(spec.rate);
         let hop = size / HOPS_A_FRAME;
 
         let mut planner = FftPlanner::<f64>::new();

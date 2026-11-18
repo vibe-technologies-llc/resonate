@@ -341,6 +341,18 @@ impl OutputPlan {
         self.dither_to.is_some()
     }
 
+    pub fn frames_a_block_becomes(&self, block: usize) -> usize {
+        let source_rate = self.resample.map_or(self.stream.rate, |(from, _)| from);
+        let restored = match self.restoration {
+            Some(_) => Restore::frames_out_at_most(source_rate, block),
+            None => block,
+        };
+        match self.resample {
+            Some((from, to)) => Resampler::frames_out_at_most(from, to, restored),
+            None => restored,
+        }
+    }
+
     pub fn build_chain(
         &self,
         source: StreamSpec,
@@ -1234,6 +1246,49 @@ mod tests {
         let mut output = vec![0.0; chain.max_output_frames() * 2];
         let count = chain.process(&input, &mut output);
         assert_eq!(count.frames_in, BLOCK);
+    }
+
+    #[test]
+    fn the_block_a_plan_is_weighed_by_is_the_block_its_chain_hands_on() {
+        let extending = EngineConfig {
+            restoration: Restoration::Extend,
+            ..EngineConfig::default()
+        };
+        let rates = [
+            SampleRate::HZ_8000,
+            SampleRate::HZ_22050,
+            SampleRate::HZ_44100,
+            SampleRate::HZ_96000,
+            SampleRate::HZ_192000,
+        ];
+
+        for to in [SampleRate::HZ_44100, SampleRate::HZ_96000] {
+            let sink = sink(&[to], &[SampleFormat::S16]);
+            for from in rates {
+                let source = spec(from, SampleFormat::F32);
+                let lossy = Decoded {
+                    tuning: Some(Tuning::Mp3),
+                    lowpass: Frequency::from_hertz(3_000.0).ok(),
+                    ..Decoded::samples(source)
+                };
+                for (decoded, config) in [
+                    (Decoded::samples(source), EngineConfig::default()),
+                    (lossy, extending.clone()),
+                ] {
+                    let planned = plan_output(decoded, &sink, &config, AppliedGain::default());
+                    let chain = planned
+                        .build_chain(source, &config, BLOCK)
+                        .expect("the planned chain builds");
+
+                    assert_eq!(
+                        planned.frames_a_block_becomes(BLOCK),
+                        chain.max_process_frames(),
+                        "{from} onto {to}, restored: {}",
+                        planned.restoration.is_some()
+                    );
+                }
+            }
+        }
     }
 
     #[test]

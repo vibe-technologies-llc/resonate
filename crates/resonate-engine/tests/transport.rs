@@ -6356,6 +6356,92 @@ fn the_leaving_tail_a_carried_resampler_holds_at_a_gapless_turn_is_heard_at_its_
     )
 }
 
+struct TurnedDown {
+    opens: usize,
+    last_heard: Vec<i16>,
+}
+
+fn a_gapless_turn_from_96_khz_down_to(rate: u32) -> Result<TurnedDown> {
+    const ENTERING_PULLED_FOR: usize = 12_000;
+    const MEASURED_OVER: usize = 4_000;
+
+    let tree = Tree::new();
+    let first = tree.write(
+        "first.wav",
+        &sixteen_bit_stereo_at(96_000, steady(LEAVING_LEVEL, FRAMES)),
+    );
+    let second = tree.write(
+        "second.wav",
+        &sixteen_bit_stereo_at(rate, steady(ENTERING_LEVEL, FRAMES)),
+    );
+    let frame = frame_bytes(SampleFormat::S16);
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_96000], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![track(&first, 1), track(&second, 2)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        BLOCK_FRAMES * frame,
+        |player, graph| {
+            plays(player, 2) && graph.played.len() >= (FRAMES + ENTERING_PULLED_FOR) * frame
+        },
+        "the row at the lower rate to reach the graph",
+    );
+
+    let graph = graph.lock();
+    let heard = left_words(&graph.played);
+    Ok(TurnedDown {
+        opens: graph.opens,
+        last_heard: heard[heard.len() - MEASURED_OVER..].to_vec(),
+    })
+}
+
+fn heard_at_the_entering_level(turned: &TurnedDown) -> bool {
+    const TOLERANCE: i16 = 16;
+
+    turned
+        .last_heard
+        .iter()
+        .all(|word| (word - ENTERING_LEVEL).abs() <= TOLERANCE)
+}
+
+#[test]
+fn a_gapless_turn_to_a_rate_whose_block_outgrows_the_ring_reopens_the_stream_and_plays_on()
+-> Result<()> {
+    let turned = a_gapless_turn_from_96_khz_down_to(8_000)?;
+
+    assert!(
+        heard_at_the_entering_level(&turned),
+        "the row at 8 kHz did not reach the graph: {:?}",
+        &turned.last_heard[..8]
+    );
+    assert_eq!(
+        turned.opens, 2,
+        "the ring too small for the new block was kept"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_gapless_turn_to_a_rate_whose_block_fits_the_ring_keeps_the_stream() -> Result<()> {
+    let turned = a_gapless_turn_from_96_khz_down_to(48_000)?;
+
+    assert!(
+        heard_at_the_entering_level(&turned),
+        "the row at 48 kHz did not reach the graph: {:?}",
+        &turned.last_heard[..8]
+    );
+    assert_eq!(
+        turned.opens, 1,
+        "a turn whose block fits reopened the stream"
+    );
+    Ok(())
+}
+
 fn hushed_for_its_last(level: i16, frames: usize, hushed: usize) -> Vec<u8> {
     let data: Vec<u8> = (0..frames)
         .flat_map(|at| {

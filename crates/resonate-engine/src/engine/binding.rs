@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use resonate_core::{Frames, StreamSpec};
 
 use super::{
-    DOWNSTREAM_RESTARTED_AFTER_QUIET_FOR, Engine, ReadBy, Retuning,
+    CHAIN_BLOCK, DOWNSTREAM_RESTARTED_AFTER_QUIET_FOR, Engine, ReadBy, Retuning,
     output::{Output, Retire, chosen_sink},
     ring_capacity,
 };
@@ -69,7 +69,7 @@ impl Engine {
         let capacity = ring_capacity(
             self.config.buffer,
             wanted.stream,
-            output.chain.max_process_frames(),
+            wanted.frames_a_block_becomes(CHAIN_BLOCK),
         );
         wanted.stream == output.plan.stream
             && wanted.packing == output.plan.packing

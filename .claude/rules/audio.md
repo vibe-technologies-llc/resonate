@@ -356,7 +356,10 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   the first on a wrap only without shuffle) on a `resonate-track-open` thread as an `Ahead`. When
   the decoder ends (`Filled::AtTheEnd`, `Track::ended`), `Engine::hand_on` weighs the landed row's
   plan on the bound sink against the open one (`keeps_its_stream_for`: same stream, packing and ring
-  depth): kept, the entering `Track` replaces the leaving one with no flush and no drain. A plan
+  depth, the depth weighed with the *entering* chain's block, `OutputPlan::frames_a_block_becomes`,
+  so a turn from 96 kHz onto 8 kHz at a 100 ms buffer, whose resampler writes twelve times the
+  block, drains and reopens on a ring sized for it rather than keeping one it can never write
+  into): kept, the entering `Track` replaces the leaving one with no flush and no drain. A plan
   `same_shape_as` the open one keeps the chain and only sets its gain
   (`retune_for_the_entering`); any other goes through `swap_chain`, which hands the old chain's held
   frames on and carries the resampler or convolver across where it can. **The entering row's gain
@@ -778,7 +781,13 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   for 32-bit sources). `ring_capacity` clamps the buffer setting between `MIN_RING_FRAMES` (or
   `BLOCKS_A_RING_HOLDS` of the widest block one pass writes, where more: the converting `fill` writes
   only while the ring has room for a block and `primed` waits for half the ring) and `LARGEST_RING`
-  bytes, so a mistyped `buffer-ms` sizes a ring, not aborts. **Ring depth is the engine's, never the
+  bytes, so a mistyped `buffer-ms` sizes a ring, not aborts. The widest block is known from the
+  plan before any chain is built (`OutputPlan::frames_a_block_becomes`, folding
+  `Restore::frames_out_at_most` and `Resampler::frames_out_at_most`, the bounds the stages
+  themselves answer, held to the built chain by
+  `the_block_a_plan_is_weighed_by_is_the_block_its_chain_hands_on`). **A chain whose block
+  outgrows its ring fails the row loudly** (`Error::BlockOutgrowsTheRing` from `fill`) rather than
+  waiting for room the ring can never free. **Ring depth is the engine's, never the
   graph's:** every stream asks `LatencyRequest::Auto`, since a 100 ms-to-1 s ring written into a
   quantum would drag the whole graph to PipeWire's largest quantum.
 - **A track change does not start the transport; a command does.** `Engine::start` opens the row the
