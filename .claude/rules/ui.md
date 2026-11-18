@@ -1318,7 +1318,11 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   `LINGER_IN_A_BURST_AT_LEAST` 2 s where more wait; a notice is read for `READING_A_WORD` (500 ms) a
   word where that is longer than its floor (`reading_time`, `lingers`); **no toast stands indefinitely**:
   a `Trouble` with nothing waiting lingers `TROUBLE_LINGERS_AT_LEAST` (10 s), longer than a plain
-  notice, then goes (`a_trouble_lingers_longer_than_a_plain_notice_yet_never_stays`); a failure the
+  notice, then goes (`a_trouble_lingers_longer_than_a_plain_notice_yet_never_stays`); **a notice told
+  over a standing toast never withdraws it**: it waits, and the standing toast's own timer
+  (`Toaster::linger_a_step`, held while hovered or focused) reads at each step whether others wait
+  and goes once it has lingered the floor that asks, 2 s in a burst
+  (`a_notice_told_over_a_standing_toast_waits_for_the_floor_instead_of_withdrawing_it`); a failure the
   listener did not ask for and cannot act on (a found song's cover not fetched) is traced, never
   toasted; at most `WAITING_AT_MOST` (4) waiting, never the same words
   twice (a `Trouble` told again while the same one shows or waits is counted on it, *… (×3)*, and a

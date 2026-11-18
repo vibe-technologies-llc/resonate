@@ -59,6 +59,7 @@ struct Toast {
     times: u32,
     serial: u64,
     leaving: bool,
+    lingered: Duration,
     focus: Option<FocusHandle>,
 }
 
@@ -67,6 +68,7 @@ enum Lingering {
     Gone,
     Held,
     Free,
+    Over,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,11 +91,17 @@ fn said_with_its_count(notice: &Notice, times: u32) -> String {
 }
 
 impl Toaster {
-    fn lingering(&self, serial: u64) -> Lingering {
-        match self.showing.as_ref() {
+    fn linger_a_step(&mut self, serial: u64) -> Lingering {
+        let others_wait = !self.waiting.is_empty();
+        let held = self.hovered || self.focused;
+        match self.showing.as_mut() {
             Some(toast) if toast.serial == serial && !toast.leaving => {
-                if self.hovered || self.focused {
-                    Lingering::Held
+                if held {
+                    return Lingering::Held;
+                }
+                toast.lingered += LINGERS_IN_STEPS_OF;
+                if toast.lingered >= lingers(&toast.notice, others_wait) {
+                    Lingering::Over
                 } else {
                     Lingering::Free
                 }
@@ -135,7 +143,6 @@ pub(crate) fn tell(notice: Notice, cx: &mut App) {
         return;
     }
     wait(&mut toaster.waiting, notice);
-    withdraw(cx);
 }
 
 fn wait(waiting: &mut VecDeque<Waiting>, notice: Notice) {
@@ -184,22 +191,16 @@ pub(crate) fn is_showing(cx: &App) -> bool {
 }
 
 fn show(Waiting { notice, times }: Waiting, cx: &mut App) {
-    let others_wait = !cx.default_global::<Toaster>().waiting.is_empty();
-    let lingers = lingers(&notice, others_wait);
     let serial = cx.default_global::<Toaster>().told + 1;
     let fading = Some(cx.spawn(async move |cx| {
-        let mut remaining = lingers;
         loop {
             cx.background_executor().timer(LINGERS_IN_STEPS_OF).await;
-            match cx.update(|cx| cx.default_global::<Toaster>().lingering(serial)) {
+            match cx.update(|cx| cx.default_global::<Toaster>().linger_a_step(serial)) {
                 Lingering::Gone => return,
-                Lingering::Held => {}
-                Lingering::Free => {
-                    remaining = remaining.saturating_sub(LINGERS_IN_STEPS_OF);
-                    if remaining.is_zero() {
-                        cx.update(withdraw);
-                        return;
-                    }
+                Lingering::Held | Lingering::Free => {}
+                Lingering::Over => {
+                    cx.update(withdraw);
+                    return;
                 }
             }
         }
@@ -215,6 +216,7 @@ fn show(Waiting { notice, times }: Waiting, cx: &mut App) {
         times,
         serial,
         leaving: false,
+        lingered: Duration::ZERO,
         focus,
     });
     toaster.fading = fading;
@@ -481,6 +483,7 @@ mod tests {
                 times: 1,
                 serial: 1,
                 leaving: false,
+                lingered: Duration::ZERO,
                 focus: None,
             }),
             ..Toaster::default()
@@ -563,6 +566,60 @@ mod tests {
         assert_eq!(lingers(&failed, false), TROUBLE_LINGERS_AT_LEAST);
         assert!(TROUBLE_LINGERS_AT_LEAST > LINGER_AT_LEAST);
         assert_eq!(lingers(&failed, true), LINGER_IN_A_BURST_AT_LEAST);
+    }
+
+    fn steps_until_over(toaster: &mut Toaster) -> u32 {
+        let mut steps = 0;
+        loop {
+            steps += 1;
+            if toaster.linger_a_step(1) == Lingering::Over {
+                return steps;
+            }
+        }
+    }
+
+    #[test]
+    fn a_notice_told_over_a_standing_toast_waits_for_the_floor_instead_of_withdrawing_it() {
+        let mut toaster = standing(trouble("first"));
+        wait(&mut toaster.waiting, trouble("second"));
+
+        let steps = steps_until_over(&mut toaster);
+
+        assert_eq!(
+            LINGERS_IN_STEPS_OF * steps,
+            LINGER_IN_A_BURST_AT_LEAST.max(reading_time("first"))
+        );
+        assert!(!toaster.showing.expect("still showing").leaving);
+    }
+
+    #[test]
+    fn a_trouble_nothing_waits_behind_stands_its_full_time_and_a_late_arrival_shortens_it_to_the_floor()
+     {
+        let mut alone = standing(trouble("first"));
+        let alone_for = LINGERS_IN_STEPS_OF * steps_until_over(&mut alone);
+        assert_eq!(alone_for, TROUBLE_LINGERS_AT_LEAST);
+
+        let mut overtaken = standing(trouble("first"));
+        for _ in 0..30 {
+            assert_eq!(overtaken.linger_a_step(1), Lingering::Free);
+        }
+        wait(&mut overtaken.waiting, noted("second"));
+
+        assert_eq!(overtaken.linger_a_step(1), Lingering::Over);
+    }
+
+    #[test]
+    fn a_toast_held_by_the_pointer_does_not_run_down_its_floor() {
+        let mut toaster = standing(trouble("first"));
+        wait(&mut toaster.waiting, trouble("second"));
+        toaster.hovered = true;
+
+        for _ in 0..100 {
+            assert_eq!(toaster.linger_a_step(1), Lingering::Held);
+        }
+
+        toaster.hovered = false;
+        assert_eq!(steps_until_over(&mut toaster), 20);
     }
 
     #[test]
