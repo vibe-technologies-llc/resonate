@@ -26,20 +26,8 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   process whose `status` names root
 
 ## Providers and network
-- [S · 0.13.1] Phone scrobbling can stop for good: `online_tools.rs` submits up to 100 listens in
-  one call (Last.fm takes 50), with no guard against an empty title or artist and no one-by-one
-  retry of a malformed batch, and moves the mark only on success, so one bad listen holds every
-  later one back; the desktop's `scrobble.rs` does all three (`android.md` still says batches of
-  100)
 
 ## The window
-- [S · 0.13.1] A new toast withdraws the one standing at once (`toast.rs`'s `tell`), so a trouble
-  toast can be gone before it is read, against `ui.md`'s floor of 2 s and 10 s for trouble
-- [S · 0.13.1] A failed move of playback to another zone shows the zone it came from
-  (`views/zones.rs`'s `move_playback_to`) even where the listener has since turned to another
-- [S · 0.13.1] A lyric nudge on the playing song is lost or flickers when the lyrics are asked
-  again for the same track: `read_how_far_ahead` (`lyrics.rs`) sets the offset to zero before the
-  kept one is read back
 - [S · 0.13.1] A command to a running player over the Windows pipe or the Mac's socket that times
   out may still land: `exchange` (`resonate-mpris`'s `peer.rs`) gives up after `ANSWERS_WITHIN`, but
   the `converse` thread has already written the request and stays blocked reading its answer, so
