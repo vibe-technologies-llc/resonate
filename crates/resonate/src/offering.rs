@@ -1131,7 +1131,7 @@ mod tests {
         collections::BTreeSet,
         io::{self, Read as _, Write as _},
         net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, UdpSocket},
-        time::{Duration, Instant},
+        time::Duration,
     };
 
     use resonate_library::Cut;
@@ -2063,63 +2063,72 @@ mod tests {
         assert_eq!(second_page, (vec!["Alpha".into()], 3));
     }
 
-    const ANNOUNCED_WITHIN: Duration = Duration::from_secs(10);
+    #[cfg(feature = "ui")]
+    mod restarted {
+        use std::time::Instant;
 
-    const QUIET_AFTER: Duration = Duration::from_millis(500);
+        use super::*;
 
-    fn announcements_until_quiet(told: &UdpSocket) -> Vec<String> {
-        told.set_read_timeout(Some(QUIET_AFTER)).expect("a timeout");
-        let mut heard = Vec::new();
-        let mut buffer = [0_u8; 2048];
-        while let Ok(length) = told.recv(&mut buffer) {
-            let datagram = String::from_utf8_lossy(&buffer[..length]);
-            if let Some(line) = datagram.lines().find_map(|line| line.strip_prefix("NTS: ")) {
-                heard.push(line.trim().to_owned());
+        const ANNOUNCED_WITHIN: Duration = Duration::from_secs(10);
+
+        const QUIET_AFTER: Duration = Duration::from_millis(500);
+
+        fn announcements_until_quiet(told: &UdpSocket) -> Vec<String> {
+            told.set_read_timeout(Some(QUIET_AFTER)).expect("a timeout");
+            let mut heard = Vec::new();
+            let mut buffer = [0_u8; 2048];
+            while let Ok(length) = told.recv(&mut buffer) {
+                let datagram = String::from_utf8_lossy(&buffer[..length]);
+                if let Some(line) = datagram.lines().find_map(|line| line.strip_prefix("NTS: ")) {
+                    heard.push(line.trim().to_owned());
+                }
             }
+            heard.dedup();
+            heard
         }
-        heard.dedup();
-        heard
-    }
 
-    #[test]
-    fn a_catalog_switched_off_and_on_again_is_announced_after_the_old_one_has_said_goodbye() {
-        let root = scratch("offered-restart");
-        let folder = scratch("offered-restart-udn");
-        let library = Arc::new(scanned(&root));
-        let told = UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of it");
-        let offered = Offered {
-            library,
-            kept_in: Some(folder.clone()),
-            offering: Offering {
-                heard_on: SocketAddr::new(LOOPBACK, 0),
-                told: told.local_addr().expect("an address"),
-                every: Duration::from_secs(60),
-                serving_on: LOOPBACK,
-                name: None,
-            },
-            state: Arc::new(Mutex::new(Offer::default())),
-        };
+        #[test]
+        fn a_catalog_switched_off_and_on_again_is_announced_after_the_old_one_has_said_goodbye() {
+            let root = scratch("offered-restart");
+            let folder = scratch("offered-restart-udn");
+            let library = Arc::new(scanned(&root));
+            let told = UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of it");
+            let offered = Offered {
+                library,
+                kept_in: Some(folder.clone()),
+                offering: Offering {
+                    heard_on: SocketAddr::new(LOOPBACK, 0),
+                    told: told.local_addr().expect("an address"),
+                    every: Duration::from_secs(60),
+                    serving_on: LOOPBACK,
+                    name: None,
+                },
+                state: Arc::new(Mutex::new(Offer::default())),
+            };
 
-        offered.share(true);
-        offered.share(false);
-        offered.share(true);
-        let started_at_once = offered.state.lock().server.is_some();
-        let waiting_since = Instant::now();
-        while offered.state.lock().server.is_none() && waiting_since.elapsed() < ANNOUNCED_WITHIN {
-            thread::sleep(Duration::from_millis(10));
+            offered.share(true);
+            offered.share(false);
+            offered.share(true);
+            let started_at_once = offered.state.lock().server.is_some();
+            let waiting_since = Instant::now();
+            while offered.state.lock().server.is_none()
+                && waiting_since.elapsed() < ANNOUNCED_WITHIN
+            {
+                thread::sleep(Duration::from_millis(10));
+            }
+            let running = offered.state.lock().server.is_some();
+            offered.leave();
+            let heard = announcements_until_quiet(&told);
+            let _ = fs::remove_dir_all(&root);
+            let _ = fs::remove_dir_all(&folder);
+
+            assert!(!started_at_once);
+            assert!(running);
+            assert_eq!(
+                heard,
+                ["ssdp:alive", "ssdp:byebye", "ssdp:alive", "ssdp:byebye"]
+            );
         }
-        let running = offered.state.lock().server.is_some();
-        offered.leave();
-        let heard = announcements_until_quiet(&told);
-        let _ = fs::remove_dir_all(&root);
-        let _ = fs::remove_dir_all(&folder);
-
-        assert!(!started_at_once);
-        assert!(running);
-        assert_eq!(
-            heard,
-            ["ssdp:alive", "ssdp:byebye", "ssdp:alive", "ssdp:byebye"]
-        );
     }
 
     fn kept_udn_within(folder: &Path) -> io::Result<Udn> {
