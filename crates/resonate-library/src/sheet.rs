@@ -11,8 +11,8 @@ use std::{
 
 use resonate_codec::carries_what_the_file_did;
 use resonate_core::{
-    FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, file_facts, naming, os_bytes, text,
-    writer::Held,
+    FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, file_facts, naming, os_bytes,
+    path_text, text, uri_rest_of_path, writer::Held,
 };
 
 use crate::{
@@ -50,8 +50,6 @@ const A_COMMENT: char = '#';
 const LINE_BREAKS: [char; 2] = ['\n', '\r'];
 
 const UTF8_BY_DEFINITION: [&str; 2] = ["m3u8", "xspf"];
-
-const UNRESERVED: [char; 4] = ['-', '.', '_', '~'];
 
 pub const START_TIME: &str = "start-time=";
 
@@ -316,11 +314,12 @@ pub fn from_uri(named: &str) -> Option<MediaLocation> {
 }
 
 pub fn resolved(file: PathBuf, beside: &Path) -> MediaLocation {
-    MediaLocation::local(settled(&if file.is_absolute() {
+    let named = if file.is_absolute() {
         file
     } else {
         beside.join(file)
-    }))
+    };
+    MediaLocation::local(path_text::verbatim(&settled(&path_text::plain(&named))))
 }
 
 pub(crate) fn settled(file: &Path) -> PathBuf {
@@ -364,8 +363,10 @@ pub fn local_file(line: &str) -> Option<PathBuf> {
     let encoded = match reference.strip_prefix(AUTHORITY_MARK) {
         Some(named) => {
             let (authority, path) = named.split_at(named.find('/')?);
-            let here = authority.is_empty() || authority.eq_ignore_ascii_case(LOCAL_AUTHORITY);
-            here.then_some(path)?
+            if !authority.is_empty() && !authority.eq_ignore_ascii_case(LOCAL_AUTHORITY) {
+                return path_on_a_share(&forward_escaped(named));
+            }
+            path
         }
         None => reference,
     };
@@ -386,6 +387,16 @@ fn path_of_the_uri(encoded: &str) -> Option<PathBuf> {
     MediaLocation::from_uri(&format!("{FILE_SCHEME_NAME}://{encoded}"))?
         .as_path()
         .map(Path::to_path_buf)
+}
+
+#[cfg(unix)]
+const fn path_on_a_share(_: &str) -> Option<PathBuf> {
+    None
+}
+
+#[cfg(windows)]
+fn path_on_a_share(shared: &str) -> Option<PathBuf> {
+    path_of_the_uri(shared)
 }
 
 pub fn path_of_reference(reference: &str) -> &str {
@@ -421,38 +432,12 @@ pub fn unescaped(encoded: &str) -> Option<PathBuf> {
     Some(PathBuf::from(os_bytes::os_string_from(decoded)))
 }
 
-#[cfg(windows)]
-const fn forward_slashed(byte: u8) -> u8 {
-    match byte {
-        b'\\' => b'/',
-        other => other,
-    }
-}
-
-#[cfg(unix)]
-const fn forward_slashed(byte: u8) -> u8 {
-    byte
-}
-
 pub fn escaped(path: &Path) -> String {
-    let mut encoded = String::with_capacity(path.as_os_str().len());
-
-    for &byte in os_bytes::bytes_of(path.as_os_str()).iter() {
-        let byte = forward_slashed(byte);
-        let character = byte as char;
-        if character.is_ascii_alphanumeric() || UNRESERVED.contains(&character) || character == '/'
-        {
-            encoded.push(character);
-        } else {
-            encoded.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    encoded
+    uri_rest_of_path(path)
 }
 
 pub fn beside_or_absolute(file: &Path, beside: &Path) -> PathBuf {
-    file.strip_prefix(beside)
-        .map_or_else(|_| file.to_path_buf(), Path::to_path_buf)
+    path_text::beneath(file, beside).unwrap_or_else(|| file.to_path_buf())
 }
 
 pub fn as_a_row(file: &Path, beside: &Path) -> Result<String> {
@@ -472,7 +457,19 @@ fn reads_back_as_itself(row: &str) -> bool {
         && !row.starts_with(A_COMMENT)
         && !row.contains(LINE_BREAKS)
         && scheme_of(row).is_none()
-        && matches!(forward_separated(row), Cow::Borrowed(_))
+        && separated_as_read(row)
+}
+
+#[cfg(unix)]
+fn separated_as_read(row: &str) -> bool {
+    matches!(forward_separated(row), Cow::Borrowed(_))
+}
+
+#[cfg(windows)]
+fn separated_as_read(row: &str) -> bool {
+    Path::new(row)
+        .components()
+        .all(|part| matches!(part, Component::Normal(_)))
 }
 
 pub fn one_line(text: &str) -> String {
@@ -834,6 +831,132 @@ mod tests {
             read_at("Take #5.flac"),
             Some(PathBuf::from("/music/Take #5.flac"))
         );
+    }
+
+    #[cfg(windows)]
+    fn read_back(row: &str, beside: &Path) -> Option<PathBuf> {
+        located(row, beside).and_then(|held| held.as_path().map(Path::to_path_buf))
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_file_beneath_the_sheet_is_named_from_it_whichever_prefix_either_carries() {
+        let file = Path::new(r"\\?\C:\Music\Pink Floyd\Echoes.flac");
+
+        for beside in [r"C:\Music", r"\\?\C:\Music", r"c:\Music\"] {
+            let beside = Path::new(beside);
+            let row = as_a_row(file, beside).expect("a row");
+
+            assert_eq!(row, r"Pink Floyd\Echoes.flac", "beside {beside:?}");
+            assert_eq!(read_back(&row, beside), Some(file.to_path_buf()));
+        }
+
+        let plain = Path::new(r"C:\Music\Pink Floyd\Echoes.flac");
+        let beside = Path::new(r"\\?\C:\Music");
+
+        assert_eq!(
+            as_a_row(plain, beside).expect("a row"),
+            r"Pink Floyd\Echoes.flac"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_file_elsewhere_is_written_as_a_uri_naming_its_drive_or_share() {
+        let beside = Path::new(r"C:\Music");
+
+        for (file, uri) in [
+            (
+                r"\\?\D:\Elsewhere\Meddle #1.flac",
+                "file:///D:/Elsewhere/Meddle%20%231.flac",
+            ),
+            (r"C:\Elsewhere\a.flac", "file:///C:/Elsewhere/a.flac"),
+            (
+                r"\\?\UNC\nas\music\Echoes.flac",
+                "file://nas/music/Echoes.flac",
+            ),
+        ] {
+            let file = Path::new(file);
+            let row = as_a_row(file, beside).expect("a row");
+
+            assert_eq!(row, uri);
+            assert_eq!(
+                read_back(&row, beside),
+                Some(path_text::verbatim(file)),
+                "{row}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn every_format_written_on_windows_reads_back_the_files_it_named() {
+        let beside = Path::new(r"C:\Music");
+        let files = [
+            Path::new(r"\\?\C:\Music\Pink Floyd\Echoes.flac"),
+            Path::new(r"\\?\D:\Elsewhere\Meddle #1.flac"),
+            Path::new(r"\\?\UNC\nas\music\Dogs.flac"),
+        ];
+        let rows: Vec<SheetRow<'_>> = files
+            .iter()
+            .map(|&file| SheetRow {
+                file,
+                described: Described {
+                    seconds: None,
+                    artist: None,
+                    title: String::from("Echoes"),
+                },
+                timed: None,
+            })
+            .collect();
+
+        for format in [
+            PlaylistFormat::M3u,
+            PlaylistFormat::Pls,
+            PlaylistFormat::Xspf,
+        ] {
+            let text = text_of(format, "Evening", &rows, beside).expect("a sheet");
+            let (sheet, read_as) = parse(&text, beside);
+
+            assert_eq!(read_as, format);
+            assert!(
+                !text.contains("%3F"),
+                "{format:?} wrote a verbatim prefix: {text}"
+            );
+            assert_eq!(
+                sheet
+                    .locations
+                    .iter()
+                    .map(|listed| listed.location.as_path().map(Path::to_path_buf))
+                    .collect::<Vec<_>>(),
+                files
+                    .iter()
+                    .map(|file| Some(file.to_path_buf()))
+                    .collect::<Vec<_>>(),
+                "{format:?} did not read back what it wrote: {text}"
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_row_another_windows_player_wrote_reads_as_the_spelling_the_scan_stores() {
+        let echoes = Some(PathBuf::from(r"\\?\C:\Music\Pink Floyd\Echoes.flac"));
+
+        for beside in [r"C:\Music", r"\\?\C:\Music"] {
+            let beside = Path::new(beside);
+
+            assert_eq!(read_back(r"Pink Floyd\Echoes.flac", beside), echoes);
+            assert_eq!(read_back("Pink Floyd/Echoes.flac", beside), echoes);
+            assert_eq!(
+                read_back(r"..\Music\Pink Floyd\Echoes.flac", beside),
+                echoes
+            );
+            assert_eq!(
+                read_back(r"C:\Music\Pink Floyd\Echoes.flac", beside),
+                echoes
+            );
+        }
     }
 
     #[test]

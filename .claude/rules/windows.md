@@ -251,6 +251,8 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   catalog row again; the binary's `from_here` writes a path that does not exist yet the same way.
   A playlist sheet's `file://` row is read through the same `from_uri` (`sheet::local_file`), so an M3U
   or XSPF naming `file:///C:/…` finds its file.
+  An exported sheet names a file beneath its folder relatively, with `\`, whichever of the two
+  carries a `\\?\` prefix (`path_text::beneath`), and any other as such a URI (`library.md`'s *Sheets*).
   `path_text::verbatim` and `path_text::plain` are the two directions (identity off Windows),
   `path_text::shown` is what a window or notice draws, and a call into the Windows Runtime
   (`StorageFile` for the media controls' cover) is handed the plain spelling. On Unix a URI still has to start at the root.

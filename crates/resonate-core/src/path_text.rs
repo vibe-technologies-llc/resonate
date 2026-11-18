@@ -60,6 +60,19 @@ pub fn plain(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+#[cfg(windows)]
+pub fn beneath(file: &Path, folder: &Path) -> Option<PathBuf> {
+    let file = os_bytes::bytes_of(file.as_os_str());
+    let folder = os_bytes::bytes_of(folder.as_os_str());
+    crate::windows_uri::beneath(&file, &folder)
+        .map(|rest| PathBuf::from(os_bytes::os_string_from(rest)))
+}
+
+#[cfg(not(windows))]
+pub fn beneath(file: &Path, folder: &Path) -> Option<PathBuf> {
+    file.strip_prefix(folder).ok().map(Path::to_path_buf)
+}
+
 pub fn shown(path: &Path) -> String {
     plain(path).display().to_string()
 }

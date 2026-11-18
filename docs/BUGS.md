@@ -41,10 +41,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
 ## Windows
-- [M · 0.13.1] A playlist exported on Windows names its songs by odd absolute URIs: `sheet.rs`'s
-  `reads_back_as_itself` is false for any row with a `\`, so no row is written relative, and
-  `escaped` writes a verbatim path (`\\?\C:\…`) as `file:////%3F/C%3A/…`; `strip_prefix` fails
-  between a verbatim and a plain prefix too
 
 ## macOS
 

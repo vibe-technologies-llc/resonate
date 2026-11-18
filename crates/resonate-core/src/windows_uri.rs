@@ -72,6 +72,25 @@ pub(crate) fn plain(path: &[u8]) -> Cow<'_, [u8]> {
     Cow::Borrowed(path.strip_prefix(VERBATIM).unwrap_or(path))
 }
 
+pub(crate) fn beneath(file: &[u8], folder: &[u8]) -> Option<Vec<u8>> {
+    let file = backwards(&plain(file));
+    let folder = backwards(&plain(folder));
+    let folder = folder.strip_suffix(&[BACKSLASH]).unwrap_or(&folder);
+    let (head, rest) = file.split_at_checked(folder.len())?;
+    let rest = rest.strip_prefix(&[BACKSLASH])?;
+
+    (drive_folded(head) == drive_folded(folder) && !rest.is_empty()).then(|| rest.to_vec())
+}
+
+fn drive_folded(path: &[u8]) -> Cow<'_, [u8]> {
+    match (drive_of(path), path) {
+        (Some(letter), [_, rest @ ..]) => {
+            Cow::Owned([&[letter.to_ascii_uppercase()], rest].concat())
+        }
+        _ => Cow::Borrowed(path),
+    }
+}
+
 fn drive_of(path: &[u8]) -> Option<u8> {
     match path {
         [letter, DRIVE_MARK, ..] if letter.is_ascii_alphabetic() => Some(*letter),
@@ -159,6 +178,56 @@ mod tests {
         assert_eq!(plain(br"\\?\UNC\nas\music"), &br"\\nas\music"[..]);
         assert_eq!(plain(br"C:\Music"), &br"C:\Music"[..]);
         assert_eq!(plain(b"/home/music"), &b"/home/music"[..]);
+    }
+
+    #[test]
+    fn a_file_beneath_a_folder_is_named_from_it_whichever_prefix_either_carries() {
+        let echoes = Some(br"Pink Floyd\Echoes.flac".to_vec());
+
+        assert_eq!(
+            beneath(br"\\?\C:\Music\Pink Floyd\Echoes.flac", br"C:\Music"),
+            echoes
+        );
+        assert_eq!(
+            beneath(br"C:\Music\Pink Floyd\Echoes.flac", br"\\?\C:\Music"),
+            echoes
+        );
+        assert_eq!(
+            beneath(br"\\?\C:\Music\Pink Floyd\Echoes.flac", br"\\?\C:\Music\"),
+            echoes
+        );
+        assert_eq!(
+            beneath(br"C:\Music\Pink Floyd\Echoes.flac", br"c:/Music"),
+            echoes
+        );
+        assert_eq!(
+            beneath(
+                br"\\?\UNC\nas\music\Pink Floyd\Echoes.flac",
+                br"\\nas\music"
+            ),
+            echoes
+        );
+        assert_eq!(
+            beneath(
+                br"\\nas\music\Pink Floyd\Echoes.flac",
+                br"\\?\UNC\nas\music"
+            ),
+            echoes
+        );
+        assert_eq!(
+            beneath(br"\\?\C:\Echoes.flac", br"C:\"),
+            Some(b"Echoes.flac".to_vec())
+        );
+    }
+
+    #[test]
+    fn a_file_elsewhere_is_not_beneath_the_folder() {
+        assert_eq!(beneath(br"\\?\D:\Music\a.flac", br"C:\Music"), None);
+        assert_eq!(beneath(br"\\?\C:\Musical\a.flac", br"C:\Music"), None);
+        assert_eq!(beneath(br"\\?\C:\a.flac", br"C:\Music"), None);
+        assert_eq!(beneath(br"\\?\C:\Music", br"C:\Music"), None);
+        assert_eq!(beneath(br"\\nas\other\a.flac", br"\\nas\music"), None);
+        assert_eq!(beneath(br"\\?\C:\Music\a.flac", br"\\nas\music"), None);
     }
 
     #[test]

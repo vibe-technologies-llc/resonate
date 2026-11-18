@@ -2746,10 +2746,19 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
     beyond ASCII alone scans the catalog once, lowercased by Unicode as the components are
     (`a_sheet_naming_a_file_in_another_case_beyond_ascii_still_reconnects_it`).
   - **Windows rows**: backslash and no forward slash = a Windows path; `forward_separated` turns the
-    separators, and `reads_back_as_itself` refuses a row it would turn (`AC\DC.wav` is written as an
+    separators, and off Windows `reads_back_as_itself` refuses a row it would turn (`AC\DC.wav` is written as an
     escaped `file://` URI). A literal backslash cannot stand in a `file://` URI or XSPF location
     (writers escape it `%5C`), so `sheet::forward_escaped` turns every literal one into a separator
     *before* unescaping.
+  - **Written on Windows**: a file is named from the sheet's folder by `path_text::beneath`, which
+    weighs both without a `\\?\` prefix (`\\?\C:\` against `C:\`, `\\?\UNC\nas\share` against
+    `\\nas\share`, the drive letter in either case), and the row keeps Windows' `\` (an XSPF
+    location its `/`). There a backslash is a separator, so `separated_as_read` passes it, but only a
+    row of plain components is a path: a file elsewhere is a `file:///D:/…` or `file://nas/share/…`
+    URI, `sheet::escaped` being core's `uri_rest_of_path`, and `local_file` reads a share's authority
+    back as the share. `sheet::resolved` joins a relative row to the folder spelled plainly, so
+    either separator resolves under a verbatim folder, and answers the verbatim spelling the scan
+    stores (`every_format_written_on_windows_reads_back_the_files_it_named`, run on Windows).
   - **Size**: the 64 MiB ceiling (`LARGEST_PLAYLIST_FILE`) is weighed against the declared size, the
     read size and what an export would write (`read_back_within` refuses past it as
     `PlaylistFileTooLarge` before a byte lands).

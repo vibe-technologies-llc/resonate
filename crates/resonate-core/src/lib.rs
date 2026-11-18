@@ -80,7 +80,7 @@ pub use crate::{
     link::{Link, Relation, Service},
     media::{
         AUDIO_EXTENSIONS, HRIR_EXTENSIONS, Locator, MediaLocation, PICTURE_EXTENSIONS, SourceId,
-        names_a_picture, names_audio, uri_escaped, uri_unescaped,
+        names_a_picture, names_audio, uri_escaped, uri_rest_of_path, uri_unescaped,
     },
     metered::{Gate, Meter, Metering},
     presence::{AppId, Icon, Pictured, Presence, Shown},

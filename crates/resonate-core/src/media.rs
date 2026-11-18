@@ -260,12 +260,12 @@ fn without_prefix_in_any_case<'a>(text: &'a str, prefix: &str) -> Option<&'a str
 }
 
 #[cfg(unix)]
-fn uri_rest_of_path(path: &Path) -> String {
+pub fn uri_rest_of_path(path: &Path) -> String {
     uri_escaped(&os_bytes::bytes_of(path.as_os_str()))
 }
 
 #[cfg(windows)]
-fn uri_rest_of_path(path: &Path) -> String {
+pub fn uri_rest_of_path(path: &Path) -> String {
     crate::windows_uri::uri_rest_of(&os_bytes::bytes_of(path.as_os_str()))
 }
 
