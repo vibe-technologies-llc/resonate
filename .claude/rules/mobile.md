@@ -151,8 +151,12 @@ poll landing in a skip read no song and the phones drew an empty player, then th
 nothing to animate from. Where the engine names no track while buffering or paused, `current` is the
 queue row at `queue_position` (`row_being_opened`), at position 0 with the catalog's length, until
 the opening lands (`a_row_still_opening_is_the_song_a_snapshot_names`). **A seek in that window is kept**:
-`seek` sends `Command::Seek` at the opening row's catalog rate (`rate_to_seek_in`), which the engine holds as the
-place the opening lands at (`a_seek_in_a_row_still_opening_is_sent_at_that_rows_rate`). **A save in that window
+wherever a song plays or opens (`holds_a_place_to_seek`), `seek` sends the time asked as
+`Command::SeekToMoment`, never frames, and the engine turns it into frames by the rate the song opens
+at, so a row whose rate the boundary does not know (a song played in place from a service, whose
+`Track` carries a rate of 0) lands where it was asked
+(`a_seek_in_a_row_still_opening_is_sent_and_one_with_nothing_to_play_is_not`,
+`a_song_played_in_place_lands_where_a_jump_or_a_seek_while_it_opens_asks`). **A save in that window
 writes nothing** (`place_to_save`): a place of 0 would rewrite the queue over the place the previous song
 reached, and the previous place stays true until the new row publishes
 (`a_save_waits_for_the_row_opening_to_publish_its_place`).
@@ -1011,8 +1015,9 @@ over.** `queue()` reads through `tracks_held_at`, so a row whose document was de
 and moves the kept place down by the rows it skipped before it
 (`a_queue_row_whose_catalog_row_is_gone_stays_listed_beside_the_rows_that_are_held`,
 `a_saved_row_whose_uri_does_not_read_is_passed_over_and_the_place_follows_the_song`). **`jump_to_at(index,
-ms)` jumps and seeks in one call**, converting at the target row's catalog rate
-(`a_jump_with_a_place_seeks_at_the_rate_of_the_row_it_lands_on`). **`shutdown` waits up to three
+ms)` jumps and seeks in one call**, the seek a `Command::SeekToMoment` the engine lands by the rate
+the row opens at, not the catalog's
+(`a_jump_with_a_place_lands_there_whatever_rate_the_catalog_names`). **`shutdown` waits up to three
 seconds for a zone's last other holder** (`sole_holder`, the listening thread holds one a moment)
 before stopping the engine, so a service made at once never opens a second engine beside a running one.
 

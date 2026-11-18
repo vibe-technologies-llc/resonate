@@ -270,6 +270,7 @@ impl Engine {
                 Ok(())
             }
             Command::Seek(to) => self.seek(to),
+            Command::SeekToMoment(at) => self.seek_to_moment(at),
             Command::SeekBy(delta) => {
                 let now = self.position().get();
                 let to = Frames(if delta < 0 {

@@ -17,9 +17,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Sync and together
 
 ## Playback and output
-- [S · 0.13.1] A seek on a row played in place from a service is dropped on the phones: `served.rs`
-  builds such rows with a rate of 0 (`..Track::default()`), and `jump_to_at` (`lib.rs`) turns the
-  position into frames by that rate, as does a seek asked while the row opens
 
 ## Catalog
 - [S · blocked: CAP_LEASE] Lengthening in place a track another account owns (one this account may

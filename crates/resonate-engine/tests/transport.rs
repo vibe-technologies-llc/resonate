@@ -8055,6 +8055,58 @@ fn a_source_slow_to_open_leaves_the_engine_answering_while_it_waits() -> Result<
 }
 
 #[test]
+fn a_moment_asked_while_a_track_opens_lands_by_the_rate_it_opens_at() -> Result<()> {
+    const OPENS_AT: u32 = 8_000;
+    const ANSWERED_WITHIN: Duration = Duration::from_millis(500);
+    let named = SourceId::new("slow").expect("a lowercase name");
+    let open = Arc::new(AtomicBool::new(false));
+    let sources = Sources::local().and(Arc::new(Gated {
+        source: named.clone(),
+        bytes: sixteen_bit_stereo_at(OPENS_AT, pcm(16, FRAMES).file),
+        open: Arc::clone(&open),
+    }));
+    let at_the_rate_it_opens_at = |seconds: u64| Frames(u64::from(OPENS_AT) * seconds);
+
+    let (player, _graph) = player_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Arc::new(sources),
+    )?;
+    player
+        .request(Command::Load {
+            items: vec![QueueItem {
+                id: TrackId::new(1).expect("a non-zero track id"),
+                location: MediaLocation::new(named, "tracks/1.wav"),
+                span: None,
+            }],
+            start_at: 0,
+            autoplay: true,
+        })?
+        .wait_for(ANSWERED_WITHIN)?;
+    player.request(Command::Pause)?.wait_for(ANSWERED_WITHIN)?;
+    player
+        .request(Command::SeekToMoment(Duration::from_secs(1)))?
+        .wait_for(ANSWERED_WITHIN)?;
+
+    assert!(player.state().current.is_none());
+
+    open.store(true, Ordering::Release);
+    wait_for(
+        &player,
+        |player| player.state().current.is_some(),
+        "the paused track to land",
+    );
+    let landed = player.state().current.map(|track| track.position);
+    player
+        .request(Command::SeekToMoment(Duration::from_secs(2)))?
+        .wait_for(ANSWERED_WITHIN)?;
+    let moved = player.state().current.map(|track| track.position);
+
+    assert_eq!(landed, Some(at_the_rate_it_opens_at(1)));
+    assert_eq!(moved, Some(at_the_rate_it_opens_at(2)));
+    Ok(())
+}
+
+#[test]
 fn a_pause_while_a_track_opens_is_published_as_paused_before_it_lands() -> Result<()> {
     const ANSWERED_WITHIN: Duration = Duration::from_millis(500);
     let source = pcm(16, FRAMES);

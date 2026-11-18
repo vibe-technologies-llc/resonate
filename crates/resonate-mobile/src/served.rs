@@ -584,6 +584,7 @@ mod tests {
     use std::{
         io::{self, BufRead, BufReader, Read, Write},
         net::{TcpListener, TcpStream},
+        sync::atomic::{AtomicBool, Ordering},
         thread,
     };
 
@@ -598,7 +599,7 @@ mod tests {
     use crate::{
         catalog::{KeptRow, KeptServed},
         downloads::MusicProvider,
-        harness::{Harness, RATE, silence},
+        harness::{Harness, LOOKED_AGAIN_AFTER, RATE, silence},
     };
 
     const ARTISTS: &str = r#"{"subsonic-response":{"status":"ok","version":"1.16.1","artists":{"index":[{"name":"P","artist":[{"id":"ar-1","name":"Pink Floyd","albumCount":1,"coverArt":"ar-1"}]}]}}}"#;
@@ -689,12 +690,19 @@ mod tests {
     }
 
     fn fake_asked() -> (String, Arc<Mutex<Vec<String>>>) {
+        fake_held_by(Arc::new(AtomicBool::new(false)))
+    }
+
+    fn fake_held_by(held: Arc<AtomicBool>) -> (String, Arc<Mutex<Vec<String>>>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
         let server = format!("http://{}", listener.local_addr().expect("a bound address"));
         let asked = Arc::new(Mutex::new(Vec::new()));
         let log = Arc::clone(&asked);
         thread::spawn(move || {
             for stream in listener.incoming().flatten() {
+                while held.load(Ordering::Acquire) {
+                    thread::sleep(LOOKED_AGAIN_AFTER);
+                }
                 answered(stream, &log);
             }
         });
@@ -1113,6 +1121,69 @@ mod tests {
             ]
         );
         assert_eq!(queue[0].artist, "Pink Floyd");
+    }
+
+    #[test]
+    fn a_song_played_in_place_lands_where_a_jump_or_a_seek_while_it_opens_asks() {
+        let held = Arc::new(AtomicBool::new(false));
+        let harness = online();
+        harness.player.serve_from(vec![of(
+            MusicProvider::Subsonic,
+            fake_held_by(Arc::clone(&held)).0,
+        )]);
+        let uris: Vec<String> = harness
+            .player
+            .served_songs("subsonic:album/al-1".to_owned())
+            .expect("the songs")
+            .into_iter()
+            .map(|song| song.uri)
+            .collect();
+        let zone_player = harness.player.playing.player().expect("an open player");
+        let engine = &zone_player;
+        let landed_at = |row: u32| {
+            move |snapshot: &crate::Snapshot| {
+                snapshot.queue_index == row
+                    && snapshot.position_ms > 0
+                    && engine.state().current.is_some()
+            }
+        };
+
+        harness
+            .player
+            .load_served(uris, 0, false)
+            .expect("a paused load");
+        harness.settled(|_| engine.state().current.is_some());
+        harness
+            .player
+            .jump_to_at(1, 700)
+            .expect("a jump with a place");
+        let jumped = harness.settled(landed_at(1));
+        held.store(true, Ordering::Release);
+        harness.player.jump_to(0).expect("a jump back");
+        let opening = harness.settled(|_| engine.state().current.is_none());
+        harness
+            .player
+            .seek(1_200)
+            .expect("a seek while the song opens");
+        held.store(false, Ordering::Release);
+        let sought = harness.settled(landed_at(0));
+
+        assert_eq!(
+            jumped.current.as_ref().map(|current| current.rate),
+            Some(0),
+            "{jumped:?}"
+        );
+        assert!(
+            (650..750).contains(&jumped.position_ms),
+            "landed at {}",
+            jumped.position_ms
+        );
+        assert_eq!(opening.queue_index, 0);
+        assert!(
+            (1_150..1_250).contains(&sought.position_ms),
+            "landed at {}",
+            sought.position_ms
+        );
     }
 
     #[test]

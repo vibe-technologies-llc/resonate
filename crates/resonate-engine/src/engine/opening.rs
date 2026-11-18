@@ -36,7 +36,10 @@ impl Engine {
         let Some(Opening { item, at, .. }) = self.opening.take() else {
             return;
         };
-        let started = landed.and_then(|unwrapped| self.started(&item, unwrapped, at));
+        let started = landed.and_then(|unwrapped| {
+            let at = at.on_the_clock(unwrapped.info.spec.rate);
+            self.started(&item, unwrapped, at)
+        });
         if !self.deferred.is_empty() {
             self.answer_for_the_opening(started);
             return;

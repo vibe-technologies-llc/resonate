@@ -1,8 +1,8 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use resonate_core::Frames;
 
-use super::{DISCARD_TIMEOUT, Engine, Track, Unanswered};
+use super::{DISCARD_TIMEOUT, Engine, OpensAt, Track, Unanswered};
 use crate::{CommandKind, Error, Result};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -18,7 +18,7 @@ impl Engine {
         }
         self.take_the_boundary_back();
         if let Some(opening) = self.opening.as_mut() {
-            opening.at = to;
+            opening.at = OpensAt::Frame(to);
             return Ok(());
         }
         let Some(track) = self.track.as_ref() else {
@@ -39,6 +39,23 @@ impl Engine {
             self.lift_the_sleep_fade();
         }
         landed
+    }
+
+    pub(super) fn seek_to_moment(&mut self, at: Duration) -> Result<()> {
+        if self.opening.is_some() {
+            self.take_the_boundary_back();
+            if let Some(opening) = self.opening.as_mut() {
+                opening.at = OpensAt::Moment(at);
+            }
+            return Ok(());
+        }
+        let Some(clock) = self.seeking_track().map(Track::clock) else {
+            return Err(Error::InvalidTransition {
+                state: self.transport,
+                attempted: CommandKind::Seek,
+            });
+        };
+        self.seek(Frames::from_duration(at, clock))
     }
 
     fn judge_the_seek(&self, to: Frames) -> Result<Judgement> {

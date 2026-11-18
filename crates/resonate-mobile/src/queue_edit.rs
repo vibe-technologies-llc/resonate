@@ -153,7 +153,7 @@ mod tests {
     };
 
     use crossbeam_channel::unbounded;
-    use resonate_core::{Frames, SampleRate};
+    use resonate_core::Frames;
     use resonate_engine::{Event, PlaybackState, PlayerState};
 
     use super::*;
@@ -254,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn a_seek_in_a_row_still_opening_is_sent_at_that_rows_rate() {
+    fn a_seek_in_a_row_still_opening_is_sent_and_one_with_nothing_to_play_is_not() {
         let harness = Harness::new();
         harness.resumed("abc", 0, 0);
         harness.settled(|snapshot| snapshot.current.is_some());
@@ -277,11 +277,8 @@ mod tests {
             ..PlayerState::default()
         };
 
-        assert_eq!(
-            harness.player.rate_to_seek_in(&opening, &rows),
-            SampleRate::new(harness.song('b').rate).ok()
-        );
-        assert_eq!(harness.player.rate_to_seek_in(&stopped, &rows), None);
+        assert!(crate::holds_a_place_to_seek(&opening, &rows));
+        assert!(!crate::holds_a_place_to_seek(&stopped, &rows));
     }
 
     #[test]

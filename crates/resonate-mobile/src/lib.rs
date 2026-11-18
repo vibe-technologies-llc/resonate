@@ -216,6 +216,10 @@ fn row_being_opened(state: &PlayerState, rows: &QueueRows) -> Option<TrackId> {
         .map(|item| item.id)
 }
 
+fn holds_a_place_to_seek(state: &PlayerState, rows: &QueueRows) -> bool {
+    state.current.is_some() || row_being_opened(state, rows).is_some()
+}
+
 fn place_saved(
     party_following: bool,
     state: &PlayerState,
@@ -623,31 +627,17 @@ impl MobilePlayer {
     pub fn seek(&self, position_ms: u64) -> Result<()> {
         let player = self.playing.player()?;
         let (state, queue) = (player.state(), player.queued());
-        if let Some(rate) = self.rate_to_seek_in(&state, &queue.rows) {
-            self.command(Command::Seek(Frames::from_duration(
-                Duration::from_millis(position_ms),
-                rate,
-            )))?;
+        if holds_a_place_to_seek(&state, &queue.rows) {
+            self.command(Command::SeekToMoment(Duration::from_millis(position_ms)))?;
         }
         Ok(())
     }
 
     pub fn jump_to_at(&self, index: u32, position_ms: u64) -> Result<()> {
-        let player = self.playing.player()?;
-        let queue = player.queued();
-        let rate = queue
-            .rows
-            .get(index as usize)
-            .and_then(|item| self.queue_track(&queue.rows, item.id))
-            .and_then(|track| SampleRate::new(track.rate).ok());
+        let rows = self.playing.player()?.queued().rows;
         self.command(Command::JumpTo(index as usize))?;
-        if position_ms > 0
-            && let Some(rate) = rate
-        {
-            self.command(Command::Seek(Frames::from_duration(
-                Duration::from_millis(position_ms),
-                rate,
-            )))?;
+        if position_ms > 0 && rows.get(index as usize).is_some() {
+            self.command(Command::SeekToMoment(Duration::from_millis(position_ms)))?;
         }
         Ok(())
     }
@@ -914,15 +904,6 @@ impl MobilePlayer {
         Some(track)
     }
 
-    fn rate_to_seek_in(&self, state: &PlayerState, rows: &QueueRows) -> Option<SampleRate> {
-        match state.current {
-            Some(track) => Some(track.source.rate),
-            None => row_being_opened(state, rows)
-                .and_then(|id| self.queue_track(rows, id))
-                .and_then(|track| SampleRate::new(track.rate).ok()),
-        }
-    }
-
     fn command(&self, command: Command) -> Result<()> {
         self.playing.send(command)
     }
@@ -1136,7 +1117,7 @@ mod tests {
     }
 
     #[test]
-    fn a_jump_with_a_place_seeks_at_the_rate_of_the_row_it_lands_on() {
+    fn a_jump_with_a_place_lands_there_whatever_rate_the_catalog_names() {
         let harness = crate::harness::Harness::new();
         harness.resumed("abc", 0, 0);
         harness
@@ -1161,7 +1142,7 @@ mod tests {
 
         assert_eq!(landed.queue_index, 2);
         assert!(
-            (200..300).contains(&landed.position_ms),
+            (450..550).contains(&landed.position_ms),
             "landed at {}",
             landed.position_ms
         );

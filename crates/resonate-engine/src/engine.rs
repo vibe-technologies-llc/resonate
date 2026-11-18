@@ -174,9 +174,24 @@ impl Unwrapped {
     }
 }
 
+#[derive(Clone, Copy)]
+enum OpensAt {
+    Frame(Frames),
+    Moment(Duration),
+}
+
+impl OpensAt {
+    fn on_the_clock(self, clock: SampleRate) -> Frames {
+        match self {
+            Self::Frame(at) => at,
+            Self::Moment(at) => Frames::from_duration(at, clock),
+        }
+    }
+}
+
 struct Opening {
     item: QueueItem,
-    at: Frames,
+    at: OpensAt,
     landed: Receiver<resonate_codec::Result<Unwrapped>>,
 }
 
@@ -193,13 +208,21 @@ impl Opening {
         if let Err(error) = spawned {
             tracing::warn!(%error, "no thread could be started to open a track");
         }
-        Self { item, at, landed }
+        Self {
+            item,
+            at: OpensAt::Frame(at),
+            landed,
+        }
     }
 
     fn already(item: QueueItem, at: Frames, came: resonate_codec::Result<Unwrapped>) -> Self {
         let (landing, landed) = crossbeam_channel::bounded(1);
         let _ = landing.send(came);
-        Self { item, at, landed }
+        Self {
+            item,
+            at: OpensAt::Frame(at),
+            landed,
+        }
     }
 
     fn landed(&self) -> Option<Result<Unwrapped>> {
@@ -251,7 +274,10 @@ impl Ahead {
     fn opening_at(self, at: Frames) -> Opening {
         match self.came {
             Some(came) => Opening::already(self.opening.item, at, came),
-            None => Opening { at, ..self.opening },
+            None => Opening {
+                at: OpensAt::Frame(at),
+                ..self.opening
+            },
         }
     }
 }

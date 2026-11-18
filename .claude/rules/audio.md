@@ -336,8 +336,13 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
 - **Every track opens off the engine thread.** `Engine::start` hands the row to an `Opening` (a
   `resonate-track-open` thread running `Unwrapped::open`) while the engine answers commands
   (play/pause change whether it plays once landed, seek moves where it starts, stop/load/skip drop
-  it), publishing `Loading`. **The command that began an opening is answered by its landing**
-  (`OPENING_ANSWERED_WITHIN`, or the opening being dropped, answers `Ok`). A failed landing nothing
+  it), publishing `Loading`. **A seek asked in time waits for the rate:** `Command::SeekToMoment`
+  carries a `Duration`, kept on the opening as `OpensAt::Moment` and turned into frames by the rate
+  the stream opens at, so a caller who cannot know that rate (a song played in place from a service)
+  never converts by a guess; on a track already open it is `Command::Seek` at that track's rate
+  (`a_moment_asked_while_a_track_opens_lands_by_the_rate_it_opens_at`). **The command that began
+  an opening is answered by its landing** (`OPENING_ANSWERED_WITHIN`, or the opening being dropped,
+  answers `Ok`). A failed landing nothing
   waited on is passed over while playing (`Engine::fail`), else `Event::Failed`; thread stopping
   unanswered = `Error::OpenerStopped`. **An opening is published as what it will land as:**
   `Buffering` while the transport means to play, `Paused` where not.
