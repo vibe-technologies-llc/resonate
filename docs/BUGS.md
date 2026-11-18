@@ -11,15 +11,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   and a skip while paused starts playback; iOS calls the boundary's `next`/`previous`
 
 ## Security
-- [M · 0.13.1] Removing someone from a shared playlist can fail without a word and leave them in:
-  `Running::reset` (`shared/service.rs`) seats the people it knows before it connects and takes the
-  first `Closed` the server sends as its own, but a space an earlier reset already closed answers
-  with that earlier word (`Closing::Before`), so the device applies `Left` and moves to the old
-  reset's space, where the removed person still holds a seat, and anyone who joined since the
-  seats were read is dropped
-- [M · 0.13.1] `server.md` holds that the 50 shared spaces a day cannot be spent as personal ones,
-  but `Share` opens the same session `Hello` does (append and compact included), so a script makes
-  personal spaces past the 5 a day by naming a viewer token it never uses (`serve.rs`)
 - [S · blocked: design] A host on the network may take several addresses and so pass the media server's
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
@@ -34,9 +25,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   rate and answers `false`, `party/seat.rs` then leaves `rows` as they were, and `added_here`
   reads the host's songs now standing in the queue as songs the guest added, takes them out and
   sends each to the host as a request
-- [S · 0.13.1] A host dropping twice inside 30 s ends the party: every leave spawns a timer of its
-  own (`serve.rs`) and `end_unless_the_host_came_back` (`rooms.rs`) asks only whether a host session
-  stands, so the first drop's timer fires during the second absence
 - [S · 0.13.1] A phone moving its music folder (`organising.rs`'s `documents_moved`) resumes the
   saved queue even where `save_zone` skipped saving (a party being followed, a row still opening),
   so a guest is put back on its pre-party queue mid-party, and a buffering zone is resumed paused
