@@ -963,6 +963,7 @@ pub(crate) fn kept_udn(folder: &Path) -> Udn {
 pub(crate) struct Offered {
     library: Arc<Library>,
     kept_in: Option<PathBuf>,
+    offering: Offering,
     state: Arc<Mutex<Offer>>,
 }
 
@@ -986,6 +987,7 @@ impl Offered {
         let offered = Arc::new(Self {
             library: Arc::clone(library),
             kept_in,
+            offering: Offering::on_the_network(),
             state: Arc::new(Mutex::new(Offer {
                 name: config.offer_name().cloned(),
                 ..Offer::default()
@@ -1002,14 +1004,19 @@ impl Offered {
         state.wanted = on;
         if !on {
             if let Some(stopping) = state.server.take() {
-                spawn_the_stop(stopping);
+                self.restart_after(&mut state, stopping, "resonate-offer-stop");
             }
             return;
         }
         if state.server.is_some() || state.restarting {
             return;
         }
-        state.server = started(&self.library, self.kept_in.as_deref(), state.name.clone());
+        state.server = started(
+            &self.library,
+            self.kept_in.as_deref(),
+            &self.offering,
+            state.name.clone(),
+        );
     }
 
     pub(crate) fn shared(&self) -> bool {
@@ -1038,24 +1045,30 @@ impl Offered {
         let Some(stopping) = state.server.take() else {
             return;
         };
+        self.restart_after(&mut state, stopping, "resonate-offer-rename");
+    }
+
+    fn restart_after(&self, state: &mut Offer, stopping: MediaServer<Shelves>, thread_name: &str) {
         state.restarting = true;
 
         let held = Arc::clone(&self.state);
         let library = Arc::clone(&self.library);
         let kept_in = self.kept_in.clone();
+        let offering = self.offering.clone();
         let spawned = thread::Builder::new()
-            .name("resonate-offer-rename".to_owned())
+            .name(thread_name.to_owned())
             .spawn(move || {
                 drop(stopping);
                 let mut state = held.lock();
                 state.restarting = false;
                 if state.wanted {
-                    state.server = started(&library, kept_in.as_deref(), state.name.clone());
+                    state.server =
+                        started(&library, kept_in.as_deref(), &offering, state.name.clone());
                 }
             });
         if let Err(error) = spawned {
             state.restarting = false;
-            tracing::warn!(%error, "the media server could not be started again under its new name");
+            tracing::warn!(%error, "the media server could not be stopped and started again off the window's thread");
         }
     }
 
@@ -1070,13 +1083,14 @@ impl Offered {
 fn started(
     library: &Arc<Library>,
     kept_in: Option<&Path>,
+    offering: &Offering,
     name: Option<ServerName>,
 ) -> Option<MediaServer<Shelves>> {
     let udn = kept_in.map_or_else(Udn::minted, kept_udn);
     match MediaServer::start(
         Arc::new(Shelves::over(Arc::clone(library))),
         udn,
-        Offering::on_the_network().named(name),
+        offering.clone().named(name),
     ) {
         Ok(server) => {
             tracing::info!(
@@ -1089,16 +1103,6 @@ fn started(
             tracing::warn!(%error, "the catalog could not be offered on the network");
             None
         }
-    }
-}
-
-#[cfg(feature = "ui")]
-fn spawn_the_stop(stopping: MediaServer<Shelves>) {
-    let spawned = thread::Builder::new()
-        .name("resonate-offer-stop".to_owned())
-        .spawn(move || drop(stopping));
-    if let Err(error) = spawned {
-        tracing::warn!(%error, "the media server is stopped on the window's thread");
     }
 }
 
@@ -1127,7 +1131,7 @@ mod tests {
         collections::BTreeSet,
         io::{self, Read as _, Write as _},
         net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, UdpSocket},
-        time::Duration,
+        time::{Duration, Instant},
     };
 
     use resonate_library::Cut;
@@ -2057,6 +2061,65 @@ mod tests {
         );
         assert_eq!(first_page, (vec!["Alpha".into(), "Bravo".into()], 3));
         assert_eq!(second_page, (vec!["Alpha".into()], 3));
+    }
+
+    const ANNOUNCED_WITHIN: Duration = Duration::from_secs(10);
+
+    const QUIET_AFTER: Duration = Duration::from_millis(500);
+
+    fn announcements_until_quiet(told: &UdpSocket) -> Vec<String> {
+        told.set_read_timeout(Some(QUIET_AFTER)).expect("a timeout");
+        let mut heard = Vec::new();
+        let mut buffer = [0_u8; 2048];
+        while let Ok(length) = told.recv(&mut buffer) {
+            let datagram = String::from_utf8_lossy(&buffer[..length]);
+            if let Some(line) = datagram.lines().find_map(|line| line.strip_prefix("NTS: ")) {
+                heard.push(line.trim().to_owned());
+            }
+        }
+        heard.dedup();
+        heard
+    }
+
+    #[test]
+    fn a_catalog_switched_off_and_on_again_is_announced_after_the_old_one_has_said_goodbye() {
+        let root = scratch("offered-restart");
+        let folder = scratch("offered-restart-udn");
+        let library = Arc::new(scanned(&root));
+        let told = UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of it");
+        let offered = Offered {
+            library,
+            kept_in: Some(folder.clone()),
+            offering: Offering {
+                heard_on: SocketAddr::new(LOOPBACK, 0),
+                told: told.local_addr().expect("an address"),
+                every: Duration::from_secs(60),
+                serving_on: LOOPBACK,
+                name: None,
+            },
+            state: Arc::new(Mutex::new(Offer::default())),
+        };
+
+        offered.share(true);
+        offered.share(false);
+        offered.share(true);
+        let started_at_once = offered.state.lock().server.is_some();
+        let waiting_since = Instant::now();
+        while offered.state.lock().server.is_none() && waiting_since.elapsed() < ANNOUNCED_WITHIN {
+            thread::sleep(Duration::from_millis(10));
+        }
+        let running = offered.state.lock().server.is_some();
+        offered.leave();
+        let heard = announcements_until_quiet(&told);
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&folder);
+
+        assert!(!started_at_once);
+        assert!(running);
+        assert_eq!(
+            heard,
+            ["ssdp:alive", "ssdp:byebye", "ssdp:alive", "ssdp:byebye"]
+        );
     }
 
     fn kept_udn_within(folder: &Path) -> io::Result<Udn> {

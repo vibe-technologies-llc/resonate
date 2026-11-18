@@ -501,7 +501,11 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   catalog on the network* group (Output) is its switch, written as
   `Setting::Switched(Switch::ShareCatalogOnNetwork, _)` and applied at once through
   `resonate_ui::CatalogShared` (`Offered::share`, the stop off the window's thread so its farewell
-  does not hold a frame); `Offered::leave` stops it as the window closes. **`resonate offer` serves
+  does not hold a frame, and a switch back on, like a rename, waits for that farewell before the
+  new server announces, since the old `ssdp:byebye` landing after the new `ssdp:alive` under the one
+  UDN would hide a running server (`Offered::restart_after`,
+  `a_catalog_switched_off_and_on_again_is_announced_after_the_old_one_has_said_goodbye`));
+  `Offered::leave` stops it as the window closes. **`resonate offer` serves
   it with no window** (`offer.rs`, a verb like `scan` and `sleep`; `serve` would read as `served`, which browses): it opens the library, keeps the same `media-server-udn`,
   starts `MediaServer` and prints the port and the UDN and the counts of songs, albums, artists
   and playlists the shelves hold (`Shelf::Songs` and the rest through `Page::counting`), then waits
