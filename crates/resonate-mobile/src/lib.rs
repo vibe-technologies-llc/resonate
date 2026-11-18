@@ -216,6 +216,18 @@ fn row_being_opened(state: &PlayerState, rows: &QueueRows) -> Option<TrackId> {
         .map(|item| item.id)
 }
 
+fn place_saved(
+    party_following: bool,
+    state: &PlayerState,
+    rows: &QueueRows,
+    revision: u64,
+) -> Option<SavedPlace> {
+    if party_following {
+        return None;
+    }
+    place_to_save(state, rows, revision)
+}
+
 fn place_to_save(state: &PlayerState, rows: &QueueRows, revision: u64) -> Option<SavedPlace> {
     if state.current.is_none() && row_being_opened(state, rows).is_some() {
         return None;
@@ -708,10 +720,7 @@ impl MobilePlayer {
     }
 
     pub fn save(&self) -> Result<()> {
-        for zone in self.playing.listed() {
-            self.save_zone(&zone)?;
-        }
-        Ok(())
+        self.save_while(|zone| self.party_following(zone))
     }
 
     pub fn shutdown(&self) -> Result<()> {
@@ -732,17 +741,21 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
-    fn save_zone(&self, zone: &resonate_engine::Zone) -> Result<()> {
-        self.keep_volume_of(zone)?;
-        if self.party_following(zone.id) {
-            return Ok(());
+    pub(crate) fn save_while(&self, following: impl Fn(ZoneId) -> bool) -> Result<()> {
+        for zone in self.playing.listed() {
+            self.save_zone(&zone, following(zone.id))?;
         }
+        Ok(())
+    }
+
+    fn save_zone(&self, zone: &resonate_engine::Zone, following: bool) -> Result<()> {
+        self.keep_volume_of(zone)?;
         let zoned = self.playing.zoned(zone.id)?;
         let mut saved = zoned.saved.lock();
         let (place, queue, rate) = {
             let state = zone.player.state();
             let queue = zone.player.queued();
-            let Some(place) = place_to_save(&state, &queue.rows, queue.revision) else {
+            let Some(place) = place_saved(following, &state, &queue.rows, queue.revision) else {
                 return Ok(());
             };
             let rate = state.current.map(|track| track.source.rate.hz());

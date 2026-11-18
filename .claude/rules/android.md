@@ -1111,7 +1111,7 @@ the rest are `FiledSong`s (id, URI, the path's components). The front end moves 
 reports the new URIs in one `documents_moved`: where any moved song is in the queue it saves the
 queue first (by the old URIs, which the catalog still names), rewrites every moved row's URI in one
 transaction (ids, and with them favourites, plays, playlists and lyrics, stay), then resumes the
-saved queue at its row and position, playing again where it was playing. A destination another row
+saved queue at its row and position, playing again where it was playing or buffering. A zone whose save is declined (`place_saved`: a party followed, a row still opening) is left as it is, so a guest is never put back on its pre-party queue (`a_moved_song_in_a_queue_a_party_is_followed_through_leaves_the_live_queue_alone`). A destination another row
 still holds (the front end refuses a file that exists, so that row's file is gone) never fails the
 batch: where it names the same song as the moved one its history is handed over and it is deleted
 (`take_the_place_of_missing`'s merge), else it stays hidden under a `resonate-displaced:<id>` URI no

@@ -4,6 +4,7 @@ use std::{
     path::{Component, Path},
 };
 
+use resonate_core::ZoneId;
 use resonate_engine::{Command, PlaybackState, Player};
 use resonate_library::{DEFAULT_LAYOUT, Layout, Named, Naming};
 use rusqlite::{OptionalExtension, params};
@@ -12,6 +13,7 @@ use crate::{
     Error, MobilePlayer, Result, StoreOp, Track,
     catalog::read,
     documents::document_uri,
+    place_saved,
     vanished::{Vacated, referring_tables, vacated},
 };
 
@@ -65,6 +67,16 @@ impl MobilePlayer {
     }
 
     pub fn documents_moved(&self, moved: Vec<MovedDocument>) -> Result<()> {
+        self.documents_moved_while(moved, |zone| self.party_following(zone))
+    }
+}
+
+impl MobilePlayer {
+    fn documents_moved_while(
+        &self,
+        moved: Vec<MovedDocument>,
+        following: impl Fn(ZoneId) -> bool,
+    ) -> Result<()> {
         if moved.is_empty() {
             return Ok(());
         }
@@ -76,13 +88,20 @@ impl MobilePlayer {
                 let queued = self.queued_ids(&zone.player);
                 moved.iter().any(|document| queued.contains(&document.id))
             })
+            .filter(|zone| {
+                let state = zone.player.state();
+                let queue = zone.player.queued();
+                place_saved(following(zone.id), &state, &queue.rows, queue.revision).is_some()
+            })
             .map(|zone| {
-                let playing = zone.player.state().playback == PlaybackState::Playing;
-                (zone.id, playing)
+                let playback = zone.player.state().playback;
+                let sounding =
+                    matches!(playback, PlaybackState::Playing | PlaybackState::Buffering);
+                (zone.id, sounding)
             })
             .collect::<Vec<_>>();
         if !requeued.is_empty() {
-            self.save()?;
+            self.save_while(&following)?;
         }
 
         let handed_over = self.catalog.rekeyed(&moved)?;
@@ -92,18 +111,16 @@ impl MobilePlayer {
         }
         drop(analyses);
 
-        for (zone, playing) in requeued {
+        for (zone, sounding) in requeued {
             *self.playing.zoned(zone)?.saved.lock() = None;
             self.resume_saved_in(zone)?;
-            if playing {
+            if sounding {
                 self.playing.send_to(zone, Command::Play)?;
             }
         }
         Ok(())
     }
-}
 
-impl MobilePlayer {
     fn songs_within(&self, within: &str) -> Result<Vec<Track>> {
         let connection = self.catalog.0.lock();
         let mut query = connection
@@ -510,6 +527,8 @@ mod tests {
     mod through_the_queue {
         use std::fs;
 
+        use resonate_engine::PlayerState;
+
         use super::*;
         use crate::harness::{FOLDER, Harness};
 
@@ -585,6 +604,77 @@ mod tests {
             assert_eq!(
                 harness.player.catalog.track(id).expect("the song").uri,
                 format!("{FOLDER}e.wav")
+            );
+        }
+
+        #[test]
+        fn a_moved_song_in_a_queue_a_party_is_followed_through_leaves_the_live_queue_alone() {
+            let harness = Harness::sounding();
+            harness.resumed("abcd", 2, 500);
+            harness.player.play().expect("play");
+            harness.settled(|snapshot| snapshot.transport == crate::Transport::Playing);
+            harness.player.save().expect("saved");
+            harness.resumed("dcba", 1, 0);
+            harness.player.play().expect("play");
+            harness.settled(|snapshot| snapshot.transport == crate::Transport::Playing);
+            let before = harness.settled(|snapshot| snapshot.current.is_some());
+            let id = harness.song('b').id;
+
+            let moving = moved(&harness, 'b', "e.wav");
+            harness
+                .player
+                .documents_moved_while(vec![moving], |_| true)
+                .expect("documents moved");
+
+            let after = harness.player.snapshot().expect("a snapshot");
+            assert_eq!(harness.queued(), "dcba");
+            assert_eq!(after.queue_revision, before.queue_revision);
+            assert_eq!(after.queue_index, before.queue_index);
+            assert_eq!(after.transport, crate::Transport::Playing);
+            assert_eq!(
+                harness.player.catalog.track(id).expect("the song").uri,
+                format!("{FOLDER}e.wav")
+            );
+        }
+
+        #[test]
+        fn a_zone_a_party_is_followed_in_or_a_row_is_opening_in_saves_no_place() {
+            let harness = Harness::new();
+            harness.resumed("abc", 0, 0);
+            let player = harness.player.playing.player().expect("an open player");
+            let queue = player.queued();
+            let state = |playback| PlayerState {
+                playback,
+                queue_position: Some(1),
+                ..PlayerState::default()
+            };
+
+            assert!(
+                place_saved(
+                    true,
+                    &state(PlaybackState::Stopped),
+                    &queue.rows,
+                    queue.revision
+                )
+                .is_none()
+            );
+            assert!(
+                place_saved(
+                    false,
+                    &state(PlaybackState::Buffering),
+                    &queue.rows,
+                    queue.revision
+                )
+                .is_none()
+            );
+            assert!(
+                place_saved(
+                    false,
+                    &state(PlaybackState::Stopped),
+                    &queue.rows,
+                    queue.revision
+                )
+                .is_some()
             );
         }
 

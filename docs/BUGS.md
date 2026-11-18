@@ -25,9 +25,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   rate and answers `false`, `party/seat.rs` then leaves `rows` as they were, and `added_here`
   reads the host's songs now standing in the queue as songs the guest added, takes them out and
   sends each to the host as a request
-- [S · 0.13.1] A phone moving its music folder (`organising.rs`'s `documents_moved`) resumes the
-  saved queue even where `save_zone` skipped saving (a party being followed, a row still opening),
-  so a guest is put back on its pre-party queue mid-party, and a buffering zone is resumed paused
 
 ## Playback and output
 - [S · 0.13.1] Under a convolution impulse, a sleep timer ending at the end of the track or the queue
