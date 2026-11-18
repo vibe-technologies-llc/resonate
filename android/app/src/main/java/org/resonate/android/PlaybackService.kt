@@ -232,6 +232,12 @@ class PlaybackService : MediaLibraryService() {
         library.retain()
         val adapter = RustMediaPlayer(this, library)
         player = adapter
+        val skipping =
+            SkippingPlayer(
+                adapter,
+                previous = { library.request { it.previous() } },
+                next = { library.request { it.next() } },
+            )
         val openApp =
             PendingIntent.getActivity(
                 this,
@@ -241,7 +247,7 @@ class PlaybackService : MediaLibraryService() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         session =
-            MediaLibrarySession.Builder(this, adapter, TrustedControllers(::close, library, library.browse, scope, ::isBrowsingHost) {
+            MediaLibrarySession.Builder(this, skipping, TrustedControllers(::close, library, library.browse, scope, ::isBrowsingHost) {
                     buttons(adapter, forCar = true)
                 })
                 .setSessionActivity(openApp)
