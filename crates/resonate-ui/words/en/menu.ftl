@@ -50,3 +50,7 @@ save-the-lyrics = Save the lyrics
 lyrics-beside-the-file = Beside the file
 lyrics-over-the-sheet-there = Over a sheet already there
 lyrics-into-the-tags = Into the file's tags
+versions = Versions
+the-songs-own-version = { $kind }, the song's own copy
+the-version-in = { $kind } in { $place }
+the-version = { $kind }

@@ -142,30 +142,30 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
   a link, the account `online.md` names: signed out it is `Error::NotSignedInToSpotify`, and no tool
   signs in, since a sign-in is the listener's in a browser
   (`a_spotify_account_is_followed_or_moved_where_it_is_signed_in_and_says_so_where_it_is_not`).
-- **A playlist's lossy songs are listed, then replaced, by name** (`replacing.rs`):
-  `playlist_lossy_songs` (read-only, `limit` as `playlist_tracks`) is `Library::lossy_songs_of`, each
-  song a catalog track with its `codec`, a `standing` (`held`: a lossless copy the library holds
-  takes its place, `lossless_copy` naming it; `wanted`: its `release_track_id` is wanted; `offered`:
-  matched nowhere, but a service the window asked holds it lossless (`offered_by`, `Replaceable::offer`),
-  so it is kept from there; `waiting`: already so; `unmatched`: none of these), `matched` counting
-  every lossy song and `replaceable` the ones
-  `replace_lossy_songs` acts on. `replace_lossy_songs` is `Library::replace` over the songs that
-  `Replaceable::can_be_ticked`, as the window ticks them, or only the `track_ids` given (the
-  `track_id` the listing gives each song, as every other tool names a track; a duplicate counts
-  once, an empty list is `Refusal::OutOfRange`, and an id that is no lossy song of the playlist is
-  `Error::NotALossySong` with nothing replaced, `lossy` then counting the songs chosen:
-  `only_the_lossy_songs_chosen_are_replaced_and_an_unknown_one_is_refused`), and is `destructiveHint`: a held copy folds
-  in at once and the lossy file goes to the trash, so it answers `replaced`, `trashed`,
-  `not_trashed`, `wanted` (fetched by the next `start_poll`, which this starts nothing of),
-  `downloading` (`Replacing::kept`, queued for the window's keep pass, which this starts nothing of),
-  `need_a_music_folder` (`Replacing::unfiled`), `already_waiting` and `left`. A song with no held copy is never trashed, and a playlist with no
-  lossy song answers zeros; a scan walking the library is the library's `AlreadyWalking`, a failed call
-  (`a_lossy_song_with_a_lossless_copy_held_is_folded_in_and_one_with_none_is_never_trashed`,
+- **A playlist's higher quality versions are listed, then kept, by name** (`replacing.rs`; the tools
+  keep their older names): `playlist_lossy_songs` (read-only, `limit` as `playlist_tracks`) is
+  `Library::songs_to_better_in`, each song a catalog track with its `codec`, a `standing` (`held`: a
+  higher quality copy the library holds is kept beside it and plays in its place, `better_copy`
+  naming it; `wanted`: its `release_track_id` is wanted; `offered`: matched nowhere, but a service
+  the window asked holds it lossless (`offered_by`, `Replaceable::offer`), so it is kept from there;
+  `waiting`: already so; `unmatched`: none of these), `matched` counting every song listed and
+  `replaceable` the ones `replace_lossy_songs` acts on. `replace_lossy_songs` is `Library::replace`
+  over the songs that `Replaceable::can_be_ticked`, as the window ticks them, or only the
+  `track_ids` given (the `track_id` the listing gives each song, as every other tool names a track;
+  a duplicate counts once, an empty list is `Refusal::OutOfRange`, and an id the listing does not
+  hold is `Error::NotALossySong` with nothing changed, `lossy` then counting the songs chosen:
+  `only_the_lossy_songs_chosen_are_replaced_and_an_unknown_one_is_refused`). It deletes nothing and
+  moves no file, so it is no `destructiveHint`, and answers `played_beside` (`Replacing::beside`),
+  `wanted` (fetched by the next `start_poll`, which this starts nothing of), `downloading`
+  (`Replacing::kept`, queued for the window's keep pass, which this starts nothing of),
+  `need_a_music_folder` (`Replacing::unfiled`), `already_waiting` and `left`; a playlist with
+  nothing to better answers zeros
+  (`a_lossy_song_with_a_lossless_copy_held_plays_it_beside_itself_and_nothing_is_deleted`,
   `a_song_matched_nowhere_a_service_holds_lossless_is_listed_as_offered_and_queued_to_download`).
 - **A missing track is named by `release_track_id`.** `want_tracks` is `Library::want_release_tracks`
   in one transaction: one unknown row wants none.
 - **`Tool::destroys` is `destructiveHint`**: the removals, `forget_folder`, `undo_edit`,
-  `play_playlist`, `move_playback`, `refresh_playlist`, `replace_lossy_songs`. **`Tool::reaches_the_network` is `openWorldHint`**: `start_lookup`,
+  `play_playlist`, `move_playback`, `refresh_playlist`. **`Tool::reaches_the_network` is `openWorldHint`**: `start_lookup`,
   `start_poll`, `import_playlist_link`, `refresh_playlist`, `follow_profile`.
 - **A session undoes only its own edits.** `undo_edit` is `Library::undo` (`Library::redo` with
   `redo`) over this process's stack; a playlist since changed by anything else (a window that took

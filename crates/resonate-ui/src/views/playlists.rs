@@ -1004,8 +1004,7 @@ impl RootView {
                     ),
                     move |this, at, cx| {
                         let offers: Rc<Offers> = Rc::new(move |this, at, cx| {
-                            let lossy = this.library.read(cx).holds_lossy_songs(opened);
-                            playlist_menu(this, at, opened, pinned, lossy, cx)
+                            playlist_menu(this, at, opened, pinned, cx)
                         });
                         this.open_what_is_offered(offers, at, None, cx);
                     },
@@ -1063,11 +1062,13 @@ impl RootView {
                 ),
             );
 
+        let hero = kit::hero_of((opened, &playlist_name, &under, &history));
+        let sized = self.hero_side(hero);
         let art = self.playlist_art(
             &playlist_name,
             named.as_ref().is_some_and(|named| named.query.is_some()),
             &albums,
-            self.hero_side(),
+            sized.side,
             cx,
         );
         let about = div()
@@ -1078,7 +1079,7 @@ impl RootView {
             .min_w(px(0.0))
             .gap_1()
             .child(kit::measures_its_width(self.rooms.hero_width.clone()))
-            .child(kit::measures_its_height(self.rooms.hero_height.clone()))
+            .child(kit::measures_the_hero(self.rooms.hero_height.clone(), hero))
             .child(kit::eyebrow(eyebrow))
             .child(name_selector)
             .child(kit::subtitle(under))
@@ -1104,7 +1105,7 @@ impl RootView {
                 },
                 cx,
             )))
-            .child(kit::hero().child(art).child(about))
+            .child(kit::hero().child(kit::hero_art(sized, art)).child(about))
             .when(!reads.is_empty(), |pane| pane.child(listing::reads(&reads)))
             .when_some(naming, |pane, naming| {
                 pane.child(self.naming_row(naming, cx))
@@ -1377,6 +1378,17 @@ impl RootView {
                     Chosen::of(Span::one(position))
                 };
                 let put = Arc::clone(&menued);
+                let library = this.library.read(cx);
+                let variants = match versioned
+                    .as_ref()
+                    .filter(|track| library.has_variants(track.id))
+                {
+                    None => None,
+                    Some(track) => match library.variants_held(track.id) {
+                        Some(variants) => variants,
+                        None => return Menu::at(at).awaiting_the_variants_of(track.id),
+                    },
+                };
 
                 Menu::at(at)
                     .under(Icon::Play, words::menu::play(), "enter", {
@@ -1392,9 +1404,9 @@ impl RootView {
                         menu.favours(Favoured::Track(track), favourite)
                     })
                     .reaches(scanned, album, artist_id)
+                    .when_some(variants, Menu::offers_the_variants)
                     .when_some(versioned.clone(), |menu, track| {
-                        let chosen = this.library.read(cx).has_a_version_chosen(track.id);
-                        menu.looks_for_versions(track, at, chosen)
+                        menu.looks_for_versions(track, at)
                     })
                     .apart()
                     .when_some(scanned, Menu::shares)
@@ -2145,8 +2157,7 @@ fn playlist_menu_among_the_chosen(
         let playlists = this.library.read(cx).playlists_at(chosen.rows());
         return chosen_playlists_menu(at, playlists);
     }
-    let lossy = this.library.read(cx).holds_lossy_songs(id);
-    playlist_menu(this, at, id, pinned, lossy, cx)
+    playlist_menu(this, at, id, pinned, cx)
 }
 
 fn chosen_playlists_menu(at: Point<Pixels>, playlists: Vec<PlaylistId>) -> Menu {
@@ -2177,7 +2188,6 @@ pub(crate) fn playlist_menu(
     at: Point<Pixels>,
     id: PlaylistId,
     pinned: bool,
-    lossy: bool,
     cx: &App,
 ) -> Menu {
     let menu = Menu::at(at)
@@ -2218,13 +2228,11 @@ pub(crate) fn playlist_menu(
                     .update(cx, |library, cx| library.duplicate_playlist(id, cx));
             },
         )
-        .when_some(lossy.then_some(id), |menu, id| {
-            menu.does(
-                Icon::Fold,
-                words::replacing::replace_lossy_songs(),
-                move |this, _, cx| this.open_replacing(id, cx),
-            )
-        })
+        .does(
+            Icon::Search,
+            words::replacing::replace_lossy_songs(),
+            move |this, _, cx| this.open_replacing(id, cx),
+        )
         .apart()
         .does(
             Icon::Share,

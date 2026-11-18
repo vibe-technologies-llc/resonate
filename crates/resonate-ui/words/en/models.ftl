@@ -49,7 +49,6 @@ song-lookup-unreached = MusicBrainz couldn't be reached to look up { $title } ·
 song-lookup-stopped = Stopped looking up { $title }
 read-the-rest-of-the-discography = read the rest of the discography
 keep-that-version = keep that version
-forget-the-version-chosen = forget the version chosen
 put-that-back = put that back
 do-that-again = do that again
 the-cookies-lapsed = The cookies lapsed at “{ $song }”. Sign in to YouTube again, and the rest stays queued
@@ -81,7 +80,7 @@ add-the-album = add the album
 open-the-album = open the album
 open-the-artist = open the artist
 download-the-missing-tracks = download the missing tracks
-replace-the-lossy-songs = replace the lossy songs
+replace-the-lossy-songs = keep the higher quality versions
 read-that-album-s-pressings = read that album's pressings
 turn-online-on-to-upload-a-file = Turn Online on to upload a file
 uploading-file-to-catbox = Uploading file to Catbox…
@@ -232,8 +231,8 @@ the-inbox-filled = { $count ->
 }
 could-not-be-kept = { $count } couldn't be kept
 replaced-lossy-songs = { $count ->
-    [one] replaced 1 lossy song
-   *[other] replaced { $count } lossy songs
+    [one] 1 song plays a higher quality version
+   *[other] { $count } songs play a higher quality version
 }
 albums-and-artists-answered = { $albums ->
     [one] { $albums } album

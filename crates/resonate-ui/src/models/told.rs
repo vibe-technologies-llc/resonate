@@ -4,7 +4,7 @@ use ahash::AHashSet;
 use gpui::{AsyncApp, WeakEntity};
 use resonate_core::{AlbumId, MediaLocation};
 use resonate_library::{
-    Covering, Deleted, Edit, EnrichSummary, Fold, GroupRelease, ImportSummary, Library, Maker,
+    Covering, Deleted, Edit, EnrichSummary, GroupRelease, ImportSummary, Library, Maker,
     OrganiseSummary, PollSummary, Reference, ReleaseMatch, Replacing, RetagSummary, ScanSummary,
     Shared, Stopped, Track, Undoable,
 };
@@ -130,13 +130,6 @@ pub(super) fn relocations(summary: &OrganiseSummary) -> Vec<(MediaLocation, Medi
         .collect()
 }
 
-pub(super) fn folds_moved(folds: &[Fold]) -> Vec<(MediaLocation, MediaLocation)> {
-    folds
-        .iter()
-        .map(|fold| (fold.taken.clone(), fold.kept.clone()))
-        .collect()
-}
-
 pub(super) fn filed(summary: &OrganiseSummary) -> Notice {
     let stats = summary.stats;
     let mut told = match stats.moved {
@@ -219,7 +212,7 @@ pub(super) fn folding_told(folded: resonate_library::Result<Deleted>) -> Notice 
 
 pub(super) fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice> {
     let stats = summary.stats;
-    let replaced = summary.replaced.trashed.tracks;
+    let replaced = summary.replaced.beside;
     if stats.kept == 0 && replaced == 0 && prompted != Prompted::ByHand && !summary.cancelled {
         return None;
     }
@@ -234,22 +227,15 @@ pub(super) fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice
     if replaced > 0 {
         told = [told, words::models::replaced_lossy_songs(replaced)].join(" · ");
     }
-    let refused = summary.replaced.trashed.kept;
-    if refused > 0 {
-        told = [told, words::replacing::trash_refused(refused)].join(" · ");
-    }
     if summary.cancelled {
         told.push_str(words::models::stopped_early());
     }
-    Some(match refused {
-        0 => Notice::Done(told),
-        _ => Notice::Trouble(told),
-    })
+    Some(Notice::Done(told))
 }
 
 pub(super) fn replaced_now(replacing: &Replacing) -> Notice {
     let counted: [(_, fn(_) -> String); 5] = [
-        (replacing.folded, words::replacing::folded),
+        (replacing.beside, words::replacing::beside),
         (replacing.wanted, words::replacing::wanted_count),
         (replacing.kept, words::replacing::kept_count),
         (replacing.unfiled, words::replacing::unfiled_count),
@@ -261,15 +247,11 @@ pub(super) fn replaced_now(replacing: &Replacing) -> Notice {
         .map(|(count, said)| said(count))
         .collect();
     if parts.is_empty() {
-        parts.push(words::replacing::folded(0));
+        parts.push(words::replacing::beside(0));
     }
-    match (replacing.trashed.kept, replacing.unfiled) {
-        (0, 0) => Notice::Done(parts.join(", ")),
-        (0, _) => Notice::Trouble(parts.join(", ")),
-        (refused, _) => {
-            parts.push(words::replacing::trash_refused(refused));
-            Notice::Trouble(parts.join(", "))
-        }
+    match replacing.unfiled {
+        0 => Notice::Done(parts.join(", ")),
+        _ => Notice::Trouble(parts.join(", ")),
     }
 }
 

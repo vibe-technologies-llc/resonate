@@ -2,13 +2,13 @@ use std::sync::Arc;
 
 use gpui::{Context, Pixels, Point};
 use resonate_core::{
-    MediaLocation, TrackId,
+    TrackId,
     titles::{self, Rating},
 };
-use resonate_engine::{QueueItem, Unclaimed};
+use resonate_engine::QueueItem;
 use resonate_library::{
-    Chosen, Codec, Played, SongHeard, TheSong, Track, Version, VersionSought, better_held,
-    codec_named, rated_held, rating_of,
+    Chosen, Codec, KeptAs, Played, SongHeard, SongToKeep, TheSong, Track, VersionSought,
+    better_held, codec_named, rated_held, rating_of,
 };
 
 use crate::{
@@ -17,6 +17,7 @@ use crate::{
     models::Notice,
     serial::Serial,
     served::{ServedSong, Serves},
+    serving::song_to_keep,
     views::{menu::Menu, root::RootView},
     words,
 };
@@ -65,6 +66,7 @@ fn served_codec(song: &ServedSong) -> Option<Codec> {
 pub(crate) struct ServedVersion {
     service: String,
     song: ServedSong,
+    kept: SongToKeep,
 }
 
 impl ServedVersion {
@@ -75,14 +77,23 @@ impl ServedVersion {
                 let codec =
                     served_codec(&self.song).map_or(words::better::lossless(), Codec::as_str);
                 match album {
-                    Some(album) => words::better::play_served_on_album(album, codec, &self.service),
-                    None => words::better::play_served(codec, &self.service),
+                    Some(album) => {
+                        words::better::download_from_served_on_album(album, codec, &self.service)
+                    }
+                    None => words::better::download_from_served(codec, &self.service),
                 }
             }
             Sought::Rated(_) => match album {
-                Some(album) => words::better::play_it_on_album(album, &self.service),
-                None => words::better::play_it_on(&self.service),
+                Some(album) => words::better::download_it_on_album(album, &self.service),
+                None => words::better::download_it_from(&self.service),
             },
+        }
+    }
+
+    const fn kept_as(sought: Sought) -> KeptAs {
+        match sought {
+            Sought::Better => KeptAs::Lossless,
+            Sought::Rated(_) => KeptAs::AsServed,
         }
     }
 }
@@ -114,9 +125,12 @@ fn asked_of(services: &[Arc<dyn Serves>], words: &str, song: &TheSong, sought: S
                     .songs
                     .into_iter()
                     .filter(|found| song.served_as(sought, heard_of(found)))
-                    .map(|found| ServedVersion {
-                        service: service.clone(),
-                        song: found,
+                    .filter_map(|found| {
+                        Some(ServedVersion {
+                            service: service.clone(),
+                            kept: song_to_keep(&found)?,
+                            song: found,
+                        })
                     }),
             ),
             Err(error) => {
@@ -163,12 +177,13 @@ pub(crate) fn nothing_said(
 fn versions_menu(
     at: Point<Pixels>,
     sought: Sought,
-    track: TrackId,
+    song: &Track,
     title: &str,
     held: Vec<(Track, Option<String>)>,
     served: Vec<ServedVersion>,
 ) -> Menu {
     let mut menu = Menu::at(at);
+    let track = song.id;
     for (copy, album) in held {
         let label = held_label(sought, &copy, album.as_deref());
         let chosen = copy.id;
@@ -176,16 +191,18 @@ fn versions_menu(
         let title = title.to_owned();
         menu = menu.does(Icon::Play, label, move |this, _, cx| {
             this.play(&playing, 0, cx);
-            this.choose_the_version(track, Version::Held(chosen), &title, cx);
+            this.choose_the_version(track, chosen, &title, cx);
         });
     }
     for version in served {
         let label = version.label(sought);
-        let location: MediaLocation = version.song.location;
+        let kept = version.kept;
         let title = title.to_owned();
-        menu = menu.does(Icon::Play, label, move |this, _, cx| {
-            this.play_served(vec![location.clone()], 0, cx);
-            this.choose_the_version(track, Version::Served(location.clone()), &title, cx);
+        menu = menu.does(Icon::Download, label, move |this, _, cx| {
+            let (kept, title) = (kept.clone(), title.clone());
+            this.library.update(cx, |library, cx| {
+                library.keep_as_a_version(track, kept, ServedVersion::kept_as(sought), title, cx);
+            });
         });
     }
     menu
@@ -195,23 +212,16 @@ fn words_of(track: &Track) -> String {
     TheSong::words(&track.title, track.artist.as_deref())
 }
 
-pub(crate) fn played_as_chosen(
-    chosen: &Chosen,
-    items: Vec<QueueItem>,
-    minting: &mut Unclaimed,
-) -> Vec<QueueItem> {
+pub(crate) fn played_as_chosen(chosen: &Chosen, items: Vec<QueueItem>) -> Vec<QueueItem> {
     items
         .into_iter()
         .map(
             |item| match chosen.in_place_of(item.id, &item.location, item.span) {
-                Some(Played::Held { track, cut }) => QueueItem {
+                Some(Played { track, cut }) => QueueItem {
                     id: *track,
                     location: cut.location.clone(),
                     span: cut.span,
                 },
-                Some(Played::Served(location)) => {
-                    QueueItem::whole(minting.mint(), location.clone())
-                }
                 None => item,
             },
         )
@@ -289,7 +299,6 @@ impl RootView {
         let services = app.serving.opened(&app.online);
         let song = TheSong::of(&track);
         let title = titles::bare(&track.title).to_owned();
-        let id = track.id;
 
         let nothing_to_ask = match sought {
             Sought::Better if song.is_lossless() => Some(Nothing::AlreadyLossless),
@@ -301,7 +310,10 @@ impl RootView {
                 true => self.report(Notice::Noted(nothing_said(sought, why, &title, &[])), cx),
                 false => {
                     self.report(Notice::Done(words::better::found(held.len(), &title)), cx);
-                    self.open_a_menu(versions_menu(at, sought, id, &title, held, Vec::new()), cx);
+                    self.open_a_menu(
+                        versions_menu(at, sought, &track, &title, held, Vec::new()),
+                        cx,
+                    );
                 }
             }
             return;
@@ -338,7 +350,7 @@ impl RootView {
                 }
                 this.report(Notice::Done(words::better::found(found, &title)), cx);
                 this.open_a_menu(
-                    versions_menu(at, sought, id, &title, held, asked.served),
+                    versions_menu(at, sought, &track, &title, held, asked.served),
                     cx,
                 );
             });
@@ -349,46 +361,26 @@ impl RootView {
     pub(crate) fn choose_the_version(
         &mut self,
         track: TrackId,
-        version: Version,
+        copy: TrackId,
         title: &str,
         cx: &mut Context<Self>,
     ) {
         let title = title.to_owned();
         self.library.update(cx, |library, cx| {
-            library.choose_version(track, version, title, cx);
-        });
-    }
-
-    pub(crate) fn play_your_own_copy(&mut self, track: Track, cx: &mut Context<Self>) {
-        let title = titles::bare(&track.title).to_owned();
-        let id = track.id;
-        let root = cx.weak_entity();
-        self.library.update(cx, |library, cx| {
-            library.forget_the_version_chosen(
-                id,
-                title,
-                move |cx| {
-                    let _ = root.update(cx, |root, cx| root.play(&[track], 0, cx));
-                },
-                cx,
-            );
+            library.choose_version(track, copy, title, cx);
         });
     }
 
     pub(crate) fn with_the_versions_chosen(
         &self,
         items: Vec<QueueItem>,
-        inserting: bool,
         cx: &mut Context<Self>,
     ) -> Vec<QueueItem> {
         let chosen = self.library.read(cx).chosen_among(&items);
-        if chosen.is_empty() {
-            return items;
+        match chosen.is_empty() {
+            true => items,
+            false => played_as_chosen(&chosen, items),
         }
-        let queue = self.player.read(cx).queue();
-        let beside = queue.iter().filter(|_| inserting).map(AsRef::as_ref);
-        let mut minting = Unclaimed::beside(beside.chain(&items));
-        played_as_chosen(&chosen, items, &mut minting)
     }
 }
 
@@ -396,7 +388,7 @@ impl RootView {
 mod tests {
     use std::time::{Duration, SystemTime};
 
-    use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
+    use resonate_core::{ChannelLayout, MediaLocation, SampleFormat, SampleRate, StreamSpec};
     use resonate_library::{ChosenVersion, Codec};
 
     use super::*;
@@ -448,23 +440,16 @@ mod tests {
         let opus = rated(1, None, "Echoes");
         let flac = rated(2, None, "Echoes");
         let other = rated(3, None, "Time");
-        let streamed = MediaLocation::from_uri("tidal:track/7").expect("a location");
         let row = |track: &Track| QueueItem {
             id: track.id,
             location: track.location.clone(),
             span: track.span,
         };
         let chosen = Chosen::of(
-            vec![
-                ChosenVersion {
-                    track: opus.id,
-                    version: Version::Held(flac.id),
-                },
-                ChosenVersion {
-                    track: other.id,
-                    version: Version::Served(streamed.clone()),
-                },
-            ],
+            vec![ChosenVersion {
+                track: opus.id,
+                copy: flac.id,
+            }],
             &[opus.clone(), flac.clone(), other.clone()],
         );
         let minted_apart = QueueItem {
@@ -473,13 +458,11 @@ mod tests {
             span: None,
         };
         let items = vec![row(&opus), row(&other), minted_apart.clone()];
-        let mut minting = Unclaimed::beside(&items);
 
-        let queued = played_as_chosen(&chosen, items, &mut minting);
+        let queued = played_as_chosen(&chosen, items);
 
         assert_eq!(queued[0], row(&flac));
-        assert_eq!(queued[1].location, streamed);
-        assert_ne!(queued[1].id, other.id);
+        assert_eq!(queued[1], row(&other));
         assert_eq!(queued[2], minted_apart);
     }
 

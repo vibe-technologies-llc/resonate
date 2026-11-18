@@ -47,7 +47,7 @@ impl Standing {
 
 pub(crate) fn lossy_songs(library: &Library, name: &str, most: usize) -> Result<Value> {
     let found = catalog::playlist_called(library, name)?;
-    let songs = library.lossy_songs_of(found.id)?;
+    let songs = library.songs_to_better_in(found.id)?;
     let mut titles = AlbumTitles::over(library);
     let listed = songs
         .iter()
@@ -73,7 +73,7 @@ fn lossy_song(titles: &mut AlbumTitles<'_>, song: &Replaceable) -> Result<Value>
         );
         if let Some(held) = &song.held {
             fields.insert(
-                "lossless_copy".to_owned(),
+                "better_copy".to_owned(),
                 json!({
                     "track_id": held.id.get(),
                     "codec": held.codec.as_str(),
@@ -119,7 +119,7 @@ pub(crate) fn replace_lossy_songs(
     chosen: Option<&[TrackId]>,
 ) -> Result<Value> {
     let found = catalog::playlist_called(library, name)?;
-    let songs = only_the_chosen(&found.name, library.lossy_songs_of(found.id)?, chosen)?;
+    let songs = only_the_chosen(&found.name, library.songs_to_better_in(found.id)?, chosen)?;
     let chosen: Vec<Replaceable> = songs
         .iter()
         .filter(|song| song.can_be_ticked())
@@ -136,9 +136,7 @@ pub(crate) fn replace_lossy_songs(
     Ok(json!({
         "playlist": written::playlist(&held),
         "lossy": songs.len(),
-        "replaced": replacing.folded,
-        "trashed": replacing.trashed.files,
-        "not_trashed": replacing.trashed.kept,
+        "played_beside": replacing.beside,
         "wanted": replacing.wanted,
         "downloading": replacing.kept,
         "need_a_music_folder": replacing.unfiled,

@@ -109,7 +109,7 @@ pub fn read_a_playlist_sheet(text: &str) {
 }
 
 pub use crate::{
-    chosen::{Chosen, ChosenVersion, Played, Version},
+    chosen::{Chosen, ChosenVersion, Played, Variants},
     copies::{Copies, IdenticalCopy},
     db::{CatalogStamp, HiddenTracks, Library, WrittenElsewhere},
     deleted::{Deleted, Removal, Trashes},
@@ -144,7 +144,9 @@ pub use crate::{
         ImportOptions, ImportPlan, ImportProgress, ImportStats, ImportSummary, Passed, Passing,
         Vaulted, Wanted,
     },
-    keeps::{KeepStopped, KeepSummary, Kept as KeptSong, KeptList, PlaylistToKeep, SongToKeep},
+    keeps::{
+        KeepStopped, KeepSummary, Kept as KeptSong, KeptAs, KeptList, PlaylistToKeep, SongToKeep,
+    },
     kept_listens::{
         HistoryLines, KeptListens, LINES_READ_AS, LISTENS_READ_AT_ONCE, bring_in_history,
         bring_in_lines, history_lines,
@@ -189,7 +191,7 @@ pub use crate::{
         wikipedia_urls,
     },
     renamed::NamesMoved,
-    replacing::{Fold, Looked, LookingFor, Replaceable, Replaced, Replacing},
+    replacing::{Looked, LookingFor, Replaceable, Replaced, Replacing},
     retag::{
         PassedOver, RetagOptions, RetagProgress, RetagStats, RetagSummary, Retagging, Unwritten,
         Written,

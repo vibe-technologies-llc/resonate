@@ -41,7 +41,27 @@ const KEEP_TRIES_AT_MOST: i64 = 5;
 const KEEPS_QUEUED: &str =
     "SELECT id, source, video, title, artist, album, length, playlist, cover,
             EXISTS (SELECT 1 FROM replacements_kept rk WHERE rk.kept_id = kept_songs.id)
+                OR EXISTS (SELECT 1 FROM versions_kept vk WHERE vk.kept_id = kept_songs.id),
+            EXISTS (SELECT 1 FROM replacements_kept rk WHERE rk.kept_id = kept_songs.id)
+                OR EXISTS (SELECT 1 FROM versions_kept vk
+                            WHERE vk.kept_id = kept_songs.id AND vk.lossless = 1)
        FROM kept_songs WHERE landed IS NULL AND gone = 0 ORDER BY tried, asked, id";
+
+const THE_SONG_A_KEEP_IS_FOR: &str = "SELECT t.path, t.album_id
+       FROM (SELECT track_id AS track, kept_id FROM replacements_kept
+             UNION ALL SELECT track, kept_id FROM versions_kept) kept
+       JOIN tracks t ON t.id = kept.track
+      WHERE kept.kept_id = ?1
+      ORDER BY t.id LIMIT 1";
+
+const THE_KEEP_OF_A_SONG_ALONE: &str =
+    "SELECT id FROM kept_songs WHERE source = ?1 AND video = ?2 AND playlist IS NULL";
+
+const A_KEEP_IS_A_VERSION_OF_ITS_SONG: &str =
+    "INSERT INTO versions_kept (kept_id, track, lossless) VALUES (?1, ?2, ?3)
+     ON CONFLICT (kept_id) DO UPDATE SET track = excluded.track, lossless = excluded.lossless";
+
+const THE_TRACK_HELD: &str = "SELECT 1 FROM tracks WHERE id = ?1";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SongToKeep {
@@ -65,6 +85,12 @@ pub struct PlaylistToKeep {
 pub enum Kept {
     Queued,
     AlreadyHeld(TrackId),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeptAs {
+    Lossless,
+    AsServed,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -183,12 +209,13 @@ struct Queued {
     id: i64,
     song: SongToKeep,
     playlist: Option<String>,
-    replaces: bool,
+    for_a_song: bool,
+    lossless_only: bool,
 }
 
 impl Queued {
     fn identity(&self) -> Identity {
-        match self.replaces {
+        match self.for_a_song {
             true => Identity {
                 links: Vec::new(),
                 ..self.song.identity()
@@ -282,6 +309,35 @@ impl Library {
         Ok(Kept::Queued)
     }
 
+    pub fn keep_as_a_version(&self, track: TrackId, song: SongToKeep, kept: KeptAs) -> Result<()> {
+        self.a_folder_to_keep_into()?;
+        refused_untitled(&song)?;
+        self.inner().write(|transaction| {
+            transaction
+                .query_row(THE_TRACK_HELD, params![track.get() as i64], |_| Ok(()))
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))?
+                .ok_or(Error::UnknownTrack(track))?;
+            queued_alone(transaction, &song, WhatLanded::Stays)?;
+            let keep: i64 = transaction
+                .query_row(
+                    THE_KEEP_OF_A_SONG_ALONE,
+                    params![song.source.as_str(), song.video],
+                    |row| row.get(0),
+                )
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            transaction
+                .execute(
+                    A_KEEP_IS_A_VERSION_OF_ITS_SONG,
+                    params![keep, track.get() as i64, kept == KeptAs::Lossless],
+                )
+                .map(drop)
+                .map_err(|source| Error::store(StoreOp::Insert, source))
+        })?;
+        self.settle_the_versions_kept()?;
+        Ok(())
+    }
+
     pub fn keep_playlist(&self, list: PlaylistToKeep) -> Result<KeptList> {
         self.a_folder_to_keep_into()?;
         list.songs.iter().try_for_each(refused_untitled)?;
@@ -371,7 +427,8 @@ impl Library {
                 .query_row(
                     "SELECT count(*) FROM kept_songs k
                       WHERE k.landed IS NULL AND k.gone = 0
-                        AND EXISTS (SELECT 1 FROM replacements_kept rk WHERE rk.kept_id = k.id)",
+                        AND (EXISTS (SELECT 1 FROM replacements_kept rk WHERE rk.kept_id = k.id)
+                          OR EXISTS (SELECT 1 FROM versions_kept vk WHERE vk.kept_id = k.id))",
                     [],
                     |row| row.get::<_, i64>(0),
                 )
@@ -601,7 +658,7 @@ impl Library {
             );
             return Ok(Turn::Unkept);
         }
-        if !row.replaces
+        if !row.for_a_song
             && let Some(copy) = self.copy_of(&row.song)?
         {
             walking.unread.extend(self.root_of_an_unread_copy(&copy)?);
@@ -627,8 +684,8 @@ impl Library {
             return Ok(Turn::Yielded);
         }
         let album = row.song.album();
-        let picture = match row.replaces {
-            true => self.picture_it_replaces(row),
+        let picture = match row.for_a_song {
+            true => self.picture_of_its_song(row),
             false => pictured(&row.song, walking.providers),
         };
         let song = row.song.to_file(album.as_ref(), picture.as_ref());
@@ -645,7 +702,9 @@ impl Library {
 
         let video = &row.song.video;
         match drawn {
-            Drawn::Read(Ok(filed)) if row.replaces && filed::lossless(&filed.path).is_err() => {
+            Drawn::Read(Ok(filed))
+                if row.lossless_only && filed::lossless(&filed.path).is_err() =>
+            {
                 tracing::warn!(video, "a song kept to replace a lossy one arrived lossy");
                 if let Err(error) = std::fs::remove_file(&filed.path) {
                     tracing::warn!(%error, path = %filed.path.display(), "a lossy file kept for a replacement could not be taken away");
@@ -710,17 +769,12 @@ impl Library {
         }
     }
 
-    fn picture_it_replaces(&self, row: &Queued) -> Option<CoverArt> {
+    fn picture_of_its_song(&self, row: &Queued) -> Option<CoverArt> {
         let replaced = self.inner().read(|connection| {
             connection
-                .query_row(
-                    "SELECT t.path, t.album_id FROM replacements_kept rk
-                       JOIN tracks t ON t.id = rk.track_id
-                      WHERE rk.kept_id = ?1
-                      ORDER BY t.id LIMIT 1",
-                    params![row.id],
-                    |found| Ok((found.get::<_, String>(0)?, found.get::<_, Option<i64>>(1)?)),
-                )
+                .query_row(THE_SONG_A_KEEP_IS_FOR, params![row.id], |found| {
+                    Ok((found.get::<_, String>(0)?, found.get::<_, Option<i64>>(1)?))
+                })
                 .optional()
                 .map_err(|source| Error::store(StoreOp::Query, source))
         });
@@ -728,7 +782,7 @@ impl Library {
             Ok(Some(replaced)) => replaced,
             Ok(None) => return None,
             Err(error) => {
-                tracing::warn!(%error, "the song a keep replaces could not be read for its picture");
+                tracing::warn!(%error, "the song a keep is for could not be read for its picture");
                 return None;
             }
         };
@@ -745,7 +799,7 @@ impl Library {
         carried.or_else(|| {
             let album = AlbumId::new(album?.cast_unsigned()).ok()?;
             self.cover_art(album).unwrap_or_else(|error| {
-                tracing::warn!(%error, "the cover of the album a keep replaces could not be read");
+                tracing::warn!(%error, "the cover of the album a keep is for could not be read");
                 None
             })
         })
@@ -1044,7 +1098,9 @@ fn asked(row: &Queued, providers: &Providers, progress: &PollProgress, away: &mu
             within: ANSWERED_ALONE_WITHIN,
             cancelled: &cancelled,
             turning_to: &|_| {},
-            declined: &|delivered| row.replaces && replacing::offered_for_lossy_sound(delivered),
+            declined: &|delivered| {
+                row.lossless_only && replacing::offered_for_lossy_sound(delivered)
+            },
             passing: &[],
             apart: TURNED_TO_APART,
             grace: WAITED_ON_AFTER_AN_OFFER,
@@ -1315,7 +1371,8 @@ fn queued_at(row: &SqlRow<'_>) -> rusqlite::Result<Option<Queued>> {
             cover: row.get(8)?,
         },
         playlist: row.get(7)?,
-        replaces: row.get(9)?,
+        for_a_song: row.get(9)?,
+        lossless_only: row.get(10)?,
     }))
 }
 

@@ -3355,12 +3355,8 @@ fn a_song_with_a_version_chosen_is_queued_as_that_version_and_kept_as_itself_in_
             .id
     };
     let (song_id, copy_id, other_id) = (held(&song), held(&copy), held(&other));
-    let served = MediaLocation::from_uri("tidal:track/7").expect("a served song");
     library
-        .choose_version(song_id, &resonate_library::Version::Held(copy_id))
-        .expect("a version chosen");
-    library
-        .choose_version(other_id, &resonate_library::Version::Served(served.clone()))
+        .choose_version(song_id, copy_id)
         .expect("a version chosen");
     library
         .create_playlist("Late Night")
@@ -3389,7 +3385,7 @@ fn a_song_with_a_version_chosen_is_queued_as_that_version_and_kept_as_itself_in_
         [Call::Queue(
             vec![
                 (MediaLocation::local(copy), None::<FrameSpan>),
-                (served, None),
+                (MediaLocation::local(other), None),
             ],
             Queueing {
                 at: Placement::Queued,
@@ -3486,10 +3482,10 @@ fn a_playlists_lossy_songs_are_listed_with_what_replacing_would_do_to_each() {
     assert_eq!(songs[0]["title"], "Night Signal");
     assert_eq!(songs[0]["codec"], "MP3");
     assert_eq!(songs[0]["standing"], "held");
-    assert_eq!(songs[0]["lossless_copy"]["codec"], "PCM");
+    assert_eq!(songs[0]["better_copy"]["codec"], "PCM");
     assert_eq!(songs[1]["title"], "Elsewhere");
     assert_eq!(songs[1]["standing"], "unmatched");
-    assert!(songs[1].get("lossless_copy").is_none());
+    assert!(songs[1].get("better_copy").is_none());
     assert_eq!(
         called(
             &server,
@@ -3512,7 +3508,7 @@ fn a_playlists_lossy_songs_are_listed_with_what_replacing_would_do_to_each() {
 }
 
 #[test]
-fn a_lossy_song_with_a_lossless_copy_held_is_folded_in_and_one_with_none_is_never_trashed() {
+fn a_lossy_song_with_a_lossless_copy_held_plays_it_beside_itself_and_nothing_is_deleted() {
     let tree = Tree::new();
     let night = tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
     let lossless = tree.wav("lossless/a.wav", "Night Signal", "Hours", "1");
@@ -3537,17 +3533,14 @@ fn a_lossy_song_with_a_lossless_copy_held_is_folded_in_and_one_with_none_is_neve
     );
 
     assert_eq!(replaced["lossy"], 2);
-    assert_eq!(replaced["replaced"], 1);
-    assert_eq!(replaced["trashed"], 1);
+    assert_eq!(replaced["played_beside"], 1);
     assert_eq!(replaced["wanted"], 0);
     assert_eq!(replaced["left"], 1);
-    assert!(!night.exists());
-    assert!(lossless.exists());
-    assert!(elsewhere.exists(), "a song with no copy held was trashed");
+    assert!(night.exists() && lossless.exists() && elsewhere.exists());
     let rows = called(&server, "playlist_tracks", json!({ "playlist": "Late" }));
     assert_eq!(
         rows["tracks"][0]["uri"],
-        MediaLocation::local(&lossless).to_uri()
+        MediaLocation::local(&night).to_uri()
     );
     let listed = listed_lossy(&server, "Late");
     assert_eq!(listed["matched"], 1);
@@ -3596,7 +3589,7 @@ fn a_song_matched_nowhere_a_service_holds_lossless_is_listed_as_offered_and_queu
     library
         .look_for_replacements(
             &shop,
-            &library.lossy_songs_of(playlist).expect("a read"),
+            &library.songs_to_better_in(playlist).expect("a read"),
             &LookingFor {
                 cancelled: &|| false,
                 told: &|_, _| {},
@@ -3618,7 +3611,7 @@ fn a_song_matched_nowhere_a_service_holds_lossless_is_listed_as_offered_and_queu
     assert_eq!(replaced["downloading"], 1);
     assert_eq!(replaced["need_a_music_folder"], 0);
     assert_eq!(replaced["left"], 0);
-    assert!(night.exists(), "a song queued to download was trashed");
+    assert!(night.exists());
     assert_eq!(
         listed_lossy(&server, "Late")["songs"][0]["standing"],
         "waiting"
@@ -3647,7 +3640,7 @@ fn only_the_lossy_songs_chosen_are_replaced_and_an_unknown_one_is_refused() {
     let listed = listed_lossy(&server, "Late");
     let night_id = listed["songs"][0]["track_id"].clone();
     let dusk_id = listed["songs"][1]["track_id"].clone();
-    let copy_id = listed["songs"][1]["lossless_copy"]["track_id"].clone();
+    let copy_id = listed["songs"][1]["better_copy"]["track_id"].clone();
 
     let unknown = failed(
         &server,
@@ -3662,7 +3655,7 @@ fn only_the_lossy_songs_chosen_are_replaced_and_an_unknown_one_is_refused() {
 
     assert!(unknown.contains("999999"), "{unknown}");
     assert!(not_lossy.contains(&copy_id.to_string()), "{not_lossy}");
-    assert!(night.exists() && dusk.exists(), "a refused call trashed");
+    assert!(night.exists() && dusk.exists());
     assert_eq!(
         refused_call(
             &server,
@@ -3679,16 +3672,8 @@ fn only_the_lossy_songs_chosen_are_replaced_and_an_unknown_one_is_refused() {
     );
 
     assert_eq!(replaced["lossy"], 1);
-    assert_eq!(replaced["replaced"], 1);
-    assert_eq!(replaced["trashed"], 1);
-    assert!(night.exists(), "a song not chosen was replaced");
-    assert!(!dusk.exists());
-    assert!(copy.exists());
-    let rows = called(&server, "playlist_tracks", json!({ "playlist": "Late" }));
-    assert_eq!(
-        rows["tracks"][1]["uri"],
-        MediaLocation::local(&copy).to_uri()
-    );
+    assert_eq!(replaced["played_beside"], 1);
+    assert!(night.exists() && dusk.exists() && copy.exists());
     assert_eq!(listed_lossy(&server, "Late")["matched"], 1);
     assert_eq!(
         night_id,
@@ -3718,8 +3703,7 @@ fn a_lossy_song_with_a_release_and_no_copy_is_wanted_and_kept_until_one_is_held(
         json!({ "playlist": "Late" }),
     );
 
-    assert_eq!(replaced["replaced"], 0);
-    assert_eq!(replaced["trashed"], 0);
+    assert_eq!(replaced["played_beside"], 0);
     assert_eq!(replaced["wanted"], 1);
     assert_eq!(replaced["left"], 0);
     assert!(night.exists(), "the lossy song went before its copy came");

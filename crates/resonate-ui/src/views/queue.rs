@@ -1235,7 +1235,7 @@ impl RootView {
         else {
             return false;
         };
-        let items = self.with_the_versions_chosen(taken.rows, true, cx);
+        let items = self.with_the_versions_chosen(taken.rows, cx);
         self.send_by_position_at(
             queued.revision,
             Command::Insert {

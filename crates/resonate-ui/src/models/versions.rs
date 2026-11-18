@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use gpui::{App, Context};
+use gpui::Context;
 use resonate_core::{AlbumId, ArtistId, TrackId};
 use resonate_engine::QueueItem;
-use resonate_library::Track;
+use resonate_library::{Track, Variants};
 
 use super::{Change, Edited, LibraryModel, Wanted, arranged::Named};
 use crate::words;
@@ -30,12 +30,32 @@ impl LibraryModel {
 
     pub fn forget_the_copies(&mut self) {
         self.versions.copies = None;
+        self.versions.variants = None;
+    }
+
+    pub fn variants_held(&self, id: TrackId) -> Option<Option<Variants>> {
+        self.versions
+            .variants
+            .as_ref()
+            .filter(|(held, _)| *held == id)
+            .map(|(_, variants)| variants.clone())
+    }
+
+    pub fn keep_the_variants(&mut self, id: TrackId, variants: Option<Variants>) {
+        self.versions.variants = Some((id, variants));
+    }
+
+    pub fn has_variants(&self, track: TrackId) -> bool {
+        match self.versions.read {
+            true => self.versions.varied.contains(&track),
+            false => false,
+        }
     }
 
     pub fn choose_version(
         &mut self,
         track: TrackId,
-        version: resonate_library::Version,
+        copy: TrackId,
         title: String,
         cx: &mut Context<Self>,
     ) {
@@ -45,41 +65,16 @@ impl LibraryModel {
             Change::ChooseVersion,
             move |library| {
                 library
-                    .choose_version(track, &version)
+                    .choose_version(track, copy)
                     .map(|chosen| chosen.then(|| words::better::chosen(title.as_str())))
             },
             move |this, edited, cx| {
-                if edited == Edited::Landed {
-                    this.versions.chosen.insert(track);
+                match (edited == Edited::Landed, copy == track) {
+                    (true, true) => _ = this.versions.chosen.remove(&track),
+                    (true, false) => _ = this.versions.chosen.insert(track),
+                    (false, _) => {}
                 }
                 this.read_the_versions_chosen(cx);
-            },
-            cx,
-        );
-    }
-
-    pub fn forget_the_version_chosen(
-        &mut self,
-        track: TrackId,
-        title: String,
-        then: impl FnOnce(&mut App) + 'static,
-        cx: &mut Context<Self>,
-    ) {
-        self.versions.touched = true;
-        self.edited_then(
-            Wanted::ThePage,
-            Change::ForgetTheVersionChosen,
-            move |library| {
-                library.forget_the_version_chosen(track).map(|forgotten| {
-                    forgotten.then(|| words::better::own_copy_again(title.as_str()))
-                })
-            },
-            move |this, edited, cx| {
-                if edited == Edited::Landed {
-                    this.versions.chosen.remove(&track);
-                }
-                this.read_the_versions_chosen(cx);
-                cx.defer(then);
             },
             cx,
         );
@@ -117,21 +112,24 @@ impl LibraryModel {
         self.versions.touched = false;
         let library = Arc::clone(&self.library);
         self.versions._reading = cx.spawn(async move |this, cx| {
-            let read = cx
-                .background_executor()
-                .spawn(async move { library.versions_chosen() })
-                .await;
+            let read =
+                cx.background_executor()
+                    .spawn(async move {
+                        Ok((library.versions_chosen()?, library.tracks_with_variants()?))
+                    })
+                    .await;
             let _ = this.update(cx, |this, cx| {
                 if this.versions.touched {
                     this.read_the_versions_chosen(cx);
                     return;
                 }
                 match read {
-                    Ok(rows) => {
+                    Ok((rows, varied)) => {
                         this.versions.chosen = rows.iter().map(|row| row.track).collect();
+                        this.versions.varied = varied.into_iter().collect();
                         this.versions.read = true;
                     }
-                    Err(error) => {
+                    Err::<_, resonate_library::Error>(error) => {
                         tracing::warn!(%error, "the versions chosen could not be read");
                     }
                 }

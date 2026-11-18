@@ -1,4 +1,4 @@
-use resonate_engine::{QueueItem, Unclaimed};
+use resonate_engine::QueueItem;
 use resonate_library::{Library, Played};
 
 pub(crate) fn played_as_chosen(library: Option<&Library>, items: Vec<QueueItem>) -> Vec<QueueItem> {
@@ -17,19 +17,15 @@ pub(crate) fn played_as_chosen(library: Option<&Library>, items: Vec<QueueItem>)
         return items;
     }
 
-    let mut minting = Unclaimed::beside(&items);
     items
         .into_iter()
         .map(
             |item| match chosen.in_place_of(item.id, &item.location, item.span) {
-                Some(Played::Held { track, cut }) => QueueItem {
+                Some(Played { track, cut }) => QueueItem {
                     id: *track,
                     location: cut.location.clone(),
                     span: cut.span,
                 },
-                Some(Played::Served(location)) => {
-                    QueueItem::whole(minting.mint(), location.clone())
-                }
                 None => item,
             },
         )
@@ -41,7 +37,7 @@ mod tests {
     use std::fs;
 
     use resonate_core::{MediaLocation, TrackId};
-    use resonate_library::{Cut, Version};
+    use resonate_library::Cut;
 
     use super::*;
     use crate::{
@@ -71,12 +67,8 @@ mod tests {
                 .id
         };
         let (song_id, copy_id, other_id) = (held(&song), held(&copy), held(&other));
-        let served = MediaLocation::from_uri("tidal:track/7").expect("a served song");
         library
-            .choose_version(song_id, &Version::Held(copy_id))
-            .expect("a version chosen");
-        library
-            .choose_version(other_id, &Version::Served(served.clone()))
+            .choose_version(song_id, copy_id)
             .expect("a version chosen");
         let playlist = library.create_playlist("Evening").expect("a playlist");
         library
@@ -107,8 +99,8 @@ mod tests {
         for queued in [&played, &listed] {
             assert_eq!(queued[0].id, copy_id);
             assert_eq!(queued[0].location, MediaLocation::local(&copy));
-            assert_eq!(queued[1].location, served);
-            assert_ne!(queued[1].id, other_id);
+            assert_eq!(queued[1].id, other_id);
+            assert_eq!(queued[1].location, MediaLocation::local(&other));
         }
         assert_eq!(untouched, named);
     }

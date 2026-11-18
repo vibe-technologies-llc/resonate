@@ -76,10 +76,10 @@ paths:
   --refresh` follows every followed profile, then reads every playlist kept in step now; `playlist NAME --refresh`,
   `--upkeep once|in-step` and `--forget-link` act on one; the listing's FROM column says the service
   and how it follows.
-- **A playlist's lossy songs are listed and replaced from the terminal** (`lossy.rs`, the window's
-  *Replace lossy songs* sheet without its ticks, `library.md`'s *Replacing a lossy song*).
-  `playlist NAME --lossy` lists `Library::lossy_songs_of` as #, TITLE, ARTIST, FORMAT and STATUS
-  (replaced by the held copy's codec, wanted, found lossless on the service the window's *Check
+- **A playlist's higher quality versions are listed and kept from the terminal** (`lossy.rs`, the
+  window's *Find higher quality versions* sheet without its ticks, `library.md`'s *Finding higher
+  quality versions*; the flags keep their older names). `playlist NAME --lossy` lists
+  `Library::songs_to_better_in` as #, TITLE, ARTIST, FORMAT and STATUS (plays the held copy's codec, wanted, found lossless on the service the window's *Check
   availability* heard from, no lossless copy held and no release to want, already waiting) and says
   how many can be replaced now; `--replace-lossy` hands `Library::replace` every
   song `Replaceable::can_be_ticked` (the window's default ticks), or only the listing's numbers `--only`
@@ -89,7 +89,7 @@ paths:
   (`a_number_the_listing_does_not_hold_is_refused_and_nothing_is_replaced`,
   `the_numbers_chosen_are_the_only_songs_replaced`, `no_number_chosen_replaces_every_song_that_can_be`),
   and says what it did in one line, over the songs chosen:
-  songs folded into a held copy, files moved to the trash (and any the trash would not take), songs
+  songs now playing a higher quality copy held beside them (nothing is moved or deleted), songs
   wanted, songs queued to download from the service holding them lossless (`Replacing::kept`, which
   the window's keep pass downloads, since the terminal's keeps ask YouTube Music alone) and songs
   needing a music folder for that (`Replacing::unfiled`), songs already waiting and songs left

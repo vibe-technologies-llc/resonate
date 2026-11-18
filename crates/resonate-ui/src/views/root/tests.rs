@@ -1389,7 +1389,7 @@ mod driven {
     }
 
     #[gpui::test]
-    fn a_queued_lossy_song_plays_from_its_lossless_copy_once_replaced(cx: &mut TestAppContext) {
+    fn a_lossy_song_plays_from_its_lossless_copy_once_kept_beside_it(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let (Some(opus), Some(flac)) = (
             encoded_as_echoes(&folder, "A.opus", &["-c:a", "libopus", "-b:a", "96k"]),
@@ -1411,14 +1411,24 @@ mod driven {
         assert_eq!(queued_at(&mut driven), [lossy]);
 
         let rows = library
-            .lossy_songs_of(road_trip)
+            .songs_to_better_in(road_trip)
             .expect("the playlist read");
         let model = driven.read(|root, _| root.library.clone());
         driven.cx.update(|_, cx| {
             model.update(cx, |library, cx| library.replace_lossy_songs(rows, cx));
         });
-        driven.until(|_, _| !opus.exists());
+        let song = library
+            .track_at(&opus, None)
+            .expect("the catalog read")
+            .expect("the song is held")
+            .id;
+        driven.until(|root, cx| root.library.read(cx).has_a_version_chosen(song));
 
+        assert!(opus.exists(), "the lossy copy went");
+        driven.root.update(&mut driven.cx, |root, cx| {
+            let held = root.library.read(cx).held_tracks(&[song]);
+            root.play(&held, 0, cx);
+        });
         let lossless = resonate_core::MediaLocation::local(&flac);
         driven.until(|root, cx| {
             root.player
@@ -1550,7 +1560,7 @@ mod driven {
             )
             .expect("a playlist holding the lossy copy");
         let rows = library
-            .lossy_songs_of(road_trip)
+            .songs_to_better_in(road_trip)
             .expect("the playlist read");
         assert!(
             rows.iter().all(|row| row.release_track.is_some()),
@@ -1575,7 +1585,7 @@ mod driven {
         });
         assert!(
             library
-                .lossy_songs_of(road_trip)
+                .songs_to_better_in(road_trip)
                 .expect("the playlist read")
                 .iter()
                 .all(|row| row.pending)
@@ -1588,7 +1598,7 @@ mod driven {
         driven.until(|root, cx| root.library.read(cx).downloads().is_empty());
         driven.until(|_, _| {
             library
-                .lossy_songs_of(road_trip)
+                .songs_to_better_in(road_trip)
                 .is_ok_and(|rows| rows.len() == 1 && rows.iter().all(|row| !row.pending))
         });
         assert!(library.wants().expect("the wants read").is_empty());
@@ -1621,7 +1631,7 @@ mod driven {
             .id;
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
         driven.click("tab-playlists");
-        driven.until(|root, cx| root.library.read(cx).holds_lossy_songs(road_trip));
+        driven.until(|root, cx| root.library.read(cx).playlist_name(road_trip).is_some());
 
         opened_the_sheet_for(&mut driven, road_trip);
 
@@ -1701,7 +1711,7 @@ mod driven {
             a_shop_answering_nothing(),
         );
         driven.click("tab-playlists");
-        driven.until(|root, cx| root.library.read(cx).holds_lossy_songs(road_trip));
+        driven.until(|root, cx| root.library.read(cx).playlist_name(road_trip).is_some());
         opened_the_sheet_for(&mut driven, road_trip);
         let ticked_before = driven.read(|root, _| {
             root.replacing
@@ -1774,7 +1784,7 @@ mod driven {
             a_shop_offering_it_lossless(),
         );
         driven.click("tab-playlists");
-        driven.until(|root, cx| root.library.read(cx).holds_lossy_songs(road_trip));
+        driven.until(|root, cx| root.library.read(cx).playlist_name(road_trip).is_some());
         opened_the_sheet_for(&mut driven, road_trip);
         assert!(
             driven.read(|root, _| root
@@ -1828,7 +1838,7 @@ mod driven {
             a_shop_offering_it_lossless(),
         );
         driven.click("tab-playlists");
-        driven.until(|root, cx| root.library.read(cx).holds_lossy_songs(road_trip));
+        driven.until(|root, cx| root.library.read(cx).playlist_name(road_trip).is_some());
         opened_the_sheet_for(&mut driven, road_trip);
         let first = driven.read(|root, _| {
             root.replacing
@@ -1869,7 +1879,7 @@ mod driven {
     }
 
     #[gpui::test]
-    fn a_playlists_lossy_songs_are_replaced_from_its_menu_and_the_sheet_closes_with_a_toast(
+    fn a_playlists_higher_quality_versions_are_kept_from_its_menu_and_the_sheet_closes_with_a_toast(
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
@@ -1894,14 +1904,13 @@ mod driven {
         driven.click("tab-playlists");
         driven.until(|root, cx| {
             let library = root.library.read(cx);
-            library.playlists().len() == 2 && library.holds_lossy_songs(road_trip)
+            library.playlists().len() == 2 && library.playlist_name(road_trip).is_some()
         });
 
         driven.right_click(playlist_row(bright));
-        assert_eq!(
-            the_menu_offers(&mut driven, crate::words::replacing::replace_lossy_songs()),
-            None,
-            "a playlist holding no lossy song is offered nothing to replace"
+        assert!(
+            the_menu_offers(&mut driven, crate::words::replacing::replace_lossy_songs()).is_some(),
+            "every playlist is offered its higher quality versions"
         );
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
@@ -1926,7 +1935,7 @@ mod driven {
         assert!(driven.read(|root, _| root.replacing.is_none()));
         assert_eq!(
             library
-                .lossy_songs_of(road_trip)
+                .songs_to_better_in(road_trip)
                 .expect("the playlist read")
                 .len(),
             1,
@@ -1938,12 +1947,12 @@ mod driven {
         driven.click("replace-the-lossy-songs");
         driven.until(|_, _| {
             library
-                .lossy_songs_of(road_trip)
+                .songs_to_better_in(road_trip)
                 .is_ok_and(|rows| rows.is_empty())
         });
-        driven.until_said(|told| told.contains("1 song replaced"));
+        driven.until_said(|told| told.contains("1 song plays a higher quality version"));
 
         assert!(driven.read(|root, _| root.replacing.is_none()));
-        assert!(!opus.exists(), "the lossy copy went to the trash");
+        assert!(opus.exists() && flac.exists(), "a file went");
     }
 }

@@ -18,14 +18,12 @@ use resonate_vault::Vault;
 use rusqlite::{Connection, OptionalExtension as _, Transaction, params, types::Value};
 
 use super::{
-    Library, Walk,
+    Library,
     rows::{grouped_links, rows},
 };
 use crate::{
-    DeliveryFolder, Error, Fold, Looked, LookingFor, Quality, Replaceable, Replaced, Replacing,
-    Result, SongHeard, StoreOp, TheSong, Track, TrackQuery, Version,
-    deleted::Why,
-    elsewhere,
+    DeliveryFolder, Error, Looked, LookingFor, Quality, Replaceable, Replaced, Replacing, Result,
+    SongHeard, StoreOp, TheSong, Track, TrackQuery, chosen, elsewhere,
     foresight::Unheard,
     keeps,
     linked::LENGTHS_AGREE_WITHIN,
@@ -44,14 +42,6 @@ const THE_SAME_SONG_ELSEWHERE: &str = "SELECT other.id,
           OR (lossy.alternative_of IS NOT NULL AND other.alternative_of = lossy.alternative_of))
       WHERE lossy.id = ?1";
 
-const THE_PLAYLISTS_HOLDING_A_LOSSY_SONG: &str = concat!(
-    "SELECT DISTINCT e.playlist_id FROM playlist_entries e JOIN tracks ON ",
-    "tracks.path = e.path AND tracks.span_start = e.span_start",
-    " WHERE tracks.span_frames IS NULL AND NOT (",
-    lossless_codecs!(),
-    ")"
-);
-
 const HOW_A_WHOLE_FILE_STANDS: &str = concat!(
     "SELECT tracks.path, (",
     lossless_codecs!(),
@@ -62,7 +52,20 @@ const HOW_A_WHOLE_FILE_STANDS: &str = concat!(
 const THE_RELEASE_ROW_IS_STILL_THE_TRACKS: &str =
     "SELECT EXISTS (SELECT 1 FROM release_tracks WHERE id = ?1 AND track_id = ?2)";
 
-const ANY_REPLACEMENT_WAITS: &str = "SELECT EXISTS (SELECT 1 FROM replacements)";
+const ANY_REPLACEMENT_WAITS: &str = "SELECT EXISTS (SELECT 1 FROM replacements)
+     OR EXISTS (SELECT 1 FROM versions_kept)";
+
+const THE_VERSIONS_KEPT_THAT_LANDED: &str = concat!(
+    "SELECT vk.kept_id, vk.track, tracks.id FROM versions_kept vk",
+    " JOIN kept_songs k ON k.id = vk.kept_id",
+    " JOIN tracks ON tracks.path = k.landed",
+    " WHERE tracks.id != vk.track AND tracks.span_start = 0 AND tracks.span_frames IS NULL",
+    " AND (vk.lossless = 0 OR (",
+    lossless_codecs!(),
+    ")) ORDER BY vk.kept_id, tracks.id"
+);
+
+const A_VERSION_KEPT_IS_SETTLED: &str = "DELETE FROM versions_kept WHERE kept_id = ?1";
 
 const THE_REPLACEMENTS_REJOIN_THE_ROWS_THEIR_SONGS_HOLD: &str = "UPDATE replacements
         SET release_track_id = (SELECT id FROM release_tracks
@@ -182,11 +185,6 @@ enum Standing {
     Lossless,
 }
 
-struct Settled {
-    replacing: Replacing,
-    taken: Vec<TrackId>,
-}
-
 #[derive(Clone, Copy)]
 struct Evidenced {
     taken: TrackId,
@@ -234,40 +232,51 @@ impl WholeFile {
 
 impl Library {
     pub fn replace(&self, chosen: &[Replaceable]) -> Result<Replacing> {
-        let walk = self.walk_the_tree()?;
         let now = SystemTime::now();
         let vault = self.inner.vault.as_deref();
         let kept_into = self.delivering_into();
-        let Settled {
-            mut replacing,
-            taken,
-        } = self
-            .inner
-            .write(|transaction| settled(transaction, chosen, now, vault, kept_into.as_ref()))?;
-
-        if !taken.is_empty() {
-            self.inner.playlists_changed();
-            replacing.trashed = self.remove_tracks_under(&walk, &taken, Why::Folded)?;
-        }
-        Ok(replacing)
+        self.inner
+            .write(|transaction| settled(transaction, chosen, now, vault, kept_into.as_ref()))
     }
 
     pub fn settle_replacements(&self) -> Result<Replaced> {
         if !self.inner.read(any_replacement_waits)? {
             return Ok(Replaced::default());
         }
-        let walk = match self.walk_the_tree() {
-            Ok(walk) => walk,
-            Err(Error::AlreadyWalking) => {
-                tracing::debug!(
-                    "the replacements are settled after the pass walking the tree, or the next"
-                );
-                return Ok(Replaced::default());
-            }
-            Err(error) => return Err(error),
-        };
         self.rejoin_the_replacements()?;
-        self.settled_under(&walk)
+        let beside = self.settled_beside()? + self.settle_the_versions_kept()?;
+        Ok(Replaced { beside })
+    }
+
+    pub(crate) fn settle_the_versions_kept(&self) -> Result<u64> {
+        let now = SystemTime::now();
+        self.inner.write(|transaction| {
+            let landed = rows(
+                transaction,
+                THE_VERSIONS_KEPT_THAT_LANDED,
+                Vec::new(),
+                |row| {
+                    Ok(Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    )))
+                },
+            )?;
+            let mut settled = AHashSet::new();
+            for (kept, song, copy) in landed {
+                if !settled.insert(kept) {
+                    continue;
+                }
+                let song = TrackId::new(song.cast_unsigned())?;
+                let copy = TrackId::new(copy.cast_unsigned())?;
+                chosen::choose(transaction, song, copy, now)?;
+                transaction
+                    .execute(A_VERSION_KEPT_IS_SETTLED, params![kept])
+                    .map_err(|source| Error::store(StoreOp::Delete, source))?;
+            }
+            Ok(settled.len() as u64)
+        })
     }
 
     pub(crate) fn rejoin_the_replacements(&self) -> Result<u64> {
@@ -290,23 +299,15 @@ impl Library {
         })
     }
 
-    fn settled_under(&self, walk: &Walk) -> Result<Replaced> {
+    fn settled_beside(&self) -> Result<u64> {
         let evidenced = self.evidenced()?;
         if evidenced.is_empty() {
-            return Ok(Replaced::default());
+            return Ok(0);
         }
         let vault = self.inner.vault.as_deref();
-        let (taken, folds) = self
-            .inner
-            .write(|transaction| folded_on(transaction, vault, &evidenced))?;
-        if taken.is_empty() {
-            return Ok(Replaced::default());
-        }
-        self.inner.playlists_changed();
-        Ok(Replaced {
-            trashed: self.remove_tracks_under(walk, &taken, Why::Folded)?,
-            folds,
-        })
+        let now = SystemTime::now();
+        self.inner
+            .write(|transaction| kept_beside_on(transaction, vault, &evidenced, now))
     }
 
     fn evidenced(&self) -> Result<Vec<Evidenced>> {
@@ -324,7 +325,7 @@ impl Library {
                 .collect();
             let kept = self.inner.read(|connection| {
                 for &kept in &candidates {
-                    if may_fold(connection, vault, one.taken, kept)? {
+                    if may_be_kept_beside(connection, vault, one.taken, kept)? {
                         return Ok(Some(kept));
                     }
                 }
@@ -340,15 +341,22 @@ impl Library {
         Ok(found)
     }
 
-    pub fn lossy_songs_of(&self, playlist: PlaylistId) -> Result<Vec<Replaceable>> {
+    pub fn songs_to_better_in(&self, playlist: PlaylistId) -> Result<Vec<Replaceable>> {
         let mut seen = AHashSet::new();
         let mut found = Vec::new();
         for entry in self.playlist_entries(playlist, None)? {
             let Some(track) = entry.track else { continue };
-            if track.span.is_some() || track.codec.is_lossless() || !seen.insert(track.id) {
+            if track.span.is_some() || !seen.insert(track.id) {
                 continue;
             }
-            let held = self.lossless_copy_held_for(&track)?;
+            let held = self.better_copy_held_for(&track)?;
+            let plays_it_already = match &held {
+                Some(best) => self.plays_as_well_already(track.id, best)?,
+                None => false,
+            };
+            if plays_it_already || (track.codec.is_lossless() && held.is_none()) {
+                continue;
+            }
             let (release_track, pending, looked) = self.inner.read(|connection| {
                 let (release_track, pending) = release_track_and_pending(connection, track.id)?;
                 let looked = what_a_look_found(connection, track.id, release_track)?;
@@ -507,21 +515,7 @@ impl Library {
         Ok(Some(looked))
     }
 
-    pub fn playlists_with_lossy_songs(&self) -> Result<AHashSet<PlaylistId>> {
-        let ids = self.inner.read(|connection| {
-            rows(
-                connection,
-                THE_PLAYLISTS_HOLDING_A_LOSSY_SONG,
-                Vec::new(),
-                |row| row.get::<_, i64>(0).map(Ok),
-            )
-        })?;
-        ids.into_iter()
-            .map(|id| Ok(PlaylistId::new(id.cast_unsigned())?))
-            .collect()
-    }
-
-    fn lossless_copy_held_for(&self, lossy: &Track) -> Result<Option<Track>> {
+    fn better_copy_held_for(&self, lossy: &Track) -> Result<Option<Track>> {
         let song = TheSong::of(lossy);
         let related = self
             .inner
@@ -532,7 +526,11 @@ impl Library {
             limit: Some(HELD_WEIGHED_AT_MOST),
             ..TrackQuery::default()
         })?;
+        let beside = self
+            .inner
+            .read(|connection| chosen::held_for(connection, lossy.id))?;
         candidates.extend(self.tracks_with_ids(&related.ids)?);
+        candidates.extend(self.tracks_with_ids(&beside)?);
         candidates.extend(found);
 
         let mut offered: Vec<Track> = Vec::new();
@@ -540,22 +538,25 @@ impl Library {
             let fits = copy.span.is_none()
                 && copy.id != lossy.id
                 && !offered.iter().any(|held| held.id == copy.id)
-                && (song.is_bettered_by(SongHeard::of(&copy))
-                    || (related.sharing.contains(&copy.id) && copy.codec.is_lossless()));
+                && copy.codec.is_lossless()
+                && Quality::of(&copy).is_above(Quality::of(lossy))
+                && (song.names(SongHeard::of(&copy)) || related.sharing.contains(&copy.id));
             if fits {
                 offered.push(copy);
             }
         }
         offered.sort_by_key(|copy| Quality::of(copy).best_first());
+        Ok((!offered.is_empty()).then(|| offered.swap_remove(0)))
+    }
 
-        let chosen = match self.version_chosen_for(lossy.id)? {
-            Some(Version::Held(copy)) => Some(copy),
-            Some(Version::Served(_)) | None => None,
+    fn plays_as_well_already(&self, song: TrackId, best: &Track) -> Result<bool> {
+        let Some(chosen) = self.version_chosen_for(song)? else {
+            return Ok(false);
         };
-        let position = chosen
-            .and_then(|chosen| offered.iter().position(|copy| copy.id == chosen))
-            .unwrap_or(0);
-        Ok((!offered.is_empty()).then(|| offered.swap_remove(position)))
+        Ok(match self.track(chosen)? {
+            Some(chosen) => !Quality::of(best).is_above(Quality::of(&chosen)),
+            None => false,
+        })
     }
 }
 
@@ -789,34 +790,39 @@ fn settled(
     now: SystemTime,
     vault: Option<&Vault>,
     kept_into: Option<&DeliveryFolder>,
-) -> Result<Settled> {
+) -> Result<Replacing> {
     let mut seen = AHashSet::new();
-    let mut settled = Settled {
-        replacing: Replacing::default(),
-        taken: Vec::new(),
-    };
+    let mut replacing = Replacing::default();
     for one in chosen {
-        if !seen.insert(one.track.id)
-            || standing(transaction, vault, &one.track)? != Standing::Lossy
-        {
+        if !seen.insert(one.track.id) {
+            continue;
+        }
+        let stands = standing(transaction, vault, &one.track)?;
+        if stands == Standing::Gone {
             continue;
         }
         let held = match &one.held {
-            Some(copy) if standing(transaction, vault, copy)? == Standing::Lossless => {
+            Some(copy)
+                if copy.id != one.track.id
+                    && standing(transaction, vault, copy)? == Standing::Lossless
+                    && (stands == Standing::Lossy
+                        || Quality::of(copy).is_above(Quality::of(&one.track))) =>
+            {
                 Some(copy.id)
             }
             Some(_) | None => None,
         };
+        if stands == Standing::Lossless && held.is_none() {
+            continue;
+        }
         let release_track = match one.release_track {
             Some(row) if still_held_by(transaction, row, one.track.id)? => Some(row),
             Some(_) | None => None,
         };
 
         if let Some(kept) = held {
-            let fold = replacing::folded(transaction, kept, one.track.id)?;
-            settled.replacing.folds.push(fold);
-            settled.taken.push(one.track.id);
-            settled.replacing.folded += 1;
+            replacing::kept_beside(transaction, one.track.id, kept, now)?;
+            replacing.beside += 1;
         } else if let Some(row) = release_track {
             transaction
                 .execute(
@@ -829,11 +835,11 @@ fn settled(
                 )
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
             let want = elsewhere::rearmed(transaction, row, now)?;
-            settled.replacing.wanted += 1;
-            settled.replacing.wants.push((row, want));
+            replacing.wanted += 1;
+            replacing.wants.push((row, want));
         } else if let Some((by, at)) = one.offer() {
             if kept_into.is_none() {
-                settled.replacing.unfiled += 1;
+                replacing.unfiled += 1;
                 continue;
             }
             transaction
@@ -847,12 +853,12 @@ fn settled(
                 )
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
             kept_for(transaction, &one.track, by, at, now)?;
-            settled.replacing.kept += 1;
+            replacing.kept += 1;
         } else {
-            settled.replacing.unmatched += 1;
+            replacing.unmatched += 1;
         }
     }
-    Ok(settled)
+    Ok(replacing)
 }
 
 fn standing(connection: &Connection, vault: Option<&Vault>, track: &Track) -> Result<Standing> {
@@ -932,7 +938,7 @@ fn awaiting(connection: &Connection) -> Result<Vec<Awaiting>> {
     Ok(found)
 }
 
-fn may_fold(
+fn may_be_kept_beside(
     connection: &Connection,
     vault: Option<&Vault>,
     lossy: TrackId,
@@ -1036,21 +1042,21 @@ fn delivered_for(
         .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
-fn folded_on(
+fn kept_beside_on(
     transaction: &Transaction<'_>,
     vault: Option<&Vault>,
     evidenced: &[Evidenced],
-) -> Result<(Vec<TrackId>, Vec<Fold>)> {
-    let mut taken = Vec::with_capacity(evidenced.len());
-    let mut folds = Vec::with_capacity(evidenced.len());
+    now: SystemTime,
+) -> Result<u64> {
+    let mut beside = 0;
     for &Evidenced { taken: lossy, kept } in evidenced {
-        if !may_fold(transaction, vault, lossy, kept)? {
+        if !may_be_kept_beside(transaction, vault, lossy, kept)? {
             continue;
         }
-        folds.push(replacing::folded(transaction, kept, lossy)?);
-        taken.push(lossy);
+        replacing::kept_beside(transaction, lossy, kept, now)?;
+        beside += 1;
     }
-    Ok((taken, folds))
+    Ok(beside)
 }
 
 fn still_held_by(connection: &Connection, row: ReleaseTrackId, track: TrackId) -> Result<bool> {

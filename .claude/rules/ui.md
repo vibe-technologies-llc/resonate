@@ -133,7 +133,7 @@ the read stays the library's: the statistics window (`read_over`) and whether th
 
 **What the library reads itself stays the library's, though only the browse panes draw it.**
 `Shelf` (the opened playlist, its order and reading, carried in every `Asked`; the shelves the
-sidebar, the queue's menus and *Replace lossy songs* read), `Browse` (the listings and how far they
+sidebar and the queue's menus read), `Browse` (the listings and how far they
 are read, which `played_from`, a queue gesture, the lookup's `Sought` and the warmed covers read)
 and `Detail` (the album's rows and the wants listed as downloads) are inputs to the read or to what
 the library does, so a pane holding them would leave the library asking it for its own state. What
@@ -278,7 +278,7 @@ so `editing` sees it.
   a release…*, wherever the reference is reachable), and last what takes something away (*Take out
   of the queue*, *Remove* with hide, forget a delivery and delete; a playlist's *Discard*). The
   shared pieces (`Menu::holds`, `favours`, `reaches`, `shares`, `offers_the_file`,
-  `offers_the_files`) draw no line of their own; the caller puts `apart()` before each group. **Another version of a song is looked up from *Find another version***, which nests *Find a higher quality version* and the ratings the track is not already (*Look for a Clean version* for an explicit track, *Look for an Explicit version* for a clean one, both for an unmarked one: `better::offered_for`, over the library's `VersionSought::offered_for`): `views/better.rs`, its matching `resonate-library`'s `versions.rs` (`library.md`). Held copies are offered best first: for quality `alternatives_of` where `Quality` (lossless, significant bits, rate) is no lower on any count and higher on one, for a rating the catalog's tracks named alike (`LibraryModel::tracks_named`, `HELD_WEIGHED_AT_MOST`) that `TheSong::held_as` the rating. Every service that plays in place (`Serving::opened`, so nothing is asked with Online off) is searched on the background executor for the bare title and artist, a song kept only where it is the same song (folded bare title, artist, length within `LENGTHS_AGREE_WITHIN`, 3 s) and, for quality, its suffix reads as a lossless codec (`resonate_library::codec_named`), for a rating it carries it: Explicit must be marked, and Clean may be unmarked only beside an explicit track (`a_clean_version_of_an_explicit_song_may_be_unmarked_and_an_explicit_one_must_be_marked`). **Every lookup says what it is doing and what came of it**: *Looking for … of {title}* as it asks, *Found N versions of {title}* with the menu at the press, a `Trouble` naming every service that could not be asked, and where nothing was found the reason (`better::nothing_said`: already lossless, no service set up to ask, or none on the services named; `nothing_found_says_why_and_where_it_was_looked_for`). **A version picked is the song's from then on**: the menu entry plays it and keeps it in `versions_chosen` (`Library::choose_version`, `library.md`), written through `LibraryModel::edited` like every other edit and told as *{title} plays this version from now on*; `RootView::send` passes every `Command::Load` and `Insert` through `with_the_versions_chosen`, which asks `Library::chosen_among` for the rows being sent alone and only for those `LibraryModel` holds among `versions_chosen` (a set read on the background executor at each reload and after each choosing or forgetting, so a catalog with no version chosen asks nothing on the window's thread), so a row of that song wherever it is played (the tracks pane, a playlist, a queue gesture) is queued as the held copy or the served location instead, a served one under an id minted beside the queue (`better::played_as_chosen`, `a_song_with_a_version_chosen_is_queued_as_that_version_wherever_it_is_played`, `a_playlist_row_plays_the_version_chosen_for_its_song_until_its_own_copy_is_asked_for`). *Play your own copy again* stands in the nest while a version is chosen and forgets it, playing the song once the forget has landed (`LibraryModel::forget_the_version_chosen` defers its `then` so the root is free to update the model). A track's menu opens at once and never reads the catalog on the window's thread: a menu that nests the other copies (`Menu::awaiting_the_copies_of`) is held back while `open_once_read` reads `alternatives_of` on the background executor, keeps the answer in `LibraryModel::keep_the_copies` and builds the menu when it lands, unless the window moved on (`window_has_moved_on_from`); a playlist's menu where sync runs is held back the same way (`Menu::awaiting_what_is_synced_of`, `Awaited::SyncedOf`) while `PlaylistSynced::read` asks the `Syncing` seam for the songs missing, whether its songs are kept and the devices online to fetch from (the ledger's lock, and `missing_from` asking the ledger by `local_id`), kept in `RootView::synced_read` until the next menu opens (`forget_what_menus_read`), and its *Fetch* and *Keep its songs here* run on the background executor too (`a_playlists_menu_reads_the_ledger_off_the_windows_thread_and_opens_once_it_is_read`); every opening goes through `RootView::open_what_is_offered`; *Find another version* reads its held copies, or its full-text `tracks_named` match for a rating, on the background executor too (`look_for_a_version`), and an opened playlist's row menu offers *Find another version* from the same held set (`LibraryModel::has_a_version_chosen`). A queue row's *Play* and *Take out of the queue*, and the playlist row's remove, act on the queue's revision or the entries the row was drawn at and do nothing if the list has moved since (`PlayerModel::send_by_position_at`, `is_queued_at`, `entries_are`). **Every playlist edit by position carries what was drawn down the edit chain**: key Delete, the movers and the move keys, a drag's move or gather and a drop into the opened playlist hand `LibraryModel::playlist_as_drawn` (taken at the press, or for a dropped album before its tracks are read) to the library's `_as_drawn` edits, which refuse inside their transaction once the rows have moved (`library.md`), told as a `Trouble` (`playlist-moved-since-drawn`); a drag's `Carried::over` holds the entries it was lifted from, so a drop after the pane read the playlist again does nothing (`carried_over_what_is_drawn`; `a_playlist_row_taken_out_after_another_edit_landed_first_is_refused_and_said`, `a_playlist_row_moved_after_another_edit_landed_first_is_refused_and_said`, `rows_dropped_into_a_playlist_after_another_edit_landed_first_are_refused_and_said`, `rows_carried_over_a_playlist_that_has_since_moved_are_not_dropped`). A pointer opens the panel
+  `offers_the_files`) draw no line of their own; the caller puts `apart()` before each group. **Another version of a song is looked up from *Find another version***, which nests *Find a higher quality version* and the ratings the track is not already (*Look for a Clean version* for an explicit track, *Look for an Explicit version* for a clean one, both for an unmarked one: `better::offered_for`, over the library's `VersionSought::offered_for`): `views/better.rs`, its matching `resonate-library`'s `versions.rs` (`library.md`). Held copies are offered best first: for quality `alternatives_of` where `Quality` (lossless, significant bits, rate) is above (a lossless copy above any lossy one, else no lower on any count and higher on one), for a rating the catalog's tracks named alike (`LibraryModel::tracks_named`, `HELD_WEIGHED_AT_MOST`) that `TheSong::held_as` the rating. Every service that plays in place (`Serving::opened`, so nothing is asked with Online off) is searched on the background executor for the bare title and artist, a song kept only where it is the same song (folded bare title, artist, length within `LENGTHS_AGREE_WITHIN`, 3 s) and, for quality, its suffix reads as a lossless codec (`resonate_library::codec_named`), for a rating it carries it: Explicit must be marked, and Clean may be unmarked only beside an explicit track (`a_clean_version_of_an_explicit_song_may_be_unmarked_and_an_explicit_one_must_be_marked`). **Every lookup says what it is doing and what came of it**: *Looking for … of {title}* as it asks, *Found N versions of {title}* with the menu at the press, a `Trouble` naming every service that could not be asked, and where nothing was found the reason (`better::nothing_said`: already lossless, no service set up to ask, or none on the services named; `nothing_found_says_why_and_where_it_was_looked_for`). **Nothing found is ever streamed in the song's place, and nothing is deleted for it**: a held copy is played at once and chosen as the song's version (`Library::choose_version`, `library.md`'s *A song keeps its versions beside it*), written through `LibraryModel::edited` like every other edit and told as *{title} plays this version from now on*; a service's version is downloaded beside the song (`LibraryModel::keep_as_a_version`, `Library::keep_as_a_version`, `KeptAs::Lossless` for a higher quality, `KeptAs::AsServed` for a rating), told as *Downloading another version of {title}…*, and chosen once it lands; only a service the keep pass can fetch from is offered (`song_to_keep`). **The versions a song keeps are a nest of their own**: wherever `LibraryModel::has_variants` (the `tracks_with_variants` set read at each reload, so a song with none asks nothing) says a track row's song has any, its menu nests *Versions* (`Menu::offers_the_variants`): the song's own copy and each version held, by codec and quality (and folder where two read alike), a check on the one that plays (`Variants::plays`); a press makes it the one that plays, the song's own copy forgetting the choice, and plays nothing. The menu is held back while `variants_of` is read (`Menu::awaiting_the_variants_of`, `Awaited::Versions`, kept in `LibraryModel::keep_the_variants` and read back by `variants_held`). `RootView::send` passes every `Command::Load` and `Insert` through `with_the_versions_chosen`, which asks `Library::chosen_among` for the rows being sent alone and only for those `LibraryModel` holds among `versions_chosen` (a set read on the background executor at each reload and after each choosing, so a catalog with no version chosen asks nothing on the window's thread), so a row of that song wherever it is played (the tracks pane, a playlist, a queue gesture) is queued as the version instead, a catalog row of its own whose artist and album link as any other (`better::played_as_chosen`, `a_song_with_a_version_chosen_is_queued_as_that_version_wherever_it_is_played`, `a_playlist_row_plays_the_version_chosen_for_its_song_until_its_own_copy_is_chosen_again`). A track's menu opens at once and never reads the catalog on the window's thread: a menu that nests the other copies (`Menu::awaiting_the_copies_of`) is held back while `open_once_read` reads `alternatives_of` on the background executor, keeps the answer in `LibraryModel::keep_the_copies` and builds the menu when it lands, unless the window moved on (`window_has_moved_on_from`); a playlist's menu where sync runs is held back the same way (`Menu::awaiting_what_is_synced_of`, `Awaited::Synced`) while `PlaylistSynced::read` asks the `Syncing` seam for the songs missing, whether its songs are kept and the devices online to fetch from (the ledger's lock, and `missing_from` asking the ledger by `local_id`), kept in `RootView::synced_read` until the next menu opens (`forget_what_menus_read`), and its *Fetch* and *Keep its songs here* run on the background executor too (`a_playlists_menu_reads_the_ledger_off_the_windows_thread_and_opens_once_it_is_read`); every opening goes through `RootView::open_what_is_offered`; *Find another version* reads its held copies, or its full-text `tracks_named` match for a rating, on the background executor too (`look_for_a_version`), and an opened playlist's row menu offers *Find another version* from the same held set (`LibraryModel::has_a_version_chosen`). A queue row's *Play* and *Take out of the queue*, and the playlist row's remove, act on the queue's revision or the entries the row was drawn at and do nothing if the list has moved since (`PlayerModel::send_by_position_at`, `is_queued_at`, `entries_are`). **Every playlist edit by position carries what was drawn down the edit chain**: key Delete, the movers and the move keys, a drag's move or gather and a drop into the opened playlist hand `LibraryModel::playlist_as_drawn` (taken at the press, or for a dropped album before its tracks are read) to the library's `_as_drawn` edits, which refuse inside their transaction once the rows have moved (`library.md`), told as a `Trouble` (`playlist-moved-since-drawn`); a drag's `Carried::over` holds the entries it was lifted from, so a drop after the pane read the playlist again does nothing (`carried_over_what_is_drawn`; `a_playlist_row_taken_out_after_another_edit_landed_first_is_refused_and_said`, `a_playlist_row_moved_after_another_edit_landed_first_is_refused_and_said`, `rows_dropped_into_a_playlist_after_another_edit_landed_first_are_refused_and_said`, `rows_carried_over_a_playlist_that_has_since_moved_are_not_dropped`). A pointer opens the panel
   by resting on its row and a press too; it stands beside the row on whichever side has room
   (`beside_its_row`, read from the row drawn a frame behind), and resting on another row closes it only
   after `STAYS_OPEN_FOR_THE_POINTER_CROSSING` (250 ms), which reaching the panel calls off, so a
@@ -523,8 +523,9 @@ so `editing` sees it.
   its own `stop_propagation` move listener to the app element and one element's listeners run in
   reverse order. gpui reports motion only inside the window, so a drag past the edge freezes at the
   last inside value; `on_mouse_up_out` still hears the release.
-  - Volume applies on every move (`VOLUME_SETTLE` debounces `config.toml` writes, kept as the zone shown at the change: `volume_unkept`, flushed by `show_zone` and as the window leaves, so a switch neither files it under the other zone nor loses it); holding shift on the press
-    or the drag snaps it to a `VOLUME_STEP` (5 %, `snapped_by`), the seek rail ignoring the key. A seek only previews
+  - Volume applies on every move (`VOLUME_SETTLE` debounces `config.toml` writes, kept as the zone shown at the change: `volume_unkept`, flushed by `show_zone` and as the window leaves, so a switch neither files it under the other zone nor loses it); a right press
+    on the volume rail, or shift held on the press or the drag, snaps it to a `VOLUME_STEP` (5 %, `snapped_by`; a right press
+    keeps snapping for its whole drag, `Grab::snaps`), the seek rail ignoring both. A seek only previews
     and commits one `Command::Seek` on release, and only if the press's track still plays
     (`a_seek_rail_released_after_the_track_changed_seeks_nothing`); `PlayerModel::seek` holds the
     requested position until its `Outcome` answers (a refused seek restores the published position
@@ -783,10 +784,16 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
     `artist_page_heading` = `kit::way_back` top left and a `kit::hero` under it. Cover, portrait or
     opened suggestion's art is a square of the text column's own height at `Drawn::OnThePage`; column
     = eyebrow, `kit::hero_title` at `text_title`, lines about it, bottom-aligned. The column's height
-    and width are read a frame behind by absolute canvases (`kit::measures_its_height` into
+    and width are read a frame behind by absolute canvases (`kit::measures_the_hero` into
     `Rooms::hero_height` via `hero_side`; `kit::measures_its_width` into `hero_width`, taken by
     `kit::hero_title` and `kit::wraps_within`, since what wraps must be told its width); until
-    measured the cover uses `scope_cover` and the title is one line ending in an ellipsis.
+    measured the cover uses `scope_cover` and the title is one line ending in an ellipsis. **The
+    picture is drawn only at a height measured for the words beside it**: one cell serves every
+    hero, so a page opened on the height another page left, or whose lines landed since (an
+    artist's profile, genres and services arrive after the page opens), drew its picture small and
+    grew it a frame later. A `kit::HeroMeasured` keeps the height with the `kit::hero_of` of what
+    the column says (the page's id and its lines), and `kit::hero_art` holds the picture unseen,
+    in its place, until `HeroSide::settled` says the height is the one measured for those words.
   - Action row = the column's last child: Play, Shuffle (album, artist), favourite, a sort icon where
     the listing sorts. Shuffle begins at a time-chosen row and enables queue shuffle
     (`RootView::play_shuffled`). **Play plays in order**: every whole-list Play sends
@@ -2121,32 +2128,34 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   saying the listener's other devices that let them move their copy to the trash too, and *Delete*
   is `LibraryModel::delete_tracks` with `Reach::EveryDevice`, `Library::delete_tracks_everywhere`
   (`deleting_a_track_from_every_device_takes_its_file_and_waits_to_tell_the_others`, `sync.md`).
-- **A playlist's lossy songs are swapped for lossless copies from a sheet** (`views/replacing.rs`,
-  `Sheet::Replacing`, `library.md`). *Replace lossy songs…* stands in `playlist_menu` after
-  *Duplicate* only where `LibraryModel::holds_lossy_songs` says so, read from the shelves'
-  `playlists_with_lossy_songs` at each reload, so the menu reads nothing on the window's thread.
-  `open_replacing` closes the menu, stands the sheet at *Reading the playlist…* and reads
-  `lossy_songs_of` on the background executor, dropped where the window's `attention` moved or the
-  sheet in front is another. Its heading names the playlist as the shelves hold it, or, where they
-  miss it, as the same background read finds it (`name_held_for`), *Replace lossy songs* alone
-  until then
-  (`the_lossy_songs_sheet_of_a_playlist_the_shelves_miss_is_headed_by_its_name`). Every row that can be ticked (a held lossless copy, or a release row to
-  want) arrives ticked; a `kit::checkbox_when` row names the song (`spoken::song`), its
-  `kit::format_badge` and why it stands (*you hold it in FLAC*, *wanted through MusicBrainz*), the
-  checkbox taking the row's spare width and its label ending in an ellipsis
+- **A playlist's higher quality versions are found from a sheet, and kept beside its songs**
+  (`views/replacing.rs`, `Sheet::Replacing`, `library.md`'s *Finding higher quality versions*). It
+  does to a whole playlist what *Find a higher quality version* does to one song: *Find higher
+  quality versions…* stands in every playlist's `playlist_menu` after *Duplicate*, reading nothing
+  on the window's thread. `open_replacing` closes the menu, stands the sheet at *Reading the
+  playlist…* and reads `songs_to_better_in` on the background executor, dropped where the window's
+  `attention` moved or the sheet in front is another. Its heading names the playlist as the shelves
+  hold it, or, where they miss it, as the same background read finds it (`name_held_for`),
+  *Higher quality versions* alone until then
+  (`the_lossy_songs_sheet_of_a_playlist_the_shelves_miss_is_headed_by_its_name`); a playlist whose
+  every song plays its best says so. Every row that can be ticked (a held higher quality copy, or a
+  release row to want) arrives ticked; a `kit::checkbox_when` row names the song (`spoken::song`),
+  its `kit::format_badge` and why it stands (*you hold it in FLAC*, *wanted through MusicBrainz*),
+  the checkbox taking the row's spare width and its label ending in an ellipsis
   (`kit::checkbox_when` wraps every label in `ends_in_an_ellipsis` under `min_w_0`), so a long title
   never pushes the badge and the words past the row's clipped edge
   (`a_long_title_in_the_lossy_songs_sheet_ends_in_an_ellipsis_before_why_it_stands`), and
-  one not matched or already being replaced is `kit::Press::Greyed`. *Tick all* in the heading row
-  ticks every tickable row or, all ticked, unticks them. A note in `muted` says each lossy copy goes
-  to the trash once its lossless copy is held, in place of a confirmation, the trash being reversible.
+  one not matched or already being looked for is `kit::Press::Greyed`. *Tick all* in the heading
+  row ticks every tickable row or, all ticked, unticks them. A note in `muted` says each version is
+  kept beside its song and plays in its place, nothing deleted, the song's *Versions* turning it
+  back, in place of a confirmation.
   *Check availability* (`look-for-lossless-copies`, `RootView::look_for_lossless_copies`) runs
   `Library::look_for_replacements` on the background executor over
   `LibraryModel::providers_to_look_through` (greyed with no service to ask or no row to ask about),
   each answer arriving over a channel: a row asked about says *checking…*, then *found lossless on
   {provider}*, which ticks it (a song matched nowhere included, which only an offer makes
   tickable), *no lossless copy found*, which unticks it, or *not every service answered*. The
-  button reads *Stop checking* meanwhile, and closing the sheet, replacing or opening it again
+  button reads *Stop checking* meanwhile, and closing the sheet, keeping or opening it again
   stops the pass (`ReplacingSheet::stop_looking`). A row kept as offered nowhere arrives unticked.
   `replace_lossy_songs` hands the library the music folder first and, where `Replacing::kept`, begins
   the keep pass (`keep_what_is_queued`); the toast adds *N songs downloading* and, as a trouble,
@@ -2158,31 +2167,26 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   never shrinks to fit the list**: each is `flex_none` in the capped, scrolled column, else a long
   playlist squeezed every row flat and the list drew blank
   (`a_long_playlists_lossy_songs_are_drawn_where_the_sheet_shows_them`).
-  *Cancel* (`KEEP_THE_LOSSY_SONGS`, the welcome), escape and a press outside keep the songs
-  (`keep_the_lossy_songs`); *Replace N songs* (greyed at none) closes the sheet and calls
+  *Cancel* (`KEEP_THE_LOSSY_SONGS`, the welcome), escape and a press outside leave the songs as
+  they are (`keep_the_lossy_songs`); *Keep N versions* (greyed at none) closes the sheet and calls
   `LibraryModel::replace_lossy_songs`: `Library::replace` on the background executor, a toast from
-  `replaced_now` (*1 song replaced, 2 songs wanted*; a trouble naming the lossy files the trash
-  refused, as `folding_told` does, and `told::polled` the same after a poll), `fetch_or_say_nobody_can` where anything was
-  wanted, an `AlreadyWalking` said as another task running, then an `Everything` read. Each want
-  it placed (`Replacing::wants`) is read back on the same background task and listed in the
-  Downloads panel at once (`list_the_replacements_wanted`: `downloads::found_of` the want, then
-  `landing` and `wanted`, as `list_as_downloads` does for an album's rows), so it stands there in
-  the session that placed it and its *Cancel* is there to press; a want whose row has no recording
-  MBID is not listed, the panel being keyed by recording
-  (`a_lossy_song_wanted_again_stands_in_the_downloads_and_its_cancel_keeps_the_song`). **A fold
-  moves the zones' queues as organise's moves do**: every `Fold` that `replace`, a scan the window
-  started or a poll it ran names (`Replacing::folds`, `ScanSummary::replaced`,
-  `PollSummary::replaced`) goes into the model's relocations through `folds_moved`, which the root
-  takes (`take_relocations`) and sends as `Command::Relocate`, so a queued lossy song plays from its
-  lossless copy rather than a trashed file
-  (`a_queued_lossy_song_plays_from_its_lossless_copy_once_replaced`). A want a
+  `replaced_now` (*1 song plays a higher quality version, 2 songs wanted*, and `told::polled` the
+  same after a poll), `fetch_or_say_nobody_can` where anything was wanted, then an `Everything`
+  read. Each want it placed (`Replacing::wants`) is read back on the same background task and
+  listed in the Downloads panel at once (`list_the_replacements_wanted`: `downloads::found_of` the
+  want, then `landing` and `wanted`, as `list_as_downloads` does for an album's rows), so it stands
+  there in the session that placed it and its *Cancel* is there to press; a want whose row has no
+  recording MBID is not listed, the panel being keyed by recording
+  (`a_lossy_song_wanted_again_stands_in_the_downloads_and_its_cancel_keeps_the_song`). **A queue
+  already playing keeps its rows**: nothing is relocated, and the song plays its new version the next
+  time it is queued (`a_lossy_song_plays_from_its_lossless_copy_once_kept_beside_it`). A want a
   replacement waits on stands in the Downloads panel like any other, marked *replacing a lossy copy*
   (`WantStanding::replacing`, `replaces_a_song`); its *Cancel* is `cancel_download`, whose `unwant`
   cancels the replacement and leaves the lossy copy
-  (`a_playlists_lossy_songs_are_replaced_from_its_menu_and_the_sheet_closes_with_a_toast`,
+  (`a_playlists_higher_quality_versions_are_kept_from_its_menu_and_the_sheet_closes_with_a_toast`,
   `every_row_that_can_be_ticked_starts_ticked_and_tick_all_turns_them_together`,
-  `the_toast_says_what_was_replaced_wanted_and_not_matched`,
-  `a_lossy_file_the_trash_refused_is_told_beside_what_was_replaced`).
+  `the_toast_says_what_plays_a_higher_quality_version_what_was_wanted_and_what_was_not_matched`,
+  `a_poll_that_kept_higher_quality_versions_is_told_so_beside_what_it_kept`).
 - **A search is a page of its own; what the library lacks is never buried under what it holds.**
   `views/search.rs`. `RootView::search_in_front` answers a `SearchShows` wherever the box holds words,
   the pane in front is Albums, Artists or Tracks, nothing is scoped and no songs are being added to a

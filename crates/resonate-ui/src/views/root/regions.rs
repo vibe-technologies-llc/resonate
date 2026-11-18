@@ -238,13 +238,11 @@ impl RootView {
         }
     }
 
-    pub(crate) fn hero_side(&self) -> f32 {
-        let measured = self.rooms.hero_height.get();
-        if measured > px(0.0) {
-            measured / px(1.0)
-        } else {
-            theme::scope_cover()
-        }
+    pub(crate) fn hero_side(&self, of: u64) -> kit::HeroSide {
+        self.rooms
+            .hero_height
+            .get()
+            .side_for(of, theme::scope_cover())
     }
 
     pub(crate) fn cover(&self, pictured: Pictured<'_>, cx: &mut Context<Self>) -> Div {

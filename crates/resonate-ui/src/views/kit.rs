@@ -1,5 +1,10 @@
-use std::{cell::Cell, rc::Rc};
+use std::{
+    cell::Cell,
+    hash::{Hash, Hasher as _},
+    rc::Rc,
+};
 
+use ahash::AHasher;
 use gpui::{
     AnyElement, App, BoxShadow, Div, ElementId, Font, FontWeight, MouseButton, Pixels, Rgba, Role,
     ScrollHandle, SharedString, Stateful, TruncateFrom, canvas, div, point, prelude::*, px,
@@ -1826,6 +1831,63 @@ pub(crate) fn measures_the_grid(grid: Rc<GridWidth>) -> impl IntoElement {
     )
     .absolute()
     .inset_0()
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct HeroMeasured {
+    of: u64,
+    height: Pixels,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct HeroSide {
+    pub(crate) side: f32,
+    pub(crate) settled: bool,
+}
+
+impl HeroMeasured {
+    pub(crate) fn side_for(self, of: u64, unmeasured: f32) -> HeroSide {
+        let measured = self.height > px(0.0);
+        HeroSide {
+            side: match measured {
+                true => self.height / px(1.0),
+                false => unmeasured,
+            },
+            settled: measured && self.of == of,
+        }
+    }
+}
+
+pub(crate) fn hero_of(says: impl Hash) -> u64 {
+    let mut hasher = AHasher::default();
+    says.hash(&mut hasher);
+    hasher.finish()
+}
+
+pub(crate) fn measures_the_hero(measured: Rc<Cell<HeroMeasured>>, of: u64) -> impl IntoElement {
+    canvas(
+        move |bounds, window, _| {
+            let now = HeroMeasured {
+                of,
+                height: bounds.size.height,
+            };
+            if measured.get() != now {
+                measured.set(now);
+                window.request_animation_frame();
+            }
+        },
+        |_, _, _, _| {},
+    )
+    .absolute()
+    .inset_0()
+}
+
+pub(crate) fn hero_art(sized: HeroSide, art: impl IntoElement) -> Div {
+    div()
+        .flex()
+        .flex_none()
+        .when(!sized.settled, |art| art.opacity(0.0))
+        .child(art)
 }
 
 pub(crate) fn measures_its_height(measured: Rc<Cell<Pixels>>) -> impl IntoElement {

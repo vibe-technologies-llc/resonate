@@ -98,12 +98,12 @@ impl RootView {
                 start_at,
                 autoplay,
             } => Command::Load {
-                items: self.with_the_versions_chosen(items, false, cx),
+                items: self.with_the_versions_chosen(items, cx),
                 start_at,
                 autoplay,
             },
             Command::Insert { items, at, play } => Command::Insert {
-                items: self.with_the_versions_chosen(items, true, cx),
+                items: self.with_the_versions_chosen(items, cx),
                 at,
                 play,
             },

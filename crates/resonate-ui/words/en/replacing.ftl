@@ -1,12 +1,12 @@
-replace-lossy-songs = Replace lossy songs…
-heading = Replace lossy songs · { $playlist }
-heading-unnamed = Replace lossy songs
+replace-lossy-songs = Find higher quality versions…
+heading = Higher quality versions · { $playlist }
+heading-unnamed = Higher quality versions
 tick-all = Tick all
-tick-all-hint = Tick every song that can be replaced
+tick-all-hint = Tick every song a higher quality version can play for
 held = you hold it in { $codec }
 wanted = wanted through MusicBrainz
 not-matched = not matched on MusicBrainz
-pending = already being replaced
+pending = already being looked for
 look = Check availability
 look-hint = Ask the services you have set up which songs they hold lossless
 look-unasked = No service is set up to ask
@@ -18,18 +18,18 @@ offered-nowhere = no lossless copy found
 unheard = not every service answered
 ask-the-services = ask the services which songs they hold lossless
 reading = Reading the playlist…
-nothing-lossy = Every song here is lossless
-trash-note = Each lossy copy goes to the trash once its lossless copy is in your library.
+nothing-lossy = Every song here plays its best version already
+beside-note = Each higher quality version is kept beside its song and plays in its place. Nothing is deleted, and the song’s menu turns it back under Versions.
 keep = Cancel
-keep-hint = Keep the lossy songs — { $keys }
+keep-hint = Leave the songs as they are — { $keys }
 replace = { $count ->
-    [one] Replace 1 song
-   *[other] Replace { $count } songs
+    [one] Keep 1 version
+   *[other] Keep { $count } versions
 }
-replace-hint = Replace the ticked songs with lossless copies
-folded = { $count ->
-    [one] 1 song replaced
-   *[other] { $count } songs replaced
+replace-hint = Keep the higher quality versions of the ticked songs beside them
+beside = { $count ->
+    [one] 1 song plays a higher quality version
+   *[other] { $count } songs play a higher quality version
 }
 wanted-count = { $count ->
     [one] 1 song wanted
@@ -46,8 +46,4 @@ unfiled-count = { $count ->
 unmatched-count = { $count ->
     [one] 1 song not matched
    *[other] { $count } songs not matched
-}
-trash-refused = { $count ->
-    [one] 1 lossy file couldn't be removed
-   *[other] { $count } lossy files couldn't be removed
 }

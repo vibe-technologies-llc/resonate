@@ -190,7 +190,7 @@ impl RootView {
         match drawn_at {
             None => self.send(Command::Insert { items, at, play }, cx),
             Some(drawn_at) => {
-                let items = self.with_the_versions_chosen(items, true, cx);
+                let items = self.with_the_versions_chosen(items, cx);
                 self.send_by_position_at(drawn_at, Command::Insert { items, at, play }, cx);
             }
         }

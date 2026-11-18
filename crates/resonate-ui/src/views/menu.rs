@@ -1,6 +1,7 @@
 use std::{
     cell::Cell,
     collections::BTreeSet,
+    iter,
     path::{Path, PathBuf},
     rc::Rc,
     sync::Arc,
@@ -12,9 +13,9 @@ use gpui::{
     MouseDownEvent, Pixels, Point, Role, SharedString, Size, Stateful, Task, Window, anchored,
     canvas, deferred, div, point, prelude::*, px, rgb,
 };
-use resonate_core::{AlbumId, ArtistId, FrameSpan, MediaLocation, PlaylistId, TrackId};
+use resonate_core::{AlbumId, ArtistId, FrameSpan, MediaLocation, PlaylistId, TrackId, titles};
 use resonate_engine::Placement;
-use resonate_library::{Favoured, Library, PlaylistEntry, Track};
+use resonate_library::{Favoured, Library, PlaylistEntry, Track, Variants};
 use resonate_lyrics::Standing;
 
 use crate::{
@@ -79,26 +80,35 @@ pub(crate) struct Menu {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Awaited {
-    CopiesOf(TrackId),
-    SyncedOf(PlaylistId),
+    Copies(TrackId),
+    Versions(TrackId),
+    Synced(PlaylistId),
 }
 
 pub(crate) enum MenuRead {
     Copies(TrackId, Vec<Track>),
+    Variants(TrackId, Option<Box<Variants>>),
     Synced(PlaylistId, PlaylistSynced),
 }
 
 impl Awaited {
     fn read(self, library: &Library, syncing: Option<&dyn Syncing>) -> MenuRead {
         match self {
-            Self::CopiesOf(track) => {
+            Self::Copies(track) => {
                 let copies = library.alternatives_of(track).unwrap_or_else(|error| {
                     tracing::warn!(%error, "the other copies of a track could not be read");
                     Vec::new()
                 });
                 MenuRead::Copies(track, copies)
             }
-            Self::SyncedOf(playlist) => MenuRead::Synced(
+            Self::Versions(track) => {
+                let variants = library.variants_of(track).unwrap_or_else(|error| {
+                    tracing::warn!(%error, "the versions of a song could not be read");
+                    None
+                });
+                MenuRead::Variants(track, variants.map(Box::new))
+            }
+            Self::Synced(playlist) => MenuRead::Synced(
                 playlist,
                 syncing.map_or_else(PlaylistSynced::default, |syncing| {
                     PlaylistSynced::read(syncing, playlist)
@@ -207,13 +217,18 @@ impl Menu {
         }
     }
 
+    pub(crate) const fn awaiting_the_variants_of(mut self, track: TrackId) -> Self {
+        self.awaiting = Some(Awaited::Versions(track));
+        self
+    }
+
     pub(crate) const fn awaiting_the_copies_of(mut self, track: TrackId) -> Self {
-        self.awaiting = Some(Awaited::CopiesOf(track));
+        self.awaiting = Some(Awaited::Copies(track));
         self
     }
 
     pub(crate) const fn awaiting_what_is_synced_of(mut self, playlist: PlaylistId) -> Self {
-        self.awaiting = Some(Awaited::SyncedOf(playlist));
+        self.awaiting = Some(Awaited::Synced(playlist));
         self
     }
 
@@ -930,6 +945,9 @@ impl RootView {
             MenuRead::Copies(track, copies) => self
                 .library
                 .update(cx, |library, _| library.keep_the_copies(track, copies)),
+            MenuRead::Variants(track, variants) => self.library.update(cx, |library, _| {
+                library.keep_the_variants(track, variants.map(|variants| *variants));
+            }),
             MenuRead::Synced(playlist, synced) => self.synced_read = Some((playlist, synced)),
         }
     }
@@ -1056,7 +1074,7 @@ impl Menu {
         })
     }
 
-    pub(crate) fn looks_for_versions(self, track: Track, at: Point<Pixels>, chosen: bool) -> Self {
+    pub(crate) fn looks_for_versions(self, track: Track, at: Point<Pixels>) -> Self {
         self.nests(
             Icon::Search,
             words::menu::find_another_version(),
@@ -1071,17 +1089,26 @@ impl Menu {
                         },
                     );
                 }
-                if chosen {
-                    let track = track.clone();
-                    menu = menu.does(
-                        Icon::Undo,
-                        words::better::play_your_own_copy(),
-                        move |this, _, cx| this.play_your_own_copy(track.clone(), cx),
-                    );
-                }
                 menu
             },
         )
+    }
+
+    pub(crate) fn offers_the_variants(self, variants: Variants) -> Self {
+        let plays = variants.plays();
+        let song = variants.song.id;
+        let title = titles::bare(&variants.song.title).to_owned();
+        let labels = variant_labels(&variants);
+        let held = iter::once(variants.song.id).chain(variants.held.iter().map(|copy| copy.id));
+
+        self.nests(Icon::Tracks, words::menu::versions(), move |menu| {
+            held.zip(labels).fold(menu, |menu, (copy, label)| {
+                let title = title.clone();
+                menu.chooses(label, copy == plays, move |this, _, cx| {
+                    this.choose_the_version(song, copy, &title, cx);
+                })
+            })
+        })
     }
 
     pub(crate) fn shares(self, track: TrackId) -> Self {
@@ -1261,6 +1288,25 @@ fn where_it_is(copy: &Track) -> Option<String> {
         Some(folder) => format!("{}/{file}", folder.to_string_lossy()),
         None => file.into_owned(),
     })
+}
+
+fn variant_labels(variants: &Variants) -> Vec<String> {
+    let every: Vec<&Track> = iter::once(&variants.song).chain(&variants.held).collect();
+    let kinds: Vec<String> = every.iter().map(|copy| kind_of(copy)).collect();
+
+    every
+        .iter()
+        .zip(&kinds)
+        .enumerate()
+        .map(|(at, (copy, kind))| {
+            let shared = kinds.iter().filter(|other| *other == kind).count() > 1;
+            match (at, where_it_is(copy).filter(|_| shared)) {
+                (0, _) => words::menu::the_songs_own_version(kind.as_str()),
+                (_, Some(place)) => words::menu::the_version_in(kind.as_str(), place),
+                (_, None) => words::menu::the_version(kind.as_str()),
+            }
+        })
+        .collect()
 }
 
 fn copy_labels(own: &Track, copies: &[Track]) -> Vec<String> {

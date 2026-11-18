@@ -1,7 +1,6 @@
 find-a-better-version = Find a higher quality version
 look-for-clean = Look for a Clean version
 look-for-explicit = Look for an Explicit version
-play-your-own-copy = Play your own copy again
 looking = Looking for a higher quality version of { $title }
 looking-for-clean = Looking for a Clean version of { $title }
 looking-for-explicit = Looking for an Explicit version of { $title }
@@ -18,12 +17,12 @@ found = { $count ->
    *[other] Found { $count } versions of { $title }
 }
 chosen = { $title } plays this version from now on
-own-copy-again = { $title } plays your own copy again
 lossless = lossless
-play-served-on-album = Play the { $codec } version on { $service } ({ $album })
-play-served = Play the { $codec } version on { $service }
-play-held = Play the { $codec } { $quality } copy
-play-it-on-album = Play it on { $service } ({ $album })
-play-it-on = Play it on { $service }
+play-held = Play the { $codec } { $quality } copy from now on
 play-your-copy-from = Play your copy from { $album }
 play-your-copy = Play your { $codec } copy
+download-from-served-on-album = Download the { $codec } version from { $service } ({ $album }) and play it from now on
+download-from-served = Download the { $codec } version from { $service } and play it from now on
+download-it-on-album = Download it from { $service } ({ $album }) and play it from now on
+download-it-from = Download it from { $service } and play it from now on
+downloading = Downloading another version of { $title }, which plays in its place once it lands

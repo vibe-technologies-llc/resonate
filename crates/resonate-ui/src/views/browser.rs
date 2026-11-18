@@ -1268,7 +1268,13 @@ impl RootView {
                     Some(None) => return Menu::at(at).awaiting_the_copies_of(track.id),
                 };
 
-                let chosen = this.library.read(cx).has_a_version_chosen(track_id);
+                let variants = match this.library.read(cx).has_variants(track.id) {
+                    false => None,
+                    true => match this.library.read(cx).variants_held(track.id) {
+                        Some(variants) => variants,
+                        None => return Menu::at(at).awaiting_the_variants_of(track.id),
+                    },
+                };
                 let placeable = this.library.read(cx).can_enrich().then_some(track_id);
                 let matched = SharedString::from(track.title.clone());
                 let looked_up = track.title.clone();
@@ -1293,7 +1299,8 @@ impl RootView {
                     .favours(Favoured::Track(track.id), favourite)
                     .reaches(Some(track.id), track.album_id, track.artist_id)
                     .when_some(others, Menu::offers_the_other_copies)
-                    .looks_for_versions(track.clone(), at, chosen)
+                    .when_some(variants, Menu::offers_the_variants)
+                    .looks_for_versions(track.clone(), at)
                     .apart()
                     .shares(track.id)
                     .offers_the_file(&track.location, names)
@@ -2074,9 +2081,11 @@ impl RootView {
         let record = record.map(drop).or(findable.then_some(()));
         let favourite = library.favoured_album(id);
         let has_missing_tracks = album.is_some_and(|album| album.missing > 0);
+        let hero = kit::hero_of((id, &title, owner.as_ref().map(|(_, name)| name), &under));
+        let sized = self.hero_side(hero);
 
         let cover = self.in_the_pane_ring(
-            self.cover_sized(Pictured::Album(id), Drawn::OnThePage, self.hero_side(), cx)
+            self.cover_sized(Pictured::Album(id), Drawn::OnThePage, sized.side, cx)
                 .id("magnify-scoped-cover")
                 .said_as(Role::Button, words::transport::cover_hint())
                 .cursor_pointer()
@@ -2111,7 +2120,7 @@ impl RootView {
             .min_w(px(0.0))
             .gap_1()
             .child(kit::measures_its_width(self.rooms.hero_width.clone()))
-            .child(kit::measures_its_height(self.rooms.hero_height.clone()))
+            .child(kit::measures_the_hero(self.rooms.hero_height.clone(), hero))
             .child(kit::eyebrow(words::browser::album()))
             .child(kit::hero_title(title, self.rooms.hero_width.get()))
             .when_some(owner, |column, (artist, name)| {
@@ -2166,7 +2175,7 @@ impl RootView {
 
         kit::heading()
             .child(self.way_back(cx))
-            .child(kit::hero().child(cover).child(about))
+            .child(kit::hero().child(kit::hero_art(sized, cover)).child(about))
     }
 
     fn artist_page_heading(&self, id: ArtistId, cx: &mut Context<Self>) -> Div {
@@ -2198,7 +2207,18 @@ impl RootView {
         let tracks = library.listed().rows as usize;
         let shows = self.shows.artist.within(any_records);
 
-        let side = self.hero_side();
+        let hero = kit::hero_of((
+            id,
+            &name,
+            &under,
+            &profile,
+            &services,
+            genres.is_empty(),
+            unheld,
+            any_records > 0,
+        ));
+        let sized = self.hero_side(hero);
+        let side = sized.side;
         let portrait = match self.library.update(cx, |library, cx| {
             library.portrait(id, Portrayed::OnThePage, cx)
         }) {
@@ -2217,7 +2237,7 @@ impl RootView {
             .min_w(px(0.0))
             .gap_1()
             .child(kit::measures_its_width(self.rooms.hero_width.clone()))
-            .child(kit::measures_its_height(self.rooms.hero_height.clone()))
+            .child(kit::measures_the_hero(self.rooms.hero_height.clone(), hero))
             .child(kit::eyebrow(words::browser::artist()))
             .child(kit::hero_title(
                 SharedString::from(name),
@@ -2299,9 +2319,11 @@ impl RootView {
                 }),
             );
 
-        kit::heading()
-            .child(self.way_back(cx))
-            .child(kit::hero().child(portrait).child(about))
+        kit::heading().child(self.way_back(cx)).child(
+            kit::hero()
+                .child(kit::hero_art(sized, portrait))
+                .child(about),
+        )
     }
 
     fn artist_tabs(
@@ -3919,7 +3941,7 @@ fn record_of(release: &ReleaseDetail) -> Option<Record> {
     (!record.is_empty()).then_some(record)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Hash)]
 struct HeardOn {
     name: &'static str,
     url: SharedString,

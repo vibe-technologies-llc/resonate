@@ -228,7 +228,6 @@ pub(super) fn shelves(
         pinned: library.pinned_playlists(PINNED_IN_THE_SIDEBAR)?,
         held,
         entries,
-        lossy: library.playlists_with_lossy_songs()?,
         wants,
         missing_tracks: library.missing_tracks(narrowing, Some(MISSING_AT_MOST))?,
         unheld_releases: library.unheld_releases(narrowing, Some(MISSING_AT_MOST))?,

@@ -288,7 +288,6 @@ struct Shelves {
     pinned: Vec<NamedPlaylist>,
     held: Option<Playlist>,
     entries: Vec<PlaylistEntry>,
-    lossy: AHashSet<PlaylistId>,
     wants: Option<WantsRead>,
     missing_tracks: Vec<MissingTrack>,
     unheld_releases: Vec<UnheldRelease>,
@@ -485,7 +484,6 @@ enum Change {
     GiveIsrc,
     ReadTheRest,
     ChooseVersion,
-    ForgetTheVersionChosen,
     KeepTheLyricsTiming,
     LookForMissingCovers,
     Undo,
@@ -518,7 +516,6 @@ impl Change {
             Self::GiveIsrc => words::models::give_the_track_that_isrc(),
             Self::ReadTheRest => words::models::read_the_rest_of_the_discography(),
             Self::ChooseVersion => words::models::keep_that_version(),
-            Self::ForgetTheVersionChosen => words::models::forget_the_version_chosen(),
             Self::KeepTheLyricsTiming => words::models::keep_the_lyrics_timing(),
             Self::LookForMissingCovers => words::models::look_for_the_missing_covers_again(),
             Self::Undo => words::models::put_that_back(),
@@ -911,7 +908,6 @@ struct Shelf {
     pinned: Arc<[NamedPlaylist]>,
     held: Option<Playlist>,
     entries: Arc<[PlaylistEntry]>,
-    lossy: AHashSet<PlaylistId>,
     opened: Option<PlaylistId>,
     order: PlaylistOrder,
     reading: Direction,
@@ -1004,6 +1000,8 @@ struct Versions {
     touched: bool,
     _reading: Task<()>,
     copies: Option<(TrackId, Arc<[Track]>)>,
+    varied: AHashSet<TrackId>,
+    variants: Option<(TrackId, Option<resonate_library::Variants>)>,
 }
 
 struct Naming {
@@ -1287,7 +1285,6 @@ impl LibraryModel {
                 pinned: Arc::default(),
                 held: None,
                 entries: Arc::default(),
-                lossy: AHashSet::new(),
                 opened: None,
                 order,
                 reading,
@@ -1372,6 +1369,8 @@ impl LibraryModel {
                 touched: false,
                 _reading: Task::ready(()),
                 copies: None,
+                varied: AHashSet::new(),
+                variants: None,
             },
             naming: Naming {
                 named: Recent::new(NAMES_HELD),

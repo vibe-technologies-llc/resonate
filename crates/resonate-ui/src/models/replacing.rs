@@ -6,17 +6,10 @@ use resonate_core::{PlaylistId, WantId};
 use resonate_library::{Replaceable, Replacing, Want};
 use resonate_providers::Providers;
 
-use super::{
-    LibraryModel, Notice, Wanted, delivery_folder,
-    told::{self, folds_moved},
-};
+use super::{LibraryModel, Wanted, delivery_folder, told};
 use crate::{downloads, toast, words};
 
 impl LibraryModel {
-    pub fn holds_lossy_songs(&self, playlist: PlaylistId) -> bool {
-        self.shelf.lossy.contains(&playlist)
-    }
-
     pub fn providers_to_look_through(&self, cx: &App) -> Option<Arc<Providers>> {
         Some(self.providers(cx).without_last_resorts())
             .filter(Providers::has_a_source)
@@ -77,7 +70,6 @@ impl LibraryModel {
         match replaced {
             Ok(replacing) => {
                 self.list_the_replacements_wanted(&replacing, wanted, cx);
-                self.passes.relocated.extend(folds_moved(&replacing.folds));
                 toast::tell(told::replaced_now(&replacing), cx);
                 if replacing.wanted > 0 {
                     self.fetch_or_say_nobody_can(cx);
@@ -86,14 +78,8 @@ impl LibraryModel {
                     self.keep_what_is_queued(cx);
                 }
             }
-            Err(resonate_library::Error::AlreadyWalking) => {
-                toast::tell(
-                    Notice::Trouble(words::models::already_walking().to_owned()),
-                    cx,
-                );
-            }
             Err(error) => {
-                tracing::error!(%error, "the lossy songs could not be replaced");
+                tracing::error!(%error, "the higher quality versions could not be kept");
                 toast::tell(
                     toast::could_not(words::models::replace_the_lossy_songs(), &error),
                     cx,

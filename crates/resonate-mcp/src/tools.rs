@@ -193,7 +193,6 @@ impl Tool {
         matches!(
             self,
             Self::RemoveFromPlaylist
-                | Self::ReplaceLossySongs
                 | Self::DiscardPlaylist
                 | Self::RefreshPlaylist
                 | Self::UndoEdit
@@ -231,14 +230,16 @@ impl Tool {
                                      names it. Needs no player."
                 .to_owned(),
             Self::PlaylistLossySongs => format!(
-                "List the lossy songs of one playlist, named as list_playlists names it, each \
-                 once, in the playlist's order, with its standing: held, a lossless copy the \
-                 library holds (lossless_copy) takes its place at once; wanted, the song's \
+                "List the songs of one playlist a higher quality version could play for, named \
+                 as list_playlists names it: every lossy song, and a lossless one where a copy \
+                 of higher resolution is held. Each once, in the playlist's order, with its \
+                 standing: held, a higher quality copy the library holds (better_copy) is kept \
+                 beside it and played in its place; wanted, the song's \
                  release row (release_track_id) is wanted so the providers fetch a lossless \
                  copy; offered, matched nowhere but a service the window asked holds it \
                  lossless (offered_by), so it is downloaded from there; waiting, that is already \
                  so; unmatched, there is none of these, and replace_lossy_songs leaves it. replaceable counts the songs replace_lossy_songs would act on, \
-                 matched all the lossy songs, {LISTED_BY_DEFAULT} listed at a time. Needs no \
+                 matched all the songs listed, {LISTED_BY_DEFAULT} listed at a time. Needs no \
                  player."
             ),
             Self::Favourites => {
@@ -275,23 +276,22 @@ impl Tool {
                                          to through_row, as playlist_tracks numbers them, or \
                                          every row a search matches. Needs no player."
                 .to_owned(),
-            Self::ReplaceLossySongs => "Replace the lossy songs of one playlist, as \
-                                        playlist_lossy_songs lists them. A song whose lossless \
-                                        copy the library holds is folded into that copy at once: \
-                                        its plays, favourite and every playlist's row go with \
-                                        it, and the lossy file is moved to the trash. A song with \
-                                        none is wanted, so start_poll fetches a lossless copy, and \
-                                        the lossy file stays until one is held. A song a \
+            Self::ReplaceLossySongs => "Find higher quality versions of the songs of one \
+                                        playlist, as playlist_lossy_songs lists them. A higher \
+                                        quality copy the library holds is kept beside the song \
+                                        and played in its place from then on (played_beside): \
+                                        the song, its file, plays and playlist rows stay as they \
+                                        are and nothing is deleted. A lossy song with none is \
+                                        wanted, so start_poll fetches a lossless copy to keep \
+                                        beside it. A song a \
                                         service was found to hold lossless is queued to download \
                                         from it (downloading), which the window does once it \
                                         opens, unless no music folder is set \
                                         (need_a_music_folder). A song with none of these is \
                                         left, and one already waiting is passed over. \
-                                        With track_ids, only those songs, a track_id that is no \
-                                        lossy song of the playlist failing the call; without, \
-                                        every lossy song. \
-                                        Refused while a scan is walking the library. Needs no \
-                                        player."
+                                        With track_ids, only those songs, a track_id the \
+                                        listing does not hold failing the call; without, every \
+                                        song listed. Needs no player."
                 .to_owned(),
             Self::RenamePlaylist => "Give a playlist another name. Needs no player.".to_owned(),
             Self::DiscardPlaylist => "Take a playlist and its rows away for good, or the search \
@@ -461,8 +461,8 @@ impl Tool {
             Self::ReplaceLossySongs => json!({
                 "playlist": { "type": "string", "description": "The playlist's name." },
                 "track_ids": ids(
-                    "Only these lossy songs, by the track_id playlist_lossy_songs gives each; \
-                     every lossy song that can be replaced when left out.",
+                    "Only these songs, by the track_id playlist_lossy_songs gives each; every \
+                     song that can be bettered when left out.",
                 ),
             }),
             Self::Favourites => json!({

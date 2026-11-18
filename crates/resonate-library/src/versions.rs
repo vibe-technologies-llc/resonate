@@ -57,8 +57,10 @@ impl Quality {
     }
 
     pub fn is_above(self, held: Self) -> bool {
-        let at_least =
-            self.lossless >= held.lossless && self.bits >= held.bits && self.rate >= held.rate;
+        if self.lossless != held.lossless {
+            return self.lossless;
+        }
+        let at_least = self.bits >= held.bits && self.rate >= held.rate;
         at_least && self != held
     }
 
@@ -261,21 +263,30 @@ mod tests {
     }
 
     #[test]
-    fn a_copy_is_higher_quality_only_where_it_is_no_lower_on_any_count_and_higher_on_one() {
+    fn a_lossless_copy_is_above_any_lossy_one_and_otherwise_no_lower_on_any_count_and_higher_on_one()
+     {
         let cd = Quality::of(&track(Codec::Flac, SampleFormat::S16, SampleRate::HZ_44100));
         let mp3 = Quality::of(&track(Codec::Mp3, SampleFormat::S16, SampleRate::HZ_44100));
         let hi_res = Quality::of(&track(Codec::Flac, SampleFormat::S24, SampleRate::HZ_96000));
         let lossy_hi_rate =
             Quality::of(&track(Codec::Mp3, SampleFormat::S16, SampleRate::HZ_48000));
+        let opus = Quality::of(&track(Codec::Opus, SampleFormat::F32, SampleRate::HZ_48000));
+        let cd_rate_at_more_bits =
+            Quality::of(&track(Codec::Flac, SampleFormat::S24, SampleRate::HZ_44100));
+        let hi_rate_at_fewer_bits =
+            Quality::of(&track(Codec::Flac, SampleFormat::S16, SampleRate::HZ_96000));
 
         assert!(cd.is_above(mp3));
         assert!(hi_res.is_above(cd));
         assert!(hi_res.is_above(mp3));
+        assert!(cd.is_above(lossy_hi_rate));
+        assert!(cd.is_above(opus));
 
         assert!(!cd.is_above(cd));
         assert!(!mp3.is_above(cd));
         assert!(!lossy_hi_rate.is_above(cd));
-        assert!(!cd.is_above(lossy_hi_rate));
+        assert!(!opus.is_above(cd));
+        assert!(!cd_rate_at_more_bits.is_above(hi_rate_at_fewer_bits));
     }
 
     #[test]

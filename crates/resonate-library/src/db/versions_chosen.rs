@@ -9,7 +9,7 @@ use super::{
     searched::collect,
     statements::{IDS_READ_AT_ONCE, TRACK_COLUMNS},
 };
-use crate::{Chosen, ChosenVersion, Result, Track, Version, chosen};
+use crate::{Chosen, ChosenVersion, Quality, Result, Track, Variants, chosen};
 
 impl Library {
     pub fn alternatives_of(&self, id: TrackId) -> Result<Vec<Track>> {
@@ -23,9 +23,9 @@ impl Library {
         )
     }
 
-    pub fn choose_version(&self, track: TrackId, version: &Version) -> Result<bool> {
+    pub fn choose_version(&self, track: TrackId, copy: TrackId) -> Result<bool> {
         self.inner
-            .write(|transaction| chosen::choose(transaction, track, version, SystemTime::now()))
+            .write(|transaction| chosen::choose(transaction, track, copy, SystemTime::now()))
     }
 
     pub fn forget_the_version_chosen(&self, track: TrackId) -> Result<bool> {
@@ -56,18 +56,37 @@ impl Library {
 
         let wanted: Vec<TrackId> = versions
             .iter()
-            .flat_map(|chosen| match chosen.version {
-                Version::Held(copy) => [Some(chosen.track), Some(copy)],
-                Version::Served(_) => [Some(chosen.track), None],
-            })
-            .flatten()
+            .flat_map(|chosen| [chosen.track, chosen.copy])
             .collect();
         let held = self.tracks_with_ids(&wanted)?;
 
         Ok(Chosen::of(versions, &held))
     }
 
-    pub fn version_chosen_for(&self, track: TrackId) -> Result<Option<Version>> {
+    pub fn version_chosen_for(&self, track: TrackId) -> Result<Option<TrackId>> {
         self.inner.read(|connection| chosen::of(connection, track))
+    }
+
+    pub fn tracks_with_variants(&self) -> Result<Vec<TrackId>> {
+        self.inner.read(chosen::varied)
+    }
+
+    pub fn variants_of(&self, track: TrackId) -> Result<Option<Variants>> {
+        let (song, held, chosen) = self.inner.read(|connection| {
+            let song = chosen::song_of(connection, track)?.unwrap_or(track);
+            Ok((
+                song,
+                chosen::held_for(connection, song)?,
+                chosen::of(connection, song)?,
+            ))
+        })?;
+        let Some(song) = self.track(song)? else {
+            return Ok(None);
+        };
+
+        let mut held = self.tracks_with_ids(&held)?;
+        held.sort_by_key(|copy| (Quality::of(copy).best_first(), copy.id));
+        let chosen = chosen.filter(|copy| held.iter().any(|held| held.id == *copy));
+        Ok(Some(Variants { song, held, chosen }))
     }
 }

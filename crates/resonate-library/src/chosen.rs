@@ -6,22 +6,29 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params, params_from_i
 
 use crate::{Cut, Error, Result, StoreOp, Track, store};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Version {
-    Held(TrackId),
-    Served(MediaLocation),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChosenVersion {
     pub track: TrackId,
-    pub version: Version,
+    pub copy: TrackId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Played {
-    Held { track: TrackId, cut: Cut },
-    Served(MediaLocation),
+pub struct Played {
+    pub track: TrackId,
+    pub cut: Cut,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Variants {
+    pub song: Track,
+    pub held: Vec<Track>,
+    pub chosen: Option<TrackId>,
+}
+
+impl Variants {
+    pub fn plays(&self) -> TrackId {
+        self.chosen.unwrap_or(self.song.id)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -52,12 +59,9 @@ impl Chosen {
             .into_iter()
             .filter_map(|chosen| {
                 let song = Cut::of(held.get(&chosen.track)?);
-                let played = match chosen.version {
-                    Version::Held(copy) => Played::Held {
-                        track: copy,
-                        cut: Cut::of(held.get(&copy)?),
-                    },
-                    Version::Served(location) => Played::Served(location),
+                let played = Played {
+                    track: chosen.copy,
+                    cut: Cut::of(held.get(&chosen.copy)?),
                 };
                 Some((chosen.track, (song, played)))
             })
@@ -76,32 +80,49 @@ const CHOSEN: &str = "INSERT INTO versions_chosen (track, held, served, chosen)
 
 const FORGOTTEN: &str = "DELETE FROM versions_chosen WHERE track = ?1";
 
-const EVERY_VERSION_CHOSEN: &str = "SELECT track, held, served FROM versions_chosen";
+const A_VERSION_IS_HELD_BESIDE_ITS_SONG: &str =
+    "INSERT OR IGNORE INTO versions_held (track, copy) VALUES (?1, ?2)";
 
-const THE_VERSION_CHOSEN: &str = "SELECT held, served FROM versions_chosen WHERE track = ?1";
+const EVERY_VERSION_CHOSEN: &str = "SELECT track, held FROM versions_chosen WHERE held IS NOT NULL";
+
+const THE_VERSION_CHOSEN: &str = "SELECT held FROM versions_chosen WHERE track = ?1";
+
+const THE_SONG_A_VERSION_IS_HELD_FOR: &str =
+    "SELECT track FROM versions_held WHERE copy = ?1 ORDER BY track LIMIT 1";
+
+const EVERY_TRACK_WITH_VERSIONS: &str =
+    "SELECT track FROM versions_held UNION SELECT copy FROM versions_held";
+
+const THE_VERSIONS_HELD_FOR_A_SONG: &str =
+    "SELECT copy FROM versions_held WHERE track = ?1 ORDER BY copy";
 
 pub(crate) fn choose(
     transaction: &Transaction<'_>,
     track: TrackId,
-    version: &Version,
+    copy: TrackId,
     at: SystemTime,
 ) -> Result<bool> {
     held(transaction, track)?;
-    if let Version::Held(copy) = version {
-        held(transaction, *copy)?;
-        if *copy == track {
-            return forget(transaction, track);
-        }
+    held(transaction, copy)?;
+    if copy == track {
+        return forget(transaction, track);
     }
 
-    let (copy, served) = match version {
-        Version::Held(copy) => (Some(copy.get() as i64), None),
-        Version::Served(location) => (None, Some(location.to_uri())),
-    };
+    transaction
+        .execute(
+            A_VERSION_IS_HELD_BESIDE_ITS_SONG,
+            params![track.get() as i64, copy.get() as i64],
+        )
+        .map_err(|source| Error::store(StoreOp::Insert, source))?;
     transaction
         .execute(
             CHOSEN,
-            params![track.get() as i64, copy, served, store::to_nanos(at)],
+            params![
+                track.get() as i64,
+                copy.get() as i64,
+                Option::<String>::None,
+                store::to_nanos(at)
+            ],
         )
         .map(|_| true)
         .map_err(|source| Error::store(StoreOp::Update, source))
@@ -136,7 +157,7 @@ pub(crate) fn among(
         let held = vec!["?"; batch.len()].join(",");
         let mut statement = connection
             .prepare(&format!(
-                "SELECT track, held, served FROM versions_chosen WHERE track IN ({held})"
+                "SELECT track, held FROM versions_chosen WHERE held IS NOT NULL AND track IN ({held})"
             ))
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
         let rows = statement
@@ -151,35 +172,63 @@ pub(crate) fn among(
     Ok(chosen)
 }
 
-fn chosen_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, Option<i64>, Option<String>)> {
-    Ok((
-        row.get::<_, i64>(0)?,
-        row.get::<_, Option<i64>>(1)?,
-        row.get::<_, Option<String>>(2)?,
-    ))
+fn chosen_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(i64, i64)> {
+    Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
 }
 
-fn chosen_version(
-    (track, copy, served): (i64, Option<i64>, Option<String>),
-) -> Option<ChosenVersion> {
+fn chosen_version((track, copy): (i64, i64)) -> Option<ChosenVersion> {
     Some(ChosenVersion {
         track: track_id(track)?,
-        version: version_of(copy, served.as_deref())?,
+        copy: track_id(copy)?,
     })
 }
 
-pub(crate) fn of(connection: &Connection, track: TrackId) -> Result<Option<Version>> {
-    let row = connection
+pub(crate) fn of(connection: &Connection, track: TrackId) -> Result<Option<TrackId>> {
+    let copy = connection
         .query_row(THE_VERSION_CHOSEN, params![track.get() as i64], |row| {
-            Ok((
-                row.get::<_, Option<i64>>(0)?,
-                row.get::<_, Option<String>>(1)?,
-            ))
+            row.get::<_, Option<i64>>(0)
         })
         .optional()
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
-    Ok(row.and_then(|(copy, served)| version_of(copy, served.as_deref())))
+    Ok(copy.flatten().and_then(track_id))
+}
+
+pub(crate) fn song_of(connection: &Connection, copy: TrackId) -> Result<Option<TrackId>> {
+    let song = connection
+        .query_row(
+            THE_SONG_A_VERSION_IS_HELD_FOR,
+            params![copy.get() as i64],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    Ok(song.and_then(track_id))
+}
+
+pub(crate) fn held_for(connection: &Connection, song: TrackId) -> Result<Vec<TrackId>> {
+    let mut statement = connection
+        .prepare_cached(THE_VERSIONS_HELD_FOR_A_SONG)
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let copies = statement
+        .query_map(params![song.get() as i64], |row| row.get::<_, i64>(0))
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    Ok(copies.into_iter().filter_map(track_id).collect())
+}
+
+pub(crate) fn varied(connection: &Connection) -> Result<Vec<TrackId>> {
+    let mut statement = connection
+        .prepare_cached(EVERY_TRACK_WITH_VERSIONS)
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let tracks = statement
+        .query_map([], |row| row.get::<_, i64>(0))
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    Ok(tracks.into_iter().filter_map(track_id).collect())
 }
 
 fn held(transaction: &Transaction<'_>, track: TrackId) -> Result<()> {
@@ -188,14 +237,6 @@ fn held(transaction: &Transaction<'_>, track: TrackId) -> Result<()> {
         .optional()
         .map_err(|source| Error::store(StoreOp::Query, source))?
         .ok_or(Error::UnknownTrack(track))
-}
-
-fn version_of(copy: Option<i64>, served: Option<&str>) -> Option<Version> {
-    match (copy, served) {
-        (Some(copy), None) => track_id(copy).map(Version::Held),
-        (None, Some(uri)) => MediaLocation::from_uri(uri).map(Version::Served),
-        _ => None,
-    }
 }
 
 fn track_id(id: i64) -> Option<TrackId> {

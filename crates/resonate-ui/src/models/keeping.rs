@@ -9,7 +9,10 @@ use std::{
 };
 
 use gpui::{App, Context};
-use resonate_library::{KeepSummary, KeptSong, Library, PlaylistToKeep, PollOptions};
+use resonate_core::TrackId;
+use resonate_library::{
+    KeepSummary, KeptAs, KeptSong, Library, PlaylistToKeep, PollOptions, SongToKeep,
+};
 
 use super::{
     KEEP_THREAD, KEEPS_LOOKED_AT_EVERY, KeepPass, LibraryModel, Notice, OWED_ASKED_AGAIN_AFTER,
@@ -32,6 +35,23 @@ impl LibraryModel {
                     KeptSong::Queued => None,
                     KeptSong::AlreadyHeld(_) => Some(words::models::already_held().to_owned()),
                 })
+            },
+            cx,
+        );
+    }
+
+    pub(crate) fn keep_as_a_version(
+        &mut self,
+        track: TrackId,
+        song: SongToKeep,
+        kept: KeptAs,
+        title: String,
+        cx: &mut Context<Self>,
+    ) {
+        self.keep_what_was_pressed(
+            move |library| {
+                library.keep_as_a_version(track, song, kept)?;
+                Ok(Some(words::better::downloading(title.as_str())))
             },
             cx,
         );

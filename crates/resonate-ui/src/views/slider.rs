@@ -54,9 +54,9 @@ impl Handle {
     }
 }
 
-fn snapped_by(handle: Handle, modifiers: Modifiers, fraction: f32) -> f32 {
+fn snapped_by(handle: Handle, snaps: bool, fraction: f32) -> f32 {
     match handle {
-        Handle::Volume if modifiers.shift => snapped_to_steps(fraction, VOLUME_STEP),
+        Handle::Volume if snaps => snapped_to_steps(fraction, VOLUME_STEP),
         Handle::Volume | Handle::Seek => fraction,
     }
 }
@@ -86,6 +86,7 @@ pub(crate) struct Grab {
     handle: Handle,
     fraction: f32,
     track: Option<TrackId>,
+    snaps: bool,
 }
 
 impl Grab {
@@ -130,17 +131,11 @@ impl RootView {
             .map(|grab| grab.fraction)
     }
 
-    fn grab(
-        &mut self,
-        handle: Handle,
-        at: Point<Pixels>,
-        modifiers: Modifiers,
-        cx: &mut Context<Self>,
-    ) {
+    fn grab(&mut self, handle: Handle, at: Point<Pixels>, snaps: bool, cx: &mut Context<Self>) {
         let Some(fraction) = self
             .rail_of(handle)
             .fraction_at(at)
-            .map(|fraction| snapped_by(handle, modifiers, fraction))
+            .map(|fraction| snapped_by(handle, snaps, fraction))
         else {
             return;
         };
@@ -149,6 +144,7 @@ impl RootView {
             handle,
             fraction,
             track,
+            snaps,
         });
         self.dragged(handle, fraction, cx);
     }
@@ -160,7 +156,7 @@ impl RootView {
         let Some(fraction) = self
             .rail_of(grab.handle)
             .fraction_at(at)
-            .map(|fraction| snapped_by(grab.handle, modifiers, fraction))
+            .map(|fraction| snapped_by(grab.handle, grab.snaps || modifiers.shift, fraction))
         else {
             return;
         };
@@ -209,6 +205,7 @@ impl RootView {
                         this.drag(event.position, event.modifiers, cx);
                         this.drag_a_band(event.position, cx);
                     }
+                    Some(MouseButton::Right) => this.drag(event.position, event.modifiers, cx),
                     _ => this.let_everything_go(cx),
                 }
             }))
@@ -218,6 +215,14 @@ impl RootView {
             )
             .on_mouse_up_out(
                 MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _, cx| this.let_everything_go(cx)),
+            )
+            .on_mouse_up(
+                MouseButton::Right,
+                cx.listener(|this, _: &MouseUpEvent, _, cx| this.let_everything_go(cx)),
+            )
+            .on_mouse_up_out(
+                MouseButton::Right,
                 cx.listener(|this, _: &MouseUpEvent, _, cx| this.let_everything_go(cx)),
             )
     }
@@ -328,9 +333,19 @@ impl RootView {
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
                     cx.stop_propagation();
                     window.prevent_default();
-                    this.grab(handle, event.position, event.modifiers, cx);
+                    this.grab(handle, event.position, event.modifiers.shift, cx);
                 }),
             )
+            .when(handle == Handle::Volume, |rail| {
+                rail.on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                        cx.stop_propagation();
+                        window.prevent_default();
+                        this.grab(handle, event.position, true, cx);
+                    }),
+                )
+            })
             .child(
                 div()
                     .relative()
@@ -434,6 +449,7 @@ mod tests {
                     handle: Handle::Seek,
                     fraction: 0.75,
                     track: Some(current.id),
+                    snaps: false,
                 });
                 root.release(cx);
                 let model = root.player.read(cx);
@@ -466,6 +482,7 @@ mod tests {
                         handle: Handle::Seek,
                         fraction,
                         track: Some(current.id),
+                        snaps: false,
                     });
                     root.release(cx);
                 }
@@ -542,6 +559,7 @@ mod tests {
             handle: Handle::Seek,
             fraction: 0.5,
             track: track(3),
+            snaps: false,
         };
 
         assert!(held.seeks_still(track(3)));
@@ -560,9 +578,7 @@ mod tests {
     }
 
     #[test]
-    fn a_volume_dragged_with_shift_lands_on_a_step_of_five() {
-        let shift = Modifiers::shift();
-
+    fn a_volume_pressed_on_the_right_or_dragged_with_shift_lands_on_a_step_of_five() {
         for (at, lands) in [
             (0.0, 0.0),
             (0.02, 0.0),
@@ -570,16 +586,16 @@ mod tests {
             (0.52, 0.5),
             (0.98, 1.0),
         ] {
-            let snapped = snapped_by(Handle::Volume, shift, at);
+            let snapped = snapped_by(Handle::Volume, true, at);
 
             assert!((snapped - lands).abs() < 1e-6, "{at} landed on {snapped}");
         }
     }
 
     #[test]
-    fn a_volume_dragged_without_shift_and_a_seek_with_it_stay_where_they_are() {
-        assert_eq!(snapped_by(Handle::Volume, Modifiers::none(), 0.337), 0.337);
-        assert_eq!(snapped_by(Handle::Seek, Modifiers::shift(), 0.337), 0.337);
+    fn a_volume_dragged_freely_and_a_seek_asked_to_snap_stay_where_they_are() {
+        assert_eq!(snapped_by(Handle::Volume, false, 0.337), 0.337);
+        assert_eq!(snapped_by(Handle::Seek, true, 0.337), 0.337);
     }
 
     #[test]
@@ -588,6 +604,7 @@ mod tests {
             handle: Handle::Volume,
             fraction: 0.5,
             track: track(3),
+            snaps: false,
         };
 
         assert!(!held.seeks_still(track(3)));

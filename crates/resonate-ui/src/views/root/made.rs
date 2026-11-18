@@ -33,6 +33,7 @@ use crate::{
         field::{Caught, Field, Submitted},
         focus::Controls,
         inspector::InspectorPane,
+        kit::HeroMeasured,
         listing::{self},
         matching::{self},
         missing::MissingPane,
@@ -374,7 +375,7 @@ impl RootView {
             rooms: Rooms {
                 grid_width: Rc::default(),
                 hero_width: Rc::new(Cell::new(px(0.0))),
-                hero_height: Rc::new(Cell::new(px(0.0))),
+                hero_height: Rc::new(Cell::new(HeroMeasured::default())),
                 playing: Rc::new(Cell::new(px(0.0))),
                 status: Rc::new(Cell::new(px(0.0))),
                 heading: Rc::new(Cell::new(px(0.0))),

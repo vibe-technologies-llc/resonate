@@ -125,7 +125,9 @@ impl Keeping {
             .start_playlist("Road trip", &[Cut::whole(MediaLocation::local(&opus))])
             .expect("a playlist holding the lossy song");
         let by = SourceId::new(KEPT_FROM).expect("a source");
-        let mut rows = catalog.lossy_songs_of(playlist).expect("the lossy songs");
+        let mut rows = catalog
+            .songs_to_better_in(playlist)
+            .expect("the lossy songs");
         rows[0].looked = Some(Looked::Offered {
             at: MediaLocation::new(by.clone(), "track/Echoes"),
             by,
@@ -786,33 +788,26 @@ fn a_lookup_that_kept_lyrics_says_how_many_tracks_it_kept_them_for() {
 }
 
 #[test]
-fn a_poll_that_replaced_lossy_songs_is_told_so_beside_what_it_kept() {
-    let summary = |kept, tracks| resonate_library::PollSummary {
+fn a_poll_that_kept_higher_quality_versions_is_told_so_beside_what_it_kept() {
+    let summary = |kept, beside| resonate_library::PollSummary {
         stats: PollStats {
             kept,
             ..PollStats::default()
         },
         cancelled: false,
-        replaced: resonate_library::Replaced {
-            trashed: resonate_library::Deleted {
-                tracks,
-                files: tracks,
-                kept: 0,
-            },
-            folds: Vec::new(),
-        },
+        replaced: resonate_library::Replaced { beside },
     };
 
     assert_eq!(
         super::told::polled(&summary(2, 1), super::Prompted::OnItsOwn),
         Some(Notice::Done(
-            "The inbox filled 2 wants · replaced 1 lossy song".to_owned()
+            "The inbox filled 2 wants · 1 song plays a higher quality version".to_owned()
         ))
     );
     assert_eq!(
         super::told::polled(&summary(0, 3), super::Prompted::OnItsOwn),
         Some(Notice::Done(
-            "Nothing in the inbox filled a want · replaced 3 lossy songs".to_owned()
+            "Nothing in the inbox filled a want · 3 songs play a higher quality version".to_owned()
         ))
     );
     assert_eq!(
@@ -822,9 +817,9 @@ fn a_poll_that_replaced_lossy_songs_is_told_so_beside_what_it_kept() {
 }
 
 #[test]
-fn the_toast_says_what_was_replaced_wanted_and_not_matched() {
+fn the_toast_says_what_plays_a_higher_quality_version_what_was_wanted_and_what_was_not_matched() {
     let replacing = resonate_library::Replacing {
-        folded: 1,
+        beside: 1,
         wanted: 2,
         unmatched: 0,
         ..resonate_library::Replacing::default()
@@ -832,7 +827,7 @@ fn the_toast_says_what_was_replaced_wanted_and_not_matched() {
 
     assert_eq!(
         super::told::replaced_now(&replacing),
-        Notice::Done("1 song replaced, 2 songs wanted".to_owned())
+        Notice::Done("1 song plays a higher quality version, 2 songs wanted".to_owned())
     );
     assert_eq!(
         super::told::replaced_now(&resonate_library::Replacing {
@@ -840,40 +835,6 @@ fn the_toast_says_what_was_replaced_wanted_and_not_matched() {
             ..resonate_library::Replacing::default()
         }),
         Notice::Done("3 songs not matched".to_owned())
-    );
-}
-
-#[test]
-fn a_lossy_file_the_trash_refused_is_told_beside_what_was_replaced() {
-    let trashed = |files, kept| resonate_library::Deleted {
-        tracks: files,
-        files,
-        kept,
-    };
-
-    assert_eq!(
-        super::told::replaced_now(&resonate_library::Replacing {
-            folded: 2,
-            trashed: trashed(1, 1),
-            ..resonate_library::Replacing::default()
-        }),
-        Notice::Trouble("2 songs replaced, 1 lossy file couldn't be removed".to_owned())
-    );
-    assert_eq!(
-        super::told::polled(
-            &resonate_library::PollSummary {
-                replaced: resonate_library::Replaced {
-                    trashed: trashed(2, 2),
-                    folds: Vec::new(),
-                },
-                ..resonate_library::PollSummary::default()
-            },
-            super::Prompted::OnItsOwn
-        ),
-        Some(Notice::Trouble(
-            "Nothing in the inbox filled a want · replaced 2 lossy songs · 2 lossy files couldn't be removed"
-                .to_owned()
-        ))
     );
 }
 

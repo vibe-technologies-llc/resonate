@@ -64,7 +64,27 @@ const MIGRATIONS: &[&str] = &[
     ANSWERS_ARE_READ_IN_THE_ORDER_THEY_WERE_TAKEN,
     A_KEPT_SONG_IS_LOOKED_UP_BY_A_PIECE_OF_A_WORD,
     A_LYRIC_LET_GO_IS_SWEPT_BY_ITS_KEY,
+    A_SONG_KEEPS_ITS_VERSIONS_BESIDE_IT,
 ];
+
+const A_SONG_KEEPS_ITS_VERSIONS_BESIDE_IT: &str = "
+CREATE TABLE versions_held (
+    track INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    copy  INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    PRIMARY KEY (track, copy),
+    CHECK (track <> copy)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX versions_held_by_copy ON versions_held(copy);
+INSERT OR IGNORE INTO versions_held (track, copy)
+    SELECT track, held FROM versions_chosen WHERE held IS NOT NULL AND held <> track;
+DELETE FROM versions_chosen WHERE served IS NOT NULL;
+CREATE TABLE versions_kept (
+    kept_id  INTEGER PRIMARY KEY REFERENCES kept_songs(id) ON DELETE CASCADE,
+    track    INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+    lossless INTEGER NOT NULL
+) STRICT;
+CREATE INDEX versions_kept_by_track ON versions_kept(track);
+";
 
 const ANSWERS_ARE_READ_IN_THE_ORDER_THEY_WERE_TAKEN: &str = "
 CREATE INDEX track_studies_by_studied ON track_studies(studied_under, studied);
@@ -2406,6 +2426,61 @@ mod tests {
             stamped(&connection).expect("the stamp reads back"),
             Some(SCHEMA_FINGERPRINT)
         );
+    }
+
+    #[test]
+    fn a_catalog_from_before_versions_were_kept_beside_their_song_keeps_its_choices_and_streams_none()
+     {
+        let connection = opened();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == A_SONG_KEEPS_ITS_VERSIONS_BESIDE_IT)
+            .expect("the step that keeps versions beside their song");
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier step");
+        }
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+        connection
+            .execute_batch(
+                "INSERT INTO tracks (id, path, title, sample_rate, channels, sample_format, codec, file_size, modified, added, seen)
+                 VALUES (1, 'echoes.opus', 'Echoes', 48000, 2, 1, 7, 10, 1, 1, 1),
+                        (2, 'echoes.flac', 'Echoes', 44100, 2, 1, 1, 10, 1, 1, 1),
+                        (3, 'time.opus', 'Time', 48000, 2, 1, 7, 10, 1, 1, 1);
+                 INSERT INTO versions_chosen (track, held, served, chosen)
+                 VALUES (1, 2, NULL, 1), (3, NULL, 'tidal:track/7', 1);",
+            )
+            .expect("versions chosen before");
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        let held: Vec<(i64, i64)> = connection
+            .prepare("SELECT track, copy FROM versions_held")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                    .and_then(|rows| rows.collect())
+            })
+            .expect("the versions held");
+        let chosen: Vec<(i64, Option<i64>)> = connection
+            .prepare("SELECT track, held FROM versions_chosen ORDER BY track")
+            .and_then(|mut statement| {
+                statement
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                    .and_then(|rows| rows.collect())
+            })
+            .expect("the versions chosen");
+        let kept: i64 = connection
+            .query_row("SELECT count(*) FROM versions_kept", [], |row| row.get(0))
+            .expect("the versions kept");
+
+        assert_eq!(held, [(1, 2)]);
+        assert_eq!(chosen, [(1, Some(2))]);
+        assert_eq!(kept, 0);
     }
 
     #[test]

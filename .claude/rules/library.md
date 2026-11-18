@@ -24,7 +24,7 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`; `track_studies.band_peaks`, each band's own peak beside `band_levels`, the eleventh: `eq.md`; the `zone` column of the three resume tables and the `zones` table, the twelfth (below); clearing the 58-byte peaks of the layout that kept one moment, so they are measured again over moments, the thirteenth: `analysis.md`; `songs_deleted`, the recording keys of songs the listener deleted from the app, the fourteenth: `sync.md`; `playlist_shares`, flagging a playlist shared with other people by its id and creation: `shared-playlists.md`; `wrapped_years`, a finished year's review kept as it was heard: *Resonate Wrapped* below; `kept_songs`, the queue of what was pressed to keep from a service, with `tried` (when a failure last moved the row to the back, NULL for a row never tried, which goes first) and `tries` (failures that counted, reset by a press), and the `vault_objects_by_origin` and `object_deliveries_by_origin` indexes that find a delivery by its `taken_from`: `providers.md`'s *Keeping a song from a service*; `kept_songs.cover`, the picture its service showed; the `tracks_by_format` index; `kept_songs.picture_asked`, stamping a landed keep once asked for its picture; the `tracks_hidden` index; letting go of every album and artist a blank tag had named (`A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST`: the tracks' and albums' ids to them cleared and the settle owed, so the open's orphan sweep takes them); `versions_chosen`, the version a listener picked for a song: *A version chosen* below; `artists_fold_wanted`, the marker owing the artists' fold once more: below; `unheld_listens` rebuilt under an `AUTOINCREMENT` `id`, each row keeping its rowid, beside `unheld_credited`: *The count is the catalog's* below; `wants_by_offered`, `retagged_sheets_by_file` and `offered_step_rows_by_path`, the indexes on the paths a removal or a move looks up once a path; `replacements`, the lossy songs waiting for a lossless copy (`A_LOSSY_SONG_WAITS_TO_BE_REPLACED`): *Replacing a lossy song* below; `larger_covers_wanted`, the marker owing every album a cover under `A_SMALL_COVER_BELOW` one ask for a larger one (`SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE`): *A cover says where it came from* below; `replacements_looked_for`, what the services answered when asked for a lossless copy and where it was offered, beside `replacements_kept`, the keep downloading one for a song matched nowhere (`WHERE_A_LOSSLESS_COPY_WAS_LOOKED_FOR_IS_KEPT`): *Replacing a lossy song* below; `songs_deleted_everywhere`, the recordings of songs deleted from every device waiting for the sync to tell them (`A_SONG_DELETED_EVERYWHERE_WAITS_TO_BE_TOLD`): *Deleting* below; `track_studies_by_studied` and `lyrics_kept_by_taken`, the order a sync look reads answers in (`ANSWERS_ARE_READ_IN_THE_ORDER_THEY_WERE_TAKEN`): `sync.md`; `discography_songs` rebuilt under an `id INTEGER PRIMARY KEY` beside `discography_songs_fts` and its triggers (`A_KEPT_SONG_IS_LOOKED_UP_BY_A_PIECE_OF_A_WORD`): *A piece of a word* below; `lyric_keys_let_go` and its triggers, seeded with every lyric key no track held (`A_LYRIC_LET_GO_IS_SWEPT_BY_ITS_KEY`): *A lyric fetched once is kept* below, the latest). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`; `track_studies.band_peaks`, each band's own peak beside `band_levels`, the eleventh: `eq.md`; the `zone` column of the three resume tables and the `zones` table, the twelfth (below); clearing the 58-byte peaks of the layout that kept one moment, so they are measured again over moments, the thirteenth: `analysis.md`; `songs_deleted`, the recording keys of songs the listener deleted from the app, the fourteenth: `sync.md`; `playlist_shares`, flagging a playlist shared with other people by its id and creation: `shared-playlists.md`; `wrapped_years`, a finished year's review kept as it was heard: *Resonate Wrapped* below; `kept_songs`, the queue of what was pressed to keep from a service, with `tried` (when a failure last moved the row to the back, NULL for a row never tried, which goes first) and `tries` (failures that counted, reset by a press), and the `vault_objects_by_origin` and `object_deliveries_by_origin` indexes that find a delivery by its `taken_from`: `providers.md`'s *Keeping a song from a service*; `kept_songs.cover`, the picture its service showed; the `tracks_by_format` index; `kept_songs.picture_asked`, stamping a landed keep once asked for its picture; the `tracks_hidden` index; letting go of every album and artist a blank tag had named (`A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST`: the tracks' and albums' ids to them cleared and the settle owed, so the open's orphan sweep takes them); `versions_chosen`, the version a listener picked for a song: *A song keeps its versions beside it* below; `artists_fold_wanted`, the marker owing the artists' fold once more: below; `unheld_listens` rebuilt under an `AUTOINCREMENT` `id`, each row keeping its rowid, beside `unheld_credited`: *The count is the catalog's* below; `wants_by_offered`, `retagged_sheets_by_file` and `offered_step_rows_by_path`, the indexes on the paths a removal or a move looks up once a path; `replacements`, the lossy songs waiting for a lossless copy (`A_LOSSY_SONG_WAITS_TO_BE_REPLACED`): *Finding higher quality versions* below; `larger_covers_wanted`, the marker owing every album a cover under `A_SMALL_COVER_BELOW` one ask for a larger one (`SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE`): *A cover says where it came from* below; `replacements_looked_for`, what the services answered when asked for a lossless copy and where it was offered, beside `replacements_kept`, the keep downloading one for a song matched nowhere (`WHERE_A_LOSSLESS_COPY_WAS_LOOKED_FOR_IS_KEPT`): *Finding higher quality versions* below; `songs_deleted_everywhere`, the recordings of songs deleted from every device waiting for the sync to tell them (`A_SONG_DELETED_EVERYWHERE_WAITS_TO_BE_TOLD`): *Deleting* below; `track_studies_by_studied` and `lyrics_kept_by_taken`, the order a sync look reads answers in (`ANSWERS_ARE_READ_IN_THE_ORDER_THEY_WERE_TAKEN`): `sync.md`; `discography_songs` rebuilt under an `id INTEGER PRIMARY KEY` beside `discography_songs_fts` and its triggers (`A_KEPT_SONG_IS_LOOKED_UP_BY_A_PIECE_OF_A_WORD`): *A piece of a word* below; `lyric_keys_let_go` and its triggers, seeded with every lyric key no track held (`A_LYRIC_LET_GO_IS_SWEPT_BY_ITS_KEY`): *A lyric fetched once is kept* below; `versions_held` and `versions_kept`, the versions a song keeps beside it and the downloads that will be (`A_SONG_KEEPS_ITS_VERSIONS_BESIDE_IT`): *A song keeps its versions beside it* below, the latest). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -581,64 +581,94 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `a_file_the_scan_prunes_keeps_its_listens_and_has_them_back_when_it_returns`,
   `a_delivered_row_forgotten_keeps_its_listens`,
   `only_a_song_the_listener_deletes_is_marked_deleted_and_every_forgetting_keeps_the_listens`).
-- **A version chosen for a song is kept by the song's row.** `versions_chosen` (`chosen.rs`): `track`
-  primary, either `held` (another row) or `served` (a `MediaLocation::to_uri` of a song a service
-  plays in place), never both, and when chosen; both ids `ON DELETE CASCADE`, so a song or a held
-  copy forgotten, deleted or folded takes the choice with it, and an organise or a followed move,
-  which keep the row's id, keep it. `Library::choose_version` refuses an unheld row
-  (`Error::UnknownTrack`) and treats the row itself as forgetting; `forget_the_version_chosen`,
-  `versions_chosen`, `versions_chosen_among` (the choices of the tracks asked for alone), `version_chosen_for` read and drop it.
+- **A song keeps its versions beside it, and one of them is what plays; nothing is ever streamed in
+  its place or deleted for it.** Three tables (`chosen.rs`): `versions_held` (`track` the song,
+  `copy` another catalog row held as one of its versions, both `ON DELETE CASCADE`, a row never its
+  own version), `versions_chosen` (`track` primary, `held` the copy that plays, `chosen` when; its
+  `served` column is left NULL, since no version is a service's stream) and `versions_kept` (a
+  `kept_songs` row downloading a version for `track`, `lossless` where only a lossless file may
+  land). The step `A_SONG_KEEPS_ITS_VERSIONS_BESIDE_IT` made `versions_held` and `versions_kept`,
+  carried every held choice into `versions_held` and dropped every served one, so the song plays its
+  own file again (`a_catalog_from_before_versions_were_kept_beside_their_song_keeps_its_choices_and_streams_none`).
+  An organise or a followed move keep the row's id and keep its versions; a copy forgotten or
+  deleted takes its choice and its place among the versions with it. `Library::choose_version(track,
+  copy)` refuses an unheld row (`Error::UnknownTrack`), notes the copy in `versions_held` and makes
+  it the one that plays; choosing the song itself forgets the choice and leaves the versions held
+  (`forget_the_version_chosen` likewise). `versions_chosen`, `versions_chosen_among` (the choices of
+  the tracks asked for alone) and `version_chosen_for` read them; `variants_of` answers a
+  `Variants` for a song or any of its versions (the song, every version held best first, the one
+  chosen), `Variants::plays` naming the row that plays, and `tracks_with_variants` every song and
+  version that has any, which the window reads at each reload to know which menus to read
+  `variants_of` for (`ui.md`'s *Versions*).
   **Every caller that queues catalog rows plays a song as its version**: `Library::chosen_among`
-  reads the choices of the rows about to be queued alone, with the song's and the held copy's rows,
-  into a `Chosen`; `Chosen::in_place_of(track, location, span)` answers the `Played` (`Held` with the
-  copy's id and `Cut`, or `Served` with its location) only where the row is still that song's file
-  and cut, so a row the queue minted apart for a file of the same id is left alone. The library sees
-  no queue, so each caller maps its own rows: the window (`ui.md`'s *Find another version*), the
-  binary's `versions::played_as_chosen` (`resonate play`, `resonate playlist`, `queue --playlist`,
-  files the window opens with, and a playlist activated over the bus, which `play_playlist` reaches),
-  and MCP's `add_to_queue` (`catalog::rows_played`). A served version is queued under an id minted
-  beside the rows. A playlist keeps the song itself: only a queue swaps it. The phones keep a table of the same
-  shape in their own catalog and swap at the boundary (`mobile.md`'s *Another version of a song*).
+  reads the choices of the rows about to be queued alone, with the song's and the copy's rows,
+  into a `Chosen`; `Chosen::in_place_of(track, location, span)` answers the `Played` (the copy's id
+  and `Cut`) only where the row is still that song's file and cut, so a row the queue minted apart
+  for a file of the same id is left alone. The library sees no queue, so each caller maps its own
+  rows: the window (`ui.md`'s *Find another version*), the binary's `versions::played_as_chosen`
+  (`resonate play`, `resonate playlist`, `queue --playlist`, files the window opens with, and a
+  playlist activated over the bus, which `play_playlist` reaches), and MCP's `add_to_queue`
+  (`catalog::rows_played`). A playlist keeps the song itself: only a queue swaps it. The phones keep
+  tables of the same shape in their own catalog and swap at the boundary (`mobile.md`'s *Another
+  version of a song*).
+  **A version a service holds is downloaded beside the song, never played from the service**:
+  `Library::keep_as_a_version(track, song, kept)` queues a `kept_songs` row for the service's song
+  (refused without a music folder, `Error::NoDeliveryFolder`, or for a track not held) and ties it
+  to the track in `versions_kept`, `KeptAs::Lossless` for a higher quality version (the keep pass
+  refuses a lossy file and declines an offer named only for lossy sound, as for a replacement) and
+  `KeptAs::AsServed` for a rated one. The keep pass treats such a row as kept for a song
+  (`for_a_song`: no `copy_of`, no YouTube link, the song's own picture through `picture_of_its_song`
+  and `THE_SONG_A_KEEP_IS_FOR`), and once its file is filed and scanned `settle_the_versions_kept`
+  (run by `keep_as_a_version` itself and by every `settle_replacements`) finds the landed track
+  (`THE_VERSIONS_KEPT_THAT_LANDED`) and chooses it as the song's version.
   **Whether a song is another version of a track is one arithmetic, the library's** (`versions.rs`,
   shared by the window's `better.rs` and the phones' `versions.rs`): `VersionSought::offered_for` (a
-  higher quality, and each rating the track is not), `Quality` (lossless, significant bits, rate; a
-  copy is above only where no count is lower and one is higher), `TheSong` (the folded bare title,
-  artist and length within 3 s of a `SongHeard`, and the rating rule: Explicit must be marked, Clean
-  may be unmarked only beside an explicit track), `better_held` and `rated_held`
-  (`a_served_song_betters_a_lossy_track_only_where_it_is_lossless_and_the_same_song`,
-  `a_clean_version_of_an_explicit_song_may_be_unmarked_and_an_explicit_one_must_be_marked`)
-  (`a_song_with_a_version_chosen_is_played_as_that_version_only_where_the_row_is_the_song`,
+  higher quality, and each rating the track is not), `Quality` (lossless, significant bits, rate: a
+  lossless copy is above any lossy one, and between two alike in that a copy is above only where no
+  count is lower and one is higher), `TheSong` (the folded bare title, artist and length within 3 s
+  of a `SongHeard`, and the rating rule: Explicit must be marked, Clean may be unmarked only beside
+  an explicit track), `better_held` and `rated_held`
+  (`a_lossless_copy_is_above_any_lossy_one_and_otherwise_no_lower_on_any_count_and_higher_on_one`,
+  `a_served_song_betters_a_lossy_track_only_where_it_is_lossless_and_the_same_song`,
+  `a_clean_version_of_an_explicit_song_may_be_unmarked_and_an_explicit_one_must_be_marked`,
+  `a_song_with_a_version_chosen_is_played_as_that_version_only_where_the_row_is_the_song`,
   `a_song_with_a_version_chosen_is_played_as_that_version_from_the_terminal_and_a_playlist`,
   `a_song_with_a_version_chosen_is_queued_as_that_version_and_kept_as_itself_in_a_playlist`,
   `a_version_chosen_for_a_song_is_kept_until_forgotten_and_goes_with_either_track`,
   `a_catalog_from_before_versions_were_chosen_keeps_its_tracks_and_gains_the_table`).
-- **Replacing a lossy song: a lossless copy held takes its place at once, else it is wanted, and
-  nothing is trashed until a lossless copy is held.** `replacements` (`replacing.rs`,
-  `db/replacing.rs`): `track_id` the lossy track (primary, `ON DELETE CASCADE`), `release_track_id`
-  the row its want fetches (`ON DELETE SET NULL`), `asked`. `Library::lossy_songs_of(playlist)`
-  lists a playlist's lossy whole files once each, in its order, as `Replaceable`s: the best held
-  lossless whole-file copy of the song (`TheSong`, `best_first`, or the version chosen where that
-  is held and lossless), the release row the track holds, whether a replacement is `pending`;
-  `playlists_with_lossy_songs` names the playlists holding one. `Library::replace(chosen)` takes
-  the `Walk` guard before any write (`Error::AlreadyWalking` writes nothing), then in one write
-  weighs each row afresh: a track no longer the lossy whole file it named is passed over; a held
-  copy still a lossless whole file, its file there or its vault object there (`vault_path` under
-  the open vault), is folded into
-  (`replacing::folded`); else a release row the track still holds is wanted (`INSERT OR REPLACE`
-  into `replacements`, then `elsewhere::rearmed`, which clears `offered`, `tried` and `misses` of a
+- **Finding higher quality versions of a playlist's songs: a higher quality copy held plays in the
+  song's place at once, else a lossless one is wanted or downloaded, and the song, its file and its
+  history stay as they are.** `replacements` (`replacing.rs`, `db/replacing.rs`): `track_id` the
+  lossy track (primary, `ON DELETE CASCADE`), `release_track_id` the row its want fetches (`ON
+  DELETE SET NULL`), `asked`. `Library::songs_to_better_in(playlist)` lists a playlist's whole files
+  once each, in its order, as `Replaceable`s: every lossy song, and a lossless one only where a copy
+  of higher `Quality` is held, each with the best such copy (`better_copy_held_for`: a lossless whole
+  file above the song and the same song by `TheSong` or by recording, its versions held among the
+  candidates), the release row the track holds, whether a replacement is `pending`; a song already
+  playing a version no worse than the best held is left out (`plays_as_well_already`), so a
+  playlist whose every song plays its best lists nothing. The window offers it on every playlist,
+  the binary's `--lossy` and `--replace-lossy` and MCP's `playlist_lossy_songs` and
+  `replace_lossy_songs` read it (`a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held`,
+  `a_song_playing_a_lesser_copy_is_offered_the_best_and_one_playing_the_best_is_not_listed`).
+  `Library::replace(chosen)` moves no file, so it takes no `Walk` and runs beside any pass
+  (`a_replacement_is_kept_while_another_pass_walks_the_tree_since_it_moves_no_file`); in one write
+  it weighs each row afresh: a track no longer the whole file it named is passed over; a held copy
+  still a lossless whole file above it, its file there or its vault object there (`vault_path` under
+  the open vault), is kept beside it (`replacing::kept_beside`: `chosen::choose`, then the
+  replacement and its want go); a lossless track is never wanted or kept, only given a held copy of
+  higher `Quality`; else a release row the track still holds is wanted (`INSERT OR REPLACE` into
+  `replacements`, then `elsewhere::rearmed`, which clears `offered`, `tried` and `misses` of a
   standing want so a lossy delivery that once answered it is not taken as the answer, and keeps its
-  `refused_offers`, unlike `want_in`); else it is `unmatched`. Then `remove_tracks_under` trashes
-  the folded files (`Why::Folded`), so `Replacing` counts folded, wanted, unmatched and `trashed`,
-  and names each `Fold` (the taken and kept locations) so the window can move its zones' queues
-  as organise does.
-  **The fold is the identical copies' hand-over and a little more**: `copies::handed_over` takes a
-  `HandOver` (kept and taken ids and paths; `IdenticalCopy::hand_over` builds one for
-  `fold_copies`), moving plays, the last play, the favourite, listens, playlist entries, kept songs,
-  queue rows and songs received; `folded` then hands the release row to the kept track only where
-  it holds none (a copy filed on another album keeps its own pairing) and deletes the replacement
-  and its want. The taken track's `versions_chosen` rows go by their cascade when its row is
-  forgotten. **Dismissing a replacement's want cancels it**: `unwant` deletes the `replacements`
-  rows naming the want's release row in the same write, and the lossy song stays.
+  `refused_offers`, unlike `want_in`); else it is `unmatched`. `Replacing` counts `beside`,
+  `wanted`, `kept`, `unfiled` and `unmatched`
+  (`a_lossy_song_with_a_lossless_copy_held_plays_it_by_default_and_keeps_everything_it_had`,
+  `a_lossless_song_plays_a_copy_of_higher_resolution_and_never_one_alike`,
+  `two_lossy_copies_of_one_song_both_play_the_one_lossless_copy`,
+  `a_vaulted_lossy_song_plays_its_lossless_copy_and_keeps_its_file_and_object`,
+  `a_lossy_song_is_not_replaced_by_a_lossless_copy_whose_file_is_gone`).
+  **Dismissing a replacement's want cancels it**: `unwant` deletes the `replacements` rows naming the
+  want's release row in the same write, and the lossy song stays
+  (`dismissing_a_replacements_want_cancels_it_and_leaves_the_lossy_song`).
   **Whether a service holds a lossless copy is asked, never fetched**:
   `Library::look_for_replacements(providers, rows, LookingFor)` asks
   `Providers::without_last_resorts` about every row that `can_be_looked_for` (no lossless copy
@@ -655,25 +685,25 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   without searching again), `Unoffered` (every provider heard, none offering) or `Unheard` (one
   refused, ran late or was away). The first two are kept in `replacements_looked_for` (`track_id`
   primary, the `release_track_id` looked for or NULL, `offered_by`, `offered_at`, `looked`), and
-  `lossy_songs_of` reads one back as `Replaceable::looked` only while the track still holds that
+  `songs_to_better_in` reads one back as `Replaceable::looked` only while the track still holds that
   same row or none (`release_track_id IS ?`); `Unheard` keeps nothing, and a cancel heard mid-ask
-  tells nothing. **A song matched nowhere is replaced by a keep**: `can_be_ticked` takes a row
+  tells nothing. **A song matched nowhere is bettered by a keep**: `can_be_ticked` takes a row
   `offer`ed, and `replace` writes its `replacements` row with no release row, queues a
   `kept_songs` row for the offer's source and key (`kept_for`, the lossy song's title, artist,
   album and length) and ties the two in `replacements_kept` (`track_id` primary, `kept_id`), counted
   `Replacing::kept`; with no music folder to keep into it is `Replacing::unfiled` and nothing is
   written. The row is `pending` while that keep waits (`A_KEEP_WAITS_FOR_THE_SONG`). The keep pass
-  (`providers.md`) takes such a row (`Queued::replaces`) without asking `copy_of`, since the lossy
-  song itself is held named alike, asks its provider alone with no YouTube link, declines an offer
-  named only for lossy sound as the look does, and refuses a lossy file (`filed::lossless`),
-  giving the row up and leaving the song; the file is filed with the lossy song's own picture, else its album's cover (`picture_it_replaces`), since a service's
-  lossless file carries none; once filed and scanned,
-  `settle_replacements` finds the landed track (`THE_COPY_KEPT_FOR_IT`) ahead of the recording's
-  copies and folds as for a want
+  (`providers.md`) takes such a row as kept for a song (`for_a_song`, `lossless_only`), asks its
+  provider alone with no YouTube link, declines an offer named only for lossy sound as the look
+  does, and refuses a lossy file (`filed::lossless`), giving the row up and leaving the song; the
+  file is filed with the lossy song's own picture, else its album's cover (`picture_of_its_song`),
+  since a service's lossless file carries none; once filed and scanned, `settle_replacements` finds
+  the landed track (`THE_COPY_KEPT_FOR_IT`) ahead of the recording's copies and keeps it beside the
+  song as for a want
   (`a_lossy_song_is_found_where_a_provider_offers_it_lossless_and_the_finding_is_kept`,
   `a_lossy_song_offered_only_lossy_is_offered_nowhere_whether_matched_or_not`,
   `a_look_a_provider_could_not_answer_keeps_nothing`,
-  `a_song_matched_nowhere_is_found_by_its_tags_kept_from_the_service_and_takes_the_lossy_songs_place`,
+  `a_song_matched_nowhere_is_found_by_its_tags_kept_from_the_service_and_plays_in_the_lossy_songs_place`,
   `a_song_kept_to_replace_a_lossy_one_that_arrives_lossy_is_refused_and_the_lossy_song_stays`,
   `a_song_kept_to_replace_a_lossy_one_is_never_downloaded_from_an_offer_named_for_lossy_sound`,
   `a_last_resort_is_never_asked_whether_a_lossy_song_is_held_lossless`,
@@ -682,61 +712,50 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `Library::settle_replacements` reads, for each pending replacement, the track at its want's
   `offered` path and the tracks holding the recording MBID of the lossy track or of its release row
   (`awaiting`), puts the delivered one first and the rest best first (`Quality::best_first`), and
-  keeps the first that `may_fold`: the replacement still waits on a row of its own (its release row
-  NULL, so only the lossy track's own MBID speaks for it, or held by the lossy track or by that
-  copy), the lossy track is still a lossy whole file, the copy a lossless whole file other than it
-  with its file there or its vault object there, and the two last alike within
-  `LENGTHS_AGREE_WITHIN` where both lengths are known; every pair is weighed by `may_fold` again
-  and folded in one write (`replacing::folded`), then `remove_tracks_under` trashes the lossy files
-  under the same walk; it answers a `Replaced`, the `trashed` count beside every `Fold`. Nobody is watching, so a copy only named alike (`TheSong`) is never taken,
-  nor a lossy copy offered, nor the delivery of a row another song now holds, nor a copy of the
-  recording lasting otherwise
+  keeps the first that `may_be_kept_beside`: the replacement still waits on a row of its own (its
+  release row NULL, so only the lossy track's own MBID speaks for it, or held by the lossy track or
+  by that copy), the lossy track is still a lossy whole file, the copy a lossless whole file other
+  than it with its file there or its vault object there, and the two last alike within
+  `LENGTHS_AGREE_WITHIN` where both lengths are known; every pair is weighed again and kept beside
+  in one write (`kept_beside_on`); it then settles the versions kept (`settle_the_versions_kept`)
+  and answers a `Replaced`, `beside` counting both. Nobody is watching, so a copy only named alike
+  (`TheSong`) is never taken, nor a lossy copy offered, nor the delivery of a row another song now
+  holds, nor a copy of the recording lasting otherwise
   (`a_replacement_whose_row_another_song_now_holds_is_never_settled_by_that_rows_delivery`,
   `a_lossless_copy_of_the_recording_lasting_otherwise_never_replaces_a_song_unattended`,
   `a_vaulted_copy_whose_object_is_gone_never_replaces_a_lossy_song`,
-  `the_best_of_two_lossless_copies_of_the_recording_takes_the_lossy_songs_place`). It runs once a scan's `Walk` guard has dropped, never under it nor on a poll's lane:
-  `scan::start` and `start_over_held` call the closure `Library::scan` and `scan_what_is_held` hand
-  them (`settle_after_a_scan`, a failure traced at warn) after `drop` of the guard and only on an
-  `Ok` outcome not `cancelled` (`replaced_after`), its `Replaced` becoming `ScanSummary::replaced`, so a scan `wind_down` cancels trashes nothing as the window closes
+  `the_best_of_two_lossless_copies_of_the_recording_plays_in_the_lossy_songs_place`). It runs once
+  a scan's `Walk` guard has dropped, never on a poll's lane: `scan::start` and `start_over_held`
+  call the closure `Library::scan` and `scan_what_is_held` hand them (`settle_after_a_scan`, a
+  failure traced at warn) after `drop` of the guard and only on an `Ok` outcome not `cancelled`
+  (`replaced_after`), its `Replaced` becoming `ScanSummary::replaced`
   (`a_cancelled_scan_settles_no_replacement`). The poll's own scans (`pair_what_was_filed`,
   `scanned_and_paired`) start through `scan_leaving_the_replacements_unsettled`, so nothing is
-  settled while other lanes run. With no replacement waiting it takes no walk; a walk refused
-  (`Error::AlreadyWalking`) is traced at debug, writes nothing and answers `Replaced::default()`,
-  leaving the replacement for the next scan's or poll's end. Under the walk it first calls
-  `rejoin_the_replacements`: a replacement whose release row was landed again or whose match was
-  forgotten (`land_release` and `forget_the_match` delete the rows, `ON DELETE SET NULL`), or whose
-  row its track no longer holds (a rematch, *Place on a release…*), is pointed at the row its track
-  now holds and that row wanted (`elsewhere::wanted`, `ON CONFLICT DO NOTHING`), and that row's want
-  re-armed (`elsewhere::rearmed`) where its `offered` names the lossy track itself, so the lossy
-  delivery that once answered it never answers the replacement
+  settled while other lanes run. With nothing waiting (`ANY_REPLACEMENT_WAITS`: no replacement and
+  no version kept) it reads nothing more. It first calls `rejoin_the_replacements`: a replacement
+  whose release row was landed again or whose match was forgotten (`land_release` and
+  `forget_the_match` delete the rows, `ON DELETE SET NULL`), or whose row its track no longer holds
+  (a rematch, *Place on a release…*), is pointed at the row its track now holds and that row wanted
+  (`elsewhere::wanted`, `ON CONFLICT DO NOTHING`), and that row's want re-armed
+  (`elsewhere::rearmed`) where its `offered` names the lossy track itself, so the lossy delivery that
+  once answered it never answers the replacement
   (`a_replacement_rejoining_a_row_whose_want_delivered_the_lossy_song_wants_it_again`); one whose
-  track holds no row is never deleted but left with a NULL row for every later
-  rejoin to try again, so a settle landing between enrichment's land and rematch writes cancels
-  nothing. Such a row is not `pending` (`lossy_songs_of` counts one only where `release_track_id IS
-  NOT NULL`), so the listener can tick the song again and `replace` overwrites it (`INSERT OR
-  REPLACE` on `track_id`); a copy holding the recording MBID still settles it. A release row handed
-  to the copy goes with the lossy song's album if the fold leaves that album to the orphan sweep
-  (the copy filed under another album); no file and no history is at risk, only that pairing
-  (`a_lossless_copy_delivered_for_a_replacement_takes_the_lossy_songs_place`,
-  `a_lossless_copy_holding_the_same_recording_takes_the_lossy_songs_place`,
+  track holds no row is never deleted but left with a NULL row for every later rejoin to try again,
+  so a settle landing between enrichment's land and rematch writes cancels nothing. Such a row is
+  not `pending` (`songs_to_better_in` counts one only where `release_track_id IS NOT NULL`), so the
+  listener can tick the song again and `replace` overwrites it (`INSERT OR REPLACE` on `track_id`);
+  a copy holding the recording MBID still settles it. The song keeps its own release row and the
+  copy its own (`a_lossless_copy_on_another_album_keeps_its_own_row_and_the_lossy_song_keeps_its_own`,
+  `a_lossless_copy_delivered_for_a_replacement_plays_in_the_lossy_songs_place`,
+  `a_lossless_copy_holding_the_same_recording_plays_in_the_lossy_songs_place`,
   `a_lossless_copy_named_alike_alone_never_replaces_a_song_unattended`,
   `a_lossy_copy_offered_for_a_replacement_is_never_taken_for_it`,
-  `a_settle_while_another_pass_walks_the_tree_leaves_the_replacement_for_the_next`,
   `a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_holds`,
   `a_replacement_whose_match_is_forgotten_waits_unpending_and_rejoins_once_matched_again`,
-  `a_lossless_copy_on_another_album_keeps_its_own_row_and_leaves_the_lossy_songs_row_unheld`,
-  `a_lossy_song_with_a_lossless_copy_held_is_replaced_at_once_and_its_history_goes_with_it`,
-  `two_lossy_copies_of_one_song_are_both_replaced_by_the_one_lossless_copy`,
   `a_lossy_song_matched_on_musicbrainz_is_wanted_and_waits_while_one_with_neither_is_counted_unmatched`,
   `a_lossy_song_a_want_once_delivered_is_wanted_again_with_its_offer_forgotten_and_its_refusals_kept`,
-  `a_replacement_waits_while_another_pass_walks_the_tree_and_writes_nothing`,
-  `a_vaulted_lossy_song_is_replaced_and_its_file_and_object_let_go`,
-  `a_lossy_song_is_not_replaced_by_a_lossless_copy_whose_file_is_gone`,
-  `dismissing_a_replacements_want_cancels_it_and_leaves_the_lossy_song`,
-  `a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held`,
   `a_catalog_from_before_lossy_songs_were_replaced_keeps_its_rows_and_gains_the_table`).
-  The phones' half, which settles a replacement only where the listener ticks it again, is
-  `mobile.md`'s *Replacing a playlist's lossy songs*.
+  The phones' half is `mobile.md`'s *Replacing a playlist's lossy songs*.
 - **Music filters narrow listings, keep the catalog whole.** `MusicFilters` = supported extension
   selection + `MinimumLength` bounded to ten minutes. `Library::filter_music` sets it for this
   opened catalog (the binary fills it from config before any listing) and drops the suggestion

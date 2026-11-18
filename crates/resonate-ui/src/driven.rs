@@ -1997,7 +1997,6 @@ mod tests {
                 point(px(200.0), px(200.0)),
                 playlist,
                 false,
-                false,
                 cx,
             );
             root.open_a_menu(menu, cx);
@@ -2073,7 +2072,7 @@ mod tests {
         let asked_as_it_was_pressed = driven.root.update(&mut driven.cx, |root, cx| {
             let offers: std::rc::Rc<crate::views::menu::Offers> =
                 std::rc::Rc::new(move |root, at, cx| {
-                    crate::views::playlists::playlist_menu(root, at, playlist, false, false, cx)
+                    crate::views::playlists::playlist_menu(root, at, playlist, false, cx)
                 });
             root.open_what_is_offered(offers, point(px(200.0), px(200.0)), None, cx);
             (*ledger.asked.lock(), root.menu.is_some())
@@ -2120,7 +2119,6 @@ mod tests {
                 root,
                 point(px(200.0), px(200.0)),
                 playlist,
-                false,
                 false,
                 cx,
             );
@@ -4930,7 +4928,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_playlist_row_plays_the_version_chosen_for_its_song_until_its_own_copy_is_asked_for(
+    fn a_playlist_row_plays_the_version_chosen_for_its_song_until_its_own_copy_is_chosen_again(
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
@@ -4939,34 +4937,27 @@ mod tests {
         let model = driven.read(|root, _| root.library.clone());
         driven.cx.update(|_, cx| {
             model.update(cx, |library, cx| {
-                library.choose_version(
-                    song,
-                    resonate_library::Version::Held(ids[4]),
-                    String::new(),
-                    cx,
-                );
+                library.choose_version(song, ids[4], String::new(), cx);
             });
         });
-        driven.until(|root, cx| root.library.read(cx).has_a_version_chosen(song));
+        driven.until(|root, cx| {
+            let library = root.library.read(cx);
+            library.has_a_version_chosen(song)
+                && library.has_variants(song)
+                && library.has_variants(ids[4])
+        });
 
         driven.click(named("entry", 1));
         driven.until(|root, cx| root.player.read(cx).queue().len() == 5);
 
         assert_eq!(driven.queue()[..4], [ids[0], ids[4], ids[2], ids[3]]);
 
-        let song = driven.read(|root, cx| {
-            root.library
-                .read(cx)
-                .held_tracks(&[ids[1]])
-                .pop()
-                .expect("the song is held")
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.choose_the_version(song, song, "", cx);
         });
-        driven
-            .root
-            .update(&mut driven.cx, |root, cx| root.play_your_own_copy(song, cx));
-        driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+        driven.until(|root, cx| !root.library.read(cx).has_a_version_chosen(song));
 
-        assert_eq!(driven.queue(), [ids[1]]);
+        assert!(driven.read(|root, cx| root.library.read(cx).has_variants(song)));
 
         driven.click(named("entry", 1));
         driven.until(|root, cx| root.player.read(cx).queue().len() == 5);

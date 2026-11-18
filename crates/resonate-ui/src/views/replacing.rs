@@ -211,7 +211,7 @@ impl RootView {
             let named = unshelved
                 .then(|| name_held_for(&catalog, playlist))
                 .flatten();
-            (catalog.lossy_songs_of(playlist), named)
+            (catalog.songs_to_better_in(playlist), named)
         });
         cx.spawn(async move |this, cx| {
             let (read, named) = reading.await;
@@ -399,7 +399,7 @@ impl RootView {
                     .child(
                         kit::sheet_heading(
                             "replacing-heading",
-                            Icon::Fold,
+                            Icon::Search,
                             theme::accent(),
                             heading,
                         )
@@ -411,11 +411,11 @@ impl RootView {
             .child(self.replacing_rows(sheet, cx))
             .child(
                 div()
-                    .id("replacing-trash-note")
-                    .read_plainly(words::replacing::trash_note())
+                    .id("replacing-beside-note")
+                    .read_plainly(words::replacing::beside_note())
                     .text_size(px(theme::text_sm()))
                     .text_color(rgb(theme::muted()))
-                    .child(words::replacing::trash_note()),
+                    .child(words::replacing::beside_note()),
             )
             .child(
                 kit::sheet_actions()
@@ -505,7 +505,7 @@ impl RootView {
         let button = kit::button_when(
             press,
             "replace-the-lossy-songs",
-            Some(Icon::Fold),
+            Some(Icon::Check),
             words::replacing::replace(count),
             words::replacing::replace_hint(),
             kit::Tone::Primary,
@@ -671,7 +671,7 @@ mod tests {
         );
         assert_eq!(
             standing_of(&row(3, false, true, true), false),
-            "already being replaced"
+            "already being looked for"
         );
     }
 

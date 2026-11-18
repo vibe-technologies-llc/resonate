@@ -111,7 +111,7 @@ fn lossy_song() -> Value {
         ("codec", text()),
         ("standing", text()),
         (
-            "lossless_copy",
+            "better_copy",
             object(
                 vec![("track_id", whole()), ("codec", text()), ("uri", text())],
                 &["track_id", "codec"],
@@ -297,9 +297,7 @@ impl Tool {
                 vec![
                     ("playlist", playlist()),
                     ("lossy", whole()),
-                    ("replaced", whole()),
-                    ("trashed", whole()),
-                    ("not_trashed", whole()),
+                    ("played_beside", whole()),
                     ("wanted", whole()),
                     ("downloading", whole()),
                     ("need_a_music_folder", whole()),
@@ -309,9 +307,7 @@ impl Tool {
                 &[
                     "playlist",
                     "lossy",
-                    "replaced",
-                    "trashed",
-                    "not_trashed",
+                    "played_beside",
                     "wanted",
                     "downloading",
                     "need_a_music_folder",

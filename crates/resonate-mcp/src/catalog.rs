@@ -34,8 +34,7 @@ pub(crate) fn rows_played(library: &Library, wanted: &Wanted) -> Result<Vec<Row>
         .into_iter()
         .map(
             |track| match chosen.in_place_of(track.id, &track.location, track.span) {
-                Some(Played::Held { cut, .. }) => (cut.location.clone(), cut.span),
-                Some(Played::Served(location)) => (location.clone(), None),
+                Some(Played { cut, .. }) => (cut.location.clone(), cut.span),
                 None => (track.location, track.span),
             },
         )
