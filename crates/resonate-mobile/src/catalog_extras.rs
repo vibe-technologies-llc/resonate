@@ -333,7 +333,7 @@ impl Catalog {
 
     pub(crate) fn statistics(&self, days: u32) -> Result<LibraryStatistics> {
         let connection = self.0.lock();
-        let (songs, albums, artists, duration_ms) = connection.query_row("SELECT count(*), count(DISTINCT album || char(0) || album_artist), count(DISTINCT artist), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0", [], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64, row.get::<_, i64>(3)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
+        let (songs, albums, artists, duration_ms) = connection.query_row("SELECT count(*), count(DISTINCT album_key), count(DISTINCT nullif(folded(artist), '')), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0", [], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64, row.get::<_, i64>(3)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
         let (plays, listened_ms) = connection.query_row("SELECT count(*), coalesce(sum(l.heard_ms), 0) FROM listens l LEFT JOIN documents d ON d.id = l.track WHERE (d.missing = 0 OR l.served IS NOT NULL) AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400)", [days], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut query = connection.prepare("SELECT d.* FROM documents d JOIN listens l ON l.track = d.id WHERE d.missing = 0 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) AND l.counted = 1 GROUP BY d.id ORDER BY sum(l.heard_ms) DESC, count(*) DESC, d.title LIMIT 25").map_err(|source| Error::store(StoreOp::Read, source))?;
         let top_tracks = query
@@ -851,6 +851,44 @@ mod tests {
 
     use super::*;
     use crate::Track;
+
+    #[test]
+    fn statistics_count_an_album_and_an_artist_once_however_they_are_spelled() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let song = |uri: &str, artist: &str, album: &str, album_artist: &str| {
+            let track = catalog
+                .upsert(Track {
+                    uri: format!("content://test/{uri}.flac"),
+                    name: format!("{uri}.flac"),
+                    title: uri.into(),
+                    artist: artist.into(),
+                    album: album.into(),
+                    duration_ms: 1_000,
+                    ..Track::default()
+                })
+                .expect("a song");
+            catalog
+                .0
+                .lock()
+                .execute(
+                    "UPDATE documents SET album_artist = ?2 WHERE id = ?1",
+                    params![track.id as i64, album_artist],
+                )
+                .expect("an album artist");
+        };
+
+        song("joga", "Björk", "Homogenic", "");
+        song("bachelorette", "BJORK", "HOMOGENIC", "Bjork");
+        song("hunter", "Bjork", "homogenic", "");
+        song("alone", "", "", "");
+        song("sometimes", "Air", "Moon Safari", "");
+
+        let held = catalog.statistics(0).expect("the statistics");
+
+        assert_eq!(held.songs, 5);
+        assert_eq!(held.albums, 2);
+        assert_eq!(held.artists, 2);
+    }
 
     #[test]
     fn listening_detail_ranks_albums_and_artists_and_buckets_days_in_the_listeners_calendar() {
