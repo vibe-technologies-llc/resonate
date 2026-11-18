@@ -19,7 +19,7 @@ use resonate_sync::{
     party::{
         Going, HANDED_OVER_WITHIN, LINES_A_PERSON_SAYS_AT_MOST, Mine, Party, PartyChat,
         PartyFinder, PartyHanding, PartyNow, PartyReach, PartyReaction, PartySeat, PartySettings,
-        PartySong, PartyWantingASong, SeatHeard, Standing, TIME_TOLD_EVERY,
+        PartySong, PartyWantingASong, SeatHeard, SeatTakenUp, Standing, TIME_TOLD_EVERY,
     },
     to_the_web, web_address,
     wire::{FromServer, PROTOCOL_VERSION, Refusal, SpaceAsked, ToServer},
@@ -1458,13 +1458,13 @@ impl PartySeat for FakeSeat {
         Vec::new()
     }
 
-    fn take_up(&self, rows: &[u64], position: u64, _at: u64, sounding: bool) -> bool {
+    fn take_up(&self, rows: &[u64], position: u64, _at: u64, sounding: bool) -> SeatTakenUp {
         self.told
             .taken_up
             .lock()
             .push((rows.to_vec(), position, sounding));
         *self.row.lock() = rows.first().map(|row| row + 1_000);
-        true
+        SeatTakenUp::InStep
     }
 
     fn keep_ahead(&self, rows: &[u64]) -> bool {

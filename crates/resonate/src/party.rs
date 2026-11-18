@@ -2,13 +2,13 @@ use std::{sync::Arc, thread, time::Duration};
 
 use crossbeam_channel::bounded;
 use resonate_core::{FrameSpan, MediaLocation, Recording, Resumable, Span};
-use resonate_engine::{Command, Moment, Player, Seat, SeatHeard as ZoneHeard, Sounding};
+use resonate_engine::{Command, Moment, Player, Seat, SeatHeard as ZoneHeard, Sounding, TakenUp};
 use resonate_library::Library;
 use resonate_providers::{PlaysInPlace, found_exactly};
 use resonate_sync::{
     party::{
         Going, Mine, Party, PartyApart, PartyChat, PartyFinder, PartyLine, PartyReach,
-        PartyReaction, PartySeat, PartySettings, PartySong, SeatHeard, Standing,
+        PartyReaction, PartySeat, PartySettings, PartySong, SeatHeard, SeatTakenUp, Standing,
     },
     shared::invitation_in,
 };
@@ -72,6 +72,14 @@ fn mine_of(heard: &ZoneHeard) -> Mine {
         Sounding::Playing => Mine::Playing,
         Sounding::Paused => Mine::Paused,
         Sounding::Stopped => Mine::Stopped,
+    }
+}
+
+const fn as_the_party_reads(taken: TakenUp) -> SeatTakenUp {
+    match taken {
+        TakenUp::InStep => SeatTakenUp::InStep,
+        TakenUp::Queued => SeatTakenUp::Queued,
+        TakenUp::Untouched => SeatTakenUp::Untouched,
     }
 }
 
@@ -142,7 +150,7 @@ impl PartySeat for ZoneSeat {
         position_nanos: u64,
         at_nanos: u64,
         sounding: bool,
-    ) -> bool {
+    ) -> SeatTakenUp {
         self.seat
             .take_up(
                 rows,
@@ -150,8 +158,13 @@ impl PartySeat for ZoneSeat {
                 Moment::from_nanos(at_nanos),
                 sounding,
             )
-            .inspect_err(|error| tracing::debug!(%error, "a party's song did not start here"))
-            .unwrap_or(false)
+            .map_or_else(
+                |error| {
+                    tracing::debug!(%error, "a party's song did not start here");
+                    SeatTakenUp::Untouched
+                },
+                as_the_party_reads,
+            )
     }
 
     fn keep_ahead(&self, rows: &[Resumable]) -> bool {

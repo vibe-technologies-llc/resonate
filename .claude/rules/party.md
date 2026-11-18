@@ -135,6 +135,15 @@ under the round trip, iOS's `PartyRoundTrip` (kept apart from `party` as the rou
   would keep the guest's `next` rows; a wrong row or rate steps in at once (`engine/in_step.rs`) and no clock
   releases after 3 s. A row that will not resume part way sits out until the next song
   (`SittingOut::CannotStartMidSong`).
+- **`take_up` answers what it did to the queue, not only whether the song started**: `TakenUp::InStep`
+  (the rows stand at the place), `TakenUp::Queued` (the first `Resume` put the rows in the queue, but the
+  first would not open or has no rate to start part way, or a later command was refused), and
+  `TakenUp::Untouched` (no rows; an `Err` means nothing reached the engine). The front ends pass it on
+  as `SeatTakenUp`, and `guested` puts the run's stamps in `rows` on `InStep` and `Queued` alike, sitting
+  out on either of the last two, so the host's songs left standing in the queue are never read by
+  `added_here` as songs added here and sent back to the host as requests
+  (`a_seat_taking_up_rows_whose_first_will_not_start_says_they_stand_in_the_queue`,
+  `a_song_that_cannot_start_mid_way_leaves_the_hosts_songs_it_queued_where_they_stand`).
 - **The row is a `QueueStamp`**, the one a `HeardAt` already names; the seat maps its own stamps to the
   host's rows, which it only compares. A guest a moment past or behind the host at a song's end is
   handing on and is left alone for `HANDED_ON_WITHIN`, 2 s, rather than reloaded.

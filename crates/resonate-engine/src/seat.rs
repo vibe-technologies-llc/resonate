@@ -19,6 +19,13 @@ pub enum Sounding {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TakenUp {
+    InStep,
+    Queued,
+    Untouched,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SeatHeard {
     pub sounding: Sounding,
     pub row: Option<QueueStamp>,
@@ -135,16 +142,38 @@ impl Seat {
         position: Duration,
         at: Moment,
         sounding: bool,
-    ) -> Result<bool> {
+    ) -> Result<TakenUp> {
         let Some(first) = rows.first() else {
-            return Ok(false);
+            return Ok(TakenUp::Untouched);
         };
 
         self.remember_what_was_here();
         self.player.send(Command::SetRepeat(RepeatMode::Off))?;
-        self.player
-            .request(Command::Resume(Self::resumed_at(rows, Frames::ZERO)))?
-            .wait()?;
+        let resumed = self
+            .player
+            .request(Command::Resume(Self::resumed_at(rows, Frames::ZERO)))?;
+
+        let started = resumed
+            .wait()
+            .and_then(|()| self.started_part_way(rows, first, position, at, sounding));
+        match started {
+            Ok(true) => Ok(TakenUp::InStep),
+            Ok(false) => Ok(TakenUp::Queued),
+            Err(error) => {
+                tracing::debug!(%error, "the rows taken up stand in the queue without starting");
+                Ok(TakenUp::Queued)
+            }
+        }
+    }
+
+    fn started_part_way(
+        &self,
+        rows: &[Resumable],
+        first: &Resumable,
+        position: Duration,
+        at: Moment,
+        sounding: bool,
+    ) -> Result<bool> {
         let Some(rate) = self
             .player
             .state()

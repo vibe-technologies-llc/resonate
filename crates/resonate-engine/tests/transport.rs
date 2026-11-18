@@ -32,7 +32,7 @@ use resonate_engine::{
     Result, Resumable, Resumption, Seat, SinkChange, SinkError, SinkFormats, SinkId, SinkInfo,
     SinkPort, SinkResult, SinkStream, SkipUnderRepeat, SmartShuffle, Sounding, SourceId, Sources,
     Stepping, StreamClock, StreamCommand, StreamEvent, StreamRequest, StreamState, StreamVolume,
-    Surveyor, Tapped, Unreshapable, Until, Words, Zone, ZoneId, ZoneName, Zones, stamp_of,
+    Surveyor, TakenUp, Tapped, Unreshapable, Until, Words, Zone, ZoneId, ZoneName, Zones, stamp_of,
 };
 
 const RATE: u32 = 44_100;
@@ -2436,12 +2436,15 @@ fn a_seat_takes_up_a_song_part_way_through_in_step_with_the_clock_and_puts_the_q
         held: None,
     };
 
-    assert!(seat.take_up(
-        std::slice::from_ref(&row),
-        Duration::from_secs(2),
-        Moment::now(),
-        true,
-    )?);
+    assert_eq!(
+        seat.take_up(
+            std::slice::from_ref(&row),
+            Duration::from_secs(2),
+            Moment::now(),
+            true,
+        )?,
+        TakenUp::InStep
+    );
     assert!(seat.is_taking_part());
     let anchor = HeardAt {
         row: Seat::stamp_of(&row),
@@ -2494,12 +2497,15 @@ fn a_seat_taken_up_over_an_empty_queue_leaves_it_empty_with_its_shuffle_as_it_wa
         held: None,
     };
 
-    assert!(seat.take_up(
-        std::slice::from_ref(&row),
-        Duration::ZERO,
-        Moment::now(),
-        false
-    )?);
+    assert_eq!(
+        seat.take_up(
+            std::slice::from_ref(&row),
+            Duration::ZERO,
+            Moment::now(),
+            false
+        )?,
+        TakenUp::InStep
+    );
     assert!(!first.state().shuffle);
     assert_eq!(first.queue().len(), 1);
 
@@ -2510,6 +2516,50 @@ fn a_seat_taken_up_over_an_empty_queue_leaves_it_empty_with_its_shuffle_as_it_wa
         "the empty queue and shuffle to come back",
     );
     assert!(first.state().current.is_none());
+    Ok(())
+}
+
+#[test]
+fn a_seat_taking_up_rows_whose_first_will_not_start_says_they_stand_in_the_queue() -> Result<()> {
+    let tree = Tree::new();
+    let long = pcm(16, RATE as usize * 10).file;
+    let [a, b] = ["a", "b"].map(|name| tree.write(&format!("{name}.wav"), &long));
+    let broken = tree.write("broken.wav", b"not a song at all");
+    let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let zones = opened.started()?;
+    let first = zones.first().player;
+    let seat = Seat::on(Arc::clone(&first));
+    let [row_a, row_b, row_broken] = [&a, &b, &broken].map(|path| kept(path));
+
+    assert_eq!(
+        seat.take_up(
+            &[row_a, row_b.clone()],
+            Duration::from_secs(1),
+            Moment::now(),
+            false,
+        )?,
+        TakenUp::InStep
+    );
+
+    let taken = seat.take_up(
+        &[row_broken, row_b],
+        Duration::from_secs(3),
+        Moment::now(),
+        false,
+    )?;
+
+    assert_eq!(taken, TakenUp::Queued);
+    assert_eq!(
+        locations(&first.queue()),
+        vec![MediaLocation::local(&broken), MediaLocation::local(&b)],
+        "the rows taken up stand in the queue whatever the answer"
+    );
+    assert!(first.state().current.is_none());
+    assert_eq!(
+        seat.take_up(&[], Duration::ZERO, Moment::now(), false)?,
+        TakenUp::Untouched
+    );
+    assert_eq!(locations(&first.queue()).len(), 2);
     Ok(())
 }
 
@@ -2532,12 +2582,15 @@ fn a_seat_keeps_the_queue_behind_the_song_heard_changing_only_what_differs_and_n
             .collect()
     };
 
-    assert!(seat.take_up(
-        &[row_a.clone(), row_b.clone(), row_c.clone()],
-        Duration::from_secs(1),
-        Moment::now(),
-        false,
-    )?);
+    assert_eq!(
+        seat.take_up(
+            &[row_a.clone(), row_b.clone(), row_c.clone()],
+            Duration::from_secs(1),
+            Moment::now(),
+            false,
+        )?,
+        TakenUp::InStep
+    );
     let id_of_b = first.queue().iter().nth(1).map(|row| row.id);
 
     assert!(seat.keep_ahead(&[row_b.clone(), row_c.clone(), row_d.clone()])?);
@@ -2572,12 +2625,15 @@ fn a_seat_keeps_the_queue_behind_the_song_heard_changing_only_what_differs_and_n
         span: None,
         held: None,
     };
-    assert!(seat.take_up(
-        std::slice::from_ref(&near_its_end),
-        Duration::from_secs(9),
-        Moment::now(),
-        false,
-    )?);
+    assert_eq!(
+        seat.take_up(
+            std::slice::from_ref(&near_its_end),
+            Duration::from_secs(9),
+            Moment::now(),
+            false,
+        )?,
+        TakenUp::InStep
+    );
     assert!(
         !seat.keep_ahead(&[row_c, row_d])?,
         "a song a moment from its end is not edited behind"
@@ -2605,12 +2661,15 @@ fn a_seat_that_read_the_queue_before_another_edit_changes_nothing_and_keeps_it_o
             .collect()
     };
 
-    assert!(seat.take_up(
-        &[row_a, row_b.clone(), row_c],
-        Duration::from_secs(1),
-        Moment::now(),
-        false,
-    )?);
+    assert_eq!(
+        seat.take_up(
+            &[row_a, row_b.clone(), row_c],
+            Duration::from_secs(1),
+            Moment::now(),
+            false,
+        )?,
+        TakenUp::InStep
+    );
     let (queued, state) = seat.settled_view().expect("a settled view");
 
     first

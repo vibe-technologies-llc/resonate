@@ -37,6 +37,13 @@ pub struct SeatHeard {
     pub coarse: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SeatTakenUp {
+    InStep,
+    Queued,
+    Untouched,
+}
+
 pub trait PartySeat: Send + 'static {
     type Row: Clone + Send + 'static;
 
@@ -54,7 +61,7 @@ pub trait PartySeat: Send + 'static {
         position_nanos: u64,
         at_nanos: u64,
         sounding: bool,
-    ) -> bool;
+    ) -> SeatTakenUp;
 
     fn keep_ahead(&self, rows: &[Self::Row]) -> bool;
 
@@ -390,11 +397,8 @@ where
             );
         }
 
-        if !rows.is_empty() {
-            let known: Vec<u64> = rows.iter().map(|(stamp, _)| *stamp).collect();
-            for song in seat.added_here(&known) {
-                party.ask_for(song);
-            }
+        for song in added_here(seat, &rows) {
+            party.ask_for(song);
         }
 
         if let Some(now) = &now
@@ -511,6 +515,28 @@ fn kept_ahead<S: PartySeat>(
     true
 }
 
+fn added_here<S: PartySeat>(seat: &S, rows: &[(u64, u64)]) -> Vec<PartySong> {
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let known: Vec<u64> = rows.iter().map(|(stamp, _)| *stamp).collect();
+
+    seat.added_here(&known)
+}
+
+fn stamped<S: PartySeat>(seat: &S, run: &[(u64, S::Row)]) -> Vec<(u64, u64)> {
+    run.iter()
+        .map(|(host, held)| (seat.stamp_of(held), *host))
+        .collect()
+}
+
+struct Cue {
+    row: u64,
+    position_nanos: u64,
+    at_nanos: u64,
+    playing: bool,
+}
+
 fn taken_up<S: PartySeat>(
     party: &Party,
     seat: &S,
@@ -525,11 +551,6 @@ fn taken_up<S: PartySeat>(
         return false;
     }
 
-    let run: Vec<(u64, S::Row)> = songs
-        .into_iter()
-        .map_while(|(host, held)| held.map(|held| (host, held)))
-        .collect();
-    let in_order: Vec<S::Row> = run.iter().map(|(_, held)| held.clone()).collect();
     let shown = party.shown();
     let Some(now) = shown.now else {
         return false;
@@ -539,19 +560,286 @@ fn taken_up<S: PartySeat>(
         follow.cannot_start_mid_song(row);
         return false;
     };
-    let position = now.position_at(there);
+    let cue = Cue {
+        row,
+        position_nanos: now.position_at(there),
+        at_nanos,
+        playing: now.playing,
+    };
 
-    if seat.take_up(&in_order, position, at_nanos, now.playing) {
-        *rows = run
-            .iter()
-            .map(|(host, held)| (seat.stamp_of(held), *host))
+    taken_up_at(seat, follow, rows, songs, &cue)
+}
+
+fn taken_up_at<S: PartySeat>(
+    seat: &S,
+    follow: &mut Follow,
+    rows: &mut Vec<(u64, u64)>,
+    songs: Vec<(u64, Option<S::Row>)>,
+    cue: &Cue,
+) -> bool {
+    let run: Vec<(u64, S::Row)> = songs
+        .into_iter()
+        .map_while(|(host, held)| held.map(|held| (host, held)))
+        .collect();
+    let in_order: Vec<S::Row> = run.iter().map(|(_, held)| held.clone()).collect();
+
+    match seat.take_up(&in_order, cue.position_nanos, cue.at_nanos, cue.playing) {
+        SeatTakenUp::InStep => {
+            *rows = stamped(seat, &run);
+            follow.loaded(cue.row, cue.playing, cue.at_nanos);
+            true
+        }
+        SeatTakenUp::Queued => {
+            *rows = stamped(seat, &run);
+            follow.cannot_start_mid_song(cue.row);
+            true
+        }
+        SeatTakenUp::Untouched => {
+            follow.cannot_start_mid_song(cue.row);
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use parking_lot::Mutex;
+    use resonate_core::Recording;
+
+    use super::*;
+    use crate::party::follow::SittingOut;
+
+    const SEATS_STAMPS_START_AT: u64 = 1_000;
+
+    struct QueueSeat {
+        queue: Mutex<Vec<u64>>,
+        answer: Mutex<SeatTakenUp>,
+        asked_for: Mutex<Vec<u64>>,
+    }
+
+    impl QueueSeat {
+        fn holding(queue: Vec<u64>) -> Self {
+            Self {
+                queue: Mutex::new(queue),
+                answer: Mutex::new(SeatTakenUp::InStep),
+                asked_for: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn answering(&self, answer: SeatTakenUp) {
+            *self.answer.lock() = answer;
+        }
+    }
+
+    fn a_song(row: u64) -> PartySong {
+        PartySong {
+            row,
+            recording: Recording {
+                mbid: None,
+                title: "Song".to_owned(),
+                artist: "Artist".to_owned(),
+                album: "Album".to_owned(),
+                length: Some(Duration::from_secs(200)),
+            },
+            isrc: None,
+        }
+    }
+
+    impl PartySeat for QueueSeat {
+        type Row = u64;
+
+        fn heard(&self) -> SeatHeard {
+            SeatHeard {
+                mine: Mine::Stopped,
+                row: self.queue.lock().first().copied(),
+                position_nanos: None,
+                at_nanos: 0,
+                coarse: false,
+            }
+        }
+
+        fn stamp_of(&self, row: &u64) -> u64 {
+            row + SEATS_STAMPS_START_AT
+        }
+
+        fn songs_up_next(&self) -> (Option<PartySong>, Vec<PartySong>) {
+            (None, Vec::new())
+        }
+
+        fn added_here(&self, known: &[u64]) -> Vec<PartySong> {
+            let mut queue = self.queue.lock();
+            let added: Vec<u64> = queue
+                .iter()
+                .copied()
+                .filter(|stamp| !known.contains(stamp))
+                .collect();
+            queue.retain(|stamp| known.contains(stamp));
+            self.asked_for.lock().extend(&added);
+
+            added.into_iter().map(a_song).collect()
+        }
+
+        fn take_up(
+            &self,
+            rows: &[u64],
+            _position_nanos: u64,
+            _at_nanos: u64,
+            _sounding: bool,
+        ) -> SeatTakenUp {
+            let answer = *self.answer.lock();
+            if answer != SeatTakenUp::Untouched {
+                *self.queue.lock() = rows.iter().map(|row| self.stamp_of(row)).collect();
+            }
+            answer
+        }
+
+        fn keep_ahead(&self, _rows: &[u64]) -> bool {
+            false
+        }
+
+        fn nudge(&self, _position_nanos: u64, _at_nanos: u64) {}
+
+        fn seek(&self, _to_nanos: u64) {}
+
+        fn pause(&self) {}
+
+        fn play(&self) {}
+
+        fn put_back(&self) {}
+    }
+
+    fn held(rows: &[u64]) -> Vec<(u64, Option<u64>)> {
+        rows.iter().map(|row| (*row, Some(*row))).collect()
+    }
+
+    fn cue(row: u64) -> Cue {
+        Cue {
+            row,
+            position_nanos: 3_000_000_000,
+            at_nanos: 0,
+            playing: true,
+        }
+    }
+
+    fn standing_on(
+        seat: &QueueSeat,
+        follow: &mut Follow,
+        rows: &[(u64, u64)],
+        host_row: u64,
+    ) -> Standing {
+        let mine_row = seat
+            .heard()
+            .row
+            .and_then(|stamp| rows.iter().find(|(held, _)| *held == stamp))
+            .map(|(_, host)| *host);
+        let seen = Seen {
+            now_nanos: 0,
+            host_row: Some(host_row),
+            host_next: &[],
+            host_playing: true,
+            host_position: Some(3_000_000_000),
+            coarse: false,
+            mine: Mine::Stopped,
+            mine_row,
+            mine_position: None,
+        };
+        follow.step(&seen);
+
+        follow.standing()
+    }
+
+    #[test]
+    fn a_song_that_cannot_start_mid_way_leaves_the_hosts_songs_it_queued_where_they_stand() {
+        let seat = QueueSeat::holding(vec![7]);
+        let mut follow = Follow::default();
+        let mut rows = Vec::new();
+
+        assert!(taken_up_at(
+            &seat,
+            &mut follow,
+            &mut rows,
+            held(&[1, 2]),
+            &cue(1)
+        ));
+        assert!(added_here(&seat, &rows).is_empty());
+
+        seat.answering(SeatTakenUp::Queued);
+
+        assert!(taken_up_at(
+            &seat,
+            &mut follow,
+            &mut rows,
+            held(&[3, 4]),
+            &cue(3)
+        ));
+        assert_eq!(rows, vec![(1_003, 3), (1_004, 4)]);
+        assert!(
+            added_here(&seat, &rows).is_empty(),
+            "the host's songs standing in the queue were taken for the guest's own"
+        );
+        assert!(seat.asked_for.lock().is_empty());
+        assert_eq!(*seat.queue.lock(), vec![1_003, 1_004]);
+        assert_eq!(
+            standing_on(&seat, &mut follow, &rows, 3),
+            Standing::SittingOut(SittingOut::CannotStartMidSong)
+        );
+    }
+
+    #[test]
+    fn a_song_not_taken_up_at_all_leaves_the_rows_the_queue_already_held() {
+        let seat = QueueSeat::holding(vec![7]);
+        let mut follow = Follow::default();
+        let mut rows = Vec::new();
+
+        assert!(taken_up_at(
+            &seat,
+            &mut follow,
+            &mut rows,
+            held(&[1, 2]),
+            &cue(1)
+        ));
+
+        seat.answering(SeatTakenUp::Untouched);
+
+        assert!(!taken_up_at(
+            &seat,
+            &mut follow,
+            &mut rows,
+            held(&[3, 4]),
+            &cue(3)
+        ));
+        assert_eq!(rows, vec![(1_001, 1), (1_002, 2)]);
+        assert!(added_here(&seat, &rows).is_empty());
+        assert_eq!(*seat.queue.lock(), vec![1_001, 1_002]);
+        assert_eq!(
+            standing_on(&seat, &mut follow, &rows, 3),
+            Standing::SittingOut(SittingOut::CannotStartMidSong)
+        );
+    }
+
+    #[test]
+    fn a_song_added_here_while_following_is_still_asked_of_the_host() {
+        let seat = QueueSeat::holding(vec![7]);
+        let mut follow = Follow::default();
+        let mut rows = Vec::new();
+
+        assert!(taken_up_at(
+            &seat,
+            &mut follow,
+            &mut rows,
+            held(&[1]),
+            &cue(1)
+        ));
+        seat.queue.lock().push(9);
+
+        let asked: Vec<u64> = added_here(&seat, &rows)
+            .into_iter()
+            .map(|song| song.row)
             .collect();
-        follow.loaded(row, now.playing, at_nanos);
 
-        true
-    } else {
-        follow.cannot_start_mid_song(row);
-
-        false
+        assert_eq!(asked, vec![9]);
+        assert_eq!(*seat.queue.lock(), vec![1_001]);
     }
 }

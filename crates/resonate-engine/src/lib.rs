@@ -76,7 +76,7 @@ pub use crate::{
     player::{Player, cuts_to_fit},
     queue::{Placement, QueueItem, QueueRows, Queued, Unclaimed, stamp_of, unclaimed_id},
     ring::{Entering, FADED_OVER, RingConsumer, RingMonitor, RingProducer, RingStamp, ring},
-    seat::{Seat, SeatHeard, Sounding},
+    seat::{Seat, SeatHeard, Sounding, TakenUp},
     shuffling::{Kin, KinSource, Kinship, ShuffleStyle, SmartShuffle},
     sleep::{Asleep, Until},
     state::{

@@ -2,14 +2,14 @@ use std::{sync::Arc, time::Duration};
 
 use parking_lot::Mutex;
 use resonate_core::{MediaLocation, Recording, Resumable, Span, ZoneId};
-use resonate_engine::{Command, Moment, Placement, Player, QueueItem, Seat, Sounding};
+use resonate_engine::{Command, Moment, Placement, Player, QueueItem, Seat, Sounding, TakenUp};
 use resonate_providers::{PlaysInPlace, found_exactly};
 use resonate_sync::{
     DeviceId, HOSTED_SERVER, LocalPlaylistId,
     party::{
         Going, Mine, Party, PartyChat, PartyFinder, PartyHanding, PartyReach, PartyReaction,
-        PartySeat, PartySettings, PartySong, PartyWantingASong, RequestId, SeatHeard, SittingOut,
-        Standing,
+        PartySeat, PartySettings, PartySong, PartyWantingASong, RequestId, SeatHeard, SeatTakenUp,
+        SittingOut, Standing,
     },
     shared::{Invited, MemberId, SharedShown, SharedStanding, invitation_in},
 };
@@ -241,6 +241,14 @@ fn song_of(
     })
 }
 
+const fn as_the_party_reads(taken: TakenUp) -> SeatTakenUp {
+    match taken {
+        TakenUp::InStep => SeatTakenUp::InStep,
+        TakenUp::Queued => SeatTakenUp::Queued,
+        TakenUp::Untouched => SeatTakenUp::Untouched,
+    }
+}
+
 impl PartySeat for PhoneSeat {
     type Row = Resumable;
 
@@ -304,7 +312,7 @@ impl PartySeat for PhoneSeat {
         added
     }
 
-    fn take_up(&self, rows: &[Resumable], position: u64, at: u64, sounding: bool) -> bool {
+    fn take_up(&self, rows: &[Resumable], position: u64, at: u64, sounding: bool) -> SeatTakenUp {
         self.seat
             .take_up(
                 rows,
@@ -312,8 +320,13 @@ impl PartySeat for PhoneSeat {
                 Moment::from_nanos(at),
                 sounding,
             )
-            .inspect_err(|error| tracing::debug!(%error, "a party's song did not start here"))
-            .unwrap_or(false)
+            .map_or_else(
+                |error| {
+                    tracing::debug!(%error, "a party's song did not start here");
+                    SeatTakenUp::Untouched
+                },
+                as_the_party_reads,
+            )
     }
 
     fn keep_ahead(&self, rows: &[Resumable]) -> bool {
