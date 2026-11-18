@@ -7,7 +7,7 @@ use std::{
 use gpui::{
     Bounds, Context, Pixels, Point, ScrollHandle, SharedString, Size, Task, ease_in_out, point, px,
 };
-use resonate_core::{Frames, TrackId};
+use resonate_core::{FrameSpan, Frames, MediaLocation, TrackId};
 use resonate_engine::{PlaybackState, PlayerState, Seeks, StreamDigest};
 use resonate_library::{Library, LyricsAhead};
 use resonate_lyrics::{Lyricists, Lyrics, Sweep, Timing, Voice, Waiting, Wanted};
@@ -200,6 +200,21 @@ impl Asked {
             duration: current.duration,
             tagged: digest.is_some_and(|digest| digest.track == current.id),
         })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Nudged {
+    location: MediaLocation,
+    span: Option<FrameSpan>,
+}
+
+impl Nudged {
+    fn of(wanted: &Wanted) -> Self {
+        Self {
+            location: wanted.location.clone(),
+            span: wanted.span,
+        }
     }
 }
 
@@ -597,6 +612,7 @@ pub struct LyricsModel {
     fading_breath: Option<FadingBreath>,
     clock: Option<Clock>,
     ahead: LyricsAhead,
+    ahead_for: Option<Nudged>,
     reading_ahead: Task<()>,
     _find: Task<()>,
 }
@@ -630,6 +646,7 @@ impl LyricsModel {
             fading_breath: None,
             clock: None,
             ahead: LyricsAhead::ZERO,
+            ahead_for: None,
             reading_ahead: Task::ready(()),
             _find: Task::ready(()),
         }
@@ -642,6 +659,7 @@ impl LyricsModel {
     pub fn hold_ahead(&mut self, ahead: LyricsAhead) {
         self.reading_ahead = Task::ready(());
         self.ahead = ahead;
+        self.ahead_for = self.looked_for.as_ref().map(Nudged::of);
     }
 
     pub fn read_how_far_ahead(
@@ -650,6 +668,11 @@ impl LyricsModel {
         catalog: Arc<Library>,
         cx: &mut Context<Self>,
     ) {
+        let nudged = wanted.as_ref().map(Nudged::of);
+        if self.ahead_for == nudged {
+            return;
+        }
+        self.ahead_for = nudged;
         self.ahead = LyricsAhead::ZERO;
         let Some(wanted) = wanted else {
             self.reading_ahead = Task::ready(());
@@ -669,7 +692,7 @@ impl LyricsModel {
                 })
                 .await;
             let landed = this.update(cx, |this, cx| {
-                if this.looked_for() == Some(&wanted) {
+                if this.ahead_for == Some(Nudged::of(&wanted)) {
                     this.ahead = ahead;
                     cx.notify();
                 }

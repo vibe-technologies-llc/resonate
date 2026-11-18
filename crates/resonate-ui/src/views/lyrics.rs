@@ -1118,6 +1118,44 @@ mod tests {
     }
 
     #[gpui::test]
+    fn asking_again_for_the_same_song_keeps_a_nudge_and_a_different_song_starts_from_none(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, library, _) = sung(cx, &folder, LyricsAhead::ZERO);
+        let twice = LyricsAhead::ZERO.later().later();
+        let wanted = driven
+            .read(|root, cx| root.lyrics.read(cx).looked_for().cloned())
+            .expect("the song being sung is looked for");
+        let retagged = Wanted {
+            title: Some("Retagged".to_owned()),
+            ..wanted.clone()
+        };
+        let elsewhere = Wanted::for_media(MediaLocation::local(folder.path().join("two.wav")));
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.lyrics.update(cx, |model, cx| {
+                model.hold_ahead(twice);
+                model.read_how_far_ahead(Some(retagged), Arc::clone(&library), cx);
+            });
+        });
+        let straight_after = ahead_of(&mut driven);
+        driven.settle();
+        let settled = ahead_of(&mut driven);
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.lyrics.update(cx, |model, cx| {
+                model.read_how_far_ahead(Some(elsewhere), Arc::clone(&library), cx);
+            });
+        });
+        let other_song = ahead_of(&mut driven);
+
+        assert_eq!(straight_after, twice);
+        assert_eq!(settled, twice);
+        assert_eq!(other_song, LyricsAhead::ZERO);
+    }
+
+    #[gpui::test]
     fn the_lyrics_pane_reads_the_sheet_beside_the_song_and_draws_each_line(
         cx: &mut TestAppContext,
     ) {
