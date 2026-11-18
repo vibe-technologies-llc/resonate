@@ -213,7 +213,7 @@ fn stamped(stamp: &str) -> Option<u32> {
     };
     figure(minutes)?
         .checked_mul(MILLISECONDS_PER_MINUTE)?
-        .checked_add(figure(seconds)? * MILLISECONDS_PER_SECOND)?
+        .checked_add(figure(seconds)?.checked_mul(MILLISECONDS_PER_SECOND)?)?
         .checked_add(figure(milliseconds)?)
 }
 
@@ -563,6 +563,9 @@ mod tests {
         for sheet in [
             "[00:01.00]Overhead the albatross\n",
             "[00:01.000]Overhead the albatross",
+            "[00:4294967295.000]Overhead the albatross\n",
+            "[00:4294968.000]Overhead the albatross\n",
+            "[71582:48.000]Overhead the albatross\n",
             "[ar:Pink Floyd]\n[00:01.000]Overhead the albatross\n",
             "Overhead the albatross\n",
             "",
