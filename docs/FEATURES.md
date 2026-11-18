@@ -143,11 +143,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   lyric text (LRCLIB's text search finds none)
 
 ## Listening history
-- [M · 0.14.0] Neither phone exports or imports the listening history: the desktop's `history
-  --export`, `--import` and `--import-file` (ListenBrainz's JSON lines, Last.fm) have no counterpart
-  at the phones' boundary
-- [S · 0.14.0] Neither phone ages its listens: the desktop's `history-kept` forgets listens and
-  skipped time past the days it names, and the phones keep every listen for good with no setting
 
 ## Identification
 - [M · blocked: encoders] The quantiser steps are weighed only on the encoders this machine has
