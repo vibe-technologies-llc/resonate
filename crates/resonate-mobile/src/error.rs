@@ -402,6 +402,26 @@ pub enum Error {
     TagsUnrestored { kept: PathBuf },
     #[error("{}", words::errors::tag_number())]
     TagNumber,
+    #[error("{}", words::errors::no_lyrics_kept())]
+    NoLyricsKept,
+    #[error("{}", words::errors::lyrics_cannot_stand_beside())]
+    LyricsCannotStandBeside,
+    #[error("{}", words::errors::lyrics_unsaved())]
+    LyricsUnsaved {
+        #[source]
+        source: Box<resonate_lyrics::Error>,
+    },
+    #[error("{}", words::errors::lyrics_document(op.to_string()))]
+    LyricsDocument {
+        op: crate::saving_lyrics::SheetOp,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{}", words::errors::lyrics_document_unread())]
+    LyricsDocumentUnread {
+        #[source]
+        source: Box<resonate_codec::Error>,
+    },
     #[error("{}", words::errors::impulse_extension())]
     ImpulseExtension,
     #[error("{}", words::errors::impulse_too_large())]

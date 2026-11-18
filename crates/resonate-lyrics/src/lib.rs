@@ -27,7 +27,10 @@ pub fn read_a_ttml(text: &str) {
 }
 
 pub use crate::{
-    beside::{Beside, KeptSheet, SidecarOp, Standing, plan_beside, write_beside},
+    beside::{
+        Beside, KeptSheet, Placing, SheetsBeside, SidecarOp, Standing, lyric_folders, plan_beside,
+        write_beside,
+    },
     embedded::Embedded,
     error::{Error, LyricOp, Result},
     lyricsfile::{LARGEST_LYRICSFILE, Lyricsfile, Unread, read_lyricsfile},

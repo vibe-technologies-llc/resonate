@@ -151,6 +151,8 @@ class Resonate(val library: LibraryRepository, val playback: Playback, val host:
 
     fun undoTags() = features.tags.undo(host::confirmWrite)
 
+    fun saveLyricsIntoTags(track: Track) = features.tags.saveLyricsIntoTags(track, host::confirmWrite)
+
     suspend fun deleteCopies(sets: List<org.resonate.android.nativecore.IdenticalSongs>) =
         features.deleteCopies(sets, host::confirmDelete)
 

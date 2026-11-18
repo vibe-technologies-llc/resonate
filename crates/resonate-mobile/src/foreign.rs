@@ -4,6 +4,7 @@ use std::panic::{self, AssertUnwindSafe};
 pub(crate) enum Callback {
     OpenDocument,
     RewriteDocument,
+    SheetsBeside,
     #[cfg(any(target_os = "android", test))]
     PreferBitPerfect,
     #[cfg(any(target_os = "android", test))]

@@ -19,6 +19,7 @@ use crate::{
     documents::location,
     error::RewriteOp,
     rewriting::{DocumentRewriting, Stage, crc_of_file, put_back},
+    saving_lyrics::SheetsBeside,
 };
 
 const UNDO_STEPS_KEPT: usize = 16;
@@ -124,23 +125,36 @@ pub struct TagsWritten {
     pub failure: Option<String>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Change {
+    pub(crate) tags: SongTags,
+    pub(crate) lyrics: Option<String>,
+}
+
+impl From<SongTags> for Change {
+    fn from(tags: SongTags) -> Self {
+        Self { tags, lyrics: None }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Planned {
     edits: Vec<TagEdit>,
     taken: Vec<TagField>,
-    before: SongTags,
+    before: Change,
 }
 
 #[derive(Clone, Debug)]
-struct Undone {
-    uri: String,
-    before: SongTags,
+pub(crate) struct Undone {
+    pub(crate) uri: String,
+    pub(crate) before: Change,
 }
 
 pub(crate) struct Tagging {
     folder: PathBuf,
     steps: Mutex<Vec<Vec<Undone>>>,
-    rewriting: Mutex<Option<Arc<dyn DocumentRewriting>>>,
+    pub(crate) rewriting: Mutex<Option<Arc<dyn DocumentRewriting>>>,
+    pub(crate) beside: Mutex<Option<Arc<dyn SheetsBeside>>>,
 }
 
 impl Tagging {
@@ -149,10 +163,11 @@ impl Tagging {
             folder,
             steps: Mutex::new(Vec::new()),
             rewriting: Mutex::new(None),
+            beside: Mutex::new(None),
         }
     }
 
-    fn keep(&self, step: Vec<Undone>) {
+    pub(crate) fn keep(&self, step: Vec<Undone>) {
         if step.is_empty() {
             return;
         }
@@ -165,7 +180,7 @@ impl Tagging {
 }
 
 struct Retagged {
-    before: SongTags,
+    before: Change,
     written: TagSet,
 }
 
@@ -188,6 +203,7 @@ impl MobilePlayer {
     pub fn edit_tags(&self, songs: Vec<SongFile>, change: SongTags) -> Result<TagsWritten> {
         let mut told = TagsWritten::default();
         let mut step = Vec::new();
+        let change = Change::from(change);
         for song in &songs {
             match self.retag(song, &change) {
                 Ok(Some(before)) => {
@@ -245,7 +261,7 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
-    fn retag(&self, song: &SongFile, change: &SongTags) -> Result<Option<SongTags>> {
+    pub(crate) fn retag(&self, song: &SongFile, change: &Change) -> Result<Option<Change>> {
         let track = self.catalog.track_uri(&song.uri)?;
         let retagged = match song.path.as_str() {
             "" => self.retag_document(&track, song, change)?,
@@ -264,7 +280,7 @@ impl MobilePlayer {
         &self,
         track: &Track,
         song: &SongFile,
-        change: &SongTags,
+        change: &Change,
     ) -> Result<Option<Retagged>> {
         let rewriting = self
             .tagging
@@ -344,7 +360,7 @@ impl MobilePlayer {
     }
 }
 
-fn retag_at(local: &MediaLocation, change: &SongTags) -> Result<Option<Retagged>> {
+fn retag_at(local: &MediaLocation, change: &Change) -> Result<Option<Retagged>> {
     let tags = FileTags::default();
     if !tags.writes(local) {
         return Err(Error::TagsUnwritable);
@@ -381,24 +397,29 @@ fn write_planned(tags: &FileTags, local: &MediaLocation, planned: &Planned) -> R
     Ok(written)
 }
 
-fn planned(held: &TagSet, change: &SongTags) -> Result<Option<Planned>> {
+fn planned(held: &TagSet, change: &Change) -> Result<Option<Planned>> {
     let mut edits = Vec::new();
     let mut taken = Vec::new();
-    let mut before = SongTags::default();
+    let mut before = Change::default();
     for field in EDITABLE {
-        let Some(wanted) = change.wanted(field) else {
+        let Some(wanted) = change.tags.wanted(field) else {
             continue;
         };
-        let wanted = spelled(field, wanted)?;
-        let current = field.read(held);
-        match wanted {
-            None if current.is_some() => taken.push(field),
-            Some(value) if current.as_deref() != Some(value.as_str()) => {
-                edits.push(TagEdit { field, value });
-            }
-            _ => continue,
+        if let Some(was) =
+            planned_field(held, field, spelled(field, wanted)?, &mut edits, &mut taken)
+        {
+            *before.tags.slot(field) = Some(was);
         }
-        *before.slot(field) = Some(current.unwrap_or_default());
+    }
+    if let Some(wanted) = &change.lyrics {
+        let wanted = Some(wanted.trim()).filter(|wanted| !wanted.is_empty());
+        before.lyrics = planned_field(
+            held,
+            TagField::Lyrics,
+            wanted.map(str::to_owned),
+            &mut edits,
+            &mut taken,
+        );
     }
 
     Ok((!edits.is_empty() || !taken.is_empty()).then_some(Planned {
@@ -406,6 +427,24 @@ fn planned(held: &TagSet, change: &SongTags) -> Result<Option<Planned>> {
         taken,
         before,
     }))
+}
+
+fn planned_field(
+    held: &TagSet,
+    field: TagField,
+    wanted: Option<String>,
+    edits: &mut Vec<TagEdit>,
+    taken: &mut Vec<TagField>,
+) -> Option<String> {
+    let current = field.read(held);
+    match wanted {
+        None if current.is_some() => taken.push(field),
+        Some(value) if current.as_deref() != Some(value.as_str()) => {
+            edits.push(TagEdit { field, value });
+        }
+        _ => return None,
+    }
+    Some(current.unwrap_or_default())
 }
 
 fn spelled(field: TagField, wanted: &str) -> Result<Option<String>> {

@@ -121,9 +121,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   families 2 and 3 would also need projection decoding
 
 ## Tagging
-- [M · 0.14.0] Neither phone saves fetched lyrics beside the track or into its tags: the desktop's
-  *Save the lyrics* and `tag --lyrics` (`beside.rs`, `--into-tags`) have no counterpart at the
-  phones' boundary, so words a phone fetched stay in its catalog
 - [M · blocked: lofty] `.caf` and the DSD containers have no writer (lofty 0.25.4 has no such file
   type); `.oga` alone could be mapped to Vorbis by hand; `.mka` is written by hand (`library.md`) and
   has no way to take a picture back out

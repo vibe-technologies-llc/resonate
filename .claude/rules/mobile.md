@@ -27,7 +27,7 @@ UniFFI generates the FFI scaffolding; the handwritten unsafe operation is one. *
 descriptor**: the front end hands Rust a descriptor it opened (Android detaches
 `ParcelFileDescriptor`, iOS calls `open(2)`), transferred once and closed by Rust's `File`; a
 negative descriptor is refused by `documents::owned` itself, which returns `io::Result<File>` (`NotFound` for `document_not_found()`, `PermissionDenied` for any other negative), so no caller can forget the check (a document read through `Documents`, one replaced through `DocumentRewriting` and the deleting identity alike; `a_descriptor_below_zero_is_refused_by_the_transfer_itself`). The same transfer (`downloads::fresh_destination`) owns a newly
-created download or received-song destination, never an existing music document. **The iOS audio
+created download or received-song destination or a lyric sheet made beside a song (`make_beside`), never an existing music document. **The iOS audio
 unit is no longer here**: the AudioToolbox calls that create, configure and dispose a RemoteIO unit,
 their sequencing, the render callback and its reading of the system's buffer list are
 `resonate-apple`'s (`Unit`, shared with the macOS backend), reached through its safe API, so
@@ -472,6 +472,44 @@ the catalog holds no words for is kept `Wordless`, so its frames ask SQLite once
 `cached_lyrics` (behind `lyrics` and the keeping calls) reads the catalog again past `Wordless`. A catalog read that
 fails is not kept: the frame is unlit for that call and the next frame asks again
 (`a_failed_reread_is_asked_again_by_the_next_frame`).
+
+## Saving lyrics beside a song or into its tags
+
+`saving_lyrics.rs` is the desktop's *Save the lyrics* and `tag --lyrics` at the boundary, both
+answered from the words the catalog keeps for the song (`Error::NoLyricsKept` where none are) and
+told as a `LyricsSaved` (`Written`, `AlreadySaid`, `SheetStands`, `SheetOutranked`) the front end
+words itself.
+
+- **Into the tags**: `save_lyrics_into_tags(song)` is a retag (`tagging.rs`) whose `Change` carries
+  `lyrics` beside the `SongTags`: the kept text, trimmed, as `TagField::Lyrics` (so ID3's frames are
+  `library.md`'s), through the same staged copy and read back as `edit_tags`, kept as one undo
+  step, so `undo_tags` puts back what the file held, taking the frame out where there was none
+  (`fetched_lyrics_go_into_the_songs_tags_read_back_and_one_undo_takes_them_out`).
+- **Beside the song**, always as `<stem>.lrc` (the phones' scans read back only an `.lrc`), under
+  the desktop's refusals (`lyrics.md`): a sheet named after the song beside it or in a lyric
+  folder is `SheetStands` unless `LyricsStanding::Replaced`, a richer one beside is
+  `SheetOutranked` even then. `save_lyrics_beside(song, standing)` takes a song with a path (iOS's
+  `withPaths`) to `write_beside`, staged and renamed in its folder
+  (`lyrics_saved_beside_a_file_read_back_as_its_sheet_and_leave_one_of_the_listeners_alone`);
+  one with none goes through the `SheetsBeside` callback (`write_sheets_beside_with`):
+  `sheets_beside` lists the `DocumentBeside`s of the song's folder and its lyric folders
+  (`lyric_folders`, compared ignoring case), `None` where the folder lets none be made;
+  `make_beside` creates a sibling and hands its descriptor (`MadeBeside`), `rewrite_beside` opens
+  one standing for replacing, and `remove_beside` takes away a sheet whose write failed. An
+  existing sheet is compared by reading it through the granted documents
+  (`lyrics_saved_beside_a_granted_document_are_made_as_a_sibling_and_replaced_only_when_asked`,
+  `a_sheet_in_a_lyrics_folder_or_a_richer_one_beside_a_document_is_never_hidden`). No callback, or
+  one answering `None`, is `Error::LyricsCannotStandBeside`, never a silent nothing
+  (`a_document_whose_folder_lets_no_sibling_be_made_is_refused_with_its_reason`).
+- **Each phone offers only what can work there.** Android's `SheetsBesideTree` reaches a Storage
+  Access Framework tree document alone (`SheetPlaces.reachable`; the parent through
+  `findDocumentPath`, a sheet made as `application/octet-stream` so no provider appends an
+  extension), never a MediaStore song, whose folder's sidecars the music permission cannot read;
+  the lyrics screen's `SaveLyricsMenu` offers *Beside the song* and *Over a sheet already there*
+  there, and *Into the song's tags* where `TagEditing.writable` holds (consent asked as a tag edit
+  asks it). iOS's `SaveLyricsMenu` in the lyrics view's options offers beside where the song's folder
+  is writable (`songDeletable`) and into the tags where `tagsWritable` holds; it passes the song's
+  path for both, so iOS registers no `SheetsBeside`.
 
 ## MusicBrainz asked of another device
 

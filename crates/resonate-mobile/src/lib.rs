@@ -45,6 +45,7 @@ mod resuming_tests;
 mod rewriting;
 mod room;
 mod saved_searches;
+mod saving_lyrics;
 mod search;
 #[cfg(test)]
 mod search_parity;
@@ -113,6 +114,9 @@ pub use crate::{
     rendering::{NetworkRenderer, RendererKind},
     rewriting::DocumentRewriting,
     saved_searches::{KeptSearch, SavedSearch, SearchOrder, search_order_reads_descending},
+    saving_lyrics::{
+        DocumentBeside, LyricsSaved, LyricsStanding, MadeBeside, SheetsBeside, lyric_folders,
+    },
     together::{
         InvitationKind, ListeningParty, PartyChatLine, PartyClockApart, PartyConnection,
         PartyFollowing, PartyHandingOver, PartyReactionKind, PartyRequest, PartySaying,

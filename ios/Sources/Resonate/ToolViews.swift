@@ -34,12 +34,43 @@ struct LyricsView: View {
                         Button("lyrics.add", systemImage: "text.badge.plus") {
                             writing = LyricWriting(track: track)
                         }
+                        if let sheet, !sheet.lines.isEmpty, !track.isServed {
+                            SaveLyricsMenu(track: track)
+                        }
                     } label: {
                         Label("lyrics.options", systemImage: "ellipsis")
                     }
                 }
             }
             .sheet(item: $writing) { LyricWriter(track: $0.track).sheetSized(.long) }
+    }
+}
+
+struct SaveLyricsMenu: View {
+    @Environment(Library.self) private var library
+    let track: Track
+
+    var body: some View {
+        let features = library.features
+        let beside = features.songDeletable(track)
+        let intoTags = features.tagsWritable(track)
+        if beside || intoTags {
+            Menu("lyrics.save", systemImage: "square.and.arrow.down") {
+                if beside {
+                    Button("lyrics.save.beside", systemImage: "doc.badge.plus") {
+                        features.saveLyricsBeside(track, replacing: false)
+                    }
+                    Button("lyrics.save.over", systemImage: "doc.on.doc") {
+                        features.saveLyricsBeside(track, replacing: true)
+                    }
+                }
+                if intoTags {
+                    Button("lyrics.save.into-tags", systemImage: "tag") {
+                        features.saveLyricsIntoTags(track)
+                    }
+                }
+            }
+        }
     }
 }
 

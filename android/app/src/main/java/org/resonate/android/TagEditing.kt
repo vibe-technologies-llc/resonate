@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.DocumentRewriting
+import org.resonate.android.nativecore.LyricsSaved
+import org.resonate.android.nativecore.LyricsStanding
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.SongFile
 import org.resonate.android.nativecore.SongTags
@@ -147,6 +149,22 @@ object TagSentences {
         else words.plural(R.plurals.tagging_edit_several, count, count)
 }
 
+object LyricSentences {
+    fun intoTags(saved: LyricsSaved): Int =
+        when (saved) {
+            LyricsSaved.WRITTEN -> R.string.lyrics_saved_into_tags
+            else -> R.string.lyrics_already_in_tags
+        }
+
+    fun beside(saved: LyricsSaved): Int =
+        when (saved) {
+            LyricsSaved.WRITTEN -> R.string.lyrics_saved_beside
+            LyricsSaved.ALREADY_SAID -> R.string.lyrics_already_beside
+            LyricsSaved.SHEET_STANDS -> R.string.lyrics_sheet_stands
+            LyricsSaved.SHEET_OUTRANKED -> R.string.lyrics_sheet_outranked
+        }
+}
+
 object TagFiles {
     fun songFile(uri: String, openedFolder: File): SongFile =
         SongFile(uri, OpenedNames.localName(uri)?.let { File(openedFolder, it).absolutePath }.orEmpty())
@@ -203,6 +221,38 @@ class TagEditing(
     fun edit(tracks: List<Track>, change: SongTags, consent: suspend (List<Uri>) -> Boolean) {
         run(undoing = false, consent, { _ -> tracks.map { it.uri } }) { native, uris ->
             native.editTags(files(uris), change)
+        }
+    }
+
+    fun savableBeside(track: Track): Boolean = SheetPlaces.reachable(track.uri)
+
+    fun saveLyricsIntoTags(track: Track, consent: suspend (List<Uri>) -> Boolean) {
+        saveLyrics { native ->
+            if (allowedToWrite(listOf(track.uri), consent).isEmpty())
+                return@saveLyrics library.words.plural(R.plurals.tagging_not_allowed, 1, 1)
+            val saved = native.saveLyricsIntoTags(files(listOf(track.uri)).single())
+            mutableUndoable.value = native.tagsToUndo().isNotEmpty()
+            if (saved == LyricsSaved.WRITTEN) library.refresh()
+            library.words.string(LyricSentences.intoTags(saved))
+        }
+    }
+
+    fun saveLyricsBeside(track: Track, standing: LyricsStanding) {
+        saveLyrics { native ->
+            val saved = native.saveLyricsBeside(files(listOf(track.uri)).single(), standing)
+            library.words.string(LyricSentences.beside(saved))
+        }
+    }
+
+    private fun saveLyrics(save: suspend (MobilePlayer) -> String) {
+        scope.launch {
+            try {
+                library.holding { native -> library.notice(save(native)) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                library.report(failure)
+            }
         }
     }
 

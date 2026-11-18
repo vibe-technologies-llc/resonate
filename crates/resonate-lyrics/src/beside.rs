@@ -62,6 +62,84 @@ impl<'a> KeptSheet<'a> {
             _ => (LRC_ENDING, self.text),
         }
     }
+
+    pub fn ending(self) -> &'static str {
+        BESIDE[self.form().0].0
+    }
+
+    pub fn body(self) -> &'a str {
+        self.form().1
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Placing<T> {
+    Fresh,
+    Over(T),
+    AlreadySaid(T),
+    Stands(T),
+    Outranked(T),
+}
+
+pub struct SheetsBeside<T> {
+    stem: String,
+    found: Vec<Found<T>>,
+}
+
+struct Found<T> {
+    at: T,
+    ending: usize,
+    beside: bool,
+}
+
+impl<T> SheetsBeside<T> {
+    pub fn named_after(stem: &str) -> Self {
+        Self {
+            stem: stem.to_lowercase(),
+            found: Vec::new(),
+        }
+    }
+
+    pub fn listed(&mut self, name: &str, beside: bool, at: T) {
+        if let Some(ending) = ending_after(&name.to_lowercase(), &self.stem) {
+            self.found.push(Found { at, ending, beside });
+        }
+    }
+
+    pub fn placing<E>(
+        self,
+        sheet: KeptSheet<'_>,
+        standing: Standing,
+        says: impl FnOnce(&T, &str) -> std::result::Result<bool, E>,
+    ) -> std::result::Result<Placing<T>, E> {
+        let (ending, body) = sheet.form();
+        let mut found = self.found;
+        found.sort_by_key(|sheet| (sheet.ending, !sheet.beside));
+        let same = found
+            .iter()
+            .position(|sheet| sheet.ending == ending && sheet.beside);
+        let said = match same {
+            Some(same) => says(&found[same].at, body)?,
+            None => false,
+        };
+
+        Ok(match same {
+            Some(same) if said => Placing::AlreadySaid(found.swap_remove(same).at),
+            _ if standing == Standing::LeftAlone && !found.is_empty() => {
+                Placing::Stands(found.swap_remove(0).at)
+            }
+            _ => match found.iter().position(|sheet| sheet.ending < ending) {
+                Some(ahead) => Placing::Outranked(found.swap_remove(ahead).at),
+                None => same.map_or(Placing::Fresh, |same| {
+                    Placing::Over(found.swap_remove(same).at)
+                }),
+            },
+        })
+    }
+}
+
+pub fn lyric_folders() -> &'static [&'static str] {
+    &WITHIN
 }
 
 pub fn plan_beside(track: &Path, sheet: KeptSheet<'_>, standing: Standing) -> Result<Beside> {
@@ -93,7 +171,6 @@ struct Planned<'a> {
 
 impl<'a> Planned<'a> {
     fn of(track: &Path, sheet: KeptSheet<'a>, standing: Standing) -> Result<Self> {
-        let (ending, body) = sheet.form();
         let stem = track
             .file_stem()
             .filter(|stem| !stem.is_empty())
@@ -101,7 +178,7 @@ impl<'a> Planned<'a> {
                 track: track.to_path_buf(),
             })?;
         let mut name = stem.to_os_string();
-        name.push(BESIDE[ending].0);
+        name.push(sheet.ending());
         if name.len() > NAME_BYTES_AT_MOST {
             return Err(Error::SidecarNameTooLong {
                 track: track.to_path_buf(),
@@ -112,68 +189,41 @@ impl<'a> Planned<'a> {
             _ => PathBuf::from("."),
         };
 
-        let standing_beside = sheets_named_after(&folder, &stem.to_string_lossy())?;
-        let same = standing_beside
-            .iter()
-            .find(|sheet| sheet.ending == ending && sheet.beside);
-        let beside = if let Some(same) = same
-            && says(&same.path, body)?
-        {
-            Beside::AlreadySaid(same.path.clone())
-        } else if let Some(first) = standing_beside.first()
-            && standing == Standing::LeftAlone
-        {
-            return Err(Error::SidecarStands {
-                path: first.path.clone(),
-            });
-        } else if let Some(ahead) = standing_beside.iter().find(|sheet| sheet.ending < ending) {
-            return Err(Error::SidecarOutranked {
-                path: ahead.path.clone(),
-            });
-        } else {
-            Beside::Written(same.map_or_else(|| folder.join(&name), |same| same.path.clone()))
+        let placing = sheets_named_after(&folder, &stem.to_string_lossy())?.placing(
+            sheet,
+            standing,
+            |path: &PathBuf, body| says(path, body),
+        )?;
+        let beside = match placing {
+            Placing::Fresh => Beside::Written(folder.join(&name)),
+            Placing::Over(path) => Beside::Written(path),
+            Placing::AlreadySaid(path) => Beside::AlreadySaid(path),
+            Placing::Stands(path) => return Err(Error::SidecarStands { path }),
+            Placing::Outranked(path) => return Err(Error::SidecarOutranked { path }),
         };
 
         Ok(Self {
             folder,
             name,
-            body,
+            body: sheet.body(),
             beside,
         })
     }
 }
 
-struct Found {
-    path: PathBuf,
-    ending: usize,
-    beside: bool,
-}
-
-fn sheets_named_after(folder: &Path, stem: &str) -> Result<Vec<Found>> {
-    let stem = stem.to_lowercase();
-    let mut found = Vec::new();
+fn sheets_named_after(folder: &Path, stem: &str) -> Result<SheetsBeside<PathBuf>> {
+    let mut sheets = SheetsBeside::named_after(stem);
     for (name, path) in names_in(folder)? {
-        if let Some(ending) = ending_after(&name, &stem) {
-            found.push(Found {
-                path,
-                ending,
-                beside: true,
-            });
-        } else if WITHIN.contains(&name.as_str()) && path.is_dir() {
+        if WITHIN.contains(&name.as_str()) && path.is_dir() {
             for (name, path) in names_in(&path)? {
-                if let Some(ending) = ending_after(&name, &stem) {
-                    found.push(Found {
-                        path,
-                        ending,
-                        beside: false,
-                    });
-                }
+                sheets.listed(&name, false, path);
             }
+        } else {
+            sheets.listed(&name, true, path);
         }
     }
-    found.sort_by_key(|sheet| (sheet.ending, !sheet.beside));
 
-    Ok(found)
+    Ok(sheets)
 }
 
 fn names_in(folder: &Path) -> Result<Vec<(String, PathBuf)>> {

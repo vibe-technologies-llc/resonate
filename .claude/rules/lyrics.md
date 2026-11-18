@@ -11,6 +11,7 @@ paths:
   - "crates/resonate-mobile/src/lyrics.rs"
   - "crates/resonate/src/tagging.rs"
   - "crates/resonate-ui/src/models/saving_lyrics.rs"
+  - "crates/resonate-mobile/src/saving_lyrics.rs"
 ---
 
 # Lyrics
@@ -194,6 +195,11 @@ dependency (tested without a window).
   (`a_sheet_standing_beside_the_track_is_not_overwritten_unless_the_listener_replaces_it`,
   `a_richer_sheet_beside_the_track_is_never_hidden_behind_a_plainer_one`). A name past
   `NAME_BYTES_AT_MOST` is refused (`SidecarNameTooLong`): a cut name would never be read back.
+- **Where the sheet goes is decided once, over names** (`SheetsBeside`: `named_after` the stem,
+  `listed` for each name beside the track or in a lyric folder, `placing` answering a `Placing`:
+  `Fresh`, `Over`, `AlreadySaid`, `Stands`, `Outranked`), so the desktop's walk of a folder and a
+  phone's listing of a granted folder refuse and replace alike; `KeptSheet::ending` and `body` say
+  the name's ending and the text, `lyric_folders` the folder names (`WITHIN`).
 - **The write is staged and renamed over.** `.<name>.<pid>.resonate-staging` beside the track,
   `Held` from creation and synced, then renamed onto the sheet (`LeftAlone` looking once more that
   nothing landed there meanwhile); a dead writer's staging for the same sheet is swept by the next
@@ -205,6 +211,10 @@ dependency (tested without a window).
 - **Only a file of its own has a sidecar of its own**: a row cut from a shared file (a span) or
   any location that is not local is passed over by both callers, the terminal's `tag --lyrics`
   (`binary.md`) and the window's *Save the lyrics* (`ui.md`).
+- **The phones save the same way, always as an `.lrc`** (`mobile.md`'s *Saving lyrics beside a song
+  or into its tags*): `save_lyrics_beside` writes the kept LRC text (never the Lyricsfile, since a
+  phone's scan reads back only `.lrc` beside a song) under the same refusals, and
+  `save_lyrics_into_tags` is the retag's lyric write, put back by the phones' tag undo.
 
 ## The LRC reader
 

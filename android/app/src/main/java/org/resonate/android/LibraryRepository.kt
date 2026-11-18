@@ -306,6 +306,7 @@ class LibraryRepository(private val context: Context) {
                 SpokenLanguages.tell(context.resources.configuration)
                 val store = preferencesStore()
                 native.rewriteDocumentsWith(DocumentRewrites(context))
+                native.writeSheetsBesideWith(SheetsBesideTree(context))
                 native.watchOutputMixer(BitPerfectMixer(context))
                 mutableFollowsSongRate.value = store.followsSongRate()
                 native.setFollowSongRate(mutableFollowsSongRate.value)

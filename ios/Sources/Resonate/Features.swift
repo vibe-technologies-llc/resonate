@@ -1601,6 +1601,43 @@ final class Features {
         }
     }
 
+    func saveLyricsBeside(_ track: Track, replacing: Bool) {
+        let uri = track.uri
+        let folders = library.folders
+        let standing: LyricsStanding = replacing ? .replaced : .leftAlone
+        work { [weak self] native in
+            let saved = try await Work.aside {
+                try folders.withPaths([uri]) { songs in
+                    try native.saveLyricsBeside(song: songs[0], standing: standing)
+                }
+            }
+            self?.library.notice(Self.told(beside: saved))
+        }
+    }
+
+    func saveLyricsIntoTags(_ track: Track) {
+        let uri = track.uri
+        let folders = library.folders
+        work { [weak self] native in
+            let saved = try await Work.aside {
+                try folders.withPaths([uri]) { songs in try native.saveLyricsIntoTags(song: songs[0]) }
+            }
+            guard let self else { return }
+            tagsUndoable = !native.tagsToUndo().isEmpty
+            if saved == .written { await library.refresh() }
+            library.notice(said(saved == .written ? "lyrics.saved.into-tags" : "lyrics.saved.already-in-tags"))
+        }
+    }
+
+    private static func told(beside saved: LyricsSaved) -> String {
+        switch saved {
+        case .written: said("lyrics.saved.beside")
+        case .alreadySaid: said("lyrics.saved.already-beside")
+        case .sheetStands: said("lyrics.saved.stands")
+        case .sheetOutranked: said("lyrics.saved.outranked")
+        }
+    }
+
     func undoTags() {
         let folders = library.folders
         work { [weak self] native in

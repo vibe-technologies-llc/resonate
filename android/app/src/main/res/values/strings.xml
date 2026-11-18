@@ -648,6 +648,16 @@
     <string name="lyrics_earlier">Earlier: the words come a tenth of a second sooner, for lyrics that run late. Kept for this song.</string>
     <string name="lyrics_later">Later: the words come a tenth of a second later, for lyrics that run early. Kept for this song.</string>
     <string name="lyrics_as_written">Put the words back on the lyrics\' own timing</string>
+    <string name="lyrics_save">Save the lyrics</string>
+    <string name="lyrics_save_beside">Beside the song</string>
+    <string name="lyrics_save_over">Over a sheet already there</string>
+    <string name="lyrics_save_into_tags">Into the song\'s tags</string>
+    <string name="lyrics_saved_beside">Saved the lyrics beside the song</string>
+    <string name="lyrics_already_beside">These lyrics already stand beside the song</string>
+    <string name="lyrics_sheet_stands">A lyric sheet already stands beside the song, so it was left alone: choose Over a sheet already there to replace it</string>
+    <string name="lyrics_sheet_outranked">A richer lyric sheet beside the song is read ahead of these lyrics, so nothing was written</string>
+    <string name="lyrics_saved_into_tags">Saved the lyrics into the song\'s tags</string>
+    <string name="lyrics_already_in_tags">The song\'s tags already hold these lyrics</string>
     <string name="sheet_added_to_favourites">Added to favourites</string>
     <string name="sheet_add_to_playlist">Add to playlist</string>
     <string name="sheet_share_unresolved">The share link could not be resolved</string>

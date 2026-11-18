@@ -621,6 +621,16 @@
 "lyrics.nothing-playing.title" = "Nothing playing";
 "lyrics.options" = "Lyrics options";
 "lyrics.refresh" = "Refresh";
+"lyrics.save" = "Save the lyrics";
+"lyrics.save.beside" = "Beside the song";
+"lyrics.save.into-tags" = "Into the song's tags";
+"lyrics.save.over" = "Over a sheet already there";
+"lyrics.saved.already-beside" = "These lyrics already stand beside the song";
+"lyrics.saved.already-in-tags" = "The song's tags already hold these lyrics";
+"lyrics.saved.beside" = "Saved the lyrics beside the song";
+"lyrics.saved.into-tags" = "Saved the lyrics into the song's tags";
+"lyrics.saved.outranked" = "A richer lyric sheet beside the song is read ahead of these lyrics, so nothing was written";
+"lyrics.saved.stands" = "A lyric sheet already stands beside the song, so it was left alone: choose Over a sheet already there to replace it";
 "lyrics.streamed.description" = "Lyrics are kept for the songs in your library.";
 "lyrics.streamed.title" = "No words for a streamed song";
 "lyrics.timing.from" = "%@, from %@";

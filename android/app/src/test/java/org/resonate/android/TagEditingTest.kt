@@ -4,9 +4,25 @@ import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.nativecore.LyricsSaved
 import org.resonate.android.nativecore.SongTags
 
 class TagEditingTest {
+    @Test
+    fun aSheetLeftAloneBesideTheSongSaysWhichChoiceReplacesIt() {
+        val stands = English.string(LyricSentences.beside(LyricsSaved.SHEET_STANDS))
+
+        assertTrue(stands, stands.contains(English.string(R.string.lyrics_save_over)))
+        assertEquals(
+            "Saved the lyrics beside the song",
+            English.string(LyricSentences.beside(LyricsSaved.WRITTEN)),
+        )
+        assertEquals(
+            "The song's tags already hold these lyrics",
+            English.string(LyricSentences.intoTags(LyricsSaved.ALREADY_SAID)),
+        )
+    }
+
     @Test
     fun aMixedFieldLeftBlankIsUnchangedAndAnEmptiedOneIsWrittenEmpty() {
         val mixed = setOf(TagName.Genre)
