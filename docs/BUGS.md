@@ -15,11 +15,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Sync and together
-- [S · 0.13.1] An invitation link given to `resonate` while a window is open reaches the window
-  spelt otherwise: `window.rs`'s `queued_in` turns it into a `MediaLocation`, whose `to_uri`
-  escapes `?`, `=`, `:` and `#`, so a link naming `?server=` loses its server and an
-  `https://<host>/s/#CODE` page link no longer reads as an invitation, and the bus's `add_tracks`
-  (`interfaces.rs`) then fails the whole call, the files beside it unqueued
 - [S · 0.13.1] A party guest whose song cannot start mid-way loses its own queue to the host:
   `Seat::take_up` (`resonate-engine/src/seat.rs`) sends `Resume` before it learns the row has no
   rate and answers `false`, `party/seat.rs` then leaves `rows` as they were, and `added_here`
@@ -33,11 +28,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   past the music, so the fade reaches silence with that tail unread, the quiet ring is pulled
   without being consumed and the track never ends; the zone shows playing all night and holds the
   idle inhibitor
-- [S · 0.13.1] A gapless turn to a source of a much lower rate can leave the stream silent while it
-  shows playing: `keeps_its_stream_for` (`binding.rs`) weighs the ring's capacity with the leaving
-  chain's block, so the stream is kept though the entering chain's block (a high resampling ratio:
-  8 kHz onto 96 kHz at a 100 ms buffer) is larger than the ring, and `fill` waits for room it can
-  never have
 - [S · 0.13.1] The UPnP media server and the renderer's stream stop for good on one unexpected
   accept error: `door.rs` ends its thread on anything but `WouldBlock` and `Interrupted`
   (`ECONNABORTED`, `ECONNRESET`, `EMFILE`), and `announce.rs` ends the SSDP loop on an error it does
