@@ -10,6 +10,7 @@ use resonate_codec::{
     FileTags, Picturing, TagEdit, TagField, TagSet, TagSink, TagSource, Writing, probe,
 };
 use resonate_core::MediaLocation;
+use resonate_library::named_by_the_file;
 use rusqlite::params;
 
 use crate::{
@@ -436,7 +437,9 @@ fn landed(written: &TagSet, planned: &Planned) -> bool {
 
 impl Catalog {
     fn retagged(&self, track: &Track, tags: &TagSet) -> Result<()> {
-        let title = tags.title.clone().unwrap_or_else(|| track.name.clone());
+        let mut named = tags.clone();
+        named_by_the_file(&track.name, &mut named);
+        let title = named.title.unwrap_or_else(|| track.name.clone());
         self.0
             .lock()
             .execute(
@@ -444,7 +447,7 @@ impl Catalog {
                 params![
                     track.id as i64,
                     title,
-                    tags.artist.clone().unwrap_or_default(),
+                    named.artist.unwrap_or_default(),
                     tags.album.clone().unwrap_or_default(),
                     tags.album_artist.clone().unwrap_or_default(),
                     tags.genre.clone().unwrap_or_default(),
@@ -577,9 +580,48 @@ mod tests {
         let restored = player.catalog.track(track.id).expect("the song");
 
         assert_eq!(undone.written, 1);
-        assert_eq!(restored.title, "song.wav");
+        assert_eq!(restored.title, "song");
         assert!(restored.artist.is_empty());
         assert_eq!(restored.track_number, None);
+    }
+
+    #[test]
+    fn a_retag_that_leaves_no_title_or_artist_names_the_song_as_the_scan_does() {
+        let player = player();
+        let path = wave("untitled");
+        let track = player
+            .catalog
+            .upsert(Track {
+                uri: URI.into(),
+                name: "Pink Floyd - Echoes.wav".into(),
+                title: "Echoes".into(),
+                artist: "Pink Floyd".into(),
+                duration_ms: 100,
+                rate: 44_100,
+                codec: "PCM".into(),
+                ..Track::default()
+            })
+            .expect("a song");
+        let song = SongFile {
+            uri: URI.into(),
+            path: path.to_string_lossy().into_owned(),
+        };
+
+        let written = player
+            .edit_tags(
+                vec![song],
+                SongTags {
+                    album: Some("Meddle".into()),
+                    ..SongTags::default()
+                },
+            )
+            .expect("an edit");
+        let retagged = player.catalog.track(track.id).expect("the song");
+
+        assert_eq!(written.written, 1);
+        assert_eq!(retagged.title, "Echoes");
+        assert_eq!(retagged.artist, "Pink Floyd");
+        assert_eq!(retagged.album, "Meddle");
     }
 
     #[test]
@@ -608,7 +650,7 @@ mod tests {
         let restored = player.catalog.track(track.id).expect("the song");
 
         assert_eq!(undone.written, 1);
-        assert_eq!(restored.title, "song.wav");
+        assert_eq!(restored.title, "song");
         assert!(player.tags_to_undo().is_empty());
     }
 
@@ -824,7 +866,7 @@ mod tests {
 
         assert_eq!(undone.written, 1);
         assert_eq!(edited.tags().title, None);
-        assert_eq!(restored.title, "song.wav");
+        assert_eq!(restored.title, "song");
         assert!(restored.artist.is_empty());
     }
 
