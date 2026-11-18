@@ -531,7 +531,11 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   a SOAP body only under a `Content-Length` of at most `BODY_BYTES_AT_MOST` (64 KiB, else 413; none
   is 411) within `BODY_READ_WITHIN`, and answers `GET` and `HEAD` but on a control or event
   address, `POST` only on a control address, `SUBSCRIBE` and `UNSUBSCRIBE` only on an event address,
-  anything else 405.
+  anything else 405. **The accept loop ends only with its server** (`Accepted`, `accepted_after`): an
+  error naming one connection (`ConnectionAborted`, `ConnectionReset` and the like) is skipped, and
+  any other (`EMFILE`, `ENFILE`, `ENOBUFS`) is logged and accepting tried again after
+  `ACCEPT_RETRIED_AFTER` (100 ms) with the poll's timeout, never a sleep, so heads already waiting
+  are still read (`a_connection_that_ended_before_it_was_accepted_is_skipped_and_anything_else_is_retried`).
 - **SSDP** (`announce.rs`, a `resonate-upnp-announce` thread): a socket on
   `Offering::heard_on` (`0.0.0.0:1900`, `SO_REUSEADDR` through `socket2` so another UPnP stack on
   the machine keeps its own) joined to `239.255.255.250` on each up IPv4 neighbour interface
@@ -541,7 +545,11 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   (`host_toward`), at most `ANSWERS_A_SECOND_AT_MOST` (100) datagrams a second. `ssdp:alive` goes out
   twice for each of the five on start and every `Offering::every` (600 s) inside `CACHE-CONTROL:
   max-age=1800`, from each interface with that interface's address as `LOCATION`; `ssdp:byebye`
-  goes out as the `MediaServer` drops, which joins the thread (`STOP_HEARD_WITHIN`, 250 ms). A test
+  goes out as the `MediaServer` drops, which joins the thread (`STOP_HEARD_WITHIN`, 250 ms). **A
+  receive error on one datagram does not end the loop** (`Heard`, `heard_after`: Windows's
+  `WSAEMSGSIZE` for a datagram past the buffer is one): the first of a run is logged and the loop
+  tries again after `HEARING_RETRIED_AFTER`, only a socket that is `NotConnected` or `InvalidInput`
+  ending it (`a_datagram_that_failed_is_gone_past_and_only_a_dead_socket_ends_the_hearing`). A test
   points `heard_on` and `told` at loopback sockets, so nothing reaches the network.
 - **The UDN is the device's, kept across runs**: `Udn::minted` makes a version-4 UUID and the
   binary keeps it in the private data folder as `media-server-udn` (`kept_udn`), minting another

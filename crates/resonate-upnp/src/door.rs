@@ -28,6 +28,8 @@ const EVENTS_AT_MOST: usize = 64;
 
 const REFUSAL_WRITTEN_WITHIN: Duration = Duration::from_secs(1);
 
+const ACCEPT_RETRIED_AFTER: Duration = Duration::from_millis(100);
+
 pub(crate) const BUSY: &[u8] =
     b"HTTP/1.1 503 Service Unavailable\r\nRetry-After: 1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
@@ -252,26 +254,63 @@ impl Heads {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Accepted {
+    Skipped,
+    Starved,
+}
+
+fn accepted_after(error: &io::Error) -> Accepted {
+    match error.kind() {
+        io::ErrorKind::ConnectionAborted
+        | io::ErrorKind::ConnectionReset
+        | io::ErrorKind::ConnectionRefused
+        | io::ErrorKind::BrokenPipe
+        | io::ErrorKind::NotConnected
+        | io::ErrorKind::TimedOut
+        | io::ErrorKind::UnexpectedEof => Accepted::Skipped,
+        _ => Accepted::Starved,
+    }
+}
+
+struct Admission {
+    sources: Vec<Source>,
+    starved: bool,
+}
+
 fn admitted<D: Door>(
     listener: &TcpListener,
     registry: &Registry,
     heads: &mut Heads,
     door: &D,
     heads_at_most: usize,
-) -> Option<Vec<Source>> {
-    let mut admitted = Vec::new();
+) -> Admission {
+    let mut sources = Vec::new();
     loop {
         match listener.accept() {
             Ok((stream, peer)) if heads.waiting.len() < heads_at_most && door.admits(peer.ip()) => {
-                admitted.extend(heads.admit(registry, stream, peer.ip()));
+                sources.extend(heads.admit(registry, stream, peer.ip()));
             }
             Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Some(admitted),
-            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-            Err(error) => {
-                tracing::warn!(%error, "a server stopped accepting connections");
-                return None;
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                return Admission {
+                    sources,
+                    starved: false,
+                };
             }
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => match accepted_after(&error) {
+                Accepted::Skipped => {
+                    tracing::debug!(%error, "a connection ended before it was accepted");
+                }
+                Accepted::Starved => {
+                    tracing::warn!(%error, "a server could not accept a connection, so it tries again shortly");
+                    return Admission {
+                        sources,
+                        starved: true,
+                    };
+                }
+            },
         }
     }
 }
@@ -280,8 +319,15 @@ fn accept<D: Door>(mut poll: Poll, listener: &TcpListener, held: &Weak<D>, limit
     let answering = Arc::new(Mutex::new(Slots::default()));
     let mut heads = Heads::new();
     let mut events = Events::with_capacity(EVENTS_AT_MOST);
+    let mut retry_at: Option<Instant> = None;
     loop {
-        let timeout = heads.nearest_deadline(limits.head_ends_within);
+        let timeout = [
+            heads.nearest_deadline(limits.head_ends_within),
+            retry_at.map(|at| at.saturating_duration_since(Instant::now())),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
         match poll.poll(&mut events, timeout) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
@@ -296,23 +342,26 @@ fn accept<D: Door>(mut poll: Poll, listener: &TcpListener, held: &Weak<D>, limit
         door.polled();
 
         let mut ready: Vec<Source> = Vec::new();
+        let mut accepting = retry_at.is_some_and(|at| Instant::now() >= at);
         for event in &events {
             match event.token() {
-                LISTENER => {
-                    let Some(admitted) = admitted(
-                        listener,
-                        poll.registry(),
-                        &mut heads,
-                        door.as_ref(),
-                        limits.heads_at_most,
-                    ) else {
-                        return;
-                    };
-                    ready.extend(admitted);
-                }
+                LISTENER => accepting = true,
                 WAKER => {}
                 source => ready.push(source),
             }
+        }
+        if accepting {
+            let admission = admitted(
+                listener,
+                poll.registry(),
+                &mut heads,
+                door.as_ref(),
+                limits.heads_at_most,
+            );
+            retry_at = admission
+                .starved
+                .then(|| Instant::now() + ACCEPT_RETRIED_AFTER);
+            ready.extend(admission.sources);
         }
         ready.extend(heads.expired(limits.head_ends_within));
         ready.sort_unstable();
@@ -398,6 +447,46 @@ mod tests {
 
     fn peer(last: u8) -> IpAddr {
         IpAddr::from([192, 168, 1, last])
+    }
+
+    #[test]
+    fn a_connection_that_ended_before_it_was_accepted_is_skipped_and_anything_else_is_retried() {
+        let skipped = [
+            io::ErrorKind::ConnectionAborted,
+            io::ErrorKind::ConnectionReset,
+            io::ErrorKind::ConnectionRefused,
+            io::ErrorKind::BrokenPipe,
+            io::ErrorKind::NotConnected,
+            io::ErrorKind::TimedOut,
+            io::ErrorKind::UnexpectedEof,
+        ];
+        let starved = [
+            io::ErrorKind::OutOfMemory,
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::Other,
+        ];
+
+        for kind in skipped {
+            assert_eq!(accepted_after(&io::Error::from(kind)), Accepted::Skipped);
+        }
+        for kind in starved {
+            assert_eq!(accepted_after(&io::Error::from(kind)), Accepted::Starved);
+        }
+        assert_eq!(
+            accepted_after(&io::Error::other("no file descriptors left")),
+            Accepted::Starved
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn running_out_of_file_descriptors_is_retried_not_the_end_of_the_server() {
+        const TOO_MANY_OPEN_FILES: i32 = 24;
+
+        assert_eq!(
+            accepted_after(&io::Error::from_raw_os_error(TOO_MANY_OPEN_FILES)),
+            Accepted::Starved
+        );
     }
 
     #[test]

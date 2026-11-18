@@ -31,6 +31,8 @@ const SEARCH_BYTES_AT_MOST: usize = 8 << 10;
 
 const STOP_HEARD_WITHIN: Duration = Duration::from_millis(250);
 
+const HEARING_RETRIED_AFTER: Duration = Duration::from_millis(250);
+
 const ANSWERS_A_SECOND_AT_MOST: u32 = 100;
 
 const ROOT_DEVICE: &str = "upnp:rootdevice";
@@ -177,6 +179,25 @@ impl Answering {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Heard {
+    Nothing,
+    Failed,
+    SocketGone,
+}
+
+fn heard_after(error: &io::Error) -> Heard {
+    match error.kind() {
+        io::ErrorKind::WouldBlock
+        | io::ErrorKind::TimedOut
+        | io::ErrorKind::Interrupted
+        | io::ErrorKind::ConnectionRefused
+        | io::ErrorKind::ConnectionReset => Heard::Nothing,
+        io::ErrorKind::NotConnected | io::ErrorKind::InvalidInput => Heard::SocketGone,
+        _ => Heard::Failed,
+    }
+}
+
 fn announce(socket: &UdpSocket, announcing: &Announcing, stop: &AtomicBool) {
     let mut buffer = vec![0; SEARCH_BYTES_AT_MOST];
     let mut answering = Answering {
@@ -185,29 +206,32 @@ fn announce(socket: &UdpSocket, announcing: &Announcing, stop: &AtomicBool) {
     };
     tell(socket, announcing, Nts::Alive);
     let mut told_at = Instant::now();
+    let mut failing = false;
     while !stop.load(Ordering::Acquire) {
         if told_at.elapsed() >= announcing.every {
             tell(socket, announcing, Nts::Alive);
             told_at = Instant::now();
         }
         let (read, sender) = match socket.recv_from(&mut buffer) {
-            Ok(heard) => heard,
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::WouldBlock
-                        | io::ErrorKind::TimedOut
-                        | io::ErrorKind::Interrupted
-                        | io::ErrorKind::ConnectionRefused
-                        | io::ErrorKind::ConnectionReset
-                ) =>
-            {
-                continue;
+            Ok(heard) => {
+                failing = false;
+                heard
             }
-            Err(error) => {
-                tracing::warn!(%error, "the media server stopped hearing searches");
-                break;
-            }
+            Err(error) => match heard_after(&error) {
+                Heard::Nothing => continue,
+                Heard::Failed => {
+                    if !failing {
+                        tracing::warn!(%error, "the media server could not hear a search, so it tries again");
+                    }
+                    failing = true;
+                    thread::sleep(HEARING_RETRIED_AFTER);
+                    continue;
+                }
+                Heard::SocketGone => {
+                    tracing::warn!(%error, "the media server stopped hearing searches");
+                    break;
+                }
+            },
         };
         if !neighbours::is_a_neighbour(sender.ip()) {
             continue;
@@ -339,6 +363,22 @@ mod tests {
 
     fn udn() -> Udn {
         Udn::new("uuid:4c1b3a27-0000-4000-8000-000000000001")
+    }
+
+    #[test]
+    fn a_datagram_that_failed_is_gone_past_and_only_a_dead_socket_ends_the_hearing() {
+        let heard = |kind| heard_after(&io::Error::from(kind));
+
+        assert_eq!(heard(io::ErrorKind::WouldBlock), Heard::Nothing);
+        assert_eq!(heard(io::ErrorKind::ConnectionReset), Heard::Nothing);
+        assert_eq!(heard(io::ErrorKind::Other), Heard::Failed);
+        assert_eq!(heard(io::ErrorKind::OutOfMemory), Heard::Failed);
+        assert_eq!(
+            heard_after(&io::Error::other("a datagram larger than the buffer")),
+            Heard::Failed
+        );
+        assert_eq!(heard(io::ErrorKind::NotConnected), Heard::SocketGone);
+        assert_eq!(heard(io::ErrorKind::InvalidInput), Heard::SocketGone);
     }
 
     #[test]
