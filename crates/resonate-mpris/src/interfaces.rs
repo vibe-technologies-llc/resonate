@@ -453,21 +453,34 @@ impl OwnInterface {
     ) -> fdo::Result<()> {
         let queue = self.shared.player.queue();
         let at = TrackList::landing(&queue, &after_track)?;
-        let items = uris
-            .iter()
-            .filter(|uri| !self.shared.host.invited(uri))
-            .map(|uri| {
-                let (location, span) = self.shared.located(uri)?;
-                let id = self
-                    .shared
-                    .host
-                    .held_as(&location, span)
-                    .unwrap_or_else(|| unclaimed_id(queue.iter().map(Arc::as_ref)));
-                Ok(QueueItem { id, location, span })
-            })
-            .collect::<fdo::Result<Vec<_>>>()?;
+        let mut items = Vec::with_capacity(uris.len());
+        let mut refused = None;
+        let mut invited = false;
+        for uri in &uris {
+            if self.shared.host.invited(uri) {
+                invited = true;
+                continue;
+            }
+            match self.shared.located(uri) {
+                Ok((location, span)) => {
+                    let id = self
+                        .shared
+                        .host
+                        .held_as(&location, span)
+                        .unwrap_or_else(|| unclaimed_id(queue.iter().map(Arc::as_ref)));
+                    items.push(QueueItem { id, location, span });
+                }
+                Err(error) => {
+                    tracing::warn!(%uri, %error, "a row asked to be queued was left out");
+                    refused = Some(error);
+                }
+            }
+        }
         if items.is_empty() {
-            return Ok(());
+            return match refused {
+                Some(error) if !invited => Err(error),
+                _ => Ok(()),
+            };
         }
 
         self.shared.settle(Command::Insert {

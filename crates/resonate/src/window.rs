@@ -6,7 +6,7 @@ use std::{
 };
 
 use crossbeam_channel::bounded;
-use resonate_core::{MediaLocation, Resumption, Switch};
+use resonate_core::{Resumption, Switch};
 use resonate_engine::{Command, Opens, Placement, Player, Zones};
 use resonate_library::Library;
 use resonate_mpris::{Queueing, Running};
@@ -482,19 +482,12 @@ fn handed_to(
 }
 
 fn queued_in(window: &Running, arguments: &[OsString], served: &Served) -> Result<()> {
-    let (invitations, arguments): (Vec<&OsString>, Vec<&OsString>) = arguments
-        .iter()
-        .partition(|argument| names_an_invitation(argument));
-    let arguments: Vec<OsString> = arguments.into_iter().cloned().collect();
-    let mut rows: Vec<_> = queue_items_served(&arguments, served)
+    let (invitations, arguments) = invitations_among(arguments);
+    window.invite(&invitations)?;
+    let rows: Vec<_> = queue_items_served(&arguments, served)
         .into_iter()
         .map(|item| (item.location, item.span))
         .collect();
-    rows.extend(
-        invitations
-            .into_iter()
-            .filter_map(|invitation| MediaLocation::from_uri_within(&invitation.to_string_lossy())),
-    );
     if !rows.is_empty() {
         window.queue(
             &rows,
@@ -506,6 +499,20 @@ fn queued_in(window: &Running, arguments: &[OsString], served: &Served) -> Resul
     }
     window.raise()?;
     Ok(())
+}
+
+fn invitations_among(arguments: &[OsString]) -> (Vec<String>, Vec<OsString>) {
+    let (invitations, files): (Vec<&OsString>, Vec<&OsString>) = arguments
+        .iter()
+        .partition(|argument| names_an_invitation(argument));
+
+    (
+        invitations
+            .into_iter()
+            .map(|invitation| invitation.to_string_lossy().into_owned())
+            .collect(),
+        files.into_iter().cloned().collect(),
+    )
 }
 
 #[cfg(feature = "sync")]
@@ -558,6 +565,32 @@ mod tests {
     use clap::Parser as _;
 
     use super::*;
+
+    #[cfg(feature = "sync")]
+    #[test]
+    fn an_invitation_given_beside_files_is_handed_to_the_window_as_it_was_given() {
+        use resonate_sync::shared::{Invited, invitation_in, link_to, web_link_to};
+
+        let code = "E-ABCDE-12345";
+        let server = "wss://music.example.org:8443/";
+        let link = link_to(Invited::Playlist, code, Some(server));
+        let page =
+            web_link_to(Invited::Playlist, code, server).expect("a server a browser reaches");
+        let given: Vec<OsString> = ["a.flac", link.as_str(), page.as_str(), "b.flac"]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+
+        let (invitations, files) = invitations_among(&given);
+
+        assert_eq!(invitations, [link, page]);
+        assert_eq!(files, [OsString::from("a.flac"), OsString::from("b.flac")]);
+        for invitation in &invitations {
+            let read = invitation_in(invitation).expect("the window reads an invitation");
+            assert_eq!(read.code, code, "{invitation}");
+            assert_eq!(read.server.as_deref(), Some(server), "{invitation}");
+        }
+    }
 
     #[test]
     fn a_launch_naming_a_settings_file_catalog_or_vault_opens_a_window_of_its_own() {

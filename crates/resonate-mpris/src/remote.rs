@@ -434,6 +434,13 @@ impl Running {
         Ok(rows.len())
     }
 
+    pub fn invite(&self, links: &[String]) -> Result<()> {
+        for chunk in links.chunks(ROWS_A_CALL) {
+            self.peer.add_tracks(chunk, None, false)?;
+        }
+        Ok(())
+    }
+
     fn landing(&self, at: Placement) -> Result<Option<TrackId>> {
         let tracks = self.peer.queued()?;
         let row = match at {

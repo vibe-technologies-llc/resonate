@@ -320,6 +320,9 @@ for a hotspot have not been seen (`docs/TESTING.md`).
   (`PlayingNext` counts them). A run goes in calls of `ROWS_A_CALL` (128) rows, back to front
   against one anchor, so each stays inside the client's 2 s timeout; a failure after some landed is
   `Error::QueuedPartway { landed, asked }`. The fallback adds back to front against one anchor.
+  **A row the player cannot open leaves the rest of its call queued**: `AddTracks` queues every URI
+  it locates, logs each it refuses, and fails the call only where it took nothing, neither a row nor
+  an invitation (`a_run_with_an_entry_no_source_opens_still_queues_the_files_beside_it`).
   `Session` is one bus connection (on Windows and macOS none where no bus answers, only the registry of players) a long-lived client (MCP) reuses through `found_in`, `listed_in`
   and `named_in`; `found`, `listed` and `named` open their own.
 - **`resonate queue --playlist <NAME>` hands a playlist over as its rows** (`ActivatePlaylist`
@@ -327,7 +330,10 @@ for a hotspot have not been seen (`docs/TESTING.md`).
   whatever it matches then. `queue` opens the library only for `--playlist`.
 - **The window is single.** The window's host answers `CanRaise`/`Raise`; a launch finding a player
   of this build able to raise (`Running::a_window`) hands it its files as `AddTrack`s placed next
-  and heard now, raises it and leaves; the engine flags it was given (`--sink`, `--quality`,
+  and heard now, raises it and leaves; an invitation among them (`window.rs`'s `invitations_among`)
+  goes over `Running::invite` as the text it was given, never through `MediaLocation`, whose `to_uri`
+  would escape its `?`, `=` and `#`, and the window's `Host::invited` reads it
+  (`an_invitation_handed_to_a_running_window_reaches_it_as_it_was_given_over_either_wire`); the engine flags it was given (`--sink`, `--quality`,
   `--filter-phase`, `--dither`, `--noise-shaping`, `--bit-perfect`, `--no-bit-perfect`) go over
   `Tune`, while one giving `--config`, `--library` or `--vault` (`settings_of_its_own`) never asks
   for a window and opens its own (`binary.md`). Headless `resonate play` can't raise. The name is claimed

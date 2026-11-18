@@ -362,6 +362,7 @@ struct Desktop {
     quit: Arc<AtomicBool>,
     raised: Arc<AtomicBool>,
     opened: Arc<Mutex<Vec<MediaLocation>>>,
+    invited: Arc<Mutex<Vec<String>>>,
     tuned: Arc<Mutex<Vec<(Tunable, String)>>>,
     reloaded: Arc<Mutex<Vec<(Reloadable, String)>>>,
     catalog: Catalog,
@@ -406,6 +407,14 @@ impl Host for Desktop {
         Opened::Accepted
     }
 
+    fn invited(&self, uri: &str) -> bool {
+        let invitation = uri.starts_with(SHARED_LINK) || uri.contains(SHARED_PAGE);
+        if invitation {
+            self.invited.lock().push(uri.to_owned());
+        }
+        invitation
+    }
+
     fn tune(&self, setting: Tunable, value: &str) -> Tuned {
         if value == UNTUNABLE {
             return Tuned::Refused;
@@ -440,6 +449,8 @@ impl Host for Desktop {
 }
 
 const HELD_IDS_FROM: u64 = 4_242;
+const SHARED_LINK: &str = "resonate://shared/";
+const SHARED_PAGE: &str = "/s/#";
 const UNTUNABLE: &str = "nonsense";
 const ELSEWHERE: &str = "/elsewhere/config.toml";
 
@@ -526,6 +537,7 @@ struct Harness {
     quit: Arc<AtomicBool>,
     raised: Arc<AtomicBool>,
     opened: Arc<Mutex<Vec<MediaLocation>>>,
+    invited: Arc<Mutex<Vec<String>>>,
     tuned: Arc<Mutex<Vec<(Tunable, String)>>>,
     reloaded: Arc<Mutex<Vec<(Reloadable, String)>>>,
     catalog: Catalog,
@@ -569,6 +581,7 @@ impl Harness {
         let quit = Arc::new(AtomicBool::new(false));
         let raised = Arc::new(AtomicBool::new(false));
         let opened = Arc::new(Mutex::new(Vec::new()));
+        let invited = Arc::new(Mutex::new(Vec::new()));
         let tuned = Arc::new(Mutex::new(Vec::new()));
         let reloaded = Arc::new(Mutex::new(Vec::new()));
         let catalog: Catalog = Arc::new(Mutex::new(Vec::new()));
@@ -576,6 +589,7 @@ impl Harness {
             quit: Arc::clone(&quit),
             raised: Arc::clone(&raised),
             opened: Arc::clone(&opened),
+            invited: Arc::clone(&invited),
             tuned: Arc::clone(&tuned),
             reloaded: Arc::clone(&reloaded),
             catalog: Arc::clone(&catalog),
@@ -599,6 +613,7 @@ impl Harness {
             quit,
             raised,
             opened,
+            invited,
             tuned,
             reloaded,
             catalog,
@@ -1827,6 +1842,77 @@ fn a_file_queued_next_lands_after_the_row_being_played_and_is_heard_when_it_is_t
 }
 
 #[test]
+fn an_invitation_handed_to_a_running_window_reaches_it_as_it_was_given_over_either_wire() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let links = [
+        "resonate://shared/E-ABCDE-12345?server=wss%3A%2F%2Fmusic.example.org%3A8443%2F".to_owned(),
+        "https://music.example.org:8443/s/#E-ABCDE-12345".to_owned(),
+    ];
+
+    listed_as(&harness)
+        .invite(&links)
+        .expect("the window over the bus takes the invitations");
+    piped(&harness)
+        .invite(&links)
+        .expect("the window over a pipe takes the invitations");
+
+    assert_eq!(
+        *harness.invited.lock(),
+        [links.clone(), links].concat(),
+        "an invitation reached the window spelt otherwise than it was given"
+    );
+    assert!(
+        harness.player.queue().is_empty(),
+        "an invitation was queued as a song"
+    );
+}
+
+#[test]
+fn a_run_with_an_entry_no_source_opens_still_queues_the_files_beside_it() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    let first = tree.wav("first.wav");
+    let second = tree.wav("second.wav");
+    let nowhere = MediaLocation::new(
+        SourceId::new("nowhere").expect("a lowercase name"),
+        "nowhere/song.flac",
+    );
+    let rows = [
+        (MediaLocation::local(&first), None),
+        (nowhere.clone(), None),
+        (MediaLocation::local(&second), None),
+    ];
+    let queued = Queueing {
+        at: Placement::Queued,
+        play: false,
+    };
+
+    for running in [listed_as(&harness), piped(&harness)] {
+        running
+            .queue(&rows, queued)
+            .expect("the running player takes the rows it can open");
+        assert!(
+            running.queue(&[(nowhere.clone(), None)], queued).is_err(),
+            "a run of nothing the player can open was taken"
+        );
+    }
+
+    harness.wait_for(
+        |harness| harness.player.queue().len() == 4,
+        "the files beside the refused entry to be queued",
+    );
+    assert_eq!(
+        queued_rows(&harness),
+        [&first, &second, &first, &second].map(MediaLocation::local),
+        "the files beside an entry the player cannot open were not queued in order"
+    );
+}
+
+#[test]
 fn a_run_of_files_queued_at_a_row_lands_on_it_in_the_order_they_were_named() {
     let Some(harness) = Harness::start() else {
         return;
@@ -1934,6 +2020,7 @@ fn piped(harness: &Harness) -> Running {
         quit: Arc::clone(&harness.quit),
         raised: Arc::clone(&harness.raised),
         opened: Arc::clone(&harness.opened),
+        invited: Arc::clone(&harness.invited),
         tuned: Arc::clone(&harness.tuned),
         reloaded: Arc::clone(&harness.reloaded),
         catalog: Arc::clone(&harness.catalog),
