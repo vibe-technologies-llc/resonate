@@ -142,7 +142,7 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `additional_info`'s or `mbid_mapping`'s `recording_mbid`, `additional_info`'s `duration_ms`),
   into the `HeardElsewhere` the service import builds, a listen naming no song or no artist
   passed over as the service's are. Blank lines and a leading byte-order mark are passed over; a
-  line that is not UTF-8, not JSON, not an object, without a whole `listened_at` or without a
+  line that is not UTF-8, not JSON, not an object, without a whole `listened_at` the clock can hold or without a
   `track_metadata` object is `Error::ListenLine { line, fault }` and the whole file is refused
   (`a_bad_line_is_refused_with_its_number_whatever_the_fault`), the fuzz target `listens` holding
   that it never panics and that a refusal names a line the input has.

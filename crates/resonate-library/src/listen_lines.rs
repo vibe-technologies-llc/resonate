@@ -43,6 +43,7 @@ fn listen_in(json: &Json) -> std::result::Result<Option<HeardElsewhere>, ListenF
     let moment = json
         .get("listened_at")
         .and_then(Json::as_whole)
+        .and_then(|seconds| UNIX_EPOCH.checked_add(Duration::from_secs(seconds)))
         .ok_or(ListenFault::NoMoment)?;
     let metadata = json
         .get("track_metadata")
@@ -74,8 +75,8 @@ fn listen_in(json: &Json) -> std::result::Result<Option<HeardElsewhere>, ListenF
         length,
     };
     let named = !recording.title.trim().is_empty() && !recording.artist.trim().is_empty();
-    Ok(named.then(|| HeardElsewhere {
-        at: UNIX_EPOCH + Duration::from_secs(moment),
+    Ok(named.then_some(HeardElsewhere {
+        at: moment,
         recording,
     }))
 }
@@ -150,6 +151,12 @@ mod tests {
         );
         assert_eq!(
             refused(&with(br#"{"listened_at":-1,"track_metadata":{}}"#)),
+            (3, ListenFault::NoMoment)
+        );
+        assert_eq!(
+            refused(&with(
+                br#"{"listened_at":18446744073709551615,"track_metadata":{}}"#
+            )),
             (3, ListenFault::NoMoment)
         );
         assert_eq!(
