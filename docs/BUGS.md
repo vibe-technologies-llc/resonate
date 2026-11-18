@@ -17,32 +17,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Sync and together
 
 ## Playback and output
-- [S · 0.13.1] Switching the catalog on the network off and on again within a quarter second can
-  hide it for ten minutes: `Offered::share` (`offering.rs`) starts the new server at once while the
-  old one's announcer has yet to hear its stop, so the old `ssdp:byebye` lands after the new
-  `ssdp:alive` under the one UDN and control points forget a server that is running; `rename`
-  already waits through `restarting`
-- [S · 0.13.1] A playlist offered on the network that names a song twice pages wrongly:
-  `played_from` (`offering.rs`) takes each track out of the map it read (`read.remove`), so a
-  repeat on the page is dropped while `total` counts it, and a control point paging by
-  `NumberReturned` sees rows twice and others never
 - [S · 0.13.1] A seek on a row played in place from a service is dropped on the phones: `served.rs`
   builds such rows with a rate of 0 (`..Track::default()`), and `jump_to_at` (`lib.rs`) turns the
   position into frames by that rate, as does a seek asked while the row opens
 
 ## Catalog
-- [S · 0.13.1] Reading a ListenBrainz export whose `listened_at` is huge panics:
-  `listen_lines.rs` adds it to `UNIX_EPOCH` unchecked
-- [S · 0.13.1] The first retag after a crash fails on the track a dead writer left: `FileTags::write`
-  (`writing.rs`) stamps the file and reads its tags before `landed` mends it
-  (`mend_what_a_dead_writer_left`), so the mend moves the stamp and the write is refused
-  `ChangedWhileWritten`; the RIFF rechunk path never mends at all
-- [S · 0.13.1] A phone's retag of a song with no title or artist tag writes the document's name,
-  extension and all, as its title and an empty artist (`tagging.rs`'s `retagged`), where the desktop
-  takes `named_by_the_file`
-- [S · 0.13.1] The phones' statistics count albums by `album || album_artist` and artists by their
-  raw spelling (`catalog_extras.rs`), so one album or one artist spelled two ways is counted twice,
-  where the desktop counts by the folded key and `album_key`
 - [S · blocked: CAP_LEASE] Lengthening in place a track another account owns (one this account may
   write through its group) still cannot see a reader root runs: the kernel grants a write lease only
   to the file's owner or a holder of `CAP_LEASE`, so such a track falls back to `held_open_elsewhere`
@@ -71,12 +50,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   stream are kept
 
 ## Formats
-- [S · 0.13.1] A WAVE whose ID3 tag stands in front of the RIFF header and whose RIFF size is odd
-  has the tag moved into an `id3 ` chunk at an odd offset (`writing.rs`'s `chunked`), where neither
-  `riff.rs` nor lofty finds it, so the retag loses every tag
-- [S · 0.13.1] An SYLT stamp with a huge seconds field overflows (`sylt.rs`'s `stamped` multiplies
-  unchecked beside a checked minutes term): a debug build panics writing such lyrics, a release
-  build wraps and falls back to a plain `USLT`
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader
