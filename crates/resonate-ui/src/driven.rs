@@ -4071,6 +4071,50 @@ mod tests {
     }
 
     #[gpui::test]
+    fn favourites_play_from_the_first_song_shown_in_order_and_shuffle_queues_them_all(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+        favourite_everything(&library);
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        driven.click("tab-favourites");
+        driven.until(|root, cx| root.library.read(cx).favourite_tracks().len() == 4);
+        let shown = favourites_listed(&mut driven);
+
+        driven.click("shuffle-all");
+        driven.until(|root, cx| {
+            root.player.read(cx).queue().len() == 4 && root.player.read(cx).state().shuffle
+        });
+        let mut shuffled = driven.queue();
+        shuffled.sort();
+        let mut expected = shown.clone();
+        expected.sort();
+        assert_eq!(shuffled, expected);
+
+        driven.click("play-all");
+        driven.until(|root, cx| !root.player.read(cx).state().shuffle);
+
+        assert_eq!(driven.queue(), shown);
+        assert_eq!(
+            driven.read(|root, cx| root.player.read(cx).state().current.map(|c| c.id)),
+            Some(shown[0])
+        );
+    }
+
+    #[gpui::test]
+    fn an_empty_favourites_offers_neither_play_nor_shuffle(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes"]);
+        let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+        driven.click("tab-favourites");
+        driven.settle();
+
+        assert!(driven.cx.debug_bounds("play-all").is_none());
+        assert!(driven.cx.debug_bounds("shuffle-all").is_none());
+    }
+
+    #[gpui::test]
     fn the_keys_hop_over_favourites_and_choose_them(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);

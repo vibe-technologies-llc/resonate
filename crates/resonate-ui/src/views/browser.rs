@@ -2663,14 +2663,7 @@ impl RootView {
     }
 
     pub(crate) fn play_all(&self, cx: &mut Context<Self>) -> Stateful<Div> {
-        self.in_the_pane_ring(
-            kit::button(
-                "play-all",
-                Some(Icon::Play),
-                words::browser::play(),
-                words::browser::play_all_hint(),
-                Tone::Primary,
-            ),
+        self.play_songs_button(
             |this, window, cx| {
                 this.with_everything_listed(window, cx, |this, listing, _, cx| {
                     this.plays_in_order(cx);
@@ -2682,6 +2675,39 @@ impl RootView {
     }
 
     pub(crate) fn shuffle_all(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+        self.shuffle_songs_button(
+            |this, window, cx| {
+                this.with_everything_listed(window, cx, |this, listing, _, cx| {
+                    this.play_shuffled(&listing, cx);
+                });
+            },
+            cx,
+        )
+    }
+
+    pub(crate) fn play_songs_button(
+        &self,
+        press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        self.in_the_pane_ring(
+            kit::button(
+                "play-all",
+                Some(Icon::Play),
+                words::browser::play(),
+                words::browser::play_all_hint(),
+                Tone::Primary,
+            ),
+            press,
+            cx,
+        )
+    }
+
+    pub(crate) fn shuffle_songs_button(
+        &self,
+        press: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + Clone + 'static,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         self.in_the_pane_ring(
             kit::button(
                 "shuffle-all",
@@ -2690,11 +2716,7 @@ impl RootView {
                 words::browser::shuffle_all_hint(),
                 Tone::Outlined,
             ),
-            |this, window, cx| {
-                this.with_everything_listed(window, cx, |this, listing, _, cx| {
-                    this.play_shuffled(&listing, cx);
-                });
-            },
+            press,
             cx,
         )
     }

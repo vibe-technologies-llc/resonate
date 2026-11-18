@@ -99,11 +99,13 @@ impl RootView {
         let playing = self.playing_now(cx).track;
         let nothing = held.is_empty();
 
+        let plays = (held.tracks > 0).then(|| self.play_favourites(&tracks, cx));
+
         let shelves = (!nothing).then(|| self.favourite_shelves(held, &artists, &albums, cx));
         let listed = (held.tracks > 0).then(|| self.favourite_rows(&tracks, playing, cx));
 
         kit::pane()
-            .child(favourites_heading(held, &reads))
+            .child(favourites_heading(held, &reads, plays))
             .when(nothing, |pane| {
                 pane.child(if narrowed {
                     empty(
@@ -122,6 +124,23 @@ impl RootView {
             .children(shelves)
             .children(listed)
             .into_any_element()
+    }
+
+    fn play_favourites(&self, tracks: &Arc<[Track]>, cx: &mut Context<Self>) -> Div {
+        let shuffled = Arc::clone(tracks);
+        let ordered = Arc::clone(tracks);
+
+        kit::actions()
+            .child(
+                self.shuffle_songs_button(move |this, _, cx| this.play_shuffled(&shuffled, cx), cx),
+            )
+            .child(self.play_songs_button(
+                move |this, _, cx| {
+                    this.plays_in_order(cx);
+                    this.play(&ordered, 0, cx);
+                },
+                cx,
+            ))
     }
 
     fn favourite_shelves(
@@ -216,23 +235,25 @@ impl RootView {
     }
 }
 
-fn favourites_heading(held: Favourited, reads: &[String]) -> Div {
+fn favourites_heading(held: Favourited, reads: &[String], plays: Option<Div>) -> Div {
     let counted = held.counted();
 
     kit::heading()
         .child(
-            kit::heading_row().child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .flex_1()
-                    .min_w(px(theme::heading_name()))
-                    .gap_1()
-                    .child(kit::title(words::favourites::favourites()))
-                    .when(!counted.is_empty(), |column| {
-                        column.child(kit::subtitle(counted))
-                    }),
-            ),
+            kit::heading_row()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w(px(theme::heading_name()))
+                        .gap_1()
+                        .child(kit::title(words::favourites::favourites()))
+                        .when(!counted.is_empty(), |column| {
+                            column.child(kit::subtitle(counted))
+                        }),
+                )
+                .children(plays),
         )
         .when(!reads.is_empty(), |heading| {
             heading.child(listing::reads(reads))
