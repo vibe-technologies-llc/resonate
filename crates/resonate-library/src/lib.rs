@@ -194,10 +194,10 @@ pub use crate::{
         disc_in_folder, named_by_the_file,
     },
     scrobble::{
-        Billed, LOVES_TOLD_AT_ONCE, LastfmApproval, LastfmSession, LastfmSignIn, ListeningService,
-        Love, Loved, LovedNames, LovesTold, SUBMITTED_AT_ONCE, Scrobble, Scrobbler, Scrobblers,
-        SignsInToSpotify, SpotifyApproval, SpotifySignInFailure, Submitted, TokenHeld,
-        refused_for_good,
+        Billed, Halted, LOVES_TOLD_AT_ONCE, LastfmApproval, LastfmSession, LastfmSignIn,
+        ListeningService, Love, Loved, LovedNames, LovesTold, Pending, SUBMITTED_AT_ONCE, Scrobble,
+        Scrobbler, Scrobblers, SignsInToSpotify, SpotifyApproval, SpotifySignInFailure, Submitted,
+        TokenHeld, refused_for_good, told_chunk,
     },
     search::{
         Asked, Clause, ClockUnit, Column, Compare, Condition, Grain, Lit, Reach, Search, Shape,

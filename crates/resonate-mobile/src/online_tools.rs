@@ -8,7 +8,10 @@ use std::{
 
 use resonate_core::{ListenId, Mbid};
 use resonate_eq::Corrections;
-use resonate_library::{Billed, LookupOp, Reference, Scrobble, Scrobbler, TokenHeld};
+use resonate_library::{
+    Billed, LookupOp, Pending, Reference, SUBMITTED_AT_ONCE, Scrobble, Scrobbler, Submitted,
+    TokenHeld, told_chunk,
+};
 use rusqlite::{OptionalExtension, params};
 
 use crate::{
@@ -324,62 +327,82 @@ impl MobilePlayer {
 
     fn submit_to(&self, client: &dyn Scrobbler, playing: Option<u64>) -> Result<u64> {
         let service = client.service().name();
-        let (through, listens) = {
-            let connection = self.catalog.0.lock();
-            let through: Option<i64> = connection
-                .query_row(
-                    "SELECT through FROM submissions WHERE service = ?1",
-                    [service],
-                    |row| row.get(0),
-                )
-                .optional()
-                .map_err(|source| Error::store(StoreOp::Read, source))?;
-            let through = through.unwrap_or(i64::MAX);
-            let mut query = connection.prepare("SELECT d.*, l.id AS listen_id, l.began AS listen_began FROM listens l JOIN documents d ON d.id = l.track WHERE l.counted = 1 AND l.elsewhere = 0 AND l.id > ?1 ORDER BY l.id LIMIT 100").map_err(|source| Error::store(StoreOp::Read, source))?;
-            let found = query
-                .query_map([through], |row| {
-                    Ok((
-                        read(row)?,
-                        row.get::<_, i64>("listen_id")?,
-                        row.get::<_, i64>("listen_began")?,
-                    ))
-                })
-                .map_err(|source| Error::store(StoreOp::Read, source))?
-                .collect::<rusqlite::Result<Vec<_>>>()
-                .map_err(|source| Error::store(StoreOp::Read, source))?;
-            (through, found)
-        };
-        let scrobbles = listens
+        let listens = self.counted_listens_after_mark(service)?;
+        let pending = listens
             .iter()
             .map(|(track, id, began)| {
-                Ok(Scrobble {
-                    listen: ListenId::new(*id as u64)?,
-                    at: UNIX_EPOCH + Duration::from_secs((*began).max(0) as u64),
-                    billed: billed(track),
+                let listen = ListenId::new(*id as u64)?;
+                Ok(Pending {
+                    listen,
+                    scrobble: scrobble_of(track, listen, *began),
                 })
             })
             .collect::<Result<Vec<_>>>()?;
-        if !scrobbles.is_empty() {
-            client
-                .submit(&scrobbles)
-                .map_err(|source| Error::reference(LookupOp::Submit, source))?;
-            let last = listens.last().map_or(through, |(_, id, _)| *id);
-            self.catalog
-                .0
-                .lock()
-                .execute(
-                    "UPDATE submissions SET through = max(through, ?2) WHERE service = ?1",
-                    params![service, last],
-                )
-                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        let mut submitted = Submitted::default();
+        let at_once = client.at_once().get().min(SUBMITTED_AT_ONCE);
+        let marked = |through: u64| self.mark_through(service, through);
+        for chunk in pending.chunks(at_once) {
+            told_chunk(client, chunk, &marked, &mut submitted).map_err(|halted| {
+                halted.into_error(|source| Error::reference(LookupOp::Submit, source))
+            })?;
+            if let Some(last) = chunk.last() {
+                marked(last.listen.get())?;
+            }
         }
         if let Some(id) = playing {
             client
                 .playing_now(&billed(&self.catalog.track(id)?))
                 .map_err(|source| Error::reference(LookupOp::Submit, source))?;
         }
-        Ok(scrobbles.len() as u64)
+        Ok(submitted.submitted as u64)
     }
+
+    fn counted_listens_after_mark(&self, service: &str) -> Result<Vec<(Track, i64, i64)>> {
+        let connection = self.catalog.0.lock();
+        let through: Option<i64> = connection
+            .query_row(
+                "SELECT through FROM submissions WHERE service = ?1",
+                [service],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        let through = through.unwrap_or(i64::MAX);
+        let mut query = connection.prepare("SELECT d.*, l.id AS listen_id, l.began AS listen_began FROM listens l JOIN documents d ON d.id = l.track WHERE l.counted = 1 AND l.elsewhere = 0 AND l.id > ?1 ORDER BY l.id LIMIT 100").map_err(|source| Error::store(StoreOp::Read, source))?;
+        let found = query
+            .query_map([through], |row| {
+                Ok((
+                    read(row)?,
+                    row.get::<_, i64>("listen_id")?,
+                    row.get::<_, i64>("listen_began")?,
+                ))
+            })
+            .map_err(|source| Error::store(StoreOp::Read, source))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+        Ok(found)
+    }
+
+    fn mark_through(&self, service: &str, through: u64) -> Result<()> {
+        self.catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE submissions SET through = max(through, ?2) WHERE service = ?1",
+                params![service, through as i64],
+            )
+            .map(drop)
+            .map_err(|source| Error::store(StoreOp::Write, source))
+    }
+}
+
+fn scrobble_of(track: &Track, listen: ListenId, began: i64) -> Option<Scrobble> {
+    let named = |text: &str| !text.trim().is_empty();
+    (named(&track.title) && named(&track.artist)).then(|| Scrobble {
+        listen,
+        at: UNIX_EPOCH + Duration::from_secs(began.max(0) as u64),
+        billed: billed(track),
+    })
 }
 
 fn billed(track: &Track) -> Billed {
@@ -402,6 +425,8 @@ fn billed(track: &Track) -> Billed {
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use parking_lot::Mutex;
     use resonate_library::{Error as LibraryError, ListeningService, Love, Loved};
 
@@ -414,6 +439,9 @@ mod tests {
         playing: Mutex<Vec<String>>,
         fails: Mutex<bool>,
         refuses_playing: Mutex<bool>,
+        at_once: NonZeroUsize,
+        malformed: Mutex<Vec<u64>>,
+        down_on: Mutex<Option<u64>>,
     }
 
     impl Told {
@@ -424,7 +452,15 @@ mod tests {
                 playing: Mutex::new(Vec::new()),
                 fails: Mutex::new(false),
                 refuses_playing: Mutex::new(false),
+                at_once: NonZeroUsize::new(100).expect("a size"),
+                malformed: Mutex::new(Vec::new()),
+                down_on: Mutex::new(None),
             }
+        }
+
+        fn in_batches_of(mut self, at_once: usize) -> Self {
+            self.at_once = NonZeroUsize::new(at_once).expect("a size");
+            self
         }
 
         fn failing(&self, fails: bool) {
@@ -447,8 +483,31 @@ mod tests {
             self.service
         }
 
+        fn at_once(&self) -> NonZeroUsize {
+            self.at_once
+        }
+
         fn submit(&self, listens: &[Scrobble]) -> resonate_library::Result<()> {
             self.refusal()?;
+            let listens_of = |listen: &Scrobble| listen.listen.get();
+            let refused = |status| LibraryError::Refused {
+                op: LookupOp::Submit,
+                status,
+            };
+            if listens
+                .iter()
+                .map(listens_of)
+                .any(|id| self.malformed.lock().contains(&id))
+            {
+                return Err(refused(400));
+            }
+            if listens
+                .iter()
+                .map(listens_of)
+                .any(|id| *self.down_on.lock() == Some(id))
+            {
+                return Err(refused(503));
+            }
             self.submitted
                 .lock()
                 .push(listens.iter().map(|listen| listen.listen.get()).collect());
@@ -477,6 +536,12 @@ mod tests {
 
     fn listened(harness: &Harness, song: u64, counted: bool, elsewhere: bool, times: usize) {
         let connection = harness.player.catalog.0.lock();
+        connection
+            .execute(
+                "UPDATE documents SET artist = 'Someone' WHERE id = ?1 AND artist = ''",
+                [song as i64],
+            )
+            .expect("an artist");
         for began in 0..times {
             connection
                 .execute(
@@ -627,5 +692,120 @@ mod tests {
         *client.refuses_playing.lock() = true;
         assert!(harness.player.submit_to(&client, Some(song)).is_err());
         assert_eq!(through(&harness, ScrobbleService::ListenBrainz), Some(3));
+    }
+
+    fn without_an_artist(harness: &Harness, song: u64) {
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute(
+                "UPDATE documents SET artist = '  ' WHERE id = ?1",
+                [song as i64],
+            )
+            .expect("a nameless artist");
+    }
+
+    #[test]
+    fn lastfm_is_told_fifty_listens_at_a_time_and_the_mark_follows_each_batch() {
+        let harness = Harness::new();
+        let song = harness.song('a').id;
+        listened(&harness, song, true, false, 100);
+        harness
+            .player
+            .start_scrobbling(ScrobbleService::LastFm, true)
+            .expect("a mark begun");
+        let client = Told::new(ListeningService::LastFm).in_batches_of(50);
+
+        assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 100);
+
+        let sent = client.submitted.lock().clone();
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[0], (1..=50).collect::<Vec<u64>>());
+        assert_eq!(sent[1], (51..=100).collect::<Vec<u64>>());
+        assert_eq!(through(&harness, ScrobbleService::LastFm), Some(100));
+    }
+
+    #[test]
+    fn a_listen_with_no_artist_is_passed_over_and_the_mark_moves_beyond_it() {
+        let harness = Harness::new();
+        let (named, nameless, last) = (
+            harness.song('a').id,
+            harness.song('b').id,
+            harness.song('c').id,
+        );
+        without_an_artist(&harness, nameless);
+        harness
+            .player
+            .start_scrobbling(ScrobbleService::ListenBrainz, true)
+            .expect("a mark begun");
+        listened(&harness, named, true, false, 1);
+        listened(&harness, nameless, true, false, 1);
+        listened(&harness, last, true, false, 1);
+        let client = Told::new(ListeningService::ListenBrainz);
+
+        assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 2);
+
+        assert_eq!(client.submitted.lock().clone(), [vec![1, 3]]);
+        assert_eq!(through(&harness, ScrobbleService::ListenBrainz), Some(3));
+    }
+
+    #[test]
+    fn a_trailing_nameless_listen_still_moves_the_mark() {
+        let harness = Harness::new();
+        let nameless = harness.song('b').id;
+        without_an_artist(&harness, nameless);
+        harness
+            .player
+            .start_scrobbling(ScrobbleService::ListenBrainz, true)
+            .expect("a mark begun");
+        listened(&harness, nameless, true, false, 2);
+        let client = Told::new(ListeningService::ListenBrainz);
+
+        assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 0);
+
+        assert!(client.submitted.lock().is_empty());
+        assert_eq!(through(&harness, ScrobbleService::ListenBrainz), Some(2));
+    }
+
+    #[test]
+    fn a_batch_refused_as_malformed_is_sent_one_by_one_and_the_bad_listen_is_passed_over() {
+        let harness = Harness::new();
+        let song = harness.song('a').id;
+        listened(&harness, song, true, false, 4);
+        harness
+            .player
+            .start_scrobbling(ScrobbleService::LastFm, true)
+            .expect("a mark begun");
+        let client = Told::new(ListeningService::LastFm).in_batches_of(50);
+        *client.malformed.lock() = vec![2];
+
+        assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 3);
+
+        assert_eq!(client.submitted.lock().clone(), [vec![1], vec![3], vec![4]]);
+        assert_eq!(through(&harness, ScrobbleService::LastFm), Some(4));
+        assert_eq!(harness.player.submit_to(&client, None).expect("none"), 0);
+    }
+
+    #[test]
+    fn a_failure_while_sending_one_by_one_keeps_the_mark_before_the_listen_it_stopped_at() {
+        let harness = Harness::new();
+        let song = harness.song('a').id;
+        listened(&harness, song, true, false, 4);
+        harness
+            .player
+            .start_scrobbling(ScrobbleService::LastFm, true)
+            .expect("a mark begun");
+        let client = Told::new(ListeningService::LastFm).in_batches_of(50);
+        *client.malformed.lock() = vec![2];
+        *client.down_on.lock() = Some(3);
+
+        assert!(harness.player.submit_to(&client, None).is_err());
+        assert_eq!(through(&harness, ScrobbleService::LastFm), Some(2));
+
+        *client.down_on.lock() = None;
+        assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 2);
+        assert_eq!(through(&harness, ScrobbleService::LastFm), Some(4));
     }
 }

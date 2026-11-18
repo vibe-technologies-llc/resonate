@@ -269,9 +269,23 @@ impl Cursor {
     }
 }
 
-struct Pending {
-    listen: ListenId,
-    scrobble: Option<Scrobble>,
+pub struct Pending {
+    pub listen: ListenId,
+    pub scrobble: Option<Scrobble>,
+}
+
+pub enum Halted<E> {
+    Submitting(Error),
+    Marking(E),
+}
+
+impl<E> Halted<E> {
+    pub fn into_error(self, submitting: impl FnOnce(Error) -> E) -> E {
+        match self {
+            Self::Submitting(error) => submitting(error),
+            Self::Marking(error) => error,
+        }
+    }
 }
 
 pub(crate) fn submit(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Submitted> {
@@ -344,7 +358,8 @@ fn told_in_batches(
         }
         let at_once = scrobbler.at_once().get().min(SUBMITTED_AT_ONCE);
         for chunk in pending.chunks(at_once) {
-            told_chunk(scrobbler, chunk, &marked, submitted)?;
+            told_chunk(scrobbler, chunk, &marked, submitted)
+                .map_err(|halted| halted.into_error(|error| error))?;
             if let Some(last) = chunk.last() {
                 through = last.listen.get();
                 marked(through)?;
@@ -356,12 +371,12 @@ fn told_in_batches(
     }
 }
 
-fn told_chunk(
+pub fn told_chunk<E>(
     scrobbler: &dyn Scrobbler,
     chunk: &[Pending],
-    marked: &dyn Fn(u64) -> Result<()>,
+    marked: &dyn Fn(u64) -> std::result::Result<(), E>,
     submitted: &mut Submitted,
-) -> Result<()> {
+) -> std::result::Result<(), Halted<E>> {
     let named: Vec<Scrobble> = chunk
         .iter()
         .filter_map(|pending| pending.scrobble.clone())
@@ -370,7 +385,7 @@ fn told_chunk(
 
     match submitted_whole(scrobbler, &named) {
         Ok(()) => submitted.submitted += named.len(),
-        Err(error) if !refused_as_malformed(&error) => return Err(error),
+        Err(error) if !refused_as_malformed(&error) => return Err(Halted::Submitting(error)),
         Err(_) => {
             for one in &named {
                 match scrobbler.submit(std::slice::from_ref(one)) {
@@ -384,8 +399,8 @@ fn told_chunk(
                         submitted.refused += 1;
                     }
                     Err(error) => {
-                        marked(one.listen.get() - 1)?;
-                        return Err(error);
+                        marked(one.listen.get() - 1).map_err(Halted::Marking)?;
+                        return Err(Halted::Submitting(error));
                     }
                 }
             }

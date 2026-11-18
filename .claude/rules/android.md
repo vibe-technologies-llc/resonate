@@ -1341,8 +1341,11 @@ AudD token is kept encrypted beside the other keys (`audd-token`) and typed in L
 
 AutoEq and pasted EqualizerAPO/GraphicEQ profiles use the shared parser and load as the curve's
 bands, every filter kept (`EqualiserImport`), into the curve in use (the bound one on a bound output). ListenBrainz and Last.fm accounts are opt-in,
-validate through their existing seams, and submit counted local listens in batches of 100 with
-independent durable marks advanced only after success. Existing history is included only when
+validate through their existing seams, and submit counted local listens, at most the batch each service takes (`Scrobbler::at_once`, 50
+for Last.fm), through the library's `told_chunk` as the desktop does: a listen with no title or
+artist is passed over, a batch refused as malformed is sent one by one with the bad listen passed
+over, and each service's durable mark moves past every chunk told or passed over, never past one
+still owed. Existing history is included only when
 asked; Last.fm is signed in to on its own page (`authorize_lastfm` answers it, the screen opens it
 in the browser and offers *Cancel* and *Open the page again* while `finish_lastfm_authorization`
 waits), and the session it answers is saved into the accounts with the key and secret it was made
