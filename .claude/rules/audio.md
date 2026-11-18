@@ -1030,7 +1030,19 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   cancel or push-back mid-fade restores the level, a seek or in-place restart lifts it. **The fade begins only on a ring that is audible** (`RingProducer::is_audible`: the consumer's `Fader::whole`, stored after every pull once its level is whole, cleared when a discard is applied, and no discard pending), since a fade-out meeting a consumer at `SILENT` after a seek's discard hushes without taking frames, so the position freezes short of the end and the timer never fires; a seek back inside the window lifts the fade and it begins again only once the new ring has been heard (`a_seek_back_inside_the_sleep_fade_never_hushes_a_ring_the_graph_has_not_heard`). **A DoP
   stream is not faded toward sleep** (`Output::can_fade`): its ring cannot ramp and goes quiet at
   once without draining, so the position froze short of the end the timer waited for; it plays to
-  the edge and pauses there. Outlives
+  the edge and pauses there. **An end-of timer waits for the last frame the row sends, not its
+  last frame of music**: `sleep_is_due_in` adds what the chain's flush will hand on past the music
+  (`Output::frames_the_flush_adds_past_the_music`, `max_flush_frames` less `frames_it_holds`: a
+  convolver's whole response, a resampler's few frames of rounding) while the row still fills, and
+  once the flush is out (`Output::has_handed_on_the_chains_tail`) reads what is left of it directly,
+  ring, unwritten stage and graph (`Output::frames_left_to_sound`), since `position` there still
+  takes off a latency the flushed chain no longer holds and never sees the stage a long response
+  waits in. A fade sized to the music alone went quiet with the response unread, so
+  the ring was pulled without being consumed and the row never ended
+  (`an_end_of_track_timer_under_a_long_impulse_or_none_pauses_on_the_next_row`,
+  `an_end_of_queue_timer_set_while_a_long_response_rings_past_the_music_ends_the_queue`). Overestimating
+  is safe (the ring runs dry first and the row ends); a gapless boundary and a flush
+  at a change of shape keep the music's measure, since neither ends the row's sound. Outlives
   track change, seek, pause, new load. Due while a row opens, it pauses the opening. Delay capped at
   `LONGEST_SLEEP` so a huge value cannot overflow an `Instant`.
 - **A skip under repeat-track repeats the queue, unless told otherwise.** `Command::Next` and

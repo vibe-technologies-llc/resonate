@@ -311,14 +311,33 @@ impl Output {
         self.capacity >= self.held_by_the_chain(carrying_the_front)
     }
 
+    fn staged_unwritten(&self) -> usize {
+        self.draining
+            .map_or(0, |written| self.staged.frames().saturating_sub(written))
+    }
+
     pub(super) fn frames_rendered_ahead_of_the_ring(&self) -> usize {
-        let staged_unwritten = self
-            .draining
-            .map_or(0, |written| self.staged.frames().saturating_sub(written));
         self.chain
             .frames_held_after_the_gain()
             .saturating_add(self.chain.frames_before_the_gain_settles())
-            .saturating_add(staged_unwritten)
+            .saturating_add(self.staged_unwritten())
+    }
+
+    pub(super) const fn has_handed_on_the_chains_tail(&self) -> bool {
+        self.ended || self.draining.is_some()
+    }
+
+    pub(super) fn frames_left_to_sound(&self) -> Frames {
+        Frames(self.buffered().saturating_add(self.staged_unwritten()) as u64)
+            .saturating_add(self.latency())
+    }
+
+    pub(super) fn frames_the_flush_adds_past_the_music(&self) -> Frames {
+        Frames(
+            self.chain
+                .max_flush_frames()
+                .saturating_sub(self.chain.frames_it_holds()) as u64,
+        )
     }
 
     pub(super) fn note_the_rendered_level(&mut self) {

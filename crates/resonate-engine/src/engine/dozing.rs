@@ -32,8 +32,30 @@ impl Engine {
             return None;
         }
         let track = self.heard_track()?;
-        let left = track.info.duration?.saturating_sub(self.position());
-        Some(left.to_duration(track.info.spec.rate))
+        let music = track
+            .info
+            .duration?
+            .saturating_sub(self.position())
+            .to_duration(track.info.spec.rate);
+
+        let Some(output) = self
+            .output
+            .as_ref()
+            .filter(|output| self.boundaries.is_empty() && !output.ends_at_a_change)
+        else {
+            return Some(music);
+        };
+        let rate = output.plan.stream.rate;
+        if output.has_handed_on_the_chains_tail() {
+            return Some(output.frames_left_to_sound().to_duration(rate));
+        }
+        Some(
+            music.saturating_add(
+                output
+                    .frames_the_flush_adds_past_the_music()
+                    .to_duration(rate),
+            ),
+        )
     }
 
     fn fade_toward_sleep(&mut self) {

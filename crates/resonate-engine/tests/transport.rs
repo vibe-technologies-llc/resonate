@@ -11031,6 +11031,84 @@ fn a_sleep_timer_set_to_the_end_of_a_track_leaves_the_queue_on_the_next_row() ->
 }
 
 #[test]
+fn an_end_of_track_timer_under_a_long_impulse_or_none_pauses_on_the_next_row() -> Result<()> {
+    for room in [Some(4.0), None] {
+        let tree = Tree::new();
+        let first = tree.write("first.wav", &steady(16_000, RATE as usize * 2));
+        let second = tree.write("second.wav", &steady(16_000, RATE as usize * 2));
+        let config = room.map_or_else(config, correcting_the_room);
+
+        let (backend, graph) =
+            FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+        let player = once_surveyed(Player::with_backend(config, move |_| {
+            Ok(Box::new(backend))
+        })?);
+        player
+            .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
+            .wait_for(PATIENCE)?;
+        player.send(Command::Load {
+            items: vec![track(&first, 1), track(&second, 2)],
+            start_at: 0,
+            autoplay: true,
+        })?;
+
+        play_until(
+            &player,
+            &graph,
+            BLOCK_FRAMES * frame_bytes(SampleFormat::S16),
+            |player, _| paused(player) && plays(player, 2),
+            "the timer to end the first track and cue the second",
+        );
+
+        assert_eq!(
+            dozing(&player),
+            None,
+            "a timer that fired under {room:?} seconds of response is still published"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn an_end_of_queue_timer_set_while_a_long_response_rings_past_the_music_ends_the_queue()
+-> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("steady.wav", &steady(16_000, RATE as usize));
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+
+    let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let player = once_surveyed(Player::with_backend(correcting_the_room(4.0), move |_| {
+        Ok(Box::new(backend))
+    })?);
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= RATE as usize * 2 * frame_bytes(SampleFormat::S16),
+        "the music to end and its response to ring on",
+    );
+    assert!(playing(&player), "the response stopped ringing early");
+
+    player
+        .request(Command::SleepUntil(Some(Until::EndOfQueue)))?
+        .wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        block,
+        |player, _| !playing(player),
+        "the timer to end the ringing track and the queue",
+    );
+    Ok(())
+}
+
+#[test]
 fn an_end_of_track_timer_over_a_dop_stream_plays_the_track_out_and_pauses_on_the_next_row()
 -> Result<()> {
     let named = SourceId::new("held").expect("a lowercase name");
