@@ -99,11 +99,11 @@ same-file = { version = "1.0.6", default-features = false }
 keepawake = { version = "0.6.1", default-features = false }
 fs4 = { version = "1.1.0", default-features = false }
 interprocess = { version = "2.4.8", default-features = false }
-ctrlc = { version = "3.5.2", default-features = false, features = ["termination"] }
+ctrlc = { version = "3.5.3", default-features = false, features = ["termination"] }
 crossterm = { version = "0.29.0", default-features = false, features = ["events", "windows"] }
 trash = { version = "5.4.0", default-features = false, features = ["coinit_apartmentthreaded"] }
 rtrb = { version = "0.4.1", default-features = false, features = ["std"] }
-smallvec = { version = "1.16.5", default-features = false, features = ["union", "const_generics"] }
+smallvec = { version = "1.16.6", default-features = false, features = ["union", "const_generics"] }
 unicode-segmentation = { version = "1.13.3", default-features = false }
 unicode-width = { version = "0.2.3", default-features = false }
 win-resource-builder = { version = "0.2.0", default-features = false }
@@ -119,7 +119,7 @@ icu_datetime = { version = "2.4.0", default-features = false, features = ["compi
 icu_calendar = { version = "2.4.0", default-features = false }
 icu_locale_core = { version = "2.4.0", default-features = false }
 jiff = {
-    version = "1.0.0",
+    version = "1.0.1",
     default-features = false,
     features = ["std", "tz-system", "tzdb-zoneinfo"]
 }
@@ -230,7 +230,7 @@ hdf5-reader = { version = "0.13.0", default-features = false }
 hdf5-writer = { version = "0.13.0", default-features = false }
 serde = { version = "1.0.229", default-features = false, features = ["std", "derive"] }
 serde_json = { version = "1.0.154", default-features = false, features = ["std"] }
-serde-saphyr = { version = "2.1.1", default-features = false, features = ["deserialize"] }
+serde-saphyr = { version = "2.2.0", default-features = false, features = ["deserialize"] }
 
 zbus = {
     version = "6.3.0",
