@@ -57,3 +57,11 @@ held-by-another-zone = Another zone plays that device bit-perfect
 zone-refused = That zone is no longer there
 not-handed-over = The other zone didn't take the playback over
 nothing-to-compare = The two sides of the listening test can't be told apart here
+history-line = Line { NUMBER($line, useGrouping: "false") } of the file is not a listen as ListenBrainz writes one: { $fault ->
+    [not-utf8] it is not text
+    [not-json] it is not JSON
+    [not-an-object] it is not a JSON object
+    [no-moment] it names no moment it was heard at
+   *[no-track-metadata] it names no song
+}
+history-unkept = The listening history could not be read or written in the document catalog

@@ -1,7 +1,7 @@
 use resonate_dsp::Error as Dsp;
 use resonate_engine::{Cause, CommandKind, Event, PlaybackState, PlayerState, QueueRows};
 use resonate_eq::Error as Eq;
-use resonate_library::{Error as Library, LookupOp};
+use resonate_library::{Error as Library, ListenFault, LookupOp};
 
 use crate::{
     MobilePlayer, documents::document_uri, measurement::MeasuredFile, words::failure as said,
@@ -125,6 +125,24 @@ pub(crate) fn of_a_lookup(op: LookupOp, source: &Library) -> String {
         Library::TooLarge { .. } => said::lookup_too_large(asked),
         Library::RefusedInARow { refusals, .. } => said::lookup_refused_in_a_row(asked, *refusals),
         _ => said::lookup_failed(asked),
+    }
+}
+
+pub(crate) fn of_the_history(source: &Library) -> String {
+    match source {
+        Library::ListenLine { line, fault } => said::history_line(fault_named(*fault), *line),
+        Library::Store { .. } => said::history_unkept().to_owned(),
+        other => of_a_lookup(LookupOp::History, other),
+    }
+}
+
+const fn fault_named(fault: ListenFault) -> &'static str {
+    match fault {
+        ListenFault::NotUtf8 => "not-utf8",
+        ListenFault::NotJson => "not-json",
+        ListenFault::NotAnObject => "not-an-object",
+        ListenFault::NoMoment => "no-moment",
+        ListenFault::NoTrackMetadata => "no-track-metadata",
     }
 }
 

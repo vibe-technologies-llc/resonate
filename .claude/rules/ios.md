@@ -415,6 +415,9 @@ sync seals its records and talks QUIC (TLS) of its own.
   (`inspectorArtist`, an `ArtistLookup`) is its own state, apart from the online artist page's,
   and survives the Inspector reappearing for the same song. Scrobbling accounts reach the
   keychain before scrobbling starts, so a refused start keeps what was typed.
+  The Scrobbling page's *Listening history* section is Android's (`android.md`): export writes `listens.jsonl` into the
+  temporary folder through an `open(2)` descriptor and hands it to `fileExporter` as a `HistoryFile`;
+  import opens the `fileImporter`'s URL inside its security scope for `importHistoryFile`.
 - **Analysis runs while its page is open**: `.task(id: track.id)` starts it unless a report for
   that song is already held, leaving the page cancels it (`cancelAnalysis`), and progress is
   indeterminate until the engine reports a fraction. A silent level reads "Silent", never

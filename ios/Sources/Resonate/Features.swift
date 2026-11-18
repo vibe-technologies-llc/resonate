@@ -72,6 +72,8 @@ final class Features {
     var applyingCorrection = false
     var scrobbleAccount: ScrobbleAccount?
     var scrobbleStatus: String?
+    private(set) var historyBusy = false
+    var historyStatus: String?
     var providers = ProviderAccounts() {
         didSet { servedChanged() }
     }
@@ -1880,6 +1882,56 @@ final class Features {
                 throw error
             }
         }
+    }
+
+    func exportHistory() async -> URL? {
+        guard !historyBusy else { return nil }
+        historyBusy = true
+        historyStatus = nil
+        defer { historyBusy = false }
+        do {
+            let native = try await library.player()
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent(ListeningHistory.fileName)
+            let count = try await Work.aside {
+                let descriptor = Darwin.open(file.path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0o600)
+                return try native.exportHistory(descriptor: descriptor)
+            }
+            historyStatus = said("scrobbling.history.exported", Int(count))
+            return file
+        } catch {
+            library.report(error)
+            return nil
+        }
+    }
+
+    func importHistoryFile(_ url: URL) {
+        historyWork { native in
+            try await Work.aside {
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                return try native.importHistoryFile(descriptor: Darwin.open(url.path, O_RDONLY | O_CLOEXEC))
+            }
+        }
+    }
+
+    func importHistory(_ service: ScrobbleService) {
+        guard let account = scrobbleAccount else { return }
+        historyWork { native in
+            try await Work.aside { try native.importHistory(service: service, user: "", account: account) }
+        }
+    }
+
+    private func historyWork(_ bringing: @escaping @MainActor (MobilePlayer) async throws -> HistoryBroughtIn) {
+        guard !historyBusy else { return }
+        historyBusy = true
+        historyStatus = nil
+        work({ [weak self] native in
+            let brought = try await bringing(native)
+            self?.historyStatus = ListeningHistory.broughtIn(brought)
+            await self?.library.refresh()
+        }, finally: { [weak self] in
+            self?.historyBusy = false
+        })
     }
 
     func validateScrobbling(_ account: ScrobbleAccount) {

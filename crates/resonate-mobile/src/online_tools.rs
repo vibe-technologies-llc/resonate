@@ -70,7 +70,7 @@ pub enum ScrobbleService {
 }
 
 impl ScrobbleService {
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::ListenBrainz => "listenbrainz",
             Self::LastFm => "lastfm",
@@ -405,7 +405,7 @@ fn scrobble_of(track: &Track, listen: ListenId, began: i64) -> Option<Scrobble> 
     })
 }
 
-fn billed(track: &Track) -> Billed {
+pub(crate) fn billed(track: &Track) -> Billed {
     Billed {
         title: track.title.clone(),
         artist: track.artist.clone(),

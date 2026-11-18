@@ -132,10 +132,14 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   counted, not kept** (`BroughtIn::unmatched`): an `unheld_listens` row needs a path and the service
   names none, so it is brought in by a later import once the song is held. `History` is the seam a
   service fills (`resonate-online`'s `ListenBrainzHistory` and `LastfmHistory`, `online.md`), paged
-  by an opaque `u64` it hands back
+  by an opaque `u64` it hands back. **`KeptListens` is the seam a catalog fills** (`kept_listens.rs`):
+  `history_from` and `bring_in`, which `Library` and the phones' document catalog both answer
+  (`mobile.md`), so `history_lines` (each listen one `line_of`, `LISTENS_READ_AT_ONCE` a page),
+  `bring_in_lines` (a file, as `LINES_READ_AS`) and `bring_in_history` (a service's pages until it
+  names no next page or the same one again) are written once for the binary and the phones
   (`listens_brought_in_from_a_service_land_once_on_the_songs_held_and_one_already_heard_here_is_not_counted_again`,
   `the_history_is_read_out_whole_the_songs_held_named_and_the_ones_not_held_by_where_they_were`).
-  **A file of ListenBrainz JSON lines is read by `heard_in_lines`** (`listen_lines.rs`, over
+  **A file of ListenBrainz JSON lines is written by `line_of` and read by `heard_in_lines`** (`listen_lines.rs`, over
   the crate's own small `json.rs`, since the library links no `serde_json`; `resonate-online`'s
   reader of the service's page cannot be reached without `online`): one listen a line, as
   `history --export` writes and ListenBrainz exports (`listened_at`, `track_metadata`'s names,

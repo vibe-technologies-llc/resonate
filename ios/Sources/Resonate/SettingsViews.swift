@@ -570,11 +570,33 @@ struct OutputView: View {
     }
 }
 
+struct HistoryFile: FileDocument {
+    static let kind = UTType(filenameExtension: "jsonl", conformingTo: .data) ?? .data
+    static let readableContentTypes: [UTType] = [kind]
+
+    let file: URL
+
+    init(file: URL) {
+        self.file = file
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        throw CocoaError(.featureUnsupported)
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        try FileWrapper(url: file, options: .immediate)
+    }
+}
+
 struct ScrobblingView: View {
     @Environment(Library.self) private var library
     @Environment(\.openURL) private var openURL
     @State private var account = ScrobbleAccount(listenbrainzToken: "", lastfmKey: "", lastfmSecret: "", lastfmSession: "")
     @State private var history = false
+    @State private var exported: HistoryFile?
+    @State private var exporting = false
+    @State private var importing = false
 
     var body: some View {
         let features = library.features
@@ -616,10 +638,63 @@ struct ScrobblingView: View {
             if let status = features.scrobbleStatus {
                 Text(status).foregroundStyle(.secondary)
             }
+            historySection
+        }
+        .fileExporter(
+            isPresented: $exporting,
+            document: exported,
+            contentType: HistoryFile.kind,
+            defaultFilename: ListeningHistory.fileName
+        ) { result in
+            if case .failure(let failure) = result { library.report(failure) }
+            exported = nil
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [HistoryFile.kind, .json, .plainText, .data]) { result in
+            switch result {
+            case .success(let url): features.importHistoryFile(url)
+            case .failure(let failure): library.report(failure)
+            }
         }
         .navigationTitle("scrobbling.title")
         .onAppear { if let saved = features.scrobbleAccount { account = saved } }
         .onChange(of: features.scrobbleAccount) { _, saved in if let saved { account = saved } }
+    }
+}
+
+extension ScrobblingView {
+    @ViewBuilder
+    private var historySection: some View {
+        let features = library.features
+        let saved = features.scrobbleAccount
+        Section {
+            Button("scrobbling.history.export") {
+                Task {
+                    guard let file = await features.exportHistory() else { return }
+                    exported = HistoryFile(file: file)
+                    exporting = true
+                }
+            }
+            .disabled(features.historyBusy)
+            Button("scrobbling.history.import-file") { importing = true }
+                .disabled(features.historyBusy)
+            if saved?.listenbrainzToken.isEmpty == false {
+                Button("scrobbling.history.import.listenbrainz") { features.importHistory(.listenBrainz) }
+                    .disabled(features.historyBusy || !features.online)
+            }
+            if saved?.lastfmSession.isEmpty == false {
+                Button("scrobbling.history.import.lastfm") { features.importHistory(.lastFm) }
+                    .disabled(features.historyBusy || !features.online)
+            }
+            if features.historyBusy {
+                Text("scrobbling.history.working").foregroundStyle(.secondary)
+            } else if let status = features.historyStatus {
+                Text(status).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("scrobbling.history")
+        } footer: {
+            Text("scrobbling.history.footer")
+        }
     }
 }
 

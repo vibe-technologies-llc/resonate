@@ -359,6 +359,8 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
                 said("settings.scrobbling.inner.sign-in-to-last-fm"),
                 said("settings.scrobbling.inner.loves"),
                 said("settings.scrobbling.inner.listening-history"),
+                said("settings.scrobbling.inner.export-listening-history"),
+                said("settings.scrobbling.inner.import-listening-history"),
             ]
         case .spotify:
             [

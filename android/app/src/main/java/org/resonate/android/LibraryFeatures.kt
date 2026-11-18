@@ -54,6 +54,7 @@ import org.resonate.android.nativecore.AutoEqDevice
 import org.resonate.android.nativecore.ConnectionMeter
 import org.resonate.android.nativecore.DownloadAccount
 import org.resonate.android.nativecore.HandedOff
+import org.resonate.android.nativecore.HistoryBroughtIn
 import org.resonate.android.nativecore.LibraryStatistics
 import org.resonate.android.nativecore.LyricFrame
 import org.resonate.android.nativecore.LyricNudge
@@ -166,6 +167,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val spotifyAddress = MutableStateFlow<String?>(null)
     val spotifySigningIn = MutableStateFlow(false)
     val scrobbleStatus = MutableStateFlow<String?>(null)
+    val historyBusy = MutableStateFlow(false)
+    val historyStatus = MutableStateFlow<String?>(null)
     private var submitting: Job? = null
     private var keepingInStep: Job? = null
     private var inStepFailure: String? = null
@@ -1905,6 +1908,40 @@ class LibraryFeatures(private val context: Context, private val library: Library
         scrobbleStatus.value = library.words.string(R.string.features_scrobble_accounts_saved)
     }
 
+    fun exportHistory(uri: Uri) = historyWork { native ->
+        val descriptor = requireNotNull(context.contentResolver.openFileDescriptor(uri, "wt")).detachFd()
+        val count = native.exportHistory(descriptor)
+        historyStatus.value =
+            library.words.plural(R.plurals.features_history_exported, count.toInt(), count.toLong())
+    }
+
+    fun importHistoryFile(uri: Uri) = historyWork { native ->
+        val descriptor = requireNotNull(context.contentResolver.openFileDescriptor(uri, "r")).detachFd()
+        historyBroughtIn(native.importHistoryFile(descriptor))
+    }
+
+    fun importHistory(service: ScrobbleService) = historyWork { native ->
+        val account = scrobbleAccount.value ?: return@historyWork
+        historyBroughtIn(native.importHistory(service, "", account))
+    }
+
+    private suspend fun historyBroughtIn(brought: HistoryBroughtIn) {
+        historyStatus.value = historyBroughtInSaid(library.words, brought)
+        library.refresh()
+    }
+
+    private fun historyWork(action: suspend (MobilePlayer) -> Unit) {
+        if (!historyBusy.compareAndSet(false, true)) return
+        historyStatus.value = null
+        work { native ->
+            try {
+                action(native)
+            } finally {
+                historyBusy.value = false
+            }
+        }
+    }
+
     fun validateScrobbling(account: ScrobbleAccount) = work { native ->
         scrobbleStatus.value = native.validateScrobbling(account).joinToString(" · ")
     }
@@ -2314,3 +2351,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 }
+
+fun historyBroughtInSaid(words: Words, brought: HistoryBroughtIn): String =
+    words.string(
+        R.string.features_history_brought_in_detail,
+        words.plural(R.plurals.features_history_brought_in, brought.credited.toInt(), brought.credited.toLong()),
+        brought.heldAlready.toLong(),
+        brought.unmatched.toLong(),
+    )

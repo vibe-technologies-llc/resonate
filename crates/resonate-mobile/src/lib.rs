@@ -18,6 +18,7 @@ mod features;
 mod foreign;
 #[cfg(test)]
 mod harness;
+mod history;
 mod language;
 mod learnt;
 mod listening;

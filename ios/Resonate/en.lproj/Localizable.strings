@@ -1076,6 +1076,14 @@
 "scan.reading" = "Reading music folder";
 "scrobbling.footer" = "Favourites with an identified recording are loved on each saved account, and taken back there when you remove them.";
 "scrobbling.include-history" = "Include existing listening history";
+"scrobbling.history" = "Listening history";
+"scrobbling.history.footer" = "A file holds one listen a line, as ListenBrainz writes them; listens of songs on this phone are added once and the rest are counted and left.";
+"scrobbling.history.export" = "Export to a file";
+"scrobbling.history.import-file" = "Import a file";
+"scrobbling.history.import.listenbrainz" = "Bring in from ListenBrainz";
+"scrobbling.history.import.lastfm" = "Bring in from Last.fm";
+"scrobbling.history.working" = "Working through the history…";
+"scrobbling.history.brought-in.detail" = "%@ · %lld already here · %lld of songs not on this phone";
 "scrobbling.lastfm.key" = "Last.fm application key";
 "scrobbling.lastfm.secret" = "Last.fm application secret";
 "scrobbling.lastfm.session" = "Last.fm session";
@@ -1315,6 +1323,8 @@
 "settings.room-correction.title" = "Room correction";
 "settings.scrobbling.inner.listenbrainz-token" = "ListenBrainz token";
 "settings.scrobbling.inner.listening-history" = "Listening history";
+"settings.scrobbling.inner.export-listening-history" = "Export listening history";
+"settings.scrobbling.inner.import-listening-history" = "Import listening history";
 "settings.scrobbling.inner.loves" = "Loves";
 "settings.scrobbling.inner.sign-in-to-last-fm" = "Sign in to Last.fm";
 "settings.scrobbling.none" = "Share your listening with ListenBrainz or Last.fm";

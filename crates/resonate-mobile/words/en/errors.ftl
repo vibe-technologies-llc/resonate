@@ -153,4 +153,12 @@ impulse-found = found
 impulse-removed = removed
 quick-connect-off = This server has Quick Connect off, so sign in with the password
 sign-in-cancelled = The sign-in was cancelled
+history-file = The listening history file could not be { $op }
+history-file-read = read
+history-file-written = written
+no-history-user = Name the { $service ->
+    [lastfm] Last.fm
+   *[listenbrainz] ListenBrainz
+} user whose listens to bring in, or save an account for it first
+no-lastfm-application = Give the API key and shared secret of your Last.fm app first
 lossy-for-a-replacement = The downloaded file is lossy, and a lossless copy was asked for to replace a lossy song

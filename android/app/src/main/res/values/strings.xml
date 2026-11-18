@@ -367,6 +367,15 @@
         <item quantity="other">Submitted %1$d listens</item>
     </plurals>
     <string name="features_scrobble_accounts_saved">Scrobbling accounts saved</string>
+    <plurals name="features_history_exported">
+        <item quantity="one">Exported %1$d listen</item>
+        <item quantity="other">Exported %1$d listens</item>
+    </plurals>
+    <plurals name="features_history_brought_in">
+        <item quantity="one">Brought in %1$d listen</item>
+        <item quantity="other">Brought in %1$d listens</item>
+    </plurals>
+    <string name="features_history_brought_in_detail">%1$s · %2$d already here · %3$d of songs not on this phone</string>
     <string name="features_scrobble_lastfm_signed_in">Signed in to Last.fm</string>
     <string name="features_scrobble_lastfm_signed_out">Signed out of Last.fm</string>
     <string name="features_sync_joining_when_read">Joining as soon as this phone\'s settings are read</string>
@@ -1021,6 +1030,15 @@
     <string name="scrobbling_keystore">Tokens, keys and sessions stay encrypted with Android Keystore.</string>
     <string name="scrobbling_save">Save</string>
     <string name="scrobbling_saved">Saved</string>
+    <string name="scrobbling_listening_history">Listening history</string>
+    <string name="scrobbling_history_export">Export to a file</string>
+    <string name="scrobbling_history_export_detail">One listen a line, as ListenBrainz writes them</string>
+    <string name="scrobbling_history_import_file">Import a file</string>
+    <string name="scrobbling_history_import_file_detail">Listens in ListenBrainz JSON lines, from Resonate or ListenBrainz</string>
+    <string name="scrobbling_history_import_listenbrainz">Bring in from ListenBrainz</string>
+    <string name="scrobbling_history_import_lastfm">Bring in from Last.fm</string>
+    <string name="scrobbling_history_import_detail">Listens of songs on this phone are added once; the rest are counted and left</string>
+    <string name="scrobbling_history_working">Working through the history…</string>
     <string name="spotify_screen_offline">Online features are off. A Spotify account is read only while they are on.</string>
     <string name="spotify_screen_turn_on">Turn on</string>
     <string name="spotify_screen_your_app">Your app</string>
@@ -1346,6 +1364,8 @@
     <string name="settings_inner_listenbrainz_token">ListenBrainz token</string>
     <string name="settings_inner_loves">Loves</string>
     <string name="settings_inner_listening_history">Listening history</string>
+    <string name="settings_inner_export_listening_history">Export listening history</string>
+    <string name="settings_inner_import_listening_history">Import listening history</string>
     <string name="settings_spotify_detail">Your playlists and liked songs, with an app you register</string>
     <string name="settings_inner_client_id">Client ID</string>
     <string name="settings_inner_sign_in_to_spotify">Sign in to Spotify</string>

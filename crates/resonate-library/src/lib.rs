@@ -22,6 +22,7 @@ mod identical;
 mod import;
 mod json;
 mod keeps;
+mod kept_listens;
 mod keyed;
 mod learning;
 #[cfg(test)]
@@ -144,13 +145,17 @@ pub use crate::{
         Vaulted, Wanted,
     },
     keeps::{KeepStopped, KeepSummary, Kept as KeptSong, KeptList, PlaylistToKeep, SongToKeep},
+    kept_listens::{
+        HistoryLines, KeptListens, LINES_READ_AS, LISTENS_READ_AT_ONCE, bring_in_history,
+        bring_in_lines, history_lines,
+    },
     learning::Learning,
     linked::{
         AlbumLink, AlbumNames, ArtistLink, Barcode, FollowedLink, FollowedPlaylist, LinkNames,
         Linked, LinkedPlaylist, LinkedProfile, ListedSong, PlaylistLink, ProfileLink,
         ProfilePlaylist, SongLink, is_a_followed_link,
     },
-    listen_lines::{ListenFault, heard_in_lines},
+    listen_lines::{ListenFault, heard_in_lines, line_of},
     meant::{ByArtist, Meant},
     model::{
         Album, AlbumToAsk, Artist, ArtistDetail, ArtistToAsk, ArtistTotals, AsDrawn, Compacted,

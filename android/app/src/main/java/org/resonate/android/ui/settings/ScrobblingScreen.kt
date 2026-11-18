@@ -1,9 +1,14 @@
 package org.resonate.android.ui.settings
 
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
@@ -32,6 +37,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.R
 import org.resonate.android.nativecore.ScrobbleAccount
+import org.resonate.android.nativecore.ScrobbleService
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
@@ -49,6 +55,8 @@ fun ScrobbleAccount.trimmed(): ScrobbleAccount =
 fun canSignInToLastFm(draft: ScrobbleDraft): Boolean =
     draft.account.lastfmKey.isNotBlank() && draft.account.lastfmSecret.isNotBlank()
 
+const val HISTORY_FILE_NAME = "listens.jsonl"
+
 class ScrobblingViewModel(private val resonate: Resonate) : ViewModel() {
     private val features = resonate.features
 
@@ -57,6 +65,8 @@ class ScrobblingViewModel(private val resonate: Resonate) : ViewModel() {
     val stored = features.scrobbleAccount
     val status = features.scrobbleStatus
     val online = features.online
+    val historyBusy = features.historyBusy
+    val historyStatus = features.historyStatus
     var draft by mutableStateOf<ScrobbleDraft?>(null)
         private set
 
@@ -110,6 +120,12 @@ class ScrobblingViewModel(private val resonate: Resonate) : ViewModel() {
     fun signOut() = features.signOutLastFm()
 
     fun goOnline() = features.setOnline(true)
+
+    fun exportHistory(uri: Uri) = features.exportHistory(uri)
+
+    fun importHistoryFile(uri: Uri) = features.importHistoryFile(uri)
+
+    fun importHistory(service: ScrobbleService) = features.importHistory(service)
 }
 
 @Composable
@@ -121,7 +137,18 @@ fun ScrobblingScreen() {
     val online by model.online.collectAsStateWithLifecycle()
     val lastfmAddress by model.lastfmAddress.collectAsStateWithLifecycle()
     val lastfmBusy by model.lastfmBusy.collectAsStateWithLifecycle()
-    LaunchedEffect(lastfmAddress) { lastfmAddress?.let(model::open) }
+    val historyBusy by model.historyBusy.collectAsStateWithLifecycle()
+    val historyStatus by model.historyStatus.collectAsStateWithLifecycle()
+    val exporting =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("application/octet-stream")
+        ) { uri ->
+            uri?.let(model::exportHistory)
+        }
+    val importing =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let(model::importHistoryFile)
+        }
     Page(stringResource(R.string.scrobbling_title)) { padding ->
         val current = draft
         if (current == null) {
@@ -278,6 +305,63 @@ fun ScrobblingScreen() {
                     icon = Icons.Rounded.Favorite,
                     supporting = stringResource(R.string.scrobbling_loves_detail),
                 )
+            }
+            item(key = "history-header") {
+                SectionHeader(stringResource(R.string.scrobbling_listening_history))
+            }
+            item(key = "history-export") {
+                SettingRow(
+                    title = stringResource(R.string.scrobbling_history_export),
+                    icon = Icons.Rounded.FileUpload,
+                    supporting = stringResource(R.string.scrobbling_history_export_detail),
+                    enabled = !historyBusy,
+                    onClick = { exporting.launch(HISTORY_FILE_NAME) },
+                    modifier = Modifier.testTag("history-export"),
+                )
+            }
+            item(key = "history-import-file") {
+                SettingRow(
+                    title = stringResource(R.string.scrobbling_history_import_file),
+                    icon = Icons.Rounded.FileDownload,
+                    supporting = stringResource(R.string.scrobbling_history_import_file_detail),
+                    enabled = !historyBusy,
+                    onClick = { importing.launch(arrayOf("*/*")) },
+                    modifier = Modifier.testTag("history-import-file"),
+                )
+            }
+            val saved = stored
+            if (saved != null && saved.listenbrainzToken.isNotEmpty()) {
+                item(key = "history-import-listenbrainz") {
+                    SettingRow(
+                        title = stringResource(R.string.scrobbling_history_import_listenbrainz),
+                        icon = Icons.Rounded.CloudDownload,
+                        supporting = stringResource(R.string.scrobbling_history_import_detail),
+                        enabled = online && !historyBusy,
+                        onClick = { model.importHistory(ScrobbleService.LISTEN_BRAINZ) },
+                    )
+                }
+            }
+            if (saved != null && saved.lastfmSession.isNotEmpty()) {
+                item(key = "history-import-lastfm") {
+                    SettingRow(
+                        title = stringResource(R.string.scrobbling_history_import_lastfm),
+                        icon = Icons.Rounded.CloudDownload,
+                        supporting = stringResource(R.string.scrobbling_history_import_detail),
+                        enabled = online && !historyBusy,
+                        onClick = { model.importHistory(ScrobbleService.LAST_FM) },
+                    )
+                }
+            }
+            if (historyBusy || historyStatus != null) {
+                item(key = "history-status") {
+                    SettingRow(
+                        title =
+                            if (historyBusy) stringResource(R.string.scrobbling_history_working)
+                            else historyStatus.orEmpty(),
+                        icon = Icons.Rounded.Info,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
             }
             item(key = "keystore") {
                 Footnote(stringResource(R.string.scrobbling_keystore))

@@ -1105,19 +1105,8 @@ impl DocumentCatalog {
         connection: &Connection,
         recording: &Recording,
     ) -> Answered<Option<u64>> {
-        if let Some(id) = self
-            .indexed(connection)
-            .map_err(unavailable)?
-            .visible
-            .resolved(recording)
-            .first()
-        {
-            return Ok(Some(*id));
-        }
-        Ok(received_as(connection, recording, false)
-            .map_err(unavailable)?
-            .first()
-            .copied())
+        let indexed = self.indexed(connection).map_err(unavailable)?;
+        held_strictly(&indexed, connection, recording).map_err(unavailable)
     }
 
     fn opened(&self, id: u64) -> Answered<Option<Opened>> {
@@ -1837,6 +1826,33 @@ struct Index {
 struct Indexed {
     visible: Index,
     withdrawn: Index,
+}
+
+pub(crate) struct SongsHeld(Indexed);
+
+impl SongsHeld {
+    pub(crate) fn read(connection: &Connection) -> rusqlite::Result<Self> {
+        Indexed::read(connection).map(Self)
+    }
+
+    pub(crate) fn resolved(
+        &self,
+        connection: &Connection,
+        recording: &Recording,
+    ) -> rusqlite::Result<Option<u64>> {
+        held_strictly(&self.0, connection, recording)
+    }
+}
+
+fn held_strictly(
+    indexed: &Indexed,
+    connection: &Connection,
+    recording: &Recording,
+) -> rusqlite::Result<Option<u64>> {
+    if let Some(id) = indexed.visible.resolved(recording).first() {
+        return Ok(Some(*id));
+    }
+    Ok(received_as(connection, recording, false)?.first().copied())
 }
 
 impl Indexed {

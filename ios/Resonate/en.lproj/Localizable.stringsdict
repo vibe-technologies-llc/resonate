@@ -1202,6 +1202,38 @@
 			<string>%lld songs</string>
 		</dict>
 	</dict>
+	<key>scrobbling.history.exported</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Exported %#@listens@</string>
+		<key>listens</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld listen</string>
+			<key>other</key>
+			<string>%lld listens</string>
+		</dict>
+	</dict>
+	<key>scrobbling.history.brought-in</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Brought in %#@listens@</string>
+		<key>listens</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld listen</string>
+			<key>other</key>
+			<string>%lld listens</string>
+		</dict>
+	</dict>
 	<key>scrobbling.submitted</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

@@ -110,6 +110,21 @@ impl fmt::Display for ReceivedOp {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum HistoryFileOp {
+    Read,
+    Write,
+}
+
+impl fmt::Display for HistoryFileOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Read => words::errors::history_file_read(),
+            Self::Write => words::errors::history_file_written(),
+        })
+    }
+}
+
 #[derive(Debug, Error, uniffi::Error)]
 #[uniffi(flat_error)]
 pub enum Error {
@@ -441,6 +456,23 @@ pub enum Error {
         #[source]
         source: io::Error,
     },
+    #[error("{}", crate::failure::of_the_history(source))]
+    History {
+        #[source]
+        source: Box<resonate_library::Error>,
+    },
+    #[error("{}", words::errors::history_file(op.to_string()))]
+    HistoryFile {
+        op: HistoryFileOp,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{}", words::errors::no_history_user(service.name()))]
+    NoHistoryUser {
+        service: crate::online_tools::ScrobbleService,
+    },
+    #[error("{}", words::errors::no_lastfm_application())]
+    NoLastfmApplication,
     #[error("{}", words::errors::folder())]
     Folder {
         op: StoreOp,
@@ -473,6 +505,12 @@ impl Error {
     pub(crate) fn sync(op: SyncOp, source: resonate_sync::Error) -> Self {
         Self::Sync {
             op,
+            source: Box::new(source),
+        }
+    }
+
+    pub(crate) fn history(source: resonate_library::Error) -> Self {
+        Self::History {
             source: Box::new(source),
         }
     }

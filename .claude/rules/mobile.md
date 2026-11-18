@@ -916,6 +916,35 @@ caller's thread, ending on a cancel, the client no longer reaching or the lapse,
 sign-in (`lastfm_sign_in`) is gone. Both phones open the page in the system browser and keep the
 session as before.
 
+## The listening history taken out and brought in
+
+`history.rs` gives the phones the desktop's `history --export`, `--import-file` and `--import` over
+the library's own seam: `PhoneListens` fills `KeptListens` (`library.md`'s *The history taken out
+and brought in*) over the document catalog, so the JSON-lines writer (`line_of`), its reader
+(`heard_in_lines`), the paging (`history_lines`, `bring_in_lines`, `bring_in_history`) and
+`resonate-online`'s `ListenBrainzHistory` and `LastfmHistory` are the desktop's. `history_from`
+reads the counted listens of documents (`HistoryFrom::Held`, a document's `Track` read as the
+scrobbler bills it) and then those of songs played in place (`HistoryFrom::Unheld`, the served
+URI as the location); a pass (`counted = 0`) is not a listen and is not written.
+`bring_in` resolves each recording strictly as a synced listen is (`SongsHeld`, the index
+`resolved_in` reads), and lands a song held as a counted `elsewhere` listen with the service's name
+as `origin_device` and the unix second as `origin_id`, `held_already` where the document has a
+listen within `SAME_LISTEN_WITHIN` of that moment, `unmatched` where no document holds it, all of a
+page in one transaction
+(`a_history_exported_from_one_phone_lands_on_another_once_and_a_pass_stays_behind`,
+`lastfm_scrobbles_land_on_the_songs_held_once_and_one_scrobbled_from_here_is_not_counted_again`).
+
+`export_history(descriptor)` writes every line into a document the phone created (Android's
+`CreateDocument`, iOS a file of its temporary folder handed to `fileExporter`), through
+`fresh_destination`, and answers the count; `import_history_file(descriptor)` reads a document
+the picker granted through `owned`, a bad line refusing the whole file as `Error::History` naming
+it; `import_history(service, user, account)` needs online, takes the user named or else the
+account's own (`token_held`), and refuses `NoHistoryUser` or, for Last.fm without a key and
+secret, `NoLastfmApplication` (`a_service_import_asks_for_online_a_user_and_for_lastfm_an_application`).
+Each answers a `HistoryBroughtIn`.
+
+Both phones show the section in Scrobbling (`android.md`, `ios.md`).
+
 ## Jellyfin Quick Connect
 
 `begin_jellyfin_quick_connect(server)` answers the code (`JellyfinQuickConnect`; `QuickConnectOff`
