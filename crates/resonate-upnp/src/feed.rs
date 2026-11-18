@@ -157,15 +157,15 @@ impl Feed {
     }
 
     pub(crate) fn serve(&self, stream: &mut TcpStream, head_only: bool) -> io::Result<()> {
+        stream.set_write_timeout(Some(WRITE_WAKES_EVERY))?;
+        if head_only {
+            return stream.write_all(self.answer_head().as_bytes());
+        }
         let mine = self
             .connections
             .fetch_add(1, Ordering::AcqRel)
             .saturating_add(1);
-        stream.set_write_timeout(Some(WRITE_WAKES_EVERY))?;
         stream.write_all(self.answer_head().as_bytes())?;
-        if head_only {
-            return Ok(());
-        }
         let (mut wire, head) = Wire::begin(&self.carriage, self.spec).map_err(io::Error::other)?;
         stream.write_all(&head)?;
 
@@ -363,6 +363,36 @@ mod tests {
         feed.close();
         drop(first);
         second_fetch.join().expect("the second fetch ends");
+    }
+
+    #[test]
+    fn a_head_asked_while_the_stream_pours_is_answered_and_leaves_the_stream_pouring() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("binds");
+        let feed = silent_feed();
+        feed.set_active(true);
+
+        let (first, first_fetch) = fetched_by_a_thread(&feed, &listener);
+        waited_for(|| feed.served.load(Ordering::Acquire) > 10 * A_QUANTUM_OF_BYTES);
+
+        let mut head =
+            TcpStream::connect(listener.local_addr().expect("an address")).expect("connects");
+        let (mut served, _) = listener.accept().expect("accepts");
+        feed.serve(&mut served, true).expect("the head is answered");
+        drop(served);
+        let mut answered = String::new();
+        head.read_to_string(&mut answered)
+            .expect("the head is read");
+
+        let before = feed.served.load(Ordering::Acquire);
+        waited_for(|| feed.served.load(Ordering::Acquire) > before + 10 * A_QUANTUM_OF_BYTES);
+
+        assert!(answered.starts_with("HTTP/1.1 200 OK"), "{answered}");
+        assert!(!first_fetch.is_finished());
+        assert_eq!(feed.fetches(), 1);
+        assert!(feed.is_fetched());
+        feed.close();
+        drop(first);
+        first_fetch.join().expect("the fetch ends");
     }
 
     fn heard_by_a_renderer_counting_whole_seconds(feed: &Feed, at: Duration, behind: Duration) {

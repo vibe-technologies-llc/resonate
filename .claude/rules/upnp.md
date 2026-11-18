@@ -233,7 +233,9 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
   16-hex-digit token and an extension (or names no stream offered) with `404` and a method but
   `GET` and `HEAD` with `405` itself, and spawns a `resonate-upnp-feed` thread only for a head naming
   a stream, at most `FETCHES_AT_MOST` (16) at once (the rest `503`), so a host on the network
-  holds no thread by connecting and saying nothing; the address handed to the renderer is the
+  holds no thread by connecting and saying nothing; **a `HEAD` is answered with the headers and
+  counts as no fetch**, so it never supersedes the `GET` pouring
+  (`a_head_asked_while_the_stream_pours_is_answered_and_leaves_the_stream_pouring`); the address handed to the renderer is the
   local address the system routes toward it (`address_toward`). `Network::open` refuses a spec the
   carriage does not carry (`FormatRefused`), offers the `Feed`, sends `SetAVTransportURI` with a
   DIDL-Lite item naming the title and `protocolInfo`, and answers a `SinkStream` with a
