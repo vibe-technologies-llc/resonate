@@ -129,13 +129,13 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   accessibility-size layouts in each) have been proved by their rules in tests and a clean build,
   never seen on an iPhone turned on its side or an iPad
 - [M · blocked: hardware] The iOS Home feed and the Library's four shelves are proved by their logic
-  in tests and a clean build, never seen on an iPhone: the tab row's legibility over the scroll edge
-  effect and beside the large title and the search field, the underline's slide between tabs, the
-  thumb appearing from `onScrollGeometryChange` on a `List` and the frame after a drag moves the
-  Songs window, the selection bar against the minimising tab bar and the mini player, the two
-  toolbars of a shelf and its shell meeting in one bar, *Jump back in*'s tiles sizing themselves in
-  their row, the *Recently added* carousel coming to rest on a cover and its play button over a
-  bright one, and the album and playlist grids' columns at each width
+  in tests and a clean build, and the Library's tab row was rebuilt after it juddered on an iPhone;
+  still to be seen there: the row's capsule under the always-shown search field and its slide
+  between tabs, the thumb appearing from `onScrollGeometryChange` on a `List` and the frame after
+  a drag moves the Songs window, the selection bar against the minimising tab bar and the mini
+  player, each shelf's toolbar, *Jump back in*'s tiles sizing themselves in their row, the
+  *Recently added* carousel coming to rest on a cover and its play button over a bright one, and
+  the album and playlist grids' columns at each width
 - [S · blocked: hardware] The sideloaded IPA and its AltStore source are proved by their shape in
   tests: no release has yet been added as a source to SideStore or AltStore, signed with a free
   Apple ID and installed, so the declared permissions matching what AltStore reads from the IPA and

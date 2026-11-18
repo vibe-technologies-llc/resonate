@@ -420,10 +420,8 @@
 "library.albums.as-rows" = "Show as a list";
 "library.albums.none" = "No albums yet";
 "library.albums.none.detail" = "Songs that name an album are gathered here.";
-"library.albums.search.prompt" = "Search albums";
 "library.artists.none" = "No artists yet";
 "library.artists.none.detail" = "Songs that name an artist are gathered here.";
-"library.artists.search.prompt" = "Search artists";
 "library.filters" = "Filters";
 "library.filters.clear" = "Clear";
 "library.filters.counted" = "Filters · %lld";
@@ -432,12 +430,10 @@
 "library.playlists.invitation" = "Gather songs under a name of your own.";
 "library.playlists.none" = "No playlists yet";
 "library.playlists.none-matching" = "No playlists match “%@”";
-"library.playlists.search.prompt" = "Search playlists";
 "library.playlists.yours" = "Your playlists";
 "library.reading" = "Reading your library";
 "library.scroller" = "Scroll position";
 "library.scroller.place" = "%1$lld of %2$lld";
-"library.songs.search.prompt" = "Search songs";
 "library.see-all" = "See all";
 "library.see-all.titled" = "See all %@";
 "library.shelves.spoken" = "Library sections";

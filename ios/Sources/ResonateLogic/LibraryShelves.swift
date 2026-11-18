@@ -26,15 +26,6 @@ public enum LibraryShelf: String, Codable, CaseIterable, Identifiable, Sendable 
         }
     }
 
-    public var searchPrompt: String {
-        switch self {
-        case .songs: said("library.songs.search.prompt")
-        case .albums: said("library.albums.search.prompt")
-        case .artists: said("library.artists.search.prompt")
-        case .playlists: said("library.playlists.search.prompt")
-        }
-    }
-
     public var orders: [CollectionOrder] {
         switch self {
         case .albums: [.alphabetical, .artist, .year, .added, .plays]

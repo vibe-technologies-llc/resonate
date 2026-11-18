@@ -15,7 +15,7 @@ struct LibraryView: View {
             .safeAreaBar(edge: .top, spacing: 0) {
                 if arrangement == .stack { LibraryShelfRow() }
             }
-            .searchable(text: $search.text, prompt: shelf.searchPrompt)
+            .searchable(text: $search.text, placement: .navigationBarDrawer(displayMode: .always), prompt: "search.title")
             .searchSuggestions { SearchSuggestions(search: search) }
             .onSubmit(of: .search) {
                 if shelf != .playlists { search.remember() }
@@ -43,7 +43,9 @@ private struct LibraryTitled: ViewModifier {
     let shelf: LibraryShelf
 
     func body(content: Content) -> some View {
-        content.navigationTitle(selected.selecting ? said("selection.count", selected.count) : title)
+        content
+            .navigationTitle(selected.selecting ? said("selection.count", selected.count) : title)
+            .navigationBarTitleDisplayMode(.inline)
     }
 
     private var title: String {
@@ -77,11 +79,9 @@ struct LibraryShelfContent: View {
 }
 
 struct LibraryShelfRow: View {
-    private static let indicator: CGFloat = 3
-    private static let gutter: CGFloat = 12
+    private static let between: CGFloat = 4
 
     @Environment(Navigation.self) private var navigation
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     @Namespace private var chosen
 
@@ -91,17 +91,21 @@ struct LibraryShelfRow: View {
             if typeSize.isAccessibilitySize {
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 0) { tabs(shelf, stretched: false) }
+                        HStack(spacing: Self.between) { tabs(shelf, stretched: false) }
                     }
+                    .clipShape(.capsule)
                     .onChange(of: shelf) { _, now in reader.scrollTo(now, anchor: .center) }
                     .onAppear { reader.scrollTo(shelf, anchor: .center) }
                 }
             } else {
-                HStack(spacing: 0) { tabs(shelf, stretched: true) }
+                HStack(spacing: Self.between) { tabs(shelf, stretched: true) }
             }
         }
-        .padding(.horizontal, 4)
-        .overlay(alignment: .bottom) { Divider() }
+        .motion(Flip.animation, value: shelf)
+        .padding(Self.between)
+        .glassEffect(.regular, in: .capsule)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("library.shelves.spoken")
         .accessibilityAddTraits(.isTabBar)
@@ -111,24 +115,23 @@ struct LibraryShelfRow: View {
         ForEach(LibraryShelf.allCases) { offered in
             let isChosen = offered == shelf
             Button {
-                withAnimation(reduceMotion ? nil : Flip.animation) { navigation.choose(offered) }
+                navigation.choose(offered)
             } label: {
                 Text(offered.title)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                    .foregroundStyle(isChosen ? Color.worn : Color.secondary)
-                    .padding(.horizontal, Self.gutter)
-                    .frame(maxWidth: stretched ? .infinity : nil, minHeight: 44)
-                    .overlay(alignment: .bottom) {
+                    .minimumScaleFactor(stretched ? 0.8 : 1)
+                    .padding(.horizontal, stretched ? 0 : 16)
+                    .frame(maxWidth: stretched ? .infinity : nil, minHeight: 36)
+                    .foregroundStyle(isChosen ? Color.wornInk : Color.primary)
+                    .background {
                         if isChosen {
                             Capsule()
                                 .fill(Color.worn)
-                                .frame(height: Self.indicator)
-                                .padding(.horizontal, Self.gutter)
                                 .matchedGeometryEffect(id: "chosen", in: chosen)
                         }
                     }
-                    .contentShape(.rect)
+                    .contentShape(.capsule)
             }
             .buttonStyle(.plain)
             .accessibilityAddTraits(isChosen ? .isSelected : [])

@@ -981,12 +981,20 @@ every route change (a pair of headphones at the same rate included), not from th
   Playlists (`LibraryShelf`, `ResonateLogic`, held by `LibraryShelvesTests`; `LibraryView` in
   `LibraryViews.swift` is the shell and `Navigation.libraryShelf` the shelf chosen). **The row is
   tapped, not swiped** (`LibraryShelfRow`, in a `safeAreaBar` at the top as the Search tab's chooser
-  is): each shelf is its own scroll view, swapped on a tap, so the large title still collapses, the
-  tab bar still minimises and a song row keeps its swipes, none of which a sideways pager leaves
-  standing. The row is four plain buttons of equal width, the chosen one lettered in `Color.worn`
-  over a 3 pt underline that slides to it in `Flip.animation` (at once under Reduce Motion; the shelf
-  itself swaps unanimated), a hairline beneath and no glass or material behind; at accessibility text
-  sizes it scrolls sideways, and VoiceOver hears a tab bar with the chosen tab selected. On an empty
+  is): each shelf is its own scroll view, swapped on a tap, so the tab bar still minimises and a
+  song row keeps its swipes, neither of which a sideways pager leaves standing. The row is the
+  Search tab's chooser again: a glass capsule of four buttons of equal width, the chosen one a
+  capsule of `Color.worn` lettered `Color.wornInk` that slides to it in `Flip.animation` (an
+  implicit animation of the row alone, at once under Reduce Motion; the choice itself is made in no
+  animation, so the shelf, its toolbar and the bar swap at once); at accessibility text sizes it
+  scrolls sideways inside the capsule, and VoiceOver hears a tab bar with the chosen tab selected.
+  **The bar over the row keeps one height**: the title is inline and the search field always shown
+  (`navigationBarDrawer(displayMode: .always)`), its prompt the same on every shelf. Under a large
+  title and a field that hides, the bar's height moved with the scroll and so did the safe area
+  the row stands in: the row sat over the rows as the list was pulled, the list juddered where the
+  title grew back, and a tap, which swaps the scroll view, replayed the bar's states, the field
+  opening among them. A row with nothing behind it (an underline on a hairline) let the songs show
+  through as they passed under. On an empty
   catalog Songs, Albums and Artists draw `EmptyLibrary` while the row and Playlists stay, since
   playlists arrive from other devices before any folder is granted. **Each shelf's toolbar is one
   builder ending in `LibraryToolbar`**, never the shell's beside the shelf's, whose order in the bar
@@ -1336,8 +1344,8 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   its own order. The completions offered
   (`offeredCompletions`) are folded once as an answer lands, not at each read.
 - **The Library tab searches the shelf shown**: one `.searchable` on the shell over
-  `Library.librarySearch`, the tab row its scope, so there is no scope bar and text typed survives a
-  change of shelf. Songs, Albums and Artists draw `SearchResults` at their own scope (`LibraryFound`),
+  `Library.librarySearch`, always shown under the inline title (above), the tab row its scope, so
+  there is no scope bar and text typed survives a change of shelf. Songs, Albums and Artists draw `SearchResults` at their own scope (`LibraryFound`),
   since `search_library` answers all three at once, and Playlists folds the names (below) and keeps no search; the *Top*
   view of all three is the Search tab's. Nothing found is said for the shelf's own kind. *Did you mean* where nothing matched; the grammar's `reads` as chips;
   completions as a row of glass capsules of the words alone heading the results (`SearchCompletions`, at most five,

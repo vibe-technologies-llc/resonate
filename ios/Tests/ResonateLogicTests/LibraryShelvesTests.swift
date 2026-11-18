@@ -11,7 +11,6 @@ import Testing
         #expect(every == [.songs, .albums, .artists, .playlists])
         #expect(every.map(\.title) == ["Songs", "Albums", "Artists", "Playlists"])
         #expect(Set(every.map(\.symbol)).count == every.count)
-        #expect(Set(every.map(\.searchPrompt)).count == every.count)
     }
 
     @Test func albumsSortFiveWaysAndArtistsThree() {

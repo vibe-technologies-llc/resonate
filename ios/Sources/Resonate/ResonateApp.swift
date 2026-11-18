@@ -99,7 +99,7 @@ final class Navigation {
     func choose(_ shelf: LibraryShelf) {
         guard libraryShelf != shelf else { return }
         libraryShelf = shelf
-        paths[.library] = []
+        if paths[.library]?.isEmpty == false { paths[.library] = [] }
     }
 
     func editTags(_ tracks: [Track]) {
