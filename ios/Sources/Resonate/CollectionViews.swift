@@ -94,14 +94,7 @@ struct LibraryView: View {
                         }
                         .buttonStyle(.shortcutCard)
                         if folded.isEmpty {
-                            Button {
-                                if library.filtering { library.setFilter(Library.everything) }
-                                navigation.songsGrouping = .songs
-                                navigation.open(.songs)
-                            } label: {
-                                AllSongsCard()
-                            }
-                            .buttonStyle(.shortcutCard)
+                            AllSongsButton()
                         }
                     }
                 }
@@ -400,6 +393,22 @@ struct FavouritesCard: View {
             detail: said("counted.songs", library.favouriteTracks.count),
             symbol: "heart.fill"
         )
+    }
+}
+
+struct AllSongsButton: View {
+    @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
+
+    var body: some View {
+        Button {
+            if library.filtering { library.setFilter(Library.everything) }
+            navigation.songsGrouping = .songs
+            navigation.open(.songs)
+        } label: {
+            AllSongsCard()
+        }
+        .buttonStyle(.shortcutCard)
     }
 }
 

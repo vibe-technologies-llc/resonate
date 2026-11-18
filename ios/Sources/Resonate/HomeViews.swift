@@ -33,7 +33,7 @@ struct HomeView: View {
                             FavouritesCard()
                         }
                         .buttonStyle(.shortcutCard)
-                        LibraryCard()
+                        AllSongsButton()
                     }
                 }
                 HomeMixes()
@@ -135,24 +135,6 @@ private struct HomeDevices: View {
                 HandoffRows()
             }
         }
-    }
-}
-
-private struct LibraryCard: View {
-    @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
-
-    var body: some View {
-        Button {
-            navigation.tab = .library
-        } label: {
-            ShortcutCard(
-                title: said("tabs.library"),
-                detail: said("counted.songs", library.catalogCount),
-                symbol: "square.stack"
-            )
-        }
-        .buttonStyle(.shortcutCard)
     }
 }
 

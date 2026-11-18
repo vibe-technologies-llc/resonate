@@ -902,8 +902,7 @@ every route change (a pair of headphones at the same rate included), not from th
   it was reached through it. A failed read cuts nothing: a catalog read that fails resumes `wholeCatalog`'s waiters with nothing cut. Now Playing and the sheets are not kept.
 - **Home is the first tab and the one a launch opens** (`Root.home`, `HomeView` in `HomeViews.swift`), Android's
   Home: a title greeting by the hour (`HomeGreeting.of`, `ResonateLogic`, held by `HomeTests`, read again on
-  appearing and coming forward), then *Favourites* and *Library* as two shortcut cards (Favourites first, as on the Library tab; `LibraryCard`, the song count, a tap
-  switching to the Library tab with `Navigation.tab`; Android's Home has the same pair), *Made for you* (`HomeMixes`: `OfferedMixes.home`, the two *Yours* mixes then up to twelve lists of the
+  appearing and coming forward), then *Favourites* and *All songs* as two shortcut cards (Favourites first, as on the Library tab; `AllSongsButton`, the Library tab's own button, shared in `CollectionViews.swift`: it clears any filter, sets the songs grouping and pushes `Destination.songs` with `Navigation.open` onto Home's own stack, so Back returns to Home; Android's Home keeps *Favourites* and *Library*), *Made for you* (`HomeMixes`: `OfferedMixes.home`, the two *Yours* mixes then up to twelve lists of the
   *Made for you*, *Rediscover* and *From your listening* shelves (`Suggestions.home`), as cards on a shelf, their covers from
   `OfferedMixes.covers`, which the Suggestions page shares; a card's cover and its words each open the mix, the words being the one button VoiceOver hears, and its play button stays apart; *See all* is `Destination.suggestions`),
   *Recently added* (`albums(order: .added)`), then *Your playlists* (a *New playlist* button
@@ -921,7 +920,7 @@ every route change (a pair of headphones at the same rate included), not from th
   page's own card ground (`Color.cardGround`: the themed card over the backdrop, the grouped
   background's cell colour without it; 20 pt continuous corners), its symbol in the accent at the
   top in a slot of one scaled height whatever the glyph (`ShortcutSymbol`, 28 pt: the cards stretch to
-  their content, so Home's taller `square.stack` drew its pair taller than the Library tab's) and the title and song count at the foot, the count in `.secondary`, at least 92 pt tall,
+  their content, so a taller glyph drew its pair taller than the other screen's) and the title and song count at the foot, the count in `.secondary`, at least 92 pt tall,
   scaled, and half as strong while disabled: no gradient, no colour pair of its own and no
   watermark behind the words. Each card is its own `NavigationLink` or `Button` in
   `.buttonStyle(.shortcutCard)` (`ShortcutCardStyle`), since a row holding two controls of the default style fires both on any
@@ -931,7 +930,7 @@ every route change (a pair of headphones at the same rate included), not from th
   do not, or a `Button` beside a `NavigationLink`, are the same size on Home and the Library tab
   (`test_shortcut_cards.py`). The pair sits in a horizontal `ScrollView` with scrolling disabled, each card half its
   width (`containerRelativeFrame`), as the shelves' links do: a `List` gives a `NavigationLink`
-  directly in a row its disclosure chevron whatever the style, which drew an arrow between the cards. The Library tab's *All songs* is a `Button` that clears any filter or mix, shows songs and
+  directly in a row its disclosure chevron whatever the style, which drew an arrow between the cards. *All songs* (`AllSongsButton`, on Home and the Library tab) is a `Button` that clears any filter or mix, shows songs and
   opens the Songs page: a `simultaneousGesture` tap on a `NavigationLink` there left a tap doing
   nothing. `ShelfTile` (a symbol in the accent, a third of the side, on the neutral ground an uncovered
   cover wears) stays the Favourites row's and page's cover, the page's at the album header's 20 pt corner.

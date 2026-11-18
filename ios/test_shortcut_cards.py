@@ -2,7 +2,7 @@ from pathlib import Path
 import unittest
 
 SOURCES = Path(__file__).resolve().parent / "Sources/Resonate"
-CARDS_ON = {"CollectionViews.swift": 2, "HomeViews.swift": 2}
+CARDS_ON = {"CollectionViews.swift": 2, "HomeViews.swift": 1}
 CARD_STYLE = ".buttonStyle(.shortcutCard)"
 
 
