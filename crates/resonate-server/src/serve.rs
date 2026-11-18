@@ -628,12 +628,12 @@ impl Server {
 
         let served = self.in_the_room(send, recv, room, member, joined).await;
 
-        if self.rooms.leave(room, member, session) == Leaving::TheHostLeft {
+        if let Leaving::TheHostLeft(absence) = self.rooms.leave(room, member, session) {
             let server_rooms = Arc::clone(&self.rooms);
             let grace = self.limits.host_back_within;
             tokio::spawn(async move {
                 tokio::time::sleep(grace).await;
-                server_rooms.end_unless_the_host_came_back(room);
+                server_rooms.end_unless_the_host_came_back(room, absence);
             });
         }
 

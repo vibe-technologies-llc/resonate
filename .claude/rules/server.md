@@ -210,7 +210,11 @@ its grace (`party.md`). A guest naming the host's `DeviceId` (which every guest 
 nobody can forge the host**: `RoomSay` from the host reaches everyone (or the one member it names),
 from a guest it reaches the host alone, whatever it names. `RoomKick` and a host's `Close` are the
 host's; a guest asking changes nothing. **A host gone is waited for** (`Limits::host_back_within`,
-30 s, `Leaving::TheHostLeft`) and then the room ends. Each member's frames count against
+30 s, `Leaving::TheHostLeft`) and then the room ends. Each wait belongs to one absence: the leaving
+hands back an `Absence` naming the host session that left, the room keeps the one it is in, and
+`end_unless_the_host_came_back` ends it only while that absence still stands, so the wait of a drop
+the host already came back from does nothing during a later one
+(`a_host_dropping_twice_is_waited_for_from_its_second_drop_not_its_first`). Each member's frames count against
 `--frames-per-minute`, a member may have at most `Limits::room_bytes_per_second` (512 KiB) said, what
 exceeds it is dropped, and a member who reads nothing holds at most `ROOM_BACKLOG_BYTES_AT_MOST`
 (1 MiB). `--rooms` (1024), `--room-members` (32) and `--rooms-per-address-per-day` (50) bound the

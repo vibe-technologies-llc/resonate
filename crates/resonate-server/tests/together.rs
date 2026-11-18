@@ -383,6 +383,46 @@ async fn a_room_ends_once_its_host_stays_gone_and_lasts_if_the_host_comes_back()
 }
 
 #[tokio::test]
+async fn a_host_dropping_twice_is_waited_for_from_its_second_drop_not_its_first() {
+    let grace = Duration::from_secs(2);
+    let server = hosted(Limits {
+        host_back_within: grace,
+        ..Limits::default()
+    })
+    .await;
+    let dropped = async |mut host: Link| {
+        host.say(ToServer::Bye).await;
+        while host.heard().await.is_some() {}
+    };
+
+    let mut host = in_the_room(server, 1, Some(token(9))).await;
+    assert!(host.heard().await.is_some());
+    let mut guest = in_the_room(server, 2, None).await;
+    assert!(guest.heard().await.is_some());
+
+    dropped(host).await;
+    let first_drop = Instant::now();
+    let mut back = in_the_room(server, 1, Some(token(9))).await;
+    assert!(back.heard().await.is_some());
+    tokio::time::sleep(grace / 2).await;
+    dropped(back).await;
+    tokio::time::sleep_until((first_drop + grace + grace / 4).into()).await;
+    let mut back_again = in_the_room(server, 1, Some(token(9))).await;
+    assert!(back_again.heard().await.is_some());
+
+    back_again
+        .say(ToServer::RoomSay {
+            to: None,
+            sealed: vec![1],
+        })
+        .await;
+    assert!(matches!(
+        guest.heard_past_presence().await,
+        Some(FromServer::RoomHeard { .. })
+    ));
+}
+
+#[tokio::test]
 async fn the_host_turns_a_guest_out_and_a_host_may_end_the_room_for_everyone() {
     let server = hosted(Limits::default()).await;
 
