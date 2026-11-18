@@ -570,6 +570,7 @@ const WAVE: &[u8; 4] = b"WAVE";
 const ID3_CHUNK: &[u8; 4] = b"id3 ";
 const RIFF_HEADER_BYTES: u64 = 12;
 const CHUNK_HEADER_BYTES: u32 = 8;
+const PAD: [u8; 1] = [0];
 
 fn tag_in_front_of_a_riff(path: &Path) -> io::Result<Option<u64>> {
     let mut file = File::open(path)?;
@@ -637,8 +638,9 @@ fn chunked(path: &Path, staged: &File, riff_at: u64) -> io::Result<()> {
     let tag_bytes =
         u32::try_from(tag.len()).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
     let padded = tag_bytes + tag_bytes % 2;
+    let to_a_word = declared % 2;
     let grown = declared
-        .checked_add(CHUNK_HEADER_BYTES + padded)
+        .checked_add(to_a_word + CHUNK_HEADER_BYTES + padded)
         .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
 
     let mut written = io::BufWriter::new(staged);
@@ -654,17 +656,30 @@ fn chunked(path: &Path, staged: &File, riff_at: u64) -> io::Result<()> {
         return Err(io::Error::from(io::ErrorKind::InvalidData));
     }
     io::copy(&mut (&mut file).take(within), &mut written)?;
+    if to_a_word > 0 {
+        written.write_all(&PAD)?;
+        passed_over_an_uncounted_pad(&mut file)?;
+    }
     written.write_all(ID3_CHUNK)?;
     written.write_all(&tag_bytes.to_le_bytes())?;
     written.write_all(&tag)?;
     if padded > tag_bytes {
-        written.write_all(&[0])?;
+        written.write_all(&PAD)?;
     }
     io::copy(&mut file, &mut written)?;
     written
         .into_inner()
         .map_err(io::IntoInnerError::into_error)?
         .sync_all()
+}
+
+fn passed_over_an_uncounted_pad(file: &mut File) -> io::Result<()> {
+    let at = file.stream_position()?;
+    let mut next = [0_u8; PAD.len()];
+    match file.read(&mut next)? {
+        read if read == next.len() && next == PAD => Ok(()),
+        _ => file.seek(SeekFrom::Start(at)).map(drop),
+    }
 }
 
 fn names_a_matroska(path: &Path) -> bool {
@@ -1994,7 +2009,7 @@ mod tests {
         time::{Duration, SystemTime},
     };
 
-    use lofty::ogg::tag::VorbisComments;
+    use lofty::{ogg::tag::VorbisComments, tag::Accessor as _};
     #[cfg(unix)]
     use rustix::fs::XattrFlags;
 
@@ -2004,6 +2019,7 @@ mod tests {
         insert::{Copying, Refusing},
         journal::WHOLE_SUFFIX,
         left_alone::left_long_ago,
+        riff,
     };
 
     const RATE: u32 = 44_100;
@@ -2203,6 +2219,134 @@ mod tests {
                 .any(|window| window.iter().all(|byte| *byte == TORN)),
             "the bytes the dead writer tore were kept"
         );
+        assert_eq!(TagField::Title.read(&read).as_deref(), Some("Echoes"));
+    }
+
+    fn an_id3_tag_naming(artist: &str) -> Vec<u8> {
+        const UTF8: u8 = 3;
+
+        let syncsafe = |bytes: usize| {
+            let bytes = u32::try_from(bytes).expect("a small tag");
+            [21, 14, 7, 0].map(|shift| u8::try_from((bytes >> shift) & 0x7f).expect("seven bits"))
+        };
+        let mut text = vec![UTF8];
+        text.extend_from_slice(artist.as_bytes());
+        let mut frame = b"TPE1".to_vec();
+        frame.extend_from_slice(&syncsafe(text.len()));
+        frame.extend_from_slice(&[0, 0]);
+        frame.extend_from_slice(&text);
+
+        let mut tag = b"ID3\x04\x00\x00".to_vec();
+        tag.extend_from_slice(&syncsafe(frame.len()));
+        tag.extend_from_slice(&frame);
+        tag
+    }
+
+    fn a_wave_of_odd_length(uncounted_pad: bool) -> Vec<u8> {
+        const ODD_FRAMES: usize = 4_411;
+        const MONO: u16 = 1;
+        const EIGHT_BITS: u16 = 8;
+        const SILENT: u8 = 0x80;
+
+        let mut format = Vec::new();
+        format.extend_from_slice(&1_u16.to_le_bytes());
+        format.extend_from_slice(&MONO.to_le_bytes());
+        format.extend_from_slice(&RATE.to_le_bytes());
+        format.extend_from_slice(&RATE.to_le_bytes());
+        format.extend_from_slice(&MONO.to_le_bytes());
+        format.extend_from_slice(&EIGHT_BITS.to_le_bytes());
+        let mut body = b"WAVE".to_vec();
+        riff_chunk(&mut body, b"fmt ", &format);
+        body.extend_from_slice(b"data");
+        body.extend_from_slice(
+            &u32::try_from(ODD_FRAMES)
+                .expect("a small chunk")
+                .to_le_bytes(),
+        );
+        body.extend_from_slice(&[SILENT; ODD_FRAMES]);
+
+        let mut file = b"RIFF".to_vec();
+        file.extend_from_slice(
+            &u32::try_from(body.len())
+                .expect("a small file")
+                .to_le_bytes(),
+        );
+        file.extend_from_slice(&body);
+        if uncounted_pad {
+            file.push(0);
+        }
+        file
+    }
+
+    fn riff_size(bytes: &[u8]) -> u64 {
+        u64::from(u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]))
+    }
+
+    #[test]
+    fn a_tag_moved_in_from_before_a_riff_of_odd_size_lands_on_a_word_the_riff_counts() {
+        let folder = Folder::new();
+
+        for uncounted_pad in [false, true] {
+            let mut bytes = an_id3_tag_naming("Pink Floyd");
+            bytes.extend_from_slice(&a_wave_of_odd_length(uncounted_pad));
+            let location = folder.holding("echoes.wav", &bytes);
+            let path = location.as_path().expect("a local file");
+            let riff_at = tag_in_front_of_a_riff(path)
+                .expect("a readable file")
+                .expect("a tag before the RIFF");
+            let staged = folder.root.join("echoes.staged");
+            let file = File::create(&staged).expect("a staging file");
+
+            chunked(path, &file, riff_at).expect("a wave of odd length is chunked");
+            let chunked = fs::read(&staged).expect("what was staged");
+            let id3_at = chunked
+                .windows(ID3_CHUNK.len())
+                .position(|window| window == ID3_CHUNK)
+                .expect("an id3 chunk");
+
+            assert_eq!(id3_at % 2, 0, "the id3 chunk stands at an odd offset");
+            assert_eq!(
+                riff_size(&chunked) + RIFF_HEADER_BYTES - WAVE.len() as u64,
+                chunked.len() as u64,
+                "the RIFF does not count exactly what the copy holds"
+            );
+            assert_eq!(
+                riff::read(&mut Cursor::new(&chunked)).id3.as_deref(),
+                Some(&bytes[..usize::try_from(riff_at).expect("a small tag")])
+            );
+        }
+    }
+
+    #[test]
+    fn a_wave_of_odd_size_behind_an_id3_tag_keeps_its_tags_when_one_is_written() {
+        let folder = Folder::new();
+        let mut bytes = an_id3_tag_naming("Pink Floyd");
+        bytes.extend_from_slice(&a_wave_of_odd_length(false));
+        let location = folder.holding("echoes.wav", &bytes);
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let tags = FileTags::default();
+
+        tags.write(&location, just(&[edited(TagField::Title, "Echoes")]))
+            .expect("a written WAVE");
+        let rewritten = fs::read(&path).expect("the file");
+        let found = riff::read(&mut Cursor::new(&rewritten));
+        let tagged = opened(&path, &location).expect("a WAVE lofty reads");
+        let id3 = tagged
+            .tag(TagType::Id3v2)
+            .expect("an ID3v2 tag lofty finds");
+        let read = tags
+            .read(&location, Picturing::Whether)
+            .expect("a readable WAVE")
+            .tags;
+
+        assert!(
+            rewritten.starts_with(RIFF),
+            "the tag still stands before the RIFF"
+        );
+        assert!(found.id3.is_some(), "riff.rs finds no id3 chunk");
+        assert_eq!(id3.artist().as_deref(), Some("Pink Floyd"));
+        assert_eq!(id3.title().as_deref(), Some("Echoes"));
+        assert_eq!(TagField::Artist.read(&read).as_deref(), Some("Pink Floyd"));
         assert_eq!(TagField::Title.read(&read).as_deref(), Some("Echoes"));
     }
 

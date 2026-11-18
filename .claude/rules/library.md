@@ -1778,6 +1778,12 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `a_wave_behind_an_id3_tag_in_a_folder_nothing_may_be_created_in_is_written_all_the_same`); **a copy that stops short of the size its `RIFF` declares
   is refused** (`chunked` answers `InvalidData`), since the chunk would land inside the `data` chunk's
   declared span and play as noise (`a_wave_cut_short_behind_an_id3_tag_is_refused_and_never_gets_its_chunk_inside_the_audio`).
+  **The chunk lands on a word:** RIFF chunks are word-aligned and both `riff.rs` and lofty step over
+  a pad byte after an odd chunk, so where the `RIFF` size is odd `chunked` writes the pad byte first
+  (taking up a zero the file holds there uncounted, so no stray byte is left past the RIFF) and
+  counts it in the size it writes; the tag moved in is then read by both
+  (`a_tag_moved_in_from_before_a_riff_of_odd_size_lands_on_a_word_the_riff_counts`,
+  `a_wave_of_odd_size_behind_an_id3_tag_keeps_its_tags_when_one_is_written`).
 - **`Library::retag` takes the `Walk` guard** (the pass rewrites sizes and mtimes a scan's snapshot
   was taken against); a second caller gets `Error::AlreadyWalking`. A vaulted row is
   `Unwritten::Vaulted` (`vault.md`).
