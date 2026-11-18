@@ -805,6 +805,16 @@ fetched whole and lands as a track row.
   `Error::Unreadable`, never an `Instant` overflow panic
   (`a_session_said_to_last_past_any_clock_is_refused_as_unreadable`,
   `a_dash_manifest_numbered_past_the_last_number_is_refused`).
+- **A manifest is bounded before it is expanded.** `dash` checks the initialization and media
+  templates against `MediaHosts` (`Unread::OffItsHosts`, which `Player::media_from` raises as
+  `Error::OffItsHosts`) before reading the timeline, then each segment URL as it is built. A `%0<width>d`
+  wider than `PADDING_DIGITS_AT_MOST` (20, a `u64`'s digits) is `Unread::PaddedTooWide`; a segment
+  URL over `URL_BYTES_AT_MOST` (2048) is `Unread::UrlTooLong`; a timeline of more than
+  `SEGMENTS_AT_MOST` (10 000, about 11 hours at TIDAL's 4 s segments) is `Unread::TooManySegments`,
+  refused before a URL is made (`a_padding_wider_than_any_number_is_refused_without_being_written`,
+  `a_segment_naming_a_foreign_host_is_refused_before_the_timeline_is_expanded`,
+  `a_segment_url_past_any_real_one_is_refused`,
+  `a_timeline_of_the_most_segments_is_read_and_one_more_is_refused`).
 - **Media from TIDAL's audio hosts alone.** `MediaHosts::holds` takes a URL only over `https` with
   host `audio.tidal.com` or under it, refusing user-info `@`, a bracketed literal, a host merely
   ending in the name; one URL off them fails the manifest as `Error::OffItsHosts` before a byte is

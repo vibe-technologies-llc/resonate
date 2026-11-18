@@ -108,7 +108,7 @@ impl Player<'_> {
             track,
             &playback.asset_presentation,
             &playback.manifest_mime_type,
-            manifest::read(&playback.manifest_mime_type, &playback.manifest),
+            manifest::read(&playback.manifest_mime_type, &playback.manifest, self.hosts),
         )
     }
 
@@ -129,6 +129,13 @@ impl Player<'_> {
             Ok(Manifest::Withheld(withheld)) => {
                 tracing::debug!(track = track.0, ?withheld, provider = %self.source, "a stream this provider does not take");
                 return Ok(None);
+            }
+            Err(manifest::Unread::OffItsHosts) => {
+                tracing::warn!(track = track.0, provider = %self.source, "a manifest named media off TIDAL's audio hosts");
+                return Err(Error::OffItsHosts {
+                    provider: self.source.clone(),
+                    op,
+                });
             }
             Err(unread) => {
                 tracing::debug!(track = track.0, ?unread, %mime, provider = %self.source, "a manifest could not be read");
@@ -156,7 +163,7 @@ impl Player<'_> {
             track,
             presentation,
             mime,
-            manifest::read_document(mime, document),
+            manifest::read_document(mime, document, self.hosts),
         )
     }
 

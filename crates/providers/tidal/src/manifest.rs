@@ -2,13 +2,17 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use roxmltree::{Document, Node};
 use serde::Deserialize;
 
+use crate::account::MediaHosts;
+
 const BTS: &str = "application/vnd.tidal.bts";
 const DASH: &str = "application/dash+xml";
 const FLAC_CODEC: &str = "flac";
 const FLAC_TYPE: &str = "audio/flac";
 const MP4_TYPE: &str = "audio/mp4";
 const UNENCRYPTED: &str = "NONE";
-const SEGMENTS_AT_MOST: u64 = 20_000;
+const SEGMENTS_AT_MOST: u64 = 10_000;
+const URL_BYTES_AT_MOST: usize = 2048;
+const PADDING_DIGITS_AT_MOST: usize = 20;
 const FIRST_NUMBER: u64 = 1;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,6 +54,9 @@ pub(crate) enum Unread {
     NoMedia,
     TooManySegments,
     NumberedPastTheEnd,
+    PaddedTooWide,
+    UrlTooLong,
+    OffItsHosts,
 }
 
 #[derive(Deserialize)]
@@ -64,17 +71,21 @@ struct Bts {
     urls: Vec<String>,
 }
 
-pub(crate) fn read(mime: &str, encoded: &str) -> Result<Manifest, Unread> {
+pub(crate) fn read(mime: &str, encoded: &str, hosts: &MediaHosts) -> Result<Manifest, Unread> {
     let bytes = STANDARD
         .decode(encoded.trim())
         .map_err(|_| Unread::NotBase64)?;
-    read_document(mime, &bytes)
+    read_document(mime, &bytes, hosts)
 }
 
-pub(crate) fn read_document(mime: &str, bytes: &[u8]) -> Result<Manifest, Unread> {
+pub(crate) fn read_document(
+    mime: &str,
+    bytes: &[u8],
+    hosts: &MediaHosts,
+) -> Result<Manifest, Unread> {
     match mime.trim() {
         BTS => bts(bytes),
-        DASH => dash(bytes),
+        DASH => dash(bytes, hosts),
         _ => Err(Unread::UnknownType),
     }
 }
@@ -136,11 +147,21 @@ struct Named<'a> {
     time: u64,
 }
 
-fn padded_width(format: Option<&str>) -> Option<usize> {
-    format?.strip_prefix('0')?.strip_suffix('d')?.parse().ok()
+fn padded_width(format: Option<&str>) -> Result<usize, Unread> {
+    let Some(digits) = format.and_then(|format| format.strip_prefix('0')?.strip_suffix('d')) else {
+        return Ok(0);
+    };
+    if digits.is_empty() || !digits.bytes().all(|digit| digit.is_ascii_digit()) {
+        return Ok(0);
+    }
+    digits
+        .parse()
+        .ok()
+        .filter(|width| *width <= PADDING_DIGITS_AT_MOST)
+        .ok_or(Unread::PaddedTooWide)
 }
 
-fn filled(template: &str, named: &Named<'_>) -> String {
+fn filled(template: &str, named: &Named<'_>) -> Result<String, Unread> {
     let mut written = String::with_capacity(template.len());
     let mut rest = template;
     while let Some(at) = rest.find('$') {
@@ -148,7 +169,7 @@ fn filled(template: &str, named: &Named<'_>) -> String {
         let after = &rest[at + 1..];
         let Some(end) = after.find('$') else {
             written.push_str(&rest[at..]);
-            return written;
+            return Ok(written);
         };
         let identifier = &after[..end];
         let (name, format) = identifier
@@ -164,7 +185,7 @@ fn filled(template: &str, named: &Named<'_>) -> String {
         };
         match value {
             Some(value) => {
-                let width = padded_width(format).unwrap_or(0);
+                let width = padded_width(format)?;
                 written.push_str(&format!("{value:0>width$}"));
             }
             None => written.push_str(&rest[at..at + end + 2]),
@@ -172,7 +193,23 @@ fn filled(template: &str, named: &Named<'_>) -> String {
         rest = &after[end + 1..];
     }
     written.push_str(rest);
-    written
+    Ok(written)
+}
+
+fn segment_url(
+    base: Option<&str>,
+    template: &str,
+    named: &Named<'_>,
+    hosts: &MediaHosts,
+) -> Result<String, Unread> {
+    let url = resolved(base, filled(template, named)?)?;
+    if url.len() > URL_BYTES_AT_MOST {
+        return Err(Unread::UrlTooLong);
+    }
+    if !hosts.holds(&url) {
+        return Err(Unread::OffItsHosts);
+    }
+    Ok(url)
 }
 
 fn resolved(base: Option<&str>, url: String) -> Result<String, Unread> {
@@ -214,7 +251,7 @@ fn base_of(representation: Node<'_, '_>) -> Option<String> {
     })
 }
 
-fn dash(bytes: &[u8]) -> Result<Manifest, Unread> {
+fn dash(bytes: &[u8], hosts: &MediaHosts) -> Result<Manifest, Unread> {
     let text = std::str::from_utf8(bytes).map_err(|_| Unread::NotTheDocument)?;
     let document = Document::parse(text).map_err(|_| Unread::NotTheDocument)?;
     if first(&document, "ContentProtection").is_some() {
@@ -254,6 +291,18 @@ fn dash(bytes: &[u8]) -> Result<Manifest, Unread> {
     let start = numbered(template.attribute("startNumber"))?.unwrap_or(FIRST_NUMBER);
     let timescale = numbered(template.attribute("timescale"))?;
 
+    let representation_id = representation.attribute("id").unwrap_or_default();
+    let bandwidth = representation.attribute("bandwidth").unwrap_or_default();
+    let base = base_of(representation);
+    let named = |number, time| Named {
+        representation: representation_id,
+        bandwidth,
+        number,
+        time,
+    };
+    let initial = segment_url(base.as_deref(), initialization, &named(start, 0), hosts)?;
+    segment_url(base.as_deref(), media, &named(start, 0), hosts)?;
+
     let mut segments = 0_u64;
     let mut ticks = 0_u64;
     let mut at = 0_u64;
@@ -285,27 +334,17 @@ fn dash(bytes: &[u8]) -> Result<Manifest, Unread> {
         return Err(Unread::NoMedia);
     }
 
-    let representation_id = representation.attribute("id").unwrap_or_default();
-    let bandwidth = representation.attribute("bandwidth").unwrap_or_default();
-    let base = base_of(representation);
-    let named = |number, time| Named {
-        representation: representation_id,
-        bandwidth,
-        number,
-        time,
-    };
     let mut urls = Vec::with_capacity(starts.len() + 1);
-    urls.push(resolved(
-        base.as_deref(),
-        filled(initialization, &named(start, 0)),
-    )?);
+    urls.push(initial);
     start
         .checked_add(segments)
         .ok_or(Unread::NumberedPastTheEnd)?;
     for (number, time) in (start..).zip(starts) {
-        urls.push(resolved(
+        urls.push(segment_url(
             base.as_deref(),
-            filled(media, &named(number, time)),
+            media,
+            &named(number, time),
+            hosts,
         )?);
     }
 
@@ -325,6 +364,18 @@ mod tests {
 
     fn encoded(text: &str) -> String {
         STANDARD.encode(text)
+    }
+
+    fn hosts() -> MediaHosts {
+        MediaHosts::tidal()
+    }
+
+    fn read(mime: &str, encoded: &str) -> Result<Manifest, Unread> {
+        super::read(mime, encoded, &hosts())
+    }
+
+    fn read_document(mime: &str, bytes: &[u8]) -> Result<Manifest, Unread> {
+        super::read_document(mime, bytes, &hosts())
     }
 
     #[test]
@@ -398,7 +449,7 @@ mod tests {
     fn a_dash_manifest_fetched_as_xml_is_read_without_base64() {
         assert_eq!(
             read_document(DASH, DASHED.as_bytes()),
-            dash(DASHED.as_bytes())
+            dash(DASHED.as_bytes(), &hosts())
         );
     }
 
@@ -521,9 +572,16 @@ mod tests {
                 "$RepresentationID$/$Number%05d$-$Time$-$Bandwidth$$$.mp4",
                 &named
             ),
-            "FLAC/00007-352256-1004547$.mp4"
+            Ok("FLAC/00007-352256-1004547$.mp4".to_owned())
         );
-        assert_eq!(filled("$Unknown$/$Number", &named), "$Unknown$/$Number");
+        assert_eq!(
+            filled("$Unknown$/$Number", &named),
+            Ok("$Unknown$/$Number".to_owned())
+        );
+        assert_eq!(
+            filled("$Number%020d$", &named),
+            Ok("00000000000000000007".to_owned())
+        );
     }
 
     #[test]
@@ -553,5 +611,101 @@ mod tests {
             Err(Unread::UnknownType)
         );
         assert_eq!(read(DASH, &encoded("<MPD")), Err(Unread::NotTheDocument));
+    }
+
+    fn manifest_with(media: &str, timeline: &str) -> String {
+        format!(
+            r#"<MPD><Period><AdaptationSet><Representation id="FLAC" codecs="flac" bandwidth="1"><SegmentTemplate timescale="44100" initialization="https://cdn.audio.tidal.com/init.mp4" media="{media}"><SegmentTimeline>{timeline}</SegmentTimeline></SegmentTemplate></Representation></AdaptationSet></Period></MPD>"#
+        )
+    }
+
+    #[test]
+    fn a_padding_wider_than_any_number_is_refused_without_being_written() {
+        let named = Named {
+            representation: "FLAC",
+            bandwidth: "1",
+            number: 7,
+            time: 0,
+        };
+
+        for wide in ["21", "4294967295", "99999999999999999999999999"] {
+            assert_eq!(
+                filled(&format!("$Number%0{wide}d$"), &named),
+                Err(Unread::PaddedTooWide)
+            );
+        }
+
+        let manifest = manifest_with(
+            "https://cdn.audio.tidal.com/$Number%0999999999999d$.mp4",
+            r#"<S d="10" r="2"/>"#,
+        );
+
+        assert_eq!(
+            read_document(DASH, manifest.as_bytes()),
+            Err(Unread::PaddedTooWide)
+        );
+    }
+
+    #[test]
+    fn a_segment_naming_a_foreign_host_is_refused_before_the_timeline_is_expanded() {
+        let foreign = manifest_with(
+            "https://evil.example/$Number$.mp4",
+            r#"<S d="10" r="99999999"/>"#,
+        );
+        let initialization = manifest_with("$Number$.mp4", r#"<S d="10" r="99999999"/>"#).replace(
+            "https://cdn.audio.tidal.com/init.mp4",
+            "https://evil.example/i",
+        );
+        let relative = manifest_with("$Number$.mp4", r#"<S d="10" r="2"/>"#);
+
+        assert_eq!(
+            read_document(DASH, foreign.as_bytes()),
+            Err(Unread::OffItsHosts)
+        );
+        assert_eq!(
+            read_document(DASH, initialization.as_bytes()),
+            Err(Unread::OffItsHosts)
+        );
+        assert_eq!(
+            read_document(DASH, relative.as_bytes()),
+            Err(Unread::NoMedia)
+        );
+    }
+
+    #[test]
+    fn a_segment_url_past_any_real_one_is_refused() {
+        let long = "a".repeat(URL_BYTES_AT_MOST);
+        let manifest = manifest_with(
+            &format!("https://cdn.audio.tidal.com/{long}/$Number$.mp4"),
+            r#"<S d="10" r="2"/>"#,
+        );
+
+        assert_eq!(
+            read_document(DASH, manifest.as_bytes()),
+            Err(Unread::UrlTooLong)
+        );
+    }
+
+    #[test]
+    fn a_timeline_of_the_most_segments_is_read_and_one_more_is_refused() {
+        let at_most = SEGMENTS_AT_MOST - 1;
+        let manifest = manifest_with(
+            "https://cdn.audio.tidal.com/$Number%08d$.mp4",
+            &format!(r#"<S d="176128" r="{at_most}"/>"#),
+        );
+        let past = manifest_with(
+            "https://cdn.audio.tidal.com/$Number%08d$.mp4",
+            &format!(r#"<S d="176128" r="{SEGMENTS_AT_MOST}"/>"#),
+        );
+
+        let Ok(Manifest::Media(media)) = read_document(DASH, manifest.as_bytes()) else {
+            panic!("a manifest of the most segments was not read");
+        };
+
+        assert_eq!(media.urls.len() as u64, 1 + SEGMENTS_AT_MOST);
+        assert_eq!(
+            read_document(DASH, past.as_bytes()),
+            Err(Unread::TooManySegments)
+        );
     }
 }

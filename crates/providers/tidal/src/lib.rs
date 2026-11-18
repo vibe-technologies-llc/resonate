@@ -27,8 +27,9 @@ use ureq::{
 
 #[cfg(fuzzing)]
 pub fn read_a_manifest(bytes: &[u8]) {
+    let hosts = MediaHosts::tidal();
     for mime in ["application/vnd.tidal.bts", "application/dash+xml"] {
-        let _ = crate::manifest::read_document(mime, bytes);
+        let _ = crate::manifest::read_document(mime, bytes, &hosts);
     }
 }
 

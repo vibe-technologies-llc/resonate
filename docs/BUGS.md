@@ -17,9 +17,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   with that earlier word (`Closing::Before`), so the device applies `Left` and moves to the old
   reset's space, where the removed person still holds a seat, and anyone who joined since the
   seats were read is dropped
-- [S · 0.13.1] A hifi-api server can make a phone or the desktop run out of memory with one
-  manifest: `manifest.rs` expands a `$Number%0Nd$` template with an uncapped width and up to the
-  segment count before the segment host is checked
 - [S · 0.13.1] A masked field (a password or a token) answers the input method's `text_for_range`
   with the secret itself and `word_at` with its word boundaries (`views/field.rs`), so an IME,
   a screen reader or an input-method plugin reads what the dots hide
