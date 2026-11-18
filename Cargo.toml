@@ -257,7 +257,7 @@ wayland-protocols = {
 }
 
 tao = { version = "0.37.2", default-features = false, features = ["rwh_06"] }
-wry = { version = "0.57.2", default-features = false, features = ["os-webview"] }
+wry = { version = "0.57.3", default-features = false, features = ["os-webview"] }
 tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 tracing-subscriber = {
     version = "0.3.23",
