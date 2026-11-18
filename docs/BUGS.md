@@ -15,25 +15,8 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Sync and together
-- [S · 0.13.1] A party guest whose song cannot start mid-way loses its own queue to the host:
-  `Seat::take_up` (`resonate-engine/src/seat.rs`) sends `Resume` before it learns the row has no
-  rate and answers `false`, `party/seat.rs` then leaves `rows` as they were, and `added_here`
-  reads the host's songs now standing in the queue as songs the guest added, takes them out and
-  sends each to the host as a request
 
 ## Playback and output
-- [S · 0.13.1] Under a convolution impulse, a sleep timer ending at the end of the track or the queue
-  never pauses: `sleep_is_due_in` (`dozing.rs`) sizes the fade by `position`, which takes off only
-  the convolver's latency (`frames_it_holds`), while its flush hands the ring the whole response
-  past the music, so the fade reaches silence with that tail unread, the quiet ring is pulled
-  without being consumed and the track never ends; the zone shows playing all night and holds the
-  idle inhibitor
-- [S · 0.13.1] The UPnP media server and the renderer's stream stop for good on one unexpected
-  accept error: `door.rs` ends its thread on anything but `WouldBlock` and `Interrupted`
-  (`ECONNABORTED`, `ECONNRESET`, `EMFILE`), and `announce.rs` ends the SSDP loop on an error it does
-  not list (Windows's `WSAEMSGSIZE`)
-- [S · 0.13.1] A renderer that sends `HEAD` while it plays ends its own stream: `feed.rs` counts a
-  `HEAD` as a connection, which supersedes the `GET` that is pouring
 - [S · 0.13.1] Switching the catalog on the network off and on again within a quarter second can
   hide it for ten minutes: `Offered::share` (`offering.rs`) starts the new server at once while the
   old one's announcer has yet to hear its stop, so the old `ssdp:byebye` lands after the new
