@@ -72,6 +72,7 @@ final class Features {
     var applyingCorrection = false
     var scrobbleAccount: ScrobbleAccount?
     var scrobbleStatus: String?
+    private(set) var historyKept: KeptHistory
     private(set) var historyBusy = false
     var historyStatus: String?
     var providers = ProviderAccounts() {
@@ -235,6 +236,7 @@ final class Features {
         hostedServices = settings.object(forKey: "hosted-services") == nil ? true : settings.bool(forKey: "hosted-services")
         enrichOnMetered = settings.bool(forKey: "enrich-on-metered")
         downloadOnMetered = MeteredDownloads.allowed(in: settings)
+        historyKept = ListeningHistory.kept(in: settings)
         syncFolder = settings.string(forKey: "sync-folder")
     }
 
@@ -341,6 +343,11 @@ final class Features {
         native.configureHostedServices(enabled: hostedServices)
         native.configureEnrichOnMetered(allowed: enrichOnMetered)
         native.configureDownloadOnMetered(allowed: downloadOnMetered)
+        let kept = historyKept
+        work { [weak self] native in
+            let forgotten = try await Work.aside { try Features.aged(native, kept) }
+            self?.historyForgotten(forgotten)
+        }
         together.tellName(to: native)
         Task { [weak self] in
             await self?.readSecrets()
@@ -1882,6 +1889,28 @@ final class Features {
                 throw error
             }
         }
+    }
+
+    func keepHistory(_ kept: KeptHistory) {
+        work { [weak self] native in
+            let forgotten = try await Work.aside { try Features.aged(native, kept) }
+            guard let self else { return }
+            ListeningHistory.keep(kept, in: settings)
+            historyKept = kept
+            historyForgotten(forgotten)
+        }
+    }
+
+    nonisolated private static func aged(_ native: MobilePlayer, _ kept: KeptHistory) throws -> UInt64 {
+        let zone = TimeZone.current
+        return try native.ageHistory(
+            kept: kept, timeZone: zone.identifier, utcOffsetSeconds: Int32(zone.secondsFromGMT())
+        ).listens
+    }
+
+    private func historyForgotten(_ listens: UInt64) {
+        guard listens > 0 else { return }
+        historyStatus = said("scrobbling.history.forgotten", Int(listens))
     }
 
     func exportHistory() async -> URL? {

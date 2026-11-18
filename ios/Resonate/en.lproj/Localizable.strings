@@ -1077,7 +1077,16 @@
 "scrobbling.footer" = "Favourites with an identified recording are loved on each saved account, and taken back there when you remove them.";
 "scrobbling.include-history" = "Include existing listening history";
 "scrobbling.history" = "Listening history";
-"scrobbling.history.footer" = "A file holds one listen a line, as ListenBrainz writes them; listens of songs on this phone are added once and the rest are counted and left.";
+"scrobbling.history.kept" = "Keep listens for";
+"scrobbling.history.kept.forever" = "Forever";
+"scrobbling.history.kept.five-years" = "Five years";
+"scrobbling.history.kept.two-years" = "Two years";
+"scrobbling.history.kept.a-year" = "A year";
+"scrobbling.history.kept.six-months" = "Six months";
+"scrobbling.history.footer" = "Older listens and skipped time are forgotten when Resonate opens, once every saved account has been sent them. A file holds one listen a line, as ListenBrainz writes them; listens of songs on this phone are added once and the rest are counted and left.";
+"scrobbling.history.forget.title" = "Forget older listens?";
+"scrobbling.history.forget.message" = "Every listen older than that is forgotten now, for good. Listens an account has not been sent yet are kept until it has.";
+"scrobbling.history.forget" = "Forget";
 "scrobbling.history.export" = "Export to a file";
 "scrobbling.history.import-file" = "Import a file";
 "scrobbling.history.import.listenbrainz" = "Bring in from ListenBrainz";
@@ -1323,6 +1332,7 @@
 "settings.room-correction.title" = "Room correction";
 "settings.scrobbling.inner.listenbrainz-token" = "ListenBrainz token";
 "settings.scrobbling.inner.listening-history" = "Listening history";
+"settings.scrobbling.inner.keep-listens-for" = "Keep listens for";
 "settings.scrobbling.inner.export-listening-history" = "Export listening history";
 "settings.scrobbling.inner.import-listening-history" = "Import listening history";
 "settings.scrobbling.inner.loves" = "Loves";

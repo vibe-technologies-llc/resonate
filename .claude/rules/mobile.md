@@ -916,7 +916,7 @@ caller's thread, ending on a cancel, the client no longer reaching or the lapse,
 sign-in (`lastfm_sign_in`) is gone. Both phones open the page in the system browser and keep the
 session as before.
 
-## The listening history taken out and brought in
+## The listening history taken out, brought in and aged
 
 `history.rs` gives the phones the desktop's `history --export`, `--import-file` and `--import` over
 the library's own seam: `PhoneListens` fills `KeptListens` (`library.md`'s *The history taken out
@@ -943,7 +943,16 @@ account's own (`token_held`), and refuses `NoHistoryUser` or, for Last.fm withou
 secret, `NoLastfmApplication` (`a_service_import_asks_for_online_a_user_and_for_lastfm_an_application`).
 Each answers a `HistoryBroughtIn`.
 
-Both phones show the section in Scrobbling (`android.md`, `ios.md`).
+**Ageing is the desktop's `history-kept`** (`ageing.rs`). `history_spans_offered()` is `HistoryKept::OFFERED`
+as `KeptHistory` (`Forever` or `Days`); each phone keeps the choice (`history-kept-days`, absent for
+forever) and calls `age_history(kept, time_zone, utc_offset_seconds)` as the player opens and on a
+change, which is when the desktop ages. It keeps the span in `Services::history_kept`, so Wrapped's
+`songs_new` is `None` under a shorter one, freezes every finished year not yet kept in the
+listener's calendar (`freeze_the_finished_years`), then deletes the counted listens older than
+the span at or behind the lowest `submissions` mark and every pass older than it, answering an
+`AgedHistory` (`ageing_forgets_listens_and_passes_past_the_span_but_not_a_listen_a_service_is_owed`,
+`ageing_keeps_a_year_over_as_it_was_heard_before_forgetting_its_listens`). A shorter span asks
+first on both phones. Both phones show the section in Scrobbling (`android.md`, `ios.md`).
 
 ## Jellyfin Quick Connect
 

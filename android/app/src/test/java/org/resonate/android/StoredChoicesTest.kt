@@ -1,8 +1,10 @@
 package org.resonate.android
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.resonate.android.nativecore.KeptHistory
 
 class StoredChoicesTest {
     private fun stored(vararg held: Pair<String, Boolean>): (String) -> Boolean? = mapOf(*held)::get
@@ -45,5 +47,22 @@ class StoredChoicesTest {
         assertTrue(StoredChoices.checkForUpdates(stored()))
         assertTrue(StoredChoices.checkForUpdates(stored("check-for-updates" to true)))
         assertFalse(StoredChoices.checkForUpdates(stored("check-for-updates" to false)))
+    }
+
+    @Test
+    fun theHistoryIsKeptForeverUntilASpanIsSavedAndOnlyAShorterSpanForgetsListens() {
+        val year = KeptHistory.Days(365u)
+        val halfYear = KeptHistory.Days(182u)
+
+        assertEquals(KeptHistory.Forever, StoredChoices.historyKept(mapOf<String, Int>()::get))
+        assertEquals(year, StoredChoices.historyKept(mapOf("history-kept-days" to 365)::get))
+        assertEquals(KeptHistory.Forever, StoredChoices.historyKept(mapOf("history-kept-days" to 0)::get))
+        assertEquals(365, StoredChoices.historyKeptDays(year))
+        assertEquals(null, StoredChoices.historyKeptDays(KeptHistory.Forever))
+        assertTrue(StoredChoices.forgetsListens(KeptHistory.Forever, year))
+        assertTrue(StoredChoices.forgetsListens(year, halfYear))
+        assertFalse(StoredChoices.forgetsListens(halfYear, year))
+        assertFalse(StoredChoices.forgetsListens(year, KeptHistory.Forever))
+        assertFalse(StoredChoices.forgetsListens(KeptHistory.Forever, KeptHistory.Forever))
     }
 }

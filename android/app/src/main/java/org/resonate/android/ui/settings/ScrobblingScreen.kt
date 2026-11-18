@@ -13,6 +13,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedButton
@@ -22,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -36,12 +38,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.resonate.android.R
+import org.resonate.android.StoredChoices
+import org.resonate.android.Words
+import org.resonate.android.nativecore.KeptHistory
 import org.resonate.android.nativecore.ScrobbleAccount
 import org.resonate.android.nativecore.ScrobbleService
+import org.resonate.android.nativecore.historySpansOffered
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.words
 
 data class ScrobbleDraft(val account: ScrobbleAccount, val includeHistory: Boolean = false)
 
@@ -57,6 +64,19 @@ fun canSignInToLastFm(draft: ScrobbleDraft): Boolean =
 
 const val HISTORY_FILE_NAME = "listens.jsonl"
 
+fun historyKeptLabel(words: Words, kept: KeptHistory): String =
+    when (StoredChoices.historyKeptDays(kept)) {
+        null -> words.string(R.string.scrobbling_history_kept_forever)
+        1826 -> words.string(R.string.scrobbling_history_kept_five_years)
+        730 -> words.string(R.string.scrobbling_history_kept_two_years)
+        365 -> words.string(R.string.scrobbling_history_kept_a_year)
+        182 -> words.string(R.string.scrobbling_history_kept_six_months)
+        else -> {
+            val days = StoredChoices.historyKeptDays(kept) ?: 0
+            words.plural(R.plurals.scrobbling_history_kept_days, days, days)
+        }
+    }
+
 class ScrobblingViewModel(private val resonate: Resonate) : ViewModel() {
     private val features = resonate.features
 
@@ -65,8 +85,10 @@ class ScrobblingViewModel(private val resonate: Resonate) : ViewModel() {
     val stored = features.scrobbleAccount
     val status = features.scrobbleStatus
     val online = features.online
+    val historyKept = features.historyKept
     val historyBusy = features.historyBusy
     val historyStatus = features.historyStatus
+    val spans: List<KeptHistory> = historySpansOffered()
     var draft by mutableStateOf<ScrobbleDraft?>(null)
         private set
 
@@ -121,6 +143,8 @@ class ScrobblingViewModel(private val resonate: Resonate) : ViewModel() {
 
     fun goOnline() = features.setOnline(true)
 
+    fun keepHistory(kept: KeptHistory) = features.keepHistory(kept)
+
     fun exportHistory(uri: Uri) = features.exportHistory(uri)
 
     fun importHistoryFile(uri: Uri) = features.importHistoryFile(uri)
@@ -137,8 +161,11 @@ fun ScrobblingScreen() {
     val online by model.online.collectAsStateWithLifecycle()
     val lastfmAddress by model.lastfmAddress.collectAsStateWithLifecycle()
     val lastfmBusy by model.lastfmBusy.collectAsStateWithLifecycle()
+    val historyKept by model.historyKept.collectAsStateWithLifecycle()
     val historyBusy by model.historyBusy.collectAsStateWithLifecycle()
     val historyStatus by model.historyStatus.collectAsStateWithLifecycle()
+    val words = words()
+    var forgetting by rememberSaveable { mutableStateOf<Int?>(null) }
     val exporting =
         rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("application/octet-stream")
@@ -149,6 +176,18 @@ fun ScrobblingScreen() {
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let(model::importHistoryFile)
         }
+    forgetting?.let { days ->
+        val asked = StoredChoices.historyKept { days }
+        ConfirmDialog(
+            title = stringResource(R.string.scrobbling_history_forget_title),
+            text = stringResource(R.string.scrobbling_history_forget_text),
+            confirm = stringResource(R.string.scrobbling_history_forget),
+            onConfirm = { model.keepHistory(asked) },
+            onDismiss = { forgetting = null },
+            destructive = true,
+        )
+    }
+    LaunchedEffect(lastfmAddress) { lastfmAddress?.let(model::open) }
     Page(stringResource(R.string.scrobbling_title)) { padding ->
         val current = draft
         if (current == null) {
@@ -308,6 +347,25 @@ fun ScrobblingScreen() {
             }
             item(key = "history-header") {
                 SectionHeader(stringResource(R.string.scrobbling_listening_history))
+            }
+            item(key = "history-kept") {
+                ChoiceRow(
+                    title = stringResource(R.string.scrobbling_history_kept),
+                    choices = model.spans.map { Choice(it, historyKeptLabel(words, it)) },
+                    selected = historyKept,
+                    onChoose = { asked ->
+                        if (StoredChoices.forgetsListens(historyKept, asked)) {
+                            forgetting = StoredChoices.historyKeptDays(asked)
+                        } else {
+                            model.keepHistory(asked)
+                        }
+                    },
+                    icon = Icons.Rounded.Schedule,
+                    modifier = Modifier.testTag("history-kept"),
+                )
+            }
+            item(key = "history-kept-detail") {
+                Note(stringResource(R.string.scrobbling_history_kept_detail))
             }
             item(key = "history-export") {
                 SettingRow(

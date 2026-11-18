@@ -376,6 +376,10 @@
         <item quantity="other">Brought in %1$d listens</item>
     </plurals>
     <string name="features_history_brought_in_detail">%1$s · %2$d already here · %3$d of songs not on this phone</string>
+    <plurals name="features_history_forgotten">
+        <item quantity="one">Forgot %1$d listen older than the history is kept for</item>
+        <item quantity="other">Forgot %1$d listens older than the history is kept for</item>
+    </plurals>
     <string name="features_scrobble_lastfm_signed_in">Signed in to Last.fm</string>
     <string name="features_scrobble_lastfm_signed_out">Signed out of Last.fm</string>
     <string name="features_sync_joining_when_read">Joining as soon as this phone\'s settings are read</string>
@@ -1031,6 +1035,20 @@
     <string name="scrobbling_save">Save</string>
     <string name="scrobbling_saved">Saved</string>
     <string name="scrobbling_listening_history">Listening history</string>
+    <string name="scrobbling_history_kept">Keep listens for</string>
+    <string name="scrobbling_history_kept_forever">Forever</string>
+    <string name="scrobbling_history_kept_five_years">Five years</string>
+    <string name="scrobbling_history_kept_two_years">Two years</string>
+    <string name="scrobbling_history_kept_a_year">A year</string>
+    <string name="scrobbling_history_kept_six_months">Six months</string>
+    <plurals name="scrobbling_history_kept_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <string name="scrobbling_history_kept_detail">Older listens and skipped time are forgotten when Resonate opens, once every saved account has been sent them</string>
+    <string name="scrobbling_history_forget_title">Forget older listens?</string>
+    <string name="scrobbling_history_forget_text">Every listen older than that is forgotten now, for good. Listens an account has not been sent yet are kept until it has.</string>
+    <string name="scrobbling_history_forget">Forget</string>
     <string name="scrobbling_history_export">Export to a file</string>
     <string name="scrobbling_history_export_detail">One listen a line, as ListenBrainz writes them</string>
     <string name="scrobbling_history_import_file">Import a file</string>
@@ -1364,6 +1382,7 @@
     <string name="settings_inner_listenbrainz_token">ListenBrainz token</string>
     <string name="settings_inner_loves">Loves</string>
     <string name="settings_inner_listening_history">Listening history</string>
+    <string name="settings_inner_keep_listens_for">Keep listens for</string>
     <string name="settings_inner_export_listening_history">Export listening history</string>
     <string name="settings_inner_import_listening_history">Import listening history</string>
     <string name="settings_spotify_detail">Your playlists and liked songs, with an app you register</string>

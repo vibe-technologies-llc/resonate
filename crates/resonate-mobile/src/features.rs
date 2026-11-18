@@ -47,6 +47,7 @@ pub(crate) struct Services {
     pub(crate) searching: Arc<crate::search::Searching>,
     pub(crate) watching: crate::watching::Watching,
     pub(crate) files: crate::deleting::Files,
+    pub(crate) history_kept: Mutex<resonate_library::HistoryKept>,
 }
 
 impl Services {
@@ -85,6 +86,7 @@ impl Default for Services {
             searching: Arc::default(),
             watching: crate::watching::Watching::default(),
             files: crate::deleting::Files::default(),
+            history_kept: Mutex::default(),
         }
     }
 }
@@ -459,6 +461,7 @@ impl MobilePlayer {
         self.catalog.wrapped(
             year,
             &the_listeners_calendar(&time_zone, utc_offset_seconds),
+            *self.services.history_kept.lock(),
         )
     }
 

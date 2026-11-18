@@ -1365,8 +1365,12 @@ catalog: `loves_told` (service, recording) is weighed against the favourites wit
 at most `LOVES_TOLD_AT_ONCE` loves or take-backs per service and call; a love refused with a 4xx
 other than 401, 403, 408 or 429 (`resonate_library::refused_for_good`) is noted told, any other
 failure stops that service until the next call; one service failing tells the other.
-The Scrobbling page ends on *Listening history* (`mobile.md`'s *The listening history taken out
-and brought in*): *Export to a file* is `CreateDocument` (`listens.jsonl`, `application/octet-stream` so
+The Scrobbling page ends on *Listening history* (`mobile.md`'s *The listening history taken out,
+brought in and aged*): *Keep listens for* is a `ChoiceRow` of `historySpansOffered()` named by
+`historyKeptLabel` as the desktop names them, a shorter span confirmed first
+(`StoredChoices.forgetsListens`, a `ConfirmDialog`), kept as `history-kept-days`
+(`StoredChoices.historyKept`) and handed to `ageHistory` by `LibraryFeatures.keepHistory` and as the
+player opens; *Export to a file* is `CreateDocument` (`listens.jsonl`, `application/octet-stream` so
 no provider renames it) opened `wt` and detached for `exportHistory`; *Import a file* is
 `OpenDocument` opened `r` for `importHistoryFile`; *Bring in from ListenBrainz* and *from Last.fm*
 show for a saved token or session and call `importHistory` with the saved account. One history task

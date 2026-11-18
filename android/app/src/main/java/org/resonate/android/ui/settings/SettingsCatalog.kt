@@ -230,6 +230,7 @@ enum class Setting(
             R.string.settings_inner_listenbrainz_token,
             R.string.settings_inner_loves,
             R.string.settings_inner_listening_history,
+            R.string.settings_inner_keep_listens_for,
             R.string.settings_inner_export_listening_history,
             R.string.settings_inner_import_listening_history,
         ),

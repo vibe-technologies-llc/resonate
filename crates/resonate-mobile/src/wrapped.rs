@@ -8,6 +8,7 @@ use resonate_core::{
         YearReview, genres_tallied, year_worth_showing,
     },
 };
+use resonate_library::HistoryKept;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::{Error, Result, StoreOp, catalog::Catalog, search::codec_named};
@@ -169,14 +170,16 @@ impl Catalog {
         &self,
         year: Option<i64>,
         calendar: &Calendar,
+        history: HistoryKept,
     ) -> Result<Option<WrappedYear>> {
-        self.wrapped_on(year, calendar, calendar.date_at(SystemTime::now()))
+        self.wrapped_on(year, calendar, history, calendar.date_at(SystemTime::now()))
     }
 
     fn wrapped_on(
         &self,
         year: Option<i64>,
         calendar: &Calendar,
+        history: HistoryKept,
         today: CivilDate,
     ) -> Result<Option<WrappedYear>> {
         let connection = self.0.lock();
@@ -184,7 +187,7 @@ impl Catalog {
         let Some(year) = year.or_else(|| year_worth_showing(&years, today)) else {
             return Ok(None);
         };
-        let review = reviewed(&connection, year, calendar, today)?;
+        let review = reviewed(&connection, year, calendar, history, today)?;
         drop(connection);
 
         Ok(Some(WrappedYear {
@@ -196,10 +199,26 @@ impl Catalog {
     }
 }
 
+pub(crate) fn freeze_the_finished_years(
+    connection: &Connection,
+    calendar: &Calendar,
+    history: HistoryKept,
+    today: CivilDate,
+) -> Result<()> {
+    for year in years_heard(connection, calendar)? {
+        if year < today.year {
+            reviewed(connection, year, calendar, history, today)?;
+        }
+    }
+
+    Ok(())
+}
+
 fn reviewed(
     connection: &Connection,
     year: i64,
     calendar: &Calendar,
+    history: HistoryKept,
     today: CivilDate,
 ) -> Result<YearReview> {
     let kept = kept_year(connection, year)?;
@@ -208,7 +227,7 @@ fn reviewed(
         return Ok(*review);
     }
 
-    let review = year_review(connection, year, calendar)?;
+    let review = year_review(connection, year, calendar, history)?;
     if year < today.year && review.holds_anything() && !of_a_later_build {
         keep_year(connection, &review)?;
     }
@@ -302,7 +321,12 @@ fn years_kept(connection: &Connection) -> Result<Vec<i64>> {
         .map_err(read_error)
 }
 
-fn year_review(connection: &Connection, year: i64, calendar: &Calendar) -> Result<YearReview> {
+fn year_review(
+    connection: &Connection,
+    year: i64,
+    calendar: &Calendar,
+    history: HistoryKept,
+) -> Result<YearReview> {
     let (from, to) = bounds_of(calendar, year);
     let (plays, listened, songs, artists, albums) = connection
         .query_row(WHAT_WAS_HEARD_IN_THE_YEAR, params![from, to], |row| {
@@ -323,7 +347,7 @@ fn year_review(connection: &Connection, year: i64, calendar: &Calendar) -> Resul
         songs,
         artists,
         albums,
-        songs_new: songs_new(connection, from, to)?,
+        songs_new: songs_new(connection, from, to, history)?,
         songs_added: how_many(
             connection
                 .query_row(THE_SONGS_ADDED_IN_THE_YEAR, params![from, to], |row| {
@@ -347,7 +371,16 @@ fn bounds_of(calendar: &Calendar, year: i64) -> (i64, i64) {
     (seconds_since_the_epoch(from), seconds_since_the_epoch(to))
 }
 
-fn songs_new(connection: &Connection, from: i64, to: i64) -> Result<Option<u64>> {
+fn songs_new(
+    connection: &Connection,
+    from: i64,
+    to: i64,
+    history: HistoryKept,
+) -> Result<Option<u64>> {
+    if history != HistoryKept::Forever {
+        return Ok(None);
+    }
+
     let first_ever: Option<i64> = connection
         .query_row(THE_FIRST_LISTEN_EVER, [], |row| row.get(0))
         .map_err(read_error)?;
@@ -558,7 +591,13 @@ mod tests {
     }
 
     fn year_of(catalog: &Catalog, year: i64) -> YearReview {
-        year_review(&catalog.0.lock(), year, &Calendar::utc()).expect("the catalog answers")
+        year_review(
+            &catalog.0.lock(),
+            year,
+            &Calendar::utc(),
+            HistoryKept::Forever,
+        )
+        .expect("the catalog answers")
     }
 
     #[test]
@@ -588,7 +627,7 @@ mod tests {
     }
 
     #[test]
-    fn songs_new_are_counted_only_where_history_reaches_before_the_year() {
+    fn songs_new_are_counted_only_where_history_reaches_before_the_year_and_was_kept_whole() {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
         let old = held(
             &catalog,
@@ -616,6 +655,18 @@ mod tests {
         heard(&catalog, old, -30, 5, 1);
 
         assert_eq!(year_of(&catalog, 2025).songs_new, Some(1));
+        assert_eq!(
+            year_review(
+                &catalog.0.lock(),
+                2025,
+                &Calendar::utc(),
+                HistoryKept::for_days(365).expect("a span"),
+            )
+            .expect("the catalog answers")
+            .songs_new,
+            None,
+            "a history kept shorter has forgotten what was heard before"
+        );
     }
 
     #[test]
@@ -673,7 +724,7 @@ mod tests {
 
         assert_eq!(
             catalog
-                .wrapped(None, &Calendar::utc())
+                .wrapped(None, &Calendar::utc(), HistoryKept::Forever)
                 .expect("the catalog answers"),
             None
         );
@@ -682,11 +733,11 @@ mod tests {
         heard(&catalog, song, 0, 90, 1);
 
         let shown = catalog
-            .wrapped(None, &Calendar::utc())
+            .wrapped(None, &Calendar::utc(), HistoryKept::Forever)
             .expect("the catalog answers")
             .expect("a year was heard");
         let empty = catalog
-            .wrapped(Some(1999), &Calendar::utc())
+            .wrapped(Some(1999), &Calendar::utc(), HistoryKept::Forever)
             .expect("the catalog answers")
             .expect("a year asked for is answered");
 
@@ -711,7 +762,7 @@ mod tests {
 
     fn shown(catalog: &Catalog, year: i64, today: CivilDate) -> WrappedYear {
         catalog
-            .wrapped_on(Some(year), &Calendar::utc(), today)
+            .wrapped_on(Some(year), &Calendar::utc(), HistoryKept::Forever, today)
             .expect("the catalog answers")
             .expect("a year asked for is answered")
     }

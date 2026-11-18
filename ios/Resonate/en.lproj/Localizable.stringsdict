@@ -1202,6 +1202,22 @@
 			<string>%lld songs</string>
 		</dict>
 	</dict>
+	<key>scrobbling.history.kept.days</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@days@</string>
+		<key>days</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld day</string>
+			<key>other</key>
+			<string>%lld days</string>
+		</dict>
+	</dict>
 	<key>scrobbling.history.exported</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
@@ -1222,6 +1238,22 @@
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
 		<string>Brought in %#@listens@</string>
+		<key>listens</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld listen</string>
+			<key>other</key>
+			<string>%lld listens</string>
+		</dict>
+	</dict>
+	<key>scrobbling.history.forgotten</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Forgot %#@listens@ older than the history is kept for</string>
 		<key>listens</key>
 		<dict>
 			<key>NSStringFormatSpecTypeKey</key>

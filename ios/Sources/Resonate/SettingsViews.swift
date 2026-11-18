@@ -594,6 +594,7 @@ struct ScrobblingView: View {
     @Environment(\.openURL) private var openURL
     @State private var account = ScrobbleAccount(listenbrainzToken: "", lastfmKey: "", lastfmSecret: "", lastfmSession: "")
     @State private var history = false
+    @State private var forgetting: KeptHistory?
     @State private var exported: HistoryFile?
     @State private var exporting = false
     @State private var importing = false
@@ -640,6 +641,16 @@ struct ScrobblingView: View {
             }
             historySection
         }
+        .confirmationDialog(
+            "scrobbling.history.forget.title",
+            isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
+            titleVisibility: .visible,
+            presenting: forgetting
+        ) { asked in
+            Button("scrobbling.history.forget", role: .destructive) { features.keepHistory(asked) }
+        } message: { _ in
+            Text("scrobbling.history.forget.message")
+        }
         .fileExporter(
             isPresented: $exporting,
             document: exported,
@@ -667,6 +678,20 @@ extension ScrobblingView {
         let features = library.features
         let saved = features.scrobbleAccount
         Section {
+            Picker("scrobbling.history.kept", selection: Binding(
+                get: { features.historyKept },
+                set: { asked in
+                    if ListeningHistory.forgetsListens(keeping: features.historyKept, asked: asked) {
+                        forgetting = asked
+                    } else {
+                        features.keepHistory(asked)
+                    }
+                }
+            )) {
+                ForEach(historySpansOffered(), id: \.self) { kept in
+                    Text(ListeningHistory.label(kept)).tag(kept)
+                }
+            }
             Button("scrobbling.history.export") {
                 Task {
                     guard let file = await features.exportHistory() else { return }

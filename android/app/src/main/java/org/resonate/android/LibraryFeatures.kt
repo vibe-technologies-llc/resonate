@@ -14,6 +14,7 @@ import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.LruCache
 import androidx.annotation.StringRes
+import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import org.json.JSONArray
@@ -55,6 +56,7 @@ import org.resonate.android.nativecore.ConnectionMeter
 import org.resonate.android.nativecore.DownloadAccount
 import org.resonate.android.nativecore.HandedOff
 import org.resonate.android.nativecore.HistoryBroughtIn
+import org.resonate.android.nativecore.KeptHistory
 import org.resonate.android.nativecore.LibraryStatistics
 import org.resonate.android.nativecore.LyricFrame
 import org.resonate.android.nativecore.LyricNudge
@@ -167,6 +169,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val spotifyAddress = MutableStateFlow<String?>(null)
     val spotifySigningIn = MutableStateFlow(false)
     val scrobbleStatus = MutableStateFlow<String?>(null)
+    val historyKept = MutableStateFlow(StoredChoices.historyKept(settings::storedNumber))
     val historyBusy = MutableStateFlow(false)
     val historyStatus = MutableStateFlow<String?>(null)
     private var submitting: Job? = null
@@ -440,6 +443,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
         native.configureHostedServices(hostedServices.value)
         native.configureEnrichOnMetered(enrichOnMetered.value)
         native.configureDownloadOnMetered(downloadOnMetered.value)
+        val kept = historyKept.value
+        work { historyForgotten(aged(it, kept)) }
         served.begin(native)
         releases.begin(native)
         enrichment.initialize(online.value)
@@ -1906,6 +1911,28 @@ class LibraryFeatures(private val context: Context, private val library: Library
         accounts.writeScrobbling(account)
         scrobbleAccount.value = account
         scrobbleStatus.value = library.words.string(R.string.features_scrobble_accounts_saved)
+    }
+
+    fun keepHistory(kept: KeptHistory) = work { native ->
+        val forgotten = aged(native, kept)
+        val edit = settings.edit()
+        StoredChoices.historyKeptDays(kept)?.let { edit.putInt(StoredChoices.HISTORY_KEPT_DAYS, it) }
+            ?: edit.remove(StoredChoices.HISTORY_KEPT_DAYS)
+        edit.commit()
+        historyKept.value = kept
+        historyForgotten(forgotten)
+    }
+
+    private fun aged(native: MobilePlayer, kept: KeptHistory): ULong {
+        val zone = TimeZone.getDefault()
+        val aged = native.ageHistory(kept, zone.id, zone.getOffset(System.currentTimeMillis()) / 1000)
+        return aged.listens
+    }
+
+    private fun historyForgotten(listens: ULong) {
+        if (listens == 0uL) return
+        historyStatus.value =
+            library.words.plural(R.plurals.features_history_forgotten, listens.toInt(), listens.toLong())
     }
 
     fun exportHistory(uri: Uri) = historyWork { native ->
