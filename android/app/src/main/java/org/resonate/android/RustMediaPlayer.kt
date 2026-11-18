@@ -310,15 +310,22 @@ class RustMediaPlayer(private val context: Context, private val library: Library
         positionMs: Long,
         seekCommand: Int,
     ): ListenableFuture<*> {
-        val first = shown.first
-        val playing = snapshot?.queueIndex?.toInt()?.minus(first)
-        val moves =
-            seekCommand != Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM && mediaItemIndex != playing
-        val position = positionMs.coerceAtLeast(0).toULong()
+        val seeking =
+            Seeking.of(
+                seekCommand,
+                mediaItemIndex,
+                positionMs,
+                shown.first,
+                snapshot?.queueIndex?.toInt(),
+            )
 
         library.request {
-            if (moves) it.jumpToAt((first + mediaItemIndex.coerceAtLeast(0)).toUInt(), position)
-            else it.seek(position)
+            when (seeking) {
+                Seeking.Previous -> it.previous()
+                Seeking.Next -> it.next()
+                is Seeking.Within -> it.seek(seeking.positionMs)
+                is Seeking.ToRow -> it.jumpToAt(seeking.row, seeking.positionMs)
+            }
         }
         return Futures.immediateVoidFuture()
     }

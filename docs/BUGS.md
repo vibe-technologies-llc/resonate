@@ -4,11 +4,11 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android
-- [M · 0.13.1] Previous and next on the Android player screen (`ui/Resonate.kt`) are Media3's
-  `seekToPreviousMediaItem`/`seekToNextMediaItem`, which `RustMediaPlayer.handleSeek` turns into
-  `jump_to_at`: a jump to a chosen row, so Previous never restarts the song past its opening
-  (`previous_restarts`), Next under repeat-track does not repeat the queue (`skip_under_repeat`),
-  and a skip while paused starts playback; iOS calls the boundary's `next`/`previous`
+- [S · 0.13.1] Next from the notification, a headset or Android Auto at the last row is dropped by
+  Media3 before it reaches `RustMediaPlayer.handleSeek` (repeat off or repeat-track: it reads no
+  next item in the slice it was shown), where the player screen's button and the desktop finish
+  the queue or wrap under skip-repeats-queue; Media3's skip methods cannot be overridden on a
+  `SimpleBasePlayer`, so the session's player wants a `ForwardingPlayer` sending them to `next`
 
 ## Security
 - [S · blocked: design] A host on the network may take several addresses and so pass the media server's

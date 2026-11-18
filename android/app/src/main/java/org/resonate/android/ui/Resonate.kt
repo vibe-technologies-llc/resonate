@@ -97,11 +97,11 @@ class Playback(
     }
 
     fun previous() {
-        remote()?.seekToPreviousMediaItem()
+        library.request { it.previous() }
     }
 
     fun next() {
-        remote()?.seekToNextMediaItem()
+        library.request { it.next() }
     }
 
     fun seek(positionMs: Long) {
