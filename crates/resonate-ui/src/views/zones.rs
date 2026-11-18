@@ -389,7 +389,9 @@ impl RootView {
                 Ok(()) => toast::tell(Notice::Done(this.switcher.moved_to(to)), cx),
                 Err(error) => {
                     tracing::warn!(%error, from = %from, to = %to, "playback was not moved");
-                    this.show_zone(from, cx);
+                    if this.switcher.selected() == to {
+                        this.show_zone(from, cx);
+                    }
                     toast::tell(Notice::Trouble(refusal(&error, &this.switcher)), cx);
                 }
             });

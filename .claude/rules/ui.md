@@ -557,7 +557,8 @@ so `editing` sees it.
   `moving_to`), *Add a zone*, *Rename this zone…* and, off the first, *Remove this zone*. **Moving
   playback** (`RootView::move_playback_to`) runs `Zones::hand_over` and its `wait` on the
   background executor and shows the incoming zone at once; landed, a toast says *Playing in … now*
-  (`moved_to`); refused or unheard, the window goes back to the zone it came from and
+  (`moved_to`); refused or unheard, the window goes back to the zone it came from only while it
+  still shows the one moved to (a listener who has turned to another zone is left there) and
   `zones::refusal` names why (`HandoverUnheard`, `NothingToHandOver`, `DeviceHeld`). Switching never
   touches playback (`show_zone` keeps a volume change waiting, moves `listen_in` to the shown zone and clears the volume aim, mute
   memory, seek grab, queue selection (`reach`, `landed_by_a_jump`), queue names and take-out offer, which belong to one queue). Adding and removing

@@ -1403,6 +1403,46 @@ mod tests {
         assert!(driven.read(|root, _| root.zones.len() == 1 && !root.switcher.several()));
     }
 
+    #[gpui::test]
+    fn a_failed_move_returns_to_the_zone_it_came_from_only_where_the_listener_is_still_on_the_one_moved_to(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let library = scanned_catalog(&folder, &["Echoes"]);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let root = driven.root.clone();
+        let second = with_a_second_zone(&mut driven);
+        let third = ZoneId::new(3).expect("a third zone");
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.add_a_zone(cx)));
+        driven.until(|root, _| root.zones.len() == 3);
+
+        zone_shown(&mut driven, ZoneId::FIRST);
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| root.move_playback_to(second, cx));
+        });
+        driven.until(|_, cx| crate::toast::showing_text(cx).is_some());
+        driven.settle();
+        let came_back = driven.read(|root, _| root.switcher.selected());
+
+        driven.cx.update(|_, cx| crate::toast::dismiss(cx));
+        driven.until(|_, cx| !crate::toast::is_showing(cx));
+        zone_shown(&mut driven, ZoneId::FIRST);
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.move_playback_to(second, cx);
+                root.show_zone(third, cx);
+            });
+        });
+        driven.until(|_, cx| crate::toast::showing_text(cx).is_some());
+        driven.settle();
+        let stayed = driven.read(|root, _| root.switcher.selected());
+
+        assert_eq!(came_back, ZoneId::FIRST);
+        assert_eq!(stayed, third);
+    }
+
     struct Recorded(Arc<parking_lot::Mutex<Vec<crate::settings::SettingChange>>>);
 
     impl crate::settings::Settings for Recorded {
