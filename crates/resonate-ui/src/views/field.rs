@@ -82,6 +82,33 @@ impl Shown {
         }
     }
 
+    fn motion(self, motion: Motion) -> Motion {
+        match (self, motion) {
+            (Self::Masked, Motion::WordLeft) => Motion::Start,
+            (Self::Masked, Motion::WordRight) => Motion::End,
+            _ => motion,
+        }
+    }
+
+    fn offset_of(self, content: &str, utf16: usize) -> usize {
+        match self {
+            Self::Plainly => offset_of(content, utf16),
+            Self::Masked => content
+                .char_indices()
+                .nth(utf16)
+                .map_or(content.len(), |(at, _)| at),
+        }
+    }
+
+    fn utf16_of(self, content: &str, offset: usize) -> usize {
+        match self {
+            Self::Plainly => utf16_of(content, offset),
+            Self::Masked => content
+                .get(..offset)
+                .map_or_else(|| content.chars().count(), |before| before.chars().count()),
+        }
+    }
+
     fn content_at(self, content: &str, drawn: usize) -> usize {
         match self {
             Self::Plainly => drawn,
@@ -382,12 +409,24 @@ impl Field {
     }
 
     fn go(&mut self, motion: Motion, anchor: Anchor, cx: &mut Context<Self>) {
-        self.edit.go(motion, anchor);
+        self.edit.go(self.shown.motion(motion), anchor);
         self.touched(cx);
     }
 
     fn remove(&mut self, removal: Removal, cx: &mut Context<Self>) {
-        self.edit.remove(removal);
+        match (self.shown, removal) {
+            (Shown::Masked, Removal::WordBackward | Removal::WordForward) => {
+                if self.edit.selection().is_empty() {
+                    let toward = match removal {
+                        Removal::WordBackward => Motion::Start,
+                        _ => Motion::End,
+                    };
+                    self.edit.go(toward, Anchor::Extend);
+                }
+                self.edit.remove(Removal::Backward);
+            }
+            _ => self.edit.remove(removal),
+        }
         self.marked = None;
         self.touched(cx);
     }
@@ -456,7 +495,7 @@ impl Field {
         match event.click_count {
             0 | 1 if event.modifiers.shift => self.edit.select_to(at),
             0 | 1 => self.edit.move_to(at),
-            2 => self.edit.select(self.edit.word_at(at)),
+            2 => self.edit.select(self.word_selected_at(at)),
             _ => self.edit.select_all(),
         }
 
@@ -497,12 +536,21 @@ impl Field {
             .content_at(self.edit.content(), painted.line.closest_index_for_x(x))
     }
 
+    fn word_selected_at(&self, at: usize) -> Range<usize> {
+        match self.shown {
+            Shown::Plainly => self.edit.word_at(at),
+            Shown::Masked => 0..self.edit.content().len(),
+        }
+    }
+
     fn range_from_utf16(&self, range: &Range<usize>) -> Range<usize> {
-        offset_of(self.edit.content(), range.start)..offset_of(self.edit.content(), range.end)
+        let content = self.edit.content();
+        self.shown.offset_of(content, range.start)..self.shown.offset_of(content, range.end)
     }
 
     fn range_to_utf16(&self, range: &Range<usize>) -> Range<usize> {
-        utf16_of(self.edit.content(), range.start)..utf16_of(self.edit.content(), range.end)
+        let content = self.edit.content();
+        self.shown.utf16_of(content, range.start)..self.shown.utf16_of(content, range.end)
     }
 
     fn target_of(&self, range: Option<Range<usize>>) -> Range<usize> {
@@ -644,7 +692,10 @@ impl EntityInputHandler for Field {
     ) -> Option<String> {
         let range = self.range_from_utf16(&range);
         adjusted.replace(self.range_to_utf16(&range));
-        self.edit.content().get(range).map(str::to_owned)
+        self.edit
+            .content()
+            .get(range)
+            .map(|shown| self.shown.text(shown))
     }
 
     fn selected_text_range(
@@ -746,7 +797,10 @@ impl EntityInputHandler for Field {
     ) -> Option<usize> {
         let painted = self.painted.as_ref()?;
         painted.bounds.contains(&point).then_some(())?;
-        Some(utf16_of(self.edit.content(), self.index_at(point)))
+        Some(
+            self.shown
+                .utf16_of(self.edit.content(), self.index_at(point)),
+        )
     }
 }
 
@@ -1200,6 +1254,122 @@ mod tests {
         assert_eq!(Shown::Plainly.text(content), content);
         assert_eq!(Shown::Plainly.drawn_at(content, 3), 3);
         assert_eq!(Shown::Plainly.content_at(content, 3), 3);
+    }
+
+    fn asked_text(
+        field: &mut Field,
+        range: Range<usize>,
+        window: &mut Window,
+        cx: &mut Context<Field>,
+    ) -> (Option<String>, Option<Range<usize>>) {
+        let mut adjusted = None;
+        let text = field.text_for_range(range, &mut adjusted, window, cx);
+        (text, adjusted)
+    }
+
+    #[gpui::test]
+    fn a_masked_field_tells_the_input_method_marks_in_the_offsets_it_counts_them_by(
+        cx: &mut TestAppContext,
+    ) {
+        let _worn = crate::theme::alongside();
+        let secret = "pa😀s sé";
+        let field = cx.add_window(|window, cx| Field::new(|| "Token", window, cx).masked());
+
+        let (whole, middle, selection) = field
+            .update(cx, |field, window, cx| {
+                field.hold(secret.to_owned(), cx);
+                field.edit.select_all();
+                (
+                    asked_text(field, 0..100, window, cx),
+                    asked_text(field, 2..4, window, cx),
+                    field.selected_text_range(false, window, cx),
+                )
+            })
+            .unwrap();
+
+        assert_eq!(whole, (Some("•••••••".to_owned()), Some(0..7)));
+        assert_eq!(middle, (Some("••".to_owned()), Some(2..4)));
+        assert_eq!(selection.map(|selection| selection.range), Some(0..7));
+        assert!(
+            !whole
+                .0
+                .unwrap()
+                .chars()
+                .any(|letter| secret.contains(letter))
+        );
+    }
+
+    #[gpui::test]
+    fn a_masked_field_replaces_the_range_the_input_method_counted_in_marks(
+        cx: &mut TestAppContext,
+    ) {
+        let _worn = crate::theme::alongside();
+        let field = cx.add_window(|window, cx| Field::new(|| "Token", window, cx).masked());
+
+        let text = field
+            .update(cx, |field, window, cx| {
+                field.hold("a😀bc".to_owned(), cx);
+                field.replace_text_in_range(Some(1..3), "-", window, cx);
+                field.text().to_owned()
+            })
+            .unwrap();
+
+        assert_eq!(text, "a-c");
+    }
+
+    #[gpui::test]
+    fn a_plain_field_still_answers_the_input_method_with_its_text(cx: &mut TestAppContext) {
+        let _worn = crate::theme::alongside();
+        let field = cx.add_window(|window, cx| Field::new(|| "Search", window, cx));
+
+        let (whole, tail) = field
+            .update(cx, |field, window, cx| {
+                field.hold("a😀bc".to_owned(), cx);
+                (
+                    asked_text(field, 0..100, window, cx),
+                    asked_text(field, 3..4, window, cx),
+                )
+            })
+            .unwrap();
+
+        assert_eq!(whole, (Some("a😀bc".to_owned()), Some(0..5)));
+        assert_eq!(tail, (Some("b".to_owned()), Some(3..4)));
+    }
+
+    #[gpui::test]
+    fn a_masked_field_is_one_word_whatever_its_text_and_a_plain_one_is_not(
+        cx: &mut TestAppContext,
+    ) {
+        let _worn = crate::theme::alongside();
+        let secret = "one two three";
+        let masked = cx.add_window(|window, cx| Field::new(|| "Token", window, cx).masked());
+        let plain = cx.add_window(|window, cx| Field::new(|| "Search", window, cx));
+
+        let (picked, jumped, removed) = masked
+            .update(cx, |field, _, cx| {
+                field.hold(secret.to_owned(), cx);
+                let picked = field.word_selected_at(5);
+
+                field.edit.move_to(5);
+                field.go(Motion::WordRight, Anchor::Collapse, cx);
+                let jumped = field.edit.cursor();
+
+                field.edit.move_to(5);
+                field.remove(Removal::WordBackward, cx);
+                (picked, jumped, field.text().to_owned())
+            })
+            .unwrap();
+        let word = plain
+            .update(cx, |field, _, cx| {
+                field.hold(secret.to_owned(), cx);
+                field.word_selected_at(5)
+            })
+            .unwrap();
+
+        assert_eq!(picked, 0..secret.len());
+        assert_eq!(jumped, secret.len());
+        assert_eq!(removed, &secret[5..]);
+        assert_eq!(word, 4..7);
     }
 
     #[gpui::test]

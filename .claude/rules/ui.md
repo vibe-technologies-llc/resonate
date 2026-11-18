@@ -378,7 +378,8 @@ so `editing` sees it.
   (`last_fm_is_signed_in_to_by_allowing_it_on_its_own_page_and_no_password_is_asked`).
 - **A secret is drawn as marks.** `Field::masked` (Subsonic and Jellyfin password, TIDAL secret and token,
   AcoustID/AudD/ListenBrainz keys, the MetaBrainz token, Last.fm key and secret) shapes one `•` per letter; `Shown`
-  maps every offset both ways; copies and cuts nothing.
+  maps every offset both ways; copies and cuts nothing. The input method is told marks too: `text_for_range` answers a `•` per letter and every UTF-16 range it sends or is sent counts marks (`Shown::offset_of`, `Shown::utf16_of`), and a masked field is one word (`Shown::motion`, `Field::word_selected_at`: a double click selects all, word motions and word deletions go to an end), so neither the letters nor their boundaries reach an IME or a plugin
+  (`a_masked_field_tells_the_input_method_marks_in_the_offsets_it_counts_them_by`).
 - **The caret blinks as the desktop says.** `CaretBlink` on `Stored` and `ResonateApp` (`as_built`
   500 ms; `steady` holds it lit); every field's blink task rereads it each tick. The binary's
   `caret_as_the_desktop_blinks` asks on a `resonate-caret` thread via
