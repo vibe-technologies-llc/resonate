@@ -497,6 +497,7 @@ impl TagSink for FileTags {
             false => named.to_path_buf(),
         };
         let path = resolved.as_path();
+        mend_what_dead_writers_left(path);
         let taken = Taken::of(path).map_err(|source| Error::Io {
             location: location.clone(),
             source,
@@ -1405,14 +1406,17 @@ fn moved(file: &File, from: u64, to: u64) -> io::Result<()> {
     file.set_len(length - (from - to))
 }
 
+fn mend_what_dead_writers_left(path: &Path) {
+    mend_what_a_dead_writer_left(path);
+    mend_what_was_left_in(&crate::spool::mended_under());
+    sweep_what_a_dead_writer_staged(path);
+}
+
 fn landed<L: Lands>(path: &Path, location: &MediaLocation, saving: &L) -> Result<()> {
     let unread = |source| Error::Io {
         location: location.clone(),
         source,
     };
-    mend_what_a_dead_writer_left(path);
-    mend_what_was_left_in(&crate::spool::mended_under());
-    sweep_what_a_dead_writer_staged(path);
     match cloned_beside(path) {
         Ok(Some(staged)) => return landed_through(&staged, path, location, saving),
         Ok(None) => {}
@@ -1998,6 +2002,7 @@ mod tests {
     use crate::{
         ImageFormat, Pictured,
         insert::{Copying, Refusing},
+        journal::WHOLE_SUFFIX,
         left_alone::left_long_ago,
     };
 
@@ -2136,6 +2141,69 @@ mod tests {
 
         assert!(!left.exists(), "a dead writer's copy was left");
         assert!(track.exists(), "the track was swept");
+    }
+
+    fn left_whole_by_a_dead_writer(track: &Path, whole: &[u8]) -> PathBuf {
+        const NEVER_A_PROCESS: u32 = 999_999_999;
+
+        let name = track.file_name().expect("a named track").to_string_lossy();
+        let copy = track.with_file_name(format!(".{name}.{NEVER_A_PROCESS}-0{WHOLE_SUFFIX}"));
+
+        fs::write(&copy, whole).expect("a whole copy");
+        left_long_ago(&copy);
+        copy
+    }
+
+    #[test]
+    fn the_first_write_after_a_crash_finishes_what_the_dead_writer_left_and_then_lands() {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.wav", &wave_with(&[(b"INAM", "Ech")]));
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let copy = left_whole_by_a_dead_writer(&path, &wave());
+        let tags = FileTags::default();
+
+        let written = tags.write(&location, just(&[edited(TagField::Artist, "Pink Floyd")]));
+        let read = tags
+            .read(&location, Picturing::Whether)
+            .expect("a readable WAVE")
+            .tags;
+
+        written.expect("the track mended and then written");
+        assert!(!copy.exists(), "the dead writer's whole copy was left");
+        assert_eq!(TagField::Artist.read(&read).as_deref(), Some("Pink Floyd"));
+        assert_eq!(TagField::Title.read(&read), None);
+    }
+
+    #[test]
+    fn the_first_write_after_a_crash_finishes_a_wave_behind_an_id3_tag_before_moving_the_tag_in() {
+        const TORN: u8 = 0xa5;
+        const TORN_RUN: usize = 64;
+
+        let folder = Folder::new();
+        let whole = a_wave_behind_an_id3_tag(0);
+        let mut torn = whole.clone();
+        torn.extend_from_slice(&[TORN; TORN_RUN]);
+        let location = folder.holding("echoes.wav", &torn);
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let copy = left_whole_by_a_dead_writer(&path, &whole);
+        let tags = FileTags::default();
+
+        let written = tags.write(&location, just(&[edited(TagField::Title, "Echoes")]));
+        let rewritten = fs::read(&path).expect("the file");
+        let read = tags
+            .read(&location, Picturing::Whether)
+            .expect("a readable WAVE")
+            .tags;
+
+        written.expect("the track mended and then written");
+        assert!(!copy.exists(), "the dead writer's whole copy was left");
+        assert!(
+            !rewritten
+                .windows(TORN_RUN)
+                .any(|window| window.iter().all(|byte| *byte == TORN)),
+            "the bytes the dead writer tore were kept"
+        );
+        assert_eq!(TagField::Title.read(&read).as_deref(), Some("Echoes"));
     }
 
     fn aiff() -> Vec<u8> {

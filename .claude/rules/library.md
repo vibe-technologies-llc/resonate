@@ -1658,7 +1658,13 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `an_undo_kept_under_the_spool_by_another_user_is_not_rolled_back`,
   `an_undo_kept_under_the_spool_naming_another_track_than_its_name_writes_nothing`). A dead
   writer's journal is mended by the next write to that track and by the scan, which looks in each
-  folder before reading a file there: a length between the two and every byte
+  folder before reading a file there. **A write mends before it stamps and reads:**
+  `FileTags::write` runs `mend_what_dead_writers_left` (the track's journal and whole copies, the
+  spool's, a dead writer's staging) before `Taken` stamps the track and before anything reads it,
+  on every path (the `id3 ` rechunk and Matroska too), so the mend never moves the stamp the write
+  is weighed against nor leaves a dead writer's copy standing beside the track it just rewrote
+  (`the_first_write_after_a_crash_finishes_what_the_dead_writer_left_and_then_lands`,
+  `the_first_write_after_a_crash_finishes_a_wave_behind_an_id3_tag_before_moving_the_tag_in`). A journal is weighed thus: a length between the two and every byte
   the journal's before or after (a byte past the file's end is not counted) → rolled back, unless
   all after; other length or bytes is another program's, left alone. **A shifted journal is
   carried on, not rolled back:** at the old length with the old head the file is untouched; at the

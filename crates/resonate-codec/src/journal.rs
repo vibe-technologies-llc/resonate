@@ -18,7 +18,7 @@ use resonate_core::{
 const MAGIC: &[u8; 8] = b"RSUNDO01";
 const AWAY_UNDO_MAGIC: &[u8; 8] = b"RSUNDA01";
 const JOURNAL_SUFFIX: &str = ".resonate-undo";
-const WHOLE_SUFFIX: &str = ".resonate-whole";
+pub(crate) const WHOLE_SUFFIX: &str = ".resonate-whole";
 const TORN_SUFFIX: &str = ".resonate-torn";
 const STAGED_ELSEWHERE_SUFFIX: &str = ".resonate-staged";
 const KEPT_BY_AND_COUNTED: char = '-';
