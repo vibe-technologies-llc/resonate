@@ -163,6 +163,28 @@ cannot compact it away. Whoever finds a seat moves without noticing, and whoever
 link included, keeps their copy as their own list (`shared_unflag`)
 (`removing_someone_moves_everyone_else_and_leaves_them_only_the_copy_they_held`).
 
+**The seats are read after the space is caught up**: `reset_once` opens the session, reads every
+record to the `Welcome`'s head (`caught_up`) and only then seals a seat for each person the list
+holds, so someone who joined since this device last read the list keeps theirs, and the songs heard
+on the way reach the catalog (`written_if`)
+(`a_reset_seats_someone_who_joined_since_this_device_last_read_the_list`). A join reaching the server
+between that read and the `Close` (one round trip) is as one made after the reset: its link is
+already spent.
+
+**A reset knows its own close by its bytes.** The server keeps the first `Close` and answers a later
+one with that first word (`Closing::Before`), and a space already closed says so after its records
+before any `Close` is sent, so the first `Closed` a reset hears may be an earlier reset's. The word
+sealed here holds seats sealed to one-time keys, so only this reset's own `Closed` is byte for byte
+the word it sent; no wire field is needed and an older server answers the same. Any other word
+(heard while catching up, or answering the `Close`) means an earlier reset won: `followed` takes it
+as every member does, applying a `Left` for each person this device holds whom it left out (the
+people that reset removed, so they are not seated again from a list that still names them), moves
+to its space, and the reset begins again there, catching up and closing that space with the person
+asked removed. After `RESETS_OVERTAKEN_AT_MOST` (4) spaces in a row closed under it the reset fails
+`Error::ResetOvertaken`; an earlier word that seats nobody here leaves the copy as removal does and
+fails `Refused::Unavailable`. It never stops in an older reset's space
+(`a_reset_meeting_an_earlier_reset_follows_it_and_still_removes_whom_it_was_asked_to`).
+
 ## The service
 
 **No session is held open** (`shared/service.rs`): one thread, `Heads` every five minutes and every five

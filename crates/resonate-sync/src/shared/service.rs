@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::PathBuf,
     sync::{Arc, mpsc as blocking},
     thread::{self, JoinHandle},
@@ -63,6 +63,8 @@ const COMPACT_PAST_RECORDS: u64 = 512;
 const COMPACT_PAST_BYTES: u64 = 4 * 1024 * 1024;
 
 const CLOSES_BEFORE_ANSWER_FOR_TOO_OLD: u32 = 3;
+
+const RESETS_OVERTAKEN_AT_MOST: usize = 4;
 
 const LARGEST_BUNDLE: usize = LARGEST_RECORD / 2;
 
@@ -1020,35 +1022,12 @@ impl Running {
             let Some(frame) = frame else {
                 break;
             };
-            match FromServer::decoded(&frame)? {
-                FromServer::Welcome { head, .. } => {
-                    if head < self.lists[at].cursor {
-                        let kept = &mut self.lists[at];
-                        kept.cursor = 0;
-                        let whole = kept.list.as_ops();
-                        kept.owed.clear();
-                        owed_more(kept, whole);
-                    }
-                    target = Some(head);
-                }
-                FromServer::Snapshot { through, parts } => {
-                    for part in &parts {
-                        changed |= self.heard_a_record(at, &keys, part)?;
-                    }
-                    let kept = &mut self.lists[at];
-                    kept.cursor = through;
-                    kept.records_since = 0;
-                    kept.bytes_since = 0;
-                }
-                FromServer::Records { entries } => {
-                    changed |= self.heard_records(at, &keys, entries)?;
-                }
-                FromServer::Closed { sealed } => {
+            match self.heard_in_a_session(at, &keys, FromServer::decoded(&frame)?, &mut target)? {
+                Heard::Read { changed: read } => changed |= read,
+                Heard::Closed(sealed) => {
                     heard_closed = Some(sealed);
                     break;
                 }
-                FromServer::Refused(refusal) => return Err(Error::Refused(refusal)),
-                _ => {}
             }
         }
 
@@ -1083,6 +1062,45 @@ impl Running {
         }
 
         Ok(())
+    }
+
+    fn heard_in_a_session(
+        &mut self,
+        at: usize,
+        keys: &crate::shared::SharedKeys,
+        frame: FromServer,
+        target: &mut Option<u64>,
+    ) -> Result<Heard> {
+        let changed = match frame {
+            FromServer::Welcome { head, .. } => {
+                if head < self.lists[at].cursor {
+                    let kept = &mut self.lists[at];
+                    kept.cursor = 0;
+                    let whole = kept.list.as_ops();
+                    kept.owed.clear();
+                    owed_more(kept, whole);
+                }
+                *target = Some(head);
+                false
+            }
+            FromServer::Snapshot { through, parts } => {
+                let mut changed = false;
+                for part in &parts {
+                    changed |= self.heard_a_record(at, keys, part)?;
+                }
+                let kept = &mut self.lists[at];
+                kept.cursor = through;
+                kept.records_since = 0;
+                kept.bytes_since = 0;
+                changed
+            }
+            FromServer::Records { entries } => self.heard_records(at, keys, entries)?,
+            FromServer::Closed { sealed } => return Ok(Heard::Closed(sealed)),
+            FromServer::Refused(refusal) => return Err(Error::Refused(refusal)),
+            _ => false,
+        };
+
+        Ok(Heard::Read { changed })
     }
 
     fn heard_records(
@@ -1266,10 +1284,7 @@ impl Running {
         keys: &crate::shared::SharedKeys,
         sealed_seats: &[u8],
     ) -> Result<Option<SpaceId>> {
-        let seats = opened(&keys.sealer, keys.space, sealed_seats, LARGEST_SEATS_OPENED)
-            .ok()
-            .and_then(|plain| decoded_seats(&plain).ok())
-            .unwrap_or_default();
+        let seats = seats_in(keys, sealed_seats);
         let me = self.lists[at].me.clone();
         let mine = seats.iter().find(|seat| seat.member == me.member);
 
@@ -1314,6 +1329,26 @@ impl Running {
     }
 
     async fn reset(&mut self, space: SpaceId, removing: Option<MemberId>) -> Result<Invites> {
+        let mut space = space;
+        for _ in 0..RESETS_OVERTAKEN_AT_MOST {
+            match self.reset_once(space, removing).await? {
+                Reset::Made(moved) => {
+                    let Some(kept) = self.lists.iter().find(|kept| kept.space == moved) else {
+                        return Err(Error::Catalog(Refused::Unavailable));
+                    };
+                    return invites_of(
+                        &kept.access,
+                        self.named_in_a_link(kept.server.as_ref()).as_deref(),
+                    );
+                }
+                Reset::Overtaken(followed) => space = followed,
+            }
+        }
+
+        Err(Error::ResetOvertaken)
+    }
+
+    async fn reset_once(&mut self, space: SpaceId, removing: Option<MemberId>) -> Result<Reset> {
         let Some(at) = self.lists.iter().position(|kept| kept.space == space) else {
             return Err(Error::Catalog(Refused::NotHere));
         };
@@ -1323,30 +1358,13 @@ impl Running {
         let address = self
             .address_of(&self.lists[at])
             .ok_or(Error::SharedNeedsAServer)?;
-
         let old_keys = self.lists[at].access.keys()?;
-        let fresh = Access::minted()?;
-        let mut seats: Vec<Seat> = Vec::new();
-        for (member, person) in self.lists[at].list.people() {
-            if Some(member) != removing {
-                seats.push(seat_for(member, &person.public, &fresh)?);
-            }
-        }
-        if !seats.iter().any(|seat| seat.member == self.me.member) {
-            seats.push(seat_for(
-                self.me.member,
-                &self.me.personal.public(),
-                &fresh,
-            )?);
-        }
-        let told = sealed(&old_keys.sealer, old_keys.space, &encoded_seats(&seats))?;
-
-        let (mut send, mut recv) = self.reached(&address).await?;
-        let device = self.lists[at].device;
-        let after = self.lists[at].cursor;
         let Some(token) = old_keys.write_token.clone() else {
             return Err(Error::Catalog(Refused::Unwritable));
         };
+        let device = self.lists[at].device;
+
+        let (mut send, mut recv) = self.reached(&address).await?;
         send.send(
             &ToServer::Share {
                 version: PROTOCOL_VERSION,
@@ -1354,46 +1372,143 @@ impl Running {
                 token,
                 viewer: old_keys.read_token.digest(),
                 device,
-                after,
+                after: self.lists[at].cursor,
             }
             .encoded(),
         )
         .await?;
-        send.send(&ToServer::Close { sealed: told }.encoded())
-            .await?;
+        let mut changed = false;
+        if let Some(earlier) = self
+            .caught_up(at, &old_keys, &mut recv, &mut changed)
+            .await?
+        {
+            send.finish().await;
+            self.written_if(at, changed)?;
+            return self.followed(at, &old_keys, &earlier).map(Reset::Overtaken);
+        }
 
-        let kept_word = loop {
+        let told = sealed(
+            &old_keys.sealer,
+            old_keys.space,
+            &encoded_seats(&self.seats_after(at, removing)?),
+        )?;
+        send.send(
+            &ToServer::Close {
+                sealed: told.clone(),
+            }
+            .encoded(),
+        )
+        .await?;
+        let mut target = None;
+        let word = loop {
             let frame = within(async { recv.read().await }).await?;
             let Some(frame) = frame else {
                 return Err(Error::ServerSilent);
             };
-            match FromServer::decoded(&frame)? {
-                FromServer::Closed { sealed } => break sealed,
-                FromServer::Refused(refusal) => return Err(Error::Refused(refusal)),
-                _ => {}
+            match self.heard_in_a_session(
+                at,
+                &old_keys,
+                FromServer::decoded(&frame)?,
+                &mut target,
+            )? {
+                Heard::Read { changed: read } => changed |= read,
+                Heard::Closed(word) => break word,
             }
         };
         send.finish().await;
 
+        self.written_if(at, changed)?;
+        if word != told {
+            return self.followed(at, &old_keys, &word).map(Reset::Overtaken);
+        }
         if let Some(removing) = removing {
             let stamp = self.clock.now(device);
-            let op = SharedOp::Left {
+            self.lists[at].list.apply(&SharedOp::Left {
                 member: removing,
                 stamp,
-            };
-            self.lists[at].list.apply(&op);
+            });
         }
-        let Some(moved) = self.heard_it_closed(at, &old_keys, &kept_word)? else {
-            return Err(Error::Catalog(Refused::Unavailable));
-        };
-        let Some(kept) = self.lists.iter().find(|kept| kept.space == moved) else {
-            return Err(Error::Catalog(Refused::Unavailable));
-        };
+        match self.heard_it_closed(at, &old_keys, &word)? {
+            Some(moved) => Ok(Reset::Made(moved)),
+            None => Err(Error::Catalog(Refused::Unavailable)),
+        }
+    }
 
-        invites_of(
-            &kept.access,
-            self.named_in_a_link(kept.server.as_ref()).as_deref(),
-        )
+    async fn caught_up(
+        &mut self,
+        at: usize,
+        keys: &crate::shared::SharedKeys,
+        recv: &mut Incoming,
+        changed: &mut bool,
+    ) -> Result<Option<Vec<u8>>> {
+        let mut target = None;
+        loop {
+            if target.is_some_and(|target| self.lists[at].cursor >= target) {
+                return Ok(None);
+            }
+            let frame = within(async { recv.read().await }).await?;
+            let Some(frame) = frame else {
+                return Err(Error::ServerSilent);
+            };
+            match self.heard_in_a_session(at, keys, FromServer::decoded(&frame)?, &mut target)? {
+                Heard::Read { changed: read } => *changed |= read,
+                Heard::Closed(word) => return Ok(Some(word)),
+            }
+        }
+    }
+
+    fn written_if(&mut self, at: usize, changed: bool) -> Result<()> {
+        if changed && !self.lists[at].leaving {
+            self.materialised(at)?;
+        }
+
+        Ok(())
+    }
+
+    fn seats_after(&self, at: usize, removing: Option<MemberId>) -> Result<Vec<Seat>> {
+        let kept = &self.lists[at];
+        let fresh = Access::minted()?;
+        let mut seats: Vec<Seat> = Vec::new();
+        for (member, person) in kept.list.people() {
+            if Some(member) != removing {
+                seats.push(seat_for(member, &person.public, &fresh)?);
+            }
+        }
+        if !seats.iter().any(|seat| seat.member == kept.me.member) {
+            seats.push(seat_for(
+                kept.me.member,
+                &kept.me.personal.public(),
+                &fresh,
+            )?);
+        }
+
+        Ok(seats)
+    }
+
+    fn followed(
+        &mut self,
+        at: usize,
+        keys: &crate::shared::SharedKeys,
+        earlier: &[u8],
+    ) -> Result<SpaceId> {
+        let seated: BTreeSet<MemberId> = seats_in(keys, earlier)
+            .into_iter()
+            .map(|seat| seat.member)
+            .collect();
+        let left_out: Vec<MemberId> = self.lists[at]
+            .list
+            .people()
+            .map(|(member, _)| member)
+            .filter(|member| !seated.contains(member))
+            .collect();
+        let device = self.lists[at].device;
+        for member in left_out {
+            let stamp = self.clock.now(device);
+            self.lists[at].list.apply(&SharedOp::Left { member, stamp });
+        }
+
+        self.heard_it_closed(at, keys, earlier)?
+            .ok_or(Error::Catalog(Refused::Unavailable))
     }
 
     fn named_in_a_link(&self, kept_on: Option<&String>) -> Option<String> {
@@ -1449,6 +1564,23 @@ impl Running {
         *self.shown.write() = shown;
         *self.held.write() = held_of(&self.lists);
     }
+}
+
+enum Heard {
+    Read { changed: bool },
+    Closed(Vec<u8>),
+}
+
+enum Reset {
+    Made(SpaceId),
+    Overtaken(SpaceId),
+}
+
+fn seats_in(keys: &crate::shared::SharedKeys, sealed_seats: &[u8]) -> Vec<Seat> {
+    opened(&keys.sealer, keys.space, sealed_seats, LARGEST_SEATS_OPENED)
+        .ok()
+        .and_then(|plain| decoded_seats(&plain).ok())
+        .unwrap_or_default()
 }
 
 fn held_of(lists: &[Kept]) -> Vec<HeldShare> {

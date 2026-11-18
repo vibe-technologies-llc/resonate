@@ -202,6 +202,9 @@ pub enum Error {
     #[error("the server did not answer in time")]
     ServerSilent,
 
+    #[error("every reset of a shared playlist tried here was overtaken by another member's")]
+    ResetOvertaken,
+
     #[error("the server holds this space afresh, behind what this device read")]
     SpaceMadeAnew,
 

@@ -18,7 +18,9 @@ use resonate_server::{Allowance, Limits, Server, Store};
 use resonate_sync::{
     LocalPlaylistId, Refused, Server as Reached, SyncKey,
     party::PartyKey,
-    shared::{LocalShared, Shared, SharedCatalog, SharedSettings, SharedShown, SharedStanding},
+    shared::{
+        LocalShared, MemberId, Shared, SharedCatalog, SharedSettings, SharedShown, SharedStanding,
+    },
     wire::{FromServer, LARGEST_FRAME, LONGEST_TEXT, Record, Refusal, SpaceHead, ToServer},
 };
 use serde_json::json;
@@ -729,6 +731,123 @@ fn removing_someone_moves_everyone_else_and_leaves_them_only_the_copy_they_held(
         Some(vec!["One".to_owned()]),
         "someone removed heard an edit made after"
     );
+}
+
+fn joined_by_edit_link(hosted: &Hosted, name: &str, edit: &str) -> Person {
+    let person = hosted.person(name, Shelf::default());
+    person.shared.join(&code_in(edit), None).expect("joined");
+    eventually("the copy arriving", &person, || {
+        shown_on(&person)
+            .first()
+            .and_then(|shown| shown.at)
+            .is_some()
+    });
+
+    person
+}
+
+fn member_of(person: &Person) -> MemberId {
+    shown_on(person)[0]
+        .people
+        .iter()
+        .find(|shown| shown.me)
+        .map(|shown| shown.member)
+        .expect("the person on their own list")
+}
+
+fn names_on(person: &Person) -> Vec<String> {
+    let mut names: Vec<String> = shown_on(person)[0]
+        .people
+        .iter()
+        .map(|shown| shown.name.clone())
+        .collect();
+    names.sort();
+
+    names
+}
+
+#[test]
+fn a_reset_seats_someone_who_joined_since_this_device_last_read_the_list() {
+    let hosted = hosted("reset-joined-since");
+    let ada = hosted.person("Ada", Shelf::default());
+    let list = ada.shelf.made("Mix", &["One"]);
+    let invites = ada.shared.share(list).expect("shared");
+    let edit = invites.edit.expect("an edit link");
+
+    let ben = joined_by_edit_link(&hosted, "Ben", &edit);
+    let bens = local_of(&ben);
+    ben.shelf.edit(bens, &["One", "Two"]);
+    let viewer = hosted.person("Viewer", Shelf::default());
+    viewer
+        .shared
+        .join(&code_in(&invites.view), None)
+        .expect("joined");
+    eventually("Ben's song reaching the server", &viewer, || {
+        let copy = shown_on(&viewer).first().and_then(|shown| shown.at);
+        copy.and_then(|copy| viewer.shelf.titles_of(copy))
+            == Some(vec!["One".to_owned(), "Two".to_owned()])
+    });
+
+    let space = shown_on(&ada)[0].space;
+    ada.shared.reset(space, None).expect("reset");
+    let fresh = shown_on(&ada)[0].space;
+
+    assert_ne!(fresh, space);
+    assert_eq!(names_on(&ada), ["Ada", "Ben"]);
+    assert_eq!(
+        ada.shelf.titles_of(list),
+        Some(vec!["One".to_owned(), "Two".to_owned()]),
+        "a song heard while resetting reached the catalog"
+    );
+    eventually("Ben moving to the new list", &ben, || {
+        shown_on(&ben).first().map(|shown| shown.space) == Some(fresh)
+    });
+}
+
+#[test]
+fn a_reset_meeting_an_earlier_reset_follows_it_and_still_removes_whom_it_was_asked_to() {
+    let hosted = hosted("reset-overtaken");
+    let ada = hosted.person("Ada", Shelf::default());
+    let list = ada.shelf.made("Mix", &["One"]);
+    let invites = ada.shared.share(list).expect("shared");
+    let edit = invites.edit.expect("an edit link");
+    let space = shown_on(&ada)[0].space;
+
+    let ben = joined_by_edit_link(&hosted, "Ben", &edit);
+    let cal = joined_by_edit_link(&hosted, "Cal", &edit);
+    let dan = joined_by_edit_link(&hosted, "Dan", &edit);
+    let eve = joined_by_edit_link(&hosted, "Eve", &edit);
+    eventually("Cal seeing everyone", &cal, || {
+        shown_on(&cal)[0].people.len() == 5
+    });
+
+    let bens = member_of(&ben);
+    let dans = member_of(&dan);
+    cal.shared.reset(space, Some(bens)).expect("Cal's reset");
+    let cals_space = shown_on(&cal)[0].space;
+    ada.shared.reset(space, Some(dans)).expect("Ada's reset");
+    let adas_space = shown_on(&ada)[0].space;
+
+    assert_ne!(cals_space, space);
+    assert_ne!(adas_space, space);
+    assert_ne!(
+        adas_space, cals_space,
+        "Ada followed Cal's reset and stopped there"
+    );
+    assert_eq!(names_on(&ada), ["Ada", "Cal", "Eve"]);
+
+    eventually("Dan finding himself out", &dan, || {
+        shown_on(&dan).is_empty()
+    });
+    eventually("Ben finding himself out", &ben, || {
+        shown_on(&ben).is_empty()
+    });
+    eventually("Cal moving on to Ada's list", &cal, || {
+        shown_on(&cal).first().map(|shown| shown.space) == Some(adas_space)
+    });
+    eventually("Eve moving on to Ada's list", &eve, || {
+        shown_on(&eve).first().map(|shown| shown.space) == Some(adas_space)
+    });
 }
 
 #[test]
