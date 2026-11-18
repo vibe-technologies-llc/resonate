@@ -349,13 +349,16 @@ impl Shelves {
             .take(page.most as usize)
             .copied()
             .collect();
-        let mut read: HashMap<TrackId, Track> = self
+        let read: HashMap<TrackId, Track> = self
             .library
             .tracks_with_ids(&wanted)?
             .into_iter()
             .map(|track| (track.id, track))
             .collect();
-        let rows: Vec<Track> = wanted.iter().filter_map(|id| read.remove(id)).collect();
+        let rows: Vec<Track> = wanted
+            .iter()
+            .filter_map(|id| read.get(id).cloned())
+            .collect();
         Ok(Some(Shelved {
             held: self.songs_of(&rows)?,
             total: u32::try_from(listed.len()).unwrap_or(u32::MAX),
@@ -1999,6 +2002,61 @@ mod tests {
             searched_as(&Query::Everything, song_column, Denials::Read),
             Some(None)
         );
+    }
+
+    #[test]
+    fn a_playlist_that_names_a_song_twice_pages_every_row_it_counts() {
+        let root = scratch("offered-repeat");
+        for (file, title) in [("a.wav", "Alpha"), ("b.wav", "Bravo")] {
+            fs::write(
+                root.join(file),
+                tagged_wave(&[(TITLE, title), (ARTIST, "Band"), (ALBUM, "Record")]),
+            )
+            .expect("a song");
+        }
+        let library = Arc::new(scanned(&root));
+        let shelves = Shelves::over(Arc::clone(&library));
+
+        let rows = library.tracks(&TrackQuery::default()).expect("the rows");
+        let row = |title: &str| {
+            rows.iter()
+                .find(|track| track.title == title)
+                .expect("a song")
+        };
+        let mix = library.create_playlist("Twice").expect("a playlist");
+        library
+            .add_to_playlist(
+                mix,
+                &["Alpha", "Bravo", "Alpha"].map(|title| Cut::of(row(title))),
+            )
+            .expect("listed");
+
+        let titles_of = |page: Page| {
+            let shelved = shelves
+                .shelved(Shelf::Playlist(mix), page)
+                .expect("a page")
+                .expect("the shelf");
+            let titles: Vec<String> = shelved
+                .held
+                .into_iter()
+                .filter_map(|entry| match entry {
+                    Entry::Song(song) => Some(song.title),
+                    Entry::Shelf(_) => None,
+                })
+                .collect();
+            (titles, shelved.total)
+        };
+        let whole = titles_of(Page::first(10));
+        let first_page = titles_of(Page { from: 0, most: 2 });
+        let second_page = titles_of(Page { from: 2, most: 2 });
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(
+            whole,
+            (vec!["Alpha".into(), "Bravo".into(), "Alpha".into()], 3)
+        );
+        assert_eq!(first_page, (vec!["Alpha".into(), "Bravo".into()], 3));
+        assert_eq!(second_page, (vec!["Alpha".into()], 3));
     }
 
     fn kept_udn_within(folder: &Path) -> io::Result<Udn> {
