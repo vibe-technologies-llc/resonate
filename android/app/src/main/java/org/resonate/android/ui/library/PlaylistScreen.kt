@@ -109,7 +109,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
     var adding by rememberSaveable { mutableStateOf(false) }
     var deleting by rememberSaveable { mutableStateOf(false) }
     var sharing by rememberSaveable { mutableStateOf(false) }
-    var replacingLossy by rememberSaveable { mutableStateOf(false) }
+    var findingHigher by rememberSaveable { mutableStateOf(false) }
     val shared by model.shared.collectAsStateWithLifecycle()
     val followed = playlist?.followed == true
     val mayEdit = TogetherWords.mayEdit(shared, followed)
@@ -185,7 +185,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
                                 }
                             },
                         onUndo = model::undo,
-                        onReplaceLossy = { replacingLossy = true },
+                        onFindHigher = { findingHigher = true },
                         onKeep = model::keep,
                         onFetch = model::fetch,
                         link = link,
@@ -302,7 +302,7 @@ fun PlaylistScreen(screen: Screen.Playlist) {
             }
         }
     }
-    if (replacingLossy) LossySongsSheet(screen.id, name) { replacingLossy = false }
+    if (findingHigher) HigherVersionsSheet(screen.id, name) { findingHigher = false }
     if (sharing) SharingSheet(screen.id, name, sharedHere = playlist?.shared == true) { sharing = false }
     if (adding) {
         AddSongsSheet(
@@ -424,7 +424,7 @@ private fun playlistMenu(
     onRename: () -> Unit,
     onEditSearch: (() -> Unit)?,
     onUndo: () -> Unit,
-    onReplaceLossy: () -> Unit,
+    onFindHigher: () -> Unit,
     onKeep: (Boolean) -> Unit,
     onFetch: (org.resonate.android.nativecore.SyncedDevice) -> Unit,
     link: PlaylistLinkInfo?,
@@ -474,9 +474,9 @@ private fun playlistMenu(
                 if (fills) null
                 else
                     MenuEntry.Action(
-                        words.string(R.string.lossy_replace_menu),
+                        words.string(R.string.higher_menu),
                         Icons.Rounded.HighQuality,
-                        run = onReplaceLossy,
+                        run = onFindHigher,
                     ),
             ),
         if (sync == null) emptyList()

@@ -580,6 +580,9 @@ struct SongPages: View {
         Button("song.find-another-version", systemImage: "arrow.left.arrow.right") {
             navigation.findVersions(track)
         }
+        if library.features.withVariants.contains(track.id) {
+            Button("song.variants", systemImage: "square.stack.3d.up") { navigation.chooseVariant(track) }
+        }
         if library.features.tagsWritable(track) {
             Button("song.edit-tags", systemImage: "pencil") { navigation.editTags([track]) }
         }

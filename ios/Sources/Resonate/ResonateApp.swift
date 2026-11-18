@@ -62,6 +62,7 @@ final class Navigation {
     var listening = false
     var tagging: TagEditing?
     var versioning: VersionsOf?
+    var choosingVariant: VersionsOf?
     var deleting: SongsToDelete?
     var addingToPlaylist: PickedTracks?
     private(set) var queuedFelt = 0
@@ -70,6 +71,7 @@ final class Navigation {
     private(set) var selectedFelt = 0
     @ObservationIgnored private var taggingAfterPlayer: TagEditing?
     @ObservationIgnored private var versioningAfterPlayer: VersionsOf?
+    @ObservationIgnored private var variantsAfterPlayer: VersionsOf?
     var libraryShelf = LibraryShelf.songs
 
     func addToPlaylist(_ tracks: [Track]) {
@@ -122,10 +124,24 @@ final class Navigation {
         nowPlaying = false
     }
 
+    func chooseVariant(_ track: Track) {
+        let choosing = VersionsOf(track: track)
+        guard nowPlaying else {
+            choosingVariant = choosing
+            return
+        }
+        variantsAfterPlayer = choosing
+        nowPlaying = false
+    }
+
     func playerClosed() {
         if let waiting = versioningAfterPlayer {
             versioningAfterPlayer = nil
             versioning = waiting
+        }
+        if let waiting = variantsAfterPlayer {
+            variantsAfterPlayer = nil
+            choosingVariant = waiting
         }
         guard let waiting = taggingAfterPlayer else { return }
         taggingAfterPlayer = nil
@@ -298,6 +314,11 @@ struct RootView: View {
                 .sheetSized()
                 .presentationDetents([.medium, .large])
         }
+        .sheet(item: $navigation.choosingVariant) { choosing in
+            VariantsSheet(track: choosing.track)
+                .sheetSized()
+                .presentationDetents([.medium, .large])
+        }
         .modifier(SharingSheet(insidePlayer: false))
         .modifier(PairingOffer(insidePlayer: false))
         .modifier(PartyOffer(insidePlayer: false))
@@ -336,6 +357,7 @@ struct RootView: View {
             navigation.choosingFolder = false
             navigation.tagging = nil
             navigation.versioning = nil
+            navigation.choosingVariant = nil
             library.features.sharing = nil
         }
         .environment(navigation)

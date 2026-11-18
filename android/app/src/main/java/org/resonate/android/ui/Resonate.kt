@@ -156,8 +156,6 @@ class Resonate(val library: LibraryRepository, val playback: Playback, val host:
     suspend fun deleteCopies(sets: List<org.resonate.android.nativecore.IdenticalSongs>) =
         features.deleteCopies(sets, host::confirmDelete)
 
-    suspend fun replaceLossySongs(ids: List<ULong>) = features.replaceLossySongs(ids, host::confirmDelete)
-
     fun forceSync(scope: CoroutineScope): Job {
         syncAskedAt.value = SystemClock.elapsedRealtime()
         return attempt(scope) { native -> withContext(Dispatchers.IO) { native.syncForce() } }

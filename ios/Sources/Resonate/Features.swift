@@ -216,6 +216,7 @@ final class Features {
     @ObservationIgnored private(set) var unmetered = false
     @ObservationIgnored private var connection = ConnectionMeter.unknown
     @ObservationIgnored private var artRevision: UInt64?
+    var withVariants: Set<UInt64> = []
     @ObservationIgnored var foreground = true {
         didSet {
             guard foreground != oldValue else { return }
@@ -296,9 +297,68 @@ final class Features {
 
     func chooseVersion(_ track: Track, _ version: SongVersion) {
         let id = track.id
+        work { [weak self] _ in
+            guard let self else { return }
+            let chosen = try await self.serverAnswer { try $0.chooseVersion(id: id, version: version) }
+            if let download = chosen.download {
+                await self.downloadVersions([download])
+            } else {
+                self.library.play([track], at: 0)
+            }
+            self.rereadVariants()
+            self.library.notice(chosen.said)
+        }
+    }
+
+    func downloadVersions(_ songs: [SearchSong]) async {
+        await rereadWanted()
+        downloads.wantsChanged()
+        downloads.enqueue(songs)
+    }
+
+    func keepHigherVersions(_ picked: [HigherVersionPicked]) async {
+        do {
+            let kept = try await serverAnswer { try $0.keepHigherVersions(picked: picked) }
+            if !kept.downloading.isEmpty { await downloadVersions(kept.downloading) }
+            rereadVariants()
+            library.notice(
+                HigherVersionRows.told(
+                    HigherKept(
+                        chosen: Int(kept.chosen),
+                        downloading: kept.downloading.count,
+                        passedOver: Int(kept.passedOver)
+                    )
+                )
+            )
+        } catch {
+            library.report(error)
+        }
+    }
+
+    func higherVersionsOf(_ playlist: UInt64) async throws -> HigherVersions {
+        try await serverAnswer { try $0.higherVersionsOf(playlist: playlist) }
+    }
+
+    func rereadVariants() {
+        Task { [weak self] in
+            guard let self, let native = try? await self.library.player() else { return }
+            guard let held = try? await Work.onScreen({ Set(try native.songsWithVariants()) }) else { return }
+            if held != self.withVariants { self.withVariants = held }
+        }
+    }
+
+    func variantsOf(_ track: Track) async throws -> [SongVariant] {
+        let native = try await library.player()
+        let id = track.id
+        return try await Work.aside { try native.variantsOf(id: id) }
+    }
+
+    func chooseVariant(_ track: Track, _ variant: SongVariant) {
+        let id = track.id
+        let chosen = variant.id
         work { [weak self] native in
-            let told = try await Work.aside { try native.chooseVersion(id: id, version: version) }
-            self?.library.play([track], at: 0)
+            let told = try await Work.aside { try native.chooseVariant(song: id, variant: chosen) }
+            self?.rereadVariants()
             self?.library.notice(told)
         }
     }

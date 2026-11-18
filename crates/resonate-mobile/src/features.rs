@@ -237,6 +237,8 @@ pub struct SearchSong {
     pub position: Option<u32>,
     #[uniffi(default)]
     pub held: bool,
+    #[uniffi(default)]
+    pub served: Option<String>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -878,6 +880,7 @@ pub(crate) fn search_song(song: RecordingMatch, album_asked: &[String]) -> Searc
         duration_ms: song.length.map(milliseconds),
         isrcs: song.isrcs.iter().map(ToString::to_string).collect(),
         held: false,
+        served: None,
     }
 }
 

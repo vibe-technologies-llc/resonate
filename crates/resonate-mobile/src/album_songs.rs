@@ -82,6 +82,7 @@ pub(crate) fn songs_of(release: &Release) -> Vec<SearchSong> {
                 .map(|length| length.as_millis().min(u128::from(u64::MAX)) as u64),
             isrcs: track.isrcs.clone(),
             held: false,
+            served: None,
         })
         .collect()
 }
@@ -182,6 +183,7 @@ fn kept_song(row: &rusqlite::Row<'_>) -> rusqlite::Result<SearchSong> {
             .map(str::to_owned)
             .collect(),
         held: false,
+        served: None,
     })
 }
 

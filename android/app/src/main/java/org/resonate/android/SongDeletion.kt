@@ -7,7 +7,6 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.IdenticalSongs
-import org.resonate.android.nativecore.LossyReplacement
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.shownTitle
 
@@ -71,19 +70,6 @@ class SongDeletion(
                     folded += told.forgotten.toInt()
                 }
                 Deleted(0, kept, folded)
-            }
-        }
-
-    suspend fun replaceLossy(held: List<LossyReplacement>): Deleted =
-        withContext(Dispatchers.IO) {
-            if (held.isEmpty()) return@withContext Deleted(0, 0)
-            library.holding { native ->
-                val removed = removeFiles(held.map { it.lossy })
-                val gone = removed.gone.map { it.id }.toSet()
-                val told =
-                    if (gone.isEmpty()) 0
-                    else native.foldLossySongs(held.filter { it.lossy.id in gone }).forgotten.toInt()
-                Deleted(0, removed.kept, told)
             }
         }
 

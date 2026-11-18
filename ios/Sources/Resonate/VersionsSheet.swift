@@ -2,6 +2,13 @@ import ResonateLogic
 import ResonateNative
 import SwiftUI
 
+extension SongVersion {
+    var isServed: Bool {
+        if case .served = self { return true }
+        return false
+    }
+}
+
 struct VersionsOf: Identifiable {
     let id = UUID()
     let track: Track
@@ -75,7 +82,7 @@ struct VersionsSheet: View {
                 Text(said).foregroundStyle(.secondary)
             }
             ForEach(Array(found.versions.enumerated()), id: \.offset) { _, version in
-                Button(version.label, systemImage: "play.fill") {
+                Button(version.label, systemImage: version.version.isServed ? "arrow.down.circle" : "play.fill") {
                     library.features.chooseVersion(track, version.version)
                     dismiss()
                 }
@@ -102,6 +109,78 @@ struct VersionsSheet: View {
             } catch {
                 shown = .failed(explained(error))
             }
+        }
+    }
+}
+
+enum VariantsShown {
+    case reading
+    case listed([SongVariant])
+    case failed(String)
+}
+
+struct VariantsSheet: View {
+    @Environment(Library.self) private var library
+    @Environment(\.dismiss) private var dismiss
+    let track: Track
+    @State private var shown = VariantsShown.reading
+    @State private var asked = 0
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    content
+                } header: {
+                    Text(track.shownTitle).textCase(nil)
+                } footer: {
+                    Text("variants.detail")
+                }
+            }
+            .navigationTitle("variants.title")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(role: .close) { dismiss() }
+                }
+            }
+        }
+        .task(id: asked) { await read() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch shown {
+        case .reading:
+            ProgressView().accessibilityLabel("variants.reading").frame(maxWidth: .infinity)
+        case .listed(let variants):
+            ForEach(variants, id: \.id) { variant in
+                Button {
+                    library.features.chooseVariant(track, variant)
+                    dismiss()
+                } label: {
+                    HStack {
+                        Text(variant.label).foregroundStyle(.primary)
+                        Spacer(minLength: 0)
+                        if variant.default {
+                            Image(systemName: "checkmark").foregroundStyle(Color.worn).accessibilityHidden(true)
+                        }
+                    }
+                    .contentShape(.rect)
+                }
+                .accessibilityAddTraits(variant.default ? .isSelected : [])
+                .accessibilityHint(variant.default ? said("variants.default") : "")
+            }
+        case .failed(let failure):
+            ReadFailure(text: failure) { asked += 1 }
+        }
+    }
+
+    private func read() async {
+        do {
+            shown = .listed(try await library.features.variantsOf(track))
+        } catch {
+            shown = .failed(explained(error))
         }
     }
 }

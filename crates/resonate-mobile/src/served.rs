@@ -10,7 +10,7 @@ use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Son
 use crate::{
     Error, MobilePlayer, Result, Track,
     documents::location,
-    downloads::{DownloadAccount, failure_of},
+    downloads::{DownloadAccount, MusicProvider, failure_of},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -298,8 +298,20 @@ impl Served {
         })
     }
 
-    pub(crate) fn knows(&self, location: &MediaLocation) -> bool {
-        self.known.lock().contains_key(location)
+    pub(crate) fn streamed_to_keep(
+        &self,
+        location: &MediaLocation,
+    ) -> Result<(resonate_providers::Streamed, MusicProvider)> {
+        let service = self.named(location.source().as_str())?;
+        let Some(Named::Song(id)) = service.plays.named_by(location) else {
+            return Err(Error::InvalidUri);
+        };
+        let provider = service.account.provider;
+        service
+            .plays
+            .streamed(&id)
+            .map(|streamed| (streamed, provider))
+            .map_err(|source| failure_of(provider, &source))
     }
 
     pub(crate) fn serves(&self, location: &MediaLocation) -> bool {
@@ -500,7 +512,7 @@ impl MobilePlayer {
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
-        let held = self.as_chosen(held, [])?;
+        let held = self.as_chosen(held)?;
         let mut minting = Unclaimed::beside(&held);
         let mut held = held.into_iter();
         let items = songs

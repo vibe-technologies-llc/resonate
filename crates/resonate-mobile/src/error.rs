@@ -234,6 +234,8 @@ pub enum Error {
     WrongSong,
     #[error("{}", words::errors::lossy_for_a_replacement())]
     LossyForAReplacement,
+    #[error("{}", words::errors::not_a_variant())]
+    NotAVariant,
     #[error("{}", crate::failure::of_a_lookup(*op, source))]
     Reference {
         op: resonate_library::LookupOp,

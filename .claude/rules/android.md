@@ -1088,17 +1088,19 @@ forgotten or folded; a file the app does not own in MediaStore (a `SecurityExcep
 asked of the listener once with `MediaStore.createDeleteRequest` (`Host.confirmDelete`), and one that
 stays is told as *N files could not be deleted* (`DeletionSentences`, `SongDeletionTest`).
 
-**Replace lossy songs** is an entry of a plain playlist's menu (not a saved search's, nor where the
-playlist may not be edited) opening `LossySongsSheet`, the desktop sheet's counterpart
-(`mobile.md`'s *Replacing a playlist's lossy songs*): each lossy song with what replacing it does
-(`LossySongs.line`: a lossless copy held, downloaded first, waiting on its download, or not matched),
-the ones that can be replaced ticked at first (`LossySongs.ticked`; one waiting or unmatched cannot be
-ticked), and *Replace N songs*, confirmed where it deletes a file (`LossySongs.deletes`). It calls
-`Resonate.replaceLossySongs`: `replace_lossy_songs`, then `SongDeletion.replaceLossy` removes the lossy
-files with the same consent as any deletion and folds those that went (`fold_lossy_songs`), the wants
-are read again and the download queue told (`wantsChanged`), and one notice counts what was replaced,
-wanted, unmatched and kept (`LossySongs.told`, `LossySongsTest`). The sheet reads the list again after
-each replacement.
+**Find higher quality versions** is an entry of a plain playlist's menu (not a saved search's, nor
+where the playlist may not be edited) opening `HigherVersionsSheet` (*Higher quality versions of
+{playlist}*), the desktop sheet's counterpart (`mobile.md`'s *Higher quality versions of a playlist*):
+each song `higher_versions_of` lists with what was found (`HigherVersions.line`: the version's label,
+already played, waiting on its download, or nothing found), those with a version not yet chosen
+ticked at first (`HigherVersions.ticked`; one chosen, waiting or with nothing found cannot be ticked),
+the services that could not be asked under the heading, and *Keep the ticked versions*. It calls
+`LibraryFeatures.keepHigherVersions` (the served accounts bound first): `keep_higher_versions`, then
+the versions to download are queued (`downloadVersions`: the wants read again, `wantsChanged`, and
+`DownloadQueue.enqueue` into the remembered folder, or a notice asking for one where automatic downloads
+are off), and one notice counts what was chosen, is downloading and was passed over
+(`HigherVersions.told`, `HigherVersionsTest`). Nothing is deleted, so nothing asks consent. The sheet
+reads the list again after each keep.
 
 **A folder is organised by the desktop's layout, its files moved by the front end** (`organising.rs`).
 `plan_organise(folder, layout)` reads the layout through `resonate_library::Layout` (refused as
@@ -1380,8 +1382,13 @@ runs at a time (`historyBusy`), and `historyStatus` says what it did (`historyBr
 `version_searches` and `version_chosen`, offers each search (and *Play your own copy again* while a
 version is chosen, `forget_version_chosen`), runs `find_versions` on the IO dispatcher after binding
 the served accounts (`LibraryFeatures.served.bind`, which hands them over on the IO dispatcher, as every caller of `serve_from` does, since it takes the served lock readers on other threads hold) and lists the versions under the boundary's
-`said` and `trouble`; a version pressed is `choose_version` and then `Playback.play` of the song, so
-the controller's load queues the version (`mobile.md`'s *Another version of a song*).
+`said` and `trouble`; a held version pressed is `choose_version` (the served accounts bound) and then
+`Playback.play` of the song, so the controller's load queues the version; a served one (a download
+icon) answers a `VersionChosen` with `download`, which `downloadVersions` queues, and the notice says
+it plays once it lands, nothing playing meanwhile (`mobile.md`'s *Another version of a song*).
+**The song sheet's *Variants*** shows where `variants_of` answers any (read as the sheet opens) and
+opens `VariantsSheet`: the original and each variant held as radio rows, the default selected; a row
+pressed is `choose_variant` and its notice.
 
 `share_link(id)` (`sharing.rs`) is the desktop's share over a document row: `Shared` is built from the
 row's title, artist, album, year, recording id, ISRC and length (a stored code that does not parse is

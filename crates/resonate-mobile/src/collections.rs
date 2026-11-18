@@ -17,8 +17,9 @@ use crate::{
     features::{Listing, SearchSong, distinct_takes, search_song},
     one_file::Spelled,
     online_tools::{SearchArtist, SearchRelease},
-    replacing::{held_losslessly, replaces},
+    replacing::held_losslessly,
     vanished::Absorbing,
+    versions::wanted_as_a_version,
 };
 
 const WANTED_READ_AT_MOST: usize = 500;
@@ -172,6 +173,10 @@ impl MobilePlayer {
         }
         let track = job.settled(indexed)?;
         job.done();
+
+        if let Err(error) = self.catalog.variant_landed(&job.song, track.id) {
+            tracing::warn!(%error, "a version downloaded was not kept as its song's variant");
+        }
 
         if let Err(error) = self.catalog.note_downloaded(track.id) {
             tracing::warn!(%error, "a download was not marked to be looked up first");
@@ -336,6 +341,7 @@ fn wanted_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WantedRow> {
             artist_id: row.get(11)?,
             disc: row.get(12)?,
             position: row.get(13)?,
+            served: row.get(14)?,
             ..SearchSong::default()
         },
         tried: row.get(7)?,
@@ -344,9 +350,11 @@ fn wanted_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<WantedRow> {
 }
 
 fn held_as_wanted(connection: &Connection, row: &WantedRow) -> Result<bool> {
-    match replaces(connection, row.id)? {
-        true => held_losslessly(connection, &row.song.recording),
-        false => Ok(local_match(connection, &row.song)?.is_some()),
+    match (wanted_as_a_version(connection, row.id)?, &row.song.served) {
+        (true, Some(_)) => Ok(false),
+        (true, None) => held_losslessly(connection, &row.song.recording),
+        (false, Some(_)) => Ok(true),
+        (false, None) => Ok(local_match(connection, &row.song)?.is_some()),
     }
 }
 
@@ -366,7 +374,7 @@ fn forgotten_before(now: SystemTime) -> i64 {
 }
 
 fn still_asked(connection: &Connection) -> Result<Vec<WantedRow>> {
-    let mut query = connection.prepare("SELECT id, recording, title, artist, album, duration_ms, isrcs, tried, misses, release, release_group, artist_id, disc, position FROM wanted WHERE misses < ?1 ORDER BY added, id").map_err(read_error)?;
+    let mut query = connection.prepare("SELECT id, recording, title, artist, album, duration_ms, isrcs, tried, misses, release, release_group, artist_id, disc, position, served FROM wanted WHERE misses < ?1 ORDER BY added, id").map_err(read_error)?;
     query
         .query_map([TRIES_BEFORE_GIVING_UP], wanted_row)
         .map_err(read_error)?
@@ -388,7 +396,7 @@ fn due_at(tried: Option<i64>, misses: u32) -> Option<SystemTime> {
 impl Catalog {
     fn wanted(&self, offset: u32, limit: u32) -> Result<Vec<WantedSong>> {
         let connection = self.0.lock();
-        let mut query = connection.prepare("SELECT id, recording, title, artist, album, duration_ms, isrcs, tried, misses, release, release_group, artist_id, disc, position FROM wanted ORDER BY added DESC, id DESC LIMIT ?1 OFFSET ?2").map_err(read_error)?;
+        let mut query = connection.prepare("SELECT id, recording, title, artist, album, duration_ms, isrcs, tried, misses, release, release_group, artist_id, disc, position, served FROM wanted ORDER BY added DESC, id DESC LIMIT ?1 OFFSET ?2").map_err(read_error)?;
         let rows = query
             .query_map(params![limit.min(500), offset], wanted_row)
             .map_err(read_error)?
@@ -486,7 +494,7 @@ impl Catalog {
         Ok(())
     }
 
-    fn save_wanted(&self, songs: &[SearchSong]) -> Result<u64> {
+    pub(crate) fn save_wanted(&self, songs: &[SearchSong]) -> Result<u64> {
         let mut connection = self.0.lock();
         let transaction = connection.transaction().map_err(write_error)?;
         let mut saved = 0;
@@ -502,7 +510,7 @@ impl Catalog {
                 .map(|code| code.to_string())
                 .collect::<Vec<_>>()
                 .join("\n");
-            saved += transaction.execute("INSERT INTO wanted(identity, recording, title, artist, album, duration_ms, isrcs, release, release_group, artist_id, disc, position) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) ON CONFLICT(identity) DO NOTHING", params![identity, song.recording, song.title, song.artist, song.album, song.duration_ms.map(|value| value.min(i64::MAX as u64) as i64), isrcs, song.release, song.release_group, song.artist_id, song.disc, song.position]).map_err(write_error)? as u64;
+            saved += transaction.execute("INSERT INTO wanted(identity, recording, title, artist, album, duration_ms, isrcs, release, release_group, artist_id, disc, position, served) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) ON CONFLICT(identity) DO NOTHING", params![identity, song.recording, song.title, song.artist, song.album, song.duration_ms.map(|value| value.min(i64::MAX as u64) as i64), isrcs, song.release, song.release_group, song.artist_id, song.disc, song.position, song.served]).map_err(write_error)? as u64;
         }
         transaction.commit().map_err(write_error)?;
         Ok(saved)
@@ -551,6 +559,9 @@ pub(crate) fn local_match(connection: &Connection, song: &SearchSong) -> Result<
 }
 
 pub(crate) fn wanted_key(song: &SearchSong) -> String {
+    if let Some(served) = &song.served {
+        return format!("served:{served}");
+    }
     if let Ok(recording) = Mbid::new(&song.recording) {
         return format!("recording:{recording}");
     }

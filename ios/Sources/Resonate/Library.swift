@@ -966,6 +966,7 @@ final class Library {
         favouriteIds = catalog.favouriteIds
         flagFavourites(catalog.flagsMoved)
         if let favourites = catalog.favourites { favouriteTracks = favourites }
+        features.rereadVariants()
     }
 
     private func keepFavourite(_ track: Track, at place: Int) {

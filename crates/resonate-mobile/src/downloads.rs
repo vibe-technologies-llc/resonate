@@ -846,6 +846,30 @@ impl Downloads {
         Err(failure.unwrap_or(Error::NotFound))
     }
 
+    pub(crate) fn served(
+        &self,
+        job: &Arc<Job>,
+        streamed: resonate_providers::Streamed,
+        extension: String,
+        provider: MusicProvider,
+        taken_from: String,
+    ) -> Result<DownloadOffer> {
+        job.moved_to(DownloadPhase::Finding)?;
+        self.waits_out_the_meter(job)?;
+        let length = streamed.length();
+        Ok(self.held_for_a_destination(
+            job,
+            Taken {
+                reader: Box::new(streamed),
+                partial: None,
+                length,
+                extension,
+                provider,
+                taken_from,
+            },
+        ))
+    }
+
     fn held_for_a_destination(&self, job: &Arc<Job>, taken: Taken) -> DownloadOffer {
         let name = resonate_core::naming::named_within(
             "",
@@ -1175,7 +1199,10 @@ impl MobilePlayer {
         let client = Arc::clone(self.services.online.client());
         let reaching = move || client.is_reaching();
         let refused = self.catalog.refused_offers(&job.song, SystemTime::now())?;
-        let searched = self.downloads.find(&job, accounts, &refused, &reaching);
+        let searched = match job.song.served.clone() {
+            Some(served) => self.found_served(&job, &served),
+            None => self.downloads.find(&job, accounts, &refused, &reaching),
+        };
         if let Err(error) = self.catalog.note_wanted_tried(&job.song, searched.tried) {
             tracing::warn!(%error, "a wanted song's try could not be noted");
         }

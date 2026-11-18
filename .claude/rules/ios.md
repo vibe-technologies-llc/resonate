@@ -858,9 +858,14 @@ every route change (a pair of headphones at the same rate included), not from th
   presented by the root as `VersionsSheet` and held until Now Playing closes, as the tag editor is):
   `Features.versionSearches` reads the searches and whether a version is chosen,
   `Features.findVersions` asks `find_versions` through `serverAnswer` (the served accounts bound),
-  and a version chosen is `chooseVersion` (`choose_version`, then `Library.play` of the song, which the
-  boundary swaps for its version); *Play your own copy again* is `forgetVersionChosen`
-  (`mobile.md`'s *Another version of a song*).
+  and a version chosen is `chooseVersion` (`choose_version` through `serverAnswer`, then `Library.play`
+  of the song, which the boundary swaps for its version; a served version, drawn with a download
+  symbol, answers a `download` that `downloadVersions` queues, and nothing plays until it lands);
+  *Play your own copy again* is `forgetVersionChosen` (`mobile.md`'s *Another version of a song*).
+  **`SongPages` offers *Variants*** where `Features.withVariants` holds the song (`songs_with_variants`,
+  read again after every catalog read and every choice, `rereadVariants`), opening `VariantsSheet`
+  through `Navigation.chooseVariant` (held until Now Playing closes, as above): the original and each
+  variant, the default checked, a row pressed being `chooseVariant` (`choose_variant`).
 - **One song menu everywhere a song is listed** (`SongPages`: *Song details*, *Share link*, *Find another version*, *Edit
   tags* where writable, *Lyrics*, *Analyse*, *Go to album*, *Go to artist*): `TrackMenu` carries it
   under its queue, favourite and playlist sections, a queue row (`QueueRow`) under its favourite and
@@ -1249,13 +1254,14 @@ every route change (a pair of headphones at the same rate included), not from th
   set, never one `Folders.holdOneFile` finds to be the kept song's own file (device and inode), and folds those that went into the kept one (`Library.deleteIdenticalCopies`, then the
   page asks again). Both refresh the catalog, the open playlist and the playlists, and read the
   queue again where rows left it.
-- **Replace lossy songs** is in a plain playlist's options where it may be edited
-  (`PlaylistOptions`, `LossySongsSheet.swift`), the Android sheet's counterpart (`mobile.md`'s
-  *Replacing a playlist's lossy songs*): each lossy song with `LossySongs.line`, the replaceable ones
-  ticked at first, and *Replace N songs* in the toolbar, confirmed where it deletes a file.
-  `Library.replaceLossySongs` asks `replace_lossy_songs`, deletes the lossy files with
-  `Folders.deleteSong`, folds those that went (`fold_lossy_songs`), reads the wants again and tells
-  one notice (`LossySongs.told`, `LossySongsTests`).
+- **Find higher quality versions** is in a plain playlist's options where it may be edited
+  (`PlaylistOptions`, `HigherVersionsSheet.swift`), the Android sheet's counterpart (`mobile.md`'s
+  *Higher quality versions of a playlist*): titled *Higher quality versions of {playlist}*, each song
+  with `HigherVersionRows.line`, those with a version not yet chosen ticked at first, and *Keep the
+  ticked versions* in the toolbar. `Features.keepHigherVersions` asks `keep_higher_versions` through
+  `serverAnswer`, queues the downloads (`downloadVersions`: the wants read again, `wantsChanged`,
+  `DownloadQueue.enqueue`) and tells one notice (`HigherVersionRows.told`, `HigherVersionRowsTests`).
+  Nothing is deleted.
 - **A writable folder is organised from its row in Music folders** (`OrganiseView.swift`): a layout
   field (`organise-layout` in `library-features`, the desktop's `DEFAULT_LAYOUT` until changed)
   checked by `organise_layout_problem`, a preview 300 ms after the last keystroke (`plan_organise`

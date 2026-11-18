@@ -46,6 +46,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.resonate.android.nativecore.HigherVersionPicked
 import org.resonate.android.nativecore.SavedSearch
 import org.resonate.android.nativecore.ProfileFollowed
 import org.resonate.android.nativecore.playlistLinkService
@@ -1563,20 +1564,32 @@ class LibraryFeatures(private val context: Context, private val library: Library
             library.notice(DeletionSentences.folded(library.words, deleted.folded))
     }
 
-    suspend fun replaceLossySongs(ids: List<ULong>, consent: suspend (List<Uri>) -> Boolean) {
-        val replacing = library.holding { native -> withContext(Dispatchers.IO) { native.replaceLossySongs(ids) } }
-        val deleted = SongDeletion(context, library, consent).replaceLossy(replacing.held)
-        if (deleted.folded > 0) songsLeft()
-        if (replacing.wanted > 0u) {
-            library.holding { native -> withContext(Dispatchers.IO) { refreshWanted(native) } }
-            downloads.wantsChanged()
-        }
-        val told =
-            LossySongs.told(
+    suspend fun keepHigherVersions(picked: List<HigherVersionPicked>) {
+        val kept =
+            library.holding { native ->
+                served.bind(native)
+                withContext(Dispatchers.IO) { native.keepHigherVersions(picked) }
+            }
+        if (kept.downloading.isNotEmpty()) downloadVersions(kept.downloading)
+        library.notice(
+            HigherVersions.told(
                 library.words,
-                LossyReplaced(deleted.folded, replacing.wanted.toInt(), replacing.unmatched.toInt(), deleted.kept),
+                HigherKept(kept.chosen.toInt(), kept.downloading.size, kept.passedOver.toInt()),
             )
-        if (deleted.kept > 0) library.report(IllegalStateException(told)) else library.notice(told)
+        )
+    }
+
+    suspend fun downloadVersions(songs: List<SearchSong>) {
+        library.holding { native -> withContext(Dispatchers.IO) { refreshWanted(native) } }
+        downloads.wantsChanged()
+        val folder =
+            folders.value.firstOrNull {
+                it.uri.toString() == downloads.rememberedFolder.value && it.readable && it.writable
+            }
+        when {
+            folder != null -> download(songs, folder)
+            !downloads.automatic.value -> library.notice(R.string.versions_no_download_folder)
+        }
     }
 
     private fun tellDeleted(deleted: Deleted) {

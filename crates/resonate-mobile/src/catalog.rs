@@ -418,6 +418,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     LOSSY_SONGS_WAIT_TO_BE_REPLACED,
     SONGS_DELETED_EVERYWHERE_ARE_TOLD_AND_TAKEN,
     LYRICS_KEEP_HOW_FAR_AHEAD_THEY_RUN,
+    A_VERSION_IS_KEPT_BESIDE_ITS_SONG,
 ];
 
 pub(crate) const SONGS_DELETED_EVERYWHERE_ARE_TOLD_AND_TAKEN: &str = "
@@ -441,6 +442,31 @@ CREATE TABLE lyrics_ahead (
     track    INTEGER PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
     ahead_ms INTEGER NOT NULL
 ) STRICT;
+";
+
+pub(crate) const A_VERSION_IS_KEPT_BESIDE_ITS_SONG: &str = "
+CREATE TABLE versions_held (
+    track INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    held  INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    kept  INTEGER NOT NULL,
+    PRIMARY KEY (track, held),
+    CHECK (track <> held)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX versions_held_by_held ON versions_held(held);
+INSERT OR IGNORE INTO versions_held (track, held, kept)
+    SELECT track, held, chosen FROM versions_chosen WHERE held IS NOT NULL AND held <> track;
+DELETE FROM versions_chosen WHERE served IS NOT NULL;
+ALTER TABLE wanted ADD COLUMN served TEXT;
+CREATE TABLE versions_wanted (
+    want  INTEGER NOT NULL REFERENCES wanted(id) ON DELETE CASCADE,
+    track INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    asked INTEGER NOT NULL,
+    PRIMARY KEY (want, track)
+) STRICT, WITHOUT ROWID;
+CREATE INDEX versions_wanted_by_track ON versions_wanted(track);
+INSERT OR IGNORE INTO versions_wanted (want, track, asked)
+    SELECT want, track, asked FROM replacements;
+DELETE FROM replacements;
 ";
 
 #[cfg(test)]

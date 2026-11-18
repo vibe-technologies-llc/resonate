@@ -217,6 +217,7 @@ fn kept_song(row: &rusqlite::Row<'_>) -> rusqlite::Result<SearchSong> {
             .map(str::to_owned)
             .collect(),
         held: false,
+        served: None,
     })
 }
 

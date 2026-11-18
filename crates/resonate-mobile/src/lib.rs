@@ -554,7 +554,7 @@ impl MobilePlayer {
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
-        let items = self.as_chosen(items, [])?;
+        let items = self.as_chosen(items)?;
         if !autoplay {
             return self.command_landed(Command::Resume(Resumption {
                 rows: items

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.Person
@@ -52,6 +53,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -77,6 +79,7 @@ import kotlinx.coroutines.withContext
 import org.resonate.android.DeletionSentences
 import org.resonate.android.R
 import org.resonate.android.nativecore.SavedSearch
+import org.resonate.android.nativecore.SongVariant
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.albumKey
 import org.resonate.android.served
@@ -113,6 +116,7 @@ class Sheets(val snackbar: SnackbarHostState) {
     }
     var editingTags by mutableStateOf<List<Track>?>(null)
     var versions by mutableStateOf<Track?>(null)
+    var variants by mutableStateOf<Track?>(null)
     var listening by mutableStateOf(false)
     var sleeping by mutableStateOf(false)
     var worn by mutableStateOf<ColorScheme?>(null)
@@ -213,6 +217,7 @@ fun SheetHost() {
         }
         sheets.editingTags?.let { tracks -> TagEditorSheet(tracks) { sheets.editingTags = null } }
         sheets.versions?.let { track -> VersionsSheet(track) { sheets.versions = null } }
+        sheets.variants?.let { track -> VariantsSheet(track) { sheets.variants = null } }
         if (sheets.listening) ListenSheet { sheets.listening = false }
     }
 }
@@ -269,6 +274,14 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
         remember(catalog, request) {
             if (request.track.served) request.track
             else resonate.library.findTrack(request.track.id) ?: request.track
+        }
+    val variants by
+        produceState(emptyList<SongVariant>(), track.id, track.served) {
+            if (!track.served)
+                value =
+                    resonate
+                        .read { native -> withContext(Dispatchers.IO) { native.variantsOf(track.id) } }
+                        .getOrDefault(emptyList())
         }
     val actions = buildList {
         if (!track.served) {
@@ -327,6 +340,11 @@ private fun SongSheet(request: SongSheetRequest, dismiss: () -> Unit) {
             ) {
                 sheets.versions = track
             })
+            if (variants.isNotEmpty()) {
+                add(SheetAction(Icons.Rounded.Layers, words.string(R.string.sheet_variants)) {
+                    sheets.variants = track
+                })
+            }
             if (resonate.features.tags.writable(track)) {
                 add(SheetAction(Icons.Rounded.Edit, words.string(R.string.sheet_edit_tags)) {
                     sheets.editTags(listOf(track))

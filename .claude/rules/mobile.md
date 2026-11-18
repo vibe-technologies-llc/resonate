@@ -1142,31 +1142,57 @@ favourite in the service's own mark*)
 ## Another version of a song
 
 `versions.rs` is the phones' half of `ui.md`'s *Find another version*, the matching the library's own
-(`library.md`'s *A version chosen*). `version_searches(id)` answers the searches the song is offered
-(`VersionSearchOffered`: `VersionSearch::{Better, Clean, Explicit}` and its label, said through the
-`versions` area); `find_versions(id, search)` (blocking, for the caller's worker) weighs the songs the
-search index ranks for the bare title and artist (`HELD_WEIGHED_AT_MOST`, 64): for quality those that
-name the same song and whose `Quality` (lossless by `search::codec_named`, the document's `bits`, 16
-where none is kept, and rate) is above the song's, best first, for a rating those `TheSong::held_as`
-it; then, while online reaches, every service played in place that plays songs is searched for the
-same words and a song kept as the desktop keeps one. It answers `FoundVersions`: each version
-(`SongVersion::Held { id }` or `Served { uri }`) with its label, `said` (*Found N versions of …*, or
-why nothing was: already lossless, no service to ask, none on the services named) and `trouble`
-(the services that could not be asked). Step 34 (`A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT`) made
-`versions_chosen` (`track` primary, either `held` or `served`, never both, both to `documents` with
-`ON DELETE CASCADE`, and `chosen` in Unix seconds), so a song forgotten, deleted or folded takes the
-choice with it and a document handed over (`handed_over`'s referring columns) carries it.
-`choose_version(id, version)` keeps it (the song itself as the version forgets it) and answers
-*{title} plays this version from now on*; `version_chosen(id)` reads it and
-`forget_version_chosen(id)` drops it. **Every call that queues catalog ids plays a song as its
-version** (`MobilePlayer::as_chosen`): `load`, `load_songs`, `play_next`, `add_to_queue` and
-`insert_in_queue` queue a held version (a visible document) by its id, and a served one under an id
-minted beside the queue only while its service is served (`Served::serves`), else the song itself;
-a served version not yet remembered is named after the song (`name_as_its_song`). A playlist keeps
-the song itself; only a queue swaps it. Both phones draw it (`android.md`'s and `ios.md`'s *Find
-another version*), choosing and then playing the song, which the swap turns into its version
-(`a_version_chosen_is_queued_in_place_of_its_song_and_forgotten_with_it`,
-`a_catalog_of_before_versions_were_chosen_keeps_its_songs_and_gains_the_table`).
+(`library.md`'s *A version chosen*). **A version is never streamed and nothing is deleted**: a version
+picked is kept as a file beside the song and played in its place. `version_searches(id)` answers the
+searches the song is offered (`VersionSearchOffered`: `VersionSearch::{Better, Clean, Explicit}` and its
+label, said through the `versions` area); `find_versions(id, search)` (blocking, for the caller's worker)
+weighs the songs the search index ranks for the bare title and artist (`HELD_WEIGHED_AT_MOST`, 64) through
+`better_held`: for quality those that name the same song and whose `Quality` (lossless by
+`search::codec_named`, the document's `bits`, 16 where none is kept, and rate) is above the song's, best
+first, for a rating those `TheSong::held_as` it; then, while online reaches, every service played in place
+that plays songs is searched for the same words (`asked_for_versions`). It answers `FoundVersions`: each
+version (`SongVersion::Held { id }` or `Served { uri }`, a served one labelled *Download … from
+{service}*) with its label, `said` and `trouble` (the services that could not be asked).
+
+**A held version is a variant at once; a served one is downloaded first.** Step 34
+(`A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT`) made `versions_chosen` (`track` primary, `held` or `served`,
+`chosen` in Unix seconds); step 41 (`A_VERSION_IS_KEPT_BESIDE_ITS_SONG`) made `versions_held` (`track`,
+`held`, both to `documents` with `ON DELETE CASCADE`, `kept`; every variant a song holds, seeded from the
+held choices), dropped every served choice (one was only ever streamed), gave `wanted` a `served` (the
+service's song uri a want is downloaded from) and made `versions_wanted` (`want` to `wanted`, `track` to
+`documents`, both cascading, `asked`), the link from a download to the song it becomes a variant of,
+seeded from the `replacements` rows step 38 (`LOSSY_SONGS_WAIT_TO_BE_REPLACED`) made for the lossy songs a playlist once replaced, which it empties. `choose_version(id, version)` answers a
+`VersionChosen` (`said`, and `download`): a held version goes through `kept_as_a_variant` into
+`versions_held` and `versions_chosen` (*{title} plays this version from now on*; the song itself as the
+version forgets the choice); a served one is `served_version_wanted` (its service must be served, else
+`NoServedServer`), a `SearchSong` carrying `served`, saved by `want_a_version` (the want under
+`wanted_key`'s `served:{uri}`, re-armed, and its `versions_wanted` row) and answered as `download`
+with *Downloading this version of {title}* for the front end to queue at once. The download job of
+such a want takes the service's own stream (`find_download` routes it to `found_served`, which opens
+`Served::streamed_to_keep` and hands it to `Downloads::served`), never a search, and `index_download`
+lands it through `variant_landed`: the landed document is kept as a variant of each song
+`versions_wanted` names and chosen, and the want and its links go. `held_as_wanted` reads a served
+want as held only once its song is gone (`wanted_as_a_version`), so an orphan is never downloaded
+(`a_want_whose_song_is_gone_is_held_and_never_downloaded`). `version_chosen(id)` reads a held choice;
+`forget_version_chosen(id)` drops it and keeps every variant.
+
+**The track menu's *Variants*** is `variants_of(id)` (a variant's own id resolves to its song): the
+original first, then every variant held, each a `SongVariant` (`id`, `label`, `original`, `default`),
+the default the one chosen; empty where the song holds none, so a front end shows the entry only then
+(`songs_with_variants` lists every song and variant that would). `choose_variant(song, variant)` makes
+one the default; the original forgets the choice; a copy not kept as its variant is
+`Error::NotAVariant`. **Every call that queues catalog ids plays a song as its version**
+(`MobilePlayer::as_chosen`): `load`, `load_songs`, `play_next`, `add_to_queue` and `insert_in_queue`
+queue the chosen variant (a visible document) by its id, never a served location. A playlist keeps the
+song itself; only a queue swaps it
+(`a_version_chosen_is_kept_beside_its_song_and_queued_in_its_place`,
+`the_variants_name_the_original_and_each_copy_kept_with_the_default_checked`,
+`a_variant_forgotten_takes_its_choice_and_leaves_the_song_playing_itself`,
+`a_served_version_is_never_queued_and_one_of_no_service_is_refused`,
+`a_version_downloaded_lands_beside_its_song_and_plays_from_then_on`,
+`a_catalog_of_before_versions_were_chosen_keeps_its_songs_and_gains_the_table`,
+`a_catalog_of_before_versions_were_kept_beside_their_songs_carries_its_choices_and_waits`). Both phones
+draw it (`android.md`'s and `ios.md`'s *Find another version*).
 
 ## A song deleted from every device
 
@@ -1189,44 +1215,32 @@ device
 `a_deletion_another_device_told_waits_for_the_platform_only_for_a_copy_older_than_it`,
 `a_song_one_phone_deletes_from_every_device_waits_for_the_other_unless_it_refuses`).
 
-## Replacing a playlist's lossy songs
+## Higher quality versions of a playlist
 
-`replacing.rs` is the phones' half of `library.md`'s *Replacing a lossy song*, over the document
-catalog, and nothing is deleted from a phone unasked: a phone's files are the listener's own and a
-deletion there is final, so a replacement waiting on a download is settled where the listener ticks
-it again, never by the download landing. The `LOSSY_SONGS_WAIT_TO_BE_REPLACED` step made
-`replacements` (`track` the lossy document, primary, `ON DELETE CASCADE`; `want` the `wanted` row
-fetching its copy, `ON DELETE CASCADE`, so dismissing the want cancels the replacement and the lossy
-song stays; `asked` in Unix seconds). `lossy_songs_of(playlist)` lists a playlist's visible documents
-that are not lossless (`Codec::is_lossless` of `search::codec_named`, as the desktop's `!is_lossless`)
-once each, in its order, as `LossySong`s: the best held lossless copy (the documents of its recording
-MBID that are lossless, and those the search index ranks for its title and artist that
-`TheSong::is_bettered_by`, best first by `Quality`, the version chosen first where it is among them),
-`wantable` (the song carries a recording MBID, the desktop's MusicBrainz match) and `pending` (a
-replacement waits). `replace_lossy_songs(ids)` weighs each afresh: a lossless copy held is answered
-in `LossyReplacing.held` for the front end to delete the lossy file; else a song with a recording is
-wanted (`wanted_in_place_of`: the want saved under its `recording:` identity, `ON CONFLICT DO
-NOTHING`, then re-armed, `tried`, `misses` and `offered_at` cleared and its refused offers kept, and
-the replacement written, `ON CONFLICT` on `track` overwriting); else it is `unmatched`. The front end
-removes the lossy files as it removes any song (`android.md`'s *A song is deleted by the front end*)
-and hands the pairs whose files went to `fold_lossy_songs`, which drops them from every zone's queue,
-weighs each again (the taken still lossy, the kept still lossless), deletes the replacement and its
-want once no other replacement names it, and folds the lossy document into the copy (`handed_over`,
-as `fold_identical_songs` does), answering `SongsForgotten`. **A replacement's want is held only
-losslessly**: `held_as_wanted` reads a want a replacement names as held only where a visible
-lossless document carries its recording (`held_losslessly`), so the lossy song itself never answers
-it and `poll_wanted_due` keeps asking; and `index_download` refuses a lossy delivery for such a want
-before indexing it (`refuse_a_lossy_delivery`, `Error::LossyForAReplacement`), remembering the offer
-as refused as a wrong song's is, so the next try asks elsewhere and the front end deletes the file
-(`a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held`,
-`the_songs_chosen_are_folded_into_the_copy_held_or_wanted_and_the_rest_are_left`,
-`a_wanted_replacement_is_held_only_once_a_lossless_copy_lands_and_goes_once_folded`,
-`dismissing_a_replacements_want_cancels_it_and_leaves_the_lossy_song`,
-`a_fold_is_refused_where_the_kept_copy_is_lossy_or_the_taken_one_lossless`,
-`a_lossy_delivery_is_refused_only_where_it_answers_a_replacement`,
-`a_replacement_waiting_is_kept_across_a_reopen`,
-`a_catalog_of_before_lossy_songs_were_replaced_keeps_its_wants_and_gains_the_table`). Both phones
-draw it (`android.md`'s and `ios.md`'s *Replace lossy songs*).
+`replacing.rs` is the phones' half of the desktop's *Find higher quality versions*, over the document
+catalog: what the track menu's *Find a higher quality version* does, for every song of a playlist, and
+nothing is deleted. `higher_versions_of(playlist)` lists the playlist's visible songs once each, in its
+order, as `HigherVersion`s: the best copy held above the song (`best_copy_held_above`: the documents
+sharing its recording and those the search index ranks for its title and artist that name the same
+song, whose `Quality` `is_above` the song's, `best_first`), else, for a lossy song, the first lossless
+version a service played in place offers (`asked_for_versions` of `VersionSearch::Better`), with
+`chosen` (that version is already the default) and `pending` (`a_version_waits_for`: a download is
+under way). A lossless song with nothing above it is left out; a lossy one with nothing found is listed
+so the sheet says so, and `HigherVersions.trouble` names the services that could not be asked.
+`keep_higher_versions(picked)` takes `HigherVersionPicked`s and does for each what `choose_version`
+does: a held copy, weighed again as above the song, is kept as its variant and chosen; a served one is
+wanted (`served_version_wanted`, `want_a_version`) and answered in `HigherVersionsKept.downloading`
+for the front end to download; anything gone or no longer above is `passed_over`. A step 38
+replacement migrated into `versions_wanted` (a want of no `served`) still asks a lossless copy:
+`held_as_wanted` reads it held only where a visible lossless document carries its recording
+(`held_losslessly`), and `refuse_a_lossy_delivery` refuses a lossy file for it before indexing
+(`Error::LossyForAReplacement`)
+(`a_playlists_songs_are_offered_the_best_copy_held_above_them_once_each`,
+`the_versions_ticked_are_kept_beside_their_songs_and_nothing_is_deleted`,
+`a_service_version_of_no_service_is_passed_over_and_wants_nothing`,
+`a_lossy_delivery_is_refused_only_where_it_answers_a_lossless_copy_wanted`,
+`a_version_waiting_is_kept_across_a_reopen`). Both phones draw it (`android.md`'s and `ios.md`'s
+*Find higher quality versions*).
 
 ## Reaching a private server
 

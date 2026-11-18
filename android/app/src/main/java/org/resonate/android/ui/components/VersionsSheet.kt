@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Undo
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.HorizontalDivider
@@ -16,6 +18,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -41,6 +45,8 @@ import kotlinx.coroutines.withContext
 import org.resonate.android.R
 import org.resonate.android.nativecore.FoundVersion
 import org.resonate.android.nativecore.FoundVersions
+import org.resonate.android.nativecore.SongVariant
+import org.resonate.android.nativecore.SongVersion
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.VersionSearch
 import org.resonate.android.nativecore.VersionSearchOffered
@@ -135,7 +141,10 @@ fun VersionsSheet(track: Track, dismiss: () -> Unit) {
                     now.found.trouble?.let { Said(it, MaterialTheme.colorScheme.error) }
                     now.found.said?.let { Said(it) }
                     now.found.versions.forEach { version ->
-                        SheetRow(Icons.Rounded.PlayArrow, version.label) {
+                        val icon =
+                            if (version.version is SongVersion.Served) Icons.Rounded.Download
+                            else Icons.Rounded.PlayArrow
+                        SheetRow(icon, version.label) {
                             dismiss()
                             resonate.playVersion(track, version, scope)
                         }
@@ -173,9 +182,11 @@ private fun Resonate.playVersion(
     scope: CoroutineScope,
 ) {
     attempt(scope) { native ->
-        val said = withContext(Dispatchers.IO) { native.chooseVersion(track.id, version.version) }
-        playback.play(listOf(track))
-        library.notice(said)
+        features.served.bind(native)
+        val chosen = withContext(Dispatchers.IO) { native.chooseVersion(track.id, version.version) }
+        val download = chosen.download
+        if (download == null) playback.play(listOf(track)) else features.downloadVersions(listOf(download))
+        library.notice(chosen.said)
     }
 }
 
@@ -183,6 +194,68 @@ private fun Resonate.playOwnCopy(track: Track, scope: CoroutineScope) {
     attempt(scope) { native ->
         val said = withContext(Dispatchers.IO) { native.forgetVersionChosen(track.id) }
         playback.play(listOf(track))
+        library.notice(said)
+    }
+}
+
+@Composable
+fun VariantsSheet(track: Track, dismiss: () -> Unit) {
+    val resonate = LocalResonate.current
+    val scope = rememberCoroutineScope()
+    var variants by remember(track.id) { mutableStateOf<List<SongVariant>?>(null) }
+    LaunchedEffect(track.id) {
+        resonate
+            .read { native -> withContext(Dispatchers.IO) { native.variantsOf(track.id) } }
+            .onSuccess { variants = it }
+            .onFailure { failure ->
+                if (failure is Exception) resonate.library.report(failure)
+                dismiss()
+            }
+    }
+    ModalBottomSheet(onDismissRequest = dismiss) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding().semantics {
+                testTagsAsResourceId = true
+            }
+        ) {
+            ListItem(
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                leadingContent = { Artwork(track, Sizes.rowArt, shape = MaterialTheme.shapes.medium) },
+                supportingContent = { Text(stringResource(R.string.variants_detail)) },
+                overlineContent = { Text(stringResource(R.string.sheet_variants)) },
+            ) {
+                Text(
+                    stringResource(R.string.variants_title, track.shownTitle),
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            val listed = variants
+            if (listed == null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(24.dp))
+            else
+                listed.forEach { variant ->
+                    ListItem(
+                        modifier =
+                            Modifier.selectable(selected = variant.default, role = Role.RadioButton) {
+                                    dismiss()
+                                    resonate.chooseVariant(track, variant, scope)
+                                }
+                                .testTag("variant-${variant.id}"),
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        leadingContent = { RadioButton(selected = variant.default, onClick = null) },
+                    ) {
+                        Text(variant.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+        }
+    }
+}
+
+private fun Resonate.chooseVariant(track: Track, variant: SongVariant, scope: CoroutineScope) {
+    attempt(scope) { native ->
+        val said = withContext(Dispatchers.IO) { native.chooseVariant(track.id, variant.id) }
         library.notice(said)
     }
 }
