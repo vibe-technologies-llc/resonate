@@ -3,7 +3,7 @@ use std::{
     env, fs,
     io::{self, BufReader, Read as _, Write as _},
     num::NonZeroUsize,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process,
     rc::Rc,
     sync::{
@@ -21,7 +21,7 @@ use resonate_library::{
     GroupMatch, Isrc, Layout, Library, Link, LinkNames, LinkedPlaylist, LinkedProfile, LookingFor,
     LyricText, LyricsAsked, Mbid, Medium, PlaylistLink, ProfileLink, Recording, RecordingAsked,
     RecordingMatch, Reference, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch, ReleaseTrack,
-    ScanOptions, SongLink, SongsAsked, StreamAsked,
+    Removal, ScanOptions, SongLink, SongsAsked, StreamAsked, Trashes,
 };
 use resonate_mcp::{Controlling, Error, Lookups, Reach, Resource, Row, Server, Tool};
 use resonate_mpris::{Described, PlaybackStatus, PlaylistInfo, Queueing, Seeking, ZoneAsked};
@@ -39,6 +39,18 @@ const MP3_FRAMES: usize = 40;
 
 struct Tree {
     root: PathBuf,
+}
+
+struct Discarded;
+
+impl Trashes for Discarded {
+    fn trash(&self, file: &Path) -> Removal {
+        match fs::remove_file(file) {
+            Ok(()) => Removal::Removed,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Removal::AlreadyGone,
+            Err(_) => Removal::Kept,
+        }
+    }
 }
 
 impl Tree {
@@ -3502,12 +3514,11 @@ fn a_playlists_lossy_songs_are_listed_with_what_replacing_would_do_to_each() {
 #[test]
 fn a_lossy_song_with_a_lossless_copy_held_is_folded_in_and_one_with_none_is_never_trashed() {
     let tree = Tree::new();
-    let trash = Tree::new();
     let night = tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
     let lossless = tree.wav("lossless/a.wav", "Night Signal", "Hours", "1");
     let elsewhere = tree.mp3("lossy/b.mp3", "Elsewhere", "Days");
     let library = scanned(&tree);
-    library.trash_into(Some(trash.root.clone()));
+    library.trash_through(Some(Arc::new(Discarded)));
     library
         .start_playlist(
             "Late",
@@ -3617,13 +3628,12 @@ fn a_song_matched_nowhere_a_service_holds_lossless_is_listed_as_offered_and_queu
 #[test]
 fn only_the_lossy_songs_chosen_are_replaced_and_an_unknown_one_is_refused() {
     let tree = Tree::new();
-    let trash = Tree::new();
     let night = tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
     let dusk = tree.mp3("lossy/b.mp3", "Afterglow", "Dusk");
     tree.wav("lossless/a.wav", "Night Signal", "Hours", "1");
     let copy = tree.wav("lossless/b.wav", "Afterglow", "Dusk", "1");
     let library = scanned(&tree);
-    library.trash_into(Some(trash.root.clone()));
+    library.trash_through(Some(Arc::new(Discarded)));
     library
         .start_playlist(
             "Late",
@@ -3689,10 +3699,9 @@ fn only_the_lossy_songs_chosen_are_replaced_and_an_unknown_one_is_refused() {
 #[test]
 fn a_lossy_song_with_a_release_and_no_copy_is_wanted_and_kept_until_one_is_held() {
     let tree = Tree::new();
-    let trash = Tree::new();
     let night = tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
     let library = scanned(&tree);
-    library.trash_into(Some(trash.root.clone()));
+    library.trash_through(Some(Arc::new(Discarded)));
     landed_release_of(&library, "Night Signal", "Hours");
     library
         .start_playlist("Late", &[Cut::whole(MediaLocation::local(&night))])

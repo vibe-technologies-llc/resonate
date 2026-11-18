@@ -45,6 +45,7 @@ pub(crate) const WIDE: f32 = 1_400.0;
 pub(crate) const TALL: f32 = 1_600.0;
 const FRAME: Duration = Duration::from_millis(16);
 const PATIENCE: Duration = Duration::from_secs(10);
+const A_NOTICE_IS_WAITED_ON_IN_STEPS_OF: Duration = Duration::from_millis(500);
 const HINT_SHOWN_BY: Duration = Duration::from_secs(2);
 const VOLUME_SETTLED_BY: Duration = Duration::from_secs(1);
 const WINDOW_SIZE_SETTLED_BY: Duration = Duration::from_secs(1);
@@ -612,6 +613,12 @@ impl Driven {
 
     pub(crate) fn until(&mut self, holds: impl FnMut(&RootView, &gpui::App) -> bool) {
         self.until_ticking(Duration::ZERO, holds);
+    }
+
+    pub(crate) fn until_said(&mut self, heard: impl Fn(&str) -> bool) {
+        self.until_ticking(A_NOTICE_IS_WAITED_ON_IN_STEPS_OF, |_, cx| {
+            crate::toast::showing_text(cx).is_some_and(|said| heard(&said))
+        });
     }
 
     pub(crate) fn until_ticking(
@@ -4093,13 +4100,13 @@ mod tests {
         assert_eq!(shuffled, expected);
 
         driven.click("play-all");
-        driven.until(|root, cx| !root.player.read(cx).state().shuffle);
+        let first = shown[0];
+        driven.until(move |root, cx| {
+            let state = root.player.read(cx).state();
+            !state.shuffle && state.current.as_ref().map(|current| current.id) == Some(first)
+        });
 
         assert_eq!(driven.queue(), shown);
-        assert_eq!(
-            driven.read(|root, cx| root.player.read(cx).state().current.map(|c| c.id)),
-            Some(shown[0])
-        );
     }
 
     #[gpui::test]
@@ -5042,9 +5049,7 @@ mod tests {
     }
 
     fn refusal_told_and_the_other_edit_drawn(driven: &mut Driven, last: TrackId) {
-        driven.until(|_, cx| {
-            crate::toast::showing_text(cx).is_some_and(|said| said.contains("changed first"))
-        });
+        driven.until_said(|said| said.contains("changed first"));
         driven.until(|root, cx| {
             root.library
                 .read(cx)
@@ -6429,7 +6434,6 @@ mod tests {
         });
         let session =
             |_: &RootView, cx: &gpui::App| cx.global::<ResonateApp>().online.lastfm_session.clone();
-        let told = |_: &RootView, cx: &gpui::App| crate::toast::showing_text(cx);
         driven.click("tab-settings");
         driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("last.fm");
@@ -6440,9 +6444,7 @@ mod tests {
         driven.cx.simulate_keystrokes("enter");
 
         driven.click("lastfm-sign-in");
-        driven.until(|root, cx| {
-            told(root, cx).is_some_and(|said| said.starts_with("Last.fm refused the sign-in"))
-        });
+        driven.until_said(|said| said.starts_with("Last.fm refused the sign-in"));
 
         assert_eq!(driven.read(session), "");
         assert!(driven.cx.debug_bounds("lastfm-stop").is_none());
@@ -6947,9 +6949,7 @@ mod tests {
         let mut driven = jellyfin_shown(cx, signs_in);
 
         driven.click("jellyfin-quick-connect");
-        driven.until(|_, cx| {
-            crate::toast::showing_text(cx).is_some_and(|said| said.contains("lapsed"))
-        });
+        driven.until_said(|said| said.contains("lapsed"));
 
         driven.cx.update(|_, cx| {
             let online = &cx.global::<ResonateApp>().online;
@@ -6965,9 +6965,7 @@ mod tests {
         let mut driven = jellyfin_shown(cx, signs_in);
 
         driven.click("jellyfin-quick-connect");
-        driven.until(|_, cx| {
-            crate::toast::showing_text(cx).is_some_and(|said| said.contains("Quick Connect off"))
-        });
+        driven.until_said(|said| said.contains("Quick Connect off"));
 
         driven.cx.update(|_, cx| {
             assert_eq!(
@@ -7149,9 +7147,7 @@ mod tests {
         driven.settle();
 
         driven.click("youtube-music-sign-in");
-        driven.until(|_, cx| {
-            crate::toast::showing_text(cx).is_some_and(|said| said.contains("nothing kept"))
-        });
+        driven.until_said(|said| said.contains("nothing kept"));
 
         assert!(checked.lock().is_empty());
         driven.cx.update(|_, cx| {

@@ -1941,9 +1941,7 @@ mod driven {
                 .lossy_songs_of(road_trip)
                 .is_ok_and(|rows| rows.is_empty())
         });
-        driven.until(|_, cx| {
-            toast::showing_text(cx).is_some_and(|told| told.contains("1 song replaced"))
-        });
+        driven.until_said(|told| told.contains("1 song replaced"));
 
         assert!(driven.read(|root, _| root.replacing.is_none()));
         assert!(!opus.exists(), "the lossy copy went to the trash");

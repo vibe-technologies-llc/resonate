@@ -1,5 +1,5 @@
 use std::{
-    env, fs,
+    env, fs, io,
     num::NonZeroUsize,
     path::{Path, PathBuf},
     process,
@@ -7,7 +7,7 @@ use std::{
 };
 
 use clap::Parser as _;
-use resonate_library::{Library, PassHandle, ScanOptions};
+use resonate_library::{Library, PassHandle, Removal, ScanOptions, Trashes};
 
 use crate::cli::Cli;
 
@@ -120,6 +120,18 @@ pub fn scan_of(root: &Path) -> ScanOptions {
         follow_symlinks: false,
         extract_cover_art: false,
         workers: NonZeroUsize::MIN,
+    }
+}
+
+pub struct Discarded;
+
+impl Trashes for Discarded {
+    fn trash(&self, file: &Path) -> Removal {
+        match fs::remove_file(file) {
+            Ok(()) => Removal::Removed,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Removal::AlreadyGone,
+            Err(_) => Removal::Kept,
+        }
     }
 }
 

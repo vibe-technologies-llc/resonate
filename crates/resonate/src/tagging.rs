@@ -344,7 +344,7 @@ mod tests {
     const KEPT: &str = "[00:01.00]all that you touch\n[00:05.00]all that you see\n";
 
     fn kept_beside(name: &str) -> (Library, PathBuf) {
-        let root = scratch(name);
+        let root = scratch(name).canonicalize().expect("a canonical folder");
         let track = root.join("Eclipse.wav");
         fs::write(&track, silent_wave(10)).expect("a track");
         let library = scanned(&root);

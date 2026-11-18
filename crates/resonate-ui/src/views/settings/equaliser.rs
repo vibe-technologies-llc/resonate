@@ -2892,6 +2892,15 @@ mod tests {
         for name in left.iter().chain(&others) {
             fs::write(folder.path().join(name), b"").expect("a writable folder");
         }
+        let long_ago =
+            std::time::SystemTime::now() - resonate_core::writer::UNHELD_AND_UNTOUCHED_FOR * 2;
+        for name in &left {
+            fs::File::options()
+                .write(true)
+                .open(folder.path().join(name))
+                .and_then(|file| file.set_modified(long_ago))
+                .expect("a stage left long ago");
+        }
         let held = Held::made(&folder.path().join(&living)).expect("a stage being written");
 
         write_beside(&kept, b"pair").expect("the pair is kept");

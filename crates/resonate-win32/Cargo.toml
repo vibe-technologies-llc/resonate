@@ -10,11 +10,9 @@ doctest = false
 [features]
 console = []
 
-[dependencies]
-thiserror.workspace = true
-
 [dev-dependencies]
 parking_lot.workspace = true
+thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows = {
@@ -39,6 +37,7 @@ windows = {
         "Win32_UI_WindowsAndMessaging"
     ]
 }
+thiserror.workspace = true
 windows-core.workspace = true
 
 [lints.rust]

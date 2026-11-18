@@ -146,7 +146,11 @@ pub(crate) fn search(to: SocketAddr, within: Duration, sought: Sought) -> Result
             {
                 break;
             }
-            Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::ConnectionRefused | io::ErrorKind::ConnectionReset
+                ) => {}
             Err(error) => return Err(failed(SearchOp::Receive)(error)),
         }
     }

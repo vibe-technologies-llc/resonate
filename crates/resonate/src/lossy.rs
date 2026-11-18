@@ -189,7 +189,9 @@ mod tests {
     };
 
     use super::*;
-    use crate::fixtures::{ALBUM, ARTIST, TITLE, scanned, scratch, tagged_mp3, tagged_wave};
+    use crate::fixtures::{
+        ALBUM, ARTIST, Discarded, TITLE, scanned, scratch, tagged_mp3, tagged_wave,
+    };
 
     const TAGS: [(&[u8; 4], &str); 3] =
         [(TITLE, "Echoes"), (ARTIST, "Pink Floyd"), (ALBUM, "Meddle")];
@@ -208,7 +210,7 @@ mod tests {
         }
         let folder = folder.canonicalize().expect("a canonical folder");
         let library = scanned(&folder);
-        library.trash_into(Some(scratch("lossy-trash")));
+        library.trash_through(Some(Arc::new(Discarded)));
         Collection { library, folder }
     }
 

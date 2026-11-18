@@ -307,7 +307,9 @@ mod tests {
             if name == THE_ONLY_MODULE_THAT_DELETES_TRACKS || name.ends_with("tests.rs") {
                 continue;
             }
-            let text = fs::read_to_string(&source).expect("a source is read");
+            let text = fs::read_to_string(&source)
+                .expect("a source is read")
+                .replace("\r\n", "\n");
             raw.extend(
                 deletes_tracks(the_code_apart_from_its_tests(&text))
                     .into_iter()

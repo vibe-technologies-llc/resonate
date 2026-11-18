@@ -594,9 +594,7 @@ fn a_song_with_no_title_is_told_it_cannot_be_kept(cx: &mut TestAppContext) {
         .cx
         .update(|_, cx| model.update(cx, |library, cx| library.keep(&row, cx)));
 
-    keeping
-        .driven
-        .until(|_, cx| toast::showing_text(cx).is_some_and(|said| said.contains("no title")));
+    keeping.driven.until_said(|said| said.contains("no title"));
     assert_eq!(keeping.queued(), 0);
 }
 
@@ -615,7 +613,7 @@ fn a_list_says_how_many_of_its_rows_were_left_out_for_want_of_a_title(cx: &mut T
 
     keeping
         .driven
-        .until(|_, cx| toast::showing_text(cx).is_some_and(|said| said.contains("1 left out")));
+        .until_said(|said| said.contains("1 left out"));
 }
 
 #[test]

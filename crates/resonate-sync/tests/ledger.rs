@@ -1343,6 +1343,7 @@ fn an_answer_for_a_song_not_held_is_not_offered_again_by_a_ledger_opened_anew() 
     phone.shelf.listen_here("Elsewhere", days_ago(0));
     phone.ledger.settle(&phone.shelf).expect("settled");
     let offered = phone.shelf.inside.lock().answers_offered - offered_before;
+    drop(phone);
     std::fs::remove_dir_all(&folder).expect("cleared");
 
     assert_eq!(offered, 0);

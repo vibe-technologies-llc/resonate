@@ -70,6 +70,25 @@ impl Pane {
         self.driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| root.remember_settings_category(true, cx));
         });
+        self.written_through(&stored(Setting::Switched(
+            Switch::RememberSettingsCategory,
+            true,
+        )));
+    }
+
+    fn written_through(&mut self, last: &SettingChange) {
+        let began = Instant::now();
+        loop {
+            self.driven.settle();
+            if self.written.lock().contains(last) {
+                return;
+            }
+            assert!(
+                began.elapsed() < PATIENCE,
+                "{last:?} was awaited and never written"
+            );
+            thread::sleep(FRAME);
+        }
     }
 
     fn reach(&mut self, selector: &'static str) {
@@ -281,6 +300,7 @@ fn no_longer_remembering_the_category_forgets_the_one_kept(cx: &mut TestAppConte
     pane.remembering_the_category();
     pane.category(Category::Online);
     pane.category(Category::Window);
+    pane.written_through(&stored(Setting::LastSettingsCategory(Category::Window)));
 
     let written = pane.pressing("remember-the-settings-category-track", 2);
 

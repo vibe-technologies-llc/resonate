@@ -62,6 +62,9 @@ engine is a dev-dependency, for the end-to-end test.
   only where that names the IP the answer came from (`Located::is_at`), never a hostname or another
   machine, since the description it points at is fetched and its controls posted to. The
   address searched is `Searching::to`, so tests answer on loopback and nothing reaches the network.
+  A search sent where nobody listens comes back as an ICMP port unreachable, which the next receive
+  reports as `ConnectionRefused` on Linux and `ConnectionReset` (`WSAECONNRESET`) on Windows; both
+  are passed over and the round keeps listening, so a server that left is missed, not a failure.
   **A round describes a bounded number of what it heard** (`room_to_describe`): at most
   `DESCRIBED_FROM_A_SEARCH_AT_MOST` (32) devices a round, each one's failure counted, and none once
   `RENDERERS_AT_MOST` (64) are held; the rest are passed over with a debug line. The renderers the
