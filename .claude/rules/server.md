@@ -172,9 +172,15 @@ holds. The `A_SPACE_MAY_BE_SHARED_AND_CLOSED` step adds two columns.
   once (`Store::allow_viewers`), and a new space it makes spends
   `--shared-spaces-per-address-per-day` (50), not the 5 a personal space does, so a reset behind one
   NAT cannot fail halfway through its work. **A space with a viewer is a shared space and a `Hello`
-  to it is refused `Token`** (`Store::is_shared`, no stored mark of its own), so the 50 a day cannot
-  be spent on spaces used as personal ones past the 5
-  (`a_space_made_by_a_share_is_never_answered_to_a_hello_so_the_two_budgets_stay_apart`).
+  to it is refused `Token`** (`Store::is_shared`, no stored mark of its own)
+  (`a_space_made_by_a_share_is_never_answered_to_a_hello_so_the_two_budgets_stay_apart`). **A
+  `Share` session does only what a shared list asks** (`SpaceKind::Shared`): it reads, appends,
+  compacts (whole or staged), closes and says `Bye`, and nothing of a device's own space; its
+  `Welcome` names nobody online, it is told no `Arrived` or `Left`, and a `Relaying`, `Relay` or
+  `Punch` is refused `Shared` and ends the session. Personal sync rests on devices meeting
+  (presence, punches, the relay that carries songs between them), so a script naming a viewer
+  token it never uses cannot spend the 50 a day on personal spaces past the 5
+  (`a_share_does_only_what_a_shared_list_needs_so_it_cannot_stand_in_for_a_personal_space`).
 - **`View` is one read and no seat**: the viewer token opens `Welcome`, the snapshot and records and
   a `Closed` if there is one, then the connection ends. It joins no hub, so followers do not count
   against `--devices`, and appending or compacting is not a thing it can ask. It touches the space,

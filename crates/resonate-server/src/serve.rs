@@ -85,8 +85,15 @@ struct Door {
     after: u64,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SpaceKind {
+    Personal,
+    Shared,
+}
+
 struct Seat {
     space: SpaceId,
+    kind: SpaceKind,
     device: DeviceId,
     after: u64,
     seen: SocketAddr,
@@ -475,6 +482,10 @@ impl Server {
         if version != PROTOCOL_VERSION {
             return refuse(&mut send, Refusal::Version).await;
         }
+        let kind = match viewer {
+            Some(_) => SpaceKind::Shared,
+            None => SpaceKind::Personal,
+        };
         let store = Arc::clone(&self.store);
         let digest = token.digest();
         let making = Arc::clone(&admitted);
@@ -506,6 +517,7 @@ impl Server {
         let session = joined.session;
         let seat = Seat {
             space,
+            kind,
             device,
             after,
             seen: address,
@@ -740,6 +752,7 @@ impl Server {
     ) -> Result<()> {
         let Seat {
             space,
+            kind,
             device,
             after,
             seen,
@@ -752,8 +765,12 @@ impl Server {
         } = joined;
         let store = Arc::clone(&self.store);
         let (head, _) = in_the_store(move || store.lock().head(space)).await?;
+        let online = match kind {
+            SpaceKind::Personal => others,
+            SpaceKind::Shared => Vec::new(),
+        };
         let welcome = FromServer::Welcome {
-            online: others,
+            online,
             seen_at: seen,
             head,
         };
@@ -792,6 +809,11 @@ impl Server {
                         Err(_) => break Ok(()),
                     };
                     let frame = match frame {
+                        ToServer::Relay { .. } | ToServer::Relaying | ToServer::Punch { .. }
+                            if kind == SpaceKind::Shared =>
+                        {
+                            break refuse(&mut send, Refusal::Shared).await;
+                        }
                         ToServer::Relay { to, datagram } => {
                             if allowance.spend(relayed_weight(datagram.len())) {
                                 self.hub.relay(space, device, to, datagram);
@@ -843,6 +865,7 @@ impl Server {
                     match notice {
                         Notice::Replaced | Notice::FellBehind => break Ok(()),
                         Notice::Appended => self.send_records(&mut send, space, device, &mut sent).await?,
+                        Notice::Arrived(_) | Notice::Left(_) if kind == SpaceKind::Shared => {}
                         Notice::Arrived(other) => send.send(&FromServer::Arrived { device: other }.encoded()).await?,
                         Notice::Left(other) => send.send(&FromServer::Left { device: other }.encoded()).await?,
                         Notice::Relayed { from, datagram } => {

@@ -190,6 +190,7 @@ pub enum Refusal {
     Busy,
     Stale,
     NoSuchRoom,
+    Shared,
     Unknown,
 }
 
@@ -1407,6 +1408,7 @@ impl Refusal {
             Self::Busy => 5,
             Self::Stale => 6,
             Self::NoSuchRoom => 7,
+            Self::Shared => 8,
             Self::Unknown => 255,
         }
     }
@@ -1421,6 +1423,7 @@ impl Refusal {
             5 => Self::Busy,
             6 => Self::Stale,
             7 => Self::NoSuchRoom,
+            8 => Self::Shared,
             _ => Self::Unknown,
         }
     }
@@ -2608,6 +2611,7 @@ mod tests {
             },
             FromServer::RoomEnded,
             FromServer::Refused(Refusal::NoSuchRoom),
+            FromServer::Refused(Refusal::Shared),
         ];
 
         for frame in to_server {

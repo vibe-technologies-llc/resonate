@@ -508,6 +508,88 @@ async fn a_space_made_by_a_share_is_never_answered_to_a_hello_so_the_two_budgets
 }
 
 #[tokio::test]
+async fn a_share_does_only_what_a_shared_list_needs_so_it_cannot_stand_in_for_a_personal_space() {
+    let server = hosted(Limits::default()).await;
+    let opened_as = |who: u8| ToServer::Share {
+        version: PROTOCOL_VERSION,
+        space: SPACE,
+        token: token(5),
+        viewer: token(6).digest(),
+        device: device(who),
+        after: 0,
+    };
+    let refused_after = async |who: u8, asked: ToServer| {
+        let mut link = Link::to(server).await;
+        link.say(opened_as(who)).await;
+        assert!(matches!(
+            link.heard().await,
+            Some(FromServer::Welcome { online, .. }) if online.is_empty()
+        ));
+        link.say(asked).await;
+
+        loop {
+            match link.heard().await {
+                Some(FromServer::Records { .. }) => {}
+                heard => return heard,
+            }
+        }
+    };
+
+    let mut first = Link::to(server).await;
+    first.say(opened_as(1)).await;
+    assert!(matches!(
+        first.heard().await,
+        Some(FromServer::Welcome { .. })
+    ));
+    let mut second = Link::to(server).await;
+    second.say(opened_as(2)).await;
+    let second_welcomed = second.heard().await;
+    second
+        .say(ToServer::Append {
+            blobs: vec![SEALED.to_vec()],
+        })
+        .await;
+    let appended = second.heard().await;
+
+    let relaying = refused_after(3, ToServer::Relaying).await;
+    let punching = refused_after(
+        4,
+        ToServer::Punch {
+            to: device(1),
+            sealed: vec![1; 40],
+        },
+    )
+    .await;
+    let relayed = refused_after(
+        5,
+        ToServer::Relay {
+            to: device(1),
+            datagram: vec![1; 40],
+        },
+    )
+    .await;
+    first.say(ToServer::Bye).await;
+
+    assert!(matches!(
+        second_welcomed,
+        Some(FromServer::Welcome { online, .. }) if online.is_empty()
+    ));
+    assert!(matches!(
+        appended,
+        Some(FromServer::Records { .. } | FromServer::Appended { .. })
+    ));
+    assert_eq!(relaying, Some(FromServer::Refused(Refusal::Shared)));
+    assert_eq!(punching, Some(FromServer::Refused(Refusal::Shared)));
+    assert_eq!(relayed, Some(FromServer::Refused(Refusal::Shared)));
+    while let Some(heard) = first.heard().await {
+        assert!(
+            !matches!(heard, FromServer::Arrived { .. } | FromServer::Left { .. }),
+            "a shared list's devices are never told of each other: {heard:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn a_view_link_cannot_claim_a_shared_list_before_its_owner_does() {
     let server = hosted(Limits::default()).await;
     let edit = resonate_sync::shared::Access::minted().expect("a key");
@@ -637,10 +719,6 @@ async fn a_space_closed_again_tells_only_the_one_asking_not_every_device_once_mo
 
     let mut first = share_opened_as(server, 1).await;
     let mut second = share_opened_as(server, 2).await;
-    assert!(matches!(
-        first.heard().await,
-        Some(FromServer::Arrived { .. })
-    ));
 
     first
         .say(ToServer::Close {
