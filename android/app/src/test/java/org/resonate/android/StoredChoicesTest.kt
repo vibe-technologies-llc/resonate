@@ -39,4 +39,11 @@ class StoredChoicesTest {
         assertTrue(StoredChoices.deletionsFromOthers(stored("sync-deletions-from-others" to true)))
         assertFalse(StoredChoices.deletionsFromOthers(stored("sync-deletions-from-others" to false)))
     }
+
+    @Test
+    fun newerReleasesAreLookedForUnlessTurnedOff() {
+        assertTrue(StoredChoices.checkForUpdates(stored()))
+        assertTrue(StoredChoices.checkForUpdates(stored("check-for-updates" to true)))
+        assertFalse(StoredChoices.checkForUpdates(stored("check-for-updates" to false)))
+    }
 }

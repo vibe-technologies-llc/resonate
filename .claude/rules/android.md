@@ -439,7 +439,8 @@ arriving on a first scan never squeeze its buttons.
 *Library* (Music folders, Library tools, Listening statistics, Made for you, Saved for later), *Online &
 services* (Online features, the root's one switch; Download sources; Server, only while serving;
 Scrobbling; Spotify), *Devices* (Device sync), *Appearance* (Appearance) and *App* (Playback
-notifications, with *Allow* while refused, and the version). Every row is an icon, its page's title and
+notifications, with *Allow* while refused; Check for updates, Android's alone so far; and the version, a
+newer release told under it). Every row is an icon, its page's title and
 a one-line status, live where there is one to tell (the equaliser's *On · <curve>* or *Off*, the output
 in use, the theme and accent). Search folds accents and matches word starts across a row's title, line,
 group, the settings its page holds (`Setting.inner`, the one matched named in place of the line) and the
@@ -1537,6 +1538,25 @@ desktop does (`tried`, `misses`): an offer zeroes the misses, nothing heard from
 counts one, a refusal or cancel neither; `poll_wanted_due` answers the unheld wants due by the
 desktop's `Want::due_at` (`RETRY_WAITS`, `POLL_AGAIN_AFTER`, given up at `TRIES_BEFORE_GIVING_UP`),
 and `next_wanted_due` the earliest of those times among them (unix seconds), for a front end's timer.
+
+**The sideloaded app says when a newer release is out** (`NewerReleases.kt`), as the desktop's
+window does and through the same code: `newer_release()` at the boundary (`updates.rs`) asks the
+repository `Repository::of_this_build` names through the shared client, paced by `KeptRelease`
+over `latest-release` in the player's folder (`online.md`'s *The latest release*: at most one ask a
+day, a failed ask keeping what was heard, only a version newer than this build answered). It asks
+nothing while Online is off and, being on the lookup gate's client, nothing while metered unless
+*Look up on a metered connection* is on; the kept answer is still told. A build naming no
+repository answers `None` and `names_where_it_was_released()` is false, so Settings says it never
+asks (`a_phone_offline_is_told_what_was_heard_and_asks_nothing`,
+`a_release_no_newer_than_this_build_is_not_told`). *Check for updates* (Settings, App,
+`check-for-updates`, on unless stored off: `StoredChoices.checkForUpdates`) runs `ReleaseWatch`,
+begun with the player: while the app is in the foreground it calls the boundary at once and again
+every `LOOKED_AT_AGAIN_EVERY_MS` (six hours, the desktop's window's), so the network is asked at most
+once a day. A newer release is told once a run as a notice (*Resonate X is out · Settings has it*)
+and shown under the Version row (`newer-release`): a press opens the release page, the cross
+dismisses that version for good (`update-dismissed`), and a later version is told again
+(`NewerReleases.shown`, `newerReleasesAreLookedForUnlessTurnedOff`). Turning the switch off hides
+the row and asks nothing more. iOS reaches the same call and shows nothing yet.
 
 ## Services played in place
 

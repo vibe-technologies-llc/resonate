@@ -55,6 +55,7 @@ mod stamp;
 mod sync;
 mod tagging;
 mod together;
+mod updates;
 mod vanished;
 mod versions;
 mod watching;
@@ -334,6 +335,7 @@ pub struct MobilePlayer {
     rendering: rendering::Rendering,
     together: together::Together,
     offered: offering::Offered,
+    releases: resonate_online::KeptRelease,
 }
 
 #[uniffi::export]
@@ -400,6 +402,7 @@ impl MobilePlayer {
             together: together::Together::default(),
             rendering,
             offered: offering::Offered::under(PathBuf::from(&folder)),
+            releases: resonate_online::KeptRelease::in_folder(Path::new(&folder)),
         });
         this.downloads.stall_by(this.services.downloads.clone());
         this.services.files.reach_through(files);

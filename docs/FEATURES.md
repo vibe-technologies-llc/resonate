@@ -4,8 +4,6 @@ Gaps: what is not built, a limit by design, an unsupported format or a behaviour
 reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android parity
-- [S · 0.14.0] The sideloaded Android app never says a newer release is out: the desktop asks once a
-  day while `check-for-updates` is on (`updates.rs`), and nothing on Android asks or shows it
 - [M · blocked: hardware] Android offers no DoP: a marked stream needs the USB bit-perfect mixer at a
   32-bit word (Oboe-rs has no packed 24-bit one) and a DAC that decodes it to prove the markers
   arrive untouched

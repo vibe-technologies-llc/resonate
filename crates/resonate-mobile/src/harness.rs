@@ -293,6 +293,7 @@ impl Harness {
             together: crate::together::Together::default(),
             rendering,
             offered: Offered::on(folder.clone(), offering),
+            releases: resonate_online::KeptRelease::in_folder(&folder),
         };
         player.services.files.reach_through(files);
 

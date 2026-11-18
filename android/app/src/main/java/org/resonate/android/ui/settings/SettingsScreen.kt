@@ -1,6 +1,8 @@
 package org.resonate.android.ui.settings
 
 import android.content.Context
+import android.net.Uri
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
@@ -32,6 +35,7 @@ import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material.icons.rounded.SpeakerGroup
 import androidx.compose.material.icons.rounded.SurroundSound
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,6 +62,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.resonate.android.R
 import org.resonate.android.Words
+import org.resonate.android.nativecore.NewerRelease
 import org.resonate.android.nativecore.PlaybackPreferences
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.EmptyState
@@ -79,10 +84,19 @@ class SettingsViewModel(private val resonate: Resonate) : ViewModel() {
     val preferences = resonate.library.preferences
     val route = resonate.library.route
     val bound = resonate.library.boundRoutes
+    val checksForUpdates = resonate.features.releases.checks
+    val asksForUpdates = resonate.features.releases.asksSomewhere
+    val newerRelease = resonate.features.releases.newer
 
     fun setOnline(enabled: Boolean) = resonate.features.setOnline(enabled)
 
     fun allowNotifications() = resonate.host.allowNotifications()
+
+    fun checkForUpdates(on: Boolean) = resonate.features.releases.check(on)
+
+    fun openRelease(page: String) = resonate.host.open(Uri.parse(page))
+
+    fun dismissRelease(version: String) = resonate.features.releases.dismiss(version)
 }
 
 private val Setting.icon: ImageVector
@@ -110,6 +124,7 @@ private val Setting.icon: ImageVector
             Setting.SYNC -> Icons.Rounded.Devices
             Setting.APPEARANCE -> Icons.Rounded.Palette
             Setting.NOTIFICATIONS -> Icons.Rounded.Notifications
+            Setting.UPDATES -> Icons.Rounded.SystemUpdate
             Setting.VERSION -> Icons.Rounded.Info
         }
 
@@ -138,6 +153,7 @@ private val Setting.destination: Screen?
             Setting.APPEARANCE -> Screen.Appearance
             Setting.ONLINE,
             Setting.NOTIFICATIONS,
+            Setting.UPDATES,
             Setting.VERSION -> null
         }
 
@@ -172,6 +188,9 @@ fun SettingsScreen() {
     val preferences by model.preferences.collectAsStateWithLifecycle()
     val route by model.route.collectAsStateWithLifecycle()
     val bound by model.bound.collectAsStateWithLifecycle()
+    val checksForUpdates by model.checksForUpdates.collectAsStateWithLifecycle()
+    val asksForUpdates by model.asksForUpdates.collectAsStateWithLifecycle()
+    val newerRelease by model.newerRelease.collectAsStateWithLifecycle()
     val othersKept = keptForOthers(route, bound).isNotEmpty()
     var query by rememberSaveable { mutableStateOf("") }
     var notifications by remember { mutableStateOf(notificationsAllowed(context)) }
@@ -267,12 +286,38 @@ fun SettingsScreen() {
                                         }
                                     },
                             )
-                        Setting.VERSION ->
-                            SettingRow(
-                                title = stringResource(R.string.app_name),
+                        Setting.UPDATES ->
+                            SwitchRow(
+                                title = title,
                                 icon = setting.icon,
-                                supporting = stringResource(R.string.settings_version, version),
+                                supporting =
+                                    detail
+                                        ?: when {
+                                            !asksForUpdates ->
+                                                stringResource(R.string.settings_updates_nowhere)
+                                            checksForUpdates -> ownDetail
+                                            else -> stringResource(R.string.settings_updates_off)
+                                        },
+                                checked = checksForUpdates,
+                                onCheckedChange = model::checkForUpdates,
+                                modifier = Modifier.testTag("setting-updates"),
                             )
+                        Setting.VERSION ->
+                            Column {
+                                SettingRow(
+                                    title = stringResource(R.string.app_name),
+                                    icon = setting.icon,
+                                    supporting = stringResource(R.string.settings_version, version),
+                                )
+                                newerRelease?.let { newer ->
+                                    NewerReleaseRow(
+                                        newer,
+                                        version,
+                                        onOpen = { model.openRelease(newer.page) },
+                                        onDismiss = { model.dismissRelease(newer.version) },
+                                    )
+                                }
+                            }
                         Setting.EQUALISER ->
                             SettingRow(
                                 title = title,
@@ -305,6 +350,30 @@ fun SettingsScreen() {
             }
         }
     }
+}
+
+@Composable
+private fun NewerReleaseRow(
+    newer: NewerRelease,
+    thisBuild: String,
+    onOpen: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    SettingRow(
+        title = stringResource(R.string.settings_newer_release, newer.version),
+        icon = Icons.Rounded.NewReleases,
+        supporting = stringResource(R.string.settings_newer_release_this_build, thisBuild),
+        modifier = Modifier.testTag("newer-release"),
+        onClick = onOpen,
+        trailing = {
+            IconButton(onClick = onDismiss, modifier = Modifier.testTag("dismiss-the-release")) {
+                Icon(
+                    Icons.Rounded.Clear,
+                    contentDescription = stringResource(R.string.settings_newer_release_dismiss),
+                )
+            }
+        },
+    )
 }
 
 @Composable

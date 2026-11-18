@@ -2235,6 +2235,7 @@ mod tests {
             together: crate::together::Together::default(),
             rendering: crate::rendering::Rendering::default(),
             offered: crate::offering::Offered::untold(),
+            releases: resonate_online::KeptRelease::in_folder(&std::env::temp_dir()),
         }
     }
 

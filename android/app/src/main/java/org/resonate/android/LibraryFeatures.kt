@@ -213,6 +213,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     val downloads = DownloadQueue(context, library, scope, settings, downloadSeams)
     val listening = Listening(library, scope, { online.value }, { auddToken.value })
+    val releases = ReleaseWatch(library, settings, scope, derivedScope) { foreground }
     val tags = TagEditing(context, library, scope) { songDeletable(it) }
     val downloading: StateFlow<Boolean> =
         downloads.jobs
@@ -437,6 +438,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         native.configureEnrichOnMetered(enrichOnMetered.value)
         native.configureDownloadOnMetered(downloadOnMetered.value)
         served.begin(native)
+        releases.begin(native)
         enrichment.initialize(online.value)
         downloads.recover(native)
         settings.getString("unfinished-sync-landing", null)?.let { value ->

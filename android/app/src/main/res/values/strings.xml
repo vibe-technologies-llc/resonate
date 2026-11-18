@@ -1239,6 +1239,7 @@
     <string name="settings_appearance_title">Appearance</string>
     <string name="settings_notifications_title">Playback notifications</string>
     <string name="settings_version_title">Version</string>
+    <string name="settings_updates_title">Check for updates</string>
     <string name="settings_equaliser_detail">Bands, presets and corrections</string>
     <string name="settings_inner_presets">Presets</string>
     <string name="settings_inner_bands">Bands</string>
@@ -1371,9 +1372,11 @@
     <string name="settings_inner_player_intensity">Player intensity</string>
     <string name="settings_inner_now_playing">Now Playing</string>
     <string name="settings_notifications_detail">Controls on the lock screen and in the shade</string>
+    <string name="settings_updates_detail">Tell me when a newer release is out</string>
     <string name="settings_inner_permission">Permission</string>
     <string name="settings_inner_media_controls">Media controls</string>
     <string name="settings_inner_about">About</string>
+    <string name="settings_inner_newer_release">Newer release</string>
     <string name="settings_title">Settings</string>
     <string name="settings_equaliser_on">On · %1$s</string>
     <string name="settings_equaliser_off">Off</string>
@@ -1386,6 +1389,12 @@
     <string name="settings_notifications_allowed">Allowed</string>
     <string name="settings_notifications_not_allowed">Not allowed yet</string>
     <string name="settings_notifications_allow">Allow</string>
+    <string name="settings_updates_off">Off, nothing is asked</string>
+    <string name="settings_updates_nowhere">This build names no repository it was released from, so it never asks</string>
+    <string name="settings_newer_release">Resonate %1$s is out</string>
+    <string name="settings_newer_release_this_build">This build is %1$s · tap to open the release</string>
+    <string name="settings_newer_release_dismiss">Dismiss</string>
+    <string name="updates_newer_is_out_notice">Resonate %1$s is out · Settings has it</string>
     <string name="settings_search">Search settings</string>
     <string name="settings_search_clear">Clear search</string>
     <string name="settings_cancel">Cancel</string>

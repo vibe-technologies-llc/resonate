@@ -56,7 +56,7 @@ pub use crate::{
     listenbrainz::ListenBrainz,
     lyrics::{OnlineLyrics, source_of as lyric_source_of},
     reference::Online,
-    releases::{Release, Releases, Repository, Version},
+    releases::{KeptRelease, Release, Releases, Repository, Version},
     shazam::Shazam,
     spotify_account::{
         SPOTIFY_REDIRECT, SpotifyAccount, SpotifyAuthorizing, SpotifyEndpoints, SpotifyGrant,

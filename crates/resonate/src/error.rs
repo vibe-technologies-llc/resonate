@@ -420,14 +420,6 @@ pub enum Error {
     #[error("the latest release could not be asked for")]
     LatestRelease(#[source] Box<resonate_online::Error>),
 
-    #[cfg(feature = "online")]
-    #[error("what was last heard of the releases could not be kept at {path}")]
-    KeepLatestRelease {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
-
     #[cfg(not(feature = "online"))]
     #[error("this build has no TIDAL sign-in; it was built without the online feature")]
     NoSignIn,

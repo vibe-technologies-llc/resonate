@@ -1,8 +1,11 @@
+mod kept;
+
 use std::{cmp::Ordering, fmt, sync::Arc};
 
 use resonate_library::LookupOp;
 use serde::Deserialize;
 
+pub use self::kept::KeptRelease;
 use crate::{Client, Host, Result};
 
 const RELEASE_PAGES: &str = "https://github.com/";
@@ -16,6 +19,10 @@ pub struct Repository {
 }
 
 impl Repository {
+    pub fn of_this_build() -> Option<Self> {
+        option_env!("RESONATE_RELEASES").and_then(Self::named)
+    }
+
     pub fn named(spelt: &str) -> Option<Self> {
         let (owner, name) = spelt.trim().split_once('/')?;
         let reads = |part: &str| {
@@ -73,6 +80,10 @@ pub struct Version {
 impl Version {
     pub fn of_this_build() -> Option<Self> {
         Self::read(env!("CARGO_PKG_VERSION"))
+    }
+
+    pub fn outdates_this_build(&self) -> bool {
+        Self::of_this_build().is_some_and(|built| *self > built)
     }
 
     pub fn read(spelt: &str) -> Option<Self> {
@@ -303,6 +314,16 @@ mod tests {
     }
 
     #[test]
+    fn only_a_later_version_outdates_this_build() {
+        let built = Version::of_this_build().expect("this build's version");
+
+        assert!(version("99.0.0").outdates_this_build());
+        assert!(!built.outdates_this_build());
+        assert!(!version("0.0.1").outdates_this_build());
+        assert!(!version("0.0.1-rc.1").outdates_this_build());
+    }
+
+    #[test]
     fn a_repository_is_named_owner_and_name_and_nothing_else() {
         assert!(Repository::named("someone/resonate").is_some());
         for spelt in [
@@ -364,7 +385,10 @@ mod tests {
         assert_eq!(candidate.into_release(&repository), None);
     }
 
-    fn serving(status: &'static str, body: &'static str) -> (String, thread::JoinHandle<String>) {
+    pub(super) fn serving(
+        status: &'static str,
+        body: &'static str,
+    ) -> (String, thread::JoinHandle<String>) {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
         let base = format!("http://{}", listener.local_addr().expect("an address"));
         let served = thread::spawn(move || {
@@ -384,7 +408,7 @@ mod tests {
         (base, served)
     }
 
-    fn over_loopback(base: String) -> Releases {
+    pub(super) fn over_loopback(base: String) -> Releases {
         let client = Client::on_clock(
             Introduction::as_(&Identity::of_this_build()),
             Arc::new(WallClock),

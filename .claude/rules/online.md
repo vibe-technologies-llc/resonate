@@ -615,18 +615,34 @@ A failed optional Deezer twin lookup preserves the names and codes already read 
 `releases.rs` asks GitHub's API (`Host::GitHub`, `api.github.com`, the others' pace and gated like
 any lookup, metered included) `/repos/<owner>/<name>/releases/latest` under
 `LookupOp::LatestRelease`, saying only `resonate/<version>`. **The repository is named by the build,
-never written in the tree**: the binary reads `RESONATE_RELEASES` (`owner/name`, held by
-`Repository::named`) with `option_env!`, which `release.yml` sets to `github.repository`, so a
-build from a checkout, the `-git` recipes and the Flatpak name none and ask nothing (the window says
-so; `resonate update` is `Error::NoReleasesNamed`). A draft or pre-release is no answer (the endpoint
+never written in the tree**: `Repository::of_this_build` reads `RESONATE_RELEASES` (`owner/name`, held by
+`Repository::named`) with `option_env!`, which `release.yml` sets to `github.repository` for every
+job, the APK's native library included, so a build from a checkout, the `-git` recipes and the
+Flatpak name none and ask nothing (the window and Android's Settings say so; `resonate update` is
+`Error::NoReleasesNamed`). A draft or pre-release is no answer (the endpoint
 names neither), a page off `https://github.com/` is replaced by the tag's own, a 404 is no release,
 and a body that is not a release is `Unreadable`. `Version` orders as semantic versioning does: a
 leading `v` and build metadata are dropped, a pre-release sorts below its release, its identifiers
 numeric before named and a shorter run first
 (`versions_order_as_semantic_versioning_orders_them`,
-`the_latest_release_is_asked_of_the_repository_saying_only_what_this_build_is`). The binary's
-`online::latest_release` and `outdates_this_build` are the only callers; `updates.rs` keeps what was
-heard (`binary.md`).
+`the_latest_release_is_asked_of_the_repository_saying_only_what_this_build_is`), and
+`Version::outdates_this_build` compares one with `Version::of_this_build`
+(`only_a_later_version_outdates_this_build`).
+
+**What was heard is kept and asked again once a day, here, for the desktop and the phones alike**
+(`releases/kept.rs`): `KeptRelease::in_folder` names `latest-release` in a data folder (the binary's,
+`binary.md`, or the phone's player folder), written as `checked <unix seconds>`, then `latest` and
+`page` where a release was heard. `KeptRelease::newer_lately(now, reaching, ask)` answers from the
+file until `ASKED_AGAIN_AFTER` (a day) has passed or the clock went back before it, then calls `ask`
+and writes what it heard; a failed ask keeps what was heard before and writes nothing, and while
+not `reaching` nothing is asked. Only a release whose version `outdates_this_build` is answered.
+`KeptRelease::heard_now` writes an answer asked outside the pacing (`resonate update`). The file is
+a cache: unreadable, it is asked again, and a write that fails is logged and asked again, so it
+needs no migration and no error crosses (`the_releases_are_asked_at_most_once_a_day`, against a
+server on loopback, `nothing_is_asked_while_offline_and_a_failed_ask_keeps_what_was_heard`,
+`a_clock_set_back_past_the_last_ask_asks_again`). The binary's `online::latest_release` (the
+`online` switch, `client_for`) and the phones' `newer_release` (the shared client, so the lookup
+gate's metered rule holds, `android.md`) are the two callers.
 
 ## Public file sharing
 

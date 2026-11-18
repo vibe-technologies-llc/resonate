@@ -11,10 +11,15 @@ object StoredChoices {
     const val DOWNLOAD_ON_METERED = "download-on-metered"
     const val STALL_DOWNLOADS_ON_METERED = "stall-downloads-on-metered"
 
+    const val CHECK_FOR_UPDATES = "check-for-updates"
+    const val UPDATE_DISMISSED = "update-dismissed"
+
     fun musicbrainzCopy(stored: (String) -> Boolean?): Boolean = stored(MUSICBRAINZ_COPY) ?: true
 
     fun deletionsFromOthers(stored: (String) -> Boolean?): Boolean =
         stored(SYNC_DELETIONS_FROM_OTHERS) ?: true
+
+    fun checkForUpdates(stored: (String) -> Boolean?): Boolean = stored(CHECK_FOR_UPDATES) ?: true
 
     fun downloadOnMetered(stored: (String) -> Boolean?): Boolean =
         stored(DOWNLOAD_ON_METERED) ?: stored(STALL_DOWNLOADS_ON_METERED)?.not() ?: true

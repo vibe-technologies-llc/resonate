@@ -293,6 +293,12 @@ enum class Setting(
         R.string.settings_notifications_detail,
         listOf(R.string.settings_inner_permission, R.string.settings_inner_media_controls),
     ),
+    UPDATES(
+        SettingsGroup.APP,
+        R.string.settings_updates_title,
+        R.string.settings_updates_detail,
+        listOf(R.string.settings_inner_newer_release),
+    ),
     VERSION(
         SettingsGroup.APP,
         R.string.settings_version_title,
