@@ -104,6 +104,7 @@ struct CatalogShown: Sendable {
 struct CatalogChanges: Sendable {
     let catalog: CatalogShown?
     let listed: [Track]?
+    let listedLengthMs: UInt64
 
     init(_ read: [Track], writes: [UInt64: Bool], before: CatalogBefore, listed: [Track]?) {
         let rows = writes.isEmpty ? read : read.map { row in
@@ -114,6 +115,7 @@ struct CatalogChanges: Sendable {
         }
         catalog = rows == before.rows ? nil : CatalogShown(rows, before: before)
         self.listed = listed.flatMap { $0 != rows ? rows : nil }
+        listedLengthMs = self.listed.map { Library.length(of: $0) } ?? 0
     }
 }
 
@@ -125,10 +127,12 @@ enum PollPart: Hashable {
 
 struct SongsListed: Sendable {
     let rows: [Track]
+    let lengthMs: UInt64
 
     init?(_ rows: [Track], shown: [Track]) {
         guard rows != shown else { return nil }
         self.rows = rows
+        lengthMs = Library.length(of: rows)
     }
 }
 
@@ -214,9 +218,15 @@ final class Library {
     private(set) var collectionGeneration = 0
     var favouritesOrder = SongOrdering.newestFirst
     var playlistOrder = PlaylistOrder.name
-    var collectionOrder = CollectionOrder.alphabetical {
-        didSet { if collectionOrder != oldValue { reloadCollections() } }
+    var albumOrder = CollectionOrder.alphabetical {
+        didSet { if albumOrder != oldValue { reloadCollections() } }
     }
+    var artistOrder = CollectionOrder.alphabetical {
+        didSet { if artistOrder != oldValue { reloadCollections() } }
+    }
+    private(set) var collectionsRead = false
+    private(set) var collectionsUnread: String?
+    private(set) var tracksLengthMs: UInt64 = 0
     @ObservationIgnored private var keptQueue: [Track] = []
 
     var queue: [Track] {
@@ -263,6 +273,7 @@ final class Library {
     var routeReading = RouteReading.unread
     var boundRoutes: [OutputRoute] = []
     nonisolated static let everything = SongBrowsing.defaultFilter
+    nonisolated private static let favouritesSentTogether = 50
     var filter: TrackFilter = Library.everything
     var folderList: [MusicFolder] = [] {
         didSet {
@@ -344,8 +355,7 @@ final class Library {
     @ObservationIgnored private var busyUntil = ContinuousClock.now
     @ObservationIgnored lazy var features = Features(library: self)
     @ObservationIgnored lazy var nowPlaying = NowPlaying(library: self)
-    @ObservationIgnored lazy var songSearch = SearchModel(library: self, remembering: true)
-    @ObservationIgnored lazy var shelfSearch = SearchModel(library: self, remembering: false)
+    @ObservationIgnored lazy var librarySearch = SearchModel(library: self, remembering: true)
     @ObservationIgnored lazy var tabSearch = SearchModel(library: self, remembering: true)
 
     init() {
@@ -1249,6 +1259,83 @@ final class Library {
         }
     }
 
+    func areFavourites(_ ids: Set<UInt64>) -> Bool {
+        !ids.isEmpty && ids.isSubset(of: favouriteIds)
+    }
+
+    func setFavourites(_ rows: [Track], _ favourite: Bool) {
+        let moving = rows.filter { catalogIndex[$0.id] != nil && favouriteIds.contains($0.id) != favourite }
+        guard !moving.isEmpty else { return }
+
+        let ids = moving.map(\.id)
+        favouriteSerial += 1
+        let serial = favouriteSerial
+
+        markFavourites(Set(ids), favourite)
+        for id in ids {
+            favouriteWrites[id] = FavouriteWrite(value: favourite, serial: serial, answeredAfter: nil)
+        }
+        sendFavourites(ids[...], favourite, serial: serial)
+    }
+
+    private func sendFavourites(_ ids: ArraySlice<UInt64>, _ favourite: Bool, serial: Int) {
+        var rest = ids
+        var chunk: [UInt64] = []
+        while chunk.isEmpty, !rest.isEmpty {
+            chunk = rest.prefix(Self.favouritesSentTogether).filter { favouriteWrites[$0]?.serial == serial }
+            rest = rest.dropFirst(Self.favouritesSentTogether)
+        }
+        guard !chunk.isEmpty else { return }
+
+        let sent = chunk
+        let unsent = rest
+        attempt({ native in
+            for id in sent { try native.favourite(id: id, favourite: favourite) }
+        }) { [self] failure in
+            let answered = sent.filter { favouriteWrites[$0]?.serial == serial }
+            guard let failure else {
+                for id in answered { favouriteWrites[id]?.answeredAfter = catalogRequest }
+                sendFavourites(unsent, favourite, serial: serial)
+                return
+            }
+            let refused = Set(answered).union(unsent.filter { favouriteWrites[$0]?.serial == serial })
+            for id in refused { favouriteWrites[id] = nil }
+            markFavourites(refused, !favourite)
+            show(
+                favourite ? said("favourites.add.failed", explained(failure)) : said("favourites.remove.failed", explained(failure)),
+                as: .failure
+            )
+            Task { await refresh() }
+        }
+    }
+
+    private func markFavourites(_ ids: Set<UInt64>, _ favourite: Bool) {
+        if favourite { favouriteIds.formUnion(ids) } else { favouriteIds.subtract(ids) }
+        for id in ids {
+            if let flag = favouriteFlags[id], flag.on != favourite { flag.on = favourite }
+        }
+        if favourite {
+            let held = favouriteTracks.compactMap { catalogIndex[$0.id] }
+            let places = Set(held).union(ids.compactMap { catalogIndex[$0] }).sorted()
+            favouriteTracks = places.map { place in
+                var row = allTracks[place]
+                row.favourite = true
+                return row
+            }
+        } else {
+            favouriteTracks.removeAll { ids.contains($0.id) }
+        }
+        if filter.favourites, !favourite {
+            let gone = keptTracks.lazy.filter { ids.contains($0.id) }.reduce(UInt64(0)) { $0 + $1.durationMs }
+            withMutation(keyPath: \.tracks) { keptTracks.removeAll { ids.contains($0.id) } }
+            tracksLengthMs -= min(gone, tracksLengthMs)
+        }
+        if let inspected = features.inspector?.track.id, ids.contains(inspected) { features.inspector?.track.favourite = favourite }
+        guard let playing = snapshot?.current?.id, ids.contains(playing) else { return }
+        snapshot?.current?.favourite = favourite
+        nowPlaying.favouriteChanged()
+    }
+
     private func markFavourite(_ id: UInt64, _ favourite: Bool) {
         func marked(_ rows: [Track]) -> [Track]? {
             guard rows.contains(where: { $0.id == id && $0.favourite != favourite }) else { return nil }
@@ -1266,7 +1353,9 @@ final class Library {
         }
         if let flag = favouriteFlags[id], flag.on != favourite { flag.on = favourite }
         if filter.favourites, !favourite, let at = keptTracks.firstIndex(where: { $0.id == id }) {
+            let lengthMs = keptTracks[at].durationMs
             withMutation(keyPath: \.tracks) { _ = keptTracks.remove(at: at) }
+            tracksLengthMs -= min(lengthMs, tracksLengthMs)
         }
         let outsideTheCatalog = catalogIndex[id] == nil
         if outsideTheCatalog, let rows = marked(queue) { queue = rows }
@@ -1373,7 +1462,7 @@ final class Library {
 
     func setFilter(_ value: TrackFilter) {
         filter = value
-        songSearch.text = ""
+        librarySearch.text = ""
         reload(fresh: true)
     }
 
@@ -1487,7 +1576,10 @@ final class Library {
         guard !filtering else { return }
 
         queryRequest += 1
-        if let listed = changes.listed { tracks = listed }
+        if let listed = changes.listed {
+            tracks = listed
+            tracksLengthMs = changes.listedLengthMs
+        }
         tracksRead = true
     }
 
@@ -1500,8 +1592,7 @@ final class Library {
     }
 
     private func refreshSearches() {
-        songSearch.refresh()
-        shelfSearch.refresh()
+        librarySearch.refresh()
         tabSearch.refresh()
     }
 
@@ -1541,12 +1632,18 @@ final class Library {
 
     private func list(_ listed: SongsListed) {
         tracks = listed.rows
+        tracksLengthMs = listed.lengthMs
+    }
+
+    nonisolated static func length(of rows: [Track]) -> UInt64 {
+        rows.reduce(UInt64(0)) { $0 + $1.durationMs }
     }
 
     func reloadCollections() {
         collectionRequest += 1
         let request = collectionRequest
-        let order = collectionOrder
+        let albumOrder = albumOrder
+        let artistOrder = artistOrder
 
         let shown = CollectionsListed(albums: albums, artists: artists, albumRuns: albumRuns, artistRuns: artistRuns)
 
@@ -1554,19 +1651,24 @@ final class Library {
             guard let native = try? await player() else { return }
             do {
                 let changed = try await Work.onScreen { () -> CollectionsListed? in
-                    let albums = try native.albums(order: order)
-                    let artists = try native.artists(order: order)
+                    let albums = try native.albums(order: albumOrder)
+                    let artists = try native.artists(order: artistOrder)
                     let listed = CollectionsListed(
                         albums: albums,
                         artists: artists,
-                        albumRuns: Library.runs(of: albums, in: order),
-                        artistRuns: Library.runs(of: artists, in: order)
+                        albumRuns: Library.runs(of: albums, in: albumOrder),
+                        artistRuns: Library.runs(of: artists, in: artistOrder)
                     )
                     return listed == shown ? nil : listed
                 }
-                guard request == collectionRequest, let listed = changed else { return }
-                showCollections(listed)
+                guard request == collectionRequest else { return }
+                if !collectionsRead { collectionsRead = true }
+                if collectionsUnread != nil { collectionsUnread = nil }
+                if let listed = changed { showCollections(listed) }
             } catch {
+                guard request == collectionRequest else { return }
+                let told = explained(error)
+                if collectionsUnread != told { collectionsUnread = told }
                 report(error)
             }
         }

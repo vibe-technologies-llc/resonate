@@ -2,7 +2,7 @@ from pathlib import Path
 import unittest
 
 SOURCES = Path(__file__).resolve().parent / "Sources/Resonate"
-CARDS_ON = {"CollectionViews.swift": 2, "HomeViews.swift": 1}
+CARDS_ON = {"LibraryPlaylists.swift": 2}
 CARD_STYLE = ".buttonStyle(.shortcutCard)"
 
 
@@ -11,7 +11,7 @@ def source(name):
 
 
 class ShortcutCards(unittest.TestCase):
-    def test_every_card_on_both_screens_is_a_button_in_the_one_card_style(self):
+    def test_every_card_is_a_button_in_the_one_card_style(self):
         for name, cards in CARDS_ON.items():
             text = source(name)
 
@@ -39,7 +39,7 @@ class ShortcutCards(unittest.TestCase):
         self.assertNotIn("Image(systemName:", card)
         self.assertIn(".frame(height: slot)", symbol)
 
-    def test_favourites_leads_on_both_screens(self):
+    def test_favourites_leads(self):
         for name in CARDS_ON:
             text = source(name)
             row = text[text.index("ShortcutCards {"):]

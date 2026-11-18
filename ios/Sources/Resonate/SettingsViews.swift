@@ -761,7 +761,7 @@ struct SearchHistoryView: View {
                 }
                 .onChange(of: kept) { _, now in
                     guard !now else { return }
-                    library.songSearch.forgetRecents()
+                    library.librarySearch.forgetRecents()
                     library.tabSearch.forgetRecents()
                 }
             } footer: {

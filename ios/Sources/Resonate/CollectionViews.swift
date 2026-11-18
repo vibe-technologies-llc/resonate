@@ -2,31 +2,6 @@ import ResonateLogic
 import ResonateNative
 import SwiftUI
 
-enum LibraryPage {
-    case home
-    case playlists
-    case albums
-    case artists
-
-    var title: String {
-        switch self {
-        case .home: said("library.title")
-        case .playlists: said("library.playlists")
-        case .albums: said("library.albums")
-        case .artists: said("library.artists")
-        }
-    }
-
-    var searchPrompt: String {
-        switch self {
-        case .home: said("library.search.prompt")
-        case .playlists: said("library.playlists.search.prompt")
-        case .albums: said("library.albums.search.prompt")
-        case .artists: said("library.artists.search.prompt")
-        }
-    }
-}
-
 struct SeeAllPageHeader: View {
     private static let reachBeyondTheLine: CGFloat = 12
 
@@ -51,228 +26,6 @@ struct SeeAllPageHeader: View {
                 .accessibilityLabel(said("library.see-all.titled", title.lowercased()))
             }
         }
-    }
-}
-
-struct LibraryView: View {
-    private static let shelved = 12
-
-    @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
-    var page = LibraryPage.home
-    @State private var playlistSearch = ""
-    @State private var naming = false
-    @State private var importing = false
-    @State private var unfollowing: String?
-
-    var body: some View {
-        @Bindable var shelfSearch = library.shelfSearch
-        @Bindable var library = library
-        let asked = page == .playlists ? playlistSearch.trimmingCharacters(in: .whitespacesAndNewlines) : shelfSearch.query
-        let folded = asked.searchFolded
-        let answered = !asked.isEmpty && shelfSearch.hasAnswer
-        let lighting = asked.isEmpty ? "" : shelfSearch.answered
-        let playlists = library.playlistOrder.sorted(library.features.playlists.filter { folded.isEmpty || library.features.foldedName(of: $0).contains(folded) })
-        let albumHits = asked.isEmpty ? library.albums : shelfSearch.found.albums
-        let artistHits = asked.isEmpty ? library.artists : shelfSearch.found.artists
-        let matchedNothing = page == .home && answered && playlists.isEmpty && albumHits.isEmpty && artistHits.isEmpty && !"favourites".contains(folded)
-        ThemedList {
-            if matchedNothing {
-                ContentUnavailableView.search(text: asked)
-                    .listRowSeparator(.hidden)
-            }
-            if page == .playlists, folded.isEmpty || "favourites".contains(folded) {
-                NavigationLink(value: Destination.favourites) {
-                    FavouritesCountRow()
-                }
-            }
-            if page == .home, folded.isEmpty || "favourites".contains(folded) {
-                Section {
-                    ShortcutCards {
-                        NavigationLink(value: Destination.favourites) {
-                            FavouritesCard()
-                        }
-                        .buttonStyle(.shortcutCard)
-                        if folded.isEmpty {
-                            AllSongsButton()
-                        }
-                    }
-                }
-            }
-            if page == .home, folded.isEmpty || !playlists.isEmpty {
-                Section {
-                    if playlists.isEmpty {
-                        Text("library.playlists.none").foregroundStyle(.secondary)
-                    } else {
-                        PlaylistShelf(playlists: Array(playlists.prefix(Self.shelved)))
-                    }
-                } header: {
-                    SeeAllPageHeader(title: said("library.playlists"), more: true, page: .playlists)
-                }
-            }
-            if page == .home, !albumHits.isEmpty {
-                Section {
-                    AlbumShelf(albums: Array(albumHits.prefix(Self.shelved)), query: lighting)
-                } header: {
-                    SeeAllPageHeader(title: said("library.albums"), more: true, page: .albums)
-                }
-            }
-            if page == .home, !artistHits.isEmpty {
-                Section {
-                    ArtistShelf(artists: Array(artistHits.prefix(Self.shelved)), query: lighting)
-                } header: {
-                    SeeAllPageHeader(title: said("library.artists"), more: true, page: .artists)
-                }
-            }
-            if page == .home, albumHits.isEmpty, artistHits.isEmpty, asked.isEmpty {
-                Text("library.empty.albums-and-artists").foregroundStyle(.secondary)
-            }
-            if page == .playlists {
-                Section("library.playlists") {
-                    ForEach(playlists, id: \.id) { playlist in
-                        NavigationLink(value: Destination.playlist(playlist.id)) {
-                            PlaylistShelfRow(playlist: playlist)
-                        }
-                        .collectionActions(.playlist(playlist.id))
-                    }
-                    if playlists.isEmpty {
-                        Text(folded.isEmpty ? said("library.playlists.none") : said("library.playlists.none-matching", asked)).foregroundStyle(.secondary)
-                    }
-                }
-            }
-            if page == .albums {
-                Section {
-                    if albumHits.isEmpty, asked.isEmpty {
-                        Text("library.empty.albums").foregroundStyle(.secondary)
-                    } else if albumHits.isEmpty, answered {
-                        Text(said("library.albums.none-matching", asked)).foregroundStyle(.secondary)
-                    }
-                    ForEach(albumHits, id: \.key) { album in
-                        NavigationLink(value: album.destination) {
-                            CollectionRow(
-                                track: library.artworkTrack(album.artworkTrack),
-                                title: lit(album.shownTitle, by: lighting, in: .album),
-                                detail: album.detail
-                            )
-                        }
-                        .collectionActions(.album(album.key), artist: album.variousArtists ? nil : album.artist)
-                    }
-                }
-            }
-            if page == .artists {
-                Section {
-                    if artistHits.isEmpty, asked.isEmpty {
-                        Text("library.empty.artists").foregroundStyle(.secondary)
-                    } else if artistHits.isEmpty, answered {
-                        Text(said("library.artists.none-matching", asked)).foregroundStyle(.secondary)
-                    }
-                    ForEach(artistHits, id: \.name) { artist in
-                        NavigationLink(value: artist.destination) {
-                            CollectionRow(
-                                track: library.artworkTrack(artist.artworkTrack),
-                                title: lit(artist.shownName, by: lighting, in: .artist),
-                                detail: artist.detail,
-                                circle: true
-                            )
-                        }
-                        .collectionActions(.artist(artist.name))
-                    }
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .searchable(text: page == .playlists ? $playlistSearch : $shelfSearch.text, prompt: page.searchPrompt)
-        .navigationTitle(page.title)
-        .refreshable {
-            library.rescan()
-            library.features.loadPlaylists()
-        }
-        .toolbar {
-            if page == .playlists {
-                if !library.features.playlists.isEmpty {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("playlists.undo", systemImage: "arrow.uturn.backward") {
-                            library.features.undoPlaylistEdit()
-                        }
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu("playlists.new", systemImage: "plus") {
-                        Button("playlists.create", systemImage: "plus") { naming = true }
-                        Button("playlists.import-file", systemImage: "square.and.arrow.down") { importing = true }
-                        Button("playlists.paste-link", systemImage: "doc.on.clipboard") {
-                            library.features.together.accept(UIPasteboard.general.string ?? "")
-                        }
-                    }
-                }
-                if !library.features.followedProfiles.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Menu("playlists.followed-profiles", systemImage: "person.2") {
-                            Section(FollowedProfileWords.stopFollowingHeading) {
-                                ForEach(library.features.followedProfiles, id: \.link) { profile in
-                                    Button(FollowedProfileWords.followed(profile)) { unfollowing = profile.link }
-                                }
-                            }
-                        }
-                    }
-                }
-                if library.features.playlists.count > 1 {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        PlaylistOrderMenu(order: $library.playlistOrder)
-                    }
-                }
-                ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            }
-            if page == .albums || page == .artists {
-                ToolbarItem(placement: .topBarTrailing) {
-                    CollectionOrderMenu(grouping: page == .albums ? .albums : .artists)
-                }
-                ToolbarSpacer(.fixed, placement: .topBarTrailing)
-            }
-            LibraryToolbar()
-        }
-        .onAppear { library.features.loadPlaylists() }
-        .fileImporter(isPresented: $importing, allowedContentTypes: PlaylistFileTypes.offered) { result in
-            switch result {
-            case .success(let url): library.importPlaylistFile(url)
-            case .failure(let failure): library.report(failure)
-            }
-        }
-        .confirmationDialog(
-            unfollowing.map { link in
-                FollowedProfileWords.stopFollowing(
-                    library.features.followedProfiles.first { $0.link == link }?.name ?? link
-                )
-            } ?? "",
-            isPresented: Binding(get: { unfollowing != nil }, set: { if !$0 { unfollowing = nil } }),
-            titleVisibility: .visible,
-            presenting: unfollowing
-        ) { link in
-            Button("playlists.stop-following", role: .destructive) { library.features.unfollowProfile(link) }
-        } message: { _ in
-            Text(FollowedProfileWords.stoppingExplained)
-        }
-        .alert("playlists.create", isPresented: $naming) {
-            PlaylistNameField(confirm: said("common.create")) { library.features.createPlaylist($0) }
-        }
-    }
-}
-
-struct FavouritesRow: View {
-    @ScaledMetric(relativeTo: .body) private var artworkEdge: CGFloat = 56
-    let count: Int
-
-    var body: some View {
-        HStack(spacing: 14) {
-            FavouritesArtwork()
-                .frame(width: artworkEdge, height: artworkEdge)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("favourites.title").font(.body.weight(.medium))
-                Text(said("counted.songs", count)).font(.subheadline).foregroundStyle(.secondary)
-            }
-        }
-        .contentShape(.rect)
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -362,9 +115,21 @@ struct ShortcutCardStyle: ButtonStyle {
     }
 }
 
+private struct PlainPageKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var plainPage: Bool {
+        get { self[PlainPageKey.self] }
+        set { self[PlainPageKey.self] = newValue }
+    }
+}
+
 private struct ShortcutCardFrame: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.plainPage) private var plainPage
     @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 92
     let configuration: ButtonStyleConfiguration
 
@@ -373,7 +138,7 @@ private struct ShortcutCardFrame: View {
         configuration.label
             .padding(14)
             .frame(maxWidth: .infinity, minHeight: height, maxHeight: .infinity, alignment: .leading)
-            .background(Color.cardGround, in: shape)
+            .background(plainPage ? Color.cardGroundOnAPlainPage : Color.cardGround, in: shape)
             .contentShape(shape)
             .opacity(enabled ? (configuration.isPressed ? 0.7 : 1) : 0.5)
             .containerRelativeFrame(.horizontal, count: typeSize.isAccessibilitySize ? 1 : 2, span: 1, spacing: ShortcutCard.spacing)
@@ -392,34 +157,6 @@ struct FavouritesCard: View {
             title: said("favourites.title"),
             detail: said("counted.songs", library.favouriteTracks.count),
             symbol: "heart.fill"
-        )
-    }
-}
-
-struct AllSongsButton: View {
-    @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
-
-    var body: some View {
-        Button {
-            if library.filtering { library.setFilter(Library.everything) }
-            navigation.songsGrouping = .songs
-            navigation.open(.songs)
-        } label: {
-            AllSongsCard()
-        }
-        .buttonStyle(.shortcutCard)
-    }
-}
-
-private struct AllSongsCard: View {
-    @Environment(Library.self) private var library
-
-    var body: some View {
-        ShortcutCard(
-            title: said("library.all-songs"),
-            detail: said("counted.songs", library.catalogCount),
-            symbol: "music.note"
         )
     }
 }
@@ -1393,7 +1130,7 @@ struct FavouritesView: View {
                     Text("favourites.empty")
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
-                    Button("favourites.browse-songs") { navigation.showSongs() }.buttonStyle(.glass)
+                    Button("favourites.browse-songs") { navigation.showLibrary(.songs, in: library) }.buttonStyle(.glass)
                 }
                 .frame(maxWidth: .infinity)
                 .listRowSeparator(.hidden)
@@ -1531,13 +1268,5 @@ struct CollectionActions: ViewModifier {
 extension View {
     func collectionActions(_ source: CollectionSource, artist: String? = nil) -> some View {
         modifier(CollectionActions(source: source, artist: artist))
-    }
-}
-
-struct FavouritesCountRow: View {
-    @Environment(Library.self) private var library
-
-    var body: some View {
-        FavouritesRow(count: library.favouriteTracks.count)
     }
 }

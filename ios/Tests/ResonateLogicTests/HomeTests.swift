@@ -16,6 +16,114 @@ import Testing
     }
 }
 
+@Suite struct JumpBackInTests {
+    @Test func theSongsReadAreThoseHeardLastHeardFirst() {
+        let filter = JumpBackIn.heardLately
+
+        #expect(filter.played)
+        #expect(filter.order == .played)
+        #expect(filter.descending)
+        #expect(!filter.favourites)
+    }
+
+    @Test func eachAlbumStandsOnceAtTheSongHeardLast() {
+        let heard = [
+            track(1, title: "One", artist: "Low", album: "Things We Lost"),
+            track(2, title: "Two", artist: "Björk", album: "Vespertine"),
+            track(3, title: "Three", artist: "Low", album: "Things We Lost"),
+        ]
+        let tiles = JumpBackIn.albums(heard: heard)
+
+        #expect(tiles.map(\.title) == ["Things We Lost", "Vespertine"])
+        #expect(tiles.map(\.detail) == ["Low", "Björk"])
+        #expect(tiles.first?.cover?.id == 1)
+    }
+
+    @Test func aGuestOnOneSongDoesNotSplitItsAlbum() {
+        let heard = [
+            track(1, artist: "Host feat. Guest", album: "Together", albumArtist: "Host"),
+            track(2, artist: "Host", album: "Together", albumArtist: "Host"),
+        ]
+        let tiles = JumpBackIn.albums(heard: heard)
+
+        #expect(tiles.count == 1)
+        #expect(tiles.first?.detail == "Host")
+    }
+
+    @Test func aSongWithNoAlbumIsPassedOver() {
+        let tiles = JumpBackIn.albums(heard: [track(1, album: ""), track(2, album: "Kept")])
+
+        #expect(tiles.map(\.title) == ["Kept"])
+    }
+
+    @Test func noMoreAlbumsAreKeptThanAsked() {
+        let heard = (1...20).map { track(UInt64($0), album: "Album \($0)") }
+
+        #expect(JumpBackIn.albums(heard: heard).count == JumpBackIn.albumsKept)
+        #expect(JumpBackIn.albums(heard: heard, keeping: 3).map(\.title) == ["Album 1", "Album 2", "Album 3"])
+    }
+
+    @Test func favouritesTakeTheLastPlaceOnlyWhereThereAreSome() {
+        let albums = JumpBackIn.albums(heard: (1...8).map { track(UInt64($0), album: "Album \($0)") })
+        let with = JumpBackIn.shown(albums, favourites: true, columns: 2)
+        let without = JumpBackIn.shown(albums, favourites: false, columns: 2)
+
+        #expect(with.count == 6)
+        #expect(with.last?.subject == .favourites)
+        #expect(with.dropLast().map(\.title) == ["Album 1", "Album 2", "Album 3", "Album 4", "Album 5"])
+        #expect(without.count == 6)
+        #expect(!without.contains { $0.subject == .favourites })
+    }
+
+    @Test func fewerThanTwoTilesShowNothing() {
+        let one = JumpBackIn.albums(heard: [track(1, album: "Only")])
+
+        #expect(JumpBackIn.shown([], favourites: true, columns: 2).isEmpty)
+        #expect(JumpBackIn.shown(one, favourites: false, columns: 2).isEmpty)
+        #expect(JumpBackIn.shown(one, favourites: true, columns: 2).count == 2)
+    }
+
+    @Test func theGridIsTwoAcrossOnAPhoneFourAtRegularWidthAndOneAtLargeText() {
+        #expect(JumpBackGrid.columns(horizontal: .compact, accessibilityText: false) == 2)
+        #expect(JumpBackGrid.columns(horizontal: .regular, accessibilityText: false) == 4)
+        #expect(JumpBackGrid.columns(horizontal: .regular, accessibilityText: true) == 1)
+        #expect(JumpBackGrid.tiles(columns: 1) == 4)
+        #expect(JumpBackGrid.tiles(columns: 2) == 6)
+        #expect(JumpBackGrid.tiles(columns: 4) == 8)
+    }
+
+    @Test func aTileOpensItsAlbumOrTheFavouritesAndSpeaksItsAlbumAndArtist() {
+        let album = JumpBackIn.albums(heard: [track(1, artist: "Low", album: "Trust")])[0]
+
+        #expect(album.destination == .album(albumKey(album: "Trust", artist: "Low", albumArtist: "Low") ?? ""))
+        #expect(album.spoken == "Trust, Low")
+        #expect(JumpBackTile.favourites.destination == .favourites)
+        #expect(JumpBackTile.favourites.spoken == "Favourites")
+    }
+}
+
+@Suite struct HomeMomentTests {
+    private static let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+        return calendar
+    }()
+
+    private func moment(_ revision: UInt64, day: Int, hour: Int) -> HomeMoment {
+        let now = Self.calendar.date(from: DateComponents(year: 2026, month: 11, day: day, hour: hour)) ?? .now
+        return HomeMoment.of(catalogRevision: revision, now: now, calendar: Self.calendar)
+    }
+
+    @Test func theSameRevisionOnTheSameDayIsTheSameMomentWhateverTheHour() {
+        #expect(moment(4, day: 5, hour: 9) == moment(4, day: 5, hour: 23))
+    }
+
+    @Test func anotherDayOrAnotherRevisionIsAnotherMoment() {
+        #expect(moment(4, day: 5, hour: 23) != moment(4, day: 6, hour: 0))
+        #expect(moment(4, day: 5, hour: 9) != moment(5, day: 5, hour: 9))
+    }
+}
+
 @Suite struct ListeningGlanceTests {
     private static let hourMs: UInt64 = 3_600_000
     private static let minuteMs: UInt64 = 60_000

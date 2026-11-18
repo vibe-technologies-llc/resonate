@@ -128,6 +128,57 @@ import Testing
         #expect(KeptNavigation.decoded(Data(kept.utf8)) == nil)
     }
 
+    @Test func aLibraryStackKeptBeforeTheShelvesOpensOnTheShelfItsPageWas() throws {
+        let kept = #"{"tab":"library","paths":["library",[{"albums":{}},{"album":{"_0":"key"}}]]}"#
+        let decoded = try #require(KeptNavigation.decoded(Data(kept.utf8)))
+
+        #expect(decoded.tab == .library)
+        #expect(decoded.shelf == .albums)
+        #expect(decoded.paths == [.library: [.album("key")]])
+    }
+
+    @Test func aShelfPageOnTopOfAnotherTabOpensTheLibraryOnIt() throws {
+        let kept = #"{"tab":"home","paths":["home",[{"songs":{}}]]}"#
+        let decoded = try #require(KeptNavigation.decoded(Data(kept.utf8)))
+
+        #expect(decoded.tab == .library)
+        #expect(decoded.shelf == .songs)
+        #expect(decoded.paths.isEmpty)
+    }
+
+    @Test func aShelfPageOnTopOutranksOneBeneathTheLibrarysPagesAndOpensAtTheShelf() throws {
+        let kept = #"{"tab":"home","paths":["home",[{"songs":{}}],"library",[{"albums":{}},{"album":{"_0":"key"}}]]}"#
+        let decoded = try #require(KeptNavigation.decoded(Data(kept.utf8)))
+
+        #expect(decoded.tab == .library)
+        #expect(decoded.shelf == .songs)
+        #expect(decoded.paths.isEmpty)
+    }
+
+    @Test func aShelfPageBeneathAnotherPageLeavesItsTabAndItsStack() throws {
+        let kept = #"{"tab":"home","paths":["home",[{"playlists":{}},{"playlist":{"_0":7}}]]}"#
+        let decoded = try #require(KeptNavigation.decoded(Data(kept.utf8)))
+
+        #expect(decoded.tab == .home)
+        #expect(decoded.shelf == nil)
+        #expect(decoded.paths == [.home: [.playlist(7)]])
+    }
+
+    @Test func theShelfChosenIsKeptAndReadBackAndOutranksAnOlderPage() throws {
+        let kept = KeptNavigation(tab: .library, paths: [.library: [.artist("Björk")]], shelf: .artists)
+        let encoded = try #require(kept.encoded)
+        let older = #"{"tab":"library","shelf":"playlists","paths":["library",[{"artists":{}}]]}"#
+
+        #expect(KeptNavigation.decoded(encoded) == kept)
+        #expect(KeptNavigation.decoded(Data(older.utf8))?.shelf == .playlists)
+    }
+
+    @Test func aStackKeptWithNoShelfOpensWithNoneChosen() throws {
+        let kept = #"{"tab":"settings","paths":["settings",[{"sound":{}}]]}"#
+
+        #expect(try #require(KeptNavigation.decoded(Data(kept.utf8))).shelf == nil)
+    }
+
     @Test func theSettingsPagesBelongToTheSettingsTab() {
         #expect(Destination.sound.belongsToSettings)
         #expect(Destination.listeningTest.belongsToSettings)

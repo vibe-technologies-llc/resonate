@@ -54,7 +54,7 @@ struct SearchResults: View, Equatable {
             SearchReadings(reads: found.reads)
         }
         if search.matchedNothing {
-            NothingFound(search: search)
+            NothingFound(search: search, kind: scope == .albums ? "albums" : scope == .artists ? "artists" : "songs")
         } else if search.hasAnswer {
             switch scope {
             case .top: top(found, query)
@@ -231,6 +231,7 @@ struct NoneMatch: View {
 
 struct NothingFound: View {
     let search: SearchModel
+    var kind = "songs"
 
     var body: some View {
         if let meant = search.found.didYouMean {
@@ -243,7 +244,7 @@ struct NothingFound: View {
                 }
             }
         }
-        NoneMatch(kind: "songs", query: search.answered, symbol: "magnifyingglass")
+        NoneMatch(kind: kind, query: search.answered, symbol: "magnifyingglass")
     }
 
     static func meaning(_ meant: String) -> AttributedString {

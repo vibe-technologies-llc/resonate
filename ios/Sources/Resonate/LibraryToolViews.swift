@@ -41,8 +41,8 @@ struct LibraryToolsView: View {
         let current = library.playingTrack
         ThemedList {
             Section("library.title") {
-                NavigationLink(value: Destination.playlists) {
-                    ToolRow(title: said("library.playlists"), detail: said("tools.playlists.detail"), symbol: "music.note.list")
+                Button { navigation.showLibrary(.playlists, in: library) } label: {
+                    ToolRow(title: said("library.shelf.playlists"), detail: said("tools.playlists.detail"), symbol: "music.note.list")
                 }
                 NavigationLink(value: Destination.suggestions) {
                     ToolRow(title: said("tools.suggestions"), detail: said("tools.suggestions.detail"), symbol: "square.stack")
@@ -316,7 +316,7 @@ struct OfferedMixes: Equatable, Sendable {
 
     var all: [SuggestedMix] { SuggestedMix.yours + lists.map(SuggestedMix.init(list:)) }
 
-    var home: [SuggestedMix] { SuggestedMix.yours + Suggestions.home(lists).map(SuggestedMix.init(list:)) }
+    var home: [SuggestedMix] { Suggestions.home(lists).map(SuggestedMix.init(list:)) }
 
     var shelves: [(name: String, mixes: [SuggestedMix])] {
         var found: [(name: String, mixes: [SuggestedMix])] = []

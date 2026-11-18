@@ -3,68 +3,25 @@ import ResonateLogic
 import ResonateNative
 import SwiftUI
 
-struct HomeListening: Equatable, Sendable {
-    let glance: ListeningGlance
-    let songs: [Track]
-    let album: ListenedTo?
-    let albumCover: UInt64?
-
-    nonisolated static func of(_ statistics: LibraryStatistics, _ detail: ListeningDetail, covers: ListenedCovers) -> HomeListening {
-        let album = detail.albums.first
-        return HomeListening(
-            glance: ListeningGlance.of(
-                ListeningGlance.Heard(
-                    days: detail.days,
-                    firstHeard: detail.firstHeard,
-                    plays: statistics.plays,
-                    listenedMs: statistics.listenedMs,
-                    songsHeard: detail.songsHeard,
-                    songs: statistics.songs
-                )
-            ),
-            songs: statistics.topTracks,
-            album: album,
-            albumCover: album.flatMap { covers.albums[$0.key] }
-        )
-    }
-}
-
-struct HomeListeningSections: View {
-    @Environment(Library.self) private var library
+struct HomeListeningGlance: View {
+    let feed: HomeFeed
 
     var body: some View {
-        let listening = library.features.homeListening
         Section {
-            ListeningGlanceLink(listening: listening)
+            ListeningGlanceLink(glance: feed.glance)
         } header: {
             SeeAllPageHeader(title: said("glance.title"), more: true, page: .statistics)
-        }
-        if let listening, let song = listening.songs.first {
-            HeadedSection(said("glance.most-listened")) {
-                TrackRow(track: song) { library.play(listening.songs, selected: song) }
-                if let album = listening.album {
-                    NavigationLink(value: Destination.album(album.key)) {
-                        CollectionRow(
-                            track: listening.albumCover.flatMap(library.artworkTrack),
-                            title: album.name,
-                            detail: album.heard,
-                            measure: .song
-                        )
-                    }
-                    .collectionActions(.album(album.key), artist: album.by)
-                }
-            }
         }
     }
 }
 
 private struct ListeningGlanceLink: View {
-    let listening: HomeListening?
+    let glance: ListeningGlance?
 
     var body: some View {
         ScrollView(.horizontal) {
             NavigationLink(value: Destination.statistics) {
-                ListeningGlanceCard(listening: listening)
+                ListeningGlanceCard(read: glance)
                     .containerRelativeFrame(.horizontal)
             }
             .buttonStyle(.plain)
@@ -80,17 +37,17 @@ private struct ListeningGlanceCard: View {
 
     @Environment(\.horizontalSizeClass) private var horizontal
     @Environment(\.dynamicTypeSize) private var typeSize
-    let listening: HomeListening?
+    let read: ListeningGlance?
 
     var body: some View {
-        let glance = listening?.glance ?? Self.unread
+        let glance = read ?? Self.unread
         arranged(glance)
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(.rect)
-            .redacted(reason: listening == nil ? .placeholder : [])
+            .redacted(reason: read == nil ? .placeholder : [])
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(listening == nil ? Self.readingLabel : glance.spoken)
+            .accessibilityLabel(read == nil ? Self.readingLabel : glance.spoken)
             .accessibilityHint("glance.open.hint")
     }
 

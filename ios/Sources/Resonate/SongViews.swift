@@ -6,144 +6,6 @@ extension Track {
     var albumPage: Destination? { isServed ? nil : albumKey(album: album, artist: artist, albumArtist: albumArtist).map(Destination.album) }
 }
 
-enum Grouping: String, CaseIterable, Identifiable {
-    case songs
-    case albums
-    case artists
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .songs: said("library.songs")
-        case .albums: said("library.albums")
-        case .artists: said("library.artists")
-        }
-    }
-}
-
-struct SongsView: View {
-    @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
-    @State private var scope = SearchScope.top
-
-    var body: some View {
-        let grouping = navigation.songsGrouping
-        @Bindable var search = library.songSearch
-        Group {
-            if search.isAsked {
-                List {
-                    SearchCompletions(search: search).themedRows()
-                    SearchResults(search: search, scope: $scope) { Keyboard.stow() }.equatable().themedRows()
-                }
-                .listStyle(.plain)
-                .scrollDismissesKeyboard(.immediately)
-                .id(SongsList.searched)
-            } else {
-                browsed(grouping: grouping)
-                    .id(SongsList.browsed)
-            }
-        }
-        .searchable(text: $search.text, prompt: "songs.search.prompt")
-        .searchScopes($scope, activation: .onSearchPresentation) {
-            ForEach(SearchScope.allCases) { Text($0.label).tag($0) }
-        }
-        .searchSuggestions { SearchSuggestions(search: search) }
-        .onSubmit(of: .search) { search.remember() }
-        .onAppear { search.recallRecents() }
-        .navigationTitle("library.songs")
-        .toolbar {
-            if grouping == .songs, !search.isAsked {
-                ToolbarItem(placement: .topBarTrailing) { FilterButton() }
-            }
-            LibraryToolbar()
-        }
-    }
-
-    private func browsed(grouping: Grouping) -> some View {
-        @Bindable var navigation = navigation
-        return List {
-            Section {
-                Picker("songs.show", selection: $navigation.songsGrouping) {
-                    ForEach(Grouping.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                if grouping == .songs {
-                    FilterChips()
-                } else {
-                    CollectionOrderMenu(grouping: grouping, asRow: true)
-                }
-            }
-            .listRowSeparator(.hidden)
-            .themedRows()
-            BrowsedMusic(grouping: grouping).themedRows()
-        }
-        .listStyle(.plain)
-        .listSectionIndexVisibility(grouping == .songs ? .hidden : .visible)
-    }
-}
-
-enum SongsList {
-    case searched
-    case browsed
-}
-
-struct BrowsedMusic: View {
-    @Environment(Library.self) private var library
-    let grouping: Grouping
-
-    var body: some View {
-        if library.catalogEmpty {
-            EmptyLibrary()
-        } else {
-            switch grouping {
-            case .songs: BrowsedSongs()
-            case .albums: BrowsedAlbums()
-            case .artists: BrowsedArtists()
-            }
-        }
-    }
-}
-
-struct BrowsedSongs: View {
-    @Environment(Library.self) private var library
-    @State private var window = RowWindow()
-
-    var body: some View {
-        Group { listed }
-            .onChange(of: library.filter) { window = RowWindow() }
-    }
-
-    @ViewBuilder
-    private var listed: some View {
-        let tracks = library.tracks
-        if library.tracksRead, tracks.isEmpty, library.filtering {
-            ContentUnavailableView {
-                Label("songs.filtered.none", systemImage: "line.3.horizontal.decrease.circle")
-            } description: {
-                Text("songs.filtered.none.detail")
-            } actions: {
-                Button("songs.filtered.reset") { library.setFilter(Library.everything) }
-                    .buttonStyle(.glass)
-            }
-            .listRowSeparator(.hidden)
-        } else {
-            ForEach(tracks.prefix(window.shown(of: tracks.count)), id: \.id) { row($0, among: tracks) }
-            if window.holdsMore(than: tracks.count) {
-                MoreRows { window.widen() }
-            }
-        }
-    }
-
-    private func row(_ track: Track, among tracks: [Track]) -> some View {
-        TrackRow(track: track) {
-            library.play(tracks, selected: track)
-        }
-    }
-}
-
 struct MoreRows: View {
     let widen: () -> Void
 
@@ -153,60 +15,6 @@ struct MoreRows: View {
             .accessibilityLabel("songs.more.reading")
             .listRowSeparator(.hidden)
             .onAppear(perform: widen)
-    }
-}
-
-struct BrowsedAlbums: View {
-    @Environment(Library.self) private var library
-
-    var body: some View {
-        let albums = library.albums
-        if library.albumRuns.isEmpty {
-            ForEach(albums, id: \.key) { link($0) }
-        } else {
-            ForEach(library.albumRuns) { run in
-                Section {
-                    ForEach(albums[albums.clamped(run.rows)], id: \.key) { link($0) }
-                } header: {
-                    Text(run.letter)
-                }
-                .sectionIndexLabel(run.indexed ? run.letter : nil)
-            }
-        }
-    }
-
-    private func link(_ album: AlbumHit) -> some View {
-        NavigationLink(value: album.destination) {
-            CollectionRow(track: library.artworkTrack(album.artworkTrack), title: album.shownTitle, detail: album.detail)
-        }
-        .collectionActions(.album(album.key), artist: album.artist)
-    }
-}
-
-struct BrowsedArtists: View {
-    @Environment(Library.self) private var library
-
-    var body: some View {
-        let artists = library.artists
-        if library.artistRuns.isEmpty {
-            ForEach(artists, id: \.name) { link($0) }
-        } else {
-            ForEach(library.artistRuns) { run in
-                Section {
-                    ForEach(artists[artists.clamped(run.rows)], id: \.name) { link($0) }
-                } header: {
-                    Text(run.letter)
-                }
-                .sectionIndexLabel(run.indexed ? run.letter : nil)
-            }
-        }
-    }
-
-    private func link(_ artist: ArtistHit) -> some View {
-        NavigationLink(value: artist.destination) {
-            CollectionRow(track: library.artworkTrack(artist.artworkTrack), title: artist.shownName, detail: artist.detail, circle: true)
-        }
-        .collectionActions(.artist(artist.name))
     }
 }
 
@@ -257,54 +65,47 @@ extension CollectionOrder {
         case .plays: said("collections.order.plays")
         }
     }
-
-    static func offered(for grouping: Grouping) -> [CollectionOrder] {
-        grouping == .albums ? [.alphabetical, .artist, .year, .added, .plays] : [.alphabetical, .added, .plays]
-    }
 }
 
 struct CollectionOrderMenu: View {
     @Environment(Library.self) private var library
-    let grouping: Grouping
-    var asRow = false
+    let shelf: LibraryShelf
 
     var body: some View {
         @Bindable var library = library
+        let order = shelf == .albums ? $library.albumOrder : $library.artistOrder
         Menu {
-            ForEach(CollectionOrder.offered(for: grouping), id: \.self) { order in
-                OrderOption(selection: $library.collectionOrder, order: order, title: order.title, symbol: order.symbol)
+            ForEach(shelf.orders, id: \.self) { offered in
+                OrderOption(selection: order, order: offered, title: offered.title, symbol: offered.symbol)
             }
         } label: {
-            if asRow {
-                HStack {
-                    Text("filter.sort-by")
-                    Spacer()
-                    Text(library.collectionOrder.title).foregroundStyle(.secondary)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                }
-                .contentShape(.rect)
-            } else {
-                Label("filter.sort-by", systemImage: "arrow.up.arrow.down")
-            }
+            ShelfChip(title: order.wrappedValue.title, symbol: "arrow.up.arrow.down", opens: true)
         }
+        .accessibilityLabel("filter.sort-by")
+        .accessibilityValue(order.wrappedValue.title)
     }
 }
 
 struct SongOrderMenu: View {
     @Binding var ordering: SongOrdering
+    var asChip = false
 
     var body: some View {
+        let title = FilterChip.orderNames.first { $0.0 == ordering.order }?.1 ?? ""
         Menu {
             ForEach(FilterChip.orderNames, id: \.1) { order, title in
                 OrderOption(selection: $ordering.order, order: order, title: title, symbol: order.symbol)
             }
             DescendingOption(descending: $ordering.descending)
         } label: {
-            Label("filter.sort-by", systemImage: "arrow.up.arrow.down")
+            if asChip {
+                ShelfChip(title: title, symbol: ordering.descending ? "arrow.down" : "arrow.up", opens: true)
+            } else {
+                Label("filter.sort-by", systemImage: "arrow.up.arrow.down")
+            }
         }
+        .accessibilityLabel("filter.sort-by")
+        .accessibilityValue(ordering.descending ? said("order.descending", title) : said("order.ascending", title))
     }
 }
 
@@ -317,8 +118,39 @@ struct PlaylistOrderMenu: View {
                 OrderOption(selection: $order, order: option, title: option.title, symbol: option.symbol)
             }
         } label: {
-            Label("filter.sort-by", systemImage: "arrow.up.arrow.down")
+            ShelfChip(title: order.title, symbol: "arrow.up.arrow.down", opens: true)
         }
+        .accessibilityLabel("filter.sort-by")
+        .accessibilityValue(order.title)
+    }
+}
+
+struct ShelfChip: View {
+    @ScaledMetric(relativeTo: .subheadline) private var height: CGFloat = 34
+    let title: String
+    let symbol: String
+    var opens = false
+    var lit = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.footnote.weight(.semibold))
+                .accessibilityHidden(true)
+            Text(title).titleLines()
+            if opens {
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(lit ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+        .padding(.horizontal, 12)
+        .frame(minHeight: height)
+        .background(.quaternary, in: .capsule)
+        .contentShape(.capsule)
     }
 }
 
@@ -327,7 +159,7 @@ struct FilterChips: View {
 
     var body: some View {
         let filter = library.filter
-        let chips = FilterChip.of(filter)
+        let chips = FilterChip.parts(of: filter)
         if !chips.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -340,6 +172,10 @@ struct FilterChips: View {
                         .accessibilityLabel(said("filter.chip.remove", chip.label))
                         .accessibilityInputLabels([chip.label, said("filter.chip.remove.spoken", chip.label)])
                     }
+                    Button("library.filters.clear") { library.setFilter(chips.reduce(filter) { $1.cleared(from: $0) }) }
+                        .font(.footnote.weight(.medium))
+                        .buttonStyle(.borderless)
+                        .touchTarget()
                 }
                 .padding(.horizontal, 16)
             }
@@ -374,11 +210,18 @@ struct FilterButton: View {
     @Environment(Navigation.self) private var navigation
 
     var body: some View {
-        let filtering = library.filtering
-        Button("filter.title", systemImage: filtering ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle") {
+        let parts = FilterChip.parts(of: library.filter).count
+        Button {
             navigation.filters = true
+        } label: {
+            ShelfChip(
+                title: parts == 0 ? said("library.filters") : said("library.filters.counted", parts),
+                symbol: "line.3.horizontal.decrease",
+                lit: parts > 0
+            )
         }
-        .accessibilityValue(said(filtering ? "common.on" : "common.off"))
+        .buttonStyle(.plain)
+        .accessibilityHint("filter.title")
     }
 }
 
@@ -474,6 +317,7 @@ struct CollectionRow: View {
 struct TrackRow: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
+    @Environment(SelectedSongs.self) private var selected: SelectedSongs?
     let track: Track
     var current: Bool?
     var numbered: UInt32?
@@ -484,6 +328,40 @@ struct TrackRow: View {
     let play: () -> Void
 
     var body: some View {
+        if let selected, selected.selecting {
+            selectable(in: selected)
+        } else {
+            playable
+        }
+    }
+
+    private func selectable(in selected: SelectedSongs) -> some View {
+        let chosen = selected.contains(track.id)
+        return HStack(spacing: 12) {
+            PlayableTrack(
+                track: track,
+                title: title,
+                detail: detail,
+                current: current,
+                numbered: numbered,
+                timed: timed,
+                play: { selected.toggle(track.id) }
+            )
+            .accessibilityAddTraits(chosen ? .isSelected : [])
+            Button {
+                selected.toggle(track.id)
+            } label: {
+                Image(systemName: chosen ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(chosen ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+                    .touchTarget()
+            }
+            .buttonStyle(.plain)
+            .accessibilityHidden(true)
+        }
+    }
+
+    private var playable: some View {
         HStack(spacing: 12) {
             PlayableTrack(
                 track: track,
@@ -508,8 +386,9 @@ struct TrackRow: View {
             }
             .tint(.orange)
         }
-        .modifier(StandardTrackMenus(track: track, enabled: ownsMenus))
+        .modifier(StandardTrackMenus(track: track, enabled: ownsMenus, selected: selected))
         .accessibilityAction(named: "song.details") { navigation.open(.inspector(track)) }
+        .modifier(SelectableByName(track: track, selected: selected))
     }
 
     private var title: AttributedString {
@@ -605,6 +484,7 @@ struct StandardTrackMenus: ViewModifier {
     @Environment(Navigation.self) private var navigation
     let track: Track
     let enabled: Bool
+    var selected: SelectedSongs?
 
     func body(content: Content) -> some View {
         if enabled {
@@ -618,7 +498,7 @@ struct StandardTrackMenus: ViewModifier {
                     Button("song.add-to-playlist", systemImage: "text.badge.plus") { navigation.addToPlaylist([track]) }
                         .tint(.blue)
                 }
-                .contextMenu { TrackMenu(track: track) }
+                .contextMenu { TrackMenu(track: track, selected: selected) }
         } else {
             content
         }
@@ -648,9 +528,18 @@ struct TrackMenu: View {
     @Environment(Library.self) private var library
     @Environment(Navigation.self) private var navigation
     let track: Track
+    var selected: SelectedSongs?
 
     var body: some View {
         let favourite = library.isFavourite(track)
+        if let selected {
+            Section {
+                Button("common.select", systemImage: "checkmark.circle") {
+                    navigation.feelSelected()
+                    selected.begin(with: track.id)
+                }
+            }
+        }
         Section {
             Button("song.play-next", systemImage: "text.line.first.and.arrowtriangle.forward") {
                 navigation.feelQueued()
@@ -737,6 +626,7 @@ private struct FeltFeedback: View {
             .sensoryFeedback(.success, trigger: navigation.queuedFelt)
             .sensoryFeedback(.selection, trigger: navigation.heartFelt)
             .sensoryFeedback(.success, trigger: navigation.landedFelt)
+            .sensoryFeedback(.selection, trigger: navigation.selectedFelt)
             .accessibilityHidden(true)
     }
 }

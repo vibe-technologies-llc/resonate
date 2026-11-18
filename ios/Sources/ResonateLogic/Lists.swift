@@ -114,20 +114,42 @@ public struct RowWindow: Equatable, Sendable {
     public static let opening = 300
     public static let widenedBy = 300
 
+    public static let leadIn = 100
+
+    public private(set) var first = 0
     public private(set) var atMost = RowWindow.opening
 
     public init() {}
 
+    public var holdsEarlier: Bool { first > 0 }
+
     public func shown(of rows: Int) -> Int {
-        min(rows, atMost)
+        self.rows(of: rows).count
+    }
+
+    public func rows(of count: Int) -> Range<Int> {
+        let start = first < count ? first : max(count - atMost, 0)
+        return start..<min(start + atMost, count)
     }
 
     public func holdsMore(than rows: Int) -> Bool {
-        rows > atMost
+        rows > first + atMost
     }
 
     public mutating func widen() {
         atMost += Self.widenedBy
+    }
+
+    public mutating func widenEarlier() {
+        let earlier = min(first, Self.widenedBy)
+        first -= earlier
+        atMost += earlier
+    }
+
+    public mutating func anchor(at row: Int, of count: Int) {
+        guard row >= 0, row < count, !rows(of: count).contains(row) else { return }
+        first = max(row - Self.leadIn, 0)
+        atMost = Self.opening
     }
 }
 
@@ -273,6 +295,12 @@ public enum FilterChip: Identifiable, Sendable {
     }
 
     public static func of(_ filter: TrackFilter) -> [FilterChip] {
+        var chips = parts(of: filter)
+        if filter.order != .added || !filter.descending { chips.append(.order(filter.order, descending: filter.descending)) }
+        return chips
+    }
+
+    public static func parts(of filter: TrackFilter) -> [FilterChip] {
         var chips: [FilterChip] = []
         if filter.favourites { chips.append(.favourites) }
         if filter.unplayed { chips.append(.unplayed) }
@@ -282,7 +310,6 @@ public enum FilterChip: Identifiable, Sendable {
         if !filter.genre.isEmpty { chips.append(.genre(filter.genre)) }
         if !filter.artist.isEmpty { chips.append(.artist(filter.artist)) }
         if !filter.album.isEmpty { chips.append(.album(filter.album)) }
-        if filter.order != .added || !filter.descending { chips.append(.order(filter.order, descending: filter.descending)) }
         return chips
     }
 

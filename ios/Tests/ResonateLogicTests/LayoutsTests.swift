@@ -165,16 +165,6 @@ import Testing
         #expect(ListeningGlanceArrangement.of(horizontal: .regular, accessibilityText: true) == .stacked)
     }
 
-    @Test func theSidebarListsEverySectionOnceStartingAtHome() {
-        let every = LibrarySection.allCases
-
-        #expect(every.first == .home)
-        #expect(every.filter(\.isHome).count == 1)
-        #expect(Set(every.map(\.id)).count == every.count)
-        #expect(Set(every.map(\.title)).count == every.count)
-        #expect(every.allSatisfy { !$0.symbol.isEmpty })
-    }
-
     @Test func aShortSheetIsAFormAndALongOneAPage() {
         #expect(SheetSizing.of(.short, accessibilityText: false) == .form)
         #expect(SheetSizing.of(.long, accessibilityText: false) == .page)

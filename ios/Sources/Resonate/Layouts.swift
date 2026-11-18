@@ -58,57 +58,32 @@ extension View {
     }
 }
 
-extension LibrarySection {
-    var destination: Destination? {
-        switch self {
-        case .home: nil
-        case .favourites: .favourites
-        case .songs: .songs
-        case .playlists: .playlists
-        case .albums: .albums
-        case .artists: .artists
-        }
-    }
-}
-
 struct LibrarySidebar: View {
     @Environment(Navigation.self) private var navigation
 
     var body: some View {
-        let selection = Binding<LibrarySection?>(
-            get: { navigation.librarySection },
-            set: { if let section = $0 { navigation.choose(section) } }
+        let selection = Binding<LibraryShelf?>(
+            get: { navigation.libraryShelf },
+            set: { if let shelf = $0 { navigation.choose(shelf) } }
         )
-        List(LibrarySection.allCases, selection: selection) { section in
-            Label(section.title, systemImage: section.symbol)
-                .tag(section)
+        List(LibraryShelf.allCases, selection: selection) { shelf in
+            Label(shelf.title, systemImage: shelf.symbol)
+                .tag(shelf)
         }
         .listStyle(.sidebar)
-        .navigationTitle("layouts.library")
+        .navigationTitle("library.title")
     }
 }
 
 struct LibrarySplit<Detail: View>: View {
     @Environment(Navigation.self) private var navigation
-    @ViewBuilder let detail: (LibrarySection) -> Detail
+    @ViewBuilder let detail: (LibraryShelf) -> Detail
 
     var body: some View {
         NavigationSplitView {
             LibrarySidebar()
         } detail: {
-            detail(navigation.librarySection)
-        }
-    }
-}
-
-struct LibrarySectionRoot: View {
-    let section: LibrarySection
-
-    var body: some View {
-        if let destination = section.destination {
-            DestinationView(destination: destination)
-        } else {
-            LibraryView()
+            detail(navigation.libraryShelf)
         }
     }
 }

@@ -3,70 +3,24 @@ import ResonateNative
 import SwiftUI
 
 struct HomeView: View {
-    private static let shelved = 12
-
     @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
     @Environment(\.scenePhase) private var phase
-    @State private var wentToBackground = false
     @State private var hour = Calendar.current.component(.hour, from: .now)
-    @State private var recent: [AlbumHit] = []
-    @State private var listenedTo: [ArtistHit] = []
-    @State private var naming = false
 
     var body: some View {
         let features = library.features
-        let playlists = features.playlists
-        let empty = library.catalogRead && library.catalogCount == 0
+        let feed = features.home
+        let empty = library.catalogEmpty
         ThemedList {
             if empty {
-                ContentUnavailableView(
-                    "home.empty",
-                    systemImage: "music.note.house",
-                    description: Text("home.empty.detail")
-                )
-                .listRowBackground(Color.clear)
+                EmptyLibrary()
+                    .listRowBackground(Color.clear)
             } else {
-                Section {
-                    ShortcutCards {
-                        NavigationLink(value: Destination.favourites) {
-                            FavouritesCard()
-                        }
-                        .buttonStyle(.shortcutCard)
-                        AllSongsButton()
-                    }
-                }
-                HomeMixes()
-                if !recent.isEmpty {
-                    Section {
-                        AlbumShelf(albums: recent, query: "")
-                    } header: {
-                        SeeAllPageHeader(title: said("collections.order.added"), more: true, page: .albums)
-                    }
-                }
+                HomeCatalogSections(feed: feed)
             }
-            Section {
-                if playlists.isEmpty {
-                    Button {
-                        naming = true
-                    } label: {
-                        Label("playlists.new", systemImage: "plus")
-                    }
-                } else {
-                    PlaylistShelf(playlists: Array(playlists.prefix(Self.shelved)))
-                }
-            } header: {
-                SeeAllPageHeader(title: said("home.playlists"), more: !playlists.isEmpty, page: .playlists)
-            }
+            HomePlaylists(hiddenWithNone: empty)
             if !empty {
-                if !listenedTo.isEmpty {
-                    Section {
-                        ArtistShelf(artists: listenedTo, query: "")
-                    } header: {
-                        SeeAllPageHeader(title: said("library.artists"), more: true, page: .artists)
-                    }
-                }
-                HomeListeningSections()
+                HomeListeningGlance(feed: feed)
             }
             HomeDevices()
             Section("home.together") {
@@ -80,41 +34,96 @@ struct HomeView: View {
         .refreshable {
             library.rescan()
             features.loadPlaylists()
-            features.loadStatistics()
+            await feed.read(afresh: true)
         }
         .toolbar { LibraryToolbar() }
         .onAppear {
             hour = Calendar.current.component(.hour, from: .now)
             features.loadPlaylists()
-            features.loadStatistics()
         }
         .onChange(of: phase) { _, now in
-            if now == .background { wentToBackground = true }
-            guard now == .active else { return }
+            if now == .active { hour = Calendar.current.component(.hour, from: .now) }
+        }
+        .background { HomeFeedReading(feed: feed) }
+    }
+}
 
-            hour = Calendar.current.component(.hour, from: .now)
-            if wentToBackground, navigation.tab == .home, navigation.paths[.home]?.isEmpty ?? true {
-                features.loadStatistics()
+private struct HomeFeedReading: View {
+    @Environment(Navigation.self) private var navigation
+    @Environment(\.scenePhase) private var phase
+    let feed: HomeFeed
+    @State private var wentToBackground = false
+
+    var body: some View {
+        CatalogReading { await feed.read() }
+            .onChange(of: phase) { _, now in
+                if now == .background { wentToBackground = true }
+                guard now == .active, wentToBackground else { return }
+
+                wentToBackground = false
+                readWhereShown()
             }
-            wentToBackground = false
-        }
-        .background { CatalogReading { await loadShelves() } }
-        .alert("playlists.create", isPresented: $naming) {
-            PlaylistNameField(confirm: said("common.create")) { features.createPlaylist($0) }
-        }
+            .onChange(of: navigation.nowPlaying) { _, open in
+                if !open { readWhereShown() }
+            }
     }
 
-    private func loadShelves() async {
-        guard let native = try? await library.player() else { return }
-        let shelved = Self.shelved
-        guard let (albums, artists) = try? await Work.onScreen({
-            (
-                Array(try native.albums(order: .added).prefix(shelved)),
-                Array(try native.artists(order: .plays).prefix(shelved))
-            )
-        }) else { return }
-        if recent != albums { recent = albums }
-        if listenedTo != artists { listenedTo = artists }
+    private func readWhereShown() {
+        guard navigation.tab == .home, navigation.paths[.home]?.isEmpty ?? true else { return }
+        Task { await feed.read() }
+    }
+}
+
+private struct HomeCatalogSections: View {
+    @Environment(Library.self) private var library
+    @Environment(\.horizontalSizeClass) private var horizontal
+    @Environment(\.dynamicTypeSize) private var typeSize
+    let feed: HomeFeed
+
+    var body: some View {
+        let columns = JumpBackGrid.columns(horizontal: SizeClass(horizontal), accessibilityText: typeSize.isAccessibilitySize)
+        let tiles = JumpBackIn.shown(feed.played, favourites: !library.favouriteTracks.isEmpty, columns: columns)
+        if tiles.isEmpty {
+            HomeRecentlyAdded(albums: feed.recent)
+            HomeMixes(offered: feed.mixes)
+        } else {
+            HomeJumpBackIn(tiles: tiles, columns: columns)
+            HomeMixes(offered: feed.mixes)
+            HomeRecentlyAdded(albums: feed.recent)
+        }
+        HomePlayedArtists(artists: feed.artists)
+    }
+}
+
+private struct HomePlaylists: View {
+    @Environment(Library.self) private var library
+    @Environment(Navigation.self) private var navigation
+    let hiddenWithNone: Bool
+    @State private var naming = false
+
+    var body: some View {
+        let features = library.features
+        let playlists = features.playlists
+        if !playlists.isEmpty || !hiddenWithNone {
+            Section {
+                if playlists.isEmpty {
+                    Button {
+                        naming = true
+                    } label: {
+                        ToolRow(title: said("playlists.new"), detail: said("library.playlists.invitation"), symbol: "plus")
+                    }
+                    .alert("playlists.create", isPresented: $naming) {
+                        PlaylistNameField(confirm: said("common.create")) { features.createPlaylist($0) }
+                    }
+                } else {
+                    PlaylistShelf(playlists: Array(library.playlistOrder.sorted(playlists).prefix(HomeFeed.shelved)))
+                }
+            } header: {
+                SeeAllHeader(title: said("home.playlists"), more: !playlists.isEmpty) {
+                    navigation.showLibrary(.playlists, in: library)
+                }
+            }
+        }
     }
 }
 
@@ -133,39 +142,6 @@ private struct HomeDevices: View {
             }
             if !features.syncHandoffs.isEmpty {
                 HandoffRows()
-            }
-        }
-    }
-}
-
-private struct HomeMixes: View {
-    @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
-    @ScaledMetric(relativeTo: .subheadline) private var cardWidth: CGFloat = 160
-    @State private var offered = OfferedMixes()
-
-    var body: some View {
-        Section {
-            Shelf(spacing: 14) {
-                ForEach(offered.home) { mix in
-                    SuggestedMixCard(
-                        mix: mix,
-                        covers: (offered.covers[mix.id] ?? []).compactMap { library.artworkTrack($0) },
-                        shelved: true,
-                        open: { navigation.open(.mix(mix.id)) }
-                    )
-                    .frame(width: cardWidth)
-                }
-            }
-            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
-            .listRowSeparator(.hidden)
-        } header: {
-            SeeAllPageHeader(title: said("home.made-for-you"), more: true, page: .suggestions)
-        }
-        .background {
-            CatalogReading {
-                guard let found = await OfferedMixes.read(in: library), found != offered else { return }
-                offered = found
             }
         }
     }

@@ -1890,5 +1890,21 @@
 			<string>%lld files could not be deleted; their folders would not let go of them</string>
 		</dict>
 	</dict>
+	<key>selection.count</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld selected</string>
+			<key>other</key>
+			<string>%lld selected</string>
+		</dict>
+	</dict>
 </dict>
 </plist>

@@ -612,10 +612,10 @@ sync seals its records and talks QUIC (TLS) of its own.
 
 The views follow Android's screens and wording (`android.md`), with four tabs, Home, Library, Settings
 and Search, and a Server page in Settings while a service that plays in place is served (below), as on Android (`Tab(role: .search)`, which iOS sets apart at the trailing edge and turns into the search
-field; `Root.search` has its own stack). **Songs is a page of the Library tab and the queue is
-Now Playing's Up next, neither a tab**: *All songs*, Favourites' and the
-empty states' *Browse songs* push `Destination.songs` onto the Library stack alone
-(`Navigation.showSongs`, which closes Now Playing and sets the grouping to songs). The mini
+field; `Root.search` has its own stack). **Songs is a shelf of the Library tab and the queue is
+Now Playing's Up next, neither a tab**: Favourites' *Browse songs* opens the Library on its Songs
+shelf (`Navigation.showLibrary`, which closes Now Playing, clears any filter and empties the
+Library's stack). The mini
 player sits in the tab bar's bottom accessory (`tabViewBottomAccessory(isEnabled:)` from 26.1, enabled by `Library.loaded`, stored and flipped only when something is or stops being loaded so a song change never rebuilds the root view,
 so no empty capsule shows with nothing loaded), with previous/play/next (play alone inline), a horizontal swipe to
 skip and an upward one that opens Now Playing the moment it passes 40 pt, not on lifting the finger (the drag's start
@@ -906,75 +906,199 @@ every route change (a pair of headphones at the same rate included), not from th
   the catalog no longer holds, an album `album(key)` no longer finds, an artist with no songs or a
   playlist gone (`Library.gone`, on `Work.aside`) cuts its stack at that page, since every page above
   it was reached through it. A failed read cuts nothing: a catalog read that fails resumes `wholeCatalog`'s waiters with nothing cut. Now Playing and the sheets are not kept.
-- **Home is the first tab and the one a launch opens** (`Root.home`, `HomeView` in `HomeViews.swift`), Android's
-  Home: a title greeting by the hour (`HomeGreeting.of`, `ResonateLogic`, held by `HomeTests`, read again on
-  appearing and coming forward), then *Favourites* and *All songs* as two shortcut cards (Favourites first, as on the Library tab; `AllSongsButton`, the Library tab's own button, shared in `CollectionViews.swift`: it clears any filter, sets the songs grouping and pushes `Destination.songs` with `Navigation.open` onto Home's own stack, so Back returns to Home; Android's Home keeps *Favourites* and *Library*), *Made for you* (`HomeMixes`: `OfferedMixes.home`, the two *Yours* mixes then up to twelve lists of the
-  *Made for you*, *Rediscover* and *From your listening* shelves (`Suggestions.home`), as cards on a shelf, their covers from
-  `OfferedMixes.covers`, which the Suggestions page shares; a card's cover and its words each open the mix, the words being the one button VoiceOver hears, and its play button stays apart; *See all* is `Destination.suggestions`),
-  *Recently added* (`albums(order: .added)`), then *Your playlists* (a *New playlist* button
-  where there are none), *Artists* (`artists(order: .plays)`), *Your listening* (below), and at the
-  foot *Your devices* (reachable paired devices opening their remote controls directly, a *Remote
-  control* link for pairing and sync, and available handoffs) and *Listen together* with *Listening
-  party*. The album
-  and artist shelves read twelve each on `Work.onScreen`, keyed by `collectionGeneration` and
-  `catalogEpoch`. An empty catalog shows the invitation to add a folder, devices, parties and
-  playlists. Home's pages push onto its own stack.
-- **Home's *Your listening* is a glance at the last seven days** (`HomeListeningSections`, `ListeningGlanceViews.swift`; its words and sums in `ResonateLogic`'s `ListeningGlance`, held by `HomeTests`), under a *See all* header, and the whole card opens `Destination.statistics` (a `NavigationLink` in a horizontal `ScrollView` with scrolling disabled, as the shortcut cards are, so the list draws it no chevron). The card reads from one figure down: *Last 7 days*, the time listened in large title, its pace a day (over the days since the first play, seven at most) and how it moved against the seven days before (`ListeningTrend`: steady within 5 %, the percentage, *more than double* past 100 %, nothing with no week before), then a Swift Charts bar chart (`ListeningWeekChart`) of the seven days ending today, today's bar in the accent and bold in the weekday letters, the others the accent faded (more strongly drawn under Increase Contrast), an empty day a stub so its place still shows, and the average a dashed rule whose *avg* sits in the trailing axis, outside the bars; then up to four facts in an adaptive grid, each its figure over its caption with no symbol beside it: the run of days ending today or yesterday (from two), the weekday heard most (from seven days heard), the time and plays in all and the songs heard of the library's. Beneath it a section *Most listened* holds the all-time first song (`TrackRow`, playing the ranked songs from it) and first album (`CollectionRow`); the first artist is left out because the *Artists* shelf above already leads with it. With nothing heard these seven days the card leads with the all-time figure and says when a song was last heard, with no chart. With no counted play at all it says *No plays yet* and how a play counts, over the chart's seven stubs and no facts. It draws one column on a phone and at accessibility text sizes and the words beside the chart where the width is regular (`ListeningGlanceArrangement`), and the chart's own letters stop growing at the first accessibility size. To VoiceOver the card is one element speaking every figure as sentences (`ListeningGlance.spoken`), since the bars need no second reading there; the Statistics page steps through them. `Features.homeListening` is worked out on `Work.aside` from a `loadStatistics` of all time alone, so a period picked on the Statistics page never reads as all time on Home, and it keeps showing while such a read lands; until the first has, the card is redacted and says it is reading. Home asks on appearing and on coming forward from `.background` where it is the page showing (`Navigation.tab`, an empty stack), since the seven days end today and a read asked beneath the Statistics page would reset its period; a day ending with the app open in the foreground is seen at the next ask.
-- **Home's and the Library tab's shortcuts are a pair of cards** (`ShortcutCards`, `ShortcutCard`):
-  one list row with no side insets and a clear background, so the two cards run edge to edge with the
-  section cards below, 16 pt below the page's title (`ShortcutCard.belowTheTitle`), side by side and stacked at accessibility text sizes. A card is the
-  page's own card ground (`Color.cardGround`: the themed card over the backdrop, the grouped
+- **Home is the first tab and the one a launch opens** (`Root.home`, `HomeView` in `HomeViews.swift`), a
+  listening feed that repeats nothing the Library tab holds: a title greeting by the hour
+  (`HomeGreeting.of`, `ResonateLogic`, held by `HomeTests`, read again on appearing and coming
+  forward), then:
+  - ***Jump back in*** (`HomeJumpBackIn`): the albums heard last as compact tiles, a small cover flush
+    to the tile's leading edge and the title on two lines, on the page's card ground at a 12 pt corner
+    (`JumpBackTileStyle`), with *Favourites* in the last place where there is a favourite. Six tiles
+    two across on a phone, eight four across where the width is regular and four in one column at
+    accessibility text sizes (`JumpBackGrid`), and no section under two. The albums are worked out in
+    `ResonateLogic` (`JumpBackIn.albums`, `JumpBackInTests`) from one page of `filtered_tracks` of
+    the songs heard, newest first (`JumpBackIn.heardLately`, a hundred rows), each album standing
+    once at its song heard last and keyed by `album_key`, never from the whole catalog. A tile opens
+    its album and carries the album's `collectionActions`. The tiles sit in a horizontal `ScrollView`
+    with scrolling disabled, so the list draws no chevron between them.
+  - ***Made for you*** (`HomeMixes`): up to twelve lists of the *Made for you*, *Rediscover* and *From
+    your listening* shelves (`Suggestions.home`), as cards on a shelf, their covers from
+    `OfferedMixes.covers`, which the Suggestions page shares. The two *Yours* mixes stay on the
+    Suggestions page, since *Recently played* and *Your favourites* would repeat the tiles above. A
+    card's cover and its words each open the mix, the words being the one button VoiceOver hears, and
+    its play button stays apart; *See all* is `Destination.suggestions`.
+  - ***Recently added*** (`HomeRecentlyAdded`): `albums(order: .added)`, twelve, as a carousel of 200 pt
+    covers, scaled and held to 260 pt, that comes to rest on a cover (`HomeCarousel`:
+    `scrollTargetBehavior(.viewAligned)`), the title and the artist and year beneath each and a glass
+    play button at the cover's foot (`PlayCollectionButton`, which reads the album's songs when
+    pressed). No caption is laid over a cover: that takes a scrim, and no surface here is a gradient.
+  - ***Artists you play*** (`HomePlayedArtists`): the artists `listening_detail` of all time ranks, so
+    only those with a counted play, each a circle of its most played song's cover (`most_played_by`)
+    over its name and its plays.
+  - ***Your playlists*** (`PlaylistShelf`, twelve in `Library.playlistOrder`, or one *New playlist* row
+    where there are none), ***Your listening*** (below), and at the foot *Your devices* (reachable paired devices opening their remote controls directly, a *Remote
+    control* link for pairing and sync, and available handoffs) and
+    *Listen together* with *Listening party*.
+
+  With nothing heard yet *Recently added* leads and *Jump back in* is absent. **A *See all* naming a
+  kind opens the Library tab on that shelf in the order the shelf showed** (`Navigation.showLibrary`:
+  Albums by *Recently added*, Artists by *Most played*, Playlists), a tab switch rather than a push.
+  An empty catalog shows `EmptyLibrary`, the mark and *Choose music folder*, then playlists where
+  there are any, devices and parties. Home's pages push onto its own stack.
+- **Home's feed is one read, kept for the process** (`HomeFeed`, `Features.home`; `HomeFeedReading` in
+  the page's background, so the page's body reads no trigger). `read` asks `catalog_revision()` and
+  returns where the revision and the day are those last read (`HomeMoment`, `HomeMomentTests`); else
+  three reads run together on `Work.onScreen` (the heard page with the recent albums; the offered
+  mixes; the statistics, the listening detail and the artists' covers) and each part is assigned only
+  where it differs. One read runs at a time, and an ask meanwhile is owed once and waits for it, so a pull to refresh
+  ends when its read does. **A counted play moves
+  the revision but not `catalogEpoch`** (a `Track` carries no plays), so the catalog's epoch alone
+  never refreshed what was heard: the feed is asked on appearing and whenever `collectionGeneration`
+  or `catalogEpoch` moves (`CatalogReading`), on coming forward after `.background` and when Now
+  Playing closes while Home is the page showing, and by pull to refresh, which reads whatever the
+  moment says. A part that failed leaves the moment unset, so the next ask reads again.
+- **Home's *Your listening* is a glance at the last seven days** (`HomeListeningGlance`, `ListeningGlanceViews.swift`; its words and sums in `ResonateLogic`'s `ListeningGlance`, held by `HomeTests`), under a *See all* header, and the whole card opens `Destination.statistics` (a `NavigationLink` in a horizontal `ScrollView` with scrolling disabled, as *Jump back in*'s tiles are, so the list draws it no chevron). The card reads from one figure down: *Last 7 days*, the time listened in large title, its pace a day (over the days since the first play, seven at most) and how it moved against the seven days before (`ListeningTrend`: steady within 5 %, the percentage, *more than double* past 100 %, nothing with no week before), then a Swift Charts bar chart (`ListeningWeekChart`) of the seven days ending today, today's bar in the accent and bold in the weekday letters, the others the accent faded (more strongly drawn under Increase Contrast), an empty day a stub so its place still shows, and the average a dashed rule whose *avg* sits in the trailing axis, outside the bars; then up to four facts in an adaptive grid, each its figure over its caption with no symbol beside it: the run of days ending today or yesterday (from two), the weekday heard most (from seven days heard), the time and plays in all and the songs heard of the library's. With nothing heard these seven days the card leads with the all-time figure and says when a song was last heard, with no chart. With no counted play at all it says *No plays yet* and how a play counts, over the chart's seven stubs and no facts. It draws one column on a phone and at accessibility text sizes and the words beside the chart where the width is regular (`ListeningGlanceArrangement`), and the chart's own letters stop growing at the first accessibility size. To VoiceOver the card is one element speaking every figure as sentences (`ListeningGlance.spoken`), since the bars need no second reading there; the Statistics page steps through them. The glance is `HomeFeed.glance`, read with the feed (above) from an all-time `statistics` and `listening_detail` of its own, never through the Statistics page's `loadStatistics`, so a period picked there never reads as all time on Home and Home's read never resets it; until the first read lands the card is redacted and says it is reading. A day ending with the app open in the foreground is seen at the feed's next read, whose moment holds the day. The all-time first song and album are the Statistics page's, which leads with them.
+- **The Playlists shelf opens on a pair of cards**, *Favourites* and *Party* (`ShortcutCards`,
+  `ShortcutCard`; `FavouritesCard`, which reads its count in a view of its own so a heart never
+  rebuilds the shelf, and `PartyCard`), side by side and stacked at accessibility text sizes. A card
+  is the page's own card ground (`Color.cardGround`: the themed card over the backdrop, the grouped
   background's cell colour without it; 20 pt continuous corners), its symbol in the accent at the
   top in a slot of one scaled height whatever the glyph (`ShortcutSymbol`, 28 pt: the cards stretch to
-  their content, so a taller glyph drew its pair taller than the other screen's) and the title and song count at the foot, the count in `.secondary`, at least 92 pt tall,
-  scaled, and half as strong while disabled: no gradient, no colour pair of its own and no
-  watermark behind the words. Each card is its own `NavigationLink` or `Button` in
-  `.buttonStyle(.shortcutCard)` (`ShortcutCardStyle`), since a row holding two controls of the default style fires both on any
-  tap. The style, not the card, draws the padding, ground, corners, minimum height, half width and
-  the dimming, and stretches the card to the tallest of its row (`maxHeight: .infinity` under a
+  their content, so a taller glyph drew its card taller than its pair) and the title and detail at
+  the foot, the detail in `.secondary`, at least 92 pt tall, scaled, and half as strong while
+  disabled: no gradient, no colour pair of its own and no watermark behind the words. Each card is
+  its own `NavigationLink` in `.buttonStyle(.shortcutCard)` (`ShortcutCardStyle`). The style, not the
+  card, draws the padding, ground, corners, minimum height, half width and the dimming, and stretches
+  the card to the tallest of its row (`maxHeight: .infinity` under a
   `fixedSize(horizontal: false, vertical: true)` row), so a card whose words wrap and one whose words
-  do not, or a `Button` beside a `NavigationLink`, are the same size on Home and the Library tab
-  (`test_shortcut_cards.py`). The pair sits in a horizontal `ScrollView` with scrolling disabled, each card half its
-  width (`containerRelativeFrame`), as the shelves' links do: a `List` gives a `NavigationLink`
-  directly in a row its disclosure chevron whatever the style, which drew an arrow between the cards. *All songs* (`AllSongsButton`, on Home and the Library tab) is a `Button` that clears any filter or mix, shows songs and
-  opens the Songs page: a `simultaneousGesture` tap on a `NavigationLink` there left a tap doing
-  nothing. `ShelfTile` (a symbol in the accent, a third of the side, on the neutral ground an uncovered
-  cover wears) stays the Favourites row's and page's cover, the page's at the album header's 20 pt corner.
-- **The Library tab has no selector**: it is a home page (`LibraryView(page: .home)`) of one
-  section of shortcuts (Favourites and All songs, the second hidden while searching; Suggestions and
-  Statistics are Home's), then playlists, albums and artists as carousels (`PlaylistShelf`, `AlbumShelf`,
-  `ArtistShelf`, twelve each) under a *See all* header (`SeeAllPageHeader`) that pushes the kind's
-  own page, `Destination.playlists`, `.albums` or `.artists`, each `LibraryView(page:)` listing
-  every one as rows with its own search; the Albums and Artists pages carry a *Sort by* menu in the
-  toolbar (`CollectionOrderMenu`, which the Songs page's Albums and Artists groupings also hold as a row)
-  over `Library.collectionOrder`, which the home's shelves follow too. **Every sort menu is a
+  do not are the same size (`test_shortcut_cards.py`). The pair sits in a horizontal `ScrollView` with
+  scrolling disabled, each card half its width (`containerRelativeFrame`). **In a `List`, that
+  `ScrollView` is also what keeps the chevron away**: a `List` gives a `NavigationLink` in a row its
+  disclosure chevron whatever the style, which drew an arrow between two cards of one row, so links
+  side by side in a row (Home's *Jump back in*, the glance card) stand in one. `ShelfTile` (a symbol
+  in the accent, a third of the side, on the neutral ground an uncovered cover wears) is the
+  Favourites page's cover, at the album header's 20 pt corner, and the Favourites tile's on Home.
+- **The Library tab is four shelves under a tab row**, Android's Library: Songs, Albums, Artists and
+  Playlists (`LibraryShelf`, `ResonateLogic`, held by `LibraryShelvesTests`; `LibraryView` in
+  `LibraryViews.swift` is the shell and `Navigation.libraryShelf` the shelf chosen). **The row is
+  tapped, not swiped** (`LibraryShelfRow`, in a `safeAreaBar` at the top as the Search tab's chooser
+  is): each shelf is its own scroll view, swapped on a tap, so the large title still collapses, the
+  tab bar still minimises and a song row keeps its swipes, none of which a sideways pager leaves
+  standing. The row is four plain buttons of equal width, the chosen one lettered in `Color.worn`
+  over a 3 pt underline that slides to it in `Flip.animation` (at once under Reduce Motion; the shelf
+  itself swaps unanimated), a hairline beneath and no glass or material behind; at accessibility text
+  sizes it scrolls sideways, and VoiceOver hears a tab bar with the chosen tab selected. On an empty
+  catalog Songs, Albums and Artists draw `EmptyLibrary` while the row and Playlists stay, since
+  playlists arrive from other devices before any folder is granted. **Each shelf's toolbar is one
+  builder ending in `LibraryToolbar`**, never the shell's beside the shelf's, whose order in the bar
+  SwiftUI would decide. **Every shelf leads with its count and its controls on one
+  line** (`ShelfHeader`, the controls beneath the count where they do not fit): a sort menu drawn as a
+  chip naming the order held (`ShelfChip`, a capsule on the neutral ground, never glass, since it
+  scrolls with the rows), and what else the shelf offers.
+  - **Songs** (`LibrarySongs`, `SongsBrowsed`, `SongsLead`): *Play* and *Shuffle* as the collection
+    pages' two capsules (`CollectionAction`), then the song count over the total length
+    (`Library.tracksLengthMs`, summed where the list is read, `SongsListed`, never in a body) with the
+    sort chip (`SongOrderMenu` over the filter's order, its arrow the direction) and *Filters*,
+    counting the parts set (`FilterButton`, `FilterChip.parts`, opening `FilterSheet`), the parts set
+    as tokens beneath with *Clear* (`FilterChips`; the order is the chip's, never a token), and the
+    windowed rows (*Browsing*, below).
+  - **Albums** (`LibraryAlbums`): the album count, the sort chip (`CollectionOrderMenu` over
+    `Library.albumOrder`: name, artist, year, recently added, most played) and a toggle between a
+    grid and rows (`AlbumsLayout`, kept as `albums-as-rows` in `library-features`,
+    `Features.showAlbums`). The grid (`AlbumGrid`, `AlbumCell`) is adaptive columns at least 150 pt
+    wide, two on a phone, each a square cover over the title and the artist and year
+    (`AlbumHit.byline`, *Various artists* for a gathered album); the rows (`AlbumRows`) keep the
+    letter sections and the section index. Accessibility text sizes draw the rows and no toggle.
+  - **Artists** (`LibraryArtists`, `ArtistRows`): the artist count, the sort chip over
+    `Library.artistOrder` (name, recently added, most played), circle rows under their letter
+    headings, and the thumb (below) in the section index's place.
+  - **Playlists** (`LibraryPlaylists`): the two cards (above), *Your playlists* with its sort chip
+    from two playlists (`PlaylistOrderMenu`), and a grid of `PlaylistCard`s as wide as Albums' (the
+    mosaic, the name, and *Shared*, *Followed* or *Saved search* before the count), rows
+    (`PlaylistShelfRow`) at accessibility text sizes; none reads *No playlists yet* over *New
+    playlist*. The shelf is a plain page, so its cards take `Color.cardGroundOnAPlainPage` (the
+    `plainPage` environment): the grouped cell colour is the plain page's own white. **Creating and importing a playlist live on this shelf alone**, in its toolbar: *Undo
+    last playlist edit*, a *New playlist* menu (*Create playlist*, *Import playlist file*, *Paste a
+    link*) and *Followed profiles*.
+
+  **Albums and artists are ordered apart** (`Library.albumOrder`, `artistOrder`, either reloading
+  both lists in one read), so Home's *See all* lands on the order its shelf showed. A list not yet
+  read shows a spinner and a failed read `ReadFailure` (`ShelfStanding`, `Library.collectionsRead`,
+  `collectionsUnread`), never *No albums yet*. **Every sort menu is a
   `Button` per order** (`OrderOption`, a `Label` with the order's symbol and a checkmark in its place
   on the chosen one, `isSelected` to VoiceOver), never a `Picker`, which doubled *Sort by* and drew
-  no icons; *Descending* is a `Toggle` in a `Section` of its own (`DescendingOption`). **Playlists
+  no icons; *Descending* is a `Toggle` in a `Section` of its own (`DescendingOption`), and choosing
+  the order held does not flip it as Android's does, a checked row that silently reverses being
+  nothing VoiceOver can tell. **Playlists
   sorts too** (`PlaylistOrderMenu` over `Library.playlistOrder`, a `PlaylistOrder` read in Swift
   since a `MusicPlaylist` carries no plays or added time): *Name* as the catalog gives it, *Recently
-  added* by id, newest first, and *Most songs*, the menu shown from two playlists. **Favourites sorts
-  too** (`SongOrderMenu`, the Songs page's orders and *Descending*): newest added first is
+  added* by id, newest first, and *Most songs*. **Favourites sorts
+  too** (`SongOrderMenu`, the Songs shelf's orders and *Descending*, in its toolbar): newest added first is
   `favouriteTracks` as kept, and any other `Library.favouritesOrder` (a `SongOrdering`, kept for the
   session) is read in Rust (`filtered_tracks` of the favourites alone, `SongOrdering.favourites`) on
   `Work.onScreen`, keyed by `favouriteEpoch` and the order, never sorted in Swift; its search
-  matches in the order shown. **A shelf builds the cards on screen** (`Shelf`,
+  matches in the order shown. **A shelf of cards builds the cards on screen** (`Shelf`,
   `Layouts.swift`: a `LazyHStack` in a horizontal `ScrollView`, an `HStack` at accessibility text
-  sizes, where titles wrap and a lazy row's height would move as taller cards arrive): the three
-  shelves and Home's *Made for you* use it, since an `HStack` built all twelve cards (four
+  sizes, where titles wrap and a lazy row's height would move as taller cards arrive): the playlist
+  shelf, the search's album and artist shelves and Home's *Made for you* and *Artists you play* use
+  it, since an `HStack` built all twelve cards (four
   `ArtworkView`s a mosaic and a catalog read a playlist) in the frame its row scrolled in. A mix
   card on a shelf reserves its detail's two lines (`SuggestedMixCard(shelved:)`, `reservedLines`)
   so every card of the row is one height, and the Suggestions page's shelves stand in a
-  `LazyVStack`. **Creating and importing a playlist live on the Playlists
-  page alone**, in a *New playlist* menu in the toolbar (*Create playlist*, *Import playlist file*)
-  beside *Undo last playlist edit*, never among the home's rows; with none, the shelf and the page
-  read "No playlists". **A shelf's cover pushes its page as every album and artist entry does**,
+  `LazyVStack`. **A shelf of the Library is opened by name** (`LibraryOpening`,
+  `Navigation.showLibrary`: the tab, the shelf and, for Albums and Artists, an order the shelf
+  offers; opening Songs clears any filter): Home's *See all*, Favourites' *Browse songs*, Library
+  tools' *Playlists* and a shared playlist's link use it, and it empties the Library's stack, a
+  shelf being a root. No `Destination` names a shelf. **A scene kept before the shelves keeps its
+  place** (`KeptNavigation`'s decoder, `KeptPage`, `CarriedOver`, held by `DestinationsTests`): the
+  Songs, Albums, Artists and Playlists pages an older stack holds are read as the shelf chosen (the
+  kept `shelf` first, else one on top of the tab selected, which then opens the Library at the
+  shelf with no page over it, else the last such page of the Library's stack) and taken out of
+  every stack, the pages above them staying. **A cover pushes its page as every album and artist entry does**,
   a `NavigationLink(value:)` (the search's remembering of the text rides on a simultaneous tap,
   `picked`), never a button appending to `Navigation.paths`: the album page pushed that way from
-  the Library tab came in with no slide, and *See all* is a `NavigationLink(value:)` for the same
-  reason. The *Favourites* and *All songs* cards read their counts in views of their
-  own (`FavouritesCard`, `AllSongsCard`, from `Library.catalogCount`; the Playlists page's
-  Favourites row is `FavouritesCountRow`), so a heart or a catalog read never rebuilds the tab.
+  the Library tab came in with no slide, and *See all* to a page is a `NavigationLink(value:)` for
+  the same reason (`SeeAllPageHeader`).
+- **Several songs are selected on the Songs shelf** (`RowSelection`, `ResonateLogic`,
+  `SelectionTests`; `SelectedSongs`, the shell's, in the environment of the shelves alone, so a
+  pushed page and the search's results hold none). *Select* leads a song's long-press menu
+  (`TrackMenu`) and stands in the toolbar, and VoiceOver has it as a named action
+  (`SelectableByName`). Android begins on a long press; here a long press is the song's menu on
+  every list, and a second long-press gesture on a row holding a button and swipes was not one to
+  ship unseen. While selecting, a tap toggles the row, a check circle stands where the heart was,
+  a button toggling it too, and the row carries no swipe or menu (`TrackRow`); the title counts the rows chosen, beside
+  *Clear selection* and *Select all*, and a glass capsule at the foot (`SongSelectionBar`, in a
+  `safeAreaBar`) holds *Play*, *Add to playlist*, the favourite (removing where every chosen song
+  is one) and *More*: *Play next*, *Add to queue* and, where a folder is writable, *Delete N songs*
+  and, while sync is on, *Delete from every device* (`SongsToDelete`, `DeleteSongsConfirmation`,
+  which tells the files that stayed). Each action takes the chosen songs in the list's order and
+  ends the selection, as a change of shelf, filter or search does; a catalog read drops the rows
+  that left. **Many hearts are a write a chunk** (`Library.setFavourites`): the flags and
+  `favouriteTracks` are marked once and every song's write is registered at once under one serial
+  (`favouriteWrites`), so a catalog read landing mid-way lays the unsent hearts over itself too; the
+  songs go to the boundary fifty at a time on the transport's lane, the next fifty enqueued when
+  the last were answered, so a pause never waits behind thousands of writes. A song whose heart the
+  listener changed meanwhile carries a newer serial and is left out of the chunks still to send; a
+  refused chunk puts back its songs and those not yet sent. The bar reads whether every chosen song
+  is a favourite only up to 500 chosen, offering the heart beyond.
+- **A long list has a thumb to drag** (`FastScroller`, its arithmetic `FastScroll` in `ResonateLogic`,
+  `FastScrollTests`): on Songs, Artists and the Albums grid from 60 rows, Android's threshold, a capsule in the accent
+  at the trailing edge that shows while the list moves and for 0.9 s after (`ScrollTrack`, fed by
+  `onScrollGeometryChange`; it fades in over 0.15 s and out over 0.5 s, which Reduce Motion keeps,
+  opacity not being movement) and widens while held. A drag names a row by its share of the list and
+  scrolls there; a touch that has not moved 4 pt drags nothing (`FastScroll.moved`), since a row
+  named from a resting finger is not the row shown, and the touch is a `@GestureState`, so a drag
+  the system cancels lets go as one that ends does. Its hit shape is 24 pt wide, clear of a row's
+  heart. **The Songs list is a window, so the drag moves the window** (`RowWindow.anchor`: a
+  row outside it opens 300 rows leading 100 into that row, `ListsTests`; a sentinel at the window's
+  head widens it upward, `widenEarlier`, and scrolls back to the row that was first; the scroll to
+  a dragged row follows the window by 30 ms, at most one pending, and the sentinel is inert while
+  the thumb is held or a scroll is pending, since the list stood at the new window's head for a
+  frame and widened it there), and the
+  thumb's place is the window's place in the whole list. To VoiceOver the thumb is one adjustable
+  element saying its row of the total and stepping a tenth, shown while VoiceOver runs, where
+  Android's is hidden: it is the way through ten thousand rows there too. Albums' rows keep the
+  system's section index; Artists and the Albums grid, which has no sections, take the thumb, both
+  owning the trailing edge.
 - **Collections** are titled by their entity and drawn over a still backdrop, and grouped in Rust,
   never matched in Swift. `Destination.album` carries the album key: a Library or search hit passes
   `AlbumHit.key`, a song passes `Track.albumPage` (`album_key` of its album, artist and album artist,
@@ -1014,7 +1138,7 @@ every route change (a pair of headphones at the same rate included), not from th
 
 - **A playlist file is read, never kept**: M3U, M3U8, PLS and XSPF
   (`playlist_file_extensions()`, declared in `Info.plist` as `org.resonate.playlist`) opened in
-  Resonate or chosen from the Playlists page's *New playlist* menu's *Import playlist file* go to
+  Resonate or chosen from the Playlists shelf's *New playlist* menu's *Import playlist file* go to
   `import_playlist_file` (`android.md`'s *playlist file*), read at most one byte past the boundary's
   8 MiB so a huge pick is refused rather than loaded, a notice counts the songs found
   in the library, and `Features.playlistToShow` has the root view open the new playlist. A playlist's
@@ -1050,7 +1174,7 @@ every route change (a pair of headphones at the same rate included), not from th
   not zero). The timed refresh first asks `profiles_due_a_refresh` and follows each again
   (`refreshDueProfiles`), reloading only where the playlists read differ from those shown and
   telling `noticeUnasked` only then or where playlists were added or deleted
-  (`FollowedProfileWords.refreshed`). The Playlists page's toolbar holds *Followed profiles* while any
+  (`FollowedProfileWords.refreshed`). The Playlists shelf's toolbar holds *Followed profiles* while any
   is followed (`profiles_followed`, read with the playlists): each link a button that asks *Stop
   following* (confirmed, `unfollow_profile`; its playlists stay) (`FollowedProfileWordsTests`).
 - **A Spotify account is a page of Settings** (`SpotifyView.swift`, `SpotifyWords`; `mobile.md`'s *A Spotify account on a phone*): a client ID and a refresh token in the keychain (`AccountStore.readSpotify`), handed over with `configure_spotify` as the secrets are read and on a change. *Sign in to Spotify* asks `authorize_spotify` through `Features.signInToSpotify`, and the page shows the address in an `ASWebAuthenticationSession` (`webAuthenticationSession`, its callback scheme never called back, since the answer comes to the boundary's loopback redirect, and a session keeps the app running where Safari would suspend it), which ends as `spotifyAddress` clears; a sheet dismissed by hand cancels (`cancelSpotifySignIn`). Signed in, *Follow the account* and *Move to Resonate once* are `followProfile(spotify_account_link(), ...)`, its timers and *Followed profiles* included; a rotated token is written after a follow (`keepRenewedSpotifyToken`); *Sign out of Spotify* clears the token and calls `sign_out_of_spotify`. Not seen on a device, whether the session's browser reaches the app's listener included (`SpotifyWordsTests`; `docs/TESTING.md`).
@@ -1186,7 +1310,7 @@ every route change (a pair of headphones at the same rate included), not from th
   `Work.aside` keyed by `collectionGeneration` and `catalogEpoch`. Pressing the art pushes
   `Destination.mix(id)`, `MixView`, a page drawn as an album's (header with the mosaic, Play and Shuffle,
   the songs as rows over the first song's backdrop) that reads the mix itself (`saved_search_page` or
-  `filtered_tracks`) and never sets the Songs page's filter; the id is the list's, so a restored page
+  `filtered_tracks`) and never sets the Songs shelf's filter; the id is the list's, so a restored page
   reads the lists again (`OfferedMixes.named`), needing no statistics, and a mix no longer offered
   (the turn has moved on) reads "This mix is no longer offered". The round play button and the context
   menu (Play, Shuffle, Show songs) play every song it holds, read page by page (`Library.everyPage`), so
@@ -1198,7 +1322,7 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
 ## Search
 
 - **The library is searched in Rust, never filtered in Swift.** `SearchModel` (`SearchModel.swift`;
-  `Library.songSearch` for Songs, `Library.shelfSearch` for the Library tab, `Library.tabSearch` for
+  `Library.librarySearch` for the Library tab, `Library.tabSearch` for
   the Search tab, so each tab's text is its own) asks `search_library`
   on `Work.aside` 150 ms after the last keystroke (the desktop's `SEARCH_SETTLE`), cancels the
   settle before, refuses a stale answer by generation and keeps the last answer on screen until the
@@ -1211,8 +1335,11 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   same songs keeps the order shown with the rows read, and only one whose songs differ is shown in
   its own order. The completions offered
   (`offeredCompletions`) are folded once as an answer lands, not at each read.
-- **Songs** searches with scopes Top (five songs, six albums, six artists, each with *See all*),
-  Songs, Albums and Artists; *Did you mean* where nothing matched; the grammar's `reads` as chips;
+- **The Library tab searches the shelf shown**: one `.searchable` on the shell over
+  `Library.librarySearch`, the tab row its scope, so there is no scope bar and text typed survives a
+  change of shelf. Songs, Albums and Artists draw `SearchResults` at their own scope (`LibraryFound`),
+  since `search_library` answers all three at once, and Playlists folds the names (below) and keeps no search; the *Top*
+  view of all three is the Search tab's. Nothing found is said for the shelf's own kind. *Did you mean* where nothing matched; the grammar's `reads` as chips;
   completions as a row of glass capsules of the words alone heading the results (`SearchCompletions`, at most five,
   read from the answer on screen, so the row changes only as the results do); `.searchSuggestions`
   offers only, on an empty field, the last ten searches (`UserDefaults` suite `library-features`,
@@ -1227,15 +1354,15 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   search beginning or ending swaps one list for the other instead of deleting or inserting every
   browsed row in one. A lit string is kept per text, query and column (`lit`, up to 4096), so a
   redraw asks `highlights` across the boundary only for text it has not lit. Searching spans the catalog: filters shape browsing
-  only, and setting one clears the search. The page opens on the Songs/Albums/Artists picker; songs
-  are filtered from the toolbar (`FilterButton`, filled while a filter is set, opening
+  only, and setting one clears the search. Songs
+  are filtered from the *Filters* chip (`FilterButton`, lit and counting while a part is set, opening
   `FilterSheet`: genre, artist and album are pickers of the names the filter compares (the track's
   artist, not an album artist; an album's title, since the filter compares folded equality), each a
   `CataloguePicker`: a `NavigationLink` row showing the choice, which pushes a lazy `List` of *Any* and
   the names with a check on the chosen one and pops on a choice (`CatalogueChoices`), never a
   `Picker`, which resolves every option to find the chosen one's label and so built thousands of
   rows as the sheet rose; Cancel
-  closes it and *Reset* is a button in the form that clears the draft, applied with *Apply*), and each part of the filter set shows under the picker as a small capsule token
+  closes it and *Reset* is a button in the form that clears the draft, applied with *Apply*), and each part of the filter set shows under the header as a small capsule token
   that clears it. Playlists are reached from the Library tab and Home, Suggestions from Home's *Made for you*,
   online search from the Search tab.
 - **The Search tab keeps library and online results within one tap** (`SearchTab.swift`): a pinned
@@ -1260,30 +1387,30 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   (`contentMargins(.horizontal:for: .scrollContent)`), and *See all* reaches 12 pt above and below
   its line through its content shape while laying out at the line's height
   (`SeeAllHeader.reachBeyondTheLine`), so neither a completion nor a header stands 44 pt tall.
-- **A result answers while the keyboard is up.** The Search tab's and the Songs page's result lists
+- **A result answers while the keyboard is up.** The Search tab's and the Library tab's result lists
   stow the keyboard as soon as they are dragged (`scrollDismissesKeyboard(.immediately)`), and
   choosing a result (a song played, an album or artist opened) drops the field's focus first
   (`Keyboard.stow`, `SearchResults.chosen`), resigning the first responder rather than binding `searchFocused`, whose focus binding fought the system field as it moved above the keyboard. A library search shows no spinner: the last answer
   stays until the next lands, a few hundred milliseconds after the last keystroke. A toolbar
   spinner added and removed with each keystroke rebuilt the bar under the focused field, and one
   held hidden for the whole search drew an empty slot in the glass pill iOS 26 groups trailing
-  items into (beside Listen's ear) and a pill of its own on the Songs page.
+  items into (beside Listen's ear) and a pill of its own on the Library tab.
 - **Browsing** reads Rust too: songs through `filtered_tracks` pages of `Library.page`, the first
   page published at once where nothing is shown yet and the rest after, every later page read from the index the first came from (`Paging.pinned` over `filtered_page`, its revision as the pin, so enrichment writing meanwhile neither rebuilds the index per page nor walks again; only a page whose pin was let go starts over, at most three walks, each song kept once by id, `PagingTests`); albums and artists through
   `albums(order)`/`artists(order)`, cached on `Library` and reloaded with the catalog. The ordered
   match of a filter is kept for the pages that follow it (`Ordered`: one filter, one index, 30 s),
   so paging 100 000 songs filters and sorts once; the index is built outside the catalog's lock
   and by one caller at a time (`Searching::index`). Albums and artists with 40
-  rows or more ordered by name get a section per letter run and the section index. All songs is
-  always a flat list with no letter headings or alphabet index, **drawn as a window** (`RowWindow`:
-  its first 300 rows, 300 more each time its end row, `MoreRows`, scrolls in, back to 300 when the
-  filter changes; the add-songs sheet the same, back to 300 with each search's answer), since one
+  rows or more ordered by name get a section per letter run, Albums' rows the section index too. The
+  Songs shelf is always a flat list with no letter headings or alphabet index, **drawn as a window**
+  (`RowWindow`: 300 rows, 300 more each time its end row, `MoreRows`, scrolls in, moved by the
+  thumb's drag, back to the first 300 when the filter changes; the add-songs sheet the same, back to 300 with each search's answer), since one
   `ForEach` of the whole library had its ids gathered and diffed on the main thread at every
   publish, several milliseconds past ten thousand songs; a press still plays the whole list, ordered by Added descending by
   default (`SongBrowsing.defaultFilter`). Resetting filters or clearing an order chip returns to
-  newest added first; that default draws no filter chip. Other sort orders remain in Filter and sort. `EmptyLibrary`
+  newest added first; that default draws no filter token. The sort chip and Filter and sort set the same order. `EmptyLibrary`
   shows only once the catalog was read empty and no scan runs; filters matching nothing offer Reset.
-  The Library tab's search uses the same model for albums and artists and folds playlist names
+  The Playlists shelf's search folds playlist names
   (`searchFolded`, which is core's `folded_letters` through `folded_text`, so *Lodz* finds *Łódź* as library search does), as the Favourites and Add-songs searches fold
   a song's title, artist and album.
 - **Online** search asks as the listener types: 450 ms settle, any text that is not blank (no floor
@@ -2156,14 +2283,15 @@ are handled by the same rules as an iPad turned.
   mode names, so a mode change moves it between the columns' slots exactly as it moves it in one.
 - **The Library tab** (`LibraryArrangement.of`, `LibraryTab`) is a `NavigationSplitView` where the
   width class is regular and the text is not large, otherwise the stack it always was: the sidebar is
-  `LibrarySection.allCases` (`LibrarySidebar`: Library, Favourites, All songs, Playlists, Albums,
-  Artists), its selection `Navigation.librarySection` (`choose`
-  empties the tab's path, so a section is a root, not a page pushed on the last one), and the detail
-  is the tab's own `NavigationStack` over the same `Navigation.paths[.library]`, rooted at
-  `LibrarySectionRoot` (`.id(section)`), so every destination, value link and `Navigation.open`
-  works as in the stack. The section is not kept across launches; the path is. `showSongs` selects
-  Library and pushes Songs. Home, Settings and Search stay stacks: Settings is a list of pages the stack
-  already shows well on a wide screen, and Search is the search role's own page.
+  the shelves (`LibrarySidebar`: `LibraryShelf.allCases`), its selection the same
+  `Navigation.libraryShelf` the phone's tab row sets (`choose` empties the tab's path, so a shelf is
+  a root, not a page pushed on the last one), and the detail is the tab's own `NavigationStack` over
+  the same `Navigation.paths[.library]`, rooted at `LibraryView` drawn with no tab row and titled by
+  its shelf (`.id(shelf)`), so every destination, value link and `Navigation.open` works as in the
+  stack. The shelf and the path are both kept across launches (`KeptNavigation.shelf`). Home's
+  *Jump back in* is four tiles across there. Home, Settings and Search stay stacks: Settings is a
+  list of pages the stack already shows well on a wide screen, and Search is the search role's own
+  page.
 - **A sheet is sized by its weight** (`sheetSized(_:)`, `SheetSizing.of`): a short one (a picker, the
   sleep timer, zones, the pairing code, the folder choice) is `presentationSizing(.form)`, a long one
   (tags, filters, saved search, organise, lyrics, add songs) `.page`, and every one a `.page` at

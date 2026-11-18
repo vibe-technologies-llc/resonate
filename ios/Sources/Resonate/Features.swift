@@ -47,6 +47,7 @@ final class Features {
     @ObservationIgnored private let settings = UserDefaults(suiteName: "library-features") ?? .standard
     @ObservationIgnored private let artworks = ArtworkCache()
     @ObservationIgnored lazy var enrichment = Enrichment(library: library)
+    @ObservationIgnored lazy var home = HomeFeed(library: library)
     @ObservationIgnored lazy var downloads = DownloadQueue(library: library)
     @ObservationIgnored lazy var listening = Listening(library: library)
     @ObservationIgnored lazy var room = RoomCorrectionState(library: library)
@@ -91,6 +92,7 @@ final class Features {
         didSet { servedChanged() }
     }
     private(set) var enrichOnMetered: Bool
+    private(set) var albumsAsRows: Bool
     private(set) var downloadOnMetered: Bool
     var statistics: LibraryStatistics?
     var listeningDetail: ListeningDetail?
@@ -99,7 +101,6 @@ final class Features {
     var libraryBreakdown: LibraryBreakdown?
     var statisticsLoading = false
     private(set) var statisticsDays: UInt32?
-    private(set) var homeListening: HomeListening?
     private(set) var wrappedYear: WrappedYear?
     var lyrics: LyricSheet?
     var lyricsLoading = false
@@ -235,6 +236,7 @@ final class Features {
         online = settings.object(forKey: "online") == nil ? true : settings.bool(forKey: "online")
         hostedServices = settings.object(forKey: "hosted-services") == nil ? true : settings.bool(forKey: "hosted-services")
         enrichOnMetered = settings.bool(forKey: "enrich-on-metered")
+        albumsAsRows = settings.bool(forKey: "albums-as-rows")
         downloadOnMetered = MeteredDownloads.allowed(in: settings)
         historyKept = ListeningHistory.kept(in: settings)
         syncFolder = settings.string(forKey: "sync-folder")
@@ -1428,11 +1430,6 @@ final class Features {
             let covers = try await Work.onScreen { ListenedCovers.of(detail, from: native) }
             let bars = try await Work.onScreen { ListeningBar.grouped(detail.days, span: days) }
             let breakdown = try await Work.onScreen { try native.libraryBreakdown() }
-            let listening: HomeListening? = if days == 0 {
-                try await Work.onScreen { HomeListening.of(found, detail, covers: covers) }
-            } else {
-                nil
-            }
             guard let self, request == statisticsRequest else { return }
             if statistics != found { statistics = found }
             if listeningDetail != detail { listeningDetail = detail }
@@ -1440,7 +1437,6 @@ final class Features {
             if listenedCovers != covers { listenedCovers = covers }
             if libraryBreakdown != breakdown { libraryBreakdown = breakdown }
             if statisticsDays != days { statisticsDays = days }
-            if let listening, homeListening != listening { homeListening = listening }
         }, finally: { [weak self] in
             if request == self?.statisticsRequest { self?.statisticsLoading = false }
         })
@@ -1581,6 +1577,16 @@ final class Features {
     func songDeletable(_ track: Track) -> Bool {
         guard let root = Folders.root(of: track.uri) else { return false }
         return library.folderList.first { $0.id == root }?.writable ?? false
+    }
+
+    var holdsAWritableFolder: Bool {
+        library.folderList.contains(where: \.writable)
+    }
+
+    func showAlbums(asRows: Bool) {
+        guard albumsAsRows != asRows else { return }
+        albumsAsRows = asRows
+        settings.set(asRows, forKey: "albums-as-rows")
     }
 
     func editTags(_ tracks: [Track], _ change: SongTags) {

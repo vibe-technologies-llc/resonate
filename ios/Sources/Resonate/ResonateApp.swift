@@ -67,10 +67,10 @@ final class Navigation {
     private(set) var queuedFelt = 0
     private(set) var heartFelt = 0
     private(set) var landedFelt = 0
+    private(set) var selectedFelt = 0
     @ObservationIgnored private var taggingAfterPlayer: TagEditing?
     @ObservationIgnored private var versioningAfterPlayer: VersionsOf?
-    var songsGrouping = Grouping.songs
-    var librarySection = LibrarySection.home
+    var libraryShelf = LibraryShelf.songs
 
     func addToPlaylist(_ tracks: [Track]) {
         addingToPlaylist = PickedTracks(tracks: tracks)
@@ -88,12 +88,17 @@ final class Navigation {
         landedFelt += 1
     }
 
+    func feelSelected() {
+        selectedFelt += 1
+    }
+
     func path(_ root: Root) -> Binding<[Destination]> {
         Binding(get: { self.paths[root] ?? [] }, set: { self.paths[root] = $0 })
     }
 
-    func choose(_ section: LibrarySection) {
-        librarySection = section
+    func choose(_ shelf: LibraryShelf) {
+        guard libraryShelf != shelf else { return }
+        libraryShelf = shelf
         paths[.library] = []
     }
 
@@ -144,12 +149,15 @@ final class Navigation {
         nowPlaying || tab == .search || (paths[tab]?.last?.drawsItsOwnBackdrop ?? false)
     }
 
-    func showSongs() {
+    func showLibrary(_ opening: LibraryOpening, in library: Library) {
+        if opening.clearsFilters, library.filtering { library.setFilter(Library.everything) }
+        if let order = opening.albumOrder { library.albumOrder = order }
+        if let order = opening.artistOrder { library.artistOrder = order }
+
         nowPlaying = false
-        songsGrouping = .songs
         tab = .library
-        librarySection = .home
-        paths[.library] = [.songs]
+        libraryShelf = opening.shelf
+        paths[.library] = []
     }
 
     func leave(_ destination: Destination) {
@@ -159,12 +167,13 @@ final class Navigation {
     }
 
     var kept: KeptNavigation {
-        KeptNavigation(tab: tab, paths: paths.filter { !$0.value.isEmpty })
+        KeptNavigation(tab: tab, paths: paths.filter { !$0.value.isEmpty }, shelf: libraryShelf)
     }
 
     func restore(_ kept: KeptNavigation) {
         tab = kept.tab
         paths = kept.paths
+        if let shelf = kept.shelf { libraryShelf = shelf }
     }
 
     func leaveServer() {
@@ -301,7 +310,7 @@ struct RootView: View {
         .onChange(of: library.features.together.toShow) { _, shown in
             guard let shown else { return }
             library.features.together.toShow = nil
-            navigation.open(shown == .party ? .party : .playlists)
+            if shown == .party { navigation.open(.party) } else { navigation.showLibrary(.playlists, in: library) }
         }
         .sheet(isPresented: $navigation.listening) {
             ListenSheet()
@@ -358,11 +367,11 @@ struct LibraryTab: View {
     var body: some View {
         switch LibraryArrangement.of(horizontal: SizeClass(horizontal), accessibilityText: typeSize.isAccessibilitySize) {
         case .stack:
-            RootStack(root: .library) { LibraryView() }
+            RootStack(root: .library) { LibraryView(arrangement: .stack) }
         case .split:
-            LibrarySplit { section in
-                RootStack(root: .library) { LibrarySectionRoot(section: section) }
-                    .id(section)
+            LibrarySplit { shelf in
+                RootStack(root: .library) { LibraryView(arrangement: .split) }
+                    .id(shelf)
             }
         }
     }
@@ -516,9 +525,6 @@ struct DestinationView: View {
         case .album(let key): AlbumView(key: key)
         case .artist(let name): ArtistView(name: name)
         case .playlist(let id): PlaylistView(id: id)
-        case .playlists: LibraryView(page: .playlists)
-        case .albums: LibraryView(page: .albums)
-        case .artists: LibraryView(page: .artists)
         case .favourites: FavouritesView()
         case .tools: LibraryToolsView()
         case .folders: FoldersView()
@@ -550,7 +556,6 @@ struct DestinationView: View {
         case .appearance: AppearanceView()
         case .background: BackgroundView()
         case .identicalSongs: IdenticalSongsView()
-        case .songs: SongsView()
         case .served(let place): ServedPlaceView(place: place)
         case .party: PartyView()
         case .songLyrics(let id): LiveSong(id: id) { LyricsView(chosen: $0) }
@@ -811,8 +816,13 @@ struct LibraryToolbar: ToolbarContent {
                 } else {
                     Button("library.toolbar.rescan", systemImage: "arrow.clockwise") { library.rescan() }
                 }
-                Button("library.toolbar.tools", systemImage: "wrench.and.screwdriver") {
-                    navigation.open(.tools)
+                Section {
+                    Button("tools.party", systemImage: "person.2.wave.2") {
+                        navigation.open(.party)
+                    }
+                    Button("library.toolbar.tools", systemImage: "wrench.and.screwdriver") {
+                        navigation.open(.tools)
+                    }
                 }
             }
         }

@@ -111,43 +111,6 @@ public enum LibraryArrangement: Sendable, Equatable {
     }
 }
 
-public enum LibrarySection: String, Sendable, Equatable, CaseIterable, Identifiable {
-    case home
-    case favourites
-    case songs
-    case playlists
-    case albums
-    case artists
-
-    public var id: String { rawValue }
-
-    public var title: String {
-        switch self {
-        case .home: said("library.shelf.library")
-        case .favourites: said("library.shelf.favourites")
-        case .songs: said("library.shelf.songs")
-        case .playlists: said("library.shelf.playlists")
-        case .albums: said("library.shelf.albums")
-        case .artists: said("library.shelf.artists")
-        }
-    }
-
-    public var symbol: String {
-        switch self {
-        case .home: "music.note.house"
-        case .favourites: "heart"
-        case .songs: "music.note"
-        case .playlists: "music.note.list"
-        case .albums: "square.stack"
-        case .artists: "music.mic"
-        }
-    }
-
-    public var isHome: Bool {
-        self == .home
-    }
-}
-
 public enum SheetWeight: Sendable, Equatable {
     case short
     case long

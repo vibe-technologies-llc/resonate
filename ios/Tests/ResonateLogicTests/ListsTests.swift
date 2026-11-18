@@ -284,6 +284,73 @@ import Testing
         #expect(window.shown(of: 10_000) == RowWindow.opening + RowWindow.widenedBy)
         #expect(!window.holdsMore(than: RowWindow.opening + RowWindow.widenedBy))
     }
+
+    @Test func anUnanchoredWindowStartsAtTheFirstRowAndHoldsNothingEarlier() {
+        let window = RowWindow()
+
+        #expect(window.rows(of: 10_000) == 0..<RowWindow.opening)
+        #expect(window.rows(of: 10) == 0..<10)
+        #expect(window.rows(of: 0) == 0..<0)
+        #expect(!window.holdsEarlier)
+    }
+
+    @Test func anchoringAtARowItHoldsMovesNothing() {
+        var window = RowWindow()
+
+        window.anchor(at: 120, of: 10_000)
+
+        #expect(window == RowWindow())
+    }
+
+    @Test func anchoringFarAwayOpensAWindowLeadingIntoThatRow() {
+        var window = RowWindow()
+
+        window.widen()
+        window.anchor(at: 5_000, of: 10_000)
+
+        #expect(window.rows(of: 10_000) == (5_000 - RowWindow.leadIn)..<(5_000 - RowWindow.leadIn + RowWindow.opening))
+        #expect(window.holdsEarlier)
+        #expect(window.holdsMore(than: 10_000))
+    }
+
+    @Test func anchoringNearTheStartOrPastTheEndIsHeldWithinTheList() {
+        var early = RowWindow()
+        var late = RowWindow()
+        var beyond = RowWindow()
+
+        early.anchor(at: 5_000, of: 10_000)
+        early.anchor(at: 40, of: 10_000)
+        late.anchor(at: 9_999, of: 10_000)
+        beyond.anchor(at: 10_000, of: 10_000)
+
+        #expect(early.rows(of: 10_000) == 0..<RowWindow.opening)
+        #expect(late.rows(of: 10_000) == (9_999 - RowWindow.leadIn)..<10_000)
+        #expect(!late.holdsMore(than: 10_000))
+        #expect(beyond == RowWindow())
+    }
+
+    @Test func wideningEarlierGrowsBackTowardsTheFirstRow() {
+        var window = RowWindow()
+
+        window.anchor(at: 500, of: 10_000)
+        window.widenEarlier()
+
+        #expect(window.rows(of: 10_000) == 100..<(400 + RowWindow.opening))
+
+        window.widenEarlier()
+
+        #expect(window.rows(of: 10_000) == 0..<(400 + RowWindow.opening))
+        #expect(!window.holdsEarlier)
+    }
+
+    @Test func aListThatShrankBelowTheWindowShowsItsLastRows() {
+        var window = RowWindow()
+
+        window.anchor(at: 5_000, of: 10_000)
+
+        #expect(window.rows(of: 1_000) == (1_000 - RowWindow.opening)..<1_000)
+        #expect(window.rows(of: 50) == 0..<50)
+    }
 }
 
 @Suite struct SongOrderingTests {
@@ -304,6 +371,18 @@ import Testing
 }
 
 @Suite struct FilterChipTests {
+    @Test func thePartsOfAFilterLeaveItsOrderToTheSortChip() {
+        var filter = SongBrowsing.defaultFilter
+        filter.favourites = true
+        filter.genre = "Rock"
+        filter.order = .title
+        filter.descending = false
+
+        #expect(FilterChip.parts(of: filter).map(\.label) == FilterChip.of(filter).dropLast().map(\.label))
+        #expect(FilterChip.parts(of: filter).count == 2)
+        #expect(FilterChip.parts(of: SongBrowsing.defaultFilter).isEmpty)
+    }
+
     @Test func theDefaultFilterHasNoChips() {
         #expect(FilterChip.of(SongBrowsing.defaultFilter).isEmpty)
     }

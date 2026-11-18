@@ -201,6 +201,10 @@ extension Color {
     @MainActor static var cardGround: Color {
         AppearanceState.shared.themedBackground ? themedCard : Color(.secondarySystemGroupedBackground)
     }
+
+    @MainActor static var cardGroundOnAPlainPage: Color {
+        AppearanceState.shared.themedBackground ? themedCard : Color(.secondarySystemBackground)
+    }
 }
 
 extension View {

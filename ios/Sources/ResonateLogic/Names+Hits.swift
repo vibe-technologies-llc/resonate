@@ -18,6 +18,12 @@ extension AlbumHit {
     public var shownTitle: String { title.isEmpty ? said("library.unknown.album") : title }
     public var shownArtist: String { artist.isEmpty ? said("library.unknown.artist") : artist }
 
+    public var byline: String {
+        [variousArtists ? said("library.various-artists") : shownArtist, year.map(String.init) ?? ""]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
     public var detail: String {
         [shownArtist, year.map(String.init) ?? "", said("counted.songs", Int(songs))]
             .filter { !$0.isEmpty }
