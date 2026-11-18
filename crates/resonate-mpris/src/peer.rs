@@ -1,11 +1,18 @@
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
 use std::{
     io::{self, Read, Write},
+    net::{Shutdown, TcpStream},
     path::Path,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
 };
 
-use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
+use parking_lot::Mutex;
 use resonate_core::{PlaylistId, TrackId, ZoneId};
 use resonate_engine::{Asleep, Until};
 
@@ -78,57 +85,125 @@ pub(crate) trait Peer: Send + Sync {
     fn waiting(&self) -> Result<usize>;
 }
 
+pub type Sever = Box<dyn FnOnce() + Send>;
+
+pub trait Severable: Read + Write + Send + 'static {
+    fn severer(&self) -> io::Result<Sever>;
+}
+
+impl Severable for TcpStream {
+    fn severer(&self) -> io::Result<Sever> {
+        let held = self.try_clone()?;
+
+        Ok(Box::new(move || {
+            let _ = held.shutdown(Shutdown::Both);
+        }))
+    }
+}
+
+#[cfg(unix)]
+impl Severable for UnixStream {
+    fn severer(&self) -> io::Result<Sever> {
+        let held = self.try_clone()?;
+
+        Ok(Box::new(move || {
+            let _ = held.shutdown(Shutdown::Both);
+        }))
+    }
+}
+
 struct Job {
     request: Vec<u8>,
     reply: Sender<Result<Vec<u8>>>,
+    taken: Arc<AtomicBool>,
+}
+
+fn first_to_take(taken: &AtomicBool) -> bool {
+    !taken.swap(true, Ordering::AcqRel)
 }
 
 struct Link {
     jobs: Sender<Job>,
-    broken: AtomicBool,
+    broken: Arc<AtomicBool>,
+    sever: Mutex<Option<Sever>>,
 }
 
 impl Link {
-    fn over<S: Read + Write + Send + 'static>(stream: S) -> Result<Self> {
+    fn over<S: Severable>(stream: S) -> Result<Self> {
+        let sever = stream
+            .severer()
+            .map_err(|source| Error::pipe(PipeOp::Hold, source))?;
+        let broken = Arc::new(AtomicBool::new(false));
         let (jobs, queue) = unbounded();
-        thread::Builder::new()
-            .name(LINK_THREAD.to_owned())
-            .spawn(move || converse(stream, &queue))
-            .map_err(|source| Error::pipe(PipeOp::Spawn, source))?;
+
+        {
+            let broken = Arc::clone(&broken);
+            thread::Builder::new()
+                .name(LINK_THREAD.to_owned())
+                .spawn(move || converse(stream, &queue, &broken))
+                .map_err(|source| Error::pipe(PipeOp::Spawn, source))?;
+        }
 
         Ok(Self {
             jobs,
-            broken: AtomicBool::new(false),
+            broken,
+            sever: Mutex::new(Some(sever)),
         })
     }
 
-    fn exchange(&self, request: Vec<u8>) -> Result<Vec<u8>> {
+    fn exchange(&self, call: Call, request: Vec<u8>) -> Result<Vec<u8>> {
         if self.broken.load(Ordering::Acquire) {
-            return Err(self.severed(io::ErrorKind::BrokenPipe));
+            return Err(severed());
         }
 
         let (reply, answer) = bounded(1);
-        if self.jobs.send(Job { request, reply }).is_err() {
+        let taken = Arc::new(AtomicBool::new(false));
+        let job = Job {
+            request,
+            reply,
+            taken: Arc::clone(&taken),
+        };
+        if self.jobs.send(job).is_err() {
             self.broken.store(true, Ordering::Release);
-            return Err(self.severed(io::ErrorKind::BrokenPipe));
+            return Err(severed());
         }
 
         match answer.recv_timeout(ANSWERS_WITHIN) {
             Ok(answered) => answered,
-            Err(_) => {
+            Err(RecvTimeoutError::Disconnected) => {
                 self.broken.store(true, Ordering::Release);
-                Err(self.severed(io::ErrorKind::TimedOut))
+                Err(severed())
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                self.broken.store(true, Ordering::Release);
+                if first_to_take(&taken) {
+                    return Err(Error::pipe(PipeOp::Write, io::ErrorKind::TimedOut.into()));
+                }
+                self.cut();
+                Err(Error::Unconfirmed { call })
             }
         }
     }
 
-    fn severed(&self, kind: io::ErrorKind) -> Error {
-        Error::pipe(PipeOp::Read, kind.into())
+    fn cut(&self) {
+        if let Some(sever) = self.sever.lock().take() {
+            sever();
+        }
     }
 }
 
-fn converse<S: Read + Write>(mut stream: S, queue: &Receiver<Job>) {
+fn severed() -> Error {
+    Error::pipe(PipeOp::Read, io::ErrorKind::BrokenPipe.into())
+}
+
+fn converse<S: Read + Write>(mut stream: S, queue: &Receiver<Job>, broken: &AtomicBool) {
     for job in queue {
+        if broken.load(Ordering::Acquire) {
+            break;
+        }
+        if !first_to_take(&job.taken) {
+            continue;
+        }
         let answered = write_frame(&mut stream, &job.request).and_then(|()| {
             read_frame(&mut stream)?
                 .ok_or_else(|| Error::pipe(PipeOp::Read, io::ErrorKind::UnexpectedEof.into()))
@@ -146,14 +221,14 @@ pub(crate) struct PipePeer {
 }
 
 impl PipePeer {
-    pub(crate) fn over<S: Read + Write + Send + 'static>(stream: S) -> Result<Self> {
+    pub(crate) fn over<S: Severable>(stream: S) -> Result<Self> {
         Ok(Self {
             link: Link::over(stream)?,
         })
     }
 
     fn ask(&self, request: &Request) -> Result<Reply> {
-        let answered = self.link.exchange(request.encode())?;
+        let answered = self.link.exchange(request.call(), request.encode())?;
 
         Ok(Reply::decode(&answered)?)
     }
@@ -303,10 +378,43 @@ impl Peer for PipePeer {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use std::{os::unix::net::UnixStream, sync::Arc, time::Instant};
+    use std::time::Instant;
 
     use super::*;
     use crate::wire::WireFault;
+
+    struct Watched {
+        stream: UnixStream,
+        dropped: Sender<()>,
+    }
+
+    impl Read for Watched {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            self.stream.read(buffer)
+        }
+    }
+
+    impl Write for Watched {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.stream.write(buffer)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.stream.flush()
+        }
+    }
+
+    impl Severable for Watched {
+        fn severer(&self) -> io::Result<Sever> {
+            self.stream.severer()
+        }
+    }
+
+    impl Drop for Watched {
+        fn drop(&mut self) {
+            let _ = self.dropped.send(());
+        }
+    }
 
     fn answering_with(reply: Vec<u8>) -> PipePeer {
         let (near, mut far) = UnixStream::pair().expect("a pair of sockets");
@@ -333,10 +441,7 @@ mod tests {
 
         assert!(matches!(
             first,
-            Err(Error::Pipe {
-                op: PipeOp::Read,
-                ..
-            })
+            Err(Error::Unconfirmed { call: Call::Zone })
         ));
         assert!(waited >= ANSWERS_WITHIN);
         assert!(started.elapsed() < ANSWERS_WITHIN * 2);
@@ -347,6 +452,78 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn a_command_the_player_reads_but_never_answers_is_said_to_have_maybe_landed_and_its_thread_ends()
+     {
+        let (near, mut far) = UnixStream::pair().expect("a pair of sockets");
+        let (dropped, let_go) = bounded(1);
+        let (read, heard) = bounded(1);
+        thread::spawn(move || {
+            let _ = read.send(read_frame(&mut far).is_ok_and(|frame| frame.is_some()));
+            let _ = read_frame(&mut far);
+        });
+        let peer = PipePeer::over(Watched {
+            stream: near,
+            dropped,
+        })
+        .expect("a peer");
+
+        let started = Instant::now();
+        let asked = peer.told(Act::Next);
+        let waited = started.elapsed();
+        let released = let_go.recv_timeout(ANSWERS_WITHIN);
+
+        assert_eq!(
+            heard.try_recv(),
+            Ok(true),
+            "the player never read the command"
+        );
+        assert!(waited < ANSWERS_WITHIN * 2, "{waited:?}");
+        assert!(released.is_ok(), "the link's thread still holds the stream");
+        let Err(error) = asked else {
+            panic!("a command nobody answered was taken as done");
+        };
+        assert!(
+            matches!(error, Error::Unconfirmed { call: Call::Told }),
+            "{error:?}"
+        );
+        assert!(
+            error.to_string().contains("may still have been done"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_call_queued_behind_one_that_went_unanswered_is_said_to_have_failed_and_not_to_have_landed()
+    {
+        let (near, mut far) = UnixStream::pair().expect("a pair of sockets");
+        thread::spawn(move || while let Ok(Some(_)) = read_frame(&mut far) {});
+        let peer = Arc::new(PipePeer::over(near).expect("a peer"));
+
+        let first = {
+            let peer = Arc::clone(&peer);
+            thread::spawn(move || peer.told(Act::Next))
+        };
+        let second = {
+            let peer = Arc::clone(&peer);
+            thread::spawn(move || peer.told(Act::Previous))
+        };
+        let answers = [
+            first.join().expect("an asker"),
+            second.join().expect("an asker"),
+        ];
+
+        let unconfirmed = answers
+            .iter()
+            .filter(|answer| matches!(answer, Err(Error::Unconfirmed { .. })))
+            .count();
+        let failed = answers
+            .iter()
+            .filter(|answer| matches!(answer, Err(Error::Pipe { .. })))
+            .count();
+        assert_eq!((unconfirmed, failed), (1, 1), "{answers:?}");
     }
 
     #[test]

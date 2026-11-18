@@ -25,7 +25,7 @@ use crate::{
     Error, PipeOp, Result,
     answering::Answering,
     listening::{Serves, Sever, accepting},
-    peer::{Peer, PipePeer},
+    peer::{Peer, PipePeer, Severable},
     registry::{self, Claim},
     remote::ANSWERS_WITHIN,
     service::{INSTANCES, bus_name_of, instance_name},
@@ -54,6 +54,72 @@ impl Write for Shared {
 
     fn flush(&mut self) -> io::Result<()> {
         self.0.flush()
+    }
+}
+
+#[derive(Default)]
+struct Traffic {
+    severed: AtomicBool,
+    moving: AtomicBool,
+}
+
+struct Client {
+    stream: Arc<Stream>,
+    traffic: Arc<Traffic>,
+}
+
+impl Client {
+    fn over(stream: Stream) -> Self {
+        Self {
+            stream: Arc::new(stream),
+            traffic: Arc::default(),
+        }
+    }
+
+    fn carried<T>(&self, io: impl FnOnce(&mut &Stream) -> io::Result<T>) -> io::Result<T> {
+        self.traffic.moving.store(true, Ordering::SeqCst);
+        let carried = if self.traffic.severed.load(Ordering::SeqCst) {
+            Err(io::ErrorKind::BrokenPipe.into())
+        } else {
+            io(&mut &*self.stream)
+        };
+        self.traffic.moving.store(false, Ordering::SeqCst);
+
+        carried
+    }
+}
+
+impl Read for Client {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        self.carried(|stream| stream.read(buffer))
+    }
+}
+
+impl Write for Client {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.carried(|stream| stream.write(buffer))
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.carried(|stream| stream.flush())
+    }
+}
+
+impl Severable for Client {
+    fn severer(&self) -> io::Result<Sever> {
+        let stream = Arc::clone(&self.stream);
+        let traffic = Arc::clone(&self.traffic);
+
+        Ok(Box::new(move || {
+            traffic.severed.store(true, Ordering::SeqCst);
+            while traffic.moving.load(Ordering::SeqCst) {
+                if let Err(error) = resonate_win32::cancel_pipe_io(stream.as_handle()) {
+                    tracing::debug!(%error, "a pipe's waiting read could not be cancelled");
+                    break;
+                }
+                thread::yield_now();
+            }
+        }))
     }
 }
 
@@ -87,11 +153,12 @@ fn listen(player: &str) -> io::Result<Listener> {
         .create_duplex::<pipe_mode::Bytes>()
 }
 
-fn connect(player: &str) -> io::Result<Stream> {
+fn connect(player: &str) -> io::Result<Client> {
     Stream::connect_by_path_with_wait_mode(
         pipe_path(player),
         ConnectWaitMode::Timeout(ANSWERS_WITHIN),
     )
+    .map(Client::over)
 }
 
 pub(crate) fn serving() -> Result<Vec<(WellKnownName<'static>, Arc<dyn Peer>)>> {
@@ -229,7 +296,7 @@ mod tests {
     use std::{process, sync::mpsc};
 
     use super::*;
-    use crate::wire::{read_frame, write_frame};
+    use crate::wire::{Call, read_frame, write_frame};
 
     struct Echo;
 
@@ -273,6 +340,33 @@ mod tests {
         assert!(
             matches!(ended, Ok(Ok(true) | Err(_))),
             "the client's connection was left open"
+        );
+    }
+
+    #[test]
+    fn a_call_the_player_reads_but_never_answers_is_unconfirmed_and_lets_the_pipe_go() {
+        let player = format!("org.mpris.MediaPlayer2.resonate.silent{}", process::id());
+        let listener = listen(&player).expect("a pipe");
+        let (heard, gone) = mpsc::channel();
+        thread::spawn(move || {
+            let mut held = accepted(&listener).expect("a client");
+            let asked = read_frame(&mut held).is_ok_and(|frame| frame.is_some());
+            let after = read_frame(&mut held);
+            let _ = heard.send((asked, !matches!(after, Ok(Some(_)))));
+        });
+        let peer = PipePeer::over(connect(&player).expect("connected")).expect("a peer");
+
+        let asked = peer.zone();
+        let ended = gone.recv_timeout(ANSWERS_WITHIN * 2);
+
+        assert!(
+            matches!(asked, Err(Error::Unconfirmed { call: Call::Zone })),
+            "{asked:?}"
+        );
+        assert_eq!(
+            ended.ok(),
+            Some((true, true)),
+            "the link's thread still holds the pipe"
         );
     }
 

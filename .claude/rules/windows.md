@@ -114,6 +114,8 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   once the windows wear the new one; `every_window_of_this_process_wears_both_sizes_and_another_process_is_left_alone`);
   `disconnect_pipe` (`DisconnectNamedPipe` on a
   borrowed handle, so the window's pipe severs a client from another thread, `mpris.md`);
+  `cancel_pipe_io` (`CancelIoEx` on a borrowed handle, nothing pending being no refusal, so a
+  client's link cancels the read its own thread waits in);
   `leave_a_console_of_its_own` (`GetConsoleProcessList`, then `FreeConsole` only where this process
   is the console's one, answering a `Console`);
   `carry_alternate_streams` and `carry_security` (below); and, under the `console` feature the
@@ -505,8 +507,13 @@ through the same `Running` calls as on Linux, and `Session::open` is `Ok` withou
   (`resonate-mpris-pipe`), woken at shutdown by a connection to its own pipe; each client is served
   on a thread of its own up to `CONNECTIONS_AT_MOST` (32), more turned away. A pipe handle has no
   read timeout, so a client's `Link` runs the blocking I/O on a thread and waits `ANSWERS_WITHIN`
-  (2 s) for each reply; a call that times out severs the link (a later reply could be read for
-  another call), and dropping the client ends its thread. When the player stops serving, every
+  (2 s) for each reply; a call that times out breaks the link (a later reply could be read for
+  another call), answers `Error::Unconfirmed` (`mpris.md`) and severs the client's pipe, so its
+  thread ends: `Client` marks itself severed (every later read or write refused before it starts)
+  and `cancel_pipe_io` cancels the read it waits in, again until no I/O of its own is under way, so
+  a cancel landing before the read is issued is not lost
+  (`a_call_the_player_reads_but_never_answers_is_unconfirmed_and_lets_the_pipe_go`). Dropping the
+  client ends its thread too. When the player stops serving, every
   client still connected is disconnected from the accept thread (`disconnect_pipe`), so its
   serving thread ends rather than waiting for the client's next frame.
 

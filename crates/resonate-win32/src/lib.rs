@@ -44,7 +44,7 @@ pub use crate::{
     icons::WindowIcons,
     identity::name_the_process,
     mmcss::ProAudioClass,
-    pipes::disconnect_pipe,
+    pipes::{cancel_pipe_io, disconnect_pipe},
     security::carry_security,
     streams::carry_alternate_streams,
 };

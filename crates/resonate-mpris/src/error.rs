@@ -35,6 +35,7 @@ pub enum PipeOp {
     Spawn,
     Claim,
     List,
+    Hold,
 }
 
 #[cfg(windows)]
@@ -90,6 +91,11 @@ pub enum Error {
 
     #[error("the player's pipe spoke out of turn")]
     Wire(#[from] WireFault),
+
+    #[error(
+        "the player was sent {call:?} and did not answer in time, so it may still have been done"
+    )]
+    Unconfirmed { call: Call },
 
     #[error("the player refused {call:?} as {fault:?}")]
     Refused { call: Call, fault: Fault },

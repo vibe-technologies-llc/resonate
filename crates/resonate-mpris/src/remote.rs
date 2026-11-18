@@ -1,11 +1,4 @@
-use std::{
-    collections::HashMap,
-    fmt,
-    io::{Read, Write},
-    path::Path,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, fmt, path::Path, sync::Arc, time::Duration};
 
 use resonate_core::{FrameSpan, MediaLocation, PlaylistId, TrackId, Volume, ZoneId};
 use resonate_engine::{Asleep, Placement, Until};
@@ -18,7 +11,7 @@ use crate::{
     BusOp, Error, PlaylistInfo, PlaylistOrder, Reloadable, Result, Tunable,
     blocking::{Connection, connection},
     bus_peer::BusPeer,
-    peer::{Peer, PipePeer},
+    peer::{Peer, PipePeer, Severable},
     service::{BUS_NAME, ZONE_PREFIX},
     track::{PlaybackStatus, track_of},
     wire::Act,
@@ -213,10 +206,7 @@ impl Running {
         }))
     }
 
-    pub fn through<S: Read + Write + Send + 'static>(
-        stream: S,
-        name: WellKnownName<'static>,
-    ) -> Result<Self> {
+    pub fn through<S: Severable>(stream: S, name: WellKnownName<'static>) -> Result<Self> {
         Ok(Self {
             peer: Arc::new(PipePeer::over(stream)?),
             name,

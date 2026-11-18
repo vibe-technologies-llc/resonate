@@ -28,11 +28,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Providers and network
 
 ## The window
-- [S · 0.13.1] A command to a running player over the Windows pipe or the Mac's socket that times
-  out may still land: `exchange` (`resonate-mpris`'s `peer.rs`) gives up after `ANSWERS_WITHIN`, but
-  the `converse` thread has already written the request and stays blocked reading its answer, so
-  the terminal says the player did not answer and the track skips anyway, and the thread and its
-  stream are kept
 
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:

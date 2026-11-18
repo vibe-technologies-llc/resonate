@@ -385,7 +385,19 @@ registry's), sorted by name, so `found`, `listed`, `named` and `zoned` are the s
   tune and reload refusals, each through `Running::through`).
 - **A pipe link has a clock the bus has in its connection.** `Link` runs a stream's blocking I/O
   on a thread and a call waits `ANSWERS_WITHIN`; a timeout or a closed pipe marks the link broken
-  for good, so no later call reads an earlier call's reply (`peer::tests`).
+  for good, so no later call reads an earlier call's reply (`peer::tests`). **A call that times
+  out after it was written is `Error::Unconfirmed { call }`, never a failure**: the player read it
+  and may still carry it out, so the terminal says so rather than that it was refused
+  (`a_command_the_player_reads_but_never_answers_is_said_to_have_maybe_landed_and_its_thread_ends`).
+  Each queued `Job` is taken once, by the link's thread before it writes or by its asker on the
+  timeout (`first_to_take`), so a call still waiting behind an unanswered one is an honest
+  `PipeOp::Write` failure, never sent
+  (`a_call_queued_behind_one_that_went_unanswered_is_said_to_have_failed_and_not_to_have_landed`).
+  **The timeout severs the stream, so the link's thread ends and lets it go**: a stream is
+  `Severable` (`Running::through` and `PipePeer::over` take one), its `severer` made as the link
+  opens (`PipeOp::Hold` where it cannot be) and run by the asker whose sent call timed out: a
+  `UnixStream`'s or `TcpStream`'s is a `try_clone` shut down both ways (which `socket::severed`
+  shares), a Windows client pipe's cancels its pending I/O (`pipe.rs`'s `Client`, `windows.md`).
 - **`registry.rs` is the portable discovery** (a held file per player in a folder, `Held` and
   `writer_of`, tested on every host) and `pipe.rs` the `interprocess` half, `cfg(windows)`.
 - **`listening.rs` is the accept loop both transports share** (`accepting`, over a closure that

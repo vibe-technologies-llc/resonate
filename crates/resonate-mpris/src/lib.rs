@@ -94,6 +94,7 @@ pub use crate::{
     },
     icons::tell_the_icons_changed,
     identity::APP_USER_MODEL_ID,
+    peer::{Sever, Severable},
     preferences::{Contrast, Motion, Preferences, Scheme, desktop_preferences, watch_the_desktop},
     remote::{
         Described, PlayerName, Queueing, ROWS_A_CALL, Running, Seeking, Session, Standing,

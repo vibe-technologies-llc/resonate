@@ -32,6 +32,7 @@ pub enum Op {
     LeaveTheConsole,
     HearConsoleInterrupts,
     DisconnectPipe,
+    CancelPipeIo,
     MakeIcon,
     ListWindows,
 }
@@ -41,6 +42,7 @@ pub struct HResult(pub i32);
 
 impl HResult {
     pub(crate) const HANDLE_EOF: Self = Self(0x8007_0026_u32.cast_signed());
+    pub(crate) const NOTHING_PENDING: Self = Self(0x8007_0490_u32.cast_signed());
 
     #[cfg(windows)]
     fn explanation(self) -> String {

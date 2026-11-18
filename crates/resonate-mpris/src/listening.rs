@@ -12,13 +12,12 @@ use std::{
 
 use parking_lot::Mutex;
 
+pub(crate) use crate::peer::Sever;
 use crate::{
     Result,
     answering::Answering,
     wire::{read_frame, write_frame},
 };
-
-pub(crate) type Sever = Box<dyn FnOnce() + Send>;
 
 #[derive(Default)]
 struct Connected {
