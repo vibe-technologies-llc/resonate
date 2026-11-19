@@ -131,6 +131,12 @@ stay its own, since the headless one is archived once and partitioned.
   each image uploaded as the artifact `resonate-macos-<architecture>` and nothing published.
   `gh workflow run macos-dmg.yml --ref <branch>` starts it.
 
+- **`android-apk.yml` builds the signed Android APK alone, on a manual run**: the `android-apk`
+  job of `release.yml` over the checked-out branch (the same keystore secrets, `apksigner verify`
+  and `android/check-release.py`, the keystore removed whatever happens), named by the version
+  the root manifest names and uploaded as the artifact `resonate-android-apk`, nothing published.
+  `gh workflow run android-apk.yml --ref <branch>` starts it.
+
 - **The headless tests are built once and spread over four runners.** `headless-build` runs
   `cargo nextest archive --locked --profile ci --workspace --exclude resonate-ui --no-default-features`
   with the cargo cache, and uploads the archive (about 1.1 GB, `compression-level: 0` since the

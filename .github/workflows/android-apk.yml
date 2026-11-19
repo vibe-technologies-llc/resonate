@@ -1,0 +1,62 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-apk:
+    name: Signed Android APK
+    runs-on: ubuntu-26.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
+        with:
+          packages: platform-tools
+      - name: Install the Android toolchains
+        run: |
+          sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "ndk;28.2.13676358"
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-linux-android x86_64-linux-android
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          workspaces: . -> android/.cargo-target
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c
+      - name: Build the signed release variant
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          RESONATE_SIGNING_STORE_FILE: ${{ runner.temp }}/release.jks
+          RESONATE_SIGNING_STORE_PASSWORD: ${{ secrets.RESONATE_SIGNING_STORE_PASSWORD }}
+          RESONATE_SIGNING_KEY_ALIAS: ${{ secrets.RESONATE_SIGNING_KEY_ALIAS }}
+          RESONATE_SIGNING_KEY_PASSWORD: ${{ secrets.RESONATE_SIGNING_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RESONATE_SIGNING_STORE_FILE"
+          android/gradlew -p android :app:assembleRelease
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks"
+      - name: Verify the signature and the release shape
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          python3 android/check-release.py --sdk "$ANDROID_HOME"
+      - name: Name the asset by the declared version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          test -n "$version"
+          mkdir -p assets
+          cp android/app/build/outputs/apk/release/app-release.apk "assets/resonate-$version.apk"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: resonate-android-apk
+          path: assets/*.apk
+          if-no-files-found: error
