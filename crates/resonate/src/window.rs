@@ -6,8 +6,8 @@ use std::{
 };
 
 use crossbeam_channel::bounded;
-use resonate_core::{Resumption, Switch};
-use resonate_engine::{Command, Opens, Placement, Player, Zones};
+use resonate_core::{FrameSpan, MediaLocation, Resumption, Switch};
+use resonate_engine::{Command, Opens, Placement, Player, QueueItem, Zones};
 use resonate_library::Library;
 use resonate_mpris::{Queueing, Running};
 
@@ -60,6 +60,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
             &window,
             &cli.files,
             &mpris::tuning_of(&cli),
+            &library,
             &Served::of(&config, settings_path(&cli).ok()),
         );
     }
@@ -88,7 +89,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
     let files = crate::together::invitations_taken_out(&cli.files);
     #[cfg(not(feature = "sync"))]
     let files = cli.files.clone();
-    queue(&player, &files, keeps.then(|| library.as_ref()), &served)?;
+    queue(&player, &files, &library, keeps, &served)?;
 
     let (asked_to_quit, quitting) = bounded(1);
     let (attending, attention) = crossbeam_channel::unbounded();
@@ -178,7 +179,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
     #[cfg(not(feature = "sync"))]
     let together_for_the_window = None;
     let (opening, opened) = crossbeam_channel::unbounded();
-    queue_what_the_system_opens(opened, served.clone());
+    queue_what_the_system_opens(opened, Arc::clone(&library), served.clone());
     let present = Arc::clone(&presenter) as Arc<dyn resonate_ui::Present>;
     let leaving: resonate_ui::Leaving = {
         let zones = Arc::clone(&zones);
@@ -363,7 +364,11 @@ const WHAT_IS_OPENED_WAITS_FOR_THE_WINDOW: Duration = Duration::from_secs(15);
 
 const THE_WINDOW_IS_LOOKED_FOR_EVERY: Duration = Duration::from_millis(100);
 
-fn queue_what_the_system_opens(opened: crossbeam_channel::Receiver<Vec<String>>, served: Served) {
+fn queue_what_the_system_opens(
+    opened: crossbeam_channel::Receiver<Vec<String>>,
+    library: Arc<Library>,
+    served: Served,
+) {
     let spawned = thread::Builder::new()
         .name("resonate-opened".to_owned())
         .spawn(move || {
@@ -373,7 +378,7 @@ fn queue_what_the_system_opens(opened: crossbeam_channel::Receiver<Vec<String>>,
                     tracing::warn!("no window answered for what the system opened");
                     continue;
                 };
-                if let Err(error) = queued_in(&window, &arguments, &served) {
+                if let Err(error) = queued_in(&window, &arguments, &library, &served) {
                     tracing::warn!(%error, "what the system opened was not queued");
                 }
             }
@@ -470,24 +475,27 @@ fn handed_to(
     window: &Running,
     arguments: &[OsString],
     tuning: &[(resonate_mpris::Tunable, String)],
+    library: &Library,
     served: &Served,
 ) -> Result<()> {
     if let Err(error) = window.tune(tuning) {
         tracing::warn!(%error, "the window already open did not take the settings given");
         told!("{}", words::main::untuned());
     }
-    queued_in(window, arguments, served)?;
+    queued_in(window, arguments, library, served)?;
     said!("{}", words::main::handed(window.name().to_string()));
     Ok(())
 }
 
-fn queued_in(window: &Running, arguments: &[OsString], served: &Served) -> Result<()> {
+fn queued_in(
+    window: &Running,
+    arguments: &[OsString],
+    library: &Library,
+    served: &Served,
+) -> Result<()> {
     let (invitations, arguments) = invitations_among(arguments);
     window.invite(&invitations)?;
-    let rows: Vec<_> = queue_items_served(&arguments, served)
-        .into_iter()
-        .map(|item| (item.location, item.span))
-        .collect();
+    let rows = handed_rows(&arguments, library, served);
     if !rows.is_empty() {
         window.queue(
             &rows,
@@ -525,33 +533,59 @@ fn names_an_invitation(_argument: &OsString) -> bool {
     false
 }
 
-pub(crate) fn queue(
+fn handed_rows(
+    arguments: &[OsString],
+    library: &Library,
+    served: &Served,
+) -> Vec<(MediaLocation, Option<FrameSpan>)> {
+    opened_as_chosen(arguments, library, served)
+        .into_iter()
+        .map(|item| (item.location, item.span))
+        .collect()
+}
+
+fn opened_as_chosen(arguments: &[OsString], library: &Library, served: &Served) -> Vec<QueueItem> {
+    versions::played_as_chosen(
+        Some(library),
+        mpris::claimed_by(Some(library), queue_items_served(arguments, served)),
+    )
+}
+
+fn queue(
     player: &Player,
     arguments: &[OsString],
-    kept: Option<&Library>,
+    library: &Library,
+    resumes: bool,
     served: &Served,
 ) -> Result<()> {
-    if !arguments.is_empty() {
-        player.send(Command::Load {
-            items: versions::played_as_chosen(
-                kept,
-                mpris::claimed_by(kept, queue_items_served(arguments, served)),
-            ),
-            start_at: 0,
-            autoplay: true,
-        })?;
-        return Ok(());
+    if let Some(opening) = opening(arguments, library, resumes, served) {
+        player.send(opening)?;
     }
-
-    let Some(resumption) = resumed(kept) else {
-        return Ok(());
-    };
-    player.send(Command::Resume(resumption))?;
     Ok(())
 }
 
-pub(crate) fn resumed(kept: Option<&Library>) -> Option<Resumption> {
-    match kept?.resumption() {
+fn opening(
+    arguments: &[OsString],
+    library: &Library,
+    resumes: bool,
+    served: &Served,
+) -> Option<Command> {
+    if !arguments.is_empty() {
+        return Some(Command::Load {
+            items: opened_as_chosen(arguments, library, served),
+            start_at: 0,
+            autoplay: true,
+        });
+    }
+
+    resumes
+        .then(|| resumed(library))
+        .flatten()
+        .map(Command::Resume)
+}
+
+fn resumed(library: &Library) -> Option<Resumption> {
+    match library.resumption() {
         Ok(resumption) => resumption,
         Err(error) => {
             tracing::warn!(%error, "the queue kept from the last run could not be read");
@@ -562,9 +596,55 @@ pub(crate) fn resumed(kept: Option<&Library>) -> Option<Resumption> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use clap::Parser as _;
+    use resonate_core::TrackId;
 
     use super::*;
+    use crate::fixtures::{self, ARTIST, TITLE, tagged_wave};
+
+    #[test]
+    fn a_file_the_window_opens_or_is_handed_with_resume_off_is_queued_as_the_version_chosen() {
+        let root = fixtures::scratch("window-versions-chosen")
+            .canonicalize()
+            .expect("the scratch folder as the scan stores it");
+        let song = root.join("echoes.wav");
+        let copy = root.join("elsewhere.wav");
+        fs::write(&song, tagged_wave(&[(TITLE, "Echoes"), (ARTIST, "Ada")])).expect("a song");
+        fs::write(&copy, tagged_wave(&[(TITLE, "Echoes"), (ARTIST, "Ada")])).expect("a copy");
+        let library = fixtures::scanned(&root);
+        let held = |path| {
+            library
+                .track_at(path, None)
+                .expect("the catalog read")
+                .expect("the file is held")
+                .id
+        };
+        let (song_id, copy_id) = (held(&song), held(&copy));
+        library
+            .choose_version(song_id, copy_id)
+            .expect("a version chosen");
+        let opened = [song.clone().into_os_string()];
+
+        let loaded = match opening(&opened, &library, false, &Served::default()) {
+            Some(Command::Load { items, .. }) => items,
+            _ => Vec::new(),
+        };
+        let handed = handed_rows(&opened, &library, &Served::default());
+        let nothing_opened = opening(&[], &library, false, &Served::default());
+        fs::remove_dir_all(&root).expect("the scratch folder removed");
+
+        let ids: Vec<TrackId> = loaded.iter().map(|item| item.id).collect();
+        let locations: Vec<&MediaLocation> = loaded.iter().map(|item| &item.location).collect();
+        assert_eq!(ids, [copy_id]);
+        assert_eq!(locations, [&MediaLocation::local(&copy)]);
+        assert_eq!(handed, [(MediaLocation::local(&copy), None)]);
+        assert!(
+            nothing_opened.is_none(),
+            "a queue was resumed with resume off"
+        );
+    }
 
     #[cfg(feature = "sync")]
     #[test]

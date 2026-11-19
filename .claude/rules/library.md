@@ -606,9 +606,12 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   and `Cut`) only where the row is still that song's file and cut, so a row the queue minted apart
   for a file of the same id is left alone. The library sees no queue, so each caller maps its own
   rows: the window (`ui.md`'s *Find another version*), the binary's `versions::played_as_chosen`
-  (`resonate play`, `resonate playlist`, `queue --playlist`, files the window opens with, and a
-  playlist activated over the bus, which `play_playlist` reaches), and MCP's `add_to_queue`
-  (`catalog::rows_played`). A playlist keeps the song itself: only a queue swaps it. The phones keep
+  (`resonate play`, `resonate playlist`, `queue --playlist`, files the window opens with, whether
+  or not `resume` is on, and files handed to a window already running, by a second launch or what
+  macOS opens, which `queued_in` maps before sending them over the bus, and a playlist activated
+  over the bus, which `play_playlist` reaches;
+  `a_file_the_window_opens_or_is_handed_with_resume_off_is_queued_as_the_version_chosen`), and
+  MCP's `add_to_queue` (`catalog::rows_played`). A playlist keeps the song itself: only a queue swaps it. The phones keep
   tables of the same shape in their own catalog and swap at the boundary (`mobile.md`'s *Another
   version of a song*).
   **A version a service holds is downloaded beside the song, never played from the service**:
