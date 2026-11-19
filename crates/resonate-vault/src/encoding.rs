@@ -3,7 +3,7 @@ pub struct Encoding(u16);
 
 impl Encoding {
     pub const UNRECORDED: Self = Self(0);
-    pub const OF_THIS_BUILD: Self = Self(8);
+    pub const OF_THIS_BUILD: Self = Self(9);
     pub const KEYED_BY_THE_SOUND: Self = Self(8);
 
     pub const fn of(held: u16) -> Self {

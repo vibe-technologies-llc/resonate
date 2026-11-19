@@ -313,6 +313,37 @@ fn floating(samples: &[i32]) -> Vec<u8> {
     wave(32, true, &data, None)
 }
 
+const PAST_A_SINGLE_FLOAT: f64 = 1.0 / (1_u64 << 40) as f64;
+
+fn double_precision(samples: &[i32]) -> Vec<f64> {
+    samples
+        .iter()
+        .map(|sample| f64::from(*sample as i16) / 32_768.0 + PAST_A_SINGLE_FLOAT)
+        .collect()
+}
+
+fn sixty_four_bit_float(samples: &[f64]) -> Vec<u8> {
+    let data: Vec<u8> = samples
+        .iter()
+        .flat_map(|sample| sample.to_le_bytes())
+        .collect();
+    wave(64, true, &data, None)
+}
+
+fn heard_in_full(path: &Path) -> Vec<f64> {
+    let sources = Sources::local();
+    let location = MediaLocation::local(path);
+    let (mut decoder, info) = Decoder::open(&sources, &location).expect("a readable object");
+    decoder.hear_in_full();
+
+    let mut block = AudioBuffer::empty(info.spec);
+    let mut held = Vec::new();
+    while decoder.next_block(&mut block).expect("a decoded block") == DecodeStatus::Decoded {
+        held.extend_from_slice(decoder.heard_in_full());
+    }
+    held
+}
+
 fn decoded(path: &Path, format: SampleFormat) -> Vec<i32> {
     let sources = Sources::local();
     let location = MediaLocation::local(path);
@@ -704,6 +735,61 @@ fn a_float_source_is_kept_as_a_compressed_wave_and_reads_back_bit_for_bit() {
         .map(|sample| f32::from(*sample as i16) / 32_768.0)
         .collect();
     assert_eq!(read, wanted);
+}
+
+#[test]
+fn a_sixty_four_bit_float_master_is_kept_as_it_came_with_every_bit_of_every_sample() {
+    let tree = Tree::new();
+    let samples = double_precision(&signal(FRAMES));
+    let path = tree.write("doubled.wav", &sixty_four_bit_float(&samples));
+    let vault = tree.vault();
+
+    let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+
+    assert_eq!(held.form, Form::Kept);
+    assert_eq!(held.bits, 64);
+    assert!(
+        vault
+            .verify(&held.path, Form::Kept)
+            .expect("a verified object")
+    );
+    assert_eq!(heard_in_full(&held.path), samples);
+}
+
+#[test]
+fn a_sixty_four_bit_float_copy_differing_past_a_single_float_is_refused() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+
+    let mut first = double_precision(&signal(FRAMES));
+    let mut later = first.clone();
+    first[FRAMES] = 0.5 + PAST_A_SINGLE_FLOAT;
+    later[FRAMES] = 0.5 + PAST_A_SINGLE_FLOAT / 2.0;
+
+    let source = SourceId::new("share").expect("a lowercase name");
+    let location = MediaLocation::new(source.clone(), "changing/doubled.wav");
+    let sources = Sources::local().and(Arc::new(Changing {
+        source,
+        first: sixty_four_bit_float(&first),
+        later: sixty_four_bit_float(&later),
+        opened: AtomicU32::new(0),
+    }));
+
+    let keeping = vault.keep(&Taking {
+        sources: &sources,
+        location: &location,
+        span: None,
+        renewing: false,
+        foretold: None,
+        replacing: None,
+        halt: Halt::NEVER,
+    });
+
+    assert_eq!(first[FRAMES] as f32, later[FRAMES] as f32);
+    assert!(
+        matches!(keeping, Ok(Keeping::Refused(Refusal::NotValidated))),
+        "{keeping:?}"
+    );
 }
 
 #[test]

@@ -52,6 +52,13 @@ pub(crate) fn little_endian(block: &AudioBuffer, into: &mut Vec<u8>) {
     }
 }
 
+pub(crate) fn in_full(samples: &[f64], into: &mut Vec<u8>) {
+    into.clear();
+    for sample in samples {
+        into.extend_from_slice(&sample.to_le_bytes());
+    }
+}
+
 pub(crate) fn widened(block: &AudioBuffer, into: &mut Vec<i32>) {
     into.clear();
     match block.data() {

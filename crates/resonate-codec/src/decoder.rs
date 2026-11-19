@@ -610,6 +610,7 @@ pub struct Decoder {
     announced: StreamSpec,
     carried: u64,
     origins: Vec<Frames>,
+    in_full: Option<Vec<f64>>,
 }
 
 impl Decoder {
@@ -777,6 +778,7 @@ impl Decoder {
             announced: info.spec,
             carried: 0,
             origins,
+            in_full: None,
         };
         decoder.open_on_the_music()?;
 
@@ -893,6 +895,14 @@ impl Decoder {
         self.announced
     }
 
+    pub fn hear_in_full(&mut self) {
+        self.in_full = Some(Vec::new());
+    }
+
+    pub fn heard_in_full(&self) -> &[f64] {
+        self.in_full.as_deref().unwrap_or_default()
+    }
+
     pub fn set_output_format(&mut self, format: SampleFormat) {
         self.deliver(Delivery::samples(format));
     }
@@ -946,6 +956,9 @@ impl Decoder {
     }
 
     pub fn next_block(&mut self, out: &mut AudioBuffer) -> Result<DecodeStatus> {
+        if let Some(in_full) = &mut self.in_full {
+            in_full.clear();
+        }
         if self.remaining() == Some(0) {
             out.set_spec(self.output_spec());
             out.set_frames(0);
@@ -964,7 +977,13 @@ impl Decoder {
         let frames = match &self.reading {
             Held::Coded(_) if self.splicing.is_some() => self.spliced_block(out, wanted)?,
             Held::Coded(_) => self.coded_block(out, wanted)?,
-            Held::Dsd(_) => self.dsd_block(out, wanted)?,
+            Held::Dsd(_) => {
+                let frames = self.dsd_block(out, wanted)?;
+                if let Some(in_full) = &mut self.in_full {
+                    widened_in_full(out.data(), in_full);
+                }
+                frames
+            }
         };
 
         if frames == 0 {
@@ -1045,12 +1064,18 @@ impl Decoder {
             let taking = taking.min(SILENCE_HANDED_OUT_AT_ONCE);
             out.set_frames(taking);
             silence_out(out.data_mut());
+            if let Some(in_full) = &mut self.in_full {
+                silence_in_full(out, in_full);
+            }
             taking
         } else {
             let decoded = coded.decoder.last_decoded();
             let block = decoded.slice(coded.consumed..coded.consumed + taking);
             out.set_frames(block.frames());
             copy_out(&block, out.data_mut());
+            if let Some(in_full) = &mut self.in_full {
+                copy_in_full(&block, in_full);
+            }
             block.frames()
         };
 
@@ -1085,6 +1110,9 @@ impl Decoder {
                         .min(SILENCE_HANDED_OUT_AT_ONCE);
                     out.set_frames(taking);
                     silence_out(out.data_mut());
+                    if let Some(in_full) = &mut self.in_full {
+                        silence_in_full(out, in_full);
+                    }
                     taking
                 }
                 Edit::Music { .. } => self.coded_block(out, Some(taking))?,
@@ -1646,6 +1674,28 @@ fn silence_out(data: &mut SampleData) {
         SampleData::S16(samples) => samples.fill(0),
         SampleData::S24(samples) | SampleData::S32(samples) => samples.fill(0),
         SampleData::F32(samples) => samples.fill(0.0),
+    }
+}
+
+fn silence_in_full(out: &AudioBuffer, in_full: &mut Vec<f64>) {
+    in_full.clear();
+    in_full.resize(out.data().len(), 0.0);
+}
+
+fn copy_in_full(block: &GenericAudioSlice<'_>, in_full: &mut Vec<f64>) {
+    in_full.clear();
+    in_full.resize(block.frames() * block.spec().channels().count(), 0.0);
+    block.copy_to_slice_interleaved::<f64, _>(in_full.as_mut_slice());
+}
+
+fn widened_in_full(data: &SampleData, in_full: &mut Vec<f64>) {
+    in_full.clear();
+    match data {
+        SampleData::S16(samples) => in_full.extend(samples.iter().map(|&sample| f64::from(sample))),
+        SampleData::S24(samples) | SampleData::S32(samples) => {
+            in_full.extend(samples.iter().map(|&sample| f64::from(sample)));
+        }
+        SampleData::F32(samples) => in_full.extend(samples.iter().map(|&sample| f64::from(sample))),
     }
 }
 

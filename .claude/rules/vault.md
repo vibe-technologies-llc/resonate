@@ -77,7 +77,7 @@ engine, library, `ureq` (CI `refuse`).
   `TRACKS_TO_VAULT` finds exactly one noted object keyed by the sound (`Encoding::KEYED_BY_THE_SOUND`)
   with the row's sound (frames, rate, channels; `vault_objects_by_sound`); a sound two objects share
   foretells nothing.
-- **`Form::Wave`**: PCM FLAC cannot hold (`SampleFormat::F32`, > 24 bits, > 96 kHz). Canonical
+- **`Form::Wave`**: PCM FLAC cannot hold (32-bit float, > 24 bits, > 96 kHz). Canonical
   `fmt `+`data` WAVE, zstd at `ARCHIVED_AT` (19). Over `LARGEST_PCM` (RIFF ceiling): refused before
   decoding where the source declares its length (`wave::outgrows_a_wave`), else `wave::tally` stops
   at the ceiling, then `kept_whole`. **Two passes, no uncompressed copy ever written.** `wave::tally`
@@ -96,7 +96,11 @@ engine, library, `ureq` (CI `refuse`).
   `PACKED_FRAME_BYTES` (8 MiB) of WAVE, each pledged its length: any zstd reader sees one stream,
   `Unpacking` finds frame starts.
 - **`Form::Kept`**: source bytes where re-encoding loses something or costs more: lossy codec, DSD,
-  over 8 channels, re-encode no smaller. Tag containers *around* the audio go without touching a
+  over 8 channels, a float wider than 32 bits (`Form::floats_wider_than_a_wave`: a 64-bit master,
+  which decodes to 32-bit float, is read back through `Decoder::hear_in_full` so source and copy are
+  compared at 64 bits:
+  `a_sixty_four_bit_float_master_is_kept_as_it_came_with_every_bit_of_every_sample`,
+  `a_sixty_four_bit_float_copy_differing_past_a_single_float_is_refused`), re-encode no smaller. Tag containers *around* the audio go without touching a
   frame; `bare::bare` decides by the container symphonia opened:
   - FLAC, MPEG, ADTS, WavPack, Monkey's Audio, DSF shed ID3, APE, Lyrics3 (FLAC rewritten to
     STREAMINFO alone; DSF ends where its metadata pointer pointed).

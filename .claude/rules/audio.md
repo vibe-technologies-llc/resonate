@@ -84,7 +84,10 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   the audio does, before a trailing APEv2 or ID3v1 tag and the terminating data, as the SDK counts it); WAVE too long for RIFF
   (`wide.rs`, RF64/BW64 `ds64` and Wave64; scan takes `.rf64`, `.w64`).
 - **Every PCM symphonia names = `Codec::Pcm`; ADPCM = `Codec::Adpcm`** (lossy). **64-bit float
-  decodes as 32-bit float** (`container::representable`); declared depth stays 64.
+  decodes as 32-bit float** (`container::representable`); declared depth stays 64, written or not
+  (`float_wider_than_it_decodes`, since a plain WAVE's IEEE `fmt ` names none), and
+  `Decoder::hear_in_full` hands each block's samples beside it at their own precision as f64
+  (`Decoder::heard_in_full`), for a reader that must compare every bit (the vault).
 - **This build drops every priming itself** (`AudioDecoderOptions::gapless(false)`); only
   `MediaInfo::playable` trims. `container::priming` prefers `Track::delay`/`padding`/`num_frames`,
   else the box scan (`iTunSMPB`, else the `elst` entries) or an iTunes MP3 `COMM` note

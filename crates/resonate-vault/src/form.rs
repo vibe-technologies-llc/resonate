@@ -3,6 +3,7 @@ use resonate_core::{ChannelCount, SampleRate, StreamSpec};
 
 pub(crate) const WIDEST_FLAC_BITS: u8 = 24;
 pub(crate) const MOST_FLAC_CHANNELS: u8 = 8;
+pub(crate) const WIDEST_FLOAT_A_WAVE_HOLDS: u8 = 32;
 pub const FASTEST_FLAC_RATE: SampleRate = SampleRate::HZ_96000;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -20,6 +21,7 @@ impl Form {
         if !codec.is_lossless()
             || matches!(codec, Codec::Dsd)
             || spec.channel_count().get() > MOST_FLAC_CHANNELS
+            || Self::floats_wider_than_a_wave(spec, bits)
         {
             return Self::Kept;
         }
@@ -30,6 +32,10 @@ impl Form {
             return Self::Wave;
         }
         Self::Flac
+    }
+
+    pub(crate) const fn floats_wider_than_a_wave(spec: StreamSpec, bits: u8) -> bool {
+        spec.format.is_float() && bits > WIDEST_FLOAT_A_WAVE_HOLDS
     }
 
     pub fn placing(self, speakers: Speakers, channels: ChannelCount) -> Self {

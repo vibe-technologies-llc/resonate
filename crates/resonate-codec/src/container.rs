@@ -59,6 +59,7 @@ const ALAC_ATOM_IDS: [&[u8; 4]; 2] = [b"frma", b"alac"];
 const ALAC_COOKIE_BYTES: [usize; 2] = [24, 48];
 const ALAC_BIT_DEPTH_AT: usize = 5;
 const ALAC_MAX_BIT_DEPTH: u32 = 32;
+const DOUBLE_PRECISION_BITS: u32 = 64;
 
 const SPOOLED_AT_MOST: u64 = 256 << 20;
 const SPOOLED_WITHIN: Duration = Duration::from_millis(750);
@@ -903,6 +904,14 @@ fn declared_bits(params: &AudioCodecParameters, prescan: &Prescan) -> Option<u32
         .or(prescan.segment.bit_depth)
         .or(params.bits_per_sample)
         .or_else(|| alac_bit_depth(params))
+        .or_else(|| float_wider_than_it_decodes(params.codec))
+}
+
+const fn float_wider_than_it_decodes(codec: AudioCodecId) -> Option<u32> {
+    match float_pcm_format(codec) {
+        Some(SymphoniaSampleFormat::F64) => Some(DOUBLE_PRECISION_BITS),
+        _ => None,
+    }
 }
 
 fn flac_bit_depth(params: &AudioCodecParameters) -> Option<u32> {
@@ -1511,6 +1520,18 @@ mod tests {
         params.with_bits_per_sample(64);
 
         assert_eq!(format(&params).expect("representable"), SampleFormat::F32);
+    }
+
+    #[test]
+    fn sixty_four_bit_float_samples_declare_their_width_though_none_is_written() {
+        assert_eq!(
+            declared_bits(&params(CODEC_ID_PCM_F64LE), &Prescan::default()),
+            Some(64)
+        );
+        assert_eq!(
+            declared_bits(&params(CODEC_ID_PCM_F32LE), &Prescan::default()),
+            None
+        );
     }
 
     #[test]

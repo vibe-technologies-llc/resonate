@@ -1790,10 +1790,11 @@ fn pcm_of(
     format: Option<SampleFormat>,
     halt: Halt<'_>,
 ) -> Result<Heard> {
+    let bits = info
+        .bits_per_coded_sample
+        .unwrap_or_else(|| info.spec.format.valid_bits());
+    let in_full = format.is_none() && Form::floats_wider_than_a_wave(info.spec, bits);
     let format = format.unwrap_or_else(|| {
-        let bits = info
-            .bits_per_coded_sample
-            .unwrap_or_else(|| info.spec.format.valid_bits());
         if info.spec.format.is_float() {
             SampleFormat::F32
         } else if bits <= SIXTEEN_BIT_CEILING {
@@ -1807,6 +1808,9 @@ fn pcm_of(
     decoder.set_output_format(format);
     decoder.refuse_holes();
     decoder.follow_format_changes();
+    if in_full {
+        decoder.hear_in_full();
+    }
 
     let spec = StreamSpec::new(info.spec.rate, info.spec.channels, format);
     let mut block = AudioBuffer::empty(spec);
@@ -1823,7 +1827,10 @@ fn pcm_of(
             DecodeStatus::EndOfStream => break,
             DecodeStatus::Reformatted(sounding) => digest.turned(sounding),
             DecodeStatus::Decoded => {
-                pcm::little_endian(&block, &mut bytes);
+                match in_full {
+                    true => pcm::in_full(decoder.heard_in_full(), &mut bytes),
+                    false => pcm::little_endian(&block, &mut bytes),
+                }
                 digest.note(&bytes);
                 frames += block.frames() as u64;
             }
