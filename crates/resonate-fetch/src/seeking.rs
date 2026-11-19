@@ -81,9 +81,16 @@ impl Seeking {
         let Some(reading) = self.reading.as_mut() else {
             return Ok(false);
         };
-        let passed = io::copy(&mut reading.take(bytes), &mut io::sink())?;
-        self.at += passed;
-        Ok(passed == bytes)
+        match io::copy(&mut reading.take(bytes), &mut io::sink()) {
+            Ok(passed) => {
+                self.at += passed;
+                Ok(passed == bytes)
+            }
+            Err(error) => {
+                self.reading = None;
+                Err(error)
+            }
+        }
     }
 }
 
@@ -131,11 +138,12 @@ mod tests {
     use super::*;
     use crate::{
         Trusted, configured,
-        testing::{WHOLE_BODY, answering, lower, partial_from, serving},
+        testing::{WHOLE_BODY, answering, cut_first_answer, lower, partial_from, serving},
     };
 
     const READ_FIRST: usize = 30;
     const SOUGHT_BACK_TO: u64 = 10;
+    const SOUGHT_PAST_THE_BREAK: u64 = 40;
 
     fn seeking_over(url: &str) -> Seeking {
         let agent = configured(Duration::from_secs(5), Trusted::BuiltInRoots)
@@ -211,5 +219,36 @@ mod tests {
             .expect_err("the change is refused");
 
         assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn a_seek_whose_skipping_copy_fails_leaves_the_place_where_it_was_and_reads_on_from_there() {
+        let (url, heads) = serving(vec![
+            Box::new(|_| cut_first_answer(&["ETag: \"v1\""])),
+            Box::new(|_| answering("403 Forbidden", &[], b"", 0)),
+            Box::new(|_| {
+                partial_from(SOUGHT_BACK_TO as usize, WHOLE_BODY.len(), &["ETag: \"v1\""])
+            }),
+        ]);
+        let mut seeking = seeking_over(&url);
+        seeking
+            .read_exact(&mut [0; SOUGHT_BACK_TO as usize])
+            .expect("the first part");
+
+        let failed = seeking
+            .seek(SeekFrom::Start(SOUGHT_PAST_THE_BREAK))
+            .expect_err("the skip is refused");
+        let stayed_at = seeking.stream_position().expect("the place");
+        let mut read = Vec::new();
+        seeking.read_to_end(&mut read).expect("the rest is read");
+
+        assert_eq!(failed.kind(), ErrorKind::PermissionDenied);
+        assert_eq!(stayed_at, SOUGHT_BACK_TO);
+        assert_eq!(read, &WHOLE_BODY[SOUGHT_BACK_TO as usize..]);
+        let asked = lower(&heads.lock()[2]);
+        assert!(
+            asked.contains(&format!("range: bytes={SOUGHT_BACK_TO}-")),
+            "{asked}"
+        );
     }
 }

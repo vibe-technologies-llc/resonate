@@ -392,7 +392,9 @@ plumbing, so a `ureq` bump is made once:
   as any `Ranged` does), carrying the first answer's validator and total as a `Known` (`If-Range`
   and the `Changed` guard, so a file replaced between two seeks is refused, never joined old to
   new: `a_file_replaced_between_two_seeks_is_not_joined_old_to_new`), except a seek at most `SKIPPED_RATHER_THAN_ASKED` (256 KiB) ahead, which
-  reads on and discards. Its length is the first answer's `Content-Length`; a read at or past it
+  reads on and discards (a skip that fails drops the reading in hand, so the seek's error leaves the
+  place where it was and the next read asks from there:
+  `a_seek_whose_skipping_copy_fails_leaves_the_place_where_it_was_and_reads_on_from_there`). Its length is the first answer's `Content-Length`; a read at or past it
   answers nothing without asking (`a_seek_a_little_ahead_reads_on_rather_than_asking_again_and_one_past_the_end_reads_nothing`).
   A server ignoring `Range` is read from its start past the place (`asked`'s `WHOLE`). `Seeking::bearing`
   sends a key on the reading in hand and on every range asked after (`Ranged::opened_bearing`).
