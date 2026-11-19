@@ -254,7 +254,11 @@ impl Running {
     }
 
     pub fn a_window() -> Result<Option<Self>> {
-        for running in Self::listed()? {
+        Self::a_window_in(&Session::open()?)
+    }
+
+    pub fn a_window_in(session: &Session) -> Result<Option<Self>> {
+        for running in Self::listed_in(session)? {
             if running.can_raise().unwrap_or(false) {
                 return Ok(Some(running));
             }

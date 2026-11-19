@@ -323,8 +323,8 @@ for a hotspot have not been seen (`docs/TESTING.md`).
   **A row the player cannot open leaves the rest of its call queued**: `AddTracks` queues every URI
   it locates, logs each it refuses, and fails the call only where it took nothing, neither a row nor
   an invitation (`a_run_with_an_entry_no_source_opens_still_queues_the_files_beside_it`).
-  `Session` is one bus connection (on Windows and macOS none where no bus answers, only the registry of players) a long-lived client (MCP) reuses through `found_in`, `listed_in`
-  and `named_in`; `found`, `listed` and `named` open their own.
+  `Session` is one bus connection (on Windows and macOS none where no bus answers, only the registry of players) a long-lived client (MCP) reuses through `found_in`, `listed_in`,
+  `named_in` and `a_window_in` (`resonate play` asks it before each keep, `audio.md`); `found`, `listed` and `named` open their own.
 - **`resonate queue --playlist <NAME>` hands a playlist over as its rows** (`ActivatePlaylist`
   replaces a queue). A search-filled playlist is read via `Library::playlist_entries`, so queued as
   whatever it matches then. `queue` opens the library only for `--playlist`.

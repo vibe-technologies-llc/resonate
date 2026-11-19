@@ -10,8 +10,7 @@ use resonate_core::{
     FrameSpan, Frames, MediaLocation, PlaylistId, SampleRate, Switch, TrackId, Volume, elapsed,
 };
 use resonate_engine::{
-    Command, Counting, Event, Keeping, Listening, Placement, Player, QueueItem, RepeatMode, Until,
-    stamp_of,
+    Command, Counting, Event, Listening, Placement, Player, QueueItem, RepeatMode, Until, stamp_of,
 };
 use resonate_library::{Library, Listen, Playing, PlaylistName};
 use resonate_mpris::{
@@ -32,7 +31,7 @@ use crate::{
     readout::Readout,
     rendering::{Asked, Rendering},
     report,
-    resuming::{keep_the_queue, keep_the_queue_on_leaving, resuming},
+    resuming::{KeptBesideTheWindow, resuming},
     served::Served,
     settings_path,
     sinks::{confirm_sink, wanted_sink},
@@ -349,7 +348,8 @@ fn play_queue_here(
     if asleep.is_some() {
         player.send(Command::SleepUntil(asleep))?;
     }
-    let keeps = resuming(config, library.as_deref());
+    let mut keeper =
+        resuming(config, library.as_deref()).then(KeptBesideTheWindow::asking_the_session);
 
     let (asked_to_quit, quitting) = bounded(1);
     let silenced = Arc::clone(&player);
@@ -412,7 +412,6 @@ fn play_queue_here(
     let sampled = tick(HEARD_SAMPLE);
     let mut listening = Listening::default();
     let mut counted: Option<Listen> = None;
-    let mut keeping = Keeping::default();
     let mut outcome = Played::default();
     let mut acted = Ok(());
 
@@ -429,8 +428,8 @@ fn play_queue_here(
             }
             recv(sampled) -> _ => {
                 count_a_play(&player, library.as_deref(), &mut listening, &mut counted);
-                if keeps {
-                    keep_the_queue(&player, library.as_deref(), &mut keeping);
+                if let Some(keeper) = keeper.as_mut() {
+                    keeper.keep(&player, library.as_deref());
                 }
                 readout.draw(&player);
             }
@@ -462,8 +461,8 @@ fn play_queue_here(
     readout.clear();
     drop(keyed);
 
-    if keeps {
-        keep_the_queue_on_leaving(&player, library.as_deref(), &mut keeping);
+    if let Some(keeper) = keeper.as_mut() {
+        keeper.keep_on_leaving(&player, library.as_deref());
     }
     count_a_play(&player, library.as_deref(), &mut listening, &mut counted);
     if let Some(library) = library.as_deref() {

@@ -932,6 +932,16 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   `KEPT_EVERY`, or transport rests elsewhere than the place kept); only the first allocates a
   `Resumption`. `resonate play` samples every 500 ms and keeps once more as it leaves
   (`Keeping::kept_on_leaving`: the same answers, but a place counts as moved at any distance).
+  **`resonate play` keeps nothing while a window runs**: both keep zone 1 in the same tables, and
+  each rewrites the whole queue only when its own stamp moves, so the terminal's `Keep::Place` would
+  land on the window's rows. `KeptBesideTheWindow` asks `Running::a_window_in` (over one `Session`
+  held for the run) before each keep `Keeping` answers, so a window opened mid-run is seen at the
+  next keep; while one runs the answer is dropped. Once the window is gone, the next keep (and the
+  one on leaving, even with nothing moved) starts `Keeping` afresh, so the terminal's whole queue is
+  written, never only its place over the window's rows
+  (`a_play_beside_a_running_window_keeps_nothing_of_its_queue`,
+  `a_window_gone_before_play_leaves_has_the_whole_queue_kept_again_not_just_its_place`). With no
+  window `play` keeps as before.
 - **A zone is a `Player` of its own; `Zones` (`zones.rs`) holds them and is the one way a command
   reaches one.** Each zone has its own queue, place, transport, sleep timer, device and volume, and
   its own PipeWire client and stream (the sink section). `Zones::start` takes the first player (never
