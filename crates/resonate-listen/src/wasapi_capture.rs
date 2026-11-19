@@ -10,12 +10,13 @@ use std::{
 
 use resonate_audio::{Error, Operation, Result};
 use wasapi::{
-    AudioCaptureClient, AudioClient, DeviceEnumerator, Direction, Handle, SampleType, StreamMode,
-    WasapiError, WaveFormat,
+    AudioCaptureClient, AudioClient, DeviceEnumerator, DeviceEventCallbacks,
+    DeviceEventRegistration, Direction, Handle, Role, SampleType, StreamMode, WasapiError,
+    WaveFormat,
 };
 
 use crate::{
-    endpoints::Tap,
+    endpoints::{Tap, TappedDefault},
     recording::Recorder,
     session::{BYTES_PER_FRAME, HEARD_AT, HEARD_IN_CHANNELS, Held, frames_in, zeroed_if_silent},
     wasapi_apartment::{Apartment, backend_error, initialize_error},
@@ -38,6 +39,18 @@ struct Opened {
     capture: AudioCaptureClient,
     event: Handle,
     scratch: Vec<u8>,
+    followed: Option<DefaultFollowed>,
+}
+
+struct DefaultFollowed {
+    moved: Arc<AtomicBool>,
+    _registration: DeviceEventRegistration,
+}
+
+impl DefaultFollowed {
+    fn has_moved(&self) -> bool {
+        self.moved.load(Ordering::Acquire)
+    }
 }
 
 struct Running {
@@ -168,11 +181,52 @@ fn opened_for(tap: &Tap) -> Result<Opened> {
         .get_buffer_size()
         .map_err(|e| backend_error(Operation::Open, e))?;
     let scratch = vec![0_u8; BYTES_PER_FRAME * usize::try_from(buffer_frames).unwrap_or_default()];
+    let followed = match tap {
+        Tap::Desktop => device
+            .get_id()
+            .ok()
+            .and_then(|endpoint| followed_from(&enumerator, TappedDefault::of(endpoint))),
+        Tap::Microphone(_) => None,
+    };
     Ok(Opened {
         client,
         capture,
         event,
         scratch,
+        followed,
+    })
+}
+
+fn followed_from(enumerator: &DeviceEnumerator, tapped: TappedDefault) -> Option<DefaultFollowed> {
+    let moved = Arc::new(AtomicBool::new(false));
+    let told_of = Arc::clone(&moved);
+    let watched = tapped.clone();
+    let mut callbacks = DeviceEventCallbacks::new();
+    callbacks.set_default_device_callback(move |direction, role, told| {
+        if direction == Direction::Render
+            && role == Role::Console
+            && watched.is_moved_by(told.as_deref())
+        {
+            told_of.store(true, Ordering::Release);
+        }
+    });
+    let registration = match enumerator.register_notification_callback(callbacks) {
+        Ok(registration) => registration,
+        Err(error) => {
+            tracing::warn!(%error, "the desktop's loopback will not follow a new default output");
+            return None;
+        }
+    };
+    let default_now = enumerator
+        .get_default_device(Direction::Render)
+        .and_then(|device| device.get_id())
+        .ok();
+    if tapped.is_moved_by(default_now.as_deref()) {
+        moved.store(true, Ordering::Release);
+    }
+    Some(DefaultFollowed {
+        moved,
+        _registration: registration,
     })
 }
 
@@ -182,12 +236,18 @@ fn serve(opened: Opened, mut recorder: Recorder, running: &Running) -> Result<()
         capture,
         event,
         mut scratch,
+        followed,
     } = opened;
     client
         .start_stream()
         .map_err(|e| backend_error(Operation::Start, e))?;
     let mut turned = Instant::now();
     while !running.stop.load(Ordering::Acquire) {
+        if followed.as_ref().is_some_and(DefaultFollowed::has_moved) {
+            tracing::debug!("the default output moved from under the desktop's loopback");
+            running.lost.store(true, Ordering::Release);
+            break;
+        }
         let _ = event.wait_for_event(EVENT_WAIT_MS);
         let heard = drained(&capture, &mut scratch, &mut recorder)
             .map_err(|e| backend_error(Operation::Start, e))?;

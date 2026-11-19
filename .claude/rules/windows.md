@@ -562,7 +562,13 @@ PipeWire sink is `admit`) and `endpoints.rs` (naming, the listing, the choice of
   sets the flag and joins (dropping does the same). A failure of any call ends the thread with
   `lost` set, which is `Held::is_lost`, so `Sitting::until_full` opens the same capture again behind a
   held-back `Recorder` and the gap is silence of the time lost (`audio.md`'s recording survives the
-  restart); a device unplugged, or the default render endpoint changed under a loopback, is that.
+  restart); a device unplugged is that. **A loopback follows the default render endpoint**: no call
+  fails when another endpoint becomes the default, the old one just falls silent, so the capture
+  registers for the enumerator's default-device notification as it opens (and asks the default once
+  more after registering, so a change between the open and the registration is not missed), and a
+  console-role render default whose id is not the one tapped, or no default at all, is a loss
+  (`TappedDefault::is_moved_by`): the loop stops the client and sets `lost`, so the sitting reopens
+  on the new default.
 - **A quiet loopback is silence of the time that passed.** A render endpoint with nothing playing
   delivers no packets, so a turn of the loop that drained none pads the clip with the frames of the
   time since the last turn (`Recorder::pad`, loopback only; a microphone never starves, its quiet

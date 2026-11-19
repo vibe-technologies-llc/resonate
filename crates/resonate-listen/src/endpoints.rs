@@ -20,6 +20,21 @@ pub(crate) enum Tap {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct TappedDefault {
+    endpoint: String,
+}
+
+impl TappedDefault {
+    pub(crate) const fn of(endpoint: String) -> Self {
+        Self { endpoint }
+    }
+
+    pub(crate) fn is_moved_by(&self, told: Option<&str>) -> bool {
+        told != Some(self.endpoint.as_str())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Output {
     Default,
     Endpoint { name: NodeName, id: String },
@@ -181,6 +196,15 @@ mod tests {
             tap_of(&Listening::Microphone(Some(foreign.clone()))),
             Err(&foreign)
         );
+    }
+
+    #[test]
+    fn a_default_output_named_otherwise_or_gone_is_a_loss_and_the_same_one_told_again_is_not() {
+        let tapped = TappedDefault::of(ENDPOINT.to_owned());
+
+        assert!(!tapped.is_moved_by(Some(ENDPOINT)));
+        assert!(tapped.is_moved_by(Some("{0.0.0.00000000}.{headset}")));
+        assert!(tapped.is_moved_by(None));
     }
 
     #[test]
