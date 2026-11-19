@@ -2655,13 +2655,51 @@ fn another_link_of(from: &Path, to: &Path) -> bool {
     from.file_name() != to.file_name() && listed_as_named(from) && listed_as_named(to)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Sameness {
+    Apart,
+    ItsOwnName,
+    AnotherName,
+}
+
+fn sameness(from: &Path, to: &Path) -> Sameness {
+    if !is_the_same_file(from, to) {
+        Sameness::Apart
+    } else if another_link_of(from, to) {
+        Sameness::AnotherName
+    } else {
+        Sameness::ItsOwnName
+    }
+}
+
 fn as_the_volume_names_it(from: &Path, to: PathBuf) -> PathBuf {
-    if to == from || !is_the_same_file(from, &to) {
+    if to == from {
+        return to;
+    }
+
+    let sameness = sameness(from, &to);
+    landing_named(from, to, sameness)
+}
+
+fn landing_named(from: &Path, to: PathBuf, sameness: Sameness) -> PathBuf {
+    let renamed_only_in_case = match sameness {
+        Sameness::Apart => false,
+        Sameness::ItsOwnName => true,
+        Sameness::AnotherName => differs_only_in_case(from, &to),
+    };
+    if to == from || !renamed_only_in_case {
         return to;
     }
     match (from.parent(), to.file_name()) {
         (Some(folder), Some(name)) => folder.join(name),
         _ => to,
+    }
+}
+
+fn differs_only_in_case(one: &Path, other: &Path) -> bool {
+    match (one.to_str(), other.to_str()) {
+        (Some(one), Some(other)) => one.to_lowercase() == other.to_lowercase(),
+        _ => one.as_os_str().eq_ignore_ascii_case(other.as_os_str()),
     }
 }
 
@@ -4735,6 +4773,91 @@ mod tests {
             sidecars: Vec::new(),
         };
         assert_eq!(standing(&onto_itself), None);
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn only_a_destination_the_volume_folds_onto_the_track_is_kept_in_the_tracks_own_folder() {
+        let from = PathBuf::from(format!("{NOWHERE}/downloads/echoes.wav"));
+        let filed = PathBuf::from(format!("{NOWHERE}/Pink Floyd/Meddle/02 Echoes.wav"));
+        let recased = PathBuf::from(format!("{NOWHERE}/Downloads/Echoes.wav"));
+        let in_its_own_folder = PathBuf::from(format!("{NOWHERE}/downloads/Echoes.wav"));
+
+        assert_eq!(
+            landing_named(&from, filed.clone(), Sameness::AnotherName),
+            filed,
+            "a second name elsewhere was renamed in its own folder rather than filed"
+        );
+        assert_eq!(landing_named(&from, filed.clone(), Sameness::Apart), filed);
+        assert_eq!(
+            landing_named(&from, filed.clone(), Sameness::ItsOwnName),
+            PathBuf::from(format!("{NOWHERE}/downloads/02 Echoes.wav")),
+            "the track's own entry under another spelling left its folder"
+        );
+        assert_eq!(
+            landing_named(&from, recased.clone(), Sameness::AnotherName),
+            in_its_own_folder,
+            "a destination differing only in case left the track's folder"
+        );
+        assert_eq!(
+            landing_named(&from, recased.clone(), Sameness::ItsOwnName),
+            in_its_own_folder
+        );
+        assert_eq!(
+            landing_named(&from, recased.clone(), Sameness::Apart),
+            recased
+        );
+        assert_eq!(
+            landing_named(&from, from.clone(), Sameness::ItsOwnName),
+            from
+        );
+    }
+
+    #[test]
+    fn a_casefold_folder_renames_a_track_only_in_case_in_place_and_files_a_second_name_elsewhere() {
+        if ran_on_a_casefold_volume(
+            "organise::tests::a_casefold_folder_renames_a_track_only_in_case_in_place_and_files_a_second_name_elsewhere",
+        ) {
+            return;
+        }
+        let blind =
+            PathBuf::from(env::var_os(CASEFOLD_AT).expect("the casefold volume")).join("blind");
+        let spelled = blind.join("meddle/echoes.wav");
+        let filed = blind.join("Meddle/Echoes.wav");
+        let downloaded = blind.join("downloads/echoes.wav");
+        fs::create_dir_all(blind.join("meddle")).expect("a folder on the volume");
+        fs::create_dir_all(blind.join("downloads")).expect("a folder on the volume");
+        fs::write(&spelled, b"held").expect("a file on the volume");
+        fs::hard_link(&spelled, &downloaded).expect("a second name on the volume");
+
+        assert_eq!(sameness(&spelled, &filed), Sameness::ItsOwnName);
+        assert_eq!(sameness(&downloaded, &spelled), Sameness::AnotherName);
+        assert_eq!(
+            as_the_volume_names_it(&spelled, filed),
+            blind.join("meddle/Echoes.wav")
+        );
+        assert_eq!(
+            as_the_volume_names_it(&downloaded, spelled.clone()),
+            spelled
+        );
+    }
+
+    #[test]
+    fn a_name_in_another_folder_is_another_name_of_the_file_and_a_copy_is_apart() {
+        let folder = a_folder_of_its_own();
+        let filed = folder.join("Meddle/02 Echoes.wav");
+        let downloaded = folder.join("downloads/echoes.wav");
+        let copied = folder.join("downloads/copy.wav");
+        fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
+        fs::create_dir_all(folder.join("downloads")).expect("a writable temporary directory");
+        fs::write(&filed, b"held").expect("a writable temporary file");
+        fs::hard_link(&filed, &downloaded).expect("a second name for a temporary file");
+        fs::write(&copied, b"held").expect("a writable temporary file");
+
+        assert_eq!(sameness(&downloaded, &filed), Sameness::AnotherName);
+        assert_eq!(sameness(&copied, &filed), Sameness::Apart);
+        assert_eq!(as_the_volume_names_it(&downloaded, filed.clone()), filed);
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }

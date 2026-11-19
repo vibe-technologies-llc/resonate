@@ -19317,6 +19317,61 @@ fn organising_a_second_name_onto_the_filed_copy_of_its_file_keeps_the_filed_rows
 }
 
 #[test]
+fn organising_a_second_name_in_another_folder_lands_it_on_the_filed_name_with_both_rows_history()
+-> Result<()> {
+    let tree = Tree::new();
+    let filed = tree.write("Pink Floyd/Meddle/02 Echoes.wav", &meddle("Echoes", "2"));
+    let downloaded = tree.path().join("downloads/echoes.wav");
+    fs::create_dir_all(tree.path().join("downloads")).expect("a download client's folder");
+    fs::hard_link(&filed, &downloaded).expect("a second name for the filed copy");
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let root = filed_under(&tree);
+    let filed = root.join("Pink Floyd/Meddle/02 Echoes.wav");
+    let downloaded = root.join("downloads/echoes.wav");
+    for (played, times) in [(&filed, 2), (&downloaded, 1)] {
+        for _ in 0..times {
+            let counted = library
+                .track_played(&MediaLocation::local(played), None, Duration::from_secs(2))?
+                .expect("a counted play");
+            library.listened(counted.listen, Duration::from_secs(2))?;
+        }
+    }
+    let favoured = library.track_at(&filed, None)?.expect("the filed row").id;
+    library.favour(Favoured::Track(favoured), true)?;
+    let before = library.statistics(Window::Everything)?;
+
+    let summary = applied(&library)?;
+    let after = library.statistics(Window::Everything)?;
+    let standing = library
+        .track_at(&filed, None)?
+        .expect("a row at the filed name");
+    let held: Vec<PathBuf> = all(&library)?
+        .into_iter()
+        .filter_map(|track| track.location.as_path().map(Path::to_path_buf))
+        .collect();
+
+    assert_eq!(
+        landings(&summary),
+        vec![(downloaded.clone(), filed.clone())]
+    );
+    assert!(filed.is_file(), "the filed name was taken away");
+    assert!(!downloaded.exists(), "the second name was left standing");
+    assert!(
+        !root.join("downloads/02 Echoes.wav").exists(),
+        "the second name was renamed in its own folder"
+    );
+    assert_eq!(held, vec![filed.clone()]);
+    assert_eq!(standing.plays, 3);
+    assert!(standing.favourite.is_some(), "the favourite was lost");
+    assert_eq!(before.plays, 3);
+    assert_eq!(after.plays, before.plays);
+    assert_eq!(after.listened, before.listened);
+    Ok(())
+}
+
+#[test]
 fn the_files_a_sheet_names_wait_in_vain_on_a_file_that_stays_and_each_says_what_it_met()
 -> Result<()> {
     let tree = Tree::new();

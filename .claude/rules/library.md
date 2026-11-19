@@ -2090,8 +2090,15 @@ guard and re-keys a sleeve-keyed album after moves land.
   with `chattr +F` beside one without, and skips where the kernel or the namespace refuses; a
   casefold folder holding nothing is probed by its own name in its parent, which is the parent's
   rule, so it reads as sensitive); `InTheWay::MayGo` for a scanned row. **A
-  destination that is the track itself is reduced to its own name in its own folder**: on a
-  case-insensitive volume a case-only layout difference changes only the file name's case.
+  destination that is the track's own entry is reduced to its own name in its own folder**: on a
+  case-insensitive volume a case-only layout difference changes only the file name's case. Only
+  that: `as_the_volume_names_it` narrows where the destination differs from the track only in case
+  or names its own directory entry (`Sameness::ItsOwnName`), never where it is another name of the
+  file elsewhere (`Sameness::AnotherName`, a download client's hard link beside the filed copy),
+  which lands on the filed name as `Landing::Linked`, its own name taken away and the catalog left
+  one row with both rows' history
+  (`organising_a_second_name_in_another_folder_lands_it_on_the_filed_name_with_both_rows_history`,
+  `a_casefold_folder_renames_a_track_only_in_case_in_place_and_files_a_second_name_elsewhere`).
   `Planner::order_the_chains`: a move waits on at most one other, so `walked` follows each chain to
   its end, deepest first. **A cycle is broken through a parked name.** `parked_out_of_their_cycles`
   splits one cycle of single-file moves: its file goes first to `<stem>.resonate-parked-<pid>.<ext>`
