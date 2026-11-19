@@ -1,7 +1,10 @@
-use resonate_core::{Frames, Span};
+use resonate_core::{Frames, MediaLocation, Span};
 
 use super::Engine;
-use crate::{Error, Event, RepeatMode, Result, SkipUnderRepeat, Sleeping, queue::Removal};
+use crate::{
+    Error, Event, RepeatMode, Result, SkipUnderRepeat, Sleeping,
+    queue::{Removal, landed_at},
+};
 
 impl Engine {
     pub(super) fn clear(&mut self) -> Result<()> {
@@ -49,6 +52,28 @@ impl Engine {
         }
         let started = self.start(Frames::ZERO);
         self.past_what_will_not_open(started)
+    }
+
+    pub(super) fn follow_the_moves(&mut self, moved: &[(MediaLocation, MediaLocation)]) {
+        self.queue.relocate(moved);
+        let leaving = self
+            .boundaries
+            .iter_mut()
+            .map(|boundary| &mut boundary.leaving);
+        for track in self.track.iter_mut().chain(leaving) {
+            if let Some(to) = landed_at(&track.location, moved) {
+                track.relocate(to);
+            }
+        }
+        let sources = &self.sources;
+        self.opening = self
+            .opening
+            .take()
+            .map(|opening| opening.followed(moved, sources));
+        self.ahead = self
+            .ahead
+            .take()
+            .map(|ahead| ahead.followed(moved, sources));
     }
 
     pub(super) fn finish_the_queue(&mut self) {

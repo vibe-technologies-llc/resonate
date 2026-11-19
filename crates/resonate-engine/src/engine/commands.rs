@@ -10,10 +10,7 @@ use super::{
     Answer, Answering, Deferred, EVENTS_OWED_AT_MOST, Engine, Following, OPENING_ANSWERED_WITHIN,
     ReadBy, Retuning, levelled,
 };
-use crate::{
-    Command, CommandKind, Error, Event, Reply, Request, Result, Sleeping, Stepping,
-    queue::{self},
-};
+use crate::{Command, CommandKind, Error, Event, Reply, Request, Result, Sleeping, Stepping};
 
 impl Engine {
     pub(super) fn take_commands(&mut self) -> bool {
@@ -427,17 +424,7 @@ impl Engine {
             }
             Command::Audition(asked) => self.audition(asked),
             Command::Relocate(moved) => {
-                self.queue.relocate(&moved);
-                if let Some(track) = self.track.as_mut()
-                    && let Some(to) = queue::landed_at(&track.location, &moved)
-                {
-                    track.location = to;
-                }
-                for boundary in &mut self.boundaries {
-                    if let Some(to) = queue::landed_at(&boundary.leaving.location, &moved) {
-                        boundary.leaving.location = to;
-                    }
-                }
+                self.follow_the_moves(&moved);
                 Ok(())
             }
         }

@@ -24,7 +24,7 @@ use crate::{
     lending::{Block, Decoding, Lost, Returned},
     measure::{Measured, Measuring},
     pipeline::{Decoded, resolve_replay_gain},
-    queue::{Queue, QueueItem},
+    queue::{Queue, QueueItem, landed_at},
     ring::{FADED_OVER, Turned},
     shuffling::{KinAsking, KinLanded},
     streaming::{Streamed, Streaming},
@@ -146,6 +146,10 @@ enum Peak {
     Unmeasurable,
 }
 
+fn heard_as(location: &MediaLocation, span: Option<FrameSpan>) -> QueueStamp {
+    QueueStamp::of([(location, span)])
+}
+
 struct Unwrapped {
     decoder: Decoder,
     info: MediaInfo,
@@ -197,6 +201,10 @@ struct Opening {
 
 impl Opening {
     fn begin(item: QueueItem, at: Frames, sources: &Arc<Sources>) -> Self {
+        Self::begin_at(item, OpensAt::Frame(at), sources)
+    }
+
+    fn begin_at(item: QueueItem, at: OpensAt, sources: &Arc<Sources>) -> Self {
         let (landing, landed) = crossbeam_channel::bounded(1);
         let sources = Arc::clone(sources);
         let opened = item.clone();
@@ -208,20 +216,34 @@ impl Opening {
         if let Err(error) = spawned {
             tracing::warn!(%error, "no thread could be started to open a track");
         }
-        Self {
-            item,
-            at: OpensAt::Frame(at),
-            landed,
-        }
+        Self { item, at, landed }
     }
 
     fn already(item: QueueItem, at: Frames, came: resonate_codec::Result<Unwrapped>) -> Self {
+        Self::already_at(item, OpensAt::Frame(at), came)
+    }
+
+    fn already_at(item: QueueItem, at: OpensAt, came: resonate_codec::Result<Unwrapped>) -> Self {
         let (landing, landed) = crossbeam_channel::bounded(1);
         let _ = landing.send(came);
-        Self {
-            item,
-            at: OpensAt::Frame(at),
-            landed,
+        Self { item, at, landed }
+    }
+
+    fn followed(self, moved: &[(MediaLocation, MediaLocation)], sources: &Arc<Sources>) -> Self {
+        match landed_at(&self.item.location, moved) {
+            Some(to) => self.relocated(to, sources),
+            None => self,
+        }
+    }
+
+    fn relocated(self, to: MediaLocation, sources: &Arc<Sources>) -> Self {
+        let item = QueueItem {
+            location: to,
+            ..self.item
+        };
+        match self.landed.try_recv() {
+            Ok(Ok(unwrapped)) => Self::already_at(item, self.at, Ok(unwrapped)),
+            Ok(Err(_)) | Err(_) => Self::begin_at(item, self.at, sources),
         }
     }
 
@@ -271,6 +293,34 @@ impl Ahead {
         (self.came.is_none() && !self.lost).then_some(&self.opening.landed)
     }
 
+    fn followed(self, moved: &[(MediaLocation, MediaLocation)], sources: &Arc<Sources>) -> Self {
+        match landed_at(&self.opening.item.location, moved) {
+            Some(to) => self.relocated(to, sources),
+            None => self,
+        }
+    }
+
+    fn relocated(mut self, to: MediaLocation, sources: &Arc<Sources>) -> Self {
+        self.look();
+        let Self {
+            opening,
+            came,
+            lost,
+        } = self;
+        let item = QueueItem {
+            location: to,
+            ..opening.item
+        };
+        match came {
+            Some(Ok(unwrapped)) => Self {
+                opening: Opening { item, ..opening },
+                came: Some(Ok(unwrapped)),
+                lost,
+            },
+            Some(Err(_)) | None => Self::begin(item, sources),
+        }
+    }
+
     fn opening_at(self, at: Frames) -> Opening {
         match self.came {
             Some(came) => Opening::already(self.opening.item, at, came),
@@ -311,7 +361,7 @@ impl Track {
         let replay_gain = levelled(config, &info, hints);
         let mut track = Self {
             id: item.id,
-            heard_as: QueueStamp::of([(&item.location, item.span)]),
+            heard_as: heard_as(&item.location, item.span),
             location: item.location.clone(),
             span: item.span,
             hints,
@@ -332,6 +382,11 @@ impl Track {
         };
         track.measure_where_wanted(sources, config);
         track
+    }
+
+    fn relocate(&mut self, to: MediaLocation) {
+        self.heard_as = heard_as(&to, self.span);
+        self.location = to;
     }
 
     fn measure_where_wanted(&mut self, sources: &Arc<Sources>, config: &EngineConfig) {

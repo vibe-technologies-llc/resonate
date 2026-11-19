@@ -859,7 +859,12 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   rows a playlist loaded stamp as `stamp_of` of that playlist (place `i` for row `i`) while rows
   queued next come and go; a reorder leaves both stamps (only `Queue::split`, a move or reorder,
   sums `playing_from` again). A stamp is only ever compared, never stored. `Queue::relocate` copies
-  only a row a reader still holds (`Arc::make_mut`) and keeps its stamp. **A drag splices**:
+  only a row a reader still holds (`Arc::make_mut`) and keeps its stamp. `Engine::follow_the_moves`
+  carries the engine's own rows with it (the playing track, each boundary's leaving one, the row
+  opening and the one opened ahead), `heard_as` included, so a zone handed the song after a move
+  meets it in step; an opening not yet landed opens again where the file went
+  (`a_playing_row_whose_file_was_moved_is_heard_as_the_row_it_became`,
+  `a_row_opening_while_its_file_is_moved_lands_where_the_file_went`). **A drag splices**:
   `Queue::move_rows` cuts the span out of `order` and `next` where its drawn positions fall
   (`Queue::lift`, `Vector::slice`, O(log n)), reads which side of the rows played next it lands on
   from the row before its landing (`waits_beside`: a row heard or played next before it makes it

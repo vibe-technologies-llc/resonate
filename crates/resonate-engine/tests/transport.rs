@@ -5017,6 +5017,121 @@ fn a_queued_row_whose_file_was_moved_is_reached_where_it_went() -> Result<()> {
 }
 
 #[test]
+fn a_playing_row_whose_file_was_moved_is_heard_as_the_row_it_became() -> Result<()> {
+    const PULLED: usize = 256;
+
+    let tree = Tree::new();
+    let path = tree.write("playing.wav", &pcm(16, FRAMES).file);
+    let filed = tree.root.join("filed.wav");
+    let frame = frame_bytes(SampleFormat::S16);
+    let left = track(&path, 1);
+    let landed = track(&filed, 1);
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    player.send(Command::Load {
+        items: vec![left.clone()],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    let start = Moment::now();
+    let pull = |pulled: usize| {
+        graph.lock().pull_heard(
+            PULLED * frame,
+            start.after_frames((pulled * PULLED) as f64, SampleRate::HZ_44100),
+        );
+    };
+    pull(0);
+    wait_for(
+        &player,
+        |player| player.heard_at().is_some(),
+        "the stream to be heard",
+    );
+    let before = player.heard_at().map(|heard| heard.row);
+
+    fs::rename(&path, &filed).expect("the file moves");
+    player
+        .request(Command::Relocate(vec![(
+            left.location.clone(),
+            landed.location.clone(),
+        )]))?
+        .wait_for(PATIENCE)?;
+    pull(1);
+    wait_for(
+        &player,
+        |player| {
+            player
+                .heard_at()
+                .is_some_and(|heard| heard.row == stamp_of([&landed]))
+        },
+        "the moved row to be heard as the row the queue now holds",
+    );
+
+    assert_eq!(before, Some(stamp_of([&left])));
+    Ok(())
+}
+
+#[test]
+fn a_row_opening_while_its_file_is_moved_lands_where_the_file_went() -> Result<()> {
+    const PULLED: usize = 256;
+
+    let named = SourceId::new("gated").expect("a lowercase name");
+    let open = Arc::new(AtomicBool::new(false));
+    let sources = Sources::local().and(Arc::new(Gated {
+        source: named.clone(),
+        bytes: pcm(16, FRAMES).file,
+        open: Arc::clone(&open),
+    }));
+    let frame = frame_bytes(SampleFormat::S16);
+    let left = QueueItem {
+        id: TrackId::new(1).expect("a non-zero track id"),
+        location: MediaLocation::new(named.clone(), "refused"),
+        span: None,
+    };
+    let landed = QueueItem {
+        location: MediaLocation::new(named, "filed.wav"),
+        ..left.clone()
+    };
+
+    let (player, graph) = player_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Arc::new(sources),
+    )?;
+    player.send(Command::Load {
+        items: vec![left.clone()],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    player
+        .request(Command::Relocate(vec![(
+            left.location.clone(),
+            landed.location.clone(),
+        )]))?
+        .wait_for(PATIENCE)?;
+    open.store(true, Ordering::Release);
+    wait_for(&player, playing, "the moved row to open where it went");
+    graph.lock().pull_heard(PULLED * frame, Moment::now());
+    wait_for(
+        &player,
+        |player| player.heard_at().is_some(),
+        "the stream to be heard",
+    );
+
+    assert_eq!(
+        player.heard_at().map(|heard| heard.row),
+        Some(stamp_of([&landed]))
+    );
+    assert!(
+        !player
+            .events()
+            .try_iter()
+            .any(|event| matches!(event, Event::Failed { .. })),
+        "the row opening as it moved failed at the place it left"
+    );
+    Ok(())
+}
+
+#[test]
 fn an_edit_made_against_a_queue_another_client_changed_is_refused_and_touches_nothing() -> Result<()>
 {
     let tree = Tree::new();
