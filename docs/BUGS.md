@@ -40,11 +40,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 
 
 ## Catalog
-- [S · 0.14.1] Organising a second name of a filed track, a download client's hard link in another
-  folder, renames it in its own folder rather than filing it: `as_the_volume_names_it`
-  (`organise.rs`) sees the same file at the destination and narrows the landing to the link's own
-  folder, meant for a case-only rename on a case-insensitive volume, so `downloads/echoes.wav`
-  becomes `downloads/02 Echoes.wav` and the two names stay apart
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as
