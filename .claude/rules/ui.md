@@ -61,7 +61,10 @@ the root's list:
   (`queue_put_in_order` sends the order through `send_by_position_at` under the revision it keyed, so
   the engine refuses it where MPRIS, the terminal, another device or a guest moved the queue first:
   `a_sort_keyed_before_another_reorder_landed_is_refused_rather_than_shuffling_the_new_order`).
-  Showing another zone lets go of the names and the rows taken out (`QueuePane::another_zone_shown`).
+  Showing another zone lets go of the names, the rows taken out and a sort still being keyed, so its
+  order never reaches the zone shown next, whose revision may stand at the same number
+  (`QueuePane::another_zone_shown`,
+  `a_sort_started_in_one_zone_never_orders_the_queue_of_the_zone_shown_after_it`).
 - `LyricsModel` (`lyrics.rs`): the sheet, its motion and its scroll (the lyrics pane, below), the
   lookup and the read of how far the words run ahead (`read_how_far_ahead`).
   `RootView::look_for_lyrics` builds what is asked from the zone shown and hands it over.

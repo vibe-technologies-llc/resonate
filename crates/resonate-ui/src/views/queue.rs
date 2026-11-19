@@ -125,6 +125,7 @@ impl QueuePane {
     pub(crate) fn another_zone_shown(&mut self) {
         self.names = QueueNames::default();
         self.took_out = TakenBack::default();
+        self.ordering = Task::ready(());
     }
 
     fn names(&mut self, over: Over, cx: &mut Context<Self>) -> Option<Arc<[Named]>> {
@@ -2093,6 +2094,109 @@ mod tests {
             named_in_order(&mut driven)[..4],
             ["alpha", "charlie", "delta", "bravo"]
         );
+    }
+
+    fn revision_of(driven: &mut Driven, zone: ZoneId) -> u64 {
+        driven.read(|root, cx| {
+            root.zones
+                .iter()
+                .find(|shown| shown.id == zone)
+                .expect("the zone is shown in the switcher")
+                .player
+                .read(cx)
+                .queued()
+                .revision
+        })
+    }
+
+    fn told_behind_the_window(driven: &mut Driven, zone: ZoneId, command: Command) {
+        let before = revision_of(driven, zone);
+        driven.read(|root, cx| {
+            root.zones
+                .iter()
+                .find(|shown| shown.id == zone)
+                .expect("the zone is shown in the switcher")
+                .player
+                .read(cx)
+                .engine()
+                .send(command)
+                .expect("the engine takes a command");
+        });
+        driven.until(|root, cx| {
+            root.zones
+                .iter()
+                .find(|shown| shown.id == zone)
+                .is_some_and(|shown| shown.player.read(cx).queued().revision != before)
+        });
+    }
+
+    fn named_in_the_zone(driven: &mut Driven, zone: ZoneId) -> Vec<String> {
+        driven.read(|root, cx| {
+            root.zones
+                .iter()
+                .find(|shown| shown.id == zone)
+                .expect("the zone is shown in the switcher")
+                .player
+                .read(cx)
+                .queue()
+                .iter()
+                .map(|item| crate::format::stem(&item.location))
+                .collect()
+        })
+    }
+
+    #[gpui::test]
+    fn a_sort_started_in_one_zone_never_orders_the_queue_of_the_zone_shown_after_it(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _) = queue_of(cx, &folder, &[1, 1, 1, 1]);
+        let items: Vec<QueueItem> = driven.read(|root, cx| {
+            root.player
+                .read(cx)
+                .queue()
+                .iter()
+                .map(|item| QueueItem::clone(item))
+                .collect()
+        });
+        let unmoved: Vec<usize> = (0..items.len()).collect();
+
+        driven
+            .root
+            .update(&mut driven.cx, |root, cx| root.add_a_zone(cx));
+        driven.until(|root, _| root.zones.len() == 2);
+        let second = driven.read(|root, _| root.switcher.selected());
+        told_behind_the_window(
+            &mut driven,
+            second,
+            Command::Load {
+                items,
+                start_at: 0,
+                autoplay: false,
+            },
+        );
+        while revision_of(&mut driven, second) < revision_of(&mut driven, ZoneId::FIRST) {
+            told_behind_the_window(&mut driven, second, Command::Order(unmoved.clone()));
+        }
+        while revision_of(&mut driven, ZoneId::FIRST) < revision_of(&mut driven, second) {
+            told_behind_the_window(&mut driven, ZoneId::FIRST, Command::Order(unmoved.clone()));
+        }
+
+        assert_eq!(
+            revision_of(&mut driven, ZoneId::FIRST),
+            revision_of(&mut driven, second)
+        );
+
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.show_zone(ZoneId::FIRST, cx);
+            root.put_the_queue_in_order(RowOrder::Title, Direction::Ascending, cx);
+            root.show_zone(second, cx);
+        });
+        driven.settle();
+        one_more_row_landed(&mut driven);
+
+        assert_eq!(named_in_the_zone(&mut driven, second)[..4], SPOKEN);
+        assert_eq!(named_in_the_zone(&mut driven, ZoneId::FIRST), SPOKEN);
     }
 
     #[gpui::test]
