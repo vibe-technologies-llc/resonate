@@ -101,11 +101,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   moved songs from that zone: `documents_moved` (`organising.rs`) leaves such a zone's live queue
   on the old URIs and rekeys the catalog, so each moved song fails when reached and the next
   `save_zone` (`ids_held_at`) leaves it out of the saved queue for good
-- [M · 0.14.1] A retag that grows a hard-linked track's head while it plays shifts the bytes under
-  the decoder: a track a reader holds takes the whole copy, `settled_over` sends it back over the
-  same inode (`written_back`, `laid_over`) whenever `nlink > 1` or the owner, mode or xattrs cannot
-  be carried, and nothing asks `Shifting::while_alone` first, against `library.md` (such a track
-  takes a new inode its readers never see); a torrent client's hard links make it common
 - [S · 0.14.1] `resonate playlists --refresh` stops at the first followed profile or playlist that
   fails: `profile_followed(...)?` and `refreshed(...)?` (`followed.rs`) end the run, so a deleted
   Deezer profile (`NoProfileAtTheLink`, naming no profile) or one lapsed sign-in refreshes nothing
@@ -115,6 +110,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `follow_the_changes` when it is turned back on, and a mirror switched off and on within its 60 s
   sleep finds `FOLLOWING` still held by the cancelled thread, which then clears it on leaving, so
   the copy goes stale
+- [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
+  plays still shifts the bytes under the decoder: neither can tell who holds a file
+  (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as
+  before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
 ## Providers and network
 - [S · 0.14.1] A server answering an open range with a capped `206` ends the song early: `Ranged`
