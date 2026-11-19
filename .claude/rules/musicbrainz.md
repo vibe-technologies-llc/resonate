@@ -414,10 +414,17 @@ then their own. `REPLICATION_SEQUENCE` naming another number than the one asked 
   `pending_data` rows alone (`read_pending_changes`, the hand-written JSON `Parser`); its seeds are
   the packets this suite replicates
   (`the_replication_seeds_hold_the_packets_this_suite_replicates`).
-- **The binary follows hourly.** `musicbrainz::follow_the_changes` (started by `keep_fresh`, and by
-  the settings pane when the token is given) runs a `resonate-musicbrainz-follow` thread while the
-  mirror, Online and the token are on: every `FOLLOWED_EVERY` (an hour) it calls `replicate`, never
-  while a build runs, the lookup gate is shut or no tables are held, and `stop_building` cancels it.
+- **The binary follows hourly.** `musicbrainz::follow_the_changes` (started by `keep_fresh`, by
+  the settings pane when the token is given, and by `online::reach` when Online comes back on,
+  through `musicbrainz::reached`) runs a `resonate-musicbrainz-follow` thread while the mirror,
+  Online and the token are on: every `FOLLOWED_EVERY` (an hour) it calls `replicate`, never while a
+  build runs, the lookup gate is shut or no tables are held, and `stop_building` cancels it.
+  **The hold belongs to one follower.** `begun_following` takes it unless a follower not cancelled
+  holds it, so one cancelled and still asleep is no follower, and a follower leaving lets go only of
+  its own (`still_following`, `let_go_of`), so a switch turned off and on within the minute leaves
+  the successor following
+  (`a_follower_stopped_by_online_going_off_is_begun_again_when_it_comes_back_on`,
+  `a_cancelled_follower_leaving_cannot_let_go_of_the_hold_of_the_one_begun_after_it`).
   A replication that moved the copy swaps the `Mirrored` held. `resonate musicbrainz --replicate`
   applies what is published now, the first interrupt cancelling the batch; the bare command says
   the packet the copy follows to and when it was applied, and so does the settings pane.

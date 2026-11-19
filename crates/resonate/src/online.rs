@@ -145,18 +145,13 @@ pub fn introduce(contact: Option<&str>) {
 pub fn introduce(_contact: Option<&str>) {}
 
 #[cfg(all(feature = "online", feature = "ui"))]
-pub fn reach(on: bool) {
+pub fn reach(config: &Config, on: bool) {
     REACHING.store(on, Ordering::Relaxed);
-    if !on {
-        crate::musicbrainz::stop_building();
-    }
+    crate::musicbrainz::reached(config, on);
     if let Some(client) = CLIENT.get() {
         client.reach(on);
     }
 }
-
-#[cfg(all(not(feature = "online"), feature = "ui"))]
-pub fn reach(_on: bool) {}
 
 #[cfg(feature = "online")]
 pub fn reference(config: &Config, asking: Asking) -> Option<Arc<dyn Reference>> {

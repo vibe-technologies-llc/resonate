@@ -317,20 +317,61 @@ fn follows_the_changes(config: &Config) -> bool {
 }
 
 #[cfg(feature = "ui")]
-pub fn follow_the_changes(config: &Config) {
+pub fn reached(config: &Config, on: bool) {
+    if on {
+        follow_the_changes(config);
+    } else {
+        stop_building();
+    }
+}
+
+#[cfg(feature = "ui")]
+fn begun_following(config: &Config) -> Option<Arc<Building>> {
     let mut current = FOLLOWING.lock();
-    if current.is_some() || !follows_the_changes(config) {
-        return;
+    let living = current
+        .as_ref()
+        .is_some_and(|following| !following.is_cancelled());
+    if living || !follows_the_changes(config) {
+        return None;
     }
     let following = Arc::new(Building::default());
     *current = Some(Arc::clone(&following));
+    Some(following)
+}
+
+#[cfg(feature = "ui")]
+fn still_following(following: &Arc<Building>, config: &Config) -> bool {
+    let mut current = FOLLOWING.lock();
+    if !following.is_cancelled() && follows_the_changes(config) {
+        return true;
+    }
+    let_go_of(&mut current, following);
+    false
+}
+
+#[cfg(feature = "ui")]
+fn let_go_of(current: &mut Option<Arc<Building>>, following: &Arc<Building>) {
+    if current
+        .as_ref()
+        .is_some_and(|held| Arc::ptr_eq(held, following))
+    {
+        *current = None;
+    }
+}
+
+#[cfg(feature = "ui")]
+pub fn follow_the_changes(config: &Config) {
+    let Some(following) = begun_following(config) else {
+        return;
+    };
+    let held = Arc::clone(&following);
     let config = config.clone();
     let spawned = thread::Builder::new()
         .name("resonate-musicbrainz-follow".to_owned())
         .spawn(move || {
             let lookups = metered::for_lookups(&config);
             let mut last: Option<Instant> = None;
-            while !following.is_cancelled() && follows_the_changes(&config) {
+            while still_following(&following, &config) {
                 let due = last.is_none_or(|last| last.elapsed() >= FOLLOWED_EVERY);
                 let ready = BUILDING.lock().is_none()
                     && !lookups.is_shut()
@@ -347,7 +388,10 @@ pub fn follow_the_changes(config: &Config) {
                             "the copy of MusicBrainz follows the changes published"
                         ),
                         Ok(_) => {}
-                        Err(error) if was_cancelled(&error) => break,
+                        Err(error) if was_cancelled(&error) => {
+                            let_go_of(&mut FOLLOWING.lock(), &following);
+                            break;
+                        }
                         Err(error) => {
                             tracing::warn!(%error, "MusicBrainz's changes could not be followed");
                         }
@@ -355,11 +399,10 @@ pub fn follow_the_changes(config: &Config) {
                 }
                 thread::sleep(FOLLOWING_LOOKED_AT_EVERY);
             }
-            *FOLLOWING.lock() = None;
         });
     if let Err(error) = spawned {
         tracing::debug!(%error, "MusicBrainz's changes could not begin to be followed");
-        *current = None;
+        let_go_of(&mut FOLLOWING.lock(), &held);
     }
 }
 
@@ -1054,6 +1097,62 @@ mod tests {
         assert!(after);
         assert!(followed);
         assert!(untouched);
+    }
+
+    #[cfg(feature = "ui")]
+    const FOLLOWING_THE_CHANGES: &str = "online = true\nmusicbrainz-mirror = true\n\
+        musicbrainz-replication-token = \"metabrainz-sesame\"\n";
+
+    #[cfg(feature = "ui")]
+    fn followed() -> Option<Arc<Building>> {
+        FOLLOWING.lock().clone()
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_follower_stopped_by_online_going_off_is_begun_again_when_it_comes_back_on() {
+        let file = settings_file(FOLLOWING_THE_CHANGES);
+        let config = started_with(true, true, &file);
+        let a_build_keeps_any_follower_from_replicating = Arc::new(Building::default());
+        *BUILDING.lock() = Some(Arc::clone(&a_build_keeps_any_follower_from_replicating));
+
+        reached(&config, true);
+        let first = followed().expect("following begun");
+        reached(&config, false);
+        let first_stopped = first.is_cancelled();
+        reached(&config, true);
+        let successor = followed().expect("following begun again");
+        let successor_living = !successor.is_cancelled();
+        stop_building();
+        let _ = fs::remove_file(&file);
+
+        assert!(first_stopped);
+        assert!(!Arc::ptr_eq(&first, &successor));
+        assert!(successor_living);
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_cancelled_follower_leaving_cannot_let_go_of_the_hold_of_the_one_begun_after_it() {
+        let file = settings_file(FOLLOWING_THE_CHANGES);
+        let config = started_with(true, true, &file);
+
+        let first = begun_following(&config).expect("following begun");
+        stop_building();
+        let successor = begun_following(&config).expect("following begun again");
+        let first_goes_on = still_following(&first, &config);
+        let held_after_the_first_left = followed();
+        let successor_goes_on = still_following(&successor, &config);
+        stop_building();
+        let successor_goes_on_once_stopped = still_following(&successor, &config);
+        let held_after_the_successor_left = followed();
+        let _ = fs::remove_file(&file);
+
+        assert!(!first_goes_on);
+        assert!(held_after_the_first_left.is_some_and(|held| Arc::ptr_eq(&held, &successor)));
+        assert!(successor_goes_on);
+        assert!(!successor_goes_on_once_stopped);
+        assert!(held_after_the_successor_left.is_none());
     }
 
     #[cfg(feature = "ui")]

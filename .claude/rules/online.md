@@ -41,7 +41,7 @@ and not the local network: the catalog offered as a MediaServer (`resonate offer
   asked before each request; the binary's `Followed` reads only the `contact` key
   (`config::contact_in`), only where the config file's mtime moved. `Client::reach` is a switch
   `exchange` reads before taking a turn: off, `Error::Offline` with nothing sent
-  (`Setting::Switched(Switch::Online, _)` calls `online::reach`). The binary also keeps it in `online::REACHING`, set on
+  (`Setting::Switched(Switch::Online, _)` and forgetting the key call `online::reach`). The binary also keeps it in `online::REACHING`, set on
   the process client every time it is handed out, so a switch turned off before the client was first
   made still holds. Every other seam's error reads `Offline` as `NetworkDown`; the library's keeps
   `Error::Offline` and `Error::Metered` apart from `Unreachable`.

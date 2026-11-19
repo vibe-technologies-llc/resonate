@@ -146,7 +146,14 @@ impl Settings for File {
                     online::introduce(Some(contact.trim()).filter(|contact| !contact.is_empty()));
                 }
                 SettingChange::Forget(ConfigKey::Contact) => online::introduce(None),
-                SettingChange::Store(Setting::Switched(Switch::Online, on)) => online::reach(*on),
+                #[cfg(feature = "online")]
+                SettingChange::Store(Setting::Switched(Switch::Online, on)) => {
+                    online::reach(&self.reread(), *on);
+                }
+                #[cfg(feature = "online")]
+                SettingChange::Forget(ConfigKey::Online) => {
+                    online::reach(&self.reread(), ConfigKey::Online.switched(None));
+                }
                 #[cfg(feature = "online")]
                 SettingChange::Store(Setting::Switched(Switch::EnrichOnMetered, allowed)) => {
                     metered::allow_lookups(*allowed);
