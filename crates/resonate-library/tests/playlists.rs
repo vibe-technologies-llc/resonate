@@ -392,6 +392,30 @@ fn a_prune_keeps_the_rows_under_a_root_that_is_not_there() -> Result<()> {
     Ok(())
 }
 
+#[cfg(all(unix, not(target_os = "macos")))]
+#[test]
+fn a_tidy_and_a_prune_keep_a_row_whose_file_name_is_not_text_while_the_file_is_there() -> Result<()>
+{
+    let tree = Tree::new();
+    let root = tree.path().join("root");
+    let cafe =
+        root.join(<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(b"caf\xe9.wav"));
+    let deleted = tree.write("root/gone.wav", &wav(4_410));
+    fs::write(&cafe, wav(4_410)).expect("a file with a name that is not text");
+
+    let library = Library::open(&tree.path().join("library.db"))?;
+    scan(&library, &root, false)?;
+    let tidied = library.start_playlist("Evening", &[&cafe, &deleted].map(whole))?;
+    let pruned = library.start_playlist("Morning", &[&cafe, &deleted].map(whole))?;
+    fs::remove_file(&deleted).expect("the fixture file can be deleted");
+
+    assert_eq!(library.tidy_playlist(tidied)?, 1);
+    assert_eq!(paths(&library, tidied)?, vec![cafe.clone()]);
+    assert_eq!(library.prune_playlist(pruned)?, 1);
+    assert_eq!(paths(&library, pruned)?, vec![cafe]);
+    Ok(())
+}
+
 #[test]
 fn a_sheet_title_carrying_a_character_xml_forbids_is_written_without_it() -> Result<()> {
     let tree = Tree::new();

@@ -987,7 +987,7 @@ impl Adding {
         for cut in cuts {
             rows.push(Row::of(cut)?);
         }
-        let volumes = volumes::under(rows.iter().map(|row| Path::new(&row.path)));
+        let volumes = volumes::under(rows.iter().map(|row| store::path_of(&row.path)));
 
         Ok(Self { rows, volumes })
     }
@@ -1915,7 +1915,7 @@ fn gone_from(inner: &Inner, id: PlaylistId) -> Result<AHashSet<String>> {
 
     Ok(paths
         .into_iter()
-        .filter(|path| has_gone(Path::new(path), &out_of_reach, &mut folders))
+        .filter(|path| has_gone(&store::path_of(path), &out_of_reach, &mut folders))
         .collect())
 }
 

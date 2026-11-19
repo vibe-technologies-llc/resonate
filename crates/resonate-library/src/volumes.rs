@@ -155,12 +155,12 @@ pub fn is_on_an_absent_one(path: &Path, absent: &[PathBuf]) -> bool {
     absent.iter().any(|volume| path.starts_with(volume))
 }
 
-pub fn under<'a>(paths: impl IntoIterator<Item = &'a Path>) -> Vec<PathBuf> {
+pub fn under(paths: impl IntoIterator<Item = impl AsRef<Path>>) -> Vec<PathBuf> {
     let mut by_folder = AHashMap::new();
     let mut found = AHashSet::new();
 
     for path in paths {
-        let Some(folder) = path.parent() else {
+        let Some(folder) = path.as_ref().parent() else {
             continue;
         };
         let point = by_folder
