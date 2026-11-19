@@ -683,8 +683,10 @@ every route change (a pair of headphones at the same rate included), not from th
   is found), since even at 1 % its knob showed as a faint bubble riding the bar. A level heard from
   the session (the volume buttons, Control Centre) moves the fill in 0.25 s (`steppedOutside`);
   a drag, the first reading and the driver's seed set it at once.
-  The driver (the kept `MPVolumeView`) is mounted 600 ms after the row appears (or at the first touch), so
-  it never lands in the zoom's first frames, and `SystemVolumeLevel` reads the session's
+  The driver (the kept `MPVolumeView`) is mounted 600 ms after the cover has finished presenting
+  (`CoverPresence.shown`, below; at once for a row elsewhere) or at the first touch, so it never lands
+  inside the zoom: mounted 600 ms after the row appeared, it fell inside the 0.7 s opening and its
+  `layoutIfNeeded` and subview search took the main thread there; and `SystemVolumeLevel` reads the session's
   volume only in `watch()`: a `@State` initial value is built on every parent body, and
   `outputVolume` is a call into the audio server.
   The glass row toggles two modes inside the cover: Lyrics (the compact `LyricsPane`) and Up next,
@@ -712,17 +714,25 @@ every route change (a pair of headphones at the same rate included), not from th
   until the spring is removed (`completionCriteria: .removed`; logically complete ends while the
   bounce still moves, and the field woke under it):
   left to the system, the spring ran at its default rate, and the field redrawing under the moving
-  glass took the frames it needed. **The opening zoom is held the same way**: for its first 0.7 s
-  (`NowPlayingView.openedWithin`, `FieldRest.opening`) the cover asks 120 Hz and the field rests on its
-  opening frame (the placeholder, *The backdrop*), since the field flowing at 120 fps under the
-  zooming glass, titles and cover held the whole transition below the display's rate; the 120 Hz is asked as
+  glass took the frames it needed. **The opening zoom is held the same way, until the zoom has ended**:
+  the cover asks 120 Hz and the field rests on its opening frame (the placeholder, *The backdrop*)
+  for at least 0.7 s (`NowPlayingView.openedWithin`) and then until the presentation has finished,
+  which `PresentationProbe` hears (a `UIViewControllerRepresentable` whose controller's
+  `viewDidAppear` the cover's transition ends with, `FieldRest.presentedFully`), at most
+  `openedAtMost` (1.4 s) should it never call; the field flowing at 120 fps under the zooming glass,
+  titles and cover held the whole transition below the display's rate, and a fixed 0.7 s woke it
+  under a zoom that ran longer. Its `viewWillDisappear` rests the field again as the cover begins
+  to close (`dismissalBegan`, `FieldRest.closing`, 120 Hz for `closesWithin`), and a dismissal
+  given up calls `viewDidAppear` again, which wakes it. The 120 Hz is asked as
   `Navigation.nowPlaying` turns true (its `didSet`), so the zoom's first frames have it, not only once the view's
   task starts. **The cover is decoded at its own size before the opening**: `NowPlayingOpening.prepare`, at each
   song change and each time the scene becomes active, decodes the playing song's cover at the bucket the large cover last
-  measured (`coverMeasured`) and keeps it as `ShownArtwork`, so an opening draws the sharp cover from its first
-  frame; it drew the mini player's small picture and swapped in the large one, decoded and uploaded, partway
+  measured (`coverMeasured`), or before any opening has measured one at the bucket the key window's
+  narrower side less the player's gutters fits (`estimatedBucket`), and keeps it as `ShownArtwork`, so
+  an opening draws the sharp cover from its first frame, the first after a launch included; it drew the
+  mini player's small picture and swapped in the large one, decoded and uploaded, partway
   through the zoom. **The rest is
-  read by the field alone**: `FieldRest` (opening, reshaping) is an observable only `NowPlayingField` reads, so
+  read by the field alone**: `FieldRest` (opening, reshaping, closing, tucking) is an observable only `NowPlayingField` reads, so
   the field waking at 0.7 s and at a spring's end redraws the field, not Now Playing's body and toolbar,
   as two `@State` flags of `NowPlayingView` did, in the zoom's last frames and the spring's.
   **Every other Now Playing motion asks 120 Hz for its length too**: a song's handover with its slot's settle
@@ -985,21 +995,29 @@ every route change (a pair of headphones at the same rate included), not from th
 - **The Library tab is four shelves under a tab row**, Android's Library: Songs, Albums, Artists and
   Playlists (`LibraryShelf`, `ResonateLogic`, held by `LibraryShelvesTests`; `LibraryView` in
   `LibraryViews.swift` is the shell and `Navigation.libraryShelf` the shelf chosen). **The row is
-  tapped, not swiped** (`LibraryShelfRow`, in a `safeAreaBar` at the top as the Search tab's chooser
-  is): each shelf is its own scroll view, swapped on a tap, so the tab bar still minimises and a
-  song row keeps its swipes, neither of which a sideways pager leaves standing. The row is the
-  Search tab's chooser again: a glass capsule of four buttons of equal width, the chosen one a
-  capsule of `Color.worn` lettered `Color.wornInk` that slides to it in `Flip.animation` (an
-  implicit animation of the row alone, at once under Reduce Motion; the choice itself is made in no
-  animation, so the shelf, its toolbar and the bar swap at once); at accessibility text sizes it
-  scrolls sideways inside the capsule, and VoiceOver hears a tab bar with the chosen tab selected.
-  **The bar over the row keeps one height**: the title is inline and the search field always shown
-  (`navigationBarDrawer(displayMode: .always)`), its prompt the same on every shelf. Under a large
-  title and a field that hides, the bar's height moved with the scroll and so did the safe area
-  the row stands in: the row sat over the rows as the list was pulled, the list juddered where the
-  title grew back, and a tap, which swaps the scroll view, replayed the bar's states, the field
-  opening among them. A row with nothing behind it (an underline on a hairline) let the songs show
-  through as they passed under. On an empty
+  tapped or dragged, not swiped as a pager** (`LibraryShelfRow`, in a `safeAreaBar` at the top as the
+  Search tab's chooser is): each shelf is its own scroll view, swapped on a choice, so the tab bar
+  still minimises and a song row keeps its swipes, neither of which a sideways pager leaves standing.
+  The row is a glass capsule of four buttons of equal width over **one** capsule of `Color.worn`
+  (the chosen tab lettered `Color.wornInk`), drawn once in the row's `backgroundPreferenceValue` at
+  the bounds the chosen tab reports (`ShelfTabBounds`), never a capsule per tab under
+  `matchedGeometryEffect`: that one was inserted and removed on each choice and, with the choice made
+  in no animation, never slid. The capsule follows the row's own `indicated`, moved in an explicit
+  spring of its own (`slides`, 0.38 s with a little bounce, long enough to be seen travelling, as
+  the system's segmented control's thumb is; `Flip.animation`'s 140 ms read as a jump; at once under
+  Reduce Motion), while `Navigation.choose` runs outside that transaction, so the shelf, its toolbar
+  and the bar swap at once and only the capsule moves. **It is dragged as iOS's own segmented
+  controls are**: a drag along the row (from 8 pt) springs the capsule under the finger, swollen a
+  little while held, then carries it there, clamped to the row, the tab under it lettered as chosen, and letting go
+  chooses that tab and settles the capsule on it (`ShelfRowDrag`, `ResonateLogic`: the tabs' centres,
+  the clamp and the nearest, held by `LibraryShelvesTests`); a drag the system cancels settles back
+  on the tab chosen. At accessibility text sizes the row scrolls sideways inside the capsule and is
+  tapped only, and VoiceOver hears a tab bar with the chosen tab selected. **The title is inline and
+  the search field hides on scroll** (`navigationBarDrawer(displayMode: .automatic)`, its prompt the
+  same on every shelf): it shows at a shelf's top and tucks away as the list scrolls, the row riding
+  the bar down and up with it. Under a large title the bar's height moved as the title grew back and
+  the list juddered there, so the title stays inline. A row with nothing behind it (an underline on
+  a hairline) let the songs show through as they passed under. On an empty
   catalog Songs, Albums and Artists draw `EmptyLibrary` while the row and Playlists stay, since
   playlists arrive from other devices before any folder is granted. **Each shelf's toolbar is one
   builder ending in `LibraryToolbar`**, never the shell's beside the shelf's, whose order in the bar
@@ -1350,7 +1368,7 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   its own order. The completions offered
   (`offeredCompletions`) are folded once as an answer lands, not at each read.
 - **The Library tab searches the shelf shown**: one `.searchable` on the shell over
-  `Library.librarySearch`, always shown under the inline title (above), the tab row its scope, so
+  `Library.librarySearch`, in the bar's drawer under the inline title (above), the tab row its scope, so
   there is no scope bar and text typed survives a change of shelf. Songs, Albums and Artists draw `SearchResults` at their own scope (`LibraryFound`),
   since `search_library` answers all three at once, and Playlists folds the names (below) and keeps no search; the *Top*
   view of all three is the Search tab's. Nothing found is said for the shelf's own kind. *Did you mean* where nothing matched; the grammar's `reads` as chips;
@@ -1662,6 +1680,28 @@ while offered), and following returns `HANDS_OFF` after the last touch. VoiceOve
 `LyricLineElement` per line (its text, its time, selected while lit, activating it seeks; each frame
 rewrites only the elements whose `LyricLineDescription` moved, a frame rounded to whole points), framed
 where the line is drawn, and three-finger scrolling turns a page.
+
+**A hand on the lyrics moves the controls away, as Apple Music does** (`ControlsTuck`,
+`PlayerViews.swift`): in Now Playing's one-column layout with Lyrics shown (not in two columns, at
+the fold, or where the layout scrolls), a drag of the sheet slides the scrubber, the transport row
+and the mode row down by the band they stand in and fades them (`ControlsTucked`, in the cover's
+reshaping spring, a fade under Reduce Motion, untappable and hidden from VoiceOver while away), and
+they come back when following resumes (`HANDS_OFF` after the last touch), on *Follow*, on a line
+tapped and on a change of mode. The stage reports it as `LyricScene.handsOn` (`placed` and not
+following, so an unsynced sheet moves them too, where `offersFollow` is synced only), told through
+`LyricLayers`' `handsOn` once it changes. While VoiceOver runs they never go. The controls keep
+their identity in the layout's one `VStack`; only offset and opacity move. **The pane never
+resizes for it**: in that layout the pane reaches under the controls by a constant band
+(`ReachingUnderTheControls`: from the pane's allotted foot to the column's, measured in the
+column's coordinate space outside the negative padding, so the measurement does not move with
+it), and the lyrics aim above that band (`LyricFoot.aimed`: the layout's edges, the stage's
+centring and its scroll bounds all read the pane less the foot), so following lands where it did
+and nothing is laid out again when the controls go. Only the fade mask moves: it ends above the
+controls while they are shown and reaches the pane's foot while they are away (`LyricFoot.fade`,
+`LyricFootTests`), changed by Core Animation over the spring's length, so the main thread draws
+nothing per frame. The move asks 120 Hz for its length and rests the field (`FieldRest.tucking`),
+as a mode change does. Laying the pane out at a new height every frame threw its layout away
+and redirected the glide each frame, so neither an animated height nor a resize is used.
 
 **A song is given lyrics by hand** (`LyricWriter`, `ToolViews.swift`): the Lyrics page's *No
 lyrics* state offers *Add lyrics…* and its toolbar menu (*Refresh* while online, then *Add

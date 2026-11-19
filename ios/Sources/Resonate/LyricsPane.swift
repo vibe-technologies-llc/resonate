@@ -12,11 +12,13 @@ struct LyricsPane: View {
 
     let track: Track?
     let compact: Bool
+    let tuck: ControlsTuck?
     let addLyrics: (() -> Void)?
 
-    init(track: Track?, compact: Bool = false, addLyrics: (() -> Void)? = nil) {
+    init(track: Track?, compact: Bool = false, tuck: ControlsTuck? = nil, addLyrics: (() -> Void)? = nil) {
         self.track = track
         self.compact = compact
+        self.tuck = tuck
         self.addLyrics = addLyrics
     }
 
@@ -38,7 +40,7 @@ struct LyricsPane: View {
                 )
             } else if let sheet, !sheet.lines.isEmpty {
                 if let stage {
-                    LyricFollowing(sheet: sheet, track: track, stage: stage, visible: visible, compact: compact)
+                    LyricFollowing(sheet: sheet, track: track, stage: stage, visible: visible, compact: compact, tuck: tuck)
                 } else {
                     Color.clear
                 }
@@ -115,6 +117,7 @@ private struct LyricFollowing: View {
     let stage: LyricStage
     let visible: Bool
     let compact: Bool
+    let tuck: ControlsTuck?
 
     var body: some View {
         let heard = LyricHeard.of(library.snapshot, showing: track)
@@ -126,7 +129,7 @@ private struct LyricFollowing: View {
         )
         let awake = visible && phase == .active
         let sounding = heard?.playing == true && sheet.detail != .unsynced
-        let setting = LyricSetting(
+        var setting = LyricSetting(
             sheet: sheet,
             heard: heard,
             clock: library.clock,
@@ -138,8 +141,18 @@ private struct LyricFollowing: View {
             sweeps: awake && sounding && sheet.detail == .words,
             ticks: awake && sounding
         )
+        setting.foot = tuck?.reach ?? 0
+        setting.footClear = tuck?.away ?? false
 
-        return LyricLayers(setting: setting, stage: stage, beat: stage.beat, hits: hits, seek: seek) { offersFollow = $0 }
+        return LyricLayers(
+            setting: setting,
+            stage: stage,
+            beat: stage.beat,
+            hits: hits,
+            seek: seek,
+            offersFollow: { offersFollow = $0 },
+            handsOn: { [tuck, reduceMotion] in tuck?.hands(on: $0, still: reduceMotion) }
+        )
             .contentShape(.rect)
             .simultaneousGesture(hand)
             .simultaneousGesture(SpatialTapGesture().onEnded { tap in
@@ -458,6 +471,7 @@ struct LyricScene {
     let offset: CGFloat
     let shown: Double
     let offersFollow: Bool
+    let handsOn: Bool
 }
 
 struct LyricCue {
@@ -944,7 +958,8 @@ final class LyricStage {
             end: end,
             offset: CGFloat(snapped(offset)),
             shown: arrival(at: now),
-            offersFollow: synced && playingHere && placed && !following(at: now)
+            offersFollow: synced && playingHere && placed && !following(at: now),
+            handsOn: placed && !following(at: now)
         )
     }
 

@@ -130,12 +130,22 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   never seen on an iPhone turned on its side or an iPad
 - [M · blocked: hardware] The iOS Home feed and the Library's four shelves are proved by their logic
   in tests and a clean build, and the Library's tab row was rebuilt after it juddered on an iPhone;
-  still to be seen there: the row's capsule under the always-shown search field and its slide
-  between tabs, the thumb appearing from `onScrollGeometryChange` on a `List` and the frame after
-  a drag moves the Songs window, the selection bar against the minimising tab bar and the mini
+  still to be seen there: the row's one capsule sliding on a tap and following a drag, the search
+  field tucking away on scroll with the row riding the bar under the inline title, the thumb
+  appearing from `onScrollGeometryChange` on a `List` and the frame after a drag moves the Songs
+  window, the selection bar against the minimising tab bar and the mini
   player, each shelf's toolbar, *Jump back in*'s tiles sizing themselves in their row, the
   *Recently added* carousel coming to rest on a cover and its play button over a bright one, and
   the album and playlist grids' columns at each width
+- [S · blocked: hardware] Now Playing's opening rest ending as `PresentationProbe` hears the zoom
+  end (and resting again as the cover closes), the cover's bucket estimated before the first
+  opening and the volume driver mounted after the zoom are proved by a clean build alone: whether a
+  representable's controller is told `viewDidAppear` as the full-screen cover's zoom ends, and the
+  frame rate of the zoom with them, are still to be seen in Instruments on an iPhone
+- [S · blocked: hardware] The lyrics moving Now Playing's controls away (`ControlsTuck`) is proved by
+  `LyricFootTests` and a clean build: the slide and fade, the pane reaching under the band, the
+  fade mask moving with them and the controls coming back after `HANDS_OFF` are still to be seen on
+  an iPhone
 - [S · blocked: hardware] The sideloaded IPA and its AltStore source are proved by their shape in
   tests: no release has yet been added as a source to SideStore or AltStore, signed with a free
   Apple ID and installed, so the declared permissions matching what AltStore reads from the IPA and

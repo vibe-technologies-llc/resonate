@@ -60,4 +60,27 @@ import Testing
         #expect(undated.byline == "Unknown artist")
         #expect(gathered.byline == "Various artists · 1999")
     }
+
+    @Test func aDraggedCapsuleStaysOnTheRowAndLandsOnTheNearestTab() {
+        let row = ShelfRowDrag(width: 400, count: 4, between: 4)
+
+        #expect(row.segment == 97)
+        #expect((0..<4).map(row.centre(of:)) == [48.5, 149.5, 250.5, 351.5])
+        #expect(row.clamped(10) == 48.5)
+        #expect(row.clamped(390) == 351.5)
+        #expect(row.clamped(200) == 200)
+        #expect(row.nearest(to: -50) == 0)
+        #expect(row.nearest(to: 98) == 0)
+        #expect(row.nearest(to: 100) == 1)
+        #expect(row.nearest(to: 260) == 2)
+        #expect(row.nearest(to: 1000) == 3)
+    }
+
+    @Test func aRowNotYetMeasuredDragsNowhere() {
+        let row = ShelfRowDrag(width: 0, count: 4, between: 4)
+
+        #expect(row.segment == 0)
+        #expect(row.nearest(to: 120) == 3)
+        #expect(ShelfRowDrag(width: 300, count: 0, between: 4).nearest(to: 120) == 0)
+    }
 }

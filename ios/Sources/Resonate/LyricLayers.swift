@@ -15,6 +15,8 @@ struct LyricSetting {
     let awake: Bool
     let sweeps: Bool
     let ticks: Bool
+    var foot: CGFloat = 0
+    var footClear = false
 
     @MainActor var playback: LyricPlayback? {
         heard.map { LyricPlayback(track: $0.track, positionMs: clock.positionMs, playing: $0.playing) }
@@ -33,6 +35,7 @@ struct LyricLayers: UIViewRepresentable {
     let hits: LyricHits
     let seek: (UInt64) -> Void
     let offersFollow: (Bool) -> Void
+    var handsOn: (Bool) -> Void = { _ in }
 
     func makeUIView(context: Context) -> LyricLayerView {
         LyricLayerView(stage: stage)
@@ -41,6 +44,7 @@ struct LyricLayers: UIViewRepresentable {
     func updateUIView(_ view: LyricLayerView, context: Context) {
         view.seek = seek
         view.offersFollow = offersFollow
+        view.handsOn = handsOn
         hits.moment = { [weak view] point in view?.moment(at: point) }
         view.take(setting)
     }
@@ -66,8 +70,10 @@ enum LyricCadence {
 final class LyricLayerView: UIView {
     var seek: (UInt64) -> Void = { _ in }
     var offersFollow: (Bool) -> Void = { _ in }
+    var handsOn: (Bool) -> Void = { _ in }
 
     private static let presentsWithin: TimeInterval = 0.05
+    private static let fadeMovesOver: CFTimeInterval = 0.45
     private static let assistiveStatusChanges: [Notification.Name] = [
         UIAccessibility.voiceOverStatusDidChangeNotification,
         UIAccessibility.switchControlStatusDidChangeNotification,
@@ -90,6 +96,7 @@ final class LyricLayerView: UIView {
     private var reported: (generation: Int, layout: Int)?
     private var layouts = 0
     private var offering = false
+    private var handling = false
     private var shown: LyricScene?
     private var lines: [LyricLineElement] = []
     private var watching = false
@@ -119,12 +126,38 @@ final class LyricLayerView: UIView {
     }
 
     func take(_ taken: LyricSetting) {
-        if let held = setting, held.sheet != taken.sheet || held.measures != taken.measures {
+        let held = setting
+        if let held, held.sheet != taken.sheet || held.measures != taken.measures {
             forgetLayout()
+        } else if let held, held.foot != taken.foot {
+            layout = nil
+            reported = nil
         }
         setting = taken
+        if let held, held.foot != taken.foot || held.footClear != taken.footClear || held.measures != taken.measures {
+            shapeFade(moving: !taken.still && held.foot == taken.foot)
+        }
         watchClock()
         wake()
+    }
+
+    private var aimedHeight: CGFloat {
+        CGFloat(LyricFoot(height: Double(bounds.height), foot: Double(setting?.foot ?? 0)).aimed)
+    }
+
+    private func shapeFade(moving: Bool) {
+        let foot = LyricFoot(height: Double(bounds.height), foot: Double(setting?.foot ?? 0))
+        let stops = foot.fade(dissolve: Double(setting?.measures.dissolve ?? 0), clear: setting?.footClear ?? false)
+        let locations = stops.map { NSNumber(value: $0) }
+        CATransaction.begin()
+        if moving {
+            CATransaction.setAnimationDuration(Self.fadeMovesOver)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+        } else {
+            CATransaction.setDisableActions(true)
+        }
+        fade.locations = locations
+        CATransaction.commit()
     }
 
     func stop() {
@@ -147,12 +180,11 @@ final class LyricLayerView: UIView {
         CATransaction.setDisableActions(true)
         pane.frame = bounds
         fade.frame = bounds
-        let edge = bounds.height > 0 ? min((setting?.measures.dissolve ?? 0) / bounds.height, 0.25) : 0
-        fade.locations = [0, NSNumber(value: Double(edge)), NSNumber(value: Double(1 - edge)), 1]
         CATransaction.commit()
+        shapeFade(moving: false)
         if let shapes, shapes.key.width != bounds.width {
             forgetLayout()
-        } else if let layout, layout.paneHeight != bounds.height {
+        } else if let layout, layout.paneHeight != aimedHeight {
             self.layout = nil
             reported = nil
         }
@@ -226,7 +258,7 @@ final class LyricLayerView: UIView {
                 sheet: setting.sheet,
                 playback: setting.playback,
                 native: setting.native,
-                pane: bounds.size,
+                pane: CGSize(width: bounds.width, height: aimedHeight),
                 now: now,
                 measures: setting.measures,
                 inks: setting.inks,
@@ -246,6 +278,12 @@ final class LyricLayerView: UIView {
             let offered = offering
             let tell = offersFollow
             DispatchQueue.main.async { tell(offered) }
+        }
+        if scene.handsOn != handling {
+            handling = scene.handsOn
+            let holding = handling
+            let tell = handsOn
+            DispatchQueue.main.async { tell(holding) }
         }
     }
 
@@ -283,7 +321,7 @@ final class LyricLayerView: UIView {
         }
         shapes = shaped
         layouts += 1
-        let laid = LyricLayout(shaped, paneHeight: bounds.height)
+        let laid = LyricLayout(shaped, paneHeight: aimedHeight)
         layout = laid
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -321,7 +359,7 @@ final class LyricLayerView: UIView {
         let beyond = max(bounds.height * LyricPace.drawsBeyondPanes, LyricPace.drawsWithin)
         let near = (-scene.offset - beyond)...(-scene.offset + bounds.height + beyond)
         let far = (-scene.offset - 2 * beyond)...(-scene.offset + bounds.height + 2 * beyond)
-        let middle = -scene.offset + bounds.height / 2
+        let middle = -scene.offset + aimedHeight / 2
         var owed: [(away: CGFloat, layers: LyricRowLayers)] = []
 
         CATransaction.begin()

@@ -77,3 +77,36 @@ public enum AlbumsLayout: Equatable, Sendable {
         asRows || accessibilityText ? .rows : .grid
     }
 }
+
+public struct ShelfRowDrag: Equatable, Sendable {
+    public let width: Double
+    public let count: Int
+    public let between: Double
+
+    public init(width: Double, count: Int, between: Double) {
+        self.width = width
+        self.count = count
+        self.between = between
+    }
+
+    public var segment: Double {
+        guard count > 0 else { return 0 }
+        return max((width - between * Double(count - 1)) / Double(count), 0)
+    }
+
+    public func centre(of index: Int) -> Double {
+        Double(index) * (segment + between) + segment / 2
+    }
+
+    public func clamped(_ x: Double) -> Double {
+        guard count > 0 else { return x }
+        return min(max(x, centre(of: 0)), centre(of: count - 1))
+    }
+
+    public func nearest(to x: Double) -> Int {
+        let pitch = segment + between
+        guard count > 0, pitch > 0 else { return 0 }
+        let place = Int(((x - segment / 2) / pitch).rounded())
+        return min(max(place, 0), count - 1)
+    }
+}

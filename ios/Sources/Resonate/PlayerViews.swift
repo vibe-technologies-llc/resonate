@@ -178,11 +178,13 @@ enum PlayerMode {
 
 struct NowPlayingView: View {
     static let gutter: CGFloat = 24
-    private static let reshaping: Animation = .spring(duration: 0.45, bounce: 0.15)
+    static let reshaping: Animation = .spring(duration: 0.45, bounce: 0.15)
     private static let arriving = Arrival.animation
     private static let leaving: Animation = .easeOut(duration: 0.12)
     private static let reshapedWithin: CFTimeInterval = 0.8
     static let openedWithin: CFTimeInterval = 0.7
+    static let openedAtMost: CFTimeInterval = 1.4
+    static let closesWithin: CFTimeInterval = 0.6
     private static let focusedHeightAtAccessibilitySizes: CGFloat = 360
 
     @Environment(Library.self) private var library
@@ -192,6 +194,8 @@ struct NowPlayingView: View {
     @State private var mode = PlayerMode.artwork
     @State private var settled: PlayerMode?
     @State private var rest = FieldRest()
+    @State private var presence = CoverPresence()
+    @State private var tuck = ControlsTuck()
     @State private var asks = PlayerAsks()
 
     var body: some View {
@@ -212,7 +216,12 @@ struct NowPlayingView: View {
             }
             .padding(.horizontal, Self.gutter)
             .background(NowPlayingField(track: track, rest: rest, asks: asks))
-            .task { await open() }
+            .background(PresentationProbe(rest: rest, presence: presence))
+            .environment(presence)
+            .task {
+                tuck.rest = rest
+                await open()
+            }
             .safeAreaInset(edge: .top) { StatusBanner() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -258,9 +267,9 @@ struct NowPlayingView: View {
             if arrangement.sideBySide {
                 columns(track, scrolls: arrangement.scrolls)
             } else if arrangement.scrolls {
-                ScrollView { layout(track) }
+                ScrollView { layout(track, tucks: false) }
             } else {
-                layout(track)
+                layout(track, tucks: true)
             }
         }
     }
@@ -370,9 +379,10 @@ struct NowPlayingView: View {
         }
     }
 
-    private func layout(_ track: Track?) -> some View {
+    private func layout(_ track: Track?, tucks: Bool) -> some View {
         let large = mode == .artwork
         let focusedHeight: CGFloat? = typeSize.isAccessibilitySize ? Self.focusedHeightAtAccessibilitySizes : nil
+        let tucked = tucks && mode == .lyrics && !typeSize.isAccessibilitySize
         return VStack(spacing: large ? 20 : 16) {
             if large {
                 Spacer(minLength: 0)
@@ -383,29 +393,35 @@ struct NowPlayingView: View {
                     .padding(.top, 8)
                 ZStack {
                     if settled == mode {
-                        focusedContent(track).transition(.opacity)
+                        focusedContent(track, tuck: tucked ? tuck : nil).transition(.opacity)
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: focusedHeight, maxHeight: focusedHeight ?? .infinity)
+                .modifier(ReachingUnderTheControls(tuck: tuck, applies: tucked))
             }
             PlayerScrubber()
+                .modifier(ControlsTucked(tuck: tuck, applies: tucked))
             TransportRow()
+                .modifier(ControlsTucked(tuck: tuck, applies: tucked))
             if large {
                 SleepCountdown()
                 VolumeRow()
             }
             PlayerModes(mode: mode, choose: choose)
+                .modifier(ControlsTucked(tuck: tuck, applies: tucked))
             if large {
                 Spacer(minLength: 0)
             }
         }
+        .coordinateSpace(.named(TuckSpace.column))
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { tuck.measured(columnHeight: $0) }
         .padding(.bottom, large ? 0 : 8)
     }
 
     @ViewBuilder
-    private func focusedContent(_ track: Track?, bleeding: Edge.Set = .horizontal) -> some View {
+    private func focusedContent(_ track: Track?, bleeding: Edge.Set = .horizontal, tuck: ControlsTuck? = nil) -> some View {
         switch mode {
-        case .lyrics: LyricsPane(track: track, compact: true)
+        case .lyrics: LyricsPane(track: track, compact: true, tuck: tuck)
         case .queue, .artwork: UpNextList().padding(bleeding, -Self.gutter)
         }
     }
@@ -413,10 +429,17 @@ struct NowPlayingView: View {
     private func open() async {
         FrameRateBoost.shared.boost(for: Self.openedWithin)
         try? await Task.sleep(for: .seconds(Self.openedWithin))
-        rest.opening = false
+        rest.leastOpeningPassed()
+        guard rest.opening else { return }
+        let remaining = Self.openedAtMost - Self.openedWithin
+        FrameRateBoost.shared.boost(for: remaining)
+        try? await Task.sleep(for: .seconds(remaining))
+        rest.openingRanOut()
+        presence.shown = true
     }
 
     private func choose(_ target: PlayerMode) {
+        tuck.bringBack()
         guard !reduceMotion else {
             mode = target
             withAnimation(Self.arriving) { settled = target == .artwork ? nil : target }
@@ -556,8 +579,16 @@ enum NowPlayingOpening {
 
     static func prepare(_ track: Track, features: Features) async {
         await BackdropView.prepare(track, features: features)
-        guard let bucket = coverBucket, !track.isServed, let cover = await features.artwork(track, bucket: bucket) else { return }
+        guard let bucket = coverBucket ?? estimatedBucket(), !track.isServed, let cover = await features.artwork(track, bucket: bucket) else { return }
         ShownArtwork.keep(cover, for: track)
+    }
+
+    private static func estimatedBucket() -> ArtworkBucket? {
+        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+        guard let window = windows.first(where: \.isKeyWindow) ?? windows.first else { return nil }
+        let edge = min(window.bounds.width, window.bounds.height) - NowPlayingView.gutter * 2
+        guard edge > 0 else { return nil }
+        return ArtworkBucket.fitting(points: edge, scale: window.traitCollection.displayScale)
     }
 }
 
@@ -1166,6 +1197,7 @@ struct VolumeRow: View {
     private static let grabSettles: CFTimeInterval = 0.4
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(CoverPresence.self) private var presence: CoverPresence?
     @State private var volume = SystemVolumeLevel()
     @State private var dragging: Float?
     @State private var grabbedAt: Float?
@@ -1228,9 +1260,10 @@ struct VolumeRow: View {
         }
         .onAppear { volume.watch() }
         .onDisappear { volume.stopWatching() }
-        .task {
+        .task(id: presence?.shown ?? true) {
+            guard presence?.shown ?? true, !driven else { return }
             try? await Task.sleep(for: Self.driverMountsAfter)
-            driven = true
+            if !Task.isCancelled { driven = true }
         }
     }
 
@@ -1451,6 +1484,159 @@ final class PlayerAsks {
 final class FieldRest {
     var opening = true
     var reshaping = false
+    var closing = false
+    var tucking = false
+    @ObservationIgnored private var leastPassed = false
+    @ObservationIgnored private var presented = false
+
+    var resting: Bool {
+        opening || reshaping || closing || tucking
+    }
+
+    func leastOpeningPassed() {
+        leastPassed = true
+        settleOpening()
+    }
+
+    func presentedFully() {
+        presented = true
+        closing = false
+        settleOpening()
+    }
+
+    func dismissalBegan() {
+        closing = true
+    }
+
+    func openingRanOut() {
+        opening = false
+    }
+
+    private func settleOpening() {
+        if leastPassed, presented, opening { opening = false }
+    }
+}
+
+enum TuckSpace: Hashable {
+    case column
+}
+
+@MainActor
+@Observable
+final class ControlsTuck {
+    private static let movesWithin: CFTimeInterval = 0.8
+    private static let restsFor: Duration = .milliseconds(800)
+
+    var away = false
+    private(set) var columnHeight: CGFloat = 0
+    private(set) var paneFoot: CGFloat = 0
+    @ObservationIgnored var rest: FieldRest?
+    @ObservationIgnored private var moves = 0
+
+    var reach: CGFloat {
+        max(columnHeight - paneFoot, 0)
+    }
+
+    func measured(columnHeight height: CGFloat) {
+        columnHeight = height
+    }
+
+    func measured(paneFoot foot: CGFloat) {
+        paneFoot = foot
+    }
+
+    func hands(on: Bool, still: Bool) {
+        let wanted = on && !UIAccessibility.isVoiceOverRunning
+        guard wanted != away else { return }
+        away = wanted
+        guard !still, UIApplication.shared.applicationState == .active else { return }
+        FrameRateBoost.shared.boost(for: Self.movesWithin)
+        moves += 1
+        let move = moves
+        rest?.tucking = true
+        Task { [weak self] in
+            try? await Task.sleep(for: Self.restsFor)
+            guard let self, self.moves == move else { return }
+            self.rest?.tucking = false
+        }
+    }
+
+    func bringBack() {
+        if away { away = false }
+    }
+}
+
+struct ControlsTucked: ViewModifier {
+    let tuck: ControlsTuck
+    let applies: Bool
+
+    func body(content: Content) -> some View {
+        let away = applies && tuck.away
+        content
+            .offset(y: away ? tuck.reach : 0)
+            .opacity(away ? 0 : 1)
+            .allowsHitTesting(!away)
+            .accessibilityHidden(away)
+            .motion(NowPlayingView.reshaping, calm: Arrival.animation, value: away)
+    }
+}
+
+struct ReachingUnderTheControls: ViewModifier {
+    let tuck: ControlsTuck
+    let applies: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.bottom, applies ? -tuck.reach : 0)
+            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(TuckSpace.column)).maxY } action: { tuck.measured(paneFoot: $0) }
+    }
+}
+
+@MainActor
+@Observable
+final class CoverPresence {
+    var shown = false
+}
+
+struct PresentationProbe: UIViewControllerRepresentable {
+    let rest: FieldRest
+    let presence: CoverPresence
+
+    func makeUIViewController(context: Context) -> PresentationProbeController {
+        let probe = PresentationProbeController()
+        probe.rest = rest
+        probe.presence = presence
+        return probe
+    }
+
+    func updateUIViewController(_ probe: PresentationProbeController, context: Context) {
+        probe.rest = rest
+        probe.presence = presence
+    }
+}
+
+final class PresentationProbeController: UIViewController {
+    var rest: FieldRest?
+    var presence: CoverPresence?
+
+    override func loadView() {
+        let quiet = UIView()
+        quiet.isUserInteractionEnabled = false
+        quiet.isAccessibilityElement = false
+        view = quiet
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        rest?.presentedFully()
+        presence?.shown = true
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        rest?.dismissalBegan()
+        FrameRateBoost.shared.boost(for: NowPlayingView.closesWithin)
+    }
 }
 
 struct NowPlayingField: View {
@@ -1461,7 +1647,7 @@ struct NowPlayingField: View {
     let asks: PlayerAsks
 
     var body: some View {
-        BackdropView(track: track, resting: rest.opening || rest.reshaping, beneathASheet: sheetRaised)
+        BackdropView(track: track, resting: rest.resting, beneathASheet: sheetRaised)
     }
 
     private var sheetRaised: Bool {

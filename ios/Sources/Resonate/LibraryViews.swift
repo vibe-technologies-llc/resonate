@@ -15,7 +15,7 @@ struct LibraryView: View {
             .safeAreaBar(edge: .top, spacing: 0) {
                 if arrangement == .stack { LibraryShelfRow() }
             }
-            .searchable(text: $search.text, placement: .navigationBarDrawer(displayMode: .always), prompt: "search.title")
+            .searchable(text: $search.text, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "search.title")
             .searchSuggestions { SearchSuggestions(search: search) }
             .onSubmit(of: .search) {
                 if shelf != .playlists { search.remember() }
@@ -78,65 +78,132 @@ struct LibraryShelfContent: View {
     }
 }
 
+struct ShelfTabBounds: PreferenceKey {
+    static let defaultValue: [LibraryShelf: Anchor<CGRect>] = [:]
+
+    static func reduce(value: inout [LibraryShelf: Anchor<CGRect>], nextValue: () -> [LibraryShelf: Anchor<CGRect>]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
 struct LibraryShelfRow: View {
     private static let between: CGFloat = 4
+    private static let dragsPast: CGFloat = 8
+    private static let slides: Animation = .spring(duration: 0.38, bounce: 0.24)
+    private static let held: CGFloat = 1.06
 
     @Environment(Navigation.self) private var navigation
     @Environment(\.dynamicTypeSize) private var typeSize
-    @Namespace private var chosen
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var indicated = LibraryShelf.songs
+    @State private var lens: CGFloat?
+    @State private var width: CGFloat = 0
+    @GestureState private var held = false
 
     var body: some View {
-        let shelf = navigation.libraryShelf
         Group {
             if typeSize.isAccessibilitySize {
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: Self.between) { tabs(shelf, stretched: false) }
+                        tabs(stretched: false)
                     }
                     .clipShape(.capsule)
-                    .onChange(of: shelf) { _, now in reader.scrollTo(now, anchor: .center) }
-                    .onAppear { reader.scrollTo(shelf, anchor: .center) }
+                    .onChange(of: indicated) { _, now in reader.scrollTo(now, anchor: .center) }
+                    .onAppear { reader.scrollTo(indicated, anchor: .center) }
                 }
             } else {
-                HStack(spacing: Self.between) { tabs(shelf, stretched: true) }
+                tabs(stretched: true)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+                    .simultaneousGesture(slide)
             }
         }
-        .motion(Flip.animation, value: shelf)
         .padding(Self.between)
         .glassEffect(.regular, in: .capsule)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+        .onAppear { indicated = navigation.libraryShelf }
+        .onChange(of: navigation.libraryShelf) { _, now in
+            if lens == nil, now != indicated { indicated = now }
+        }
+        .onChange(of: held) { _, holding in
+            if !holding, lens != nil { settle(on: indicated) }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("library.shelves.spoken")
         .accessibilityAddTraits(.isTabBar)
     }
 
-    private func tabs(_ shelf: LibraryShelf, stretched: Bool) -> some View {
-        ForEach(LibraryShelf.allCases) { offered in
-            let isChosen = offered == shelf
-            Button {
-                navigation.choose(offered)
-            } label: {
-                Text(offered.title)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(stretched ? 0.8 : 1)
-                    .padding(.horizontal, stretched ? 0 : 16)
-                    .frame(maxWidth: stretched ? .infinity : nil, minHeight: 36)
-                    .foregroundStyle(isChosen ? Color.wornInk : Color.primary)
-                    .background {
-                        if isChosen {
-                            Capsule()
-                                .fill(Color.worn)
-                                .matchedGeometryEffect(id: "chosen", in: chosen)
-                        }
-                    }
-                    .contentShape(.capsule)
+    private var drag: ShelfRowDrag {
+        ShelfRowDrag(width: Double(width), count: LibraryShelf.allCases.count, between: Double(Self.between))
+    }
+
+    private var lit: LibraryShelf {
+        guard let lens else { return indicated }
+        return LibraryShelf.allCases[drag.nearest(to: Double(lens))]
+    }
+
+    private var slide: some Gesture {
+        DragGesture(minimumDistance: Self.dragsPast)
+            .updating($held) { _, holding, _ in holding = true }
+            .onChanged { change in
+                let following = CGFloat(drag.clamped(Double(change.location.x)))
+                if lens == nil {
+                    withAnimation(reduceMotion ? nil : Self.slides) { lens = following }
+                } else {
+                    lens = following
+                }
             }
-            .buttonStyle(.plain)
-            .accessibilityAddTraits(isChosen ? .isSelected : [])
-            .id(offered)
+            .onEnded { change in
+                settle(on: LibraryShelf.allCases[drag.nearest(to: Double(change.location.x))])
+            }
+    }
+
+    private func settle(on shelf: LibraryShelf) {
+        withAnimation(reduceMotion ? nil : Self.slides) {
+            lens = nil
+            indicated = shelf
         }
+        navigation.choose(shelf)
+    }
+
+    private func tabs(stretched: Bool) -> some View {
+        HStack(spacing: Self.between) {
+            ForEach(LibraryShelf.allCases) { offered in
+                tab(offered, stretched: stretched)
+            }
+        }
+        .backgroundPreferenceValue(ShelfTabBounds.self) { bounds in
+            GeometryReader { proxy in
+                if let anchor = bounds[indicated] {
+                    let rect = proxy[anchor]
+                    Capsule()
+                        .fill(Color.worn)
+                        .frame(width: rect.width, height: rect.height)
+                        .scaleEffect(lens == nil || reduceMotion ? 1 : Self.held)
+                        .position(x: lens ?? rect.midX, y: rect.midY)
+                }
+            }
+        }
+    }
+
+    private func tab(_ offered: LibraryShelf, stretched: Bool) -> some View {
+        let isChosen = offered == lit
+        return Button {
+            settle(on: offered)
+        } label: {
+            Text(offered.title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(stretched ? 0.8 : 1)
+                .padding(.horizontal, stretched ? 0 : 16)
+                .frame(maxWidth: stretched ? .infinity : nil, minHeight: 36)
+                .foregroundStyle(isChosen ? Color.wornInk : Color.primary)
+                .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .anchorPreference(key: ShelfTabBounds.self, value: .bounds) { [offered: $0] }
+        .accessibilityAddTraits(offered == indicated ? .isSelected : [])
+        .id(offered)
     }
 }
 

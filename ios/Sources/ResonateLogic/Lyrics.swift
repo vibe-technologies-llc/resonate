@@ -383,3 +383,25 @@ public struct LyricLandmarks: Equatable, Sendable {
         voiceTwo = frame.voiceTwo
     }
 }
+
+public struct LyricFoot: Equatable, Sendable {
+    public let height: Double
+    public let foot: Double
+
+    public init(height: Double, foot: Double) {
+        self.height = height
+        self.foot = foot
+    }
+
+    public var aimed: Double {
+        max(height - min(max(foot, 0), height), 0)
+    }
+
+    public func fade(dissolve: Double, clear: Bool) -> [Double] {
+        guard height > 0 else { return [0, 0, 1, 1] }
+        let edge = min(dissolve / height, 0.25)
+        let end = clear ? 1 : aimed / height
+        let falls = max(end - edge, edge)
+        return [0, edge, falls, max(end, falls)]
+    }
+}
