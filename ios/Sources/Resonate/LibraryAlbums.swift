@@ -74,6 +74,7 @@ struct AlbumGrid: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
             }
+            .revealsLibrarySearch()
             .onScrollGeometryChange(for: Double.self) { geometry in
                 ScrollTrack.share(of: geometry)
             } action: { _, share in
@@ -143,6 +144,7 @@ struct AlbumRows: View {
             .themedRows()
         }
         .listStyle(.plain)
+        .revealsLibrarySearch()
         .listSectionIndexVisibility(.visible)
     }
 

@@ -7,19 +7,19 @@ struct LibraryView: View {
     @Environment(Navigation.self) private var navigation
     let arrangement: LibraryArrangement
     @State private var selected = SelectedSongs()
+    @State private var indicator = ShelfIndicator()
+    @State private var reveal = LibrarySearchReveal()
 
     var body: some View {
-        @Bindable var search = library.librarySearch
+        let search = library.librarySearch
         let shelf = navigation.libraryShelf
         LibraryShelfContent(shelf: shelf)
+            .contentMargins(.top, reveal.band, for: .scrollContent)
+            .overlay(alignment: .top) { LibrarySearchField(shelf: shelf) }
             .safeAreaBar(edge: .top, spacing: 0) {
-                if arrangement == .stack { LibraryShelfRow() }
+                if arrangement == .stack { LibraryShelfRow(indicator: indicator) }
             }
-            .searchable(text: $search.text, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "search.title")
-            .searchSuggestions { SearchSuggestions(search: search) }
-            .onSubmit(of: .search) {
-                if shelf != .playlists { search.remember() }
-            }
+            .environment(reveal)
         .refreshable {
             library.rescan()
             library.features.loadPlaylists()
@@ -30,10 +30,179 @@ struct LibraryView: View {
             search.recallRecents()
             library.features.loadPlaylists()
         }
-        .onChange(of: shelf) { selected.clear() }
+        .onChange(of: shelf) {
+            selected.clear()
+            reveal.startOver()
+        }
         .onChange(of: library.filter) { selected.clear() }
         .onChange(of: search.isAsked) { selected.clear() }
         .onChange(of: library.catalogEmpty) { selected.clear() }
+    }
+}
+
+struct ScrollPlace: Equatable {
+    let offset: Double
+    let range: Double
+}
+
+@MainActor
+@Observable
+final class LibrarySearchReveal {
+    private(set) var shown = true
+    private(set) var band: CGFloat = 0
+    @ObservationIgnored private var reveal = SearchReveal()
+
+    func scrolled(_ place: ScrollPlace) {
+        reveal.scrolled(to: place.offset, within: place.range, band: Double(band))
+        if shown != reveal.shown { shown = reveal.shown }
+    }
+
+    func startOver() {
+        reveal.startOver()
+        if !shown { shown = true }
+    }
+
+    func measured(band height: CGFloat) {
+        if band != height { band = height }
+    }
+}
+
+private struct RevealsLibrarySearch: ViewModifier {
+    @Environment(LibrarySearchReveal.self) private var reveal: LibrarySearchReveal?
+
+    func body(content: Content) -> some View {
+        content.onScrollGeometryChange(for: ScrollPlace.self) { geometry in
+            let insets = geometry.contentInsets
+            return ScrollPlace(
+                offset: Double(geometry.contentOffset.y + insets.top),
+                range: Double(geometry.contentSize.height + insets.top + insets.bottom - geometry.containerSize.height)
+            )
+        } action: { _, place in
+            reveal?.scrolled(place)
+        }
+    }
+}
+
+extension View {
+    func revealsLibrarySearch() -> some View {
+        modifier(RevealsLibrarySearch())
+    }
+}
+
+struct LibrarySearchField: View {
+    private static let slides: Animation = .spring(duration: 0.32, bounce: 0)
+    private static let recentsShown = 6
+
+    @Environment(Library.self) private var library
+    @Environment(LibrarySearchReveal.self) private var reveal
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @FocusState private var focused: Bool
+    let shelf: LibraryShelf
+
+    var body: some View {
+        @Bindable var search = library.librarySearch
+        let shown = reveal.shown || focused || !search.text.isEmpty || voiceOver
+        VStack(spacing: 0) {
+            field(search)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { reveal.measured(band: $0) }
+            if focused, search.text.isEmpty, !search.recents.isEmpty {
+                recents(search)
+                    .padding(.horizontal, 16)
+                    .transition(.opacity)
+            }
+        }
+        .offset(y: shown ? 0 : -reveal.band)
+        .opacity(shown ? 1 : 0)
+        .allowsHitTesting(shown)
+        .accessibilityHidden(!shown)
+        .motion(Self.slides, calm: Arrival.animation, value: shown)
+        .motion(Arrival.animation, value: focused)
+    }
+
+    private func field(_ search: SearchModel) -> some View {
+        @Bindable var search = search
+        return HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                TextField("search.title", text: $search.text)
+                    .focused($focused)
+                    .submitLabel(.search)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onSubmit { remember(search) }
+                if !search.text.isEmpty {
+                    Button {
+                        search.text = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                            .touchTarget()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("library.search.clear")
+                }
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, search.text.isEmpty ? 14 : 0)
+            .frame(minHeight: 44)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            if focused {
+                Button("common.cancel") {
+                    search.text = ""
+                    focused = false
+                }
+                .buttonStyle(.plain)
+                .font(.body)
+                .foregroundStyle(Color.worn)
+                .transition(.opacity)
+            }
+        }
+    }
+
+    private func recents(_ search: SearchModel) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("search.recents")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                Button { search.forgetRecents() } label: {
+                    Text("search.recents.clear-short").touchTarget()
+                }
+                .buttonStyle(.plain)
+                .font(.subheadline)
+                .foregroundStyle(Color.worn)
+            }
+            .padding(.leading, 16)
+            .padding(.trailing, 8)
+            ForEach(search.recents.prefix(Self.recentsShown), id: \.self) { recent in
+                Button {
+                    search.text = recent
+                    remember(search)
+                } label: {
+                    Label {
+                        Text(recent).foregroundStyle(.primary).lineLimit(1)
+                    } icon: {
+                        Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary).accessibilityHidden(true)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 6)
+        .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
+    }
+
+    private func remember(_ search: SearchModel) {
+        if shelf != .playlists { search.remember() }
     }
 }
 
@@ -65,6 +234,7 @@ struct LibraryShelfContent: View {
             case _ where library.catalogEmpty:
                 List { EmptyLibrary().themedRows() }
                     .listStyle(.plain)
+                    .revealsLibrarySearch()
                     .toolbar { LibraryToolbar() }
             case .songs:
                 LibrarySongs()
@@ -86,33 +256,41 @@ struct ShelfTabBounds: PreferenceKey {
     }
 }
 
+@MainActor
+@Observable
+final class ShelfIndicator {
+    var shown: LibraryShelf?
+    var lens: CGFloat?
+}
+
 struct LibraryShelfRow: View {
     private static let between: CGFloat = 4
     private static let dragsPast: CGFloat = 8
     private static let slides: Animation = .spring(duration: 0.38, bounce: 0.24)
     private static let held: CGFloat = 1.06
+    private static let afterTheSwap: Duration = .milliseconds(16)
 
     @Environment(Navigation.self) private var navigation
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var indicated = LibraryShelf.songs
-    @State private var lens: CGFloat?
+    let indicator: ShelfIndicator
     @State private var width: CGFloat = 0
     @GestureState private var held = false
 
     var body: some View {
+        let indicated = indicator.shown ?? navigation.libraryShelf
         Group {
             if typeSize.isAccessibilitySize {
                 ScrollViewReader { reader in
                     ScrollView(.horizontal, showsIndicators: false) {
-                        tabs(stretched: false)
+                        tabs(indicated, stretched: false)
                     }
                     .clipShape(.capsule)
                     .onChange(of: indicated) { _, now in reader.scrollTo(now, anchor: .center) }
                     .onAppear { reader.scrollTo(indicated, anchor: .center) }
                 }
             } else {
-                tabs(stretched: true)
+                tabs(indicated, stretched: true)
                     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
                     .simultaneousGesture(slide)
             }
@@ -121,12 +299,9 @@ struct LibraryShelfRow: View {
         .glassEffect(.regular, in: .capsule)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .onAppear { indicated = navigation.libraryShelf }
-        .onChange(of: navigation.libraryShelf) { _, now in
-            if lens == nil, now != indicated { indicated = now }
-        }
+        .task(id: navigation.libraryShelf) { await follow(navigation.libraryShelf) }
         .onChange(of: held) { _, holding in
-            if !holding, lens != nil { settle(on: indicated) }
+            if !holding, indicator.lens != nil { slide(to: indicator.shown ?? navigation.libraryShelf) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("library.shelves.spoken")
@@ -137,8 +312,8 @@ struct LibraryShelfRow: View {
         ShelfRowDrag(width: Double(width), count: LibraryShelf.allCases.count, between: Double(Self.between))
     }
 
-    private var lit: LibraryShelf {
-        guard let lens else { return indicated }
+    private func lit(_ indicated: LibraryShelf) -> LibraryShelf {
+        guard let lens = indicator.lens else { return indicated }
         return LibraryShelf.allCases[drag.nearest(to: Double(lens))]
     }
 
@@ -147,29 +322,48 @@ struct LibraryShelfRow: View {
             .updating($held) { _, holding, _ in holding = true }
             .onChanged { change in
                 let following = CGFloat(drag.clamped(Double(change.location.x)))
-                if lens == nil {
-                    withAnimation(reduceMotion ? nil : Self.slides) { lens = following }
+                if indicator.lens == nil {
+                    withAnimation(reduceMotion ? nil : Self.slides) { indicator.lens = following }
                 } else {
-                    lens = following
+                    indicator.lens = following
                 }
             }
             .onEnded { change in
-                settle(on: LibraryShelf.allCases[drag.nearest(to: Double(change.location.x))])
+                choose(LibraryShelf.allCases[drag.nearest(to: Double(change.location.x))])
             }
     }
 
-    private func settle(on shelf: LibraryShelf) {
-        withAnimation(reduceMotion ? nil : Self.slides) {
-            lens = nil
-            indicated = shelf
+    private func choose(_ shelf: LibraryShelf) {
+        if shelf == navigation.libraryShelf {
+            slide(to: shelf)
+        } else {
+            navigation.choose(shelf)
         }
-        navigation.choose(shelf)
     }
 
-    private func tabs(stretched: Bool) -> some View {
-        HStack(spacing: Self.between) {
+    private func follow(_ shelf: LibraryShelf) async {
+        guard let shown = indicator.shown else {
+            indicator.shown = shelf
+            return
+        }
+        guard shown != shelf || indicator.lens != nil else { return }
+        try? await Task.sleep(for: Self.afterTheSwap)
+        guard !Task.isCancelled else { return }
+        slide(to: shelf)
+    }
+
+    private func slide(to shelf: LibraryShelf) {
+        withAnimation(reduceMotion ? nil : Self.slides) {
+            indicator.lens = nil
+            indicator.shown = shelf
+        }
+    }
+
+    private func tabs(_ indicated: LibraryShelf, stretched: Bool) -> some View {
+        let lit = lit(indicated)
+        return HStack(spacing: Self.between) {
             ForEach(LibraryShelf.allCases) { offered in
-                tab(offered, stretched: stretched)
+                tab(offered, lit: offered == lit, chosen: offered == indicated, stretched: stretched)
             }
         }
         .backgroundPreferenceValue(ShelfTabBounds.self) { bounds in
@@ -179,17 +373,16 @@ struct LibraryShelfRow: View {
                     Capsule()
                         .fill(Color.worn)
                         .frame(width: rect.width, height: rect.height)
-                        .scaleEffect(lens == nil || reduceMotion ? 1 : Self.held)
-                        .position(x: lens ?? rect.midX, y: rect.midY)
+                        .scaleEffect(indicator.lens == nil || reduceMotion ? 1 : Self.held)
+                        .position(x: indicator.lens ?? rect.midX, y: rect.midY)
                 }
             }
         }
     }
 
-    private func tab(_ offered: LibraryShelf, stretched: Bool) -> some View {
-        let isChosen = offered == lit
-        return Button {
-            settle(on: offered)
+    private func tab(_ offered: LibraryShelf, lit: Bool, chosen: Bool, stretched: Bool) -> some View {
+        Button {
+            choose(offered)
         } label: {
             Text(offered.title)
                 .font(.subheadline.weight(.semibold))
@@ -197,12 +390,12 @@ struct LibraryShelfRow: View {
                 .minimumScaleFactor(stretched ? 0.8 : 1)
                 .padding(.horizontal, stretched ? 0 : 16)
                 .frame(maxWidth: stretched ? .infinity : nil, minHeight: 36)
-                .foregroundStyle(isChosen ? Color.wornInk : Color.primary)
+                .foregroundStyle(lit ? Color.wornInk : Color.primary)
                 .contentShape(.capsule)
         }
         .buttonStyle(.plain)
         .anchorPreference(key: ShelfTabBounds.self, value: .bounds) { [offered: $0] }
-        .accessibilityAddTraits(offered == indicated ? .isSelected : [])
+        .accessibilityAddTraits(chosen ? .isSelected : [])
         .id(offered)
     }
 }
@@ -252,6 +445,7 @@ struct LibraryFound: View {
         }
         .listStyle(.plain)
         .scrollDismissesKeyboard(.immediately)
+        .revealsLibrarySearch()
         .environment(SelectedSongs?.none)
     }
 }

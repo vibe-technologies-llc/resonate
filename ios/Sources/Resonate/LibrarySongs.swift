@@ -49,6 +49,7 @@ struct SongsBrowsed: View {
                     .themedRows()
             }
             .listStyle(.plain)
+            .revealsLibrarySearch()
             .onScrollGeometryChange(for: Double.self) { geometry in
                 ScrollTrack.share(of: geometry)
             } action: { _, share in

@@ -434,6 +434,7 @@
 "library.reading" = "Reading your library";
 "library.scroller" = "Scroll position";
 "library.scroller.place" = "%1$lld of %2$lld";
+"library.search.clear" = "Clear search";
 "library.see-all" = "See all";
 "library.see-all.titled" = "See all %@";
 "library.shelves.spoken" = "Library sections";
@@ -1149,7 +1150,6 @@
 "search.order.title" = "Title";
 "search.reads.spoken" = "Searching for %@";
 "search.recents" = "Recent searches";
-"search.recents.clear" = "Clear recent searches";
 "search.recents.clear-short" = "Clear";
 "search.save-as-playlist" = "Save as playlist";
 "search.save-as-playlist.title" = "Save search as playlist";

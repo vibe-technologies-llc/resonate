@@ -1000,23 +1000,27 @@ every route change (a pair of headphones at the same rate included), not from th
   still minimises and a song row keeps its swipes, neither of which a sideways pager leaves standing.
   The row is a glass capsule of four buttons of equal width over **one** capsule of `Color.worn`
   (the chosen tab lettered `Color.wornInk`), drawn once in the row's `backgroundPreferenceValue` at
-  the bounds the chosen tab reports (`ShelfTabBounds`), never a capsule per tab under
-  `matchedGeometryEffect`: that one was inserted and removed on each choice and, with the choice made
-  in no animation, never slid. The capsule follows the row's own `indicated`, moved in an explicit
-  spring of its own (`slides`, 0.38 s with a little bounce, long enough to be seen travelling, as
-  the system's segmented control's thumb is; `Flip.animation`'s 140 ms read as a jump; at once under
-  Reduce Motion), while `Navigation.choose` runs outside that transaction, so the shelf, its toolbar
-  and the bar swap at once and only the capsule moves. **It is dragged as iOS's own segmented
+  the bounds the tab it names reports (`ShelfTabBounds`), never a capsule per tab under
+  `matchedGeometryEffect`. **Where the capsule stands is kept outside the row** (`ShelfIndicator`,
+  the shell's `@State`): the bar is the swapped scroll view's, so a choice, which swaps that scroll
+  view, rebuilt the row or dropped its animation, and neither a matched capsule nor one moved in an
+  explicit animation of the row's own state ever slid. The choice is made at once
+  (`Navigation.choose`); the row's `task(id:)` on the shelf chosen then moves the indicator to it a
+  frame later (`afterTheSwap`) in a spring of its own (`slides`, 0.38 s with a little bounce,
+  long enough to be seen travelling, as the system's segmented control's thumb is; at once under
+  Reduce Motion), so whichever row stands after the swap, the old one or one built afresh at the
+  indicator's old place, carries the capsule across. **It is dragged as iOS's own segmented
   controls are**: a drag along the row (from 8 pt) springs the capsule under the finger, swollen a
-  little while held, then carries it there, clamped to the row, the tab under it lettered as chosen, and letting go
-  chooses that tab and settles the capsule on it (`ShelfRowDrag`, `ResonateLogic`: the tabs' centres,
-  the clamp and the nearest, held by `LibraryShelvesTests`); a drag the system cancels settles back
-  on the tab chosen. At accessibility text sizes the row scrolls sideways inside the capsule and is
-  tapped only, and VoiceOver hears a tab bar with the chosen tab selected. **The title is inline and
-  the search field hides on scroll** (`navigationBarDrawer(displayMode: .automatic)`, its prompt the
-  same on every shelf): it shows at a shelf's top and tucks away as the list scrolls, the row riding
-  the bar down and up with it. Under a large title the bar's height moved as the title grew back and
-  the list juddered there, so the title stays inline. A row with nothing behind it (an underline on
+  little while held, then carries it there (`ShelfIndicator.lens`), clamped to the row, the tab
+  under it lettered as chosen, and letting go chooses that tab, the capsule springing from the
+  finger to it (`ShelfRowDrag`, `ResonateLogic`: the tabs' centres, the clamp and the nearest, held
+  by `LibraryShelvesTests`); a drag the system cancels springs back to the tab chosen. At
+  accessibility text sizes the row scrolls sideways inside the capsule and is tapped only, and
+  VoiceOver hears a tab bar with the chosen tab selected. **The bar over the row keeps one
+  height**: the title is inline and the page has no `.searchable`. The system's field that hides on
+  scroll moved the bar's height with every scrolled frame, and the row standing under it was pushed
+  about as the list scrolled (as a large title growing back had), so the Library's search is a field
+  of its own (`LibrarySearchField`, below). A row with nothing behind it (an underline on
   a hairline) let the songs show through as they passed under. On an empty
   catalog Songs, Albums and Artists draw `EmptyLibrary` while the row and Playlists stay, since
   playlists arrive from other devices before any folder is granted. **Each shelf's toolbar is one
@@ -1367,22 +1371,32 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   same songs keeps the order shown with the rows read, and only one whose songs differ is shown in
   its own order. The completions offered
   (`offeredCompletions`) are folded once as an answer lands, not at each read.
-- **The Library tab searches the shelf shown**: one `.searchable` on the shell over
-  `Library.librarySearch`, in the bar's drawer under the inline title (above), the tab row its scope, so
-  there is no scope bar and text typed survives a change of shelf. Songs, Albums and Artists draw `SearchResults` at their own scope (`LibraryFound`),
+- **The Library tab searches the shelf shown**: one field over `Library.librarySearch`
+  (`LibrarySearchField`, a glass capsule with *Cancel* while focused, laid over the shelf under the
+  tab row, the shelves' scroll content starting below it, `contentMargins`), the tab row its scope,
+  so there is no scope bar and text typed survives a change of shelf. Songs, Albums and Artists draw `SearchResults` at their own scope (`LibraryFound`),
   since `search_library` answers all three at once, and Playlists folds the names (below) and keeps no search; the *Top*
   view of all three is the Search tab's. Nothing found is said for the shelf's own kind. *Did you mean* where nothing matched; the grammar's `reads` as chips;
   completions as a row of glass capsules of the words alone heading the results (`SearchCompletions`, at most five,
-  read from the answer on screen, so the row changes only as the results do); `.searchSuggestions`
-  offers only, on an empty field, the last ten searches (`UserDefaults` suite `library-features`,
+  read from the answer on screen, so the row changes only as the results do); a glass card under
+  the focused field offers only, on an empty field, the latest of the last ten searches (`UserDefaults` suite `library-features`,
   key `recent-searches`, shared with the Search tab: a search kept merges into what is stored, and
   each tab re-reads it on appearing), kept when a search is submitted or one of its results opened.
   **Search history can be turned off**: Settings › App › Search history holds *Keep search history*
   (`SearchHistoryView`, `keep-search-history` in the same suite, on unless set), and while it is
   off `SearchModel` keeps nothing and offers nothing; turning it off forgets what both searches
   kept.
-  Completions are never `.searchSuggestions` while typing: that overlay sat over the results and
-  moved with every answer. The results and the browsed music are two `List`s (`SongsList`), so a
+  Completions are never offered under the field while typing: a list there sat over the results
+  and moved with every answer. **The field goes as the shelf scrolls down and comes back as it
+  scrolls up**, anywhere in the list (`SearchReveal`, `ResonateLogic`, held by
+  `LibraryShelvesTests`: shown within its own height of the top, gone once the list has moved
+  `turnsAfter` (24 pt) further down past it, back once it has moved as far up, a turn counting
+  afresh and a bounce past either end counting nothing). Every shelf's scroll view reports its
+  place (`revealsLibrarySearch`, `onScrollGeometryChange`) to `LibrarySearchReveal`, read by the
+  field alone, which slides up under the row and fades in a spring (a fade under Reduce Motion)
+  and never moves the bar or the content: the shelves' top margin is the field's height whether it
+  is shown or not, so nothing a scroll does lays the page out again. It stays while focused, while
+  it holds text and while VoiceOver runs, and a change of shelf shows it. The results and the browsed music are two `List`s (`SongsList`), so a
   search beginning or ending swaps one list for the other instead of deleting or inserting every
   browsed row in one. A lit string is kept per text, query and column (`lit`, up to 4096), so a
   redraw asks `highlights` across the boundary only for text it has not lit. Searching spans the catalog: filters shape browsing

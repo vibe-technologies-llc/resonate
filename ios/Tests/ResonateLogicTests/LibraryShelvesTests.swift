@@ -83,4 +83,58 @@ import Testing
         #expect(row.nearest(to: 120) == 3)
         #expect(ShelfRowDrag(width: 300, count: 0, between: 4).nearest(to: 120) == 0)
     }
+
+    @Test func theSearchFieldGoesAsTheListScrollsDownAndComesBackAsItScrollsUp() {
+        var reveal = SearchReveal()
+
+        reveal.scrolled(to: 0, within: 2000, band: 60)
+        #expect(reveal.shown)
+
+        reveal.scrolled(to: 70, within: 2000, band: 60)
+        reveal.scrolled(to: 80, within: 2000, band: 60)
+        #expect(reveal.shown)
+
+        reveal.scrolled(to: 90, within: 2000, band: 60)
+        #expect(!reveal.shown)
+
+        reveal.scrolled(to: 500, within: 2000, band: 60)
+        reveal.scrolled(to: 480, within: 2000, band: 60)
+        #expect(!reveal.shown)
+
+        reveal.scrolled(to: 470, within: 2000, band: 60)
+        #expect(reveal.shown)
+    }
+
+    @Test func aTurnStartsTheCountAgain() {
+        var reveal = SearchReveal()
+
+        reveal.scrolled(to: 100, within: 2000, band: 60)
+        reveal.scrolled(to: 200, within: 2000, band: 60)
+        #expect(!reveal.shown)
+
+        reveal.scrolled(to: 180, within: 2000, band: 60)
+        reveal.scrolled(to: 190, within: 2000, band: 60)
+        reveal.scrolled(to: 175, within: 2000, band: 60)
+        #expect(!reveal.shown)
+    }
+
+    @Test func theTopAlwaysShowsItAndABounceAtTheFootNever() {
+        var reveal = SearchReveal()
+
+        reveal.scrolled(to: 500, within: 1000, band: 60)
+        reveal.scrolled(to: 1000, within: 1000, band: 60)
+        #expect(!reveal.shown)
+
+        reveal.scrolled(to: 1060, within: 1000, band: 60)
+        reveal.scrolled(to: 1000, within: 1000, band: 60)
+        #expect(!reveal.shown)
+
+        reveal.scrolled(to: 40, within: 1000, band: 60)
+        #expect(reveal.shown)
+
+        reveal.scrolled(to: 600, within: 1000, band: 60)
+        reveal.scrolled(to: 700, within: 1000, band: 60)
+        reveal.startOver()
+        #expect(reveal.shown)
+    }
 }

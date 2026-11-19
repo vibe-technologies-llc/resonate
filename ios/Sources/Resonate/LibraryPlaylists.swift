@@ -63,6 +63,7 @@ struct LibraryPlaylists: View {
             .padding(.vertical, 8)
         }
         .scrollDismissesKeyboard(.immediately)
+        .revealsLibrarySearch()
         .toolbar {
             if !features.playlists.isEmpty {
                 ToolbarItem(placement: .topBarLeading) {

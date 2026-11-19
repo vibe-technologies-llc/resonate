@@ -283,21 +283,6 @@ struct SearchReadings: View {
     }
 }
 
-struct SearchSuggestions: View {
-    let search: SearchModel
-
-    var body: some View {
-        if search.query.isEmpty, !search.recents.isEmpty {
-            Section("search.recents") {
-                ForEach(search.recents, id: \.self) { recent in
-                    Label(recent, systemImage: "clock.arrow.circlepath").searchCompletion(recent)
-                }
-                Button("search.recents.clear", role: .destructive) { search.forgetRecents() }
-            }
-        }
-    }
-}
-
 struct SearchCompletions: View {
     private static let shown = 5
 

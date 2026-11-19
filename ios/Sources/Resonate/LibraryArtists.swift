@@ -47,6 +47,7 @@ struct ArtistRows: View {
             }
             .listStyle(.plain)
             .listSectionIndexVisibility(.hidden)
+            .revealsLibrarySearch()
             .onScrollGeometryChange(for: Double.self) { geometry in
                 ScrollTrack.share(of: geometry)
             } action: { _, share in
