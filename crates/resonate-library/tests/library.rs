@@ -19196,6 +19196,46 @@ fn the_files_a_sheet_names_wait_for_a_file_standing_where_one_lands_to_move_on_f
 }
 
 #[test]
+fn organising_a_second_name_onto_the_filed_copy_of_its_file_keeps_the_filed_rows_history()
+-> Result<()> {
+    let tree = Tree::new();
+    let filed = tree.write("Pink Floyd/Meddle/02 Echoes.wav", &meddle("Echoes", "2"));
+    let linked = filed.with_file_name("echoes.wav");
+    fs::hard_link(&filed, &linked).expect("a second name for the filed copy");
+
+    let library = Library::open_in_memory()?;
+    scan(&library, &options(&tree))?;
+    let root = filed_under(&tree);
+    let filed = root.join("Pink Floyd/Meddle/02 Echoes.wav");
+    let linked = root.join("Pink Floyd/Meddle/echoes.wav");
+    for _ in 0..2 {
+        let counted = library
+            .track_played(&MediaLocation::local(&filed), None, Duration::from_secs(2))?
+            .expect("a counted play");
+        library.listened(counted.listen, Duration::from_secs(2))?;
+    }
+    let favoured = library.track_at(&filed, None)?.expect("the filed row").id;
+    library.favour(Favoured::Track(favoured), true)?;
+    let before = library.statistics(Window::Everything)?;
+
+    let summary = applied(&library)?;
+    let after = library.statistics(Window::Everything)?;
+    let standing = library
+        .track_at(&filed, None)?
+        .expect("a row at the filed name");
+
+    assert_eq!(landings(&summary), vec![(linked.clone(), filed.clone())]);
+    assert!(!linked.exists(), "the second name was left standing");
+    assert_eq!(library.track_at(&linked, None)?, None);
+    assert_eq!(standing.plays, 2);
+    assert!(standing.favourite.is_some(), "the favourite was lost");
+    assert_eq!(before.plays, 2);
+    assert_eq!(after.plays, before.plays);
+    assert_eq!(after.listened, before.listened);
+    Ok(())
+}
+
+#[test]
 fn the_files_a_sheet_names_wait_in_vain_on_a_file_that_stays_and_each_says_what_it_met()
 -> Result<()> {
     let tree = Tree::new();

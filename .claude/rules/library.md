@@ -566,7 +566,8 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   did not walk), `Unreached` (`store::prune`) and `Superseded` (a vaulted row its file supersedes)
   drop none; `Displaced` (organise's stale row at a move's destination) keeps no listens, since
   the row that moves in takes the path and `history::credit_the_unheld` would credit the displaced
-  row's listens to it. Every other reason copies the listens of the rows into `unheld_listens`
+  row's listens to it; a displaced row naming the very file that moves in (another hard link of it)
+  has handed its history to the moving row first (below, *Files move before the catalog*). Every other reason copies the listens of the rows into `unheld_listens`
   first, so a file moved off a mount and back, or deleted by hand under a walked root and
   restored, is counted from where it was. The condition is one clause, read by the listens' copy,
   the wants and the `DELETE`, so they cannot name different rows, and a batch caller keeps its
@@ -2052,7 +2053,11 @@ guard and re-keys a sleeve-keyed album after moves land.
   its error is answered, so a move refused is never left under two names
   (`a_link_whose_source_cannot_be_unlinked_is_taken_back_and_the_source_left`). **A destination that is another hard link of
   the same file is no rename** (`another_link_of`): it lands as `Landing::Linked`, the source's name
-  taken away once the catalog committed. Sidecars are weighed apart: gone since: dropped;
+  taken away once the catalog committed. A row catalogued at that name is the same song, so before
+  it goes as `Displaced` `files_moved` hands each one's plays, last play, favourite and listens to
+  the moving row of the same `span_start` and its `songs_received` rows to the moving path, as a
+  dedupe fold does (`copies::history_handed_over`,
+  `organising_a_second_name_onto_the_filed_copy_of_its_file_keeps_the_filed_rows_history`). Sidecars are weighed apart: gone since: dropped;
   destination now taken: stays; the track moves without. `Library::files_moved`, one transaction,
   rewrites `tracks.path`, `playlist_entries.path` (touching those playlists' `modified`),
   `lyrics_kept.path`, `lyrics_ahead.path`, `lyrics_refused.path`, `kept_songs.landed` (so a song

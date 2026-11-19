@@ -119,32 +119,12 @@ fn identical_classes(wholes: &BTreeMap<PathBuf, Whole>) -> Vec<Vec<Member<'_>>> 
 }
 
 pub(crate) fn handed_over(transaction: &Transaction<'_>, over: &HandOver<'_>) -> Result<()> {
-    let kept = over.kept.get() as i64;
-    let taken = over.taken.get() as i64;
+    history_handed_over(transaction, over.kept, over.taken)?;
+
     let kept_path = store::path_text(over.kept_path).into_owned();
     let copy_path = store::path_text(over.taken_path).into_owned();
-    let changed = |sql: &str, values: &[&dyn ToSql]| {
-        transaction
-            .execute(sql, values)
-            .map_err(|source| Error::store(StoreOp::Update, source))
-    };
+    let changed = |sql: &str, values: &[&dyn ToSql]| changed(transaction, sql, values);
 
-    changed(
-        "UPDATE tracks SET
-             plays = plays + (SELECT plays FROM tracks WHERE id = ?2),
-             played = max(
-                 coalesce(played, (SELECT played FROM tracks WHERE id = ?2)),
-                 coalesce((SELECT played FROM tracks WHERE id = ?2), played)
-             ),
-             favourite = coalesce(favourite, (SELECT favourite FROM tracks WHERE id = ?2))
-         WHERE id = ?1",
-        params![kept, taken],
-    )?;
-    changed("UPDATE tracks SET plays = 0 WHERE id = ?1", params![taken])?;
-    changed(
-        "UPDATE listens SET track_id = ?1 WHERE track_id = ?2",
-        params![kept, taken],
-    )?;
     let renamed = changed(
         "UPDATE playlist_entries SET path = ?1, span_start = 0, span_frames = NULL
           WHERE path = ?2",
@@ -173,6 +153,45 @@ pub(crate) fn handed_over(transaction: &Transaction<'_>, over: &HandOver<'_>) ->
         params![kept_path, copy_path],
     )?;
     Ok(())
+}
+
+pub(crate) fn history_handed_over(
+    transaction: &Transaction<'_>,
+    kept: TrackId,
+    taken: TrackId,
+) -> Result<()> {
+    let kept = kept.get() as i64;
+    let taken = taken.get() as i64;
+
+    changed(
+        transaction,
+        "UPDATE tracks SET
+             plays = plays + (SELECT plays FROM tracks WHERE id = ?2),
+             played = max(
+                 coalesce(played, (SELECT played FROM tracks WHERE id = ?2)),
+                 coalesce((SELECT played FROM tracks WHERE id = ?2), played)
+             ),
+             favourite = coalesce(favourite, (SELECT favourite FROM tracks WHERE id = ?2))
+         WHERE id = ?1",
+        params![kept, taken],
+    )?;
+    changed(
+        transaction,
+        "UPDATE tracks SET plays = 0 WHERE id = ?1",
+        params![taken],
+    )?;
+    changed(
+        transaction,
+        "UPDATE listens SET track_id = ?1 WHERE track_id = ?2",
+        params![kept, taken],
+    )?;
+    Ok(())
+}
+
+fn changed(transaction: &Transaction<'_>, sql: &str, values: &[&dyn ToSql]) -> Result<usize> {
+    transaction
+        .execute(sql, values)
+        .map_err(|source| Error::store(StoreOp::Update, source))
 }
 
 fn whole_files(connection: &Connection) -> Result<BTreeMap<PathBuf, Whole>> {

@@ -28,7 +28,7 @@ use resonate_core::{
 use rusqlite::{Connection, OptionalExtension as _, Statement, Transaction, params};
 
 use crate::{
-    Library, StoreOp,
+    Library, StoreOp, copies,
     error::{Error, FieldName, LayoutFault, MoveOp, Result},
     filed,
     forgetting::{Forgetting, Rows, forget_rows},
@@ -2954,6 +2954,9 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
         let from = store::path_text(from_path);
         let to = store::path_text(to_path);
 
+        if from_path != to_path && names_one_file(from_path, to_path) {
+            history_follows_the_file(tx, &from, &to)?;
+        }
         forget_rows(tx, Forgetting::Displaced, &[Rows::AtPath(&to)])?;
         for statement in [
             &mut stale_lyrics,
@@ -3004,6 +3007,37 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
         sheeted::notes_follow_the_sheet(tx, &sidecar.from, &sidecar.to)?;
     }
 
+    Ok(())
+}
+
+fn history_follows_the_file(tx: &Transaction<'_>, from: &str, to: &str) -> Result<()> {
+    let paired = tx
+        .prepare_cached(
+            "SELECT moving.id, standing.id FROM tracks standing
+               JOIN tracks moving ON moving.path = ?1 AND moving.span_start = standing.span_start
+              WHERE standing.path = ?2",
+        )
+        .and_then(|mut statement| {
+            statement
+                .query_map(params![from, to], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    for (moving, standing) in paired {
+        copies::history_handed_over(
+            tx,
+            TrackId::new(moving as u64)?,
+            TrackId::new(standing as u64)?,
+        )?;
+    }
+    tx.execute(
+        "UPDATE songs_received SET path = ?1 WHERE path = ?2",
+        params![from, to],
+    )
+    .map_err(|source| Error::store(StoreOp::Update, source))?;
     Ok(())
 }
 
