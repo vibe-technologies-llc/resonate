@@ -241,7 +241,9 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
 - **Sheet edge cases, settled once.** A track belongs to the file its `INDEX 01` is in, whichever
   `FILE` line its `TRACK` followed (EAC gaps-appended). A pregap inside one file heads the track it
   leads into (`CueTrack::heard_from`; `PREGAP` is not read). A track whose `INDEX 01` does not read,
-  or that starts before the one ahead of it in its file, is dropped. A `FILE` line may name a folder
+  or that starts before or with the one ahead of it in its file (a shared `INDEX 01` would be a
+  span of no frames), is dropped
+  (`a_track_sharing_the_first_index_of_the_one_ahead_of_it_is_left_out`). A `FILE` line may name a folder
   below its sheet (`cue::folder_named`). A sheet is read as far as it parses and never fails (only the
   source and `LARGEST_CUE_SHEET` raise a `codec::Error`); text goes through `resonate_core::text`
   (`rust-style.md`) and a renamed sheet is written back in the code page it was read in.

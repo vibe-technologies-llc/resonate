@@ -101,6 +101,10 @@ impl CueStart {
             (Self::Written(_), Self::Sampled(_)) | (Self::Sampled(_), Self::Written(_)) => false,
         }
     }
+
+    fn is_before_or_with(self, other: Self) -> bool {
+        self == other || self.is_before(other)
+    }
 }
 
 impl Default for CueStart {
@@ -835,11 +839,11 @@ impl Reading {
             return;
         }
         if let Some(before) = file.tracks.last()
-            && track.start.is_before(before.start)
+            && track.start.is_before_or_with(before.start)
         {
             tracing::debug!(
                 track = track.number,
-                "a cue track starting before the one ahead of it is left out"
+                "a cue track starting before or with the one ahead of it is left out"
             );
             return;
         }
@@ -1443,6 +1447,31 @@ FILE "Meddle.flac" WAVE
     }
 
     #[test]
+    fn a_track_sharing_the_first_index_of_the_one_ahead_of_it_is_left_out() {
+        let sheet = read(
+            b"FILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Shared\"\n    INDEX 01 00:00:00\n  TRACK 03 AUDIO\n    INDEX 01 04:00:00\n  TRACK 04 AUDIO\n    INDEX 01 04:00:00\n",
+        );
+        let file = &sheet.files[0];
+        let rate = SampleRate::HZ_44100;
+
+        assert_eq!(
+            file.tracks
+                .iter()
+                .map(|track| track.number)
+                .collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        for index in 0..file.tracks.len() {
+            let span = file.span_of(index, rate, None).expect("a span");
+            assert_ne!(
+                span.frames(),
+                Some(Frames::ZERO),
+                "track {index} plays nothing"
+            );
+        }
+    }
+
+    #[test]
     fn a_span_whose_next_track_starts_earlier_is_refused_rather_than_turned_round() {
         let file = CueFile {
             named: "one.flac".to_owned(),
@@ -1704,8 +1733,9 @@ FILE "Meddle.flac" WAVE
     fn a_sheet_carrying_more_tracks_than_a_disc_could_stops_at_the_bound() {
         let mut text = String::from("FILE \"one.flac\" WAVE\n");
         for number in 0..MOST_TRACKS + 10 {
+            let (minutes, seconds) = (number / 60, number % 60);
             text.push_str(&format!(
-                "  TRACK {number:02} AUDIO\n    INDEX 01 00:00:00\n"
+                "  TRACK {number:02} AUDIO\n    INDEX 01 {minutes:02}:{seconds:02}:00\n"
             ));
         }
         let sheet = read(text.as_bytes());
