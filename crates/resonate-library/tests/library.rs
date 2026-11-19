@@ -21109,6 +21109,53 @@ fn lyric_frames_of(file: &Path) -> Vec<([u8; 4], Vec<u8>)> {
         .collect()
 }
 
+#[cfg(all(unix, not(target_os = "macos")))]
+#[test]
+fn the_walk_back_puts_back_the_tags_of_a_file_whose_name_is_not_text() -> Result<()> {
+    const SHEET: &str = "[00:01.00]Overhead the albatross\n";
+    let tree = Tree::new();
+    let sung = tree
+        .path()
+        .join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
+            b"caf\xe9.aiff",
+        ));
+    fs::write(
+        &sung,
+        Aiff::new()
+            .text(TITLE, "Echoes")
+            .text(ARTIST, "Pink Floyd")
+            .build(),
+    )
+    .expect("a file with a name that is not text");
+    let library = Library::open(&tree.path().join("library.db"))?;
+    scan(&library, &options(&tree))?;
+    library.keep_lyrics(
+        &MediaLocation::local(&sung),
+        None,
+        Some(&LyricText {
+            text: SHEET.to_owned(),
+            synced: true,
+            lyricsfile: None,
+        }),
+    )?;
+    let asked = vec![library.track_at(&sung, None)?.expect("a scanned song").id];
+
+    let written = lyrics_tagged(&library, asked, true)?;
+    let tagged = tags_of(&sung).lyrics;
+    let put_back = walked_back(&library, true)?;
+
+    assert_eq!(written.stats.written, 1);
+    assert_eq!(tagged.as_deref(), Some(SHEET.trim_end()));
+    assert!(
+        put_back.retagging.passed_over.is_empty(),
+        "the walk back passed over {:?}",
+        why_passed_over(&put_back)
+    );
+    assert_eq!(put_back.stats.written, 1);
+    assert_eq!(tags_of(&sung).lyrics, None);
+    Ok(())
+}
+
 #[test]
 fn lyrics_written_over_a_timed_frame_read_back_and_the_walk_back_puts_the_timed_frame_back()
 -> Result<()> {

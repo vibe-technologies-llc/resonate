@@ -1533,7 +1533,7 @@ pub(crate) fn last_retag(connection: &rusqlite::Connection) -> Result<Vec<KeptRe
 
     let mut kept: Vec<KeptRetag> = Vec::new();
     for (path, pictured, rated, field, was, picture, wrote, wrote_known) in rows {
-        let path = PathBuf::from(path);
+        let path = store::path_of(&path);
         if kept.last().is_none_or(|last| last.path != path) {
             kept.push(KeptRetag {
                 path,
