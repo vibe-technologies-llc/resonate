@@ -390,7 +390,12 @@ A document is a URI the front end resolves to a descriptor through the `Document
 `content` (Android's SAF URIs, kept as they are so saved locations still resolve) and
 `resonate-folder` (iOS: `resonate-folder://<root>/<percent-encoded relative path>`, the root a
 security-scoped bookmark the app keeps, or `local` for its own Documents folder). The key is the URI
-after `scheme:` with its escaping kept exactly. Anything else, a bare path or a `file:` URI
+after `scheme:` with its escaping kept exactly, and `document_uri` is that spelling again: a queued
+location is looked up in `documents` through it, never through `MediaLocation::to_uri`, which
+escapes the key's `%` and `:` a second time and so names no row of an SAF URI or an iOS name with a
+space (`song_of`, `unmeasured`:
+`a_document_whose_uri_holds_an_escape_is_named_to_the_party_by_its_catalog_row`,
+`a_document_whose_uri_holds_an_escape_is_measured_by_its_kept_peaks`). Anything else, a bare path or a `file:` URI
 included, is `InvalidUri`, and so is a `resonate-folder` URI with a piece that, once percent-decoded, is `.` or `..` or holds a `/` or NUL (`a%2F..%2Fx`), the same refusal as the iOS app's `FolderURI.components(of:)`
 (`a_folder_uri_climbing_out_of_its_root_by_any_spelling_is_refused`). A negative descriptor says why: `document_not_found()` (no such
 document: Android's `FileNotFoundException`, iOS's unresolvable bookmark or `ENOENT`) reads as

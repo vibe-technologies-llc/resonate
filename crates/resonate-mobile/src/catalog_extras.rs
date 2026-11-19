@@ -15,6 +15,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use crate::{
     Error, Result, StoreOp,
     catalog::{Catalog, picture_crc, read},
+    documents::document_uri,
     features::{
         AnalysisReport, LibraryBreakdown, LibraryShare, LibraryStatistics, ListenedOnDay,
         ListenedTo, ListeningDetail,
@@ -702,17 +703,24 @@ impl Catalog {
 
         let mut owed = Vec::new();
         for cut in cuts {
-            let held = cut.span.is_none()
-                && statement
+            let stored = cut
+                .span
+                .is_none()
+                .then(|| document_uri(&cut.location).ok())
+                .flatten();
+            let held = match stored {
+                Some(uri) => statement
                     .query_row(
                         params![
-                            cut.location.to_uri(),
+                            uri,
                             BAND_PEAKS_BYTES as i64,
                             BAND_PEAKS_BYTES_BEFORE_TOGETHER as i64
                         ],
                         |row| row.get::<_, bool>(0),
                     )
-                    .map_err(read_error)?;
+                    .map_err(read_error)?,
+                None => false,
+            };
             if !held {
                 owed.push(cut.clone());
             }
@@ -851,6 +859,38 @@ mod tests {
 
     use super::*;
     use crate::Track;
+
+    #[test]
+    fn a_document_whose_uri_holds_an_escape_is_measured_by_its_kept_peaks() {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let granted = "content://com.android.externalstorage.documents/document/primary%3AMusic%2FEchoes.flac";
+
+        let track = catalog
+            .upsert(Track {
+                uri: granted.to_owned(),
+                name: "Echoes.flac".to_owned(),
+                title: "Echoes".to_owned(),
+                ..Track::default()
+            })
+            .expect("a document");
+        catalog
+            .0
+            .lock()
+            .execute(
+                "INSERT INTO studies (track, verdict, peak, rms, true_peak, clipped, band_peaks)
+                 VALUES (?1, 'genuine', 0.5, 0.1, 0.5, 0, ?2)",
+                params![track.id as i64, vec![0_u8; BAND_PEAKS_BYTES]],
+            )
+            .expect("a study");
+
+        let cut = Cut {
+            location: crate::documents::location(granted).expect("a location"),
+            span: None,
+        };
+        let owed = catalog.unmeasured(&[cut]).expect("a read");
+
+        assert!(owed.is_empty());
+    }
 
     #[test]
     fn statistics_count_an_album_and_an_artist_once_however_they_are_spelled() {

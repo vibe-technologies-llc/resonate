@@ -18,7 +18,7 @@ use rusqlite::OptionalExtension;
 use crate::{
     Error, MobilePlayer, Result,
     catalog::Catalog,
-    documents::location,
+    documents::{document_uri, location},
     error::SyncOp,
     served,
     sync::{RECORDING_COLUMNS, Resolving, recording_at},
@@ -222,12 +222,13 @@ fn song_of(
         });
     }
 
+    let stored = document_uri(location).ok()?;
     let recording = catalog
         .0
         .lock()
         .query_row(
             &format!("SELECT {RECORDING_COLUMNS} FROM documents d WHERE d.uri = ?1"),
-            [location.to_uri()],
+            [stored],
             |held| recording_at(held, 0),
         )
         .optional()
@@ -913,6 +914,29 @@ mod tests {
         phone.together_server("  ".to_owned());
 
         assert_eq!(phone.party_settings(None).expect("settings").server, hosted);
+    }
+
+    #[test]
+    fn a_document_whose_uri_holds_an_escape_is_named_to_the_party_by_its_catalog_row() {
+        let phone = crate::playlists::tests::player();
+        let granted = "content://com.android.externalstorage.documents/document/primary%3AMusic%2FEchoes.flac";
+
+        phone
+            .catalog
+            .upsert(crate::Track {
+                uri: granted.to_owned(),
+                name: "Echoes.flac".to_owned(),
+                title: "Echoes".to_owned(),
+                artist: "Pink Floyd".to_owned(),
+                ..crate::Track::default()
+            })
+            .expect("a document");
+
+        let queued = location(granted).expect("a location");
+        let song = song_of(&phone.catalog, &phone.served, &queued, None).expect("a song named");
+
+        assert_eq!(song.recording.title, "Echoes");
+        assert_eq!(song.recording.artist, "Pink Floyd");
     }
 
     #[test]
