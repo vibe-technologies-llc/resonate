@@ -3,7 +3,7 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::{
-    DeviceId, Error, LocalPlaylistId, Result, SpaceId, StoreOp,
+    Clock, DeviceId, Error, LocalPlaylistId, Result, SpaceId, Stamp, StoreOp,
     error::Malformed,
     key::{DEVICE_BYTES, random_bytes},
     shared::{
@@ -77,6 +77,13 @@ pub struct Kept {
     pub bytes_since: u64,
     pub leaving: bool,
     pub owed: Vec<(i64, Vec<SharedOp>)>,
+    pub clock: Clock,
+}
+
+impl Kept {
+    pub fn stamped(&mut self) -> Stamp {
+        self.clock.now(self.device)
+    }
 }
 
 impl Store {
@@ -266,6 +273,7 @@ impl Store {
             bytes_since: raw.bytes_since.cast_unsigned(),
             leaving: raw.leaving != 0,
             owed,
+            clock: Clock::from_last(0),
         })
     }
 
@@ -420,6 +428,7 @@ mod tests {
             bytes_since: 3,
             leaving: false,
             owed: vec![(1, vec![added()])],
+            clock: Clock::from_last(0),
         }
     }
 

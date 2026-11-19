@@ -43,6 +43,7 @@ use crate::{
         place::Place,
         store::{Kept, Me, Store},
     },
+    wall_nanos,
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
     wire::{FromServer, LARGEST_RECORD, PROTOCOL_VERSION, Refusal, SpaceAsked, ToServer},
     words,
@@ -67,6 +68,10 @@ const CLOSES_BEFORE_ANSWER_FOR_TOO_OLD: u32 = 3;
 const RESETS_OVERTAKEN_AT_MOST: usize = 4;
 
 const LARGEST_BUNDLE: usize = LARGEST_RECORD / 2;
+
+const NANOS_A_SECOND: i64 = 1_000_000_000;
+
+const STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS: i64 = 24 * 60 * 60 * NANOS_A_SECOND;
 
 #[derive(Clone, Debug, Default)]
 pub struct SharedSettings {
@@ -165,7 +170,6 @@ impl Shared {
             lists,
             me,
             name: settings.name,
-            clock: Clock::from_last(0),
             catalog,
             server: settings.server.address(),
             to_web,
@@ -279,7 +283,6 @@ struct Running {
     lists: Vec<Kept>,
     me: Me,
     name: String,
-    clock: Clock,
     catalog: Arc<dyn SharedCatalog>,
     server: Option<String>,
     to_web: Arc<WebConfig>,
@@ -462,7 +465,8 @@ impl Running {
         let keys = access.keys()?;
         let device = DeviceId::minted()?;
         let me = self.me.clone();
-        let mut stamped = || self.clock.now(device);
+        let mut clock = Clock::from_last(0);
+        let mut stamped = || clock.now(device);
 
         let mut ops = vec![SharedOp::Renamed {
             name: local.name.clone(),
@@ -510,6 +514,7 @@ impl Running {
             bytes_since: 0,
             leaving: false,
             owed: vec![(1, ops)],
+            clock,
         };
         self.store.keep(&kept)?;
         self.lists.push(kept);
@@ -561,49 +566,39 @@ impl Running {
         if let Some(at) = self.lists.iter().position(|kept| kept.space == keys.space) {
             if access.may_edit() && !self.lists[at].access.may_edit() {
                 self.lists[at].access = access;
-                let device = self.lists[at].device;
-                let me = self.lists[at].me.clone();
-                let ops = vec![self.who_i_am_on(device, &me)];
                 let kept = &mut self.lists[at];
-                for op in &ops {
-                    kept.list.apply(op);
-                }
-                owed_more(kept, ops);
+                let op = who_i_am(&self.name, kept);
+                kept.list.apply(&op);
+                owed_more(kept, vec![op]);
                 let kept = self.lists[at].clone();
                 self.store.keep(&kept)?;
             }
             return Ok(keys.space);
         }
 
-        let device = DeviceId::minted()?;
-        let ops = if access.may_edit() {
-            vec![self.who_i_am_on(device, &me)]
-        } else {
-            Vec::new()
-        };
-        let mut list = SharedList::default();
-        for op in &ops {
-            list.apply(op);
-        }
+        let may_edit = access.may_edit();
         let mut kept = Kept {
             space: keys.space,
             access,
             server,
-            device,
+            device: DeviceId::minted()?,
             me,
             at: None,
             alias: None,
             seen: None,
             cursor: 0,
-            list,
+            list: SharedList::default(),
             written: Vec::new(),
             records_since: 0,
             bytes_since: 0,
             leaving: false,
             owed: Vec::new(),
+            clock: Clock::from_last(0),
         };
-        if !ops.is_empty() {
-            owed_more(&mut kept, ops);
+        if may_edit {
+            let op = who_i_am(&self.name, &mut kept);
+            kept.list.apply(&op);
+            owed_more(&mut kept, vec![op]);
         }
         self.store.keep(&kept)?;
         self.lists.push(kept);
@@ -612,27 +607,16 @@ impl Running {
         Ok(keys.space)
     }
 
-    fn who_i_am_on(&mut self, device: DeviceId, me: &Me) -> SharedOp {
-        SharedOp::Member {
-            member: me.member,
-            name: self.name.clone(),
-            public: me.personal.public(),
-            stamp: self.clock.now(device),
-        }
-    }
-
     fn say_who_i_am(&mut self) {
         for at in 0..self.lists.len() {
             if !self.lists[at].access.may_edit() || self.lists[at].leaving {
                 continue;
             }
-            let device = self.lists[at].device;
-            let me = self.lists[at].me.clone();
-            if self.lists[at].list.is_named(me.member, &self.name) {
+            let kept = &mut self.lists[at];
+            if kept.list.is_named(kept.me.member, &self.name) {
                 continue;
             }
-            let op = self.who_i_am_on(device, &me);
-            let kept = &mut self.lists[at];
+            let op = who_i_am(&self.name, kept);
             kept.list.apply(&op);
             owed_more(kept, vec![op]);
             let kept = kept.clone();
@@ -663,10 +647,11 @@ impl Running {
             return Ok(());
         }
 
-        let stamp = self.clock.now(self.lists[at].device);
-        let member = self.lists[at].me.member;
         let kept = &mut self.lists[at];
-        let op = SharedOp::Left { member, stamp };
+        let op = SharedOp::Left {
+            member: kept.me.member,
+            stamp: kept.stamped(),
+        };
         kept.list.apply(&op);
         kept.leaving = true;
         kept.at = None;
@@ -720,7 +705,7 @@ impl Running {
         let kept = &mut self.lists[at];
         let mut doing = Doing {
             catalog: catalog.as_ref(),
-            clock: &mut self.clock,
+            clock: &mut kept.clock,
             device,
         };
 
@@ -771,7 +756,7 @@ impl Running {
             .map_err(Error::Catalog)?;
         let mut doing = Doing {
             catalog: catalog.as_ref(),
-            clock: &mut self.clock,
+            clock: &mut kept.clock,
             device,
         };
         kept.written = written_order(&rows, &written.entries, &mut doing)?;
@@ -1139,15 +1124,13 @@ impl Running {
         };
 
         let kept = &mut self.lists[at];
-        let mut changed = false;
-        for op in &ops {
-            if let Some(stamp) = stamp_of(op) {
-                self.clock.saw(stamp);
-            }
-            changed |= kept.list.apply(op);
-        }
 
-        Ok(changed)
+        Ok(heard_ops(
+            &mut kept.list,
+            &mut kept.clock,
+            &ops,
+            wall_nanos(),
+        ))
     }
 
     async fn pushed(
@@ -1422,8 +1405,9 @@ impl Running {
             return self.followed(at, &old_keys, &word).map(Reset::Overtaken);
         }
         if let Some(removing) = removing {
-            let stamp = self.clock.now(device);
-            self.lists[at].list.apply(&SharedOp::Left {
+            let kept = &mut self.lists[at];
+            let stamp = kept.stamped();
+            kept.list.apply(&SharedOp::Left {
                 member: removing,
                 stamp,
             });
@@ -1493,10 +1477,10 @@ impl Running {
             .map(|(member, _)| member)
             .filter(|member| !seated.contains(member))
             .collect();
-        let device = self.lists[at].device;
+        let kept = &mut self.lists[at];
         for member in left_out {
-            let stamp = self.clock.now(device);
-            self.lists[at].list.apply(&SharedOp::Left { member, stamp });
+            let stamp = kept.stamped();
+            kept.list.apply(&SharedOp::Left { member, stamp });
         }
 
         self.heard_it_closed(at, keys, earlier)?
@@ -1589,20 +1573,54 @@ fn held_of(lists: &[Kept]) -> Vec<HeldShare> {
         .collect()
 }
 
+fn who_i_am(name: &str, kept: &mut Kept) -> SharedOp {
+    let stamp = kept.stamped();
+
+    SharedOp::Member {
+        member: kept.me.member,
+        name: name.to_owned(),
+        public: kept.me.personal.public(),
+        stamp,
+    }
+}
+
 fn owed_more(kept: &mut Kept, ops: Vec<SharedOp>) {
     let seq = kept.owed.last().map_or(1, |(seq, _)| seq + 1);
     kept.owed.push((seq, ops));
 }
 
-const fn stamp_of(op: &SharedOp) -> Option<Stamp> {
+const fn stamp_of(op: &SharedOp) -> Stamp {
     match op {
         SharedOp::Added { stamp, .. }
         | SharedOp::Moved { stamp, .. }
         | SharedOp::Removed { stamp, .. }
         | SharedOp::Renamed { stamp, .. }
         | SharedOp::Member { stamp, .. }
-        | SharedOp::Left { stamp, .. } => Some(*stamp),
+        | SharedOp::Left { stamp, .. } => *stamp,
     }
+}
+
+const fn stamped_too_far_ahead(stamp: Stamp, wall: i64) -> bool {
+    stamp.nanos > wall.saturating_add(STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS)
+}
+
+fn heard_ops(list: &mut SharedList, clock: &mut Clock, ops: &[SharedOp], wall: i64) -> bool {
+    let mut changed = false;
+    for op in ops {
+        let stamp = stamp_of(op);
+        if stamped_too_far_ahead(stamp, wall) {
+            tracing::warn!(
+                nanos = stamp.nanos,
+                wall,
+                "a shared playlist's op stamped too far past the wall clock was passed over"
+            );
+            continue;
+        }
+        clock.saw(stamp);
+        changed |= list.apply(op);
+    }
+
+    changed
 }
 
 fn sealed_within(
@@ -1621,4 +1639,127 @@ fn sealed_within(
     let (first, second) = ops.split_at(ops.len() / 2);
     sealed_within(sealer, space, first, blobs)?;
     sealed_within(sealer, space, second, blobs)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::key::DEVICE_BYTES;
+
+    const AN_HOUR_NANOS: i64 = 60 * 60 * NANOS_A_SECOND;
+
+    fn device(of: u8) -> DeviceId {
+        DeviceId([of; DEVICE_BYTES])
+    }
+
+    fn a_list_of_one_song() -> SharedList {
+        let mut list = SharedList::default();
+        list.apply(&SharedOp::Added {
+            entry: EntryId([1; 16]),
+            recording: Recording {
+                mbid: None,
+                title: "One".to_owned(),
+                artist: "Ada".to_owned(),
+                album: "Album".to_owned(),
+                length: Some(Duration::from_secs(200)),
+            },
+            place: Place(vec![10]),
+            by: None,
+            stamp: Stamp {
+                nanos: 1,
+                device: device(1),
+            },
+        });
+
+        list
+    }
+
+    fn moved_to(place: u8, stamp: Stamp) -> SharedOp {
+        SharedOp::Moved {
+            entry: EntryId([1; 16]),
+            place: Place(vec![place]),
+            stamp,
+        }
+    }
+
+    fn place_of_the_song(list: &SharedList) -> Vec<u8> {
+        list.rows()
+            .first()
+            .map(|row| row.place.0.clone())
+            .expect("a row")
+    }
+
+    #[test]
+    fn a_stamp_far_past_the_wall_clock_is_refused_and_later_moves_still_land() {
+        let wall = wall_nanos();
+        let mut list = a_list_of_one_song();
+        let mut clock = Clock::from_last(0);
+        let hostile = moved_to(
+            99,
+            Stamp {
+                nanos: i64::MAX,
+                device: device(2),
+            },
+        );
+
+        let changed = heard_ops(&mut list, &mut clock, &[hostile], wall);
+        let first = moved_to(20, clock.now(device(1)));
+        list.apply(&first);
+        let second = moved_to(30, clock.now(device(1)));
+        list.apply(&second);
+
+        assert!(!changed);
+        assert!(clock.last() < i64::MAX);
+        assert_eq!(place_of_the_song(&list), [30]);
+    }
+
+    #[test]
+    fn a_stamp_within_a_day_ahead_is_taken_and_moves_only_its_own_lists_clock() {
+        let wall = wall_nanos();
+        let ahead = wall + AN_HOUR_NANOS;
+        let mut heard_ahead = a_list_of_one_song();
+        let mut its_clock = Clock::from_last(0);
+        let mut another_clock = Clock::from_last(0);
+        let from_a_clock_running_fast = moved_to(
+            40,
+            Stamp {
+                nanos: ahead,
+                device: device(2),
+            },
+        );
+
+        let changed = heard_ops(
+            &mut heard_ahead,
+            &mut its_clock,
+            &[from_a_clock_running_fast],
+            wall,
+        );
+        let next_here = its_clock.now(device(1));
+        let next_elsewhere = another_clock.now(device(1));
+
+        assert!(changed);
+        assert_eq!(place_of_the_song(&heard_ahead), [40]);
+        assert!(next_here.nanos > ahead);
+        assert!(next_elsewhere.nanos < ahead);
+    }
+
+    #[test]
+    fn a_day_ahead_is_the_furthest_a_stamp_is_believed() {
+        let wall = 5 * AN_HOUR_NANOS;
+        let at = |nanos| Stamp {
+            nanos,
+            device: device(1),
+        };
+
+        assert!(!stamped_too_far_ahead(
+            at(wall + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS),
+            wall
+        ));
+        assert!(stamped_too_far_ahead(
+            at(wall + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS + 1),
+            wall
+        ));
+    }
 }

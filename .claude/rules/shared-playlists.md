@@ -83,7 +83,14 @@ A member's key never changes honestly (a listener's devices share one `Me` per l
 `Change::Share`), and an id is random, not derived from the key, so the rule needs no stored change.
 An all-zero key is no key: a snapshot writes it for someone heard only leaving, and the key they join
 with is taken after it
-(`someone_heard_leaving_before_joining_takes_the_key_they_join_with_and_a_snapshot_keeps_none`). Two
+(`someone_heard_leaving_before_joining_takes_the_key_they_join_with_and_a_snapshot_keeps_none`). **A stamp is believed at most a day past the wall clock, and every list keeps its own clock**:
+`heard_ops` passes over an op stamped past `STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS` as it is heard,
+and stamps what this device writes from the list's own `Clock` (`Kept::stamped`, started afresh with
+each run as the one shared clock was). One op stamped near `i64::MAX` would otherwise hold the clock
+there, so a second move or rename of a row compared equal to the first and was dropped, in every list
+the service held
+(`a_stamp_far_past_the_wall_clock_is_refused_and_later_moves_still_land`,
+`a_stamp_within_a_day_ahead_is_taken_and_moves_only_its_own_lists_clock`). Two
 people adding at one spot both keep their song, ordered by entry id. A snapshot is the state as ops, so
 compaction needs no second format; an op of a later build is passed over. **A list shows at most
 `ROWS_AT_MOST` (10 000) rows**, the first by place and entry id after the fold, so a stranger's
