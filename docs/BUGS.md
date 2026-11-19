@@ -19,12 +19,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · blocked: design] A host on the network may take several addresses and so pass the media server's
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
-## Sync and together
-- [S · 0.14.1] A host whose playing song's file moves makes every guest start that song again: the
-  host's rows are named by the stamp of their location, and after `Command::Relocate` the host tells
-  `Now` under the new stamp, which no guest's `rows` holds, so each finds and takes the song up anew,
-  a short gap; the hosting loop should tell the moved row under the stamp the room already knows
-  (`followed_the_moves` rewrites a guest's rows, not what a host says)
 
 ## Catalog
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
