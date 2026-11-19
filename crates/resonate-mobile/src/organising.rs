@@ -2,18 +2,18 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     num::NonZeroU32,
     path::{Component, Path},
+    time::Duration,
 };
 
-use resonate_core::ZoneId;
-use resonate_engine::{Command, PlaybackState, Player};
+use resonate_core::{MediaLocation, ZoneId};
+use resonate_engine::Command;
 use resonate_library::{DEFAULT_LAYOUT, Layout, Named, Naming};
 use rusqlite::{OptionalExtension, params};
 
 use crate::{
     Error, MobilePlayer, Result, StoreOp, Track,
     catalog::read,
-    documents::document_uri,
-    place_saved,
+    documents::location,
     vanished::{Vacated, referring_tables, vacated},
 };
 
@@ -22,6 +22,7 @@ const CONTENT_SCHEME: &str = "content:";
 const ENCODED_FOLDER_END: &str = "%2F";
 const EXTENSION_STARTS: char = '.';
 const YEAR_DIGITS: usize = 4;
+const MOVES_FOLLOWED_WITHIN: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct FiledSong {
@@ -80,45 +81,36 @@ impl MobilePlayer {
         if moved.is_empty() {
             return Ok(());
         }
-        let requeued = self
-            .playing
-            .listed()
-            .into_iter()
-            .filter(|zone| {
-                let queued = self.queued_ids(&zone.player);
-                moved.iter().any(|document| queued.contains(&document.id))
-            })
-            .filter(|zone| {
-                let state = zone.player.state();
-                let queue = zone.player.queued();
-                place_saved(following(zone.id), &state, &queue.rows, queue.revision).is_some()
-            })
-            .map(|zone| {
-                let playback = zone.player.state().playback;
-                let sounding =
-                    matches!(playback, PlaybackState::Playing | PlaybackState::Buffering);
-                (zone.id, sounding)
-            })
-            .collect::<Vec<_>>();
-        if !requeued.is_empty() {
-            self.save_while(&following)?;
-        }
+        let rekeyed = self.catalog.rekeyed(&moved)?;
 
-        let handed_over = self.catalog.rekeyed(&moved)?;
         let mut analyses = self.services.analyses.lock();
-        for old in handed_over {
-            analyses.remove(&old);
+        for old in &rekeyed.handed_over {
+            analyses.remove(old);
         }
         drop(analyses);
 
-        for (zone, sounding) in requeued {
-            *self.playing.zoned(zone)?.saved.lock() = None;
-            self.resume_saved_in(zone)?;
-            if sounding {
-                self.playing.send_to(zone, Command::Play)?;
-            }
+        if !rekeyed.relocated.is_empty() {
+            self.relocated_in_every_zone(&rekeyed.relocated, &following)?;
         }
-        Ok(())
+        self.save_while(&following)
+    }
+
+    fn relocated_in_every_zone(
+        &self,
+        relocated: &[(MediaLocation, MediaLocation)],
+        following: impl Fn(ZoneId) -> bool,
+    ) -> Result<()> {
+        let asked: Vec<_> = self
+            .playing
+            .listed()
+            .into_iter()
+            .filter(|zone| !following(zone.id))
+            .map(|zone| zone.player.request(Command::Relocate(relocated.to_vec())))
+            .collect();
+        Ok(asked
+            .into_iter()
+            .map(|sent| sent.and_then(|outcome| outcome.wait_for(MOVES_FOLLOWED_WITHIN)))
+            .fold(Ok(()), resonate_engine::Result::and)?)
     }
 
     fn songs_within(&self, within: &str) -> Result<Vec<Track>> {
@@ -134,28 +126,31 @@ impl MobilePlayer {
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|source| Error::store(StoreOp::Read, source))
     }
+}
 
-    fn queued_ids(&self, player: &Player) -> BTreeSet<u64> {
-        player
-            .queued()
-            .rows
-            .iter()
-            .filter_map(|item| document_uri(&item.location).ok())
-            .filter_map(|uri| self.catalog.track_uri(&uri).ok())
-            .map(|track| track.id)
-            .collect()
-    }
+#[derive(Default)]
+struct Rekeyed {
+    handed_over: Vec<u64>,
+    relocated: Vec<(MediaLocation, MediaLocation)>,
 }
 
 impl crate::catalog::Catalog {
-    fn rekeyed(&self, moved: &[MovedDocument]) -> Result<Vec<u64>> {
+    fn rekeyed(&self, moved: &[MovedDocument]) -> Result<Rekeyed> {
         let mut connection = self.0.lock();
         let referring = referring_tables(&connection)?;
         let transaction = connection
             .transaction()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        let mut handed_over = Vec::new();
+        let mut rekeyed = Rekeyed::default();
         for document in moved {
+            let left = transaction
+                .query_row(
+                    "SELECT uri FROM documents WHERE id = ?1",
+                    [document.id as i64],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Read, source))?;
             let holder = transaction
                 .query_row(
                     "SELECT id FROM documents WHERE uri = ?2 AND id != ?1",
@@ -168,7 +163,7 @@ impl crate::catalog::Catalog {
                 && let Vacated::HandedOver(old) =
                     vacated(&transaction, &referring, holder, document.id as i64)?
             {
-                handed_over.push(old);
+                rekeyed.handed_over.push(old);
             }
             transaction
                 .execute(
@@ -176,11 +171,17 @@ impl crate::catalog::Catalog {
                     params![document.id as i64, document.uri],
                 )
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
+            if let Some(left) = left
+                && left != document.uri
+                && let (Ok(from), Ok(to)) = (location(&left), location(&document.uri))
+            {
+                rekeyed.relocated.push((from, to));
+            }
         }
         transaction
             .commit()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        Ok(handed_over)
+        Ok(rekeyed)
     }
 }
 
@@ -484,7 +485,7 @@ mod tests {
             }])
             .expect("rekeyed");
 
-        assert!(handed.is_empty());
+        assert!(handed.handed_over.is_empty());
         assert_eq!(catalog.track(moving.id).expect("the song").uri, gone.uri);
         assert!(catalog.track(gone.id).is_ok());
         assert!(
@@ -515,7 +516,7 @@ mod tests {
             }])
             .expect("rekeyed");
 
-        assert_eq!(handed, [gone.id]);
+        assert_eq!(handed.handed_over, [gone.id]);
         assert!(catalog.track(gone.id).is_err());
         let song = catalog.track(moving.id).expect("the song");
         assert_eq!(song.uri, gone.uri);
@@ -527,10 +528,14 @@ mod tests {
     mod through_the_queue {
         use std::fs;
 
-        use resonate_engine::PlayerState;
+        use resonate_engine::{PlaybackState, PlayerState};
 
         use super::*;
-        use crate::harness::{FOLDER, Harness};
+        use crate::{
+            documents::document_uri,
+            harness::{FOLDER, Harness},
+            place_saved,
+        };
 
         fn moved(harness: &Harness, name: char, to: &str) -> MovedDocument {
             let song = harness.song(name);
@@ -676,6 +681,78 @@ mod tests {
                 )
                 .is_some()
             );
+        }
+
+        #[test]
+        fn a_zone_opening_a_row_as_its_songs_move_plays_them_where_they_went_and_saves_them() {
+            let harness = Harness::new();
+            let player = harness.player.playing.player().expect("an open player");
+            let ids = harness.ids("abcd");
+            let opening = || {
+                let state = player.state();
+                let queue = player.queued();
+                queue.rows.len() == ids.len()
+                    && place_saved(false, &state, &queue.rows, queue.revision).is_none()
+            };
+
+            harness.hold_opens();
+            harness
+                .player
+                .load(ids.clone(), 1, true)
+                .expect("a queue loaded");
+            settled_on(opening, "the zone never began opening its row");
+
+            let opened = moved(&harness, 'b', "e.wav");
+            let later = moved(&harness, 'c', "f.wav");
+            harness
+                .player
+                .documents_moved(vec![opened, later])
+                .expect("documents moved");
+            harness.let_opens_through();
+            let heard = harness.settled(|snapshot| snapshot.current.is_some());
+            player
+                .request(Command::Stop)
+                .expect("a stop sent")
+                .wait_for(crate::harness::SETTLED_WITHIN)
+                .expect("stopped");
+            harness.player.save().expect("saved");
+
+            let landed: Vec<String> = player
+                .queued()
+                .rows
+                .iter()
+                .map(|row| document_uri(&row.location).expect("a document"))
+                .collect();
+            let (kept, _) = harness
+                .player
+                .catalog
+                .resume_rows_of(ZoneId::FIRST)
+                .expect("the kept queue");
+            let kept: Vec<u64> = kept
+                .rows
+                .iter()
+                .filter_map(|laid| match laid.row {
+                    crate::catalog::KeptRow::Document(id) => Some(id),
+                    crate::catalog::KeptRow::Served(_) => None,
+                })
+                .collect();
+
+            assert_eq!(heard.queue_index, 1);
+            assert_eq!(heard.current.map(|song| song.id), Some(ids[1]));
+            assert_eq!(
+                landed,
+                ["a.wav", "e.wav", "f.wav", "d.wav"].map(|name| format!("{FOLDER}{name}"))
+            );
+            assert_eq!(harness.queued(), "abcd");
+            assert_eq!(kept, ids);
+        }
+
+        fn settled_on(until: impl Fn() -> bool, never: &str) {
+            let began = std::time::Instant::now();
+            while !until() {
+                assert!(began.elapsed() < crate::harness::SETTLED_WITHIN, "{never}");
+                std::thread::sleep(crate::harness::LOOKED_AGAIN_AFTER);
+            }
         }
 
         #[test]

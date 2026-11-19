@@ -8,7 +8,7 @@ use std::{
     process,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -49,14 +49,27 @@ pub(crate) const FOLDER: &str = "content://test/";
 pub(crate) const SONGS: [&str; 4] = ["a", "b", "c", "d"];
 const LOOPBACK: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
-pub(crate) struct Folder(PathBuf);
+pub(crate) struct Folder {
+    root: PathBuf,
+    opens_held: Arc<AtomicBool>,
+}
+
+impl Folder {
+    fn wait_while_opens_are_held(&self) {
+        let began = Instant::now();
+        while self.opens_held.load(Ordering::Acquire) && began.elapsed() < SETTLED_WITHIN {
+            thread::sleep(LOOKED_AGAIN_AFTER);
+        }
+    }
+}
 
 impl Documents for Folder {
     fn open_document(&self, uri: String) -> i32 {
         let Some(name) = uri.strip_prefix(FOLDER) else {
             return DOCUMENT_REFUSED;
         };
-        match File::open(self.0.join(name)) {
+        self.wait_while_opens_are_held();
+        match File::open(self.root.join(name)) {
             Ok(file) => file.into_raw_fd(),
             Err(error) if error.kind() == ErrorKind::NotFound => DOCUMENT_NOT_FOUND,
             Err(_) => DOCUMENT_REFUSED,
@@ -197,10 +210,12 @@ pub(crate) struct Harness {
     pub(crate) songs: Vec<Track>,
     pub(crate) folder: PathBuf,
     pub(crate) told: UdpSocket,
+    opens_held: Arc<AtomicBool>,
 }
 
 impl Drop for Harness {
     fn drop(&mut self) {
+        self.let_opens_through();
         self.player.offered.leave();
         if let Some(zones) = self.player.playing.take() {
             let _ = crate::zoning::shut_down(zones);
@@ -241,7 +256,11 @@ impl Harness {
             fs::write(folder.join(format!("{name}.wav")), silence()).expect("a song");
         }
 
-        let documents: Arc<dyn Documents> = Arc::new(Folder(folder.clone()));
+        let opens_held = Arc::new(AtomicBool::new(false));
+        let documents: Arc<dyn Documents> = Arc::new(Folder {
+            root: folder.clone(),
+            opens_held: Arc::clone(&opens_held),
+        });
         let served = crate::served::Served::default();
         let files = Arc::clone(&documents);
         let sources = Arc::new(served.sources(Sources::local().and(Arc::new(
@@ -311,7 +330,16 @@ impl Harness {
             songs,
             folder,
             told,
+            opens_held,
         }
+    }
+
+    pub(crate) fn hold_opens(&self) {
+        self.opens_held.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn let_opens_through(&self) {
+        self.opens_held.store(false, Ordering::Release);
     }
 
     pub(crate) fn ids(&self, names: &str) -> Vec<u64> {

@@ -850,7 +850,7 @@ forgetting and handing over songs reach it as they reach `queue`). The first zon
 `save` saves every zone; `MobilePlayer::new` resumes the first zone, then opens each kept zone at the
 system's device with its kept queue paused and at its kept volume (`restore_zones`); the front end
 binds a kept route to the device it now names (`select_zone_output`). A song gone or deleted leaves every zone's queue
-(`drop_from_queue`, every run of its rows in one `Command::RemoveAll`, asked again where the queue moved meanwhile), and `documents_moved` saves and resumes each zone holding a moved song, except one `place_saved` declines (a party followed, a row still opening), which keeps its live queue. One
+(`drop_from_queue`, every run of its rows in one `Command::RemoveAll`, asked again where the queue moved meanwhile), and `documents_moved` sends `Command::Relocate` to every zone but one a party is followed in, whatever its state (a row still opening included), then saves (`android.md`). One
 `resonate-watch` thread follows each zone's events, counting that zone's listening and telling the
 watch (`watching::keep(player, zone)`; it ends when the zone's engine goes)
 (`a_zone_added_keeps_a_queue_of_its_own_and_every_call_follows_the_zone_shown`,

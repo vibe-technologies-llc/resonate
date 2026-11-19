@@ -1131,10 +1131,17 @@ given, title, the year off the date's first four digits, disc, the album's disc 
 the file name's extension) under `Naming::Anything`. A song rendering nothing is `unplaced`, one
 already at its place `unchanged`, one whose place another song stands at or claimed first `taken`;
 the rest are `FiledSong`s (id, URI, the path's components). The front end moves each file and
-reports the new URIs in one `documents_moved`: where any moved song is in the queue it saves the
-queue first (by the old URIs, which the catalog still names), rewrites every moved row's URI in one
-transaction (ids, and with them favourites, plays, playlists and lyrics, stay), then resumes the
-saved queue at its row and position, playing again where it was playing or buffering. A zone whose save is declined (`place_saved`: a party followed, a row still opening) is left as it is, so a guest is never put back on its pre-party queue (`a_moved_song_in_a_queue_a_party_is_followed_through_leaves_the_live_queue_alone`). A destination another row
+reports the new URIs in one `documents_moved`: it rewrites every moved row's URI in one
+transaction (ids, and with them favourites, plays, playlists and lyrics, stay; `Rekeyed` answers
+each old and new location), then sends `Command::Relocate` with those pairs to every zone and waits
+for each, as the desktop's library sends it `Within::EveryZone`, and saves. The engine carries its
+own rows along (`Engine::follow_the_moves`: the queue, the playing track, a row still opening and the
+one opened ahead), so a playing zone plays on and a zone opening a row opens it where the file went,
+and the save that follows names every moved row by its new URI
+(`a_zone_opening_a_row_as_its_songs_move_plays_them_where_they_went_and_saves_them`). A zone a
+party is followed in is passed over, its live queue left as the host laid it, since the party reads a
+row by the stamp of its location
+(`a_moved_song_in_a_queue_a_party_is_followed_through_leaves_the_live_queue_alone`). A destination another row
 still holds (the front end refuses a file that exists, so that row's file is gone) never fails the
 batch: where it names the same song as the moved one its history is handed over and it is deleted
 (`take_the_place_of_missing`'s merge), else it stays hidden under a `resonate-displaced:<id>` URI no
