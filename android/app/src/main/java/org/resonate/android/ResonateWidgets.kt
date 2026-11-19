@@ -17,7 +17,9 @@ import android.graphics.Shader
 import android.os.Bundle
 import android.util.Base64
 import android.util.Log
+import android.view.KeyEvent
 import android.widget.RemoteViews
+import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -51,7 +53,7 @@ open class ResonatePlayerWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (intent.action in ResonateWidgets.actions) {
+        if (intent.action in WidgetPresses.actions) {
             ResonateWidgets.control(
                 context.applicationContext,
                 requireNotNull(intent.action),
@@ -65,10 +67,6 @@ open class ResonatePlayerWidgetProvider : AppWidgetProvider() {
 
 @UnstableApi
 object ResonateWidgets {
-    const val TOGGLE = "org.resonate.android.widget.TOGGLE"
-    const val PREVIOUS = "org.resonate.android.widget.PREVIOUS"
-    const val NEXT = "org.resonate.android.widget.NEXT"
-    val actions = setOf(TOGGLE, PREVIOUS, NEXT)
     private const val ARTWORK_EDGE_AT_MOST = 512
     private val scope =
         CoroutineScope(
@@ -162,7 +160,30 @@ object ResonateWidgets {
             null
         }
 
+    private fun playPress(context: Context): Intent =
+        Intent(Intent.ACTION_MEDIA_BUTTON)
+            .setClass(context, PlaybackService::class.java)
+            .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+
+    private fun startedToPlay(context: Context, result: BroadcastReceiver.PendingResult) {
+        try {
+            ContextCompat.startForegroundService(context, playPress(context))
+            result.finish()
+        } catch (refused: IllegalStateException) {
+            Log.w("ResonateWidgets", "Start the playback service", refused)
+            refresh(context, result)
+        }
+    }
+
     fun control(context: Context, action: String, result: BroadcastReceiver.PendingResult) {
+        when (WidgetPresses.pressed(action, PlaybackService.running)) {
+            WidgetPress.CONTROLLED -> controlled(context, action, result)
+            WidgetPress.STARTED -> startedToPlay(context, result)
+            WidgetPress.UNHEARD -> result.finish()
+        }
+    }
+
+    private fun controlled(context: Context, action: String, result: BroadcastReceiver.PendingResult) {
         scope.launch {
             val connection =
                 MediaController.Builder(
@@ -173,14 +194,14 @@ object ResonateWidgets {
             try {
                 val controller = withContext(Dispatchers.IO) { connection.get(8, TimeUnit.SECONDS) }
                 when (action) {
-                    TOGGLE ->
+                    WidgetPresses.TOGGLE ->
                         if (controller.playWhenReady) controller.pause()
                         else {
                             controller.prepare()
                             controller.play()
                         }
-                    PREVIOUS -> controller.seekToPrevious()
-                    NEXT -> controller.seekToNext()
+                    WidgetPresses.PREVIOUS -> controller.seekToPrevious()
+                    WidgetPresses.NEXT -> controller.seekToNext()
                 }
             } catch (failure: java.util.concurrent.ExecutionException) {
                 Log.w("ResonateWidgets", "Connect playback session", failure)
@@ -255,23 +276,31 @@ object ResonateWidgets {
             )
             for ((id, action) in
                 listOf(
-                    R.id.widget_prev to PREVIOUS,
-                    R.id.widget_play_pause to TOGGLE,
-                    R.id.widget_next to NEXT,
+                    R.id.widget_prev to WidgetPresses.PREVIOUS,
+                    R.id.widget_play_pause to WidgetPresses.TOGGLE,
+                    R.id.widget_next to WidgetPresses.NEXT,
                 )) {
-                views.setOnClickPendingIntent(
-                    id,
-                    PendingIntent.getBroadcast(
-                        context,
-                        id,
-                        Intent(context, ResonatePlayerWidgetProvider::class.java).setAction(action),
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                    ),
-                )
+                views.setOnClickPendingIntent(id, pressOf(context, id, action, song.playing))
             }
             manager.updateAppWidget(ids, views)
         }
     }
+
+    private fun pressOf(context: Context, id: Int, action: String, playing: Boolean): PendingIntent =
+        if (action == WidgetPresses.TOGGLE && WidgetPresses.playStartsTheService(playing))
+            PendingIntent.getForegroundService(
+                context,
+                id,
+                playPress(context),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+        else
+            PendingIntent.getBroadcast(
+                context,
+                id,
+                Intent(context, ResonatePlayerWidgetProvider::class.java).setAction(action),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
 
     private fun decoded(bytes: ByteArray): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

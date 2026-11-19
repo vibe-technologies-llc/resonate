@@ -227,6 +227,7 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        running = true
         setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
         val library = (application as ResonateApplication).library
         library.retain()
@@ -316,6 +317,12 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? =
+    companion object {
+        @Volatile
+        var running = false
+            private set
+    }
+
         session
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -326,6 +333,7 @@ class PlaybackService : MediaLibraryService() {
     override fun onDestroy() {
         scope.cancel()
         session?.release()
+        running = false
         player?.release()
         session = null
         super.onDestroy()

@@ -50,9 +50,16 @@ answers a `Result`. Each screen has a ViewModel (`resonateViewModel`, scoped to 
 entry) exposing typed `StateFlow`s; no screen reads an untyped map or names an action by string.
 Kotlin retains SAF, encrypted accounts, workers, Media3 and services.
 Compact and album home-screen widgets use RemoteViews with rounded,
-artwork-tinted surfaces and system light/dark colors. Explicit, immutable PendingIntents send
-transport actions through a short-lived Media3 controller, preserving audio focus and the
-service lifecycle. Metadata and the bounded session thumbnail are kept in app preferences for
+artwork-tinted surfaces and system light/dark colors. A play drawn while nothing plays is an
+explicit, immutable foreground-service PendingIntent carrying the headset's `KEYCODE_MEDIA_PLAY` to
+`PlaybackService` (`WidgetPresses.playStartsTheService`), so the service starts in the foreground and
+resumes the saved queue through `onPlaybackResumption` as a headset's play does, after the task was
+swiped away or the process ended. Every other press is a broadcast the provider sends through a
+short-lived Media3 controller only while `PlaybackService.running`, the service being held by
+something other than that controller; with no service a stale pause starts it to play the same way,
+and a previous or next is dropped rather than binding a service only to let it go mid-resumption
+(`WidgetPresses.pressed`, `WidgetPressesTest`), as Media3's `MediaButtonReceiver` drops every key
+but play on a service that is gone. Metadata and the bounded session thumbnail are kept in app preferences for
 launcher refresh after process death; that fallback is paused until a live session publishes.
 Widget updates deduplicate metadata, artwork and playing state instead of sending polling ticks
 to the launcher; a drawing that fails (a launcher refusing the views, a cover too big for memory, the
