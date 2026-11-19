@@ -27,21 +27,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   or a sheet; each should be `words.string(R.string.…)` as `OpenedFiles` does
 
 ## Security
-- [S · 0.14.1] The scan overwrites or truncates whatever a planted whole copy names: every folder
-  walked passes its entries through `mend_a_cut_short_write` (`scan.rs`'s
-  `mend_what_dead_writers_left`), and a `.<name>.<pid>-<n>.resonate-whole` left untouched for 10 s
-  with no `RSSTOOD1` record is `Record::Absent`, which `finished_writing_back` lays over
-  `folder.join(name)` with no `Stood::standing` check (`written_back_over` with `None`), opened
-  following symlinks; an empty copy truncates the track to nothing, and one beside a symlink writes
-  through it (an extracted archive carries both), then the copy is deleted; `library.md` holds that
-  a dead writer's copy is finished only over a track still between the two lengths, so `Absent`
-  should write nothing and the track should be opened without following a link
-- [S · 0.14.1] Mending beside a track has none of the spool's guards: under the spool a journal or
-  whole copy this user does not own, or a link, is passed over (`journal.rs`), but beside the track
-  (on every write and every scan) neither is checked, and `rolled_back` opens the track a
-  journal names for writing, following links, so in a shared folder another account's planted
-  `.resonate-undo` whose `after` matches a page of a file writes its `before` bytes into it on this
-  account's scan
 - [M · blocked: design] A device that joins a shared playlist after a hostile editor compacted it
   takes the forged member keys from the snapshot: the first key heard for a `MemberId` stands, so
   devices that already held the list keep the true keys, but a newcomer's first is the forger's, and
