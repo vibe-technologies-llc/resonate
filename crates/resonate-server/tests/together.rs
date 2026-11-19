@@ -1404,6 +1404,7 @@ struct FakeSeat {
     hosting: bool,
     row: Arc<Mutex<Option<u64>>>,
     next: Arc<Mutex<Vec<u64>>>,
+    moves: Arc<Mutex<Vec<(u64, u64)>>>,
     began: u64,
 }
 
@@ -1436,7 +1437,7 @@ impl PartySeat for FakeSeat {
     fn songs_up_next(&self) -> (Option<PartySong>, Vec<PartySong>) {
         if self.hosting {
             return (
-                Some(a_song(1)),
+                self.row.lock().map(a_song),
                 self.next.lock().iter().copied().map(a_song).collect(),
             );
         }
@@ -1455,7 +1456,7 @@ impl PartySeat for FakeSeat {
     }
 
     fn moved(&self) -> Vec<(u64, u64)> {
-        Vec::new()
+        std::mem::take(&mut *self.moves.lock())
     }
 
     fn added_here(&self, _known: &[u64]) -> Vec<PartySong> {
@@ -1519,6 +1520,7 @@ async fn a_guest_takes_up_what_the_host_plays_as_far_as_it_holds_and_puts_its_qu
         hosting: true,
         row: Arc::new(Mutex::new(Some(1))),
         next: Arc::new(Mutex::new(vec![2])),
+        moves: Arc::default(),
     };
     let _hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(2))).expect("the host's seat");
 
@@ -1532,6 +1534,7 @@ async fn a_guest_takes_up_what_the_host_plays_as_far_as_it_holds_and_puts_its_qu
         hosting: false,
         row: Arc::new(Mutex::new(None)),
         next: Arc::new(Mutex::new(vec![2])),
+        moves: Arc::default(),
     };
     let guest = Party::join(guest_settings, &code).expect("the guest joins");
     let mut going =
@@ -1570,6 +1573,7 @@ async fn a_guest_holding_nothing_sits_out_and_is_not_moved() {
         hosting: true,
         row: Arc::new(Mutex::new(Some(1))),
         next: Arc::new(Mutex::new(vec![2])),
+        moves: Arc::default(),
     };
     let _hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(2))).expect("the host's seat");
 
@@ -1583,6 +1587,7 @@ async fn a_guest_holding_nothing_sits_out_and_is_not_moved() {
         hosting: false,
         row: Arc::new(Mutex::new(None)),
         next: Arc::new(Mutex::new(vec![2])),
+        moves: Arc::default(),
     };
     let guest = Party::join(guest_settings, &code).expect("the guest joins");
     let going = Going::begin(guest, guest_seat, Arc::new(HeldOnly(0))).expect("the guest's seat");
@@ -1610,6 +1615,7 @@ async fn a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_a
         hosting: true,
         row: Arc::new(Mutex::new(Some(1))),
         next: Arc::clone(&host_next),
+        moves: Arc::default(),
     };
     let _hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(9))).expect("the host's seat");
 
@@ -1623,6 +1629,7 @@ async fn a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_a
         hosting: false,
         row: Arc::new(Mutex::new(None)),
         next: Arc::new(Mutex::new(Vec::new())),
+        moves: Arc::default(),
     };
     let guest = Party::join(guest_settings, &code).expect("the guest joins");
     let _going = Going::begin(guest, guest_seat, Arc::new(HeldOnly(9))).expect("the guest's seat");
@@ -1652,6 +1659,74 @@ async fn a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_a
         taken.len(),
         1,
         "the song playing was never taken up again: {taken:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_host_whose_song_moves_goes_on_naming_it_as_the_party_knows_it_and_no_guest_takes_it_up_again()
+ {
+    let server = hosted(Limits::default()).await;
+    let host_row = Arc::new(Mutex::new(Some(1)));
+    let host_moves = Arc::new(Mutex::new(Vec::new()));
+    let host_settings = party_settings(server, "Host");
+    let host_now = Arc::clone(&host_settings.now_nanos);
+    let host = Party::host(host_settings).expect("the host starts");
+    let code = host.shown().code;
+    let host_seat = FakeSeat {
+        began: host_now(),
+        now_nanos: Arc::clone(&host_now),
+        told: Told::default(),
+        hosting: true,
+        row: Arc::clone(&host_row),
+        next: Arc::new(Mutex::new(vec![2])),
+        moves: Arc::clone(&host_moves),
+    };
+    let hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(9_999))).expect("the host's seat");
+
+    let guest_settings = party_settings(server, "Guest");
+    let guest_now = Arc::clone(&guest_settings.now_nanos);
+    let told = Told::default();
+    let guest_seat = FakeSeat {
+        began: guest_now(),
+        now_nanos: guest_now,
+        told: told.clone(),
+        hosting: false,
+        row: Arc::new(Mutex::new(None)),
+        next: Arc::new(Mutex::new(Vec::new())),
+        moves: Arc::default(),
+    };
+    let guest = Party::join(guest_settings, &code).expect("the guest joins");
+    let going =
+        Going::begin(guest, guest_seat, Arc::new(HeldOnly(9_999))).expect("the guest's seat");
+    until("the guest to stand in step", || {
+        going.followed().standing == Standing::InStep
+    })
+    .await;
+
+    host_moves.lock().push((1, 5_001));
+    *host_row.lock() = Some(5_001);
+    until("the host to take the move", || host_moves.lock().is_empty()).await;
+    let moved_by = hosted
+        .party()
+        .to_server(host_now())
+        .expect("the host reads the party's clock");
+    until("the guest to hear the host after the move", || {
+        going
+            .shown()
+            .now
+            .is_some_and(|now| now.anchor_nanos > moved_by)
+    })
+    .await;
+    let heard = going.shown().now.expect("the guest heard the host");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    assert_eq!(heard.song.map(|song| song.row), Some(1));
+    assert_eq!(going.followed().standing, Standing::InStep);
+    let taken = told.taken_up.lock().clone();
+    assert_eq!(
+        taken.len(),
+        1,
+        "the song whose file moved was taken up again: {taken:?}"
     );
 }
 
@@ -1844,6 +1919,7 @@ async fn a_guest_taking_the_party_over_plays_on_under_the_rows_everyone_already_
         hosting: true,
         row: Arc::new(Mutex::new(Some(1))),
         next: Arc::new(Mutex::new(vec![2, 3])),
+        moves: Arc::default(),
     });
     let code = host.shown().code;
     let mut hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(3))).expect("the host's seat");
@@ -1858,6 +1934,7 @@ async fn a_guest_taking_the_party_over_plays_on_under_the_rows_everyone_already_
         hosting: false,
         row: Arc::new(Mutex::new(None)),
         next: Arc::new(Mutex::new(Vec::new())),
+        moves: Arc::default(),
     };
     let ada = Party::join(ada_settings, &code).expect("Ada joins");
     let mut going = Going::begin(ada, ada_seat, Arc::new(HeldOnly(3))).expect("Ada's seat");

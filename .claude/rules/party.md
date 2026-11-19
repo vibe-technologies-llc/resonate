@@ -188,6 +188,13 @@ where its files went
 (`a_row_whose_file_moves_is_known_where_it_went_and_never_asked_of_the_host`,
 `a_guest_whose_song_moves_keeps_it_where_it_went_and_asks_the_host_nothing`,
 `a_seat_tells_the_rows_moved_under_it_and_puts_back_its_own_queue_where_the_files_went`).
+**The host's own moved song keeps the name the room knows**: the hosting loop takes the same moves
+each look before it reads what is up next (`named_as_first_told`), mapping each moved row's new stamp
+to the one the party first heard (a row already mapped, as a handover's rows are to the old host's,
+keeps its first name), for the life of the party, so `Now` and `next` name the row as before and no
+guest takes the song up again
+(`a_host_whose_song_moves_goes_on_naming_it_as_the_party_knows_it_and_no_guest_takes_it_up_again`,
+`a_guest_that_took_the_party_over_names_a_moved_row_by_the_old_hosts_row`).
 
 ## The room
 

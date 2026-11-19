@@ -194,6 +194,16 @@ fn followed_the_moves<S: PartySeat>(seat: &S, rows: &mut [(u64, u64)], heard: &m
     heard.row = heard.row.map(|row| landed(row, &moved));
 }
 
+fn named_as_first_told(rows: &mut Vec<(u64, u64)>, moved: &[(u64, u64)]) {
+    for &(from, to) in moved {
+        if let Some(row) = rows.iter_mut().find(|(stamp, _)| *stamp == from) {
+            row.0 = to;
+        } else if !rows.iter().any(|(stamp, _)| *stamp == to) {
+            rows.push((to, from));
+        }
+    }
+}
+
 fn nanos_of(duration: Duration) -> u64 {
     u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
 }
@@ -272,8 +282,8 @@ fn hosted<S: PartySeat>(party: &Party, seat: &S, stop: &AtomicBool, mut rows: Ve
     while !stop.load(Ordering::Acquire) {
         thread::sleep(LOOK_EVERY);
 
-        let mut heard = seat.heard();
-        followed_the_moves(seat, &mut rows, &mut heard);
+        let heard = seat.heard();
+        named_as_first_told(&mut rows, &seat.moved());
         let Some(anchor) = party.to_server(heard.at_nanos) else {
             continue;
         };
@@ -921,5 +931,29 @@ mod tests {
         assert!(seat.asked_for.lock().is_empty());
         assert_eq!(*seat.queue.lock(), vec![5_001, 5_002]);
         assert_eq!(standing_on(&seat, &mut follow, &rows, 1), Standing::InStep);
+    }
+
+    #[test]
+    fn a_host_names_a_row_whose_file_moves_by_the_stamp_the_party_first_knew() {
+        let mut rows = Vec::new();
+
+        named_as_first_told(&mut rows, &[(1, 5_001), (1, 5_001)]);
+        named_as_first_told(&mut rows, &[(5_001, 6_001)]);
+
+        assert_eq!(rows, vec![(6_001, 1)]);
+        assert_eq!(as_the_party_knows(&rows, a_song(6_001)).row, 1);
+        assert_eq!(as_the_party_knows(&rows, a_song(2)).row, 2);
+    }
+
+    #[test]
+    fn a_guest_that_took_the_party_over_names_a_moved_row_by_the_old_hosts_row() {
+        let mut rows = vec![(1_001, 1), (1_002, 2)];
+
+        named_as_first_told(&mut rows, &[(1_001, 5_001), (3, 7_003)]);
+
+        assert_eq!(rows, vec![(5_001, 1), (1_002, 2), (7_003, 3)]);
+        assert_eq!(as_the_party_knows(&rows, a_song(5_001)).row, 1);
+        assert_eq!(as_the_party_knows(&rows, a_song(1_002)).row, 2);
+        assert_eq!(as_the_party_knows(&rows, a_song(7_003)).row, 3);
     }
 }
