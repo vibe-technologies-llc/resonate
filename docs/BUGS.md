@@ -20,11 +20,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Sync and together
-- [S · 0.14.1] A shared playlist a device folded before far-ahead stamps were refused still holds
-  them: `heard_ops` now drops an op stamped more than a day past the wall clock on arrival, but a
-  list kept in `shared/store.rs` (`Kept.list`) keeps the stamps it folded, so a row or name a hostile
-  editor stamped near `i64::MAX` still outranks every later move or rename there, as the ledger's
-  rows did before `STAMPS_PAST_THE_BOUND_ARE_RESTAMPED`
 - [S · 0.14.1] A song whose file moves while a party is followed is lost to the party: a guest's rows
   are known by a `QueueStamp` of their location, so on the desktop a `Command::Relocate` (organise,
   which reaches every zone) makes the moved row read as a song added here, and `added_here` takes it
