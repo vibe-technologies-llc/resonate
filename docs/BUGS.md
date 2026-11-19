@@ -50,11 +50,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
 
-## The window
-- [S · 0.14.1] A song fetched to play lands on the zone shown when the download arrives, not the one
-  it was asked on: `fetch_and_play` waits for the library model's arrival and then plays through the
-  zone shown, so turning to another zone while it downloads replaces that zone's queue; the zone
-  should travel with the download as `act_on_the_zone` carries it through a catalog read
 
 ## Formats
 - [S · 0.14.1] The vault keeps a 64-bit float master at 32-bit float and calls it bit-exact:
