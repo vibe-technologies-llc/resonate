@@ -131,17 +131,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `Shazam::signed` logs too few peaks and gives up with no error
 
 ## The window
-- [S · 0.14.1] Files the window opens with skip the version the listener chose: with `resume` off
-  `window.rs` passes the catalog to `queue` as `None`, so `versions::played_as_chosen` and
-  `mpris::claimed_by` return the rows as they came (the original copy, under minted ids), and files
-  handed to a running window (`queued_in`, a second launch or what macOS opens) never pass through
-  `played_as_chosen`, against `library.md`'s list of callers that do
-- [S · 0.14.1] A play or a queue started on one zone lands on the zone shown when its catalog read
-  finishes: `with_everything_listed`, `with_the_whole_library`, `with_the_rows_of`,
-  `plays_everything_in_each` (`acting.rs`), `with_playlist_entries`, `queue_the_playlists` and a
-  dragged album's landing send through `self.switcher.selected()` after the await, so turning to
-  another zone during a whole-library shuffle replaces that zone's queue; the zone should be taken
-  at the press
+- [S · 0.14.1] A song fetched to play lands on the zone shown when the download arrives, not the one
+  it was asked on: `fetch_and_play` waits for the library model's arrival and then plays through the
+  zone shown, so turning to another zone while it downloads replaces that zone's queue; the zone
+  should travel with the download as `act_on_the_zone` carries it through a catalog read
 - [S · 0.14.1] A queue sort in flight survives a zone switch and can reorder the other zone's queue:
   `another_zone_shown` (`queue.rs`) does not drop `ordering`, and `queue_put_in_order` checks the
   sort's revision against the zone shown now, whose own counter may stand at the same number, then
@@ -209,9 +202,3 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   so the Listen pane draws only *Microphone* and the default stays `Microphone(None)`; only
   `listen_from = "desktop"` in the file reaches what `macos.md` describes
 
-## Equaliser
-- [S · 0.14.1] A listening test of a setting sends A, B, X and its end to the zone shown, not the
-  one tested: the test begins on the shown zone's engine, then `hear_in_the_test`,
-  `end_the_listening_test` and `stop_measuring` (`settings/abx.rs`) go through `self.send`, and
-  `Audition` reaches one zone alone, so after a switch the tested zone stays auditioning arm B's
-  dither, resampler or restoration until restart
