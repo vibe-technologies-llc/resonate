@@ -3299,6 +3299,87 @@ fn a_link_naming_a_file_is_never_catalogued_whether_links_are_followed_or_not() 
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn a_row_an_older_build_catalogued_for_a_link_hands_its_history_to_the_file_it_names() -> Result<()>
+{
+    let tree = Tree::new();
+    tree.write("album/song.wav", &Wav::new().text(TITLE, "Song").build());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    scan(&library, &options(&tree))?;
+    let root = filed_under(&tree);
+    let song = root.join("album/song.wav");
+    let link = root.join("alias.wav");
+    std::os::unix::fs::symlink(&song, &link).expect("the fixture tree takes a link");
+    catalogued_again_at(&database, &song, &link);
+
+    for (played, times) in [(&song, 1), (&link, 2)] {
+        for _ in 0..times {
+            let counted = library
+                .track_played(&MediaLocation::local(played), None, Duration::from_secs(2))?
+                .expect("a counted play");
+            library.listened(counted.listen, Duration::from_secs(2))?;
+        }
+    }
+    let linked = library
+        .track_at(&link, None)?
+        .expect("the row the older build kept");
+    library.favour(Favoured::Track(linked.id), true)?;
+    let before = library.statistics(Window::Everything)?;
+
+    scan(&library, &options(&tree))?;
+    let after = library.statistics(Window::Everything)?;
+    let standing = library.track_at(&song, None)?.expect("the file's own row");
+
+    assert_eq!(library.track_at(&link, None)?, None);
+    assert_eq!(standing.plays, 3);
+    assert!(
+        standing.favourite.is_some(),
+        "the link's favourite was lost"
+    );
+    assert_eq!(before.plays, 3);
+    assert_eq!(after.plays, before.plays);
+    assert_eq!(after.listened, before.listened);
+    Ok(())
+}
+
+fn catalogued_again_at(database: &Path, held: &Path, at: &Path) {
+    let catalog = beside(database);
+    let columns: Vec<String> = catalog
+        .prepare("SELECT name FROM pragma_table_xinfo('tracks') WHERE hidden = 0 AND name != 'id'")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .expect("the catalog names its columns");
+    let chosen: Vec<&str> = columns
+        .iter()
+        .map(|column| match column.as_str() {
+            "path" => "?1",
+            other => other,
+        })
+        .collect();
+    let written = catalog
+        .execute(
+            &format!(
+                "INSERT INTO tracks ({}) SELECT {} FROM tracks WHERE path = ?2",
+                columns.join(", "),
+                chosen.join(", ")
+            ),
+            rusqlite::params![settled_text(at), settled(held)],
+        )
+        .expect("the catalog takes a second row");
+    assert_eq!(written, 1);
+}
+
+fn settled_text(path: &Path) -> String {
+    path.to_str()
+        .expect("a path the catalog can hold")
+        .to_owned()
+}
+
 #[test]
 fn a_count_answers_for_the_whole_match_where_a_page_answers_for_itself() -> Result<()> {
     const MP3: i64 = 7;

@@ -26,7 +26,8 @@ use unicode_normalization::UnicodeNormalization as _;
 
 use crate::{
     Column, CoverSource, Direction, EncodedColumn, Error, Isrc, Mbid, OrderedColumn,
-    REFRESH_SPREAD, Relation, Result, RowOrder, Service, SortOrder, Spellings, StoreOp, credits,
+    REFRESH_SPREAD, Relation, Result, RowOrder, Service, SortOrder, Spellings, StoreOp, copies,
+    credits,
     forgetting::{Forgetting, Rows, forget_rows},
     synced::HeldRow,
 };
@@ -1285,6 +1286,7 @@ pub fn prune(tx: &Transaction<'_>, roots: &[i64], generation: i64) -> Result<u64
     }
     let scoped = scoped(roots);
 
+    copies::unreached_links_hand_over_their_history(tx, &scoped, generation)?;
     let removed = forget_rows(
         tx,
         Forgetting::Unreached,

@@ -460,7 +460,13 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   `follow_symlinks` is on): one naming a file is never catalogued, switch or not, so a song is
   never held twice and a dedupe or an organise never keeps or moves the link over the file it
   names (`a_link_naming_a_file_is_never_catalogued_whether_links_are_followed_or_not`, the walk and
-  `audio_below` alike); every directory is walked once by its canonical path
+  `audio_below` alike). A row an older build catalogued for such a link is no longer reached, so
+  before `store::prune` forgets it `copies::unreached_links_hand_over_their_history` hands its plays,
+  last play, favourite and listens to the row of the same `span_start` at the file the link
+  canonically names, wherever that row's root (`history_handed_over`,
+  `a_row_an_older_build_catalogued_for_a_link_hands_its_history_to_the_file_it_names`); where that
+  file is catalogued nowhere the row goes as any unreached row does, its listens kept as unheld
+  ones; every directory is walked once by its canonical path
   (`Visited::first_time_through`). A link whose canonical target is inside a registered root, or
   holds one, is never followed (`Walking::reaches_a_root`, over every root `roots` holds): else
   files are stored twice under both paths or filed under the wrong root. Not stepped past: a

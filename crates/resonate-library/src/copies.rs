@@ -1,12 +1,12 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::File,
+    fs::{self, File},
     path::{Path, PathBuf},
     time::SystemTime,
 };
 
 use resonate_core::{MediaLocation, TrackId};
-use rusqlite::{Connection, ToSql, Transaction, params};
+use rusqlite::{Connection, OptionalExtension as _, ToSql, Transaction, params};
 
 use crate::{
     Error, Result, StoreOp,
@@ -186,6 +186,63 @@ pub(crate) fn history_handed_over(
         params![kept, taken],
     )?;
     Ok(())
+}
+
+pub(crate) fn unreached_links_hand_over_their_history(
+    transaction: &Transaction<'_>,
+    scoped: &str,
+    generation: i64,
+) -> Result<()> {
+    let unreached: Vec<(i64, String, i64)> = transaction
+        .prepare(&format!(
+            "SELECT id, path, span_start FROM tracks
+              WHERE seen = -?1 AND root_id IN ({scoped}) AND vault_key IS NULL"
+        ))
+        .and_then(|mut statement| {
+            statement
+                .query_map(params![generation], |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+        })
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    for (link, path, span_start) in unreached {
+        let Some(named) = file_a_link_names(&store::path_of(&path)) else {
+            continue;
+        };
+        let Some(held) = row_at(transaction, &named, span_start)? else {
+            continue;
+        };
+        if held != link {
+            history_handed_over(
+                transaction,
+                TrackId::new(held as u64)?,
+                TrackId::new(link as u64)?,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn file_a_link_names(path: &Path) -> Option<PathBuf> {
+    let is_a_link = fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_symlink());
+    let names_a_file = fs::metadata(path).is_ok_and(|metadata| metadata.is_file());
+    if !(is_a_link && names_a_file) {
+        return None;
+    }
+    fs::canonicalize(path).ok()
+}
+
+fn row_at(transaction: &Transaction<'_>, path: &Path, span_start: i64) -> Result<Option<i64>> {
+    transaction
+        .query_row(
+            "SELECT id FROM tracks WHERE path = ?1 AND span_start = ?2",
+            params![store::path_text(path), span_start],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 fn changed(transaction: &Transaction<'_>, sql: &str, values: &[&dyn ToSql]) -> Result<usize> {
