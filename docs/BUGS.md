@@ -36,23 +36,26 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   through it (an extracted archive carries both), then the copy is deleted; `library.md` holds that
   a dead writer's copy is finished only over a track still between the two lengths, so `Absent`
   should write nothing and the track should be opened without following a link
-- [M · 0.14.1] An editor about to be removed from a shared playlist can take the new list from
-  everyone: a `Member` op (`shared/op.rs`) replaces any member's `public` key under a later stamp,
-  whoever wrote it, `seats_after` (`shared/service.rs`) seals every new seat, the remover's own
-  included, to the key the list holds, and `say_who_i_am` re-announces only a changed name; so after
-  overwriting the others' keys with their own, the removed person opens every seat and the rest are
-  left with a private copy; the first key seen for a `MemberId` should stand (or the id derive from
-  the key), and the remover's seat always use `me.personal.public()`
 - [S · 0.14.1] Mending beside a track has none of the spool's guards: under the spool a journal or
   whole copy this user does not own, or a link, is passed over (`journal.rs`), but beside the track
   (on every write and every scan) neither is checked, and `rolled_back` opens the track a
   journal names for writing, following links, so in a shared folder another account's planted
   `.resonate-undo` whose `after` matches a page of a file writes its `before` bytes into it on this
   account's scan
+- [M · blocked: design] A device that joins a shared playlist after a hostile editor compacted it
+  takes the forged member keys from the snapshot: the first key heard for a `MemberId` stands, so
+  devices that already held the list keep the true keys, but a newcomer's first is the forger's, and
+  a removal it later makes seals the other members' seats to them; closing it needs `Member` ops
+  signed by the member's own key, a change of the op format
 - [S · blocked: design] A host on the network may take several addresses and so pass the media server's
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Sync and together
+- [S · 0.14.1] One synced change stamped near `i64::MAX` freezes the sync ledger's clock for good:
+  `ledger.rs` calls `Clock::saw` on every change a paired device sends and saves that clock, so
+  `now()` stays at `i64::MAX` and every later change of a key compares equal to the held one and is
+  dropped; a stamp too far past the wall clock should be refused as shared playlists now refuse one
+  (`STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS`)
 - [S · 0.14.1] A phone hosting a party names no song when the song is a document whose URI holds a
   `%` (every Android SAF URI, an iOS file name with a space): `song_of` (`together.rs`) asks
   `documents.uri = ?` with `location.to_uri()`, which escapes `%` and `:` again, where the catalog
@@ -60,10 +63,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   document song added mid-party is taken out of its queue by `added_here` and never requested;
   `unmeasured` (`catalog_extras.rs`) compares the same way, so *Fit the preamp to the queue* decodes
   every song though its peaks are kept
-- [S · 0.14.1] `resonate shared --remove-person NAME` removes whichever namesake comes first:
-  `person_named` (`together.rs`) takes the first other person whose free-text name matches without
-  case and never says that two matched, so an honest member who shares a name, or whose name a
-  hostile editor took, is removed for good
 - [S · 0.14.1] Removing the zone a phone's party is seated on leaves the party driving its player:
   `remove_zone` (`zoning.rs`) neither leaves nor refuses while `Room.zone` is that zone, so the
   follow thread plays on a zone `zones()` no longer lists, and the next zone added, given the same
@@ -75,11 +74,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   the server process's start, so for up to `CLOCK_WINDOW` the quickest sample may be the old
   process's, off by its whole uptime, and a guest seeks to nonsense; samples should be cleared on
   every `RoomWelcome`
-- [S · 0.14.1] One shared-playlist op stamped near `i64::MAX` stops later moves and renames in every
-  list the device is in: `Clock::saw` (`change.rs`) takes any stamp read, one `Clock` serves all of
-  the service's lists, `now()` then stays at `i64::MAX`, and a second move or rename of the same row
-  compares equal and is dropped (`stamp > held`), spreading to every member; a stamp too far past
-  the wall clock should be refused and the clock kept per list
 - [S · 0.14.1] A paired device's MusicBrainz answer can make the receiver reserve gigabytes:
   `list` (`resonate-musicbrainz`'s `wire.rs`) calls `Vec::with_capacity(count)` with a count
   `count_of(ITEM_AT_LEAST = 1)` allows up to one per remaining byte, for values of hundreds of bytes
