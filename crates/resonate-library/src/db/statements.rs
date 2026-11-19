@@ -256,7 +256,7 @@ pub(super) const TRACKS_TO_VAULT: &str = "SELECT tracks.id, tracks.path, tracks.
                 AND o.sample_rate = tracks.sample_rate AND o.channels = tracks.channels
                 AND o.encoding >= ?
              HAVING count(*) = 1),
-            tracks.vault_key, vault_objects.bytes, vault_objects.encoding
+            tracks.vault_key, vault_objects.bytes, vault_objects.encoding, vault_objects.path
        FROM tracks
        JOIN roots ON roots.id = tracks.root_id
        LEFT JOIN vault_objects ON vault_objects.key = tracks.vault_key

@@ -374,7 +374,7 @@ fn keep_one(
         span: row.span,
         renewing: row.renewing,
         foretold: row.foretold,
-        replacing: row.replacing.filter(|_| row.renewing),
+        replacing: row.replacing.clone().filter(|_| row.renewing),
         halt: Halt::on(&progress.cancelled),
     };
 
@@ -693,6 +693,41 @@ mod tests {
             shared, None,
             "a sound two objects share foretold one of them"
         );
+    }
+
+    #[test]
+    fn a_row_weighed_again_names_the_object_it_would_replace_by_where_it_stands() {
+        let scratch = Scratch::new("standing");
+        let library = opened(&scratch);
+        let music = scratch.music().canonicalize().expect("a scratch folder");
+        fs::write(music.join("hum.wav"), hummed(3)).expect("a written source");
+        scanned(&library, &music);
+        imported(&library);
+        let object = library
+            .vault_objects()
+            .expect("the objects noted")
+            .remove(0);
+        library
+            .inner()
+            .write(|transaction| {
+                transaction
+                    .execute("UPDATE vault_objects SET encoding = 0", [])
+                    .map(drop)
+                    .map_err(|source| Error::store(crate::error::StoreOp::Update, source))
+            })
+            .expect("an object stamped as an older encoder's");
+
+        let row = library
+            .tracks_to_vault(&[])
+            .expect("the rows to vault")
+            .remove(0);
+        let standing = row.replacing.expect("the object the renewal would replace");
+
+        assert!(row.renewing);
+        assert_eq!(standing.key, object.key);
+        assert_eq!(standing.bytes, object.bytes);
+        assert_eq!(standing.path, object.path);
+        assert!(standing.path.is_file());
     }
 
     #[test]

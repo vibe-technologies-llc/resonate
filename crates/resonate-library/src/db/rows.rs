@@ -408,6 +408,7 @@ pub(super) struct RawToVault {
     pub(super) standing: Option<String>,
     pub(super) standing_bytes: Option<i64>,
     pub(super) standing_encoding: Option<u16>,
+    pub(super) standing_path: Option<String>,
 }
 
 impl RawToVault {
@@ -428,11 +429,16 @@ impl RawToVault {
             standing: row.get(12)?,
             standing_bytes: row.get(13)?,
             standing_encoding: row.get(14)?,
+            standing_path: row.get(15)?,
         })
     }
 
-    pub(super) fn into_vaultable(self) -> Result<TrackToVault> {
+    pub(super) fn into_vaultable(self, inner: &Inner) -> Result<TrackToVault> {
         let id = TrackId::new(self.id as u64)?;
+        let standing_at = self
+            .standing_path
+            .as_deref()
+            .and_then(|within| inner.in_the_vault(within).ok());
         Ok(TrackToVault {
             id,
             path: store::path_of(&self.path),
@@ -458,11 +464,13 @@ impl RawToVault {
                 .as_deref()
                 .and_then(|key| VaultKey::read(key).ok())
                 .zip(self.standing_bytes)
-                .map(|(key, bytes)| Replacing {
+                .zip(standing_at)
+                .map(|((key, bytes), path)| Replacing {
                     key,
                     bytes: u64::try_from(bytes).unwrap_or(0),
                     keyed_by_the_pcm_alone: Encoding::of(self.standing_encoding.unwrap_or(0))
                         .keyed_by_the_pcm_alone(),
+                    path,
                 }),
         })
     }

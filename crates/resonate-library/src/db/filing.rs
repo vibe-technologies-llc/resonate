@@ -41,7 +41,7 @@ impl Library {
                 RawToVault::read(row).map(Ok)
             })?
             .into_iter()
-            .map(RawToVault::into_vaultable)
+            .map(|raw| raw.into_vaultable(&self.inner))
             .collect()
         })
     }

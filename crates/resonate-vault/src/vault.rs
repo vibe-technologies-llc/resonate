@@ -156,15 +156,16 @@ pub struct Taking<'a> {
     pub halt: Halt<'a>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Replacing {
     pub key: VaultKey,
     pub bytes: u64,
     pub keyed_by_the_pcm_alone: bool,
+    pub path: PathBuf,
 }
 
 impl Replacing {
-    const fn outweighed_by(self, bytes: u64) -> bool {
+    const fn outweighed_by(&self, bytes: u64) -> bool {
         bytes > self.bytes || (bytes == self.bytes && !self.keyed_by_the_pcm_alone)
     }
 }
@@ -599,15 +600,53 @@ impl Vault {
             }
             kept => kept,
         };
-        let kept = match (kept, taking.replacing) {
+        let kept = match (kept, taking.replacing.as_ref()) {
             (Keeping::Kept(kept), Some(standing))
                 if kept.key != standing.key && standing.outweighed_by(kept.bytes) =>
             {
-                Keeping::Refused(Refusal::NoSmaller)
+                match self.holds_the_source_whole(standing, taking, &info)? {
+                    true => Keeping::Refused(Refusal::NoSmaller),
+                    false => Keeping::Kept(kept),
+                }
             }
             (kept, _) => kept,
         };
         Ok(weighed(kept, held, Box::new(info.tags), bits))
+    }
+
+    fn holds_the_source_whole(
+        &self,
+        standing: &Replacing,
+        taking: &Taking<'_>,
+        info: &MediaInfo,
+    ) -> Result<bool> {
+        let heard_at = unnarrowed(info);
+        let opened = match taking.span {
+            Some(span) => Decoder::open_span(taking.sources, taking.location, span),
+            None => Decoder::open(taking.sources, taking.location),
+        };
+        let went_in = opened
+            .map_err(|source| Error::codec(VaultOp::Read, source))
+            .and_then(|(mut decoder, info)| {
+                pcm_of(&mut decoder, &info, Some(heard_at), taking.halt)
+            });
+        let went_in = match went_in {
+            Ok(went_in) => went_in,
+            Err(Error::Halted) => return Err(Error::Halted),
+            Err(Error::Codec { source, op }) if source.is_out_of_reach() => {
+                return Err(Error::Codec { op, source });
+            }
+            Err(_) => return Ok(true),
+        };
+
+        let held = self
+            .inside(&standing.path)
+            .and_then(|()| self.read_back_packed(&standing.path, Some(heard_at), taking.halt));
+        match held {
+            Ok(held) => Ok(held.pcm == went_in.pcm && held.frames == went_in.frames),
+            Err(Error::Halted) => Err(Error::Halted),
+            Err(_) => Ok(false),
+        }
     }
 
     pub fn keep_cover(&self, art: &CoverArt) -> Result<KeptCover> {

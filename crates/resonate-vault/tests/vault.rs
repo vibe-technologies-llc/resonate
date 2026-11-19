@@ -481,6 +481,7 @@ fn a_renewal_under_another_key_is_weighed_against_the_object_it_would_replace() 
             key: elsewhere,
             bytes: first.bytes,
             keyed_by_the_pcm_alone: false,
+            path: first.path.clone(),
         }),
         Ok(Keeping::Refused(Refusal::NoSmaller))
     ));
@@ -489,6 +490,7 @@ fn a_renewal_under_another_key_is_weighed_against_the_object_it_would_replace() 
             key: elsewhere,
             bytes: first.bytes + 1,
             keyed_by_the_pcm_alone: false,
+            path: first.path.clone(),
         }),
         Ok(Keeping::Kept(_))
     ));
@@ -497,6 +499,7 @@ fn a_renewal_under_another_key_is_weighed_against_the_object_it_would_replace() 
             key: first.key,
             bytes: 1,
             keyed_by_the_pcm_alone: false,
+            path: first.path.clone(),
         }),
         Ok(Keeping::Kept(_))
     ));
@@ -523,6 +526,7 @@ fn a_renewal_off_a_key_of_the_samples_alone_lands_under_the_sound_at_the_same_we
                 key: pcm_alone,
                 bytes: first.bytes,
                 keyed_by_the_pcm_alone: true,
+                path: first.path.clone(),
             }),
             halt: Halt::NEVER,
         })
@@ -1735,6 +1739,85 @@ fn a_wider_source_declaring_fewer_bits_is_narrowed_only_where_every_bit_dropped_
             .verify(&widened.path, widened.form)
             .expect("a verified object")
     );
+}
+
+#[test]
+fn an_object_an_older_build_narrowed_past_live_bits_is_renewed_whole_while_its_source_stands() {
+    const LIVE_EVERY: usize = 997;
+
+    let tree = Tree::new();
+    let vault = tree.vault();
+
+    let mut state = 0x9e37_79b9_u32;
+    let mut grain = || {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        (state >> 24) as i32
+    };
+    let padded: Vec<i32> = signal(FRAMES)
+        .iter()
+        .map(|sample| ((sample << 8) | grain()) << 8)
+        .collect();
+    let mut live = padded.clone();
+    for sample in live.iter_mut().step_by(LIVE_EVERY) {
+        *sample |= 1;
+    }
+    let as_an_older_build_narrowed_it = tree.write(
+        "narrowed.wav",
+        &thirty_two_bits_declaring_twenty_four(&padded),
+    );
+    let live_at = tree.write("live.wav", &thirty_two_bits_declaring_twenty_four(&live));
+    let location = MediaLocation::local(&live_at);
+    let sources = Sources::local();
+
+    let narrowed = kept(
+        &vault,
+        &sources,
+        &MediaLocation::local(&as_an_older_build_narrowed_it),
+    );
+    let renewing = || {
+        vault.keep(&Taking {
+            sources: &sources,
+            location: &location,
+            span: None,
+            renewing: true,
+            foretold: None,
+            replacing: Some(Replacing {
+                key: narrowed.key,
+                bytes: narrowed.bytes,
+                keyed_by_the_pcm_alone: false,
+                path: narrowed.path.clone(),
+            }),
+            halt: Halt::NEVER,
+        })
+    };
+
+    let renewed = renewing();
+    let Ok(Keeping::Kept(renewed)) = renewed else {
+        panic!("the narrowed object was kept over its whole source: {renewed:?}");
+    };
+
+    assert_eq!(narrowed.form, Form::Flac);
+    assert_eq!(decoded(&narrowed.path, SampleFormat::S32), padded);
+    assert_ne!(renewed.key, narrowed.key);
+    assert!(
+        renewed.bytes > narrowed.bytes,
+        "the renewal would have won on its size alone"
+    );
+    assert_eq!(renewed.bits, 32);
+    assert_eq!(
+        decoded_through(
+            &Sources::local().and(Arc::new(VaultFiles::over(&vault))),
+            &renewed.path,
+            SampleFormat::S32
+        ),
+        live
+    );
+
+    fs::remove_file(&live_at).expect("the source goes");
+
+    assert!(renewing().is_err());
+    assert!(narrowed.path.is_file());
+    assert_eq!(decoded(&narrowed.path, SampleFormat::S32), padded);
 }
 
 #[test]

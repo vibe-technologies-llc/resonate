@@ -190,9 +190,14 @@ DSD, Vorbis, Opus). Preview marks it *weighed again*. A renewal is a `Taking` wi
 object already under the key is a rival, not a dedup hit; the new one replaces it (`Kept::replaced`,
 `Landing::Replaced`) only if smaller; a loser keeps the standing object, stamps it current. **A
 renewal settling on another key is weighed against the object it would replace**: `Taking::replacing`
-carries that object's key and size (`TRACKS_TO_VAULT`), and a result no smaller is
+carries that object's key, size and path (`TRACKS_TO_VAULT`), and a result no smaller is
 `Refusal::NoSmaller`, so the vault never grows by a renewal
-(`a_renewal_under_another_key_is_weighed_against_the_object_it_would_replace`). `keep` never discards
+(`a_renewal_under_another_key_is_weighed_against_the_object_it_would_replace`), **unless the object
+it would replace does not hold the source whole**: before refusing, `holds_the_source_whole` reads
+the source and that object at `unnarrowed` depth and compares them, so an object an earlier build
+narrowed past live bits (or one gone or unreadable) gives way to the larger lossless renewal
+(`an_object_an_older_build_narrowed_past_live_bits_is_renewed_whole_while_its_source_stands`). Only
+while the source stands: a source that cannot be read keeps the object it has. `keep` never discards
 a replaced object; the old object of a renewal on another key, like one landed then refused, waits
 for `--prune`. A plain dedup hit is stamped `Encoding::UNRECORDED` where the catalog has no row for
 its object: weighed again next import.
