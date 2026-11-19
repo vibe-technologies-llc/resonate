@@ -126,18 +126,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   it was asked on: `fetch_and_play` waits for the library model's arrival and then plays through the
   zone shown, so turning to another zone while it downloads replaces that zone's queue; the zone
   should travel with the download as `act_on_the_zone` carries it through a catalog read
-- [S · 0.14.1] A queue sort in flight survives a zone switch and can reorder the other zone's queue:
-  `another_zone_shown` (`queue.rs`) does not drop `ordering`, and `queue_put_in_order` checks the
-  sort's revision against the zone shown now, whose own counter may stand at the same number, then
-  sends `Command::Order` with the first zone's permutation
-- [M · 0.14.1] The queue's selection is held by row number across edits, so Delete, the move keys
-  and Enter act on another song: `let_go_of_a_reach_the_rows_left` spares `Shift::Queue` and nothing
-  remaps a queue reach when its revision moves, so after a sort, an MPRIS or remote edit, a party
-  request or *Play next* the highlighted row names a different song; playlists refuse through
-  `playlist_as_drawn`
-- [S · 0.14.1] A queue row's raise and lower buttons move rows from the frame drawn against the
-  queue as it now stands: `mover` (`reorder.rs`) sends `Command::Move` through `send_by_position`,
-  where the row's remove control checks `is_queued_at(drawn_at)` and a drag carries `drawn_at`
 
 ## Formats
 - [S · 0.14.1] The vault keeps a 64-bit float master at 32-bit float and calls it bit-exact:
