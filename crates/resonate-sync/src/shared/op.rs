@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt};
+use std::{collections::BTreeMap, fmt, iter};
 
 use resonate_core::Recording;
 
@@ -77,6 +77,30 @@ pub enum SharedOp {
         member: MemberId,
         stamp: Stamp,
     },
+}
+
+impl SharedOp {
+    pub const fn stamp(&self) -> Stamp {
+        match self {
+            Self::Added { stamp, .. }
+            | Self::Moved { stamp, .. }
+            | Self::Removed { stamp, .. }
+            | Self::Renamed { stamp, .. }
+            | Self::Member { stamp, .. }
+            | Self::Left { stamp, .. } => *stamp,
+        }
+    }
+
+    pub const fn stamp_mut(&mut self) -> &mut Stamp {
+        match self {
+            Self::Added { stamp, .. }
+            | Self::Moved { stamp, .. }
+            | Self::Removed { stamp, .. }
+            | Self::Renamed { stamp, .. }
+            | Self::Member { stamp, .. }
+            | Self::Left { stamp, .. } => stamp,
+        }
+    }
 }
 
 pub fn encoded_ops(ops: &[SharedOp]) -> Vec<u8> {
@@ -445,6 +469,23 @@ impl SharedList {
             .iter()
             .filter(|(_, person)| person.is_here())
             .map(|(member, person)| (*member, person))
+    }
+
+    pub fn stamps_mut(&mut self) -> impl Iterator<Item = &mut Stamp> {
+        let name = self.name.iter_mut().map(|(_, stamp)| stamp);
+        let people = self
+            .people
+            .values_mut()
+            .flat_map(|person| iter::once(&mut person.stamp).chain(person.left.as_mut()));
+        let rows = self.rows.values_mut().flat_map(|row| {
+            row.placed
+                .as_mut()
+                .map(|(_, stamp)| stamp)
+                .into_iter()
+                .chain(row.removed.as_mut())
+        });
+
+        name.chain(people).chain(rows)
     }
 
     pub fn as_ops(&self) -> Vec<SharedOp> {

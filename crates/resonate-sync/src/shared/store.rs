@@ -1,4 +1,7 @@
-use std::path::Path;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
@@ -14,6 +17,7 @@ use crate::{
             encoded_ops,
         },
     },
+    wall_nanos,
 };
 
 const V1: &str = "
@@ -84,6 +88,61 @@ impl Kept {
     pub fn stamped(&mut self) -> Stamp {
         self.clock.now(self.device)
     }
+
+    pub fn owe(&mut self, ops: Vec<SharedOp>) {
+        let seq = self.owed.last().map_or(1, |(seq, _)| seq + 1);
+        self.owed.push((seq, ops));
+    }
+
+    pub fn restamped_past_the_bound(&mut self, wall: i64) -> bool {
+        let past: BTreeSet<Stamp> = self
+            .list
+            .stamps_mut()
+            .map(|stamp| *stamp)
+            .chain(stamps_owed(&mut self.owed).map(|stamp| *stamp))
+            .filter(|stamp| stamp.too_far_ahead_of(wall))
+            .collect();
+        if past.is_empty() {
+            return false;
+        }
+
+        let brought_back: BTreeMap<Stamp, Stamp> = past
+            .into_iter()
+            .zip(wall..)
+            .map(|(stamp, nanos)| (stamp, Stamp { nanos, ..stamp }))
+            .collect();
+        let before = self.list.as_ops();
+        for stamp in self.list.stamps_mut().chain(stamps_owed(&mut self.owed)) {
+            if let Some(back) = brought_back.get(stamp) {
+                *stamp = *back;
+            }
+        }
+        let restamped: Vec<SharedOp> = self
+            .list
+            .as_ops()
+            .into_iter()
+            .zip(before)
+            .filter_map(|(after, before)| (after != before).then_some(after))
+            .collect();
+
+        if let Some(latest) = brought_back.values().max() {
+            self.clock.saw(*latest);
+        }
+        if self.access.may_edit() && !restamped.is_empty() {
+            self.owe(restamped);
+        }
+        tracing::info!(
+            stamps = brought_back.len(),
+            "a shared playlist's stamps past the wall clock were brought back to it"
+        );
+
+        true
+    }
+}
+
+fn stamps_owed(owed: &mut [(i64, Vec<SharedOp>)]) -> impl Iterator<Item = &mut Stamp> {
+    owed.iter_mut()
+        .flat_map(|(_, ops)| ops.iter_mut().map(SharedOp::stamp_mut))
 }
 
 impl Store {
@@ -174,7 +233,7 @@ impl Store {
         Ok(())
     }
 
-    pub fn lists(&self) -> Result<Vec<Kept>> {
+    pub fn lists(&mut self) -> Result<Vec<Kept>> {
         let mut statement = self
             .connection
             .prepare(
@@ -207,7 +266,9 @@ impl Store {
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Read, source))?;
 
-        rows.into_iter()
+        drop(statement);
+        let mut lists = rows
+            .into_iter()
             .filter_map(|raw| match self.read(raw) {
                 Ok(kept) => Some(Ok(kept)),
                 Err(Error::Code(_)) => {
@@ -216,7 +277,16 @@ impl Store {
                 }
                 Err(error) => Some(Err(error)),
             })
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+
+        let wall = wall_nanos();
+        for kept in &mut lists {
+            if kept.restamped_past_the_bound(wall) {
+                self.keep(kept)?;
+            }
+        }
+
+        Ok(lists)
     }
 
     fn read(&self, raw: Raw) -> Result<Kept> {
@@ -467,6 +537,111 @@ mod tests {
 
         store.forget(kept.space).expect("forgotten");
         assert!(store.lists().expect("read").is_empty());
+    }
+
+    fn at_the_end_of_time(less: i64) -> Stamp {
+        Stamp {
+            nanos: i64::MAX - less,
+            device: DeviceId([8; DEVICE_BYTES]),
+        }
+    }
+
+    #[test]
+    fn a_list_kept_with_stamps_past_the_wall_clock_is_restamped_as_it_loads_and_takes_later_honest_edits()
+     {
+        let mut store = Store::in_memory().expect("a store");
+        let mut kept = a_list();
+        let entry = EntryId([2; ENTRY_BYTES]);
+        kept.owed.clear();
+        kept.list.apply(&SharedOp::Moved {
+            entry,
+            place: Place(vec![200]),
+            stamp: at_the_end_of_time(0),
+        });
+        kept.list.apply(&SharedOp::Renamed {
+            name: "Theirs".to_owned(),
+            stamp: at_the_end_of_time(0),
+        });
+        store.keep(&kept).expect("kept as an older build kept it");
+
+        let wall = wall_nanos();
+        let mut loaded = store.lists().expect("read").remove(0);
+        let restamped = loaded.list.clone();
+        let owed: Vec<SharedOp> = loaded
+            .owed
+            .iter()
+            .flat_map(|(_, ops)| ops.clone())
+            .collect();
+        let read_again = store.lists().expect("read again").remove(0);
+        let moved = SharedOp::Moved {
+            entry,
+            place: Place(vec![100]),
+            stamp: loaded.stamped(),
+        };
+        let renamed = SharedOp::Renamed {
+            name: "Ours".to_owned(),
+            stamp: loaded.stamped(),
+        };
+
+        assert_eq!(restamped.rows()[0].place, Place(vec![200]));
+        assert_eq!(restamped.name(), Some("Theirs"));
+        assert_eq!(owed.len(), 2);
+        assert!(owed.iter().map(SharedOp::stamp).all(|stamp| {
+            stamp.device == DeviceId([8; DEVICE_BYTES])
+                && stamp.nanos >= wall
+                && !stamp.too_far_ahead_of(wall)
+        }));
+        assert_eq!(read_again.list, restamped);
+        assert_eq!(read_again.owed, loaded.owed);
+
+        assert!(loaded.list.apply(&moved));
+        assert!(loaded.list.apply(&renamed));
+        assert_eq!(loaded.list.rows()[0].place, Place(vec![100]));
+        assert_eq!(loaded.list.name(), Some("Ours"));
+    }
+
+    #[test]
+    fn restamping_keeps_the_order_of_the_stamps_it_brings_back_and_a_followed_list_owes_nothing() {
+        let wall = wall_nanos();
+        let mut kept = a_list();
+        let gone = MemberId([4; MEMBER_BYTES]);
+        let back = MemberId([5; MEMBER_BYTES]);
+        kept.access = kept.access.viewing().expect("a view key");
+        kept.owed.clear();
+        for op in [
+            SharedOp::Member {
+                member: gone,
+                name: "Gone".to_owned(),
+                public: [1; 32],
+                stamp: at_the_end_of_time(1),
+            },
+            SharedOp::Left {
+                member: gone,
+                stamp: at_the_end_of_time(0),
+            },
+            SharedOp::Member {
+                member: back,
+                name: "Back".to_owned(),
+                public: [2; 32],
+                stamp: at_the_end_of_time(0),
+            },
+            SharedOp::Left {
+                member: back,
+                stamp: at_the_end_of_time(1),
+            },
+        ] {
+            kept.list.apply(&op);
+        }
+
+        let restamped = kept.restamped_past_the_bound(wall);
+        let here: Vec<MemberId> = kept.list.people().map(|(member, _)| member).collect();
+        let again = kept.restamped_past_the_bound(wall);
+
+        assert!(restamped);
+        assert_eq!(here, [back]);
+        assert!(kept.owed.is_empty());
+        assert!(!again);
+        assert!(kept.stamped().nanos > wall + 1);
     }
 
     #[test]

@@ -151,7 +151,7 @@ pub struct Shared {
 
 impl Shared {
     pub fn start(settings: SharedSettings, catalog: Arc<dyn SharedCatalog>) -> Result<Self> {
-        let store = Store::open(&settings.store)?;
+        let mut store = Store::open(&settings.store)?;
         let roots = trusted_roots(settings.trusted.as_deref())?;
         let to_web = to_the_web(roots.clone())?;
         let to_server = to_the_server(roots)?;
@@ -565,7 +565,7 @@ impl Running {
                 let kept = &mut self.lists[at];
                 let op = who_i_am(&self.name, kept);
                 kept.list.apply(&op);
-                owed_more(kept, vec![op]);
+                kept.owe(vec![op]);
                 let kept = self.lists[at].clone();
                 self.store.keep(&kept)?;
             }
@@ -594,7 +594,7 @@ impl Running {
         if may_edit {
             let op = who_i_am(&self.name, &mut kept);
             kept.list.apply(&op);
-            owed_more(&mut kept, vec![op]);
+            kept.owe(vec![op]);
         }
         self.store.keep(&kept)?;
         self.lists.push(kept);
@@ -614,7 +614,7 @@ impl Running {
             }
             let op = who_i_am(&self.name, kept);
             kept.list.apply(&op);
-            owed_more(kept, vec![op]);
+            kept.owe(vec![op]);
             let kept = kept.clone();
             if let Err(error) = self.store.keep(&kept) {
                 tracing::warn!(%error, "a name could not be kept");
@@ -651,7 +651,7 @@ impl Running {
         kept.list.apply(&op);
         kept.leaving = true;
         kept.at = None;
-        owed_more(kept, vec![op]);
+        kept.owe(vec![op]);
         let kept = kept.clone();
 
         self.store.keep(&kept)
@@ -729,7 +729,7 @@ impl Running {
         kept.written = written_order(&kept.list.rows(), &listed.entries, &mut doing)?;
         kept.seen = Some(digest);
         if !ops.is_empty() {
-            owed_more(kept, ops);
+            kept.owe(ops);
         }
         let kept = kept.clone();
 
@@ -1059,7 +1059,7 @@ impl Running {
                     kept.cursor = 0;
                     let whole = kept.list.as_ops();
                     kept.owed.clear();
-                    owed_more(kept, whole);
+                    kept.owe(whole);
                 }
                 *target = Some(head);
                 false
@@ -1110,21 +1110,13 @@ impl Running {
         keys: &crate::shared::SharedKeys,
         blob: &[u8],
     ) -> Result<bool> {
-        let Ok(plain) = opened(&keys.sealer, keys.space, blob, LARGEST_BUNDLE_OPENED) else {
-            tracing::warn!("a shared playlist's record did not open and was passed over");
-            return Ok(false);
-        };
-        let Ok(ops) = decoded_ops(&plain) else {
-            tracing::warn!("a shared playlist's record did not read and was passed over");
-            return Ok(false);
-        };
-
         let kept = &mut self.lists[at];
 
-        Ok(heard_ops(
+        Ok(heard_sealed(
             &mut kept.list,
             &mut kept.clock,
-            &ops,
+            keys,
+            blob,
             wall_nanos(),
         ))
     }
@@ -1295,7 +1287,7 @@ impl Running {
         kept.bytes_since = 0;
         let whole = kept.list.as_ops();
         kept.owed.clear();
-        owed_more(kept, whole);
+        kept.owe(whole);
         let kept = kept.clone();
 
         self.store.keep(&kept)?;
@@ -1580,26 +1572,29 @@ fn who_i_am(name: &str, kept: &mut Kept) -> SharedOp {
     }
 }
 
-fn owed_more(kept: &mut Kept, ops: Vec<SharedOp>) {
-    let seq = kept.owed.last().map_or(1, |(seq, _)| seq + 1);
-    kept.owed.push((seq, ops));
-}
+fn heard_sealed(
+    list: &mut SharedList,
+    clock: &mut Clock,
+    keys: &crate::shared::SharedKeys,
+    blob: &[u8],
+    wall: i64,
+) -> bool {
+    let Ok(plain) = opened(&keys.sealer, keys.space, blob, LARGEST_BUNDLE_OPENED) else {
+        tracing::warn!("a shared playlist's record did not open and was passed over");
+        return false;
+    };
+    let Ok(ops) = decoded_ops(&plain) else {
+        tracing::warn!("a shared playlist's record did not read and was passed over");
+        return false;
+    };
 
-const fn stamp_of(op: &SharedOp) -> Stamp {
-    match op {
-        SharedOp::Added { stamp, .. }
-        | SharedOp::Moved { stamp, .. }
-        | SharedOp::Removed { stamp, .. }
-        | SharedOp::Renamed { stamp, .. }
-        | SharedOp::Member { stamp, .. }
-        | SharedOp::Left { stamp, .. } => *stamp,
-    }
+    heard_ops(list, clock, &ops, wall)
 }
 
 fn heard_ops(list: &mut SharedList, clock: &mut Clock, ops: &[SharedOp], wall: i64) -> bool {
     let mut changed = false;
     for op in ops {
-        let stamp = stamp_of(op);
+        let stamp = op.stamp();
         if stamp.too_far_ahead_of(wall) {
             tracing::warn!(
                 nanos = stamp.nanos,
@@ -1735,6 +1730,49 @@ mod tests {
         assert_eq!(place_of_the_song(&heard_ahead), [40]);
         assert!(next_here.nanos > ahead);
         assert!(next_elsewhere.nanos < ahead);
+    }
+
+    #[test]
+    fn a_snapshot_compacted_with_a_stamp_far_past_the_wall_clock_is_folded_without_it() {
+        let wall = wall_nanos();
+        let keys = Access::minted()
+            .and_then(|access| access.keys())
+            .expect("keys");
+        let mut compacted = a_list_of_one_song();
+        let mut clock = Clock::from_last(0);
+        let mut parts = Vec::new();
+        let renamed_at_the_end_of_time = SharedOp::Renamed {
+            name: "Theirs".to_owned(),
+            stamp: Stamp {
+                nanos: i64::MAX,
+                device: device(2),
+            },
+        };
+        compacted.apply(&renamed_at_the_end_of_time);
+        compacted.apply(&moved_to(
+            40,
+            Stamp {
+                nanos: wall,
+                device: device(2),
+            },
+        ));
+
+        sealed_within(&keys.sealer, keys.space, &compacted.as_ops(), &mut parts).expect("sealed");
+        let mut folded = SharedList::default();
+        let changed = parts.iter().fold(false, |changed, part| {
+            heard_sealed(&mut folded, &mut clock, &keys, part, wall) | changed
+        });
+        let unnamed = folded.name().map(str::to_owned);
+        folded.apply(&SharedOp::Renamed {
+            name: "Ours".to_owned(),
+            stamp: clock.now(device(1)),
+        });
+
+        assert!(changed);
+        assert_eq!(unnamed, None);
+        assert_eq!(place_of_the_song(&folded), [40]);
+        assert_eq!(folded.name(), Some("Ours"));
+        assert!(clock.last() < i64::MAX);
     }
 
     #[test]

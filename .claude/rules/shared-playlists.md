@@ -90,7 +90,20 @@ each run as the one shared clock was). One op stamped near `i64::MAX` would othe
 there, so a second move or rename of a row compared equal to the first and was dropped, in every list
 the service held
 (`a_stamp_far_past_the_wall_clock_is_refused_and_later_moves_still_land`,
-`a_stamp_within_a_day_ahead_is_taken_and_moves_only_its_own_lists_clock`). Two
+`a_stamp_within_a_day_ahead_is_taken_and_moves_only_its_own_lists_clock`). A snapshot's parts are
+heard through the same `heard_ops`, so a compaction an older build sealed with such a stamp folds
+without that op
+(`a_snapshot_compacted_with_a_stamp_far_past_the_wall_clock_is_folded_without_it`). **A list a
+device folded before the bound is restamped as it loads**: the kept state is an encoded blob SQL
+cannot reach, so `Store::lists` asks `Kept::restamped_past_the_bound` of each list and keeps any it
+changed. Every stamp past the bound, in the folded list and in what it owes, is brought back to the
+wall clock keeping its device, ranked from the wall in their old order (so someone who joined and
+left past the bound is still here or gone as before); the list's clock sees the latest, so the next
+edit here outranks them; and an editable list owes the ops it restamped, so the other members, which
+refused the far stamp and never folded it, converge on what this device holds, as the ledger's
+restamp owes its rows (`sync.md`)
+(`a_list_kept_with_stamps_past_the_wall_clock_is_restamped_as_it_loads_and_takes_later_honest_edits`,
+`restamping_keeps_the_order_of_the_stamps_it_brings_back_and_a_followed_list_owes_nothing`). Two
 people adding at one spot both keep their song, ordered by entry id. A snapshot is the state as ops, so
 compaction needs no second format; an op of a later build is passed over. **A list shows at most
 `ROWS_AT_MOST` (10 000) rows**, the first by place and entry id after the fold, so a stranger's
