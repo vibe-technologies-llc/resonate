@@ -19,12 +19,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · blocked: design] A host on the network may take several addresses and so pass the media server's
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
-## Sync and together
-- [S · 0.14.1] A song whose file moves while a party is followed is lost to the party: a guest's rows
-  are known by a `QueueStamp` of their location, so on the desktop a `Command::Relocate` (organise,
-  which reaches every zone) makes the moved row read as a song added here, and `added_here` takes it
-  out and asks the host for it; on the phones `documents_moved` leaves the following zone on the old
-  URIs instead, so the song fails when reached; the seat's known stamps should follow the move
 
 ## Catalog
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
