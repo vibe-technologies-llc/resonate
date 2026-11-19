@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.MoreVert
@@ -44,6 +45,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
@@ -60,6 +62,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import org.resonate.android.R
+import org.resonate.android.nativecore.HandedOff
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.byline
 import org.resonate.android.ui.shownTitle
@@ -268,6 +271,22 @@ fun CollectionRow(
     ) {
         Text(titleText ?: AnnotatedString(title), maxLines = lines, overflow = TextOverflow.Ellipsis)
     }
+}
+
+@Composable
+fun HandoffRow(handoff: HandedOff, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    CollectionRow(
+        title = handoff.device,
+        supporting =
+            pluralStringResource(
+                if (handoff.playing) R.plurals.queue_handoff_songs_playing else R.plurals.count_songs,
+                handoff.songs.toInt(),
+                handoff.songs.toInt(),
+            ),
+        onClick = onClick,
+        leading = { IconTile(Icons.Rounded.Devices) },
+        modifier = modifier,
+    )
 }
 
 @Composable

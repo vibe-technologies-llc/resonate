@@ -64,6 +64,7 @@ import org.resonate.android.nativecore.SleepTimer
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.clock
 import org.resonate.android.ui.components.CollectionRow
+import org.resonate.android.ui.components.HandoffRow
 import org.resonate.android.ui.components.DragHandle
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.IconTile
@@ -290,20 +291,12 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
             )
             Column(Modifier.navigationBarsPadding().padding(bottom = 16.dp)) {
                 queue.handoffs.forEach { handoff ->
-                    CollectionRow(
-                        title = handoff.device,
-                        supporting =
-                            pluralStringResource(
-                                if (handoff.playing) R.plurals.queue_handoff_songs_playing
-                                else R.plurals.count_songs,
-                                handoff.songs.toInt(),
-                                handoff.songs.toInt(),
-                            ),
+                    HandoffRow(
+                        handoff,
                         onClick = {
                             devicesOpen = false
                             model.continueFrom(handoff)
                         },
-                        leading = { IconTile(Icons.Rounded.Devices) },
                     )
                 }
             }

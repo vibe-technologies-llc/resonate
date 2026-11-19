@@ -35,6 +35,7 @@ import org.resonate.android.ui.settings.SettingsScreen
 import org.resonate.android.ui.settings.SpotifyScreen
 import org.resonate.android.ui.settings.StatisticsScreen
 import org.resonate.android.ui.settings.SuggestionsScreen
+import org.resonate.android.ui.settings.SyncDeviceScreen
 import org.resonate.android.ui.settings.SyncScreen
 import org.resonate.android.ui.together.PartyScreen
 import org.resonate.android.ui.tools.AnalysisScreen
@@ -80,6 +81,7 @@ fun ScreenContent(screen: Screen) {
         Screen.Scrobbling -> ScrobblingScreen()
         Screen.Spotify -> SpotifyScreen()
         Screen.Sync -> SyncScreen()
+        is Screen.SyncDevice -> SyncDeviceScreen(screen.id)
         Screen.Party -> PartyScreen()
         Screen.Appearance -> AppearanceScreen()
         Screen.Server -> ServerScreen()

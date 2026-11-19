@@ -3,31 +3,36 @@ package org.resonate.android.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.resonate.android.nativecore.AlbumHit
-import org.resonate.android.nativecore.ArtistHit
-import org.resonate.android.nativecore.CollectionOrder
-import org.resonate.android.nativecore.LibraryStatistics
+import org.resonate.android.nativecore.HandedOff
 import org.resonate.android.nativecore.MusicPlaylist
 import org.resonate.android.nativecore.SuggestedList
+import org.resonate.android.nativecore.SyncedDevice
 import org.resonate.android.nativecore.Track
-import org.resonate.android.ui.onHome
 import org.resonate.android.ui.Resonate
-import org.resonate.android.ui.suggestions
-import org.resonate.android.ui.library.Loaded
-import org.resonate.android.ui.library.Retry
-import org.resonate.android.ui.library.catalogRead
+import org.resonate.android.ui.library.catalogChanges
 import org.resonate.android.ui.library.catalogReady
+import org.resonate.android.ui.library.playInOrder
+import org.resonate.android.ui.library.savedSearchFully
+import org.resonate.android.ui.settings.mayDrive
+import org.resonate.android.ui.settings.orderedDevices
 
 class HomeViewModel(private val resonate: Resonate) : ViewModel() {
     private val features = resonate.features
     private val shared = SharingStarted.WhileSubscribed(5_000)
 
-    val retry = Retry()
+    val feed = features.home
 
     val ready: StateFlow<Boolean> = resonate.catalogReady().stateIn(viewModelScope, shared, false)
 
@@ -37,37 +42,72 @@ class HomeViewModel(private val resonate: Resonate) : ViewModel() {
 
     fun reread() = resonate.library.reread()
 
-    val favourites: StateFlow<List<Track>> =
+    val anyFavourite: StateFlow<Boolean> =
         resonate.library.allTracks
-            .map { songs -> songs.filter { it.favourite } }
+            .map { songs -> songs.any { it.favourite } }
+            .distinctUntilChanged()
             .flowOn(Dispatchers.Default)
-            .stateIn(viewModelScope, shared, emptyList())
+            .stateIn(viewModelScope, shared, false)
 
-    val recentAlbums: StateFlow<Loaded<List<AlbumHit>>> =
-        resonate
-            .catalogRead(retry) { it.albums(CollectionOrder.ADDED).take(SHELF_AT_MOST) }
-            .stateIn(viewModelScope, shared, Loaded.Loading)
+    val played: StateFlow<List<JumpBackTile.Album>> = feed.played
 
-    val artists: StateFlow<Loaded<List<ArtistHit>>> =
-        resonate
-            .catalogRead(retry) { it.artists(CollectionOrder.PLAYS).take(SHELF_AT_MOST) }
-            .stateIn(viewModelScope, shared, Loaded.Loading)
+    val recent: StateFlow<List<AlbumHit>> = feed.recent
 
-    val mixes: StateFlow<Loaded<List<SuggestedList>>> =
-        resonate
-            .catalogRead(retry) { native -> native.suggestions().onHome() }
-            .stateIn(viewModelScope, shared, Loaded.Loading)
+    val mixes: StateFlow<List<SuggestedList>> = feed.mixes
+
+    val artists: StateFlow<List<PlayedArtist>> = feed.artists
+
+    val heard: StateFlow<ListeningGlance.Heard?> = feed.heard
 
     val playlists: StateFlow<List<MusicPlaylist>> = features.playlists
 
-    val statistics: StateFlow<LibraryStatistics?> = features.statistics
+    val devices: StateFlow<List<SyncedDevice>> =
+        features.syncStatus
+            .map { status -> orderedDevices(status?.devices.orEmpty()).filter(::mayDrive) }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, shared, emptyList())
 
-    fun refresh() {
-        features.loadPlaylists()
-        features.loadStatistics()
+    val handoffs: StateFlow<List<HandedOff>> = features.syncHandoffs
+
+    private val mutableRefreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = mutableRefreshing.asStateFlow()
+
+    suspend fun followCatalog() {
+        resonate.catalogChanges().conflate().collect { feed.read() }
     }
+
+    fun cameForward() {
+        features.loadPlaylists()
+        feed.ask()
+    }
+
+    fun pull() {
+        if (mutableRefreshing.value) return
+        mutableRefreshing.value = true
+        viewModelScope.launch {
+            try {
+                resonate.library.rescan()
+                features.loadPlaylists()
+                feed.read(afresh = true)
+            } finally {
+                mutableRefreshing.value = false
+            }
+        }
+    }
+
+    fun playAlbum(album: AlbumHit) =
+        resonate.attempt(viewModelScope) { native ->
+            val tracks = withContext(Dispatchers.IO) { native.albumTracks(album.key) }
+            resonate.playInOrder(tracks)
+        }
+
+    fun playMix(list: SuggestedList) =
+        resonate.attempt(viewModelScope) { native ->
+            val tracks = withContext(Dispatchers.IO) { savedSearchFully(native, list.search) }
+            resonate.playInOrder(tracks)
+        }
+
+    fun continueFrom(handoff: HandedOff) = features.continueFrom(handoff) { resonate.playback.resume() }
 
     fun createPlaylist(name: String) = features.createPlaylist(name)
 }
-
-private const val SHELF_AT_MOST = 12

@@ -86,13 +86,6 @@ fun greeting(words: Words, hour: Int): String =
         else -> words.string(R.string.home_greeting_evening)
     }
 
-fun listenedHours(words: Words, milliseconds: ULong): String {
-    val hours = milliseconds.toLong() / 3_600_000
-    val minutes = (milliseconds.toLong() / 60_000) % 60
-    return if (hours > 0) words.string(R.string.home_listened_hours, hours)
-    else words.string(R.string.length_minutes, minutes)
-}
-
 fun artistLine(kind: String, country: String, area: String): String =
     listOf(kind, area.ifBlank { country }).filter { it.isNotBlank() }.joinToString(" · ")
 

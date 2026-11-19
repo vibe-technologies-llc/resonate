@@ -100,4 +100,9 @@ class LibraryViewModel(private val resonate: Resonate) : ViewModel() {
     }
 
     fun rescan() = library.rescan()
+
+    fun open(opening: LibraryOpening) {
+        opening.albumOrder?.let { albumOrder.value = it }
+        opening.artistOrder?.let { artistOrder.value = it }
+    }
 }

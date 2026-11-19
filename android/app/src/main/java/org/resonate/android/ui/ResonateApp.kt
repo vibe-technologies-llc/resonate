@@ -72,6 +72,8 @@ import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.SheetHost
 import org.resonate.android.ui.components.Sheets
 import org.resonate.android.ui.components.StatusNotice
+import org.resonate.android.ui.library.LibraryOpening
+import org.resonate.android.ui.library.showLibrary
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.navigation.ScreenContent
@@ -310,17 +312,14 @@ private fun ListOfferDialog() {
 
 @Composable
 private fun InvitationArrivals() {
-    val together = LocalResonate.current.features.together
+    val features = LocalResonate.current.features
+    val together = features.together
     val navigator = LocalNavigator.current
     val arrived by together.arrived.collectAsStateWithLifecycle()
     LaunchedEffect(arrived) {
         when (arrived) {
             ArrivalPage.PARTY -> navigator.open(Screen.Party)
-            ArrivalPage.PLAYLISTS -> {
-                navigator.beforeOpen()
-                navigator.selectAtRoot(Screen.Library)
-                together.playlistsAsked.value = true
-            }
+            ArrivalPage.PLAYLISTS -> navigator.showLibrary(features, LibraryOpening.playlists)
             null -> return@LaunchedEffect
         }
         together.arrived.value = null

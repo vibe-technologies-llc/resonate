@@ -46,7 +46,6 @@ class Together(
     val lists = mutableLists.asStateFlow()
     val nameForOthers = mutableName.asStateFlow()
     val arrived = MutableStateFlow<ArrivalPage?>(null)
-    val playlistsAsked = MutableStateFlow(false)
     val partyOffered = MutableStateFlow<String?>(null)
     val listOffered = MutableStateFlow<ListOffer?>(null)
 

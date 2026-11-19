@@ -85,6 +85,8 @@ import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.syncCodeInLink
 import org.resonate.android.nativecore.syncDeviceCalled
 import org.resonate.android.nativecore.syncNewCode
+import org.resonate.android.ui.home.HomeFeed
+import org.resonate.android.ui.library.LibraryOpening
 
 data class AudioOutput(
     val id: Int,
@@ -266,6 +268,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val analysisProgress = MutableStateFlow<Float?>(null)
     val artist = MutableStateFlow<ArtistInformation?>(null)
     val playlists = MutableStateFlow<List<MusicPlaylist>>(emptyList())
+    val libraryOpening = MutableStateFlow<LibraryOpening?>(null)
+    val home = HomeFeed(library, scope)
     val playlistRows = MutableStateFlow<List<Track>>(emptyList())
     val openPlaylist = MutableStateFlow<ULong?>(null)
     val playlistLoading = MutableStateFlow(false)
@@ -2331,6 +2335,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         routes.stop()
         enrichment.close()
         scope.coroutineContext.cancelChildren()
+        home.forget()
         submitting = null
         keepingInStep = null
         refreshingPlaylists.value = emptySet()

@@ -1,6 +1,5 @@
 package org.resonate.android.ui.library
 
-import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
@@ -51,13 +50,6 @@ import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
 
-private enum class Shelf(@StringRes val title: Int) {
-    SONGS(R.string.library_shelf_songs),
-    ALBUMS(R.string.library_shelf_albums),
-    ARTISTS(R.string.library_shelf_artists),
-    PLAYLISTS(R.string.library_shelf_playlists),
-}
-
 @Composable
 fun LibraryScreen() {
     val model = resonateViewModel { LibraryViewModel(it) }
@@ -65,23 +57,23 @@ fun LibraryScreen() {
     val navigator = LocalNavigator.current
     val sheets = LocalSheets.current
     val scope = rememberCoroutineScope()
-    val pager = rememberPagerState { Shelf.entries.size }
+    val pager = rememberPagerState { LibraryShelf.entries.size }
     val ready by model.ready.collectAsStateWithLifecycle()
     val empty by model.catalogEmpty.collectAsStateWithLifecycle()
     val unread by model.unread.collectAsStateWithLifecycle()
     val songs by model.songs.collectAsStateWithLifecycle()
     val selection = rememberSelection<ULong>()
-    val onPlaylists = pager.currentPage == Shelf.PLAYLISTS.ordinal
+    val onPlaylists = pager.currentPage == LibraryShelf.PLAYLISTS.ordinal
     LaunchedEffect(pager.currentPage) { selection.clear() }
     LaunchedEffect(songs) { selection.retain(songs.map { it.id }) }
     val newPlaylistTitle = stringResource(R.string.library_new_playlist)
     val newPlaylist = { sheets.name(newPlaylistTitle) { model.createOrJoin(it) } }
-    val playlistsAsked by resonate.features.together.playlistsAsked.collectAsStateWithLifecycle()
-    LaunchedEffect(playlistsAsked) {
-        if (playlistsAsked) {
-            pager.scrollToPage(Shelf.PLAYLISTS.ordinal)
-            resonate.features.together.playlistsAsked.value = false
-        }
+    val opening by resonate.features.libraryOpening.collectAsStateWithLifecycle()
+    LaunchedEffect(opening) {
+        val asked = opening ?: return@LaunchedEffect
+        model.open(asked)
+        pager.scrollToPage(asked.shelf.ordinal)
+        resonate.features.libraryOpening.compareAndSet(asked, null)
     }
     Page(
         stringResource(R.string.library_title),
@@ -153,7 +145,7 @@ fun LibraryScreen() {
             else ->
                 Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
                     val tabs: @Composable () -> Unit = {
-                        Shelf.entries.forEach { shelf ->
+                        LibraryShelf.entries.forEach { shelf ->
                             Tab(
                                 selected = pager.currentPage == shelf.ordinal,
                                 onClick = { scope.launch { pager.animateScrollToPage(shelf.ordinal) } },
@@ -177,13 +169,13 @@ fun LibraryScreen() {
                         state = pager,
                         modifier = Modifier.fillMaxSize(),
                         beyondViewportPageCount = 1,
-                        key = { Shelf.entries[it].name },
+                        key = { LibraryShelf.entries[it].name },
                     ) { page ->
-                        when (Shelf.entries[page]) {
-                            Shelf.SONGS -> SongsTab(model, below, selection)
-                            Shelf.ALBUMS -> AlbumsTab(model, below)
-                            Shelf.ARTISTS -> ArtistsTab(model, below)
-                            Shelf.PLAYLISTS ->
+                        when (LibraryShelf.entries[page]) {
+                            LibraryShelf.SONGS -> SongsTab(model, below, selection)
+                            LibraryShelf.ALBUMS -> AlbumsTab(model, below)
+                            LibraryShelf.ARTISTS -> ArtistsTab(model, below)
+                            LibraryShelf.PLAYLISTS ->
                                 PlaylistsTab(
                                     model,
                                     PaddingValues(

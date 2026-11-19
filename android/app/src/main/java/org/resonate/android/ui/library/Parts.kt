@@ -427,47 +427,54 @@ fun <T> LoadedContent(
 
 @Composable
 fun Welcome(modifier: Modifier = Modifier) {
-    val host = LocalResonate.current.host
     BoxWithConstraints(modifier.fillMaxSize()) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(32.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
+        WelcomeWords(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight)
+        )
+    }
+}
+
+@Composable
+fun WelcomeWords(modifier: Modifier = Modifier) {
+    val host = LocalResonate.current.host
+    Column(
+        modifier.padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        ResonateMark(WELCOME_MARK, MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(24.dp))
+        Text(
+            stringResource(R.string.library_welcome_title),
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 420.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.library_welcome_detail),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.widthIn(max = 420.dp),
+        )
+        Spacer(Modifier.height(24.dp))
+        Button(
+            onClick = host::chooseFolder,
+            modifier = Modifier.widthIn(min = WELCOME_BUTTON_WIDTH).testTag("add-folder"),
         ) {
-            ResonateMark(WELCOME_MARK, MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(24.dp))
-            Text(
-                stringResource(R.string.library_welcome_title),
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.widthIn(max = 420.dp),
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.library_welcome_detail),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.widthIn(max = 420.dp),
-            )
-            Spacer(Modifier.height(24.dp))
-            Button(
-                onClick = host::chooseFolder,
-                modifier = Modifier.widthIn(min = WELCOME_BUTTON_WIDTH).testTag("add-folder"),
-            ) {
-                Icon(Icons.Rounded.CreateNewFolder, null, Modifier.size(ButtonDefaults.IconSize))
-                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text(stringResource(R.string.library_add_folder))
-            }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = host::useDownloads,
-                modifier = Modifier.widthIn(min = WELCOME_BUTTON_WIDTH).testTag("use-downloads"),
-            ) {
-                Icon(Icons.Rounded.Download, null, Modifier.size(ButtonDefaults.IconSize))
-                Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                Text(stringResource(R.string.library_use_downloads))
-            }
+            Icon(Icons.Rounded.CreateNewFolder, null, Modifier.size(ButtonDefaults.IconSize))
+            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+            Text(stringResource(R.string.library_add_folder))
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = host::useDownloads,
+            modifier = Modifier.widthIn(min = WELCOME_BUTTON_WIDTH).testTag("use-downloads"),
+        ) {
+            Icon(Icons.Rounded.Download, null, Modifier.size(ButtonDefaults.IconSize))
+            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+            Text(stringResource(R.string.library_use_downloads))
         }
     }
 }

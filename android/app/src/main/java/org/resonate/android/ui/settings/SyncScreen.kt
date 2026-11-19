@@ -162,7 +162,7 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
         }
 }
 
-private fun iconFor(device: SyncedDevice): ImageVector =
+internal fun iconFor(device: SyncedDevice): ImageVector =
     when (device.platform) {
         DevicePlatform.ANDROID -> Icons.Rounded.PhoneAndroid
         DevicePlatform.IOS -> Icons.Rounded.PhoneIphone
@@ -837,4 +837,4 @@ private fun DeviceRow(
     )
 }
 
-private fun mayDrive(device: SyncedDevice): Boolean = !device.thisDevice && (device.online || device.nearby)
+internal fun mayDrive(device: SyncedDevice): Boolean = !device.thisDevice && (device.online || device.nearby)

@@ -728,7 +728,6 @@
     <string name="home_greeting_morning">Good morning</string>
     <string name="home_greeting_afternoon">Good afternoon</string>
     <string name="home_greeting_evening">Good evening</string>
-    <string name="home_listened_hours">%1$d h</string>
     <string name="library_order_title">Title</string>
     <string name="library_order_album">Album</string>
     <string name="library_order_artist">Artist</string>
@@ -935,16 +934,88 @@
     <string name="library_playlist_delete">Delete playlist</string>
     <string name="library_playlist_nothing_to_undo">There is no playlist edit to undo</string>
     <string name="home_your_listening">Your listening</string>
-    <string name="home_statistics">Statistics</string>
-    <plurals name="home_figure_plays">
-        <item quantity="one">play</item>
-        <item quantity="other">plays</item>
+    <string name="home_jump_back_in">Jump back in</string>
+    <string name="home_jump_back_in_spoken">%1$s, %2$s</string>
+    <string name="home_recently_added">Recently added</string>
+    <string name="home_artists">Artists you play</string>
+    <plurals name="home_artist_plays">
+        <item quantity="one">%1$d play</item>
+        <item quantity="other">%1$d plays</item>
     </plurals>
-    <string name="home_figure_listened">listened</string>
-    <plurals name="home_figure_songs">
-        <item quantity="one">song</item>
-        <item quantity="other">songs</item>
+    <string name="home_play_named">Play %1$s</string>
+    <string name="home_devices">Your devices</string>
+    <string name="home_remote">Remote control</string>
+    <string name="home_remote_detail">Pair devices and control their playback</string>
+    <string name="home_together">Listen together</string>
+    <string name="home_party_detail">Start or join a party with other people</string>
+    <string name="glance_reading">Reading your listening…</string>
+    <string name="glance_open">show your listening statistics</string>
+    <string name="glance_average">avg</string>
+    <string name="listening_brief_minutes">%1$d min</string>
+    <string name="listening_brief_hours_minutes">%1$d h %2$d min</string>
+    <string name="listening_brief_hours">%1$d h</string>
+    <plurals name="listening_hours">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
     </plurals>
+    <plurals name="listening_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <string name="listening_hours_and_minutes">%1$s %2$s</string>
+    <string name="listening_trend_steady">about the same as the week before</string>
+    <string name="listening_trend_up">up %1$d%% on the week before</string>
+    <string name="listening_trend_down">down %1$d%% on the week before</string>
+    <string name="listening_trend_more_than_double">more than double the week before</string>
+    <string name="listening_glance_this_week">Last 7 days</string>
+    <string name="listening_glance_this_week_spoken">Last 7 days, %1$s listened</string>
+    <string name="listening_glance_all_time">All time</string>
+    <string name="listening_glance_a_day">%1$s a day</string>
+    <string name="listening_glance_busiest">The most was %1$s, %2$s</string>
+    <string name="listening_glance_nothing_heard">No plays yet</string>
+    <string name="listening_glance_nothing_heard_detail">Play a song for half its length, or four minutes, to count a play.</string>
+    <string name="listening_glance_resting">Nothing this week</string>
+    <string name="listening_glance_resting_last_heard">Nothing this week · last heard %1$s</string>
+    <plurals name="listening_glance_resting_spoken">
+        <item quantity="one">All time, %1$s listened, %2$d play</item>
+        <item quantity="other">All time, %1$s listened, %2$d plays</item>
+    </plurals>
+    <plurals name="listening_fact_run">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <string name="listening_fact_run_caption">in a row</string>
+    <plurals name="listening_fact_run_spoken">
+        <item quantity="one">%1$d day in a row</item>
+        <item quantity="other">%1$d days in a row</item>
+    </plurals>
+    <string name="listening_fact_weekday_caption">heard most</string>
+    <string name="listening_fact_weekday_spoken">Heard most on %1$s</string>
+    <plurals name="listening_fact_all_time_caption">
+        <item quantity="one">in all · %1$d play</item>
+        <item quantity="other">in all · %1$d plays</item>
+    </plurals>
+    <plurals name="listening_fact_all_time_spoken">
+        <item quantity="one">%1$s in all, %2$d play</item>
+        <item quantity="other">%1$s in all, %2$d plays</item>
+    </plurals>
+    <string name="listening_fact_songs_heard_of">%1$d of %2$d</string>
+    <string name="listening_fact_songs_heard_caption">songs heard</string>
+    <string name="listening_fact_songs_heard_spoken">%1$s songs heard</string>
+    <string name="listening_weekday_sunday">Sunday</string>
+    <string name="listening_weekday_monday">Monday</string>
+    <string name="listening_weekday_tuesday">Tuesday</string>
+    <string name="listening_weekday_wednesday">Wednesday</string>
+    <string name="listening_weekday_thursday">Thursday</string>
+    <string name="listening_weekday_friday">Friday</string>
+    <string name="listening_weekday_saturday">Saturday</string>
+    <string name="listening_weekdays_sunday">Sundays</string>
+    <string name="listening_weekdays_monday">Mondays</string>
+    <string name="listening_weekdays_tuesday">Tuesdays</string>
+    <string name="listening_weekdays_wednesday">Wednesdays</string>
+    <string name="listening_weekdays_thursday">Thursdays</string>
+    <string name="listening_weekdays_friday">Fridays</string>
+    <string name="listening_weekdays_saturday">Saturdays</string>
     <string name="provider_detail_monochrome">A Monochrome server, or the hosted one</string>
     <string name="provider_detail_hifi_api">A hifi-api server, or the hosted one</string>
     <string name="provider_detail_subsonic">Your own Subsonic or Navidrome server</string>
