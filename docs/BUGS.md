@@ -27,11 +27,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Sync and together
-- [S · 0.14.1] One synced change stamped near `i64::MAX` freezes the sync ledger's clock for good:
-  `ledger.rs` calls `Clock::saw` on every change a paired device sends and saves that clock, so
-  `now()` stays at `i64::MAX` and every later change of a key compares equal to the held one and is
-  dropped; a stamp too far past the wall clock should be refused as shared playlists now refuse one
-  (`STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS`)
+- [S · 0.14.1] A synced row a paired device stamped near `i64::MAX` before the ledger refused such
+  stamps still wins every later write of its key: the ledger now refuses a stamp more than a day
+  past the wall clock and sets a saved clock back on load (`Clock::from_saved`), but rows already
+  stored keep their stamp, so an honest edit of that key never lands; such rows should be restamped
+  to the wall clock when the ledger opens
 
 
 ## Catalog
