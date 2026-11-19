@@ -8,6 +8,8 @@ pub const PLAYLIST_KEY_BYTES: usize = 16;
 const MINTED_KEY_MARK: [u8; 4] = *b"RSK1";
 const MINTED_NANOS_FROM: usize = MINTED_KEY_MARK.len();
 const MINTED_NANOS_TO: usize = MINTED_NANOS_FROM + 8;
+const NANOS_A_SECOND: i64 = 1_000_000_000;
+pub const STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS: i64 = 24 * 60 * 60 * NANOS_A_SECOND;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Stamp {
@@ -201,9 +203,27 @@ impl PlaylistKey {
     }
 }
 
+const fn nanos_too_far_ahead(nanos: i64, wall: i64) -> bool {
+    nanos > wall.saturating_add(STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS)
+}
+
+impl Stamp {
+    pub const fn too_far_ahead_of(self, wall: i64) -> bool {
+        nanos_too_far_ahead(self.nanos, wall)
+    }
+}
+
 impl Clock {
     pub const fn from_last(last: i64) -> Self {
         Self { last }
+    }
+
+    pub const fn from_saved(last: i64, wall: i64) -> Self {
+        if nanos_too_far_ahead(last, wall) {
+            Self { last: wall }
+        } else {
+            Self { last }
+        }
     }
 
     pub const fn last(&self) -> i64 {

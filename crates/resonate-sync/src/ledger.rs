@@ -522,7 +522,7 @@ impl Ledger {
         Ok(Self {
             connection,
             device,
-            clock: Clock::from_last(clock),
+            clock: Clock::from_saved(clock, wall_nanos()),
             answers_tried_at: None,
             deletions_tried_at: None,
         })
@@ -1950,8 +1950,17 @@ impl Ledger {
         self.look_at_what_is_held(catalog)?;
         let mut applied = Applied::default();
         let mut weighed = None;
+        let wall = wall_nanos();
         for change in changes {
             if let Some(stamp) = change.stamp() {
+                if stamp.too_far_ahead_of(wall) {
+                    tracing::warn!(
+                        nanos = stamp.nanos,
+                        wall,
+                        "a synced change stamped too far past the wall clock was passed over"
+                    );
+                    continue;
+                }
                 self.clock.saw(stamp);
             }
             let changed = match change {
@@ -4155,6 +4164,39 @@ pub(crate) fn lacked(catalog: &dyn Catalog, recording: &Recording) -> Result<boo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS;
+
+    #[test]
+    fn a_clock_saved_far_past_the_wall_clock_is_set_back_when_the_ledger_opens() {
+        let ledger = Ledger::in_memory().expect("a ledger");
+        ledger
+            .connection
+            .execute(
+                "UPDATE state SET clock = ?1 WHERE id = 1",
+                params![i64::MAX],
+            )
+            .expect("a frozen clock");
+        let before = wall_nanos();
+
+        let mut reopened = Ledger::over(ledger.connection).expect("reopened");
+        let next = reopened.clock.now(reopened.device);
+
+        assert!(next.nanos < before + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS);
+    }
+
+    #[test]
+    fn a_clock_saved_within_a_day_ahead_of_the_wall_clock_is_kept_when_the_ledger_opens() {
+        let ledger = Ledger::in_memory().expect("a ledger");
+        let ahead = wall_nanos() + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS / 2;
+        ledger
+            .connection
+            .execute("UPDATE state SET clock = ?1 WHERE id = 1", params![ahead])
+            .expect("a clock running fast");
+
+        let reopened = Ledger::over(ledger.connection).expect("reopened");
+
+        assert_eq!(reopened.clock.last(), ahead);
+    }
 
     #[test]
     fn a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held() {

@@ -36,7 +36,8 @@ pub use crate::{
     change::{
         AnswerNote, Change, Clock, DeletionNote, DeviceForgotten, DeviceNote, FavouriteNote,
         Handoff, LayoutNote, Listen, Platform, PlaylistBody, PlaylistFolded, PlaylistKey,
-        PlaylistNote, QueryBody, QueryFolded, QueryNote, ShareNote, Stamp, wall_nanos,
+        PlaylistNote, QueryBody, QueryFolded, QueryNote, STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS,
+        ShareNote, Stamp, wall_nanos,
     },
     consulted::{
         AskedForExport, AskedToConsult, CONSULT_ANSWERED_WITHIN, Consultable, ConsultedAnswer,

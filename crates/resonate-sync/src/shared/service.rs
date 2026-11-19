@@ -69,10 +69,6 @@ const RESETS_OVERTAKEN_AT_MOST: usize = 4;
 
 const LARGEST_BUNDLE: usize = LARGEST_RECORD / 2;
 
-const NANOS_A_SECOND: i64 = 1_000_000_000;
-
-const STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS: i64 = 24 * 60 * 60 * NANOS_A_SECOND;
-
 #[derive(Clone, Debug, Default)]
 pub struct SharedSettings {
     pub server: Server,
@@ -1600,15 +1596,11 @@ const fn stamp_of(op: &SharedOp) -> Stamp {
     }
 }
 
-const fn stamped_too_far_ahead(stamp: Stamp, wall: i64) -> bool {
-    stamp.nanos > wall.saturating_add(STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS)
-}
-
 fn heard_ops(list: &mut SharedList, clock: &mut Clock, ops: &[SharedOp], wall: i64) -> bool {
     let mut changed = false;
     for op in ops {
         let stamp = stamp_of(op);
-        if stamped_too_far_ahead(stamp, wall) {
+        if stamp.too_far_ahead_of(wall) {
             tracing::warn!(
                 nanos = stamp.nanos,
                 wall,
@@ -1646,9 +1638,9 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::key::DEVICE_BYTES;
+    use crate::{STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS, key::DEVICE_BYTES};
 
-    const AN_HOUR_NANOS: i64 = 60 * 60 * NANOS_A_SECOND;
+    const AN_HOUR_NANOS: i64 = 60 * 60 * 1_000_000_000;
 
     fn device(of: u8) -> DeviceId {
         DeviceId([of; DEVICE_BYTES])
@@ -1753,13 +1745,7 @@ mod tests {
             device: device(1),
         };
 
-        assert!(!stamped_too_far_ahead(
-            at(wall + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS),
-            wall
-        ));
-        assert!(stamped_too_far_ahead(
-            at(wall + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS + 1),
-            wall
-        ));
+        assert!(!at(wall + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS).too_far_ahead_of(wall));
+        assert!(at(wall + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS + 1).too_far_ahead_of(wall));
     }
 }

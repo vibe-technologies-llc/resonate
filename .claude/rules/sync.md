@@ -176,7 +176,14 @@ platforms; the catalog seam stays thin.
 
 - **Stamps are last-writer-wins on a hybrid clock**: `Stamp { nanos, device }` ordered by both;
   `Clock::now` is never below the last stamp seen, so a device whose clock runs behind still writes
-  after what it has read.
+  after what it has read. **A stamp is believed at most `STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS` (a
+  day) past the wall clock**, the one bound the ledger and the shared lists share: `Ledger::arrived`
+  passes over a change stamped past it (logged, before the clock sees it, so one stamp near `i64::MAX`
+  cannot freeze the clock and have every later change of a key compare equal and be dropped), and a
+  ledger opened with a saved clock past it sets the clock back to the wall (`Clock::from_saved`, the
+  stored column unchanged)
+  (`a_change_stamped_far_past_the_wall_clock_is_refused_and_a_later_honest_edit_still_lands`,
+  `a_clock_saved_far_past_the_wall_clock_is_set_back_when_the_ledger_opens`).
 - **A look diffs the catalog against what was last synced, so no catalog mutator knows about
   sync.** Playlists: a local playlist is `(id, created)` (undo re-inserts under one id and SQLite
   reuses discarded ids); a digest of name and entries (`merge::projection_digest`) moved means an

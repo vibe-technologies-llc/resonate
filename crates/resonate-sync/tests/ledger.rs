@@ -124,6 +124,11 @@ impl Device {
         changes
     }
 
+    fn send_edit(&mut self, id: i64, titles: &[&str]) -> Vec<Change> {
+        self.shelf.edit_playlist(id, titles);
+        self.send()
+    }
+
     fn receive(&mut self, changes: &[Change]) {
         self.ledger.arrived(&self.shelf, changes).expect("arrived");
     }
@@ -682,6 +687,40 @@ fn the_later_edit_wins_where_two_devices_edit_one_playlist() {
 
     assert_eq!(titles(&desk, "Summer"), ["A", "C"]);
     assert_eq!(titles(&phone, "Summer"), ["A", "C"]);
+}
+
+#[test]
+fn a_change_stamped_far_past_the_wall_clock_is_refused_and_a_later_honest_edit_still_lands() {
+    let mut desk = Device::new("Desk", &["A", "B", "C"]);
+    let mut phone = Device::new("Phone", &["A", "B", "C"]);
+    let summer = desk.shelf.make_playlist("Summer", &["A"]);
+    sync(&mut desk, &mut phone);
+    let hostile = desk
+        .send_edit(summer, &["C"])
+        .into_iter()
+        .map(|change| match change {
+            Change::Playlist(mut note) => {
+                note.stamp.nanos = i64::MAX;
+                Change::Playlist(note)
+            }
+            other => other,
+        })
+        .collect::<Vec<_>>();
+
+    phone.receive(&hostile);
+    let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
+    let from_phone = phone.send_edit(on_phone, &["B"]);
+    desk.shelf.edit_playlist(summer, &["A", "B"]);
+    sync(&mut desk, &mut phone);
+
+    let newest_stamp = from_phone
+        .iter()
+        .filter_map(Change::stamp)
+        .map(|stamp| stamp.nanos)
+        .max()
+        .expect("a stamped change");
+    assert!(newest_stamp < i64::MAX);
+    assert_eq!(titles(&phone, "Summer"), ["A", "B"]);
 }
 
 #[test]
