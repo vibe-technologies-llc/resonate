@@ -37,21 +37,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `count_of(ITEM_AT_LEAST = 1)` allows up to one per remaining byte, for values of hundreds of bytes
   each; the reservation should be capped
 
-## Playback and output
-- [S · 0.14.1] Handing over a song whose file organise moved while it played starts the other zone
-  unaligned: `Command::Relocate` rewrites `track.location` and each boundary's leaving location but
-  not `Track::heard_as`, which `heard_at` publishes, so the incoming zone's stamp (from the moved
-  rows) differs and `keep_in_step` steps in at once, late by its opening and priming, rather than
-  within the two frames `audio.md` promises; a row opening during the move keeps its old location
-- [M · 0.14.1] Removing, moving or clearing the next row while a gapless boundary waits lets 20-40 ms
-  of it be heard: `carry_on_after` returns at once for `Removal::Queued` and a `Move` or an `Insert`
-  touches only the queue, so the mismatch is found in `pass_the_boundary` after the graph has read
-  past `at`, and the output is retired with a 10 ms fade, where a failing entering row is spliced
-  away (`drop_what_lies_past_the_boundary`) so nothing past `at` sounds
-- [S · 0.14.1] A renderer stream whose thread cannot start stays offered and holds its lane: in
-  `resonate-upnp`'s and `resonate-cast`'s `stream.rs` a failed spawn returns after `server.offer`
-  and the lane is taken, and neither `Watch` nor `Hold` has a `Drop`, so the token stays served and
-  `Lanes::idle` refuses that receiver until another stream takes the lane over
 
 ## Catalog
 - [S · 0.14.1] Organising onto a hard link of the same file deletes the filed track's row, its
