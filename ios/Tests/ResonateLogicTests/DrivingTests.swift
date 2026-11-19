@@ -21,6 +21,16 @@ import Testing
         #expect(DrivenRows.moveDown(3, queueLength: 5) == .move(from: 3, to: 4))
     }
 
+    @Test func aFirstRowNearTheTopOfTheRangeSaturatesInsteadOfOverflowing() {
+        #expect(DrivenRows.row(3, firstRow: .max - 1) == .max)
+        #expect(DrivenRows.row(0, firstRow: .max) == .max)
+        #expect(DrivenRows.row(-1, firstRow: 7) == 7)
+        #expect(DrivenRows.moveDown(.max, queueLength: .max) == nil)
+        #expect(DrivenRows.moveDown(.max - 1, queueLength: .max) == nil)
+        #expect(DrivenRows.moveDown(.max - 2, queueLength: .max) == .move(from: .max - 2, to: .max - 1))
+        #expect(DrivenRows.moveDown(9, queueLength: 3) == nil)
+    }
+
     @Test func aSeekIsHeldWithinTheSong() {
         #expect(DrivenRows.seek(to: 12.5, lengthMillis: 60_000) == .seek(millis: 12_500))
         #expect(DrivenRows.seek(to: 90, lengthMillis: 60_000) == .seek(millis: 60_000))

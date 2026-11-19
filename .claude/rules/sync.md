@@ -890,7 +890,8 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   (`DrivenWordsTest`). iOS's sync page makes such a device's row a link to `DrivenDeviceView`, read
   every 500 ms while shown: a `CommittingSlider` to seek and every mirrored row, a tap jumping, a swipe
   removing and the context menu moving up, down and removing (`DrivenRows`, `ResonateLogic`,
-  `DrivingTests`).
+  `DrivingTests`), a row past the top of a `UInt32` saturating there as `counted` saturates it at
+  the boundary, never trapping.
 - **A phone is driven too.** `sync_start` hands its `Sync` `MobilePlayer::driven`: a
   `resonate_driven::Driven` over the boundary's `Zones`, each row named by `NamedByTheCatalog`
   (`sync/driving.rs`: the document's title, artist and length, kept per URI until the catalog's

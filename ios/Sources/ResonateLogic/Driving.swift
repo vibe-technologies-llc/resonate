@@ -40,7 +40,7 @@ public struct SessionAsked: Sendable {
 
 public enum DrivenRows {
     public static func row(_ offset: Int, firstRow: UInt32) -> UInt32 {
-        firstRow + UInt32(offset)
+        UInt32(clamping: UInt64(firstRow) + UInt64(clamping: offset))
     }
 
     public static func moveUp(_ row: UInt32) -> RemoteControl? {
@@ -48,7 +48,7 @@ public enum DrivenRows {
     }
 
     public static func moveDown(_ row: UInt32, queueLength: UInt32) -> RemoteControl? {
-        row + 1 < queueLength ? .move(from: row, to: row + 1) : nil
+        row < queueLength && queueLength - row > 1 ? .move(from: row, to: row + 1) : nil
     }
 
     public static func seek(to seconds: Double, lengthMillis: UInt64) -> RemoteControl {
