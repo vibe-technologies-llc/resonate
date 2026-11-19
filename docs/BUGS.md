@@ -86,14 +86,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   each; the reservation should be capped
 
 ## Playback and output
-- [S · 0.14.1] One NaN or infinity in a float source silences a whole block in both channels where
-  the rate is converted: `widen_into` (`buffer.rs`) widens `F32` with a bare `f64::from`, the block
-  resampler packs a stereo pair into one complex lane (`spectral.rs`'s `gather`) and transforms the
-  window at once, so every frame of every block whose window holds the sample is NaN, and the
-  equaliser's `usable` and dither's `in_range` turn it into silence (tens of ms at High, the default,
-  up to the 0.4 s hop at Very high); the convolver has the same gap for up to its 10 s response,
-  against `eq.md`'s one frame and no state left behind; samples should be made finite once where
-  they enter the chain, as the analysis's `finite_or_silent` does
 - [S · 0.14.1] Handing over a song whose file organise moved while it played starts the other zone
   unaligned: `Command::Relocate` rewrites `track.location` and each boundary's leaving location but
   not `Track::heard_as`, which `heard_at` publishes, so the incoming zone's stamp (from the moved
@@ -258,12 +250,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `listen_from = "desktop"` in the file reaches what `macos.md` describes
 
 ## Equaliser
-- [S · 0.14.1] The listening test of the equaliser plays arm A at another level than the one it
-  matched off 48 kHz: the window and `resonate abx` hand `Arms::matched` the profile already
-  `at_rate(rate)`, the levelled arm keeps its `Target`, and `eq_config` (`pipeline.rs`) calls
-  `at_rate` on it again, which reads the preamp as the 48 kHz fit plus an offset, so A plays off by
-  the difference between the two fitted preamps while the 0.1 dB check passes, and the p-value
-  measures loudness; `at_rate` should be idempotent
 - [S · 0.14.1] A listening test of a setting sends A, B, X and its end to the zone shown, not the
   one tested: the test begins on the shown zone's engine, then `hear_in_the_test`,
   `end_the_listening_test` and `stop_measuring` (`settings/abx.rs`) go through `self.send`, and
