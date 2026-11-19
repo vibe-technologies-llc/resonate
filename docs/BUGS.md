@@ -48,12 +48,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   touches only the queue, so the mismatch is found in `pass_the_boundary` after the graph has read
   past `at`, and the output is retired with a 10 ms fade, where a failing entering row is spliced
   away (`drop_what_lies_past_the_boundary`) so nothing past `at` sounds
-- [M · 0.14.1] `resonate play` beside an open window overwrites the window's kept queue:
-  `keep_the_queue_by` (`resuming.rs`) always keeps `ZoneId::FIRST`, `play_queue_here` keeps every
-  500 ms and on leaving, and the window keeps zone 1 in the same tables, each writer rewriting the
-  whole queue only when its own stamp moves, so the window's `keep_place`/`keep_order` then apply
-  its rows and positions to the terminal's queue and the next bare `resonate` resumes a queue the
-  window never held, at the wrong row; `play` should not keep while a window runs (`Running`)
 - [S · 0.14.1] A renderer stream whose thread cannot start stays offered and holds its lane: in
   `resonate-upnp`'s and `resonate-cast`'s `stream.rs` a failed spawn returns after `server.offer`
   and the lane is taken, and neither `Watch` nor `Hold` has a `Drop`, so the token stays served and
