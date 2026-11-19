@@ -180,7 +180,11 @@ paths:
 
 - **`shared` is the terminal's way into shared playlists** (`together.rs`, `shared-playlists.md`): bare, a
   table of them; `--share PLAYLIST` prints the two links; `--join LINK`, `--leave PLAYLIST`,
-  `--remove-person PERSON --from PLAYLIST`, `--reset PLAYLIST`; `--name NAME` writes `shared-name` and is the name the run itself starts with (`named_for_the_run`), so a `--join` carries it, and it tells the service (`Shared::named`) so every list already joined is renamed; a list whose person already carries the name is not written again (`SharedList::is_named`). It
+  `--remove-person PERSON --from PLAYLIST` (a name, without case, or a member's id; a name two other
+  people share is refused as `Error::NamesakesOnTheList`, which says each one's id to name instead,
+  `person_named`:
+  `removing_a_name_two_people_share_is_refused_and_names_both_so_either_may_be_picked_by_id`),
+  `--reset PLAYLIST`; `--name NAME` writes `shared-name` and is the name the run itself starts with (`named_for_the_run`), so a `--join` carries it, and it tells the service (`Shared::named`) so every list already joined is renamed; a list whose person already carries the name is not written again (`SharedList::is_named`). It
   waits up to 20 s for what it did to reach the server. A window holding `shared.lock` makes it
   `Error::SharedBusy`. **A `resonate://shared/` or `resonate://party/` argument or `OpenUri` is an
   invitation, not a song** (`together::accepted`, `Host::invited`), though `resonate` is a played-in-place

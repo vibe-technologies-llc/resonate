@@ -1,10 +1,11 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt};
 
 use resonate_core::Recording;
 
 use crate::{
     Result, Stamp,
     error::{Error, Malformed},
+    key::hex,
     shared::place::Place,
     wire::{LONGEST_TEXT, Reader, Writer, reserved},
 };
@@ -37,6 +38,12 @@ pub struct EntryId(pub [u8; ENTRY_BYTES]);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MemberId(pub [u8; MEMBER_BYTES]);
+
+impl fmt::Display for MemberId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&hex(&self.0))
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SharedOp {

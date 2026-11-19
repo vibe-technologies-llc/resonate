@@ -18,10 +18,12 @@ use resonate_sync::DeviceId;
 use resonate_sync::party::{
     PartyChat, PartyHanding, PartyReach, PartyReaction, SittingOut, Standing,
 };
+#[cfg(any(feature = "ui", test))]
+use resonate_sync::shared::MemberId;
 use resonate_sync::{
     HOSTED_SERVER, HeldShare, LocalPlaylistId, Refused,
     shared::{
-        Invitation, Invited, LocalShared, MemberId, Shared, SharedCatalog, SharedSettings,
+        Invitation, Invited, LocalShared, PersonShown, Shared, SharedCatalog, SharedSettings,
         SharedShown, SharedStanding, invitation_in,
     },
 };
@@ -694,12 +696,17 @@ pub(crate) fn run(
     } else if let Some(person) = &args.remove_person {
         let name = args.from.as_deref().ok_or(Error::SharedNeedsAList)?;
         let list = listed_as(&library, shared, name)?;
-        let member = person_named(&list, person)?;
+        let removing = person_named(&list, person)?;
         shared
-            .reset(list.space, Some(member))
+            .reset(list.space, Some(removing.member))
             .map_err(Error::Sync)?;
         settled(shared);
-        said!("{}", words::together::removed(name, person));
+        let called = if removing.name.is_empty() {
+            person.as_str()
+        } else {
+            removing.name.as_str()
+        };
+        said!("{}", words::together::removed(name, called));
         told_invites(&listed_as(&library, shared, name)?);
     } else if let Some(name) = &args.reset {
         let list = listed_as(&library, shared, name)?;
@@ -715,12 +722,24 @@ pub(crate) fn run(
     Ok(())
 }
 
-fn person_named(list: &SharedShown, person: &str) -> Result<MemberId> {
-    list.people
-        .iter()
-        .find(|held| !held.me && held.name.eq_ignore_ascii_case(person))
-        .map(|held| held.member)
-        .ok_or_else(|| Error::NoSuchPersonOnTheList(person.into()))
+fn person_named<'list>(list: &'list SharedShown, person: &str) -> Result<&'list PersonShown> {
+    let others = || list.people.iter().filter(|held| !held.me);
+    if let Some(by_id) = others().find(|held| held.member.to_string().eq_ignore_ascii_case(person))
+    {
+        return Ok(by_id);
+    }
+
+    let namesakes: Vec<&PersonShown> = others()
+        .filter(|held| held.name.eq_ignore_ascii_case(person))
+        .collect();
+    match namesakes.as_slice() {
+        [] => Err(Error::NoSuchPersonOnTheList(person.into())),
+        [only] => Ok(only),
+        _ => Err(Error::NamesakesOnTheList {
+            name: person.into(),
+            members: namesakes.iter().map(|held| held.member).collect(),
+        }),
+    }
 }
 
 fn print_every_list(lists: &[SharedShown]) {
@@ -835,6 +854,60 @@ mod tests {
         );
 
         *HOME_SERVER.lock() = None;
+    }
+
+    fn a_list_with(people: &[(u8, &str, bool)]) -> SharedShown {
+        SharedShown {
+            space: resonate_sync::SpaceId([1; 16]),
+            at: None,
+            name: "Mix".to_owned(),
+            may_edit: true,
+            invites: resonate_sync::shared::Invites {
+                edit: None,
+                view: String::new(),
+                edit_page: None,
+                view_page: None,
+            },
+            people: people
+                .iter()
+                .map(|(id, name, me)| PersonShown {
+                    member: MemberId([*id; 16]),
+                    name: (*name).to_owned(),
+                    me: *me,
+                })
+                .collect(),
+            unheld: Vec::new(),
+            standing: SharedStanding::Reached,
+            owed: 0,
+        }
+    }
+
+    #[test]
+    fn removing_a_name_two_people_share_is_refused_and_names_both_so_either_may_be_picked_by_id() {
+        let list = a_list_with(&[(1, "Ada", true), (2, "Ada", false), (3, "ada", false)]);
+
+        let refused = person_named(&list, "Ada");
+        let picked = person_named(&list, &MemberId([3; 16]).to_string());
+
+        assert!(matches!(
+            refused,
+            Err(Error::NamesakesOnTheList { ref members, .. })
+                if *members == [MemberId([2; 16]), MemberId([3; 16])]
+        ));
+        assert_eq!(picked.map(|held| held.member).ok(), Some(MemberId([3; 16])));
+    }
+
+    #[test]
+    fn removing_a_name_one_other_person_has_takes_them_and_never_the_one_removing() {
+        let list = a_list_with(&[(1, "Ada", true), (2, "Ada", false), (3, "Grace", false)]);
+
+        let taken = person_named(&list, "ada");
+        let nobody = person_named(&list, "Linus");
+        let not_me = person_named(&list, &MemberId([1; 16]).to_string());
+
+        assert_eq!(taken.map(|held| held.member).ok(), Some(MemberId([2; 16])));
+        assert!(matches!(nobody, Err(Error::NoSuchPersonOnTheList(_))));
+        assert!(matches!(not_me, Err(Error::NoSuchPersonOnTheList(_))));
     }
 
     #[test]

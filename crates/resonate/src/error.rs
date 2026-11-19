@@ -238,6 +238,17 @@ pub enum Error {
     NoSuchPersonOnTheList(Box<str>),
 
     #[cfg(feature = "sync")]
+    #[error(
+        "{} people on that playlist are called {name}; name the one meant by its id: {}",
+        .members.len(),
+        spelled_members(.members)
+    )]
+    NamesakesOnTheList {
+        name: Box<str>,
+        members: Vec<resonate_sync::shared::MemberId>,
+    },
+
+    #[cfg(feature = "sync")]
     #[error("say which playlist to remove them from with --from")]
     SharedNeedsAList,
 
@@ -728,6 +739,15 @@ pub enum Error {
 }
 
 pub type Result<T> = result::Result<T, Error>;
+
+#[cfg(feature = "sync")]
+fn spelled_members(members: &[resonate_sync::shared::MemberId]) -> String {
+    members
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 const fn pass_named(pass: PassKind) -> &'static str {
     match pass {
