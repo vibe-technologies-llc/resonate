@@ -77,6 +77,14 @@ engine, library, `ureq` (CI `refuse`).
   `TRACKS_TO_VAULT` finds exactly one noted object keyed by the sound (`Encoding::KEYED_BY_THE_SOUND`)
   with the row's sound (frames, rate, channels; `vault_objects_by_sound`); a sound two objects share
   foretells nothing.
+  **Narrowed only where nothing goes**: the depth comes from what the source declares (a WAVE's valid
+  bits, Matroska's `BitDepth`), not its container, so every read for a FLAC decodes at 32 bits and
+  narrows through `pcm::Narrowing`, which watches each dropped bit. One live and the encode stops
+  (`flac::Encode::Wider`) and the source is weighed again at 32 bits (`Bits::Widest`: a `Wave`, its
+  `vault_bits` 32); a narrowing read marks its digest (`Digest::dropped_live_bits`), so a foretold key
+  never matches a source holding more than it declared. A kept form is compared whole, at 32-bit
+  integer or float (`unnarrowed`)
+  (`a_wider_source_declaring_fewer_bits_is_narrowed_only_where_every_bit_dropped_is_zero`).
 - **`Form::Wave`**: PCM FLAC cannot hold (32-bit float, > 24 bits, > 96 kHz). Canonical
   `fmt `+`data` WAVE, zstd at `ARCHIVED_AT` (19). Over `LARGEST_PCM` (RIFF ceiling): refused before
   decoding where the source declares its length (`wave::outgrows_a_wave`), else `wave::tally` stops

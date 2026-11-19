@@ -29,7 +29,7 @@ use crate::{
     form::{Form, WIDEST_FLAC_BITS},
     key::{Sound, VaultKey},
     ogg,
-    pcm::{self, Digest},
+    pcm::{self, Digest, Narrowing},
     standing, transcoded,
     unpacking::{self, Unpacking},
     wave, words,
@@ -238,6 +238,17 @@ enum Foretold {
     Settled(Keeping),
     Unforetold,
     Misdeclared,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Bits {
+    Declared,
+    Widest,
+}
+
+enum AtDepth {
+    Kept(Keeping),
+    Wider,
 }
 
 enum Landing {
@@ -493,17 +504,17 @@ impl Vault {
     }
 
     pub fn keep(&self, taking: &Taking<'_>) -> Result<Keeping> {
-        match self.keep_as(taking, None) {
+        match self.keep_as(taking, None, Bits::Declared) {
             Err(Error::Codec { source, .. })
                 if matches!(*source, resonate_codec::Error::FormatChanged { .. }) =>
             {
-                self.keep_as(taking, Some(Form::Kept))
+                self.keep_as(taking, Some(Form::Kept), Bits::Declared)
             }
             kept => kept,
         }
     }
 
-    fn keep_as(&self, taking: &Taking<'_>, forced: Option<Form>) -> Result<Keeping> {
+    fn keep_as(&self, taking: &Taking<'_>, forced: Option<Form>, held_at: Bits) -> Result<Keeping> {
         let opened = match taking.span {
             Some(span) => Decoder::open_span(taking.sources, taking.location, span),
             None => Decoder::open(taking.sources, taking.location),
@@ -512,9 +523,12 @@ impl Vault {
         decoder.refuse_holes();
 
         let codec = Codec::from_id(info.codec);
-        let bits = info
-            .bits_per_coded_sample
-            .unwrap_or_else(|| info.spec.format.valid_bits());
+        let bits = match held_at {
+            Bits::Declared => info
+                .bits_per_coded_sample
+                .unwrap_or_else(|| info.spec.format.valid_bits()),
+            Bits::Widest => SampleFormat::S32.valid_bits(),
+        };
 
         let whole = taking.span.is_none();
         let held = match taking.span {
@@ -549,36 +563,34 @@ impl Vault {
                     codec,
                 },
             )?,
-            Form::Flac => match self.foretold_flac(taking, weighing, &mut decoder, &info, bits)? {
-                Foretold::Settled(kept) => kept,
-                Foretold::Unforetold => self.kept_as_flac(
-                    weighing,
-                    &mut decoder,
-                    Encoding {
-                        spec: info.spec,
-                        speakers,
-                        bits,
-                        codec,
-                    },
-                    taking.halt,
-                )?,
-                Foretold::Misdeclared => {
-                    let (mut again, _) = Decoder::open(taking.sources, taking.location)
-                        .map_err(|source| Error::codec(VaultOp::Read, source))?;
-                    again.refuse_holes();
-                    self.kept_as_flac(
-                        weighing,
-                        &mut again,
-                        Encoding {
-                            spec: info.spec,
-                            speakers,
-                            bits,
-                            codec,
-                        },
-                        taking.halt,
-                    )?
+            Form::Flac => {
+                let encoding = Encoding {
+                    spec: info.spec,
+                    speakers,
+                    bits,
+                    codec,
+                };
+                let at_depth =
+                    match self.foretold_flac(taking, weighing, &mut decoder, &info, bits)? {
+                        Foretold::Settled(kept) => AtDepth::Kept(kept),
+                        Foretold::Unforetold => {
+                            self.kept_as_flac(weighing, &mut decoder, encoding, taking.halt)?
+                        }
+                        Foretold::Misdeclared => {
+                            let (mut again, _) = Decoder::open(taking.sources, taking.location)
+                                .map_err(|source| Error::codec(VaultOp::Read, source))?;
+                            again.refuse_holes();
+                            self.kept_as_flac(weighing, &mut again, encoding, taking.halt)?
+                        }
+                    };
+                match at_depth {
+                    AtDepth::Kept(kept) => kept,
+                    AtDepth::Wider if held_at == Bits::Declared => {
+                        return self.keep_as(taking, forced, Bits::Widest);
+                    }
+                    AtDepth::Wider => Keeping::Refused(Refusal::NotValidated),
                 }
-            },
+            }
         };
 
         let kept = match kept {
@@ -1099,7 +1111,7 @@ impl Vault {
         decoder: &mut Decoder,
         encoding: Encoding,
         halt: Halt<'_>,
-    ) -> Result<Keeping> {
+    ) -> Result<AtDepth> {
         let Encoding {
             spec,
             speakers,
@@ -1107,22 +1119,35 @@ impl Vault {
             codec,
         } = encoding;
         let (format, stored) = flac_depth(bits);
-        decoder.set_output_format(format);
+        let narrowing = Narrowing::between(SampleFormat::S32, format);
+        decoder.set_output_format(narrowing.decoded_as());
         let spec = StreamSpec::new(spec.rate, spec.channels, format);
 
         let staging = self.staged(FLAC_EXTENSION)?;
-        let encoded =
-            match flac::encode(decoder, spec, stored, &staging, weighing.smaller_than, halt) {
-                Ok(encoded) => encoded,
-                Err(error) => {
-                    self.discard(&staging)?;
-                    return Err(error);
-                }
-            };
+        let encoding = flac::encode(
+            decoder,
+            spec,
+            stored,
+            narrowing,
+            &staging,
+            weighing.smaller_than,
+            halt,
+        );
+        let encoded = match encoding {
+            Ok(flac::Encode::Encoded(encoded)) => encoded,
+            Ok(flac::Encode::Wider) => {
+                self.discard(&staging)?;
+                return Ok(AtDepth::Wider);
+            }
+            Err(error) => {
+                self.discard(&staging)?;
+                return Err(error);
+            }
+        };
 
         if encoded.frames == Frames::ZERO {
             self.discard(&staging)?;
-            return Ok(Keeping::Refused(Refusal::Empty));
+            return Ok(AtDepth::Kept(Keeping::Refused(Refusal::Empty)));
         }
         let went_in = Heard {
             pcm: encoded.key,
@@ -1139,12 +1164,12 @@ impl Vault {
         if encoded.outgrew || standing.is_some() {
             self.discard(&staging)?;
             let Some(standing) = standing else {
-                return Ok(Keeping::Refused(Refusal::NoSmaller));
+                return Ok(AtDepth::Kept(Keeping::Refused(Refusal::NoSmaller)));
             };
             if !weighing.fits(standing) {
-                return Ok(Keeping::Refused(Refusal::NoSmaller));
+                return Ok(AtDepth::Kept(Keeping::Refused(Refusal::NoSmaller)));
             }
-            return Ok(Landing::Deduped(standing).kept(Kept {
+            return Ok(AtDepth::Kept(Landing::Deduped(standing).kept(Kept {
                 key,
                 form: Form::Flac,
                 path: target,
@@ -1157,7 +1182,7 @@ impl Vault {
                 replaced: false,
                 declared: Box::default(),
                 bits: 0,
-            }));
+            })));
         }
 
         self.settled(
@@ -1171,6 +1196,7 @@ impl Vault {
             format,
             halt,
         )
+        .map(AtDepth::Kept)
     }
 
     fn kept_as_wave(
@@ -1289,11 +1315,14 @@ impl Vault {
         info: &MediaInfo,
         unread: Option<Decoder>,
     ) -> Result<Keeping> {
+        let unnarrowed = unnarrowed(info);
         let went_in = match unread {
-            Some(mut decoder) => pcm_of(&mut decoder, info, None, taking.halt),
+            Some(mut decoder) => pcm_of(&mut decoder, info, Some(unnarrowed), taking.halt),
             None => Decoder::open(taking.sources, taking.location)
                 .map_err(|source| Error::codec(VaultOp::Verify, source))
-                .and_then(|(mut decoder, info)| pcm_of(&mut decoder, &info, None, taking.halt)),
+                .and_then(|(mut decoder, info)| {
+                    pcm_of(&mut decoder, &info, Some(unnarrowed), taking.halt)
+                }),
         };
         let went_in = match went_in {
             Ok(went_in) => went_in,
@@ -1305,12 +1334,12 @@ impl Vault {
         };
 
         let container = Container::from_id(info.container);
-        let mut copied = self.copied(taking, Stripping::Bare(container))?;
+        let mut copied = self.copied(taking, Stripping::Bare(container), unnarrowed)?;
         if copied
             .as_ref()
             .is_some_and(|copied| copied.stripped && !copied.holds_what(went_in))
         {
-            copied = self.copied(taking, Stripping::Whole)?;
+            copied = self.copied(taking, Stripping::Whole, unnarrowed)?;
         }
         let Some(copied) = copied else {
             return Ok(Keeping::Refused(Refusal::Empty));
@@ -1345,7 +1374,12 @@ impl Vault {
         }))
     }
 
-    fn copied(&self, taking: &Taking<'_>, stripping: Stripping) -> Result<Option<Copied>> {
+    fn copied(
+        &self,
+        taking: &Taking<'_>,
+        stripping: Stripping,
+        heard_at: SampleFormat,
+    ) -> Result<Option<Copied>> {
         let staging = self.staged(&named_extension(taking.location))?;
         let mut media = taking
             .sources
@@ -1418,7 +1452,7 @@ impl Vault {
         if held == 0 {
             return Ok(None);
         }
-        let came_out = held_unless_halted(read_back(&staging, None, taking.halt))?;
+        let came_out = held_unless_halted(read_back(&staging, Some(heard_at), taking.halt))?;
         Ok(Some(Copied {
             staging,
             key: digest.settled(),
@@ -1776,6 +1810,13 @@ fn reopened(taking: &Taking<'_>, format: SampleFormat) -> Result<Decoder> {
     Ok(decoder)
 }
 
+const fn unnarrowed(info: &MediaInfo) -> SampleFormat {
+    match info.spec.format.is_float() {
+        true => SampleFormat::F32,
+        false => SampleFormat::S32,
+    }
+}
+
 const fn flac_depth(bits: u8) -> (SampleFormat, u8) {
     if bits <= SIXTEEN_BIT_CEILING {
         (SampleFormat::S16, SIXTEEN_BIT_CEILING)
@@ -1793,19 +1834,13 @@ fn pcm_of(
     let bits = info
         .bits_per_coded_sample
         .unwrap_or_else(|| info.spec.format.valid_bits());
-    let in_full = format.is_none() && Form::floats_wider_than_a_wave(info.spec, bits);
-    let format = format.unwrap_or_else(|| {
-        if info.spec.format.is_float() {
-            SampleFormat::F32
-        } else if bits <= SIXTEEN_BIT_CEILING {
-            SampleFormat::S16
-        } else if bits <= WIDEST_FLAC_BITS {
-            SampleFormat::S24
-        } else {
-            SampleFormat::S32
-        }
-    });
-    decoder.set_output_format(format);
+    let format = format.unwrap_or(info.spec.format);
+    let in_full = format.is_float() && Form::floats_wider_than_a_wave(info.spec, bits);
+    let narrowing = match format.is_float() {
+        true => Narrowing::between(format, format),
+        false => Narrowing::between(SampleFormat::S32, format),
+    };
+    decoder.set_output_format(narrowing.decoded_as());
     decoder.refuse_holes();
     decoder.follow_format_changes();
     if in_full {
@@ -1813,9 +1848,14 @@ fn pcm_of(
     }
 
     let spec = StreamSpec::new(info.spec.rate, info.spec.channels, format);
-    let mut block = AudioBuffer::empty(spec);
+    let mut block = AudioBuffer::empty(StreamSpec {
+        format: narrowing.decoded_as(),
+        ..spec
+    });
     let mut bytes = Vec::new();
+    let mut widened = Vec::new();
     let mut digest = Digest::default();
+    let mut dropped_live_bits = false;
     let mut frames = 0_u64;
 
     loop {
@@ -1827,9 +1867,17 @@ fn pcm_of(
             DecodeStatus::EndOfStream => break,
             DecodeStatus::Reformatted(sounding) => digest.turned(sounding),
             DecodeStatus::Decoded => {
-                match in_full {
-                    true => pcm::in_full(decoder.heard_in_full(), &mut bytes),
-                    false => pcm::little_endian(&block, &mut bytes),
+                if in_full {
+                    pcm::in_full(decoder.heard_in_full(), &mut bytes);
+                } else if narrowing.drops() {
+                    pcm::widened(&block, &mut widened);
+                    if !narrowing.narrowed(&mut widened) && !dropped_live_bits {
+                        dropped_live_bits = true;
+                        digest.dropped_live_bits();
+                    }
+                    pcm::packed(&widened, format, &mut bytes);
+                } else {
+                    pcm::little_endian(&block, &mut bytes);
                 }
                 digest.note(&bytes);
                 frames += block.frames() as u64;

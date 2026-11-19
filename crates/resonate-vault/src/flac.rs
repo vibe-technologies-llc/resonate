@@ -20,7 +20,7 @@ use crate::{
     Halt,
     error::{Error, FlacOp, Result, VaultOp},
     key::VaultKey,
-    pcm::{self, BLOCK_FRAMES},
+    pcm::{self, BLOCK_FRAMES, Narrowing},
 };
 
 const TUKEY_ALPHA: f32 = 0.4;
@@ -34,6 +34,11 @@ pub(crate) struct Encoded {
     pub(crate) key: VaultKey,
     pub(crate) frames: Frames,
     pub(crate) outgrew: bool,
+}
+
+pub(crate) enum Encode {
+    Encoded(Encoded),
+    Wider,
 }
 
 struct Writing<'a> {
@@ -86,10 +91,11 @@ pub(crate) fn encode(
     decoder: &mut Decoder,
     spec: StreamSpec,
     bits: u8,
+    narrowing: Narrowing,
     into: &Path,
     ceiling: Option<u64>,
     halt: Halt<'_>,
-) -> Result<Encoded> {
+) -> Result<Encode> {
     let channels = usize::from(spec.channel_count().get());
     let depth = usize::from(bits);
     let rate = spec.rate.hz() as usize;
@@ -132,6 +138,9 @@ pub(crate) fn encode(
         }
 
         pcm::widened(&block, &mut widened);
+        if !narrowing.narrowed(&mut widened) {
+            return Ok(Encode::Wider);
+        }
         pending.extend_from_slice(&widened);
 
         let mut at = 0;
@@ -163,11 +172,11 @@ pub(crate) fn encode(
     let digest = context.md5_digest();
     let total = context.total_samples();
     if writing.outgrew() {
-        return Ok(Encoded {
+        return Ok(Encode::Encoded(Encoded {
             key: VaultKey::of(digest),
             frames: Frames(total as u64),
             outgrew: true,
-        });
+        }));
     }
     stream.stream_info_mut().set_md5_digest(&digest);
     stream.stream_info_mut().set_total_samples(total);
@@ -188,11 +197,11 @@ pub(crate) fn encode(
     file.sync_all()
         .map_err(|source| Error::io(VaultOp::Settle, into, source))?;
 
-    Ok(Encoded {
+    Ok(Encode::Encoded(Encoded {
         key: VaultKey::of(digest),
         frames: Frames(total as u64),
         outgrew: false,
-    })
+    }))
 }
 
 fn emit(
@@ -285,7 +294,20 @@ mod tests {
             .expect("a readable source");
         decoder.set_output_format(SampleFormat::S16);
         let spec = StreamSpec::new(info.spec.rate, info.spec.channels, SampleFormat::S16);
-        encode(&mut decoder, spec, 16, into, ceiling, Halt::NEVER).expect("an encode")
+        let narrowing = Narrowing::between(SampleFormat::S16, SampleFormat::S16);
+        match encode(
+            &mut decoder,
+            spec,
+            16,
+            narrowing,
+            into,
+            ceiling,
+            Halt::NEVER,
+        ) {
+            Ok(Encode::Encoded(encoded)) => encoded,
+            Ok(Encode::Wider) => panic!("a sixteen-bit source asked for a wider depth"),
+            Err(error) => panic!("an encode: {error}"),
+        }
     }
 
     #[test]

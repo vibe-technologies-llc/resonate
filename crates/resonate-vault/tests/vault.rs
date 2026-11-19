@@ -345,9 +345,12 @@ fn heard_in_full(path: &Path) -> Vec<f64> {
 }
 
 fn decoded(path: &Path, format: SampleFormat) -> Vec<i32> {
-    let sources = Sources::local();
+    decoded_through(&Sources::local(), path, format)
+}
+
+fn decoded_through(sources: &Sources, path: &Path, format: SampleFormat) -> Vec<i32> {
     let location = MediaLocation::local(path);
-    let (mut decoder, info) = Decoder::open(&sources, &location).expect("a readable object");
+    let (mut decoder, info) = Decoder::open(sources, &location).expect("a readable object");
     decoder.set_output_format(format);
 
     let spec = StreamSpec::new(info.spec.rate, info.spec.channels, format);
@@ -1617,6 +1620,98 @@ fn surround(channels: u16, mask: u32, rate: u32, frames: usize) -> Vec<u8> {
     whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
     whole.extend_from_slice(&body);
     whole
+}
+
+fn thirty_two_bits_declaring_twenty_four(samples: &[i32]) -> Vec<u8> {
+    const EXTENSIBLE: u16 = 0xFFFE;
+    const EXTENSION_BYTES: u16 = 22;
+    const STEREO: u32 = 0x3;
+    const PCM_SUBFORMAT: [u8; 16] = [
+        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b,
+        0x71,
+    ];
+    const BITS: u16 = 32;
+    const VALID_BITS: u16 = 24;
+
+    let block_align = CHANNELS * (BITS / 8);
+    let mut format = Vec::new();
+    format.extend_from_slice(&EXTENSIBLE.to_le_bytes());
+    format.extend_from_slice(&CHANNELS.to_le_bytes());
+    format.extend_from_slice(&RATE.to_le_bytes());
+    format.extend_from_slice(&(RATE * u32::from(block_align)).to_le_bytes());
+    format.extend_from_slice(&block_align.to_le_bytes());
+    format.extend_from_slice(&BITS.to_le_bytes());
+    format.extend_from_slice(&EXTENSION_BYTES.to_le_bytes());
+    format.extend_from_slice(&VALID_BITS.to_le_bytes());
+    format.extend_from_slice(&STEREO.to_le_bytes());
+    format.extend_from_slice(&PCM_SUBFORMAT);
+    let data: Vec<u8> = samples
+        .iter()
+        .flat_map(|sample| sample.to_le_bytes())
+        .collect();
+
+    let mut body = Vec::new();
+    body.extend_from_slice(b"WAVE");
+    chunk(&mut body, b"fmt ", &format);
+    chunk(&mut body, b"data", &data);
+
+    let mut whole = Vec::new();
+    whole.extend_from_slice(b"RIFF");
+    whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    whole.extend_from_slice(&body);
+    whole
+}
+
+#[test]
+fn a_wider_source_declaring_fewer_bits_is_narrowed_only_where_every_bit_dropped_is_zero() {
+    const LIVE_EVERY: usize = 997;
+
+    let tree = Tree::new();
+    let vault = tree.vault();
+
+    let padded: Vec<i32> = signal(FRAMES).iter().map(|sample| sample << 16).collect();
+    let mut live = padded.clone();
+    for sample in live.iter_mut().step_by(LIVE_EVERY) {
+        *sample |= 1;
+    }
+    let padded_at = tree.write(
+        "padded.wav",
+        &thirty_two_bits_declaring_twenty_four(&padded),
+    );
+    let live_at = tree.write("live.wav", &thirty_two_bits_declaring_twenty_four(&live));
+
+    let narrowed = kept(&vault, &Sources::local(), &MediaLocation::local(&padded_at));
+    let widened = vault.keep(&Taking {
+        sources: &Sources::local(),
+        location: &MediaLocation::local(&live_at),
+        span: None,
+        renewing: false,
+        foretold: Some(narrowed.key),
+        replacing: None,
+        halt: Halt::NEVER,
+    });
+    let Ok(Keeping::Kept(widened)) = widened else {
+        panic!("the live source was not kept: {widened:?}");
+    };
+
+    assert_eq!(narrowed.form, Form::Flac);
+    assert_eq!(narrowed.bits, 24);
+    assert_eq!(decoded(&narrowed.path, SampleFormat::S32), padded);
+    assert_ne!(widened.form, Form::Flac);
+    assert_eq!(widened.bits, 32);
+    assert_eq!(
+        decoded_through(
+            &Sources::local().and(Arc::new(VaultFiles::over(&vault))),
+            &widened.path,
+            SampleFormat::S32
+        ),
+        live
+    );
+    assert!(
+        vault
+            .verify(&widened.path, widened.form)
+            .expect("a verified object")
+    );
 }
 
 #[test]
