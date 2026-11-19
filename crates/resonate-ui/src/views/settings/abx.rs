@@ -8,6 +8,7 @@ use std::{
 
 use gpui::{Context, Div, SharedString, Task, div, prelude::*, px, rgb};
 use resonate_core::{
+    ZoneId,
     abx::{Arm, Arms, Score, Session, TRIALS_BY_DEFAULT, Verdict},
     eq::Profile,
 };
@@ -160,8 +161,13 @@ impl Default for Setup {
     }
 }
 
+struct Measured {
+    stop: Arc<AtomicBool>,
+    zone: ZoneId,
+}
+
 struct Measuring {
-    stop: Option<Arc<AtomicBool>>,
+    measured: Option<Measured>,
     what: &'static str,
     _landing: Task<()>,
 }
@@ -169,33 +175,37 @@ struct Measuring {
 impl Measuring {
     fn idle() -> Self {
         Self {
-            stop: None,
+            measured: None,
             what: words::settings_abx::starting(),
             _landing: Task::ready(()),
         }
     }
 
-    fn under(stop: Arc<AtomicBool>, what: &'static str, landing: Task<()>) -> Self {
+    fn under(stop: Arc<AtomicBool>, zone: ZoneId, what: &'static str, landing: Task<()>) -> Self {
         Self {
-            stop: Some(stop),
+            measured: Some(Measured { stop, zone }),
             what,
             _landing: landing,
         }
     }
 
     fn finish(&mut self) {
-        self.stop = None;
+        self.measured = None;
     }
 
     const fn is_busy(&self) -> bool {
-        self.stop.is_some()
+        self.measured.is_some()
+    }
+
+    fn zone(&self) -> Option<ZoneId> {
+        self.measured.as_ref().map(|measured| measured.zone)
     }
 }
 
 impl Drop for Measuring {
     fn drop(&mut self) {
-        if let Some(stop) = &self.stop {
-            stop.store(true, Ordering::Relaxed);
+        if let Some(measured) = &self.measured {
+            measured.stop.store(true, Ordering::Relaxed);
         }
     }
 }
@@ -208,6 +218,7 @@ enum Subject {
 pub(crate) struct ListeningTest {
     session: Session,
     subject: Subject,
+    zone: ZoneId,
     heard: Option<Arm>,
     last: Option<Verdict>,
 }
@@ -231,21 +242,29 @@ impl ListeningTest {
         chain: &Profile,
         rate: resonate_core::SampleRate,
         sink: NodeName,
+        zone: ZoneId,
     ) -> Option<Self> {
         let session = Session::new(trials, clock_seed()).ok()?;
         let arms = Arms::matched(chain, rate).ok()?;
         Some(Self {
             session,
             subject: Subject::Equaliser { arms, sink },
+            zone,
             heard: None,
             last: None,
         })
     }
 
-    const fn of_a_setting(session: Session, contest: Contest, lowered: Lowered) -> Self {
+    const fn of_a_setting(
+        session: Session,
+        contest: Contest,
+        lowered: Lowered,
+        zone: ZoneId,
+    ) -> Self {
         Self {
             session,
             subject: Subject::Setting { contest, lowered },
+            zone,
             heard: None,
             last: None,
         }
@@ -267,6 +286,20 @@ impl ListeningTest {
                 ..
             } => Testing::Dither,
         }
+    }
+
+    fn hear(&mut self, hear: Hear) -> Option<(ZoneId, Command)> {
+        let arm = match hear {
+            Hear::A => Arm::A,
+            Hear::B => Arm::B,
+            Hear::X => self.session.x()?,
+        };
+        self.heard = match hear {
+            Hear::X => None,
+            Hear::A => Some(Arm::A),
+            Hear::B => Some(Arm::B),
+        };
+        Some((self.zone, self.command(arm)))
     }
 
     fn command(&self, arm: Arm) -> Command {
@@ -701,7 +734,8 @@ impl RootView {
             );
             return;
         };
-        let Some(test) = ListeningTest::of_the_equaliser(trials, &chain, rate, sink) else {
+        let zone = self.zone_acted_on();
+        let Some(test) = ListeningTest::of_the_equaliser(trials, &chain, rate, sink, zone) else {
             self.report(
                 Notice::Trouble(words::settings_abx::not_levellable().to_owned()),
                 cx,
@@ -714,7 +748,8 @@ impl RootView {
     }
 
     fn begin_testing_a_setting(&mut self, trials: usize, cx: &mut Context<Self>) {
-        let engine = self.player.read(cx).engine();
+        let engine = self.player_acted_on().read(cx).engine();
+        let zone = self.zone_acted_on();
         let set = engine.output_settings();
         let setup = &self.settings_pane.read(cx).shown.test_setup;
         let Some(contest) = setup.chosen.contest(setup.testing, &set) else {
@@ -742,7 +777,7 @@ impl RootView {
                     Ok(lowered) => {
                         this.settings_pane.update(cx, |pane, _| {
                             pane.shown.audition =
-                                Some(ListeningTest::of_a_setting(session, contest, lowered));
+                                Some(ListeningTest::of_a_setting(session, contest, lowered, zone));
                         });
                     }
                     Err(error) => {
@@ -760,38 +795,33 @@ impl RootView {
             words::settings_abx::measuring()
         };
         self.settings_pane.update(cx, |pane, _| {
-            pane.shown.test_setup.measuring = Measuring::under(stop, what, landing);
+            pane.shown.test_setup.measuring = Measuring::under(stop, zone, what, landing);
         });
         cx.notify();
     }
 
     fn stop_measuring(&mut self, cx: &mut Context<Self>) {
-        self.settings_pane.update(cx, |pane, _| {
+        let measured = self.settings_pane.update(cx, |pane, _| {
+            let measured = pane.shown.test_setup.measuring.zone();
             pane.shown.test_setup.measuring = Measuring::idle();
+            measured
         });
-        self.send(Command::Audition(None), cx);
+        let zone = measured.unwrap_or_else(|| self.zone_acted_on());
+        self.send_to(zone, Command::Audition(None), cx);
         cx.notify();
     }
 
     fn hear_in_the_test(&mut self, hear: Hear, cx: &mut Context<Self>) {
         let heard = self.settings_pane.update(cx, |pane, _| {
-            let test = pane.shown.audition.as_mut()?;
-            let arm = match hear {
-                Hear::A => Arm::A,
-                Hear::B => Arm::B,
-                Hear::X => test.session.x()?,
-            };
-            test.heard = match hear {
-                Hear::X => None,
-                Hear::A => Some(Arm::A),
-                Hear::B => Some(Arm::B),
-            };
-            Some(test.command(arm))
+            pane.shown
+                .audition
+                .as_mut()
+                .and_then(|test| test.hear(hear))
         });
-        let Some(command) = heard else {
+        let Some((zone, command)) = heard else {
             return;
         };
-        self.send(command, cx);
+        self.send_to(zone, command, cx);
         cx.notify();
     }
 
@@ -817,7 +847,7 @@ impl RootView {
         };
         match test.subject {
             Subject::Equaliser { .. } => self.tell_the_engine(cx),
-            Subject::Setting { .. } => self.send(Command::Audition(None), cx),
+            Subject::Setting { .. } => self.send_to(test.zone, Command::Audition(None), cx),
         }
         cx.notify();
     }
@@ -948,7 +978,7 @@ mod tests {
             },
         };
         let session = Session::new(4, 7).expect("a session");
-        let test = ListeningTest::of_a_setting(session, contest, Lowered::NOTHING);
+        let test = ListeningTest::of_a_setting(session, contest, Lowered::NOTHING, ZoneId::FIRST);
 
         for arm in [Arm::A, Arm::B] {
             assert!(matches!(
@@ -971,7 +1001,7 @@ mod tests {
         let lowered = Lowered { arm: Arm::B, by };
         let session = Session::new(4, 7).expect("a session");
 
-        let test = ListeningTest::of_a_setting(session, contest, lowered);
+        let test = ListeningTest::of_a_setting(session, contest, lowered, ZoneId::FIRST);
 
         assert_eq!(test.testing(), Testing::Restoration);
         assert_eq!(
@@ -983,6 +1013,7 @@ mod tests {
             Session::new(4, 7).expect("a session"),
             contest,
             Lowered::NOTHING,
+            ZoneId::FIRST,
         );
         assert_eq!(
             equal.levels_said(),
@@ -1089,8 +1120,12 @@ mod tests {
         let watched = Arc::clone(&stop);
         driven.root.update(&mut driven.cx, |root, cx| {
             root.settings_pane.update(cx, |pane, _| {
-                pane.shown.test_setup.measuring =
-                    Measuring::under(stop, words::settings_abx::measuring(), Task::ready(()));
+                pane.shown.test_setup.measuring = Measuring::under(
+                    stop,
+                    ZoneId::FIRST,
+                    words::settings_abx::measuring(),
+                    Task::ready(()),
+                );
             });
             cx.notify();
         });
@@ -1110,5 +1145,45 @@ mod tests {
         }));
         assert!(watched.load(Ordering::Relaxed));
         assert!(driven.read(|root, cx| root.settings_pane.read(cx).shown.audition.is_none()));
+    }
+
+    #[gpui::test]
+    fn a_test_of_a_setting_hears_and_ends_on_the_zone_it_began_on_though_another_is_shown(
+        cx: &mut TestAppContext,
+    ) {
+        let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+        let mut driven = Driven::open(cx, library);
+        let root = driven.root.clone();
+        let contest = Contest::Restoration {
+            a: Restoration::Off,
+            b: Restoration::Extend,
+        };
+
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                let zone = root.zone_acted_on();
+                let session = Session::new(4, 7).expect("a session");
+                let test = ListeningTest::of_a_setting(session, contest, Lowered::NOTHING, zone);
+                root.settings_pane
+                    .update(cx, |pane, _| pane.shown.audition = Some(test));
+                root.add_a_zone(cx);
+            });
+        });
+        driven.until(|root, _| root.zones.len() == 2);
+        let shown = driven.read(|root, _| root.switcher.selected());
+        let heard = driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.settings_pane.update(cx, |pane, _| {
+                    [Hear::A, Hear::B, Hear::X]
+                        .into_iter()
+                        .filter_map(|hear| pane.shown.audition.as_mut()?.hear(hear))
+                        .map(|(zone, _)| zone)
+                        .collect::<Vec<_>>()
+                })
+            })
+        });
+
+        assert_ne!(shown, ZoneId::FIRST);
+        assert_eq!(heard, [ZoneId::FIRST; 3]);
     }
 }

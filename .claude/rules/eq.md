@@ -531,8 +531,8 @@ tested.
   setting): restoration, the resampler's quality and phase, the dither's kind and noise shaping,
   each defaulting to the CLI's opposite (extend or off, low latency or very high, none or triangular; phase
   and shaping the settings'). `Chosen::contest` is the `Contest` and nothing else decides it. The
-  test (`ListeningTest`, a `Session` and a `Subject`: the equaliser's `Arms` and sink, or a
-  `Contest` and its `Lowered`) begins on the background executor (`begin_the_audition`): restoration
+  test (`ListeningTest`, a `Session`, a `Subject`: the equaliser's `Arms` and sink, or a
+  `Contest` and its `Lowered`, and the zone it began on) begins on the background executor (`begin_the_audition`): restoration
   measures the song through both arms (`Player::levels_of_the_contest`, with a stop flag the
   `Measuring` handle sets when it is dropped), then `Command::Audition` of A is requested and its
   answer waited for (`AUDITION_BEGUN_WITHIN`, 10 s), so a refusal begins nothing. While it runs the
@@ -545,7 +545,10 @@ tested.
   says how its levels were matched (*Both play at one level* for the resampler and dither,
   *Measured through both…* or *B lowered by 0.12 dB to match the other* for restoration) in place of
   the equaliser's residual; hearing an arm sends the `Audition` with that arm and ending sends
-  `Audition(None)` (the equaliser's end is `tell_the_engine`)
+  `Audition(None)` (the equaliser's end is `tell_the_engine`). An `Audition` reaches one zone alone,
+  so the test and the `Measuring` handle keep the zone they began on and every arm heard, the end and
+  a *Stop* go to it through `RootView::send_to`, whichever zone the window shows by then
+  (`a_test_of_a_setting_hears_and_ends_on_the_zone_it_began_on_though_another_is_shown`)
   (`each_test_is_the_contest_of_the_settings_against_the_arm_chosen`,
   `a_test_of_a_setting_with_nothing_playing_is_refused_in_a_toast_and_begins_nothing`,
   `a_test_being_measured_shows_it_and_can_be_stopped_before_it_begins`).
