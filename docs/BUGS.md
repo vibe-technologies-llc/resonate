@@ -25,11 +25,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   which reaches every zone) makes the moved row read as a song added here, and `added_here` takes it
   out and asks the host for it; on the phones `documents_moved` leaves the following zone on the old
   URIs instead, so the song fails when reached; the seat's known stamps should follow the move
-- [S · 0.14.1] A synced row a paired device stamped near `i64::MAX` before the ledger refused such
-  stamps still wins every later write of its key: the ledger now refuses a stamp more than a day
-  past the wall clock and sets a saved clock back on load (`Clock::from_saved`), but rows already
-  stored keep their stamp, so an honest edit of that key never lands; such rows should be restamped
-  to the wall clock when the ledger opens
 
 ## Catalog
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
