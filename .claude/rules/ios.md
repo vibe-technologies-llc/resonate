@@ -1369,16 +1369,15 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   the songs shown** (`SearchModel.steadied`): the ranking puts favourites ahead among equal matches,
   so a heart tapped on a result moved it up under the finger; an answer to the same text holding the
   same songs keeps the order shown with the rows read, and only one whose songs differ is shown in
-  its own order. The completions offered
-  (`offeredCompletions`) are folded once as an answer lands, not at each read.
+  its own order.
 - **The Library tab searches the shelf shown**: one field over `Library.librarySearch`
   (`LibrarySearchField`, a glass capsule with *Cancel* while focused, floating over the shelf under
   the tab row; only the results' list, `LibraryFound`, starts below it, `contentMargins`, since the
   field stays while it holds text), the tab row its scope, so there is no scope bar and text typed survives a change of shelf. Songs, Albums and Artists draw `SearchResults` at their own scope (`LibraryFound`),
   since `search_library` answers all three at once, and Playlists folds the names (below) and keeps no search; the *Top*
   view of all three is the Search tab's. Nothing found is said for the shelf's own kind. *Did you mean* where nothing matched; the grammar's `reads` as chips;
-  completions as a row of glass capsules of the words alone heading the results (`SearchCompletions`, at most five,
-  read from the answer on screen, so the row changes only as the results do); a glass card under
+  no completions are offered (the answer's `completions` go unread: a row of glass capsules heading
+  the results looked cluttered and was removed); a glass card under
   the focused field offers only, on an empty field, the latest of the last ten searches (`UserDefaults` suite `library-features`,
   key `recent-searches`, shared with the Search tab: a search kept merges into what is stored, and
   each tab re-reads it on appearing), kept when a search is submitted or one of its results opened.
@@ -1386,8 +1385,7 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   (`SearchHistoryView`, `keep-search-history` in the same suite, on unless set), and while it is
   off `SearchModel` keeps nothing and offers nothing; turning it off forgets what both searches
   kept.
-  Completions are never offered under the field while typing: a list there sat over the results
-  and moved with every answer. **The field is hidden until the shelf scrolls up**, anywhere in the
+  **The field is hidden until the shelf scrolls up**, anywhere in the
   list or as a pull down at its top (`SearchReveal`, `ResonateLogic`, held by
   `LibraryShelvesTests`: shown once the list has moved `turnsAfter` (24 pt) up, gone once it has
   moved as far down, a turn counting afresh; the pull's bounce back to the top and a bounce past
@@ -1420,8 +1418,8 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   most three library songs and *All library results* before the online results, so album and artist
   shelves cannot push online songs several screens down. *Library* shows the full Top with its
   song, album and artist sections and *See all*; *Online* starts with online results. The same
-  `tabSearch.text` and `Features.onlineQuery` move together whichever area is shown, including a
-  completion, *Did you mean* and Listen's *Find it*. A shared link shows online alone and hides
+  `tabSearch.text` and `Features.onlineQuery` move together whichever area is shown, including
+  *Did you mean* and Listen's *Find it*. A shared link shows online alone and hides
   the picker. With online features off no request leaves and `OnlineOffRow` opens Settings.
   Downloads live on a toolbar button's page (`DownloadsButton`), also on the online Songs and
   release pages, never above their results; its filled icon and spoken active count follow the
@@ -1431,11 +1429,9 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   Library tools alone, so the toolbar holds Downloads and *Save as playlist*. The field's prompt is
   *Songs, albums, artists*. There is no `.searchSuggestions` overlay. Library tools' *Search* opens
   this tab through `Navigation.openSearch`.
-- **Search's rows sit close**: a completion is a glass capsule 8 pt taller than its line, its row
-  inset 6 pt above and 2 pt below and scrolled within 16 pt content margins
-  (`contentMargins(.horizontal:for: .scrollContent)`), and *See all* reaches 12 pt above and below
+- **Search's rows sit close**: *See all* reaches 12 pt above and below
   its line through its content shape while laying out at the line's height
-  (`SeeAllHeader.reachBeyondTheLine`), so neither a completion nor a header stands 44 pt tall.
+  (`SeeAllHeader.reachBeyondTheLine`), so a header never stands 44 pt tall.
 - **A result answers while the keyboard is up.** The Search tab's and the Library tab's result lists
   stow the keyboard as soon as they are dragged (`scrollDismissesKeyboard(.immediately)`), and
   choosing a result (a song played, an album or artist opened) drops the field's focus first

@@ -222,7 +222,6 @@ struct LibraryFindings: View, Equatable {
     }
 
     var body: some View {
-        SearchCompletions(search: search)
         if search.matchedNothing {
             if let meant = search.found.didYouMean {
                 Button { search.text = meant } label: {

@@ -440,7 +440,6 @@ struct LibraryFound: View {
     var body: some View {
         let search = library.librarySearch
         List {
-            SearchCompletions(search: search).themedRows()
             SearchResults(search: search, scope: .constant(scope)) { Keyboard.stow() }.equatable().themedRows()
         }
         .listStyle(.plain)

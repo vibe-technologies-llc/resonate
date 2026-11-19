@@ -26,7 +26,6 @@ public final class SearchModel {
     }
     public private(set) var found = SearchModel.nothing
     public private(set) var answered = ""
-    public private(set) var offeredCompletions: [String] = []
     public private(set) var asking = false
     public private(set) var recents: [String] = []
 
@@ -60,14 +59,6 @@ public final class SearchModel {
     public var hasAnswer: Bool { !answered.isEmpty }
     public var matchedNothing: Bool { hasAnswer && found.trackCount == 0 }
 
-    private static func offered(_ completions: [String], answering typed: String) -> [String] {
-        let folded = typed.searchFolded
-        return completions.filter { completion in
-            let offered = completion.searchFolded
-            return offered != folded && offered.hasPrefix(folded)
-        }
-    }
-
     @concurrent
     private static func changed(_ answer: LibrarySearch, from shown: LibrarySearch) async -> LibrarySearch? {
         let steadied = steadied(answer, as: shown)
@@ -85,10 +76,6 @@ public final class SearchModel {
     }
 
     private func show(_ answer: LibrarySearch, answering query: String) {
-        if found.completions != answer.completions || answered != query {
-            let completions = Self.offered(answer.completions, answering: query)
-            if offeredCompletions != completions { offeredCompletions = completions }
-        }
         found = answer
         if answered != query { answered = query }
     }
@@ -126,7 +113,6 @@ public final class SearchModel {
         guard !query.isEmpty else {
             found = Self.nothing
             answered = ""
-            if !offeredCompletions.isEmpty { offeredCompletions = [] }
             asking = false
             pending = nil
             return

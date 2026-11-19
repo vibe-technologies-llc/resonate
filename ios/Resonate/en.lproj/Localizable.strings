@@ -1119,7 +1119,6 @@
 "search.area.library" = "Library";
 "search.area.online" = "Online";
 "search.area.spoken" = "Search in";
-"search.completion.spoken" = "Search for %@";
 "search.did-you-mean" = "Did you mean %@?";
 "search.heading.library" = "Library";
 "search.heading.online" = "Online";

@@ -283,38 +283,6 @@ struct SearchReadings: View {
     }
 }
 
-struct SearchCompletions: View {
-    private static let shown = 5
-
-    let search: SearchModel
-
-    var body: some View {
-        let completions = Array(search.offeredCompletions.prefix(Self.shown))
-        if !completions.isEmpty {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(completions, id: \.self) { completion in
-                        Button { search.text = completion } label: {
-                            Text(completion)
-                                .font(.subheadline)
-                                .titleLines()
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .glassEffect(.regular.interactive(), in: .capsule)
-                                .contentShape(.capsule)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(said("search.completion.spoken", completion))
-                    }
-                }
-            }
-            .contentMargins(.horizontal, 16, for: .scrollContent)
-            .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 2, trailing: 0))
-            .listRowSeparator(.hidden)
-        }
-    }
-}
-
 struct AlbumShelf: View {
     @Environment(Library.self) private var library
     @ScaledMetric(relativeTo: .subheadline) private var edge: CGFloat = 140

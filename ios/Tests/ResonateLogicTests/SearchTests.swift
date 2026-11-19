@@ -235,15 +235,6 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
         #expect(search.matchedNothing)
     }
 
-    @Test func completionsOfferedStartWithWhatWasAskedAndAreNeverTheSameWords() async {
-        let search = model { _ in found(1, completions: ["Pink Floyd", "pink", "Pinkpop", "Floyd Pink", "PÍNK FLOYD live"]) }
-
-        search.text = "Pink"
-        await eventually { search.hasAnswer }
-
-        #expect(search.offeredCompletions == ["Pink Floyd", "Pinkpop", "PÍNK FLOYD live"])
-    }
-
     @Test func recentSearchesAreKeptNewestFirstWithoutRepeatsInAnyCaseAndTenAtMost() {
         let search = model()
 
