@@ -49,20 +49,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as
   before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
-## Providers and network
-- [S · 0.14.1] A server answering an open range with a capped `206` ends the song early: `Ranged`
-  (`resonate-fetch`'s `ranged.rs`) checks only where `Content-Range` starts and returns the body's
-  `Ok(0)` as the end though it holds `total`, `Seeking` passes it up, and `resonate-upnp`'s
-  `Fetched` frames the slice by its length and fails the seek; a Subsonic, Monochrome or hifi-api
-  song played in place stops short, and a resumed download lands short and is filed `NotTheSong`,
-  refusing the offer for 30 days; a read ending under `total` should ask again from where it is
-- [S · 0.14.1] A seek whose skipping copy fails part way leaves `Seeking` reading from another place:
-  `passed_over` (`seeking.rs`) returns on the error before `self.at` moves while `self.reading`
-  stays set, so a later read with no seek between hands back bytes from an offset `at` does not
-  name
-- [S · 0.14.1] Recognising a 705.6 or 768 kHz file never asks Shazam: the signature's resampling to
-  16 kHz (`signature.rs`) is refused for a ratio under 1/32 and answers an empty signal, and
-  `Shazam::signed` logs too few peaks and gives up with no error
 
 ## The window
 - [S · 0.14.1] A song fetched to play lands on the zone shown when the download arrives, not the one
