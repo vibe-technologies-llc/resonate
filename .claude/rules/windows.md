@@ -177,7 +177,10 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   Core Audio's `serving.rs` does (`macos.md`). `serving::launch` owns the thread, the channels, the
   reshaper and the loop (`serve`, `handled`); `Hardware` is what it asks of a client:
   `wait_for_room` (the event, 100 ms), `cycle` (one fill, answering a `Cycled` whose
-  `has_played_out` is the drain's test), `start`, `pause` (stop and reset), `stop` and `prioritise`
+  `has_played_out` is the drain's test), `probe` (`get_current_padding`, asked whenever the event
+  stays quiet past its wait while streaming, so an endpoint unplugged or reformatted that stops
+  signalling fails the stream as a refused `cycle` would rather than freezing its position:
+  `a_stream_whose_event_falls_quiet_is_probed_and_a_refused_probe_fails_it_once`), `start`, `pause` (stop and reset), `stop` and `prioritise`
   (MMCSS, set as the stream opens and on every reshape). `render::Playing` implements it over the
   `wasapi` crate under `cfg(windows)`, and `stream.rs` is only the open: the target's endpoint, the
   client's `Initialize` and the `Playing` handed back to `launch`'s `make`. The fake in

@@ -36,6 +36,7 @@ pub trait Hardware {
 
     fn wait_for_room(&mut self) -> Woken;
     fn cycle(&mut self) -> Result<Cycled, Self::Fault>;
+    fn probe(&mut self) -> Result<(), Self::Fault>;
     fn start(&mut self) -> Result<(), Self::Fault>;
     fn pause(&mut self) -> Result<(), Self::Fault>;
     fn stop(&mut self);
@@ -251,16 +252,21 @@ fn serve<H: Hardware>(hardware: &mut H, serving: &Serving<'_>) {
             }
             Next::Quiet => serving.let_go_of_the_spent(),
         }
-        if standing.state != StreamState::Streaming || hardware.wait_for_room() == Woken::TimedOut {
+        if standing.state != StreamState::Streaming {
             continue;
         }
-        match hardware.cycle() {
-            Ok(cycled) => {
+        let turned = match hardware.wait_for_room() {
+            Woken::Asked => hardware.cycle().map(Some),
+            Woken::TimedOut => hardware.probe().map(|()| None),
+        };
+        match turned {
+            Ok(Some(cycled)) => {
                 if standing.draining && cycled.has_played_out() {
                     standing.draining = false;
                     let _ = serving.announced.send(StreamEvent::Drained);
                 }
             }
+            Ok(None) => {}
             Err(error) => {
                 tracing::warn!(%error, "a WASAPI stream failed");
                 hardware.stop();
@@ -338,7 +344,7 @@ fn handled<H: Hardware>(
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::atomic::{AtomicU64, AtomicUsize, Ordering},
+        sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         time::Instant,
     };
 
@@ -357,6 +363,7 @@ mod tests {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum Call {
         Cycle,
+        Probe,
         Start,
         Pause,
         Stop,
@@ -422,6 +429,7 @@ mod tests {
         played: Arc<AtomicU64>,
         heard_last: Arc<Mutex<Vec<u8>>>,
         disposed: Arc<AtomicUsize>,
+        fallen_quiet: Arc<AtomicBool>,
     }
 
     impl Seen {
@@ -461,7 +469,10 @@ mod tests {
 
         fn wait_for_room(&mut self) -> Woken {
             thread::sleep(A_DEVICE_PERIOD);
-            Woken::Asked
+            match self.seen.fallen_quiet.load(Ordering::Acquire) {
+                true => Woken::TimedOut,
+                false => Woken::Asked,
+            }
         }
 
         fn cycle(&mut self) -> Result<Cycled, Refused> {
@@ -478,6 +489,10 @@ mod tests {
                 played: self.seen.played.load(Ordering::Acquire),
                 heard_until: self.heard_until,
             })
+        }
+
+        fn probe(&mut self) -> Result<(), Refused> {
+            self.answer(Call::Probe)
         }
 
         fn start(&mut self) -> Result<(), Refused> {
@@ -764,6 +779,27 @@ mod tests {
         let opened = streaming(Box::new(Silent));
 
         *opened.seen.refusing.lock() = Some(Call::Cycle);
+
+        assert_eq!(
+            event(&opened),
+            StreamEvent::StateChanged {
+                from: StreamState::Streaming,
+                to: StreamState::Failed
+            }
+        );
+        quiet(&opened);
+        assert!(opened.seen.let_go());
+        assert_eq!(opened.seen.calls_but_cycles().last(), Some(&Call::Stop));
+    }
+
+    #[test]
+    fn a_stream_whose_event_falls_quiet_is_probed_and_a_refused_probe_fails_it_once() {
+        let opened = streaming(Box::new(Silent));
+
+        opened.seen.fallen_quiet.store(true, Ordering::Release);
+        wait_until(|| opened.seen.calls.lock().contains(&Call::Probe));
+        quiet(&opened);
+        *opened.seen.refusing.lock() = Some(Call::Probe);
 
         assert_eq!(
             event(&opened),

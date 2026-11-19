@@ -104,6 +104,10 @@ impl Hardware for Playing {
         Ok(self.cycled(filled.heard, played))
     }
 
+    fn probe(&mut self) -> Result<(), WasapiError> {
+        self.client.get_current_padding().map(|_| ())
+    }
+
     fn start(&mut self) -> Result<(), WasapiError> {
         self.client.start_stream()
     }
