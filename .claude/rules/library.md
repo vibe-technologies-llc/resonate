@@ -1725,7 +1725,22 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   another reader while they are copied, and only once whole gets the file's owner, mode and extended attributes (`carries_what_the_file_did`:
   `chown`, `set_permissions`, every `listxattr` name, via `rustix`). Where any is refused, and
   wherever the file has a second name (`nlink` over one), the whole tagged copy is written back into
-  the file's own inode instead (`settled_over`). Before that window the synced copy is renamed
+  the file's own inode instead (`settled_over`). **On Linux and Android a write back at another
+  length waits for the track's readers:** a copy whose length differs from the track's (a head
+  grown or shrunk moves the audio behind it) is laid only inside `Shifting::while_alone`, under the
+  same write lease as a lengthening, so a decoder holding the track through either name is never
+  handed shifted bytes and a newcomer waits until the copy is laid (at most the kernel's lease
+  break time); where another handle holds the track nothing is written, the copy goes and the
+  write answers `codec::Error::HeldOpenElsewhere`, the tags waiting for a later write
+  (`a_track_with_two_names_a_reader_holds_is_not_shifted_under_it`,
+  `a_whole_copy_at_another_length_waits_while_a_reader_holds_the_track`). **macOS and Windows
+  cannot learn who holds a file** (`Shifting::readers_can_be_asked` is false there), so there the
+  copy is written back over the same inode as before, and a player reading the track while its
+  head grows may be handed the audio shifted under it: a known limit, chosen over refusing every
+  such write. A write back at the track's own length lays only the pages that differ and moves no
+  audio, so it goes ahead whoever reads, everywhere
+  (`a_whole_copy_at_the_tracks_length_is_laid_whoever_reads_it`). The spool's write back follows
+  the same rule. Before that window the synced copy is renamed
   `.<name>.<pid>-<n>.resonate-whole` (`journal::WholeCopy`); a write-back failing part way renames
   it `.resonate-torn` and answers `codec::Error::WrittenBackPartway`. **The whole copy says what the
   track was:** `stood_beside` appends an FNV-1a hash of each 4 KiB page of the track as it stood,

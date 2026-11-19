@@ -15,6 +15,8 @@ use resonate_core::{
     writer::{self, Held, Writer},
 };
 
+use crate::insert::Shifting;
+
 const MAGIC: &[u8; 8] = b"RSUNDO01";
 const AWAY_UNDO_MAGIC: &[u8; 8] = b"RSUNDA01";
 const JOURNAL_SUFFIX: &str = ".resonate-undo";
@@ -288,6 +290,7 @@ pub(crate) struct Torn {
 
 pub(crate) enum Unsettled {
     Untouched(io::Error),
+    HeldOpen,
     Torn(Torn),
 }
 
@@ -344,18 +347,29 @@ impl WholeCopy {
         })
     }
 
-    pub(crate) fn written_back(self) -> Result<(), Unsettled> {
-        let laid = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&self.track)
-            .map_err(Laying::Unstarted)
-            .and_then(|track| laid_over(&self.handle, self.length, &track));
+    pub(crate) fn written_back(self, readers: &dyn Shifting) -> Result<(), Unsettled> {
+        let track = match OpenOptions::new().read(true).write(true).open(&self.track) {
+            Ok(track) => track,
+            Err(source) => return Err(self.dropped(Unsettled::Untouched(source))),
+        };
+        let laid = match lands_at_another_length(&track, self.length) {
+            Ok(false) => laid_over(&self.handle, self.length, &track),
+            Ok(true) if !readers.readers_can_be_asked() => {
+                laid_over(&self.handle, self.length, &track)
+            }
+            Ok(true) => match laid_while_alone(&self.handle, self.length, &track, readers) {
+                Some(laid) => laid,
+                None => {
+                    tracing::debug!(path = %self.track.display(), "a track another reader may hold open is not written back at another length under it, so its tags wait");
+                    return Err(self.dropped(Unsettled::HeldOpen));
+                }
+            },
+            Err(source) => Err(Laying::Unstarted(source)),
+        };
         match laid {
             Ok(()) => {}
             Err(Laying::Unstarted(source)) => {
-                let _ = fs::remove_file(&self.copy);
-                return Err(Unsettled::Untouched(source));
+                return Err(self.dropped(Unsettled::Untouched(source)));
             }
             Err(Laying::Partway(source)) => {
                 warn_torn(&source, &self.track, &self.copy);
@@ -366,6 +380,11 @@ impl WholeCopy {
             tracing::debug!(%error, path = %self.copy.display(), "the whole copy of a written-back track could not be removed");
         }
         Ok(())
+    }
+
+    fn dropped(self, unsettled: Unsettled) -> Unsettled {
+        let _ = fs::remove_file(&self.copy);
+        unsettled
     }
 
     fn torn(self, source: io::Error) -> Torn {
@@ -417,6 +436,24 @@ fn laid_over(copy: &File, length: u64, track: &File) -> Result<(), Laying> {
     }
     track.set_len(length).map_err(Laying::Partway)?;
     track.sync_all().map_err(Laying::Partway)
+}
+
+fn lands_at_another_length(track: &File, length: u64) -> io::Result<bool> {
+    Ok(track.metadata()?.len() != length)
+}
+
+fn laid_while_alone(
+    copy: &File,
+    length: u64,
+    track: &File,
+    readers: &dyn Shifting,
+) -> Option<Result<(), Laying>> {
+    let mut laid = None;
+    let asked = readers.while_alone(track, &mut || {
+        laid = Some(laid_over(copy, length, track));
+        Ok(true)
+    });
+    asked.and(laid)
 }
 
 fn read_as_far_as_it_goes(file: &File, into: &mut [u8], at: u64) -> io::Result<usize> {
@@ -1211,7 +1248,10 @@ mod tests {
     use std::{env, slice};
 
     use super::*;
-    use crate::left_alone::left_long_ago;
+    use crate::{
+        insert::{HeldElsewhere, Refusing},
+        left_alone::left_long_ago,
+    };
 
     const NEVER_A_PROCESS: u32 = 999_999_999;
 
@@ -1336,7 +1376,7 @@ mod tests {
 
         let whole = WholeCopy::named_beside(&staged, &held, &track).expect("a whole copy");
         fs::remove_file(&whole.copy).expect("the copy's name taken away");
-        let written = whole.written_back();
+        let written = whole.written_back(&Refusing);
 
         assert!(written.is_ok(), "the copy was reopened by its path");
         assert_eq!(fs::read(&track).expect("the track"), tagged);
@@ -1357,7 +1397,7 @@ mod tests {
             panic!("the copy names no track");
         };
         assert_eq!(bound, fs::canonicalize(&track).expect("the track"));
-        assert!(kept.written_back().is_ok());
+        assert!(kept.written_back(&Refusing).is_ok());
         assert_eq!(fs::read(&track).expect("the track"), [2_u8; 8]);
     }
 
@@ -2165,5 +2205,36 @@ mod tests {
 
         assert_eq!(fs::read(&track).expect("the track"), was);
         assert!(whole.exists(), "another user's copy was taken away");
+    }
+
+    #[test]
+    fn a_whole_copy_at_another_length_waits_while_a_reader_holds_the_track() {
+        let folder = Folder::new("held-open");
+        let was = paged(2, 10, 3);
+        let tagged = paged(3, 50, 9);
+        let (track, whole, _held) = about_to_be_written_back(&folder, &was, &tagged);
+        let copy = whole.copy.clone();
+
+        let written = whole.written_back(&HeldElsewhere);
+
+        assert!(matches!(written, Err(Unsettled::HeldOpen)));
+        assert_eq!(fs::read(&track).expect("the track"), was);
+        assert!(!copy.exists(), "the whole copy was left");
+    }
+
+    #[test]
+    fn a_whole_copy_at_the_tracks_length_is_laid_whoever_reads_it() {
+        let folder = Folder::new("same-length");
+        let was = paged(2, 10, 3);
+        let tagged = paged(2, 10, 9);
+        let (track, whole, _held) = about_to_be_written_back(&folder, &was, &tagged);
+
+        let written = whole.written_back(&HeldElsewhere);
+
+        assert!(
+            written.is_ok(),
+            "a copy of the same length waited for its readers"
+        );
+        assert_eq!(fs::read(&track).expect("the track"), tagged);
     }
 }

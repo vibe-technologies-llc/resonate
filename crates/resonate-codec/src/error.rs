@@ -264,6 +264,11 @@ pub enum Error {
     #[error("{location} changed while its tags were being written, so they were not")]
     ChangedWhileWritten { location: MediaLocation },
 
+    #[error(
+        "{location} has another name and may be open elsewhere, so tags that would move its audio under a reader were not written"
+    )]
+    HeldOpenElsewhere { location: MediaLocation },
+
     #[error("{location} was left part rewritten by a tag write; its whole copy is kept at {}", whole.display())]
     WrittenBackPartway {
         location: MediaLocation,
@@ -329,6 +334,7 @@ impl Error {
             | Self::Unwritable { location }
             | Self::TagsUnread { location, .. }
             | Self::ChangedWhileWritten { location }
+            | Self::HeldOpenElsewhere { location }
             | Self::WrittenBackPartway { location, .. }
             | Self::TagsUnwritten { location, .. }
             | Self::Sofa { location, .. } => Some(location),

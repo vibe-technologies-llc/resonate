@@ -1666,6 +1666,9 @@ fn landed_by<L: Lands>(
                 location: location.clone(),
                 source,
             }),
+            Err(Unsettled::HeldOpen) => Err(Error::HeldOpenElsewhere {
+                location: location.clone(),
+            }),
             Err(Unsettled::Torn(Torn { whole, source })) => Err(Error::WrittenBackPartway {
                 location: location.clone(),
                 whole,
@@ -1783,10 +1786,18 @@ fn sweep_what_a_dead_writer_staged(path: &Path) {
 }
 
 fn settled_over(staged: &Staged, path: &Path) -> std::result::Result<(), Unsettled> {
+    settled_over_asking(staged, path, &Fallocate)
+}
+
+fn settled_over_asking(
+    staged: &Staged,
+    path: &Path,
+    readers: &dyn Shifting,
+) -> std::result::Result<(), Unsettled> {
     let standing = fs::metadata(path)?;
     file_facts::sync_file(&staged.path)?;
     if has_other_names(&standing) || !carries_what_the_file_did(&standing, path, &staged.path) {
-        return WholeCopy::named_beside(&staged.path, &staged.held, path)?.written_back();
+        return WholeCopy::named_beside(&staged.path, &staged.held, path)?.written_back(readers);
     }
 
     fs::rename(&staged.path, path)?;
@@ -1913,7 +1924,7 @@ fn unsupported(error: &io::Error) -> bool {
 
 fn written_back_from_elsewhere(staged: &Staged, path: &Path) -> std::result::Result<(), Unsettled> {
     file_facts::sync_file(&staged.path)?;
-    WholeCopy::kept_elsewhere(&staged.path, &staged.held, path)?.written_back()
+    WholeCopy::kept_elsewhere(&staged.path, &staged.held, path)?.written_back(&Fallocate)
 }
 
 fn front_cover(picture: &CoverArt) -> Picture {
@@ -4280,6 +4291,69 @@ mod tests {
                 .expect("the folder")
                 .flatten()
                 .all(|entry| !entry.file_name().to_string_lossy().starts_with('.')),
+            "a staged copy was left behind"
+        );
+    }
+
+    #[cfg(unix)]
+    fn nothing_staged_is_left_in(folder: &Folder) -> bool {
+        fs::read_dir(&folder.root)
+            .expect("the folder")
+            .flatten()
+            .all(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
+    }
+
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    fn a_track_with_two_names_a_reader_holds_is_not_shifted_under_it() {
+        let folder = Folder::new();
+        let first = folder.holding("echoes.flac", &flac());
+        let path = first.as_path().expect("a local file").to_path_buf();
+        let second = folder.root.join("also.flac");
+        fs::hard_link(&path, &second).expect("a hard link");
+        let reader = File::open(&second).expect("a reader of the second name");
+        let tags = FileTags::default();
+
+        let written = tags.write(&first, just(&[edited(TagField::Title, "Echoes")]));
+
+        assert!(
+            matches!(written, Err(Error::HeldOpenElsewhere { .. })),
+            "the head was grown under a reader: {written:?}"
+        );
+        assert_eq!(fs::read(&path).expect("the track"), flac());
+        assert_eq!(fs::metadata(&second).expect("the second name").nlink(), 2);
+        assert!(
+            nothing_staged_is_left_in(&folder),
+            "a staged copy was left behind"
+        );
+
+        drop(reader);
+        tags.write(&first, just(&[edited(TagField::Title, "Echoes")]))
+            .expect("the write once the reader let go");
+
+        assert_eq!(titled(&tags, &first).as_deref(), Some("Echoes"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_hard_linked_track_written_back_at_another_length_waits_for_its_readers() {
+        use crate::insert::HeldElsewhere;
+
+        let folder = Folder::new();
+        let first = folder.holding("echoes.flac", &flac());
+        let path = first.as_path().expect("a local file").to_path_buf();
+        fs::hard_link(&path, folder.root.join("also.flac")).expect("a hard link");
+        let staged = Staged::beside(&path).expect("a staged copy");
+        let mut grown = flac();
+        grown.extend_from_slice(&flac_frame());
+        staged.held.file().write_all(&grown).expect("a grown copy");
+
+        let settled = settled_over_asking(&staged, &path, &HeldElsewhere);
+
+        assert!(matches!(settled, Err(Unsettled::HeldOpen)));
+        assert_eq!(fs::read(&path).expect("the track"), flac());
+        assert!(
+            nothing_staged_is_left_in(&folder),
             "a staged copy was left behind"
         );
     }

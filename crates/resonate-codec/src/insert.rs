@@ -6,6 +6,9 @@ use crate::journal::{Change, Undo};
 
 pub(crate) trait Shifting {
     fn block_of(&self, file: &File) -> Option<u64>;
+    fn readers_can_be_asked(&self) -> bool {
+        true
+    }
     fn while_alone(
         &self,
         file: &File,
@@ -134,6 +137,10 @@ mod fallocating {
 impl Shifting for Fallocate {
     fn block_of(&self, _: &File) -> Option<u64> {
         None
+    }
+
+    fn readers_can_be_asked(&self) -> bool {
+        false
     }
 
     fn while_alone(
@@ -275,6 +282,32 @@ impl Shifting for Refusing {
         work: &mut dyn FnMut() -> io::Result<bool>,
     ) -> Option<io::Result<bool>> {
         Some(work())
+    }
+
+    fn inserted(&self, _: &File, _: u64) -> io::Result<()> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
+    }
+
+    fn collapsed(&self, _: &File, _: u64) -> io::Result<()> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
+    }
+}
+
+#[cfg(test)]
+pub(crate) struct HeldElsewhere;
+
+#[cfg(test)]
+impl Shifting for HeldElsewhere {
+    fn block_of(&self, _: &File) -> Option<u64> {
+        Some(4096)
+    }
+
+    fn while_alone(
+        &self,
+        _: &File,
+        _: &mut dyn FnMut() -> io::Result<bool>,
+    ) -> Option<io::Result<bool>> {
+        None
     }
 
     fn inserted(&self, _: &File, _: u64) -> io::Result<()> {
