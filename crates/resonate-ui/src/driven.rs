@@ -7782,7 +7782,7 @@ mod tests {
             Listening::Microphone(Some(resonate_engine::NodeName::new("alsa_input.headset")))
         );
 
-        if resonate_listen::DESKTOP_IS_HEARD {
+        if resonate_listen::desktop_is_heard() {
             driven.click("listen-desktop");
             assert_eq!(
                 driven.read(|root, cx| root.listen.read(cx).from().clone()),

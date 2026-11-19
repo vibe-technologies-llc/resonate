@@ -73,6 +73,10 @@ pub struct DesktopTap {
 }
 
 impl DesktopTap {
+    pub fn offered_by_this_system() -> bool {
+        Tapping::of_this_system().is_some()
+    }
+
     pub fn open() -> Result<Self> {
         let tapping = Tapping::of_this_system().ok_or(Error::NoProcessTap)?;
         let output = Device::default_output()?.ok_or(Error::NoOutputToTap)?;

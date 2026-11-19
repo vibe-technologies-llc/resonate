@@ -40,7 +40,7 @@ mod words {
 #[cfg(target_os = "macos")]
 pub use crate::coreaudio_listener::Listener;
 #[cfg(any(target_os = "linux", windows, target_os = "macos"))]
-pub use crate::hearing::{CLIP_BY_DEFAULT, DESKTOP_IS_HEARD, Hearing, Listening};
+pub use crate::hearing::{CLIP_BY_DEFAULT, Hearing, Listening, desktop_is_heard};
 #[cfg(target_os = "linux")]
 pub use crate::listener::Listener;
 #[cfg(any(windows, target_os = "macos"))]

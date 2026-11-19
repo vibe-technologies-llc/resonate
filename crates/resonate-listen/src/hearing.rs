@@ -1,3 +1,5 @@
+#[cfg(target_os = "macos")]
+use std::sync::LazyLock;
 use std::{
     sync::{
         Arc,
@@ -10,7 +12,17 @@ use resonate_audio::NodeName;
 
 pub const CLIP_BY_DEFAULT: Duration = Duration::from_secs(12);
 
-pub const DESKTOP_IS_HEARD: bool = cfg!(not(target_os = "macos"));
+#[cfg(target_os = "macos")]
+pub fn desktop_is_heard() -> bool {
+    static TAPPED: LazyLock<bool> =
+        LazyLock::new(resonate_apple::DesktopTap::offered_by_this_system);
+    *TAPPED
+}
+
+#[cfg(not(target_os = "macos"))]
+pub const fn desktop_is_heard() -> bool {
+    true
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Listening {
@@ -20,7 +32,7 @@ pub enum Listening {
 
 impl Default for Listening {
     fn default() -> Self {
-        if DESKTOP_IS_HEARD {
+        if desktop_is_heard() {
             Self::Desktop
         } else {
             Self::Microphone(None)
@@ -80,5 +92,16 @@ impl Hearing {
             return 0.0;
         }
         (self.heard.load(Ordering::Relaxed) as f64 / wanted as f64).min(1.0) as f32
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_desktop_is_offered_and_listened_to_by_default_on_a_system_that_records_it() {
+        assert!(desktop_is_heard());
+        assert_eq!(Listening::default(), Listening::Desktop);
     }
 }

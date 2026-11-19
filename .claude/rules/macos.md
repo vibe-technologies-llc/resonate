@@ -188,7 +188,12 @@ input and `Sitting::until_full` reopens it on the same tap. **The tap's calls ar
 asked, never linked**: they came with macOS 14.2 and the bundle runs from 13, so `dlsym` finds
 `AudioHardwareCreateProcessTap` and `AudioHardwareDestroyProcessTap` and the class is looked up by
 name; a system without them is `Error::NoProcessTap`, which `resonate-listen` answers as
-`Error::DesktopUnheard`. The system asks the listener once (*System Audio Recording*, the bundle's
+`Error::DesktopUnheard`. **The window offers *Desktop* only where the tap is there**:
+`resonate_listen::desktop_is_heard` asks `DesktopTap::offered_by_this_system` once (the same
+lookups, nothing opened and nothing asked of the listener), so on 14.2 and later the Listen pane
+draws *Desktop* beside *Microphone* and `Listening::default` is the desktop, as on Linux and
+Windows, while an older system keeps the microphone alone and a file's `listen-from = "desktop"`
+there still meets `DesktopUnheard`. The system asks the listener once (*System Audio Recording*, the bundle's
 `NSAudioCaptureUsageDescription`); a refusal reads as silence, which the sitting answers as
 `NothingHeard`. Dropping the tap destroys the aggregate, then the tap. Nothing here has run on a Mac.
 
