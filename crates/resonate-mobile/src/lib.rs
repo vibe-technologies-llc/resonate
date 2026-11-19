@@ -53,6 +53,7 @@ mod search;
 mod search_parity;
 mod served;
 mod sharing;
+mod sounding;
 mod spotify;
 mod stamp;
 mod sync;
@@ -119,6 +120,7 @@ pub use crate::{
     saving_lyrics::{
         DocumentBeside, LyricsSaved, LyricsStanding, MadeBeside, SheetsBeside, lyric_folders,
     },
+    sounding::HeardElsewhere,
     together::{
         InvitationKind, ListeningParty, PartyChatLine, PartyClockApart, PartyConnection,
         PartyFollowing, PartyHandingOver, PartyReactionKind, PartyRequest, PartySaying,
@@ -209,6 +211,12 @@ pub enum Transport {
     Loading,
     Playing,
     Paused,
+}
+
+impl Transport {
+    const fn sounds(self) -> bool {
+        matches!(self, Self::Playing | Self::Loading)
+    }
 }
 
 fn row_being_opened(state: &PlayerState, rows: &QueueRows) -> Option<TrackId> {
@@ -308,6 +316,8 @@ pub struct Snapshot {
     pub zone: u32,
     #[uniffi(default)]
     pub zones_revision: u64,
+    #[uniffi(default)]
+    pub heard_elsewhere: Option<HeardElsewhere>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -666,19 +676,7 @@ impl MobilePlayer {
         };
         self.take_in(&zoned, events, &queue.rows);
         let waiting = Self::still_waiting(&zoned, &state);
-        let heard = state
-            .current
-            .map(|track| track.id)
-            .or_else(|| row_being_opened(&state, &queue.rows));
-        let current = heard.and_then(|id| self.queue_track(&queue.rows, id));
-        let duration_ms = state
-            .current
-            .and_then(|track| {
-                track
-                    .duration
-                    .map(|frames| frames.to_duration(track.source.rate).as_millis() as u64)
-            })
-            .unwrap_or_else(|| current.as_ref().map_or(0, |track| track.duration_ms));
+        let heard = self.heard(&state, &queue.rows);
         let queue_revision = queue.revision;
         let next_first = queue.next.map(|next| next.first() as u32);
         let next_count = queue
@@ -687,12 +685,10 @@ impl MobilePlayer {
         let figures = OutputFigures::of(state.output.as_ref());
         Ok(Snapshot {
             transport: transport_of(state.playback),
-            current,
+            current: heard.current,
             queue_index: state.queue_position.unwrap_or(0) as u32,
-            position_ms: state.current.map_or(0, |track| {
-                track.position.to_duration(track.source.rate).as_millis() as u64
-            }),
-            duration_ms,
+            position_ms: heard.position_ms,
+            duration_ms: heard.duration_ms,
             volume: state.volume.get(),
             shuffle: state.shuffle,
             repeat: match state.repeat {
@@ -715,6 +711,7 @@ impl MobilePlayer {
             waiting,
             zone: zone.get(),
             zones_revision,
+            heard_elsewhere: self.heard_elsewhere(zone),
         })
     }
 

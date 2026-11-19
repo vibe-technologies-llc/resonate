@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.resonate.android.nativecore.HeardElsewhere
 import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.Transport
@@ -44,7 +45,8 @@ class RustMediaPlayer(private val context: Context, private val library: Library
     private var built = emptyList<MediaItemData>()
     private var artwork: ByteArray? = null
     private var artworkKey: String? = null
-    private var resumeAfterFocus = false
+    @Volatile private var resumeAfterFocus = false
+    @Volatile private var zonesToResume = emptyList<UInt>()
     private var playlist: BuiltPlaylist? = null
     private val coverVersion = MutableStateFlow(0)
     private val focus =
@@ -58,18 +60,18 @@ class RustMediaPlayer(private val context: Context, private val library: Library
             .setWillPauseWhenDucked(false)
             .setOnAudioFocusChangeListener { change ->
                 when (change) {
-                    AudioManager.AUDIOFOCUS_LOSS -> {
-                        resumeAfterFocus = false
-                        library.request { it.pause() }
-                    }
+                    AudioManager.AUDIOFOCUS_LOSS -> pauseSoundingZones()
                     AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                        resumeAfterFocus = snapshot.playsOrLoads()
-                        library.request { it.pause() }
+                        resumeAfterFocus = snapshot.anyZoneSounds()
+                        library.request { zonesToResume = it.pauseSoundingZones() }
                     }
                     AudioManager.AUDIOFOCUS_GAIN ->
                         if (resumeAfterFocus) {
                             resumeAfterFocus = false
-                            library.request { it.play() }
+                            library.request {
+                                it.playZones(zonesToResume)
+                                zonesToResume = emptyList()
+                            }
                         }
                 }
             }
@@ -82,9 +84,17 @@ class RustMediaPlayer(private val context: Context, private val library: Library
             }
         }
 
-    internal fun outputBecameNoisy() {
+    internal fun outputBecameNoisy() = pauseSoundingZones()
+
+    fun pauseSoundingZones() {
         resumeAfterFocus = false
-        library.request { it.pause() }
+        library.request { it.pauseSoundingZones() }
+    }
+
+    fun stopEveryZone() {
+        resumeAfterFocus = false
+        library.request { it.stopEveryZone() }
+        audio.abandonAudioFocusRequest(focus)
     }
 
     init {
@@ -100,15 +110,19 @@ class RustMediaPlayer(private val context: Context, private val library: Library
                 val moved = value.stateKey() != snapshot.stateKey()
                 val jumped = positionJumped(snapshot, value, now - snapshotAt)
                 val stoppedItself =
-                    snapshot.playsOrLoads() && !value.playsOrLoads() && !resumeAfterFocus
-                val began = soundBegan(snapshot?.transport, value?.transport)
+                    ZonesHeard.fellSilentOfItself(
+                        snapshot.anyZoneSounds(),
+                        value.anyZoneSounds(),
+                        resumeAfterFocus,
+                    )
+                val began = ZonesHeard.soundBegan(snapshot.anyZoneSounds(), value.anyZoneSounds())
 
                 snapshot = value
                 snapshotAt = now
                 wifi.follow(value)
                 if (stoppedItself) audio.abandonAudioFocusRequest(focus)
                 if (began && audio.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
-                    library.request { it.pause() }
+                    library.request { it.pauseSoundingZones() }
                 ResonateWidgets.publish(
                     context,
                     value,
@@ -181,30 +195,12 @@ class RustMediaPlayer(private val context: Context, private val library: Library
 
     override fun getState(): State {
         val value = snapshot
+        value.spokenElsewhere()?.let { heard -> return stateHeardElsewhere(value, heard) }
         val playlist = playlistOf(value)
         return State.Builder()
             .setAvailableCommands(
                 Player.Commands.Builder()
-                    .addAll(
-                        Player.COMMAND_PLAY_PAUSE,
-                        Player.COMMAND_PREPARE,
-                        Player.COMMAND_STOP,
-                        Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
-                        Player.COMMAND_SEEK_TO_NEXT,
-                        Player.COMMAND_SEEK_TO_PREVIOUS,
-                        Player.COMMAND_SEEK_TO_MEDIA_ITEM,
-                        Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-                        Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
-                        Player.COMMAND_GET_TIMELINE,
-                        Player.COMMAND_GET_CURRENT_MEDIA_ITEM,
-                        Player.COMMAND_GET_METADATA,
-                        Player.COMMAND_SET_MEDIA_ITEM,
-                        Player.COMMAND_CHANGE_MEDIA_ITEMS,
-                        Player.COMMAND_SET_REPEAT_MODE,
-                        Player.COMMAND_SET_SHUFFLE_MODE,
-                        Player.COMMAND_SET_VOLUME,
-                        Player.COMMAND_RELEASE,
-                    )
+                    .addAll(*HEARD_HERE_COMMANDS)
                     .build()
             )
             .setPlaylist(playlist)
@@ -231,7 +227,39 @@ class RustMediaPlayer(private val context: Context, private val library: Library
             .build()
     }
 
+    private fun stateHeardElsewhere(value: Snapshot?, heard: HeardElsewhere): State {
+        val song = requireNotNull(heard.current)
+        val item =
+            MediaItemData.Builder("${HEARD_ELSEWHERE_ITEM}${heard.zone}:${song.queueId ?: song.id}")
+                .setMediaItem(song.mediaItem())
+                .setDurationUs(heard.durationMs.toLong() * 1000)
+                .setIsSeekable(false)
+                .build()
+        return State.Builder()
+            .setAvailableCommands(
+                Player.Commands.Builder()
+                    .addAll(*HEARD_ELSEWHERE_COMMANDS)
+                    .build()
+            )
+            .setPlaylist(listOf(item))
+            .setCurrentMediaItemIndex(0)
+            .setContentPositionMs { snapshot?.heardElsewhere?.positionMs?.toLong() ?: 0L }
+            .setPlayWhenReady(true, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+            .setPlaybackState(
+                if (heard.transport == Transport.LOADING) Player.STATE_BUFFERING
+                else Player.STATE_READY
+            )
+            .setRepeatMode(value?.repeat?.toInt() ?: Player.REPEAT_MODE_OFF)
+            .setShuffleModeEnabled(value?.shuffle ?: false)
+            .setVolume(value?.volume ?: 1f)
+            .build()
+    }
+
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        if (!playWhenReady && snapshot.spokenElsewhere() != null) {
+            pauseSoundingZones()
+            return Futures.immediateVoidFuture()
+        }
         if (playWhenReady) {
             if (audio.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
                 library.request { it.play() }
@@ -388,12 +416,60 @@ private data class StateKey(
     val shuffle: Boolean,
     val volume: Float,
     val current: ULong?,
+    val heardElsewhere: HeardKey?,
 )
+
+private data class HeardKey(val zone: UInt, val transport: Transport, val current: ULong?)
 
 private fun Snapshot?.stateKey() =
     this?.let {
-        StateKey(it.transport, it.queueIndex, it.repeat, it.shuffle, it.volume, it.current?.id)
+        StateKey(
+            it.transport,
+            it.queueIndex,
+            it.repeat,
+            it.shuffle,
+            it.volume,
+            it.current?.id,
+            spokenElsewhere()?.let { heard -> HeardKey(heard.zone, heard.transport, heard.current?.id) },
+        )
     }
+
+private const val HEARD_ELSEWHERE_ITEM = "heard-elsewhere:"
+
+private val HEARD_HERE_COMMANDS =
+    intArrayOf(
+        Player.COMMAND_PLAY_PAUSE,
+        Player.COMMAND_PREPARE,
+        Player.COMMAND_STOP,
+        Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+        Player.COMMAND_SEEK_TO_NEXT,
+        Player.COMMAND_SEEK_TO_PREVIOUS,
+        Player.COMMAND_SEEK_TO_MEDIA_ITEM,
+        Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+        Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+        Player.COMMAND_GET_TIMELINE,
+        Player.COMMAND_GET_CURRENT_MEDIA_ITEM,
+        Player.COMMAND_GET_METADATA,
+        Player.COMMAND_SET_MEDIA_ITEM,
+        Player.COMMAND_CHANGE_MEDIA_ITEMS,
+        Player.COMMAND_SET_REPEAT_MODE,
+        Player.COMMAND_SET_SHUFFLE_MODE,
+        Player.COMMAND_SET_VOLUME,
+        Player.COMMAND_RELEASE,
+    )
+
+private val HEARD_ELSEWHERE_COMMANDS =
+    intArrayOf(
+        Player.COMMAND_PLAY_PAUSE,
+        Player.COMMAND_PREPARE,
+        Player.COMMAND_STOP,
+        Player.COMMAND_GET_TIMELINE,
+        Player.COMMAND_GET_CURRENT_MEDIA_ITEM,
+        Player.COMMAND_GET_METADATA,
+        Player.COMMAND_SET_MEDIA_ITEM,
+        Player.COMMAND_CHANGE_MEDIA_ITEMS,
+        Player.COMMAND_RELEASE,
+    )
 
 private const val POSITION_JUMP_MS = 1_000L
 

@@ -111,19 +111,29 @@ The session activity opens or reuses the main Activity when its notification is 
 artwork is decoded off the main thread and encoded into a thumbnail bounded at 384 pixels and
 128 KiB; only the current queue row carries it, so repeated songs cannot multiply image payloads
 across a Binder timeline. Art revision and cache generation refresh the session after enrichment.
-Dismissing the app task pauses every session player and stops its foreground service. Going Home
+Dismissing the app task pauses every zone that sounds (`pause_sounding_zones`) and stops the
+foreground service. Going Home
 keeps playback running; an active download may retain the engine but never keeps music playing
 across task dismissal. The media notification offers Close as a session command, including on
-Android 13's system controls: it stops the player, abandons audio focus and stops the started
-service. A stopped transport is Media3 idle and idle players show no notification, so the card
+Android 13's system controls: it stops every zone (`stop_every_zone`), abandons audio focus and
+stops the started service. A stopped transport is Media3 idle and idle players show no notification, so the card
 disappears even while an Activity or another controller remains bound. Playing again restores it;
 pausing keeps the card. Stop clears pending audio-focus resumption so a later focus gain cannot
 restart music after Close.
 Controller actions enter one ordered worker, so load/prepare/play cannot race one another. The queue and
 place are saved every fifth second of polling and also when the Activity stops and when the task is
 dismissed (`LibraryRepository.saveNow`, through that worker), so a process kill while paused loses
-nothing. Audio focus is given up when the engine stops or pauses itself (sleep timer, end of the
-queue, a failure) unless a transient loss is waiting to resume.
+nothing. **The session is held while any zone sounds**, not only the zone shown: the snapshot
+names the first other zone that plays or loads (`Snapshot.heard_elsewhere`), and audio focus is asked
+when the first zone begins to sound and given up only when the last falls silent of itself (sleep
+timer, end of the queue, a failure) unless a transient loss is waiting to resume
+(`ZonesHeard.fellSilentOfItself`, `ZonesHeardTest`). While the zone shown is silent and another
+sounds, the session speaks for that one (`ZonesHeard.speaksFor`): one item, its song and place,
+playing, with play and pause alone among the transport commands, so the notification and the
+foreground state stay while a zone on a USB DAC plays behind an empty zone shown, and its pause
+pauses the zones heard. A focus loss, becoming noisy and the task's dismissal pause every zone that
+sounds (`pause_sounding_zones`, answering the zones it paused, which a transient loss's regain
+plays again through `play_zones`), and *Close* stops every zone.
 `RustMediaPlayer` declares `COMMAND_RELEASE`, so `release()` reaches `handleRelease` once (media3
 ignores a second): the service's retain is given back, its collectors and the widgets stop, and the
 receiver and focus request are removed. Only the service's own controllers, the media
@@ -488,7 +498,8 @@ Android hands ids out afresh. The *Audio output* page binds the shown zone (`sel
 reads the zones when `zone` or `zones_revision` moves and every eighth tick while there are several
 (`ZonePlan.due`), and `QueueReads` reads the queue again when the shown zone moves. The media session,
 notification and widgets read the snapshot, so they follow the zone shown (`ZonePlanTest`,
-`QueueReadsTest`).
+`QueueReadsTest`), save that the session speaks for a zone heard elsewhere while the one shown is
+silent (*Audio and lifecycle* above).
 
 **A zone may play on a network renderer** (`upnp.md`'s *On the phones*). The sheet's *Network
 renderers* section is a *Find renderers* row with a switch (`NetworkRenderers.look`, kept as the

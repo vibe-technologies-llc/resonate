@@ -1,7 +1,6 @@
 package org.resonate.android
 
 import org.resonate.android.nativecore.SyncControl
-import org.resonate.android.nativecore.Transport
 
 object SyncControls {
     private const val EVERYTHING = "everything"
@@ -22,7 +21,3 @@ object SyncControls {
             SyncControl.NOTHING -> NOTHING
         }
 }
-
-private fun Transport?.sounds() = this == Transport.PLAYING || this == Transport.LOADING
-
-fun soundBegan(before: Transport?, now: Transport?): Boolean = !before.sounds() && now.sounds()

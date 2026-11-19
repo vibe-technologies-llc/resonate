@@ -312,28 +312,30 @@ class PlaybackService : MediaLibraryService() {
         )
 
     private fun close() {
+        player?.stopEveryZone()
         player?.stop()
         stopSelf()
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? =
     companion object {
         @Volatile
         var running = false
             private set
     }
 
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? =
         session
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        player?.pauseSoundingZones()
         pauseAllPlayersAndStopSelf()
         (application as ResonateApplication).library.saveNow()
     }
 
     override fun onDestroy() {
+        running = false
         scope.cancel()
         session?.release()
-        running = false
         player?.release()
         session = null
         super.onDestroy()

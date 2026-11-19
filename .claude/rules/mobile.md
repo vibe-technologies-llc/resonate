@@ -787,7 +787,14 @@ route)` and `hand_over_to(zone)`, which hands the shown zone's song to another t
 `Zones::hand_over` (`lockstep.rs`; the boundary does not wait on the handover thread) and shows that
 zone. `select_output` and `output_device`/`output_stream` read the shown zone's `Routing`; follow-song-rate,
 the route's bit-perfect offers, the mixer and iOS's route reports reach every zone's (`Outputs` keeps
-the last of each for a zone opened later) and `FollowTheFormats` goes to the zones whose route moved.
+the last of each for a zone opened later) and `FollowTheFormats` goes to the zones whose route moved. **What holds the phone's session reaches every zone** (`sounding.rs`): the snapshot names the
+first zone other than the one shown that plays or loads, with its song and place
+(`heard_elsewhere`, a `HeardElsewhere`), so a front end keeps audio focus and its playback
+notification while any zone sounds; `pause_sounding_zones` pauses each zone that sounds and answers
+their ids, `play_zones` plays those again (a removed zone passed over) and `stop_every_zone` stops
+every zone, whichever is shown (`a_zone_playing_unseen_is_heard_in_the_snapshot_of_the_zone_shown`,
+`the_zones_that_sound_are_paused_whichever_is_shown_and_named_so_they_play_again`,
+`every_zone_is_stopped_though_another_is_shown`).
 
 **A zone opens over a `Routing` of its own** (`Opener`, the `Opens` the boundary hands `Zones`): the
 first zone's sink is `OUTPUT`, a later one `Routing::serving(SinkId::new(zone))`, so the zones are

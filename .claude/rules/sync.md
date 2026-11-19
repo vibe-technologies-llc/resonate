@@ -901,8 +901,8 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   `a_row_retitled_in_the_catalog_is_mirrored_by_its_new_name`,
   `a_phone_is_driven_across_the_wire_as_far_as_its_setting_trusts`). Every zone answers, not only
   the one shown. **Sound a phone did not ask for takes what a press would have**: Android's
-  `RustMediaPlayer` asks audio focus when a snapshot's transport turns to sounding
-  (`soundBegan`) and pauses where it is refused, and iOS's `NowPlaying` activates the session where
+  `RustMediaPlayer` asks audio focus when a snapshot turns to sounding in any zone
+  (`soundBegan`) and pauses the zones that sound where it is refused, and iOS's `NowPlaying` activates the session where
   the engine answered sounding with no `activate` asked of it since it last rested (`SessionAsked`).
   As for any peer, a phone on a metered network with mobile data off refuses the connection and an
   iPhone suspended in the background answers nothing, so what drives it reads as `Unanswered`.
