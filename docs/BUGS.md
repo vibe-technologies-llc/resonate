@@ -10,12 +10,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   passes over every key but play cold; whether a cold skip should start playing the row before or
   after is the open choice
 
-## iOS
-- [M · 0.14.1] The iPhone's session gives up Now Playing while another zone plays: it follows the
-  zone shown alone, so showing a stopped or empty zone drops the lock-screen controls and an
-  interruption or a route lost pauses only the shown zone, while a zone on another output plays on;
-  the boundary's snapshot now carries `heard_elsewhere` and `pause_sounding_zones`,
-  `play_zones` and `stop_every_zone`, which Android's session uses (`android.md`)
 
 ## Security
 - [M · blocked: design] A device that joins a shared playlist after a hostile editor compacted it
