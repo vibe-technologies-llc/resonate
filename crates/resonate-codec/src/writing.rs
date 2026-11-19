@@ -13,7 +13,7 @@ use lofty::{
     TextEncoding,
     ape::{ApeItem, ApeTag},
     config::{ParseOptions, WriteOptions},
-    error::FileEncodingError,
+    error::{FileEncodingError, TagEncodingError},
     file::{FileType, TaggedFileExt as _},
     id3::v2::{BinaryFrame, Frame, FrameId, Id3v2Tag, KeyValueFrame, UnsynchronizedTextFrame},
     io::FileLike,
@@ -43,6 +43,7 @@ use crate::{
     padded::{Head, Rebuilt, Room},
     probe::probe_pictured_from,
     probe_pictured,
+    riff::MAX_ID3_CHUNK_BYTES,
     source::{FormatHint, Media, Reading, Sources},
     sylt::{self, Voiced},
     tags::{TagSource, Tagged},
@@ -510,7 +511,10 @@ impl TagSink for FileTags {
             source,
         };
         let rechunked = match tag_in_front_of_a_riff(path).map_err(unstaged)? {
-            Some(riff_at) => Some(Rechunked::of(path, riff_at).map_err(unstaged)?),
+            Some(riff_at) => {
+                held_by_an_id3_chunk(riff_at, location)?;
+                Some(Rechunked::of(path, riff_at).map_err(unstaged)?)
+            }
             None => None,
         };
         let written = self.written(path, rechunked.as_ref(), location, writing, taken);
@@ -571,6 +575,21 @@ const ID3_CHUNK: &[u8; 4] = b"id3 ";
 const RIFF_HEADER_BYTES: u64 = 12;
 const CHUNK_HEADER_BYTES: u32 = 8;
 const PAD: [u8; 1] = [0];
+
+fn held_by_an_id3_chunk(bytes: u64, location: &MediaLocation) -> Result<()> {
+    match bytes > MAX_ID3_CHUNK_BYTES {
+        true => Err(Error::Id3ChunkTooLarge {
+            location: location.clone(),
+            bytes,
+            most: MAX_ID3_CHUNK_BYTES,
+        }),
+        false => Ok(()),
+    }
+}
+
+const fn chunks_its_id3(kind: FileType) -> bool {
+    matches!(kind, FileType::Wav | FileType::Aiff)
+}
 
 fn tag_in_front_of_a_riff(path: &Path) -> io::Result<Option<u64>> {
     let mut file = File::open(path)?;
@@ -815,6 +834,13 @@ impl FileTags {
             taken,
             options,
         };
+        if chunks_its_id3(kind) && saving.tag.tag_type() == TagType::Id3v2 {
+            let bytes = saving.id3_bytes().map_err(|source| Error::TagsUnwritten {
+                location: location.clone(),
+                source: source.into(),
+            })?;
+            held_by_an_id3_chunk(bytes, location)?;
+        }
         match rechunked {
             Some(Rechunked::Beside(staged)) => landed_through(staged, path, location, &saving),
             Some(Rechunked::Elsewhere(staged)) => {
@@ -962,6 +988,20 @@ const fn keeps_popularimeters(kind: TagType) -> bool {
     )
 }
 
+#[derive(Default)]
+struct Tally(u64);
+
+impl Write for Tally {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0 += bytes.len() as u64;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 fn saved<F: FileLike>(
     tag: &Tag,
     counting: Option<Popularity>,
@@ -969,12 +1009,20 @@ fn saved<F: FileLike>(
     file: &mut F,
     options: WriteOptions,
 ) -> std::result::Result<(), FileEncodingError> {
-    let concrete = (counting.is_some() || !unkeyed.is_empty())
+    match concrete(tag, counting, unkeyed) {
+        Some(counted) => counted.save(file, options),
+        None => tag.save_to(file, options),
+    }
+}
+
+fn concrete(
+    tag: &Tag,
+    counting: Option<Popularity>,
+    unkeyed: &[(TagField, Option<&str>)],
+) -> Option<Counted> {
+    let mut counted = (counting.is_some() || !unkeyed.is_empty())
         .then(|| Counted::of(tag.clone()))
-        .flatten();
-    let Some(mut counted) = concrete else {
-        return tag.save_to(file, options);
-    };
+        .flatten()?;
 
     if let Some(popularity) = counting {
         counted.count(popularity.plays);
@@ -988,7 +1036,7 @@ fn saved<F: FileLike>(
             _ => {}
         }
     }
-    counted.save(file, options)
+    Some(counted)
 }
 
 fn credit_performers(frames: &mut Id3v2Tag, performers: Option<&str>) {
@@ -1235,6 +1283,15 @@ impl Saving<'_> {
             }
             _ => self.options,
         }
+    }
+
+    fn id3_bytes(&self) -> std::result::Result<u64, TagEncodingError> {
+        let mut tally = Tally::default();
+        match concrete(self.tag, self.counting, self.unkeyed) {
+            Some(Counted::Framed(frames)) => frames.dump_to(&mut tally, self.options())?,
+            _ => self.tag.dump_to(&mut tally, self.options())?,
+        }
+        Ok(tally.0)
     }
 
     fn written_into<F: FileLike>(
@@ -2231,6 +2288,104 @@ mod tests {
             "the bytes the dead writer tore were kept"
         );
         assert_eq!(TagField::Title.read(&read).as_deref(), Some("Echoes"));
+    }
+
+    const ID3_HEADER_BYTES: u64 = 10;
+
+    fn a_padded_id3_tag_of(bytes: u64) -> Vec<u8> {
+        let body = u32::try_from(bytes - ID3_HEADER_BYTES).expect("a tag a header can declare");
+        let syncsafe =
+            [21, 14, 7, 0].map(|shift| u8::try_from((body >> shift) & 0x7f).expect("seven bits"));
+        let mut tag = b"ID3\x04\x00\x00".to_vec();
+        tag.extend_from_slice(&syncsafe);
+        tag.resize(usize::try_from(bytes).expect("a tag held in memory"), 0);
+        tag
+    }
+
+    fn staged_beside(folder: &Folder) -> Vec<PathBuf> {
+        fs::read_dir(&folder.root)
+            .expect("the folder")
+            .map(|entry| entry.expect("an entry").path())
+            .collect()
+    }
+
+    #[test]
+    fn a_leading_id3_tag_past_what_its_chunk_is_read_at_is_refused_by_its_size_before_anything_is_staged()
+     {
+        let folder = Folder::new();
+        let mut bytes = a_padded_id3_tag_of(MAX_ID3_CHUNK_BYTES + 1);
+        bytes.extend_from_slice(&wave());
+        let location = folder.holding("echoes.wav", &bytes);
+        let path = location.as_path().expect("a local file").to_path_buf();
+
+        let written =
+            FileTags::default().write(&location, just(&[edited(TagField::Title, "Echoes")]));
+
+        let Err(Error::Id3ChunkTooLarge {
+            bytes: held, most, ..
+        }) = written
+        else {
+            panic!("a leading tag past the bound was not refused by its size: {written:?}");
+        };
+        assert_eq!(held, MAX_ID3_CHUNK_BYTES + 1);
+        assert_eq!(most, MAX_ID3_CHUNK_BYTES);
+        assert_eq!(staged_beside(&folder), std::slice::from_ref(&path));
+        assert!(
+            fs::read(&path).expect("the file") == bytes,
+            "the refused file was changed"
+        );
+    }
+
+    #[test]
+    fn a_picture_that_would_grow_a_waves_id3_chunk_past_what_it_is_read_at_is_refused_before_anything_is_staged()
+     {
+        let folder = Folder::new();
+        let location = folder.holding("echoes.wav", &wave());
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let picture = CoverArt {
+            format: ImageFormat::Png,
+            bytes: vec![0; usize::try_from(MAX_ID3_CHUNK_BYTES).expect("a picture held in memory")],
+        };
+
+        let written = FileTags::default().write(&location, only(&picture));
+
+        let Err(Error::Id3ChunkTooLarge {
+            bytes: held, most, ..
+        }) = written
+        else {
+            panic!("a picture past the bound was not refused by its size: {written:?}");
+        };
+        assert!(held > MAX_ID3_CHUNK_BYTES);
+        assert_eq!(most, MAX_ID3_CHUNK_BYTES);
+        assert_eq!(staged_beside(&folder), std::slice::from_ref(&path));
+        assert!(
+            fs::read(&path).expect("the file") == wave(),
+            "the refused file was changed"
+        );
+    }
+
+    #[test]
+    fn a_waves_id3_chunk_is_read_up_to_the_bound_its_writer_keeps_to_and_passed_over_past_it() {
+        let wave_holding = |tag: Vec<u8>| {
+            let mut body = wave();
+            let tag_bytes = u32::try_from(tag.len()).expect("a chunk a RIFF can hold");
+            body.extend_from_slice(ID3_CHUNK);
+            body.extend_from_slice(&tag_bytes.to_le_bytes());
+            body.extend_from_slice(&tag);
+            let riff =
+                u32::try_from(body.len() - CHUNK_HEADER_BYTES as usize).expect("a RIFF size");
+            body[4..8].copy_from_slice(&riff.to_le_bytes());
+            body
+        };
+
+        let at_the_bound = wave_holding(a_padded_id3_tag_of(MAX_ID3_CHUNK_BYTES));
+        let past_it = wave_holding(a_padded_id3_tag_of(MAX_ID3_CHUNK_BYTES + 1));
+
+        assert!(riff::read(&mut Cursor::new(&at_the_bound)).id3.is_some());
+        assert!(riff::read(&mut Cursor::new(&past_it)).id3.is_none());
+        assert!(
+            MAX_ID3_CHUNK_BYTES <= lofty::config::GlobalOptions::DEFAULT_ALLOCATION_LIMIT as u64
+        );
     }
 
     fn an_id3_tag_naming(artist: &str) -> Vec<u8> {

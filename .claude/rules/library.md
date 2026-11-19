@@ -1850,6 +1850,16 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   counts it in the size it writes; the tag moved in is then read by both
   (`a_tag_moved_in_from_before_a_riff_of_odd_size_lands_on_a_word_the_riff_counts`,
   `a_wave_of_odd_size_behind_an_id3_tag_keeps_its_tags_when_one_is_written`).
+  **Writer and reader share one bound on that chunk**: `riff.rs`'s `MAX_ID3_CHUNK_BYTES` is lofty's
+  read allocation limit (`GlobalOptions::DEFAULT_ALLOCATION_LIMIT`, 16 MiB), so a chunk the writer
+  lays down is one both readers take. A leading tag past it is refused before anything is staged,
+  and so is a tag (a picture, mostly) that would grow a WAVE's or AIFF's chunk past it, its size
+  measured by dumping the tag as it would be saved (`Saving::id3_bytes`): both answer
+  `Error::Id3ChunkTooLarge`, naming the size and the bound, rather than lofty's `TagsUnread` on
+  the staged copy
+  (`a_leading_id3_tag_past_what_its_chunk_is_read_at_is_refused_by_its_size_before_anything_is_staged`,
+  `a_picture_that_would_grow_a_waves_id3_chunk_past_what_it_is_read_at_is_refused_before_anything_is_staged`,
+  `a_waves_id3_chunk_is_read_up_to_the_bound_its_writer_keeps_to_and_passed_over_past_it`).
 - **`Library::retag` takes the `Walk` guard** (the pass rewrites sizes and mtimes a scan's snapshot
   was taken against); a second caller gets `Error::AlreadyWalking`. A vaulted row is
   `Unwritten::Vaulted` (`vault.md`).

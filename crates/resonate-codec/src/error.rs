@@ -254,6 +254,15 @@ pub enum Error {
     #[error("{location} is in a format this build does not write tags to")]
     Unwritable { location: MediaLocation },
 
+    #[error(
+        "the ID3 tag {location} would hold takes {bytes} bytes, more than the {most} its chunk is read at, so it was not written"
+    )]
+    Id3ChunkTooLarge {
+        location: MediaLocation,
+        bytes: u64,
+        most: u64,
+    },
+
     #[error("the tags in {location} could not be read to be written")]
     TagsUnread {
         location: MediaLocation,
@@ -332,6 +341,7 @@ impl Error {
             | Self::OpenTookTooLong { location, .. }
             | Self::LocatorNotUsable { location }
             | Self::Unwritable { location }
+            | Self::Id3ChunkTooLarge { location, .. }
             | Self::TagsUnread { location, .. }
             | Self::ChangedWhileWritten { location }
             | Self::HeldOpenElsewhere { location }

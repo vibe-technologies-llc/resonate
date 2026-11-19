@@ -1,5 +1,6 @@
 use std::io::{Read, Seek, SeekFrom};
 
+use lofty::config::GlobalOptions;
 use resonate_core::text::{decoded_as, detected};
 
 use crate::{
@@ -17,7 +18,7 @@ const FORM_BYTES: u64 = 4;
 const MAX_CHUNKS: usize = 4_096;
 const MAX_INFO_BYTES: u64 = 1 << 20;
 const MAX_VALUE_BYTES: u64 = 4_096;
-const MAX_ID3_CHUNK_BYTES: u64 = 32 * 1024 * 1024;
+pub(crate) const MAX_ID3_CHUNK_BYTES: u64 = GlobalOptions::DEFAULT_ALLOCATION_LIMIT as u64;
 const RIFF_HEADER_BYTES: usize = 12;
 
 const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;

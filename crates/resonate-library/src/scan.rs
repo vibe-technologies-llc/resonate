@@ -132,6 +132,7 @@ impl Failure {
             | Codec::SeekInvalidTrack { .. }
             | Codec::ResetRequired { .. }
             | Codec::Unwritable { .. }
+            | Codec::Id3ChunkTooLarge { .. }
             | Codec::TagsUnread { .. }
             | Codec::TagsUnwritten { .. }
             | Codec::ChangedWhileWritten { .. }

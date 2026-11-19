@@ -240,6 +240,7 @@ const fn cause_of_a_read(read: &resonate_codec::Error) -> Cause {
         | Read::LocatorNotUsable { .. }
         | Read::NoRoomToSpool { .. }
         | Read::Unwritable { .. }
+        | Read::Id3ChunkTooLarge { .. }
         | Read::SheetUnspellable { .. }
         | Read::SheetTrackNotNamedOnce { .. }
         | Read::SheetValueUnwritable { .. } => Cause::Unreadable,
