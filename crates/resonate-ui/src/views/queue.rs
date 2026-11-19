@@ -946,7 +946,7 @@ impl RootView {
                                                     Step::Above,
                                                     index,
                                                     queued,
-                                                    Shift::Queue,
+                                                    &carried,
                                                     cx,
                                                 ))
                                                 .child(this.mover(
@@ -954,7 +954,7 @@ impl RootView {
                                                     Step::Below,
                                                     index,
                                                     queued,
-                                                    Shift::Queue,
+                                                    &carried,
                                                     cx,
                                                 ))
                                                 .child(this.add_control(
@@ -1534,7 +1534,7 @@ fn takes_out_again(offer: Option<Offer>) -> SharedString {
 mod tests {
     use std::{path::PathBuf, sync::Arc, time::Duration};
 
-    use gpui::{App, TestAppContext};
+    use gpui::{App, TestAppContext, Window};
     use resonate_core::{MediaLocation, Span, TrackId, ZoneId};
     use resonate_engine::Command;
     use resonate_library::{Direction, Library, NamesMoved, RowOrder, Track, TrackQuery};
@@ -2055,6 +2055,29 @@ mod tests {
             .expect("the engine takes a command");
     }
 
+    fn pressed_on_the_frame_drawn(
+        at: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let press = gpui::MouseDownEvent {
+            button: gpui::MouseButton::Left,
+            position: at,
+            modifiers: gpui::Modifiers::none(),
+            click_count: 1,
+            first_mouse: false,
+        };
+        let lift = gpui::MouseUpEvent {
+            button: gpui::MouseButton::Left,
+            position: at,
+            modifiers: gpui::Modifiers::none(),
+            click_count: 1,
+        };
+
+        window.dispatch_event(gpui::PlatformInput::MouseDown(press), cx);
+        window.dispatch_event(gpui::PlatformInput::MouseUp(lift), cx);
+    }
+
     fn one_more_row_landed(driven: &mut Driven) {
         let queued = driven.read(|root, cx| root.player.read(cx).queue());
         let mut more = QueueItem::clone(queued.first().expect("a queued row"));
@@ -2277,6 +2300,42 @@ mod tests {
 
         driven.root.update(&mut driven.cx, |root, cx| {
             root.shift_carried(&carried, 3, cx);
+        });
+        one_more_row_landed(&mut driven);
+
+        assert_eq!(
+            named_in_order(&mut driven)[..4],
+            ["alpha", "charlie", "delta", "bravo"]
+        );
+    }
+
+    #[gpui::test]
+    fn a_raise_pressed_on_a_frame_drawn_before_another_reorder_landed_moves_nothing(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let (mut driven, _) = queue_of(cx, &folder, &[1, 1, 1, 1]);
+        let drawn_at = driven.read(|root, cx| root.player.read(cx).queued().revision);
+        let raise = driven.centre_of("raise-2");
+        driven.hover(raise);
+
+        driven.read(|root, cx| behind_the_window(root, cx, Command::Order(vec![1, 0, 2, 3])));
+        let engine = driven.read(|root, cx| root.player.read(cx).engine());
+        let began = std::time::Instant::now();
+        while engine.queued().revision == drawn_at {
+            assert!(
+                began.elapsed() < std::time::Duration::from_secs(10),
+                "the engine never took the reorder"
+            );
+            std::thread::yield_now();
+        }
+        let root = driven.root.clone();
+        driven.cx.update(|window, cx| {
+            let player = root.read(cx).player.clone();
+            player.update(cx, |player, _| {
+                player.read_the_queue_leaving_the_frame_drawn();
+            });
+            pressed_on_the_frame_drawn(raise, window, cx);
         });
         one_more_row_landed(&mut driven);
 

@@ -1316,8 +1316,22 @@ impl RootView {
                     ))
                     .when(rows.are_moved(), |controls| {
                         controls
-                            .child(self.mover("raise-entry", Step::Above, index, last, shift, cx))
-                            .child(self.mover("lower-entry", Step::Below, index, last, shift, cx))
+                            .child(self.mover(
+                                "raise-entry",
+                                Step::Above,
+                                index,
+                                last,
+                                &carried,
+                                cx,
+                            ))
+                            .child(self.mover(
+                                "lower-entry",
+                                Step::Below,
+                                index,
+                                last,
+                                &carried,
+                                cx,
+                            ))
                     })
                     .child(self.add_control(
                         ("entry-to-playlist", index),

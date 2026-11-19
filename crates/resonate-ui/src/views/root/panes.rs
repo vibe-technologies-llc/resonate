@@ -159,11 +159,22 @@ impl RootView {
     }
 
     pub(crate) fn shift_carried(&mut self, carried: &Carried, to: usize, cx: &mut Context<Self>) {
-        match (&carried.over, carried.rows.single()) {
+        self.shift_drawn(&carried.over, carried.shift, &carried.rows, to, cx);
+    }
+
+    pub(crate) fn shift_drawn(
+        &mut self,
+        over: &CarriedOver,
+        shift: Shift,
+        chosen: &Chosen,
+        to: usize,
+        cx: &mut Context<Self>,
+    ) {
+        match (over, chosen.single()) {
             (&CarriedOver::Queue { drawn_at }, Some(rows)) => {
                 self.send_by_position_at(drawn_at, Command::Move { rows, to }, cx);
             }
-            _ => self.shift_chosen(carried.shift, &carried.rows, to, cx),
+            _ => self.shift_chosen(shift, chosen, to, cx),
         }
     }
 

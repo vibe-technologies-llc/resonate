@@ -747,9 +747,11 @@ impl RootView {
         step: Step,
         row: usize,
         held: usize,
-        shift: Shift,
+        drawn: &Carried,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let shift = drawn.shift;
+        let over = drawn.over.clone();
         let moving = self.acting_on_chosen(shift, row, cx);
         let Some(to) = moving
             .bounds()
@@ -772,7 +774,7 @@ impl RootView {
         kit::icon_button((id, row), step.glyph(), step.saying())
             .on_click(cx.listener(move |this, _, _, cx| {
                 cx.stop_propagation();
-                this.shift_chosen(shift, &moving, to, cx);
+                this.shift_drawn(&over, shift, &moving, to, cx);
             }))
             .into_any_element()
     }

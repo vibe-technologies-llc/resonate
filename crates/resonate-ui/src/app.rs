@@ -530,6 +530,11 @@ impl PlayerModel {
         self.queued.clone()
     }
 
+    #[cfg(test)]
+    pub(crate) fn read_the_queue_leaving_the_frame_drawn(&mut self) {
+        self.queued = self.player.queued();
+    }
+
     pub(crate) fn engine(&self) -> Arc<Player> {
         Arc::clone(&self.player)
     }
