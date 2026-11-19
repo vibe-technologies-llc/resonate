@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use parking_lot::Mutex;
-use resonate_core::{MediaLocation, Recording, Resumable, Span, ZoneId};
+use resonate_core::{MediaLocation, QueueStamp, Recording, Resumable, Span, ZoneId};
 use resonate_engine::{Command, Moment, Placement, Player, QueueItem, Seat, Sounding, TakenUp};
 use resonate_providers::{PlaysInPlace, found_exactly};
 use resonate_sync::{
@@ -9,7 +9,7 @@ use resonate_sync::{
     party::{
         Going, Mine, Party, PartyChat, PartyFinder, PartyHanding, PartyReach, PartyReaction,
         PartySeat, PartySettings, PartySong, PartyWantingASong, RequestId, SeatHeard, SeatTakenUp,
-        SittingOut, Standing,
+        SittingOut, Standing, known_where_they_moved,
     },
     shared::{Invited, MemberId, SharedShown, SharedStanding, invitation_in},
 };
@@ -204,7 +204,7 @@ fn song_of(
     location: &MediaLocation,
     span: Option<resonate_core::FrameSpan>,
 ) -> Option<PartySong> {
-    let row = resonate_core::QueueStamp::of([(location, span)]).value();
+    let row = QueueStamp::of([(location, span)]).value();
 
     if served::Served::names(location) {
         let known = served.song_at(location);
@@ -242,6 +242,13 @@ fn song_of(
     })
 }
 
+fn stamps_of(moved: &[(QueueStamp, QueueStamp)]) -> Vec<(u64, u64)> {
+    moved
+        .iter()
+        .map(|(from, to)| (from.value(), to.value()))
+        .collect()
+}
+
 const fn as_the_party_reads(taken: TakenUp) -> SeatTakenUp {
     match taken {
         TakenUp::InStep => SeatTakenUp::InStep,
@@ -262,7 +269,7 @@ impl PartySeat for PhoneSeat {
                 Sounding::Paused => Mine::Paused,
                 Sounding::Stopped => Mine::Stopped,
             },
-            row: heard.row.map(resonate_core::QueueStamp::value),
+            row: heard.row.map(QueueStamp::value),
             position_nanos: heard.position.map(Seat::nanos_of),
             at_nanos: heard.at.nanos(),
             coarse: heard.holds_seconds_downstream,
@@ -292,13 +299,18 @@ impl PartySeat for PhoneSeat {
         (song, next)
     }
 
+    fn moved(&self) -> Vec<(u64, u64)> {
+        stamps_of(&self.seat.take_the_moves())
+    }
+
     fn added_here(&self, known: &[u64]) -> Vec<PartySong> {
         let player = self.seat.player();
         let queued = player.queued();
+        let known = known_where_they_moved(known, &stamps_of(&self.seat.moves_seen()));
         let mut added = Vec::new();
 
         for (row, item) in queued.rows.iter().enumerate().rev() {
-            let stamp = resonate_core::QueueStamp::of([(&item.location, item.span)]).value();
+            let stamp = QueueStamp::of([(&item.location, item.span)]).value();
             if known.contains(&stamp) {
                 continue;
             }
@@ -1003,6 +1015,69 @@ mod tests {
             .expect("the study taken away");
 
         assert!(harness.player.party_shown().is_some());
+    }
+
+    fn a_document(uri: &str) -> Resumable {
+        Resumable {
+            location: location(uri).expect("a document"),
+            span: None,
+            held: None,
+        }
+    }
+
+    #[test]
+    fn a_guest_whose_song_moves_keeps_it_where_it_went_and_asks_the_host_nothing() {
+        let harness = crate::harness::Harness::new();
+        let host = Party::host(a_party_nowhere_reached()).expect("a host");
+        let guest = Party::join(a_party_nowhere_reached(), &host.shown().code).expect("a guest");
+        harness.player.party_seated(guest).expect("seated");
+
+        let player = harness.player.playing.player().expect("an open player");
+        let seat = PhoneSeat {
+            seat: Seat::on(Arc::clone(&player)),
+            catalog: Arc::clone(&harness.player.catalog),
+            served: Arc::clone(&harness.player.served),
+        };
+        let rows = [
+            a_document(&harness.song('b').uri),
+            a_document(&harness.song('c').uri),
+        ];
+        let moving = harness.song('c').id;
+        let moved_to = format!("{}e.wav", crate::harness::FOLDER);
+
+        seat.take_up(&rows, 0, Moment::now().nanos(), false);
+        let known: Vec<u64> = rows.iter().map(|row| seat.stamp_of(row)).collect();
+        std::fs::rename(harness.folder.join("c.wav"), harness.folder.join("e.wav"))
+            .expect("a file moved");
+        harness
+            .player
+            .documents_moved(vec![crate::organising::MovedDocument {
+                id: moving,
+                uri: moved_to.clone(),
+            }])
+            .expect("documents moved");
+
+        let asked_before_the_seat_looked = seat.added_here(&known);
+        let moved = seat.moved();
+        let known_now = [known[0], seat.stamp_of(&a_document(&moved_to))];
+        let asked = seat.added_here(&known_now);
+        player
+            .request(Command::SetRepeat(resonate_engine::RepeatMode::Off))
+            .expect("a command after any removal")
+            .wait_for(crate::harness::SETTLED_WITHIN)
+            .expect("every command before it settled");
+        let queued: Vec<String> = player
+            .queued()
+            .rows
+            .iter()
+            .map(|row| document_uri(&row.location).expect("a document"))
+            .collect();
+
+        assert!(harness.player.party_following(ZoneId::FIRST));
+        assert!(asked_before_the_seat_looked.is_empty());
+        assert_eq!(moved, vec![(known[1], known_now[1])]);
+        assert!(asked.is_empty());
+        assert_eq!(queued, [harness.song('b').uri.clone(), moved_to]);
     }
 
     #[test]

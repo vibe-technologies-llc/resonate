@@ -1454,6 +1454,10 @@ impl PartySeat for FakeSeat {
         )
     }
 
+    fn moved(&self) -> Vec<(u64, u64)> {
+        Vec::new()
+    }
+
     fn added_here(&self, _known: &[u64]) -> Vec<PartySong> {
         Vec::new()
     }

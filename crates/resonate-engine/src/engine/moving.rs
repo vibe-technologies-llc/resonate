@@ -4,6 +4,7 @@ use super::Engine;
 use crate::{
     Error, Event, RepeatMode, Result, SkipUnderRepeat, Sleeping,
     queue::{Removal, landed_at},
+    state::Relocated,
 };
 
 impl Engine {
@@ -55,6 +56,11 @@ impl Engine {
     }
 
     pub(super) fn follow_the_moves(&mut self, moved: &[(MediaLocation, MediaLocation)]) {
+        let rows = self.queue.stamps_moved_by(moved);
+        self.published.moves.tell(&Relocated {
+            moved: moved.into(),
+            rows: rows.into(),
+        });
         self.queue.relocate(moved);
         let leaving = self
             .boundaries

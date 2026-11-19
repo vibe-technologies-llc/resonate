@@ -26,6 +26,7 @@ use crate::{
     QueueItem, QueueRows, Queued, Request, Result, Stepping, StreamDigest, Tapped,
     catalog::{ArtRead, Catalog, TagsRead},
     levels_of,
+    state::Relocated,
 };
 
 const EVENT_SLOTS: usize = 256;
@@ -228,6 +229,10 @@ impl Player {
             tracing::debug!(?within, "the first sink survey had not answered in time");
         }
         self.sinks()
+    }
+
+    pub(crate) fn moves_watched(&self) -> Receiver<Relocated> {
+        self.published.moves.watched()
     }
 
     pub fn heard_clock(&self) -> HeardClock {

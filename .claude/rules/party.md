@@ -174,6 +174,21 @@ so it hands on the same queue. `Seat::put_back` restores queue, shuffle and repe
 being turned out. A song added to the queue during a party (from any front end, the CLI or the bus) is
 taken back out and asks the host (`PartySeat::added_here`, `PartySaid::Ask`).
 
+**A song whose file moves during a party stays the party's** (organise reaches a following zone as it
+reaches every zone, `Command::Relocate`). A row is known by the stamp of its location, so the seat's
+stamps follow the move: `Engine::follow_the_moves` tells each `Seat` watching its player
+(`MovesTold`) the locations moved and each queued row's old and new stamp before the queue or the
+heard row is published, and the seat loop takes them (`PartySeat::moved`, the engine's
+`Seat::take_the_moves`) right after reading `heard` each look, rewriting `rows` and the heard row
+alike (`followed_the_moves`), so a row moved is still the host's row and never sought again.
+`added_here` reads the queue first and then the moves not yet taken (`Seat::moves_seen`,
+`known_where_they_moved`), so a move landing between a look's take and its read is not taken for a
+song added here. The queue from before the party follows the same moves, so `put_back` restores it
+where its files went
+(`a_row_whose_file_moves_is_known_where_it_went_and_never_asked_of_the_host`,
+`a_guest_whose_song_moves_keeps_it_where_it_went_and_asks_the_host_nothing`,
+`a_seat_tells_the_rows_moved_under_it_and_puts_back_its_own_queue_where_the_files_went`).
+
 ## The room
 
 First frame `Room` (`server.md`): a guest's frame reaches only the host and a host's everyone, so nobody

@@ -3,6 +3,7 @@ use std::{
     time::Duration,
 };
 
+use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::{Condvar, Mutex, RwLock};
 use resonate_audio::{NodeName, SinkId, SinkInfo, StreamVolume, Words};
 use resonate_codec::{BoxLayout, MediaInfo, PacketSpan, StreamProfile};
@@ -242,6 +243,32 @@ pub struct Published {
     pub first_survey: Arc<FirstSurvey>,
     pub heard: HeardClock,
     pub stepping: Arc<RwLock<Stepping>>,
+    pub moves: Arc<MovesTold>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Relocated {
+    pub(crate) moved: Arc<[(MediaLocation, MediaLocation)]>,
+    pub(crate) rows: Arc<[(QueueStamp, QueueStamp)]>,
+}
+
+#[derive(Default)]
+pub struct MovesTold {
+    watching: Mutex<Vec<Sender<Relocated>>>,
+}
+
+impl MovesTold {
+    pub(crate) fn watched(&self) -> Receiver<Relocated> {
+        let (told, watched) = unbounded();
+        self.watching.lock().push(told);
+        watched
+    }
+
+    pub(crate) fn tell(&self, relocated: &Relocated) {
+        self.watching
+            .lock()
+            .retain(|told| told.send(relocated.clone()).is_ok());
+    }
 }
 
 #[derive(Default)]

@@ -80,8 +80,8 @@ pub use crate::{
     shuffling::{Kin, KinSource, Kinship, ShuffleStyle, SmartShuffle},
     sleep::{Asleep, Until},
     state::{
-        Event, FirstSurvey, OutputSettings, OutputStatus, PlaybackState, PlayerState, Published,
-        Seeks, StreamDigest, TrackState, TransportState,
+        Event, FirstSurvey, MovesTold, OutputSettings, OutputStatus, PlaybackState, PlayerState,
+        Published, Seeks, StreamDigest, TrackState, TransportState,
     },
     tap::{Caught, Tap, Tapped},
     zones::{

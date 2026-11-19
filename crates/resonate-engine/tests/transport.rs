@@ -2520,6 +2520,71 @@ fn a_seat_taken_up_over_an_empty_queue_leaves_it_empty_with_its_shuffle_as_it_wa
 }
 
 #[test]
+fn a_seat_tells_the_rows_moved_under_it_and_puts_back_its_own_queue_where_the_files_went()
+-> Result<()> {
+    let tree = Tree::new();
+    let own = tree.write("own.wav", &pcm(16, RATE as usize * 6).file);
+    let told = tree.write("told.wav", &pcm(16, RATE as usize * 6).file);
+    let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let zones = opened.started()?;
+    let first = zones.first().player;
+    let seat = Seat::on(Arc::clone(&first));
+    let row = Resumable {
+        location: MediaLocation::local(told.clone()),
+        span: None,
+        held: None,
+    };
+    let told_filed = Resumable {
+        location: MediaLocation::local(tree.root.join("filed-told.wav")),
+        ..row.clone()
+    };
+    let own_filed = MediaLocation::local(tree.root.join("filed-own.wav"));
+
+    played_from(&zones, ZoneId::FIRST, &own)?;
+    wait_for(
+        &first,
+        |player| player.queue().len() == 1,
+        "the listener's own queue",
+    );
+    seat.take_up(
+        std::slice::from_ref(&row),
+        Duration::ZERO,
+        Moment::now(),
+        false,
+    )?;
+    first
+        .request(Command::Relocate(vec![
+            (MediaLocation::local(own), own_filed.clone()),
+            (row.location.clone(), told_filed.location.clone()),
+        ]))?
+        .wait()?;
+
+    let seen = seat.moves_seen();
+    let taken = seat.take_the_moves();
+
+    assert_eq!(
+        taken,
+        vec![(Seat::stamp_of(&row), Seat::stamp_of(&told_filed))]
+    );
+    assert_eq!(seen, taken);
+    assert!(seat.take_the_moves().is_empty());
+
+    seat.put_back()?;
+    wait_for(
+        &first,
+        |player| {
+            player
+                .queue()
+                .iter()
+                .map(|item| item.location.clone())
+                .eq([own_filed.clone()])
+        },
+        "the listener's own queue to come back where its file went",
+    );
+    Ok(())
+}
+
+#[test]
 fn a_seat_taking_up_rows_whose_first_will_not_start_says_they_stand_in_the_queue() -> Result<()> {
     let tree = Tree::new();
     let long = pcm(16, RATE as usize * 10).file;

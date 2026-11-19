@@ -16,7 +16,10 @@ pub use self::{
     },
     key::{PARTY_LINK, PartyKey, PartyKeys},
     said::{LONGEST_LINE, PartyChat, PartyLine, PartyNow, PartyReaction, PartySaid, PartySong},
-    seat::{Going, PartyFinder, PartyFollowed, PartySeat, SeatHeard, SeatTakenUp},
+    seat::{
+        Going, PartyFinder, PartyFollowed, PartySeat, SeatHeard, SeatTakenUp,
+        known_where_they_moved,
+    },
     service::{
         CHAT_KEPT_AT_MOST, HANDED_OVER_WITHIN, LINES_A_PERSON_SAYS_AT_MOST, Party, PartyHanding,
         PartyPerson, PartyReach, PartySettings, PartyShown, PartyWantingASong, RequestClaim,

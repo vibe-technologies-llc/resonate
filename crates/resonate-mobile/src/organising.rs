@@ -90,21 +90,16 @@ impl MobilePlayer {
         drop(analyses);
 
         if !rekeyed.relocated.is_empty() {
-            self.relocated_in_every_zone(&rekeyed.relocated, &following)?;
+            self.relocated_in_every_zone(&rekeyed.relocated)?;
         }
         self.save_while(&following)
     }
 
-    fn relocated_in_every_zone(
-        &self,
-        relocated: &[(MediaLocation, MediaLocation)],
-        following: impl Fn(ZoneId) -> bool,
-    ) -> Result<()> {
+    fn relocated_in_every_zone(&self, relocated: &[(MediaLocation, MediaLocation)]) -> Result<()> {
         let asked: Vec<_> = self
             .playing
             .listed()
             .into_iter()
-            .filter(|zone| !following(zone.id))
             .map(|zone| zone.player.request(Command::Relocate(relocated.to_vec())))
             .collect();
         Ok(asked
@@ -613,7 +608,8 @@ mod tests {
         }
 
         #[test]
-        fn a_moved_song_in_a_queue_a_party_is_followed_through_leaves_the_live_queue_alone() {
+        fn a_moved_song_in_a_queue_a_party_is_followed_through_moves_there_and_the_kept_queue_stays_as_saved()
+         {
             let harness = Harness::sounding();
             harness.resumed("abcd", 2, 500);
             harness.player.play().expect("play");
@@ -624,6 +620,7 @@ mod tests {
             harness.settled(|snapshot| snapshot.transport == crate::Transport::Playing);
             let before = harness.settled(|snapshot| snapshot.current.is_some());
             let id = harness.song('b').id;
+            let saved = harness.ids("abcd");
 
             let moving = moved(&harness, 'b', "e.wav");
             harness
@@ -631,11 +628,36 @@ mod tests {
                 .documents_moved_while(vec![moving], |_| true)
                 .expect("documents moved");
 
+            let player = harness.player.playing.player().expect("an open player");
             let after = harness.player.snapshot().expect("a snapshot");
+            let landed: Vec<String> = player
+                .queued()
+                .rows
+                .iter()
+                .map(|row| document_uri(&row.location).expect("a document"))
+                .collect();
+            let (kept, _) = harness
+                .player
+                .catalog
+                .resume_rows_of(ZoneId::FIRST)
+                .expect("the kept queue");
+            let kept: Vec<u64> = kept
+                .rows
+                .iter()
+                .filter_map(|laid| match laid.row {
+                    crate::catalog::KeptRow::Document(id) => Some(id),
+                    crate::catalog::KeptRow::Served(_) => None,
+                })
+                .collect();
+
             assert_eq!(harness.queued(), "dcba");
-            assert_eq!(after.queue_revision, before.queue_revision);
+            assert_eq!(
+                landed,
+                ["d.wav", "c.wav", "e.wav", "a.wav"].map(|name| format!("{FOLDER}{name}"))
+            );
             assert_eq!(after.queue_index, before.queue_index);
             assert_eq!(after.transport, crate::Transport::Playing);
+            assert_eq!(kept, saved);
             assert_eq!(
                 harness.player.catalog.track(id).expect("the song").uri,
                 format!("{FOLDER}e.wav")

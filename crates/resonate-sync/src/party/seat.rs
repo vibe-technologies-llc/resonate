@@ -53,6 +53,8 @@ pub trait PartySeat: Send + 'static {
 
     fn songs_up_next(&self) -> (Option<PartySong>, Vec<PartySong>);
 
+    fn moved(&self) -> Vec<(u64, u64)>;
+
     fn added_here(&self, known: &[u64]) -> Vec<PartySong>;
 
     fn take_up(
@@ -113,7 +115,7 @@ impl Going {
             let stop = Arc::clone(&stop);
             move || {
                 if party.shown().hosting {
-                    hosted(&party, &seat, &stop, &[]);
+                    hosted(&party, &seat, &stop, Vec::new());
                     return;
                 }
                 match guested(&party, &seat, &finder, &followed, &stop) {
@@ -161,6 +163,35 @@ impl Drop for Going {
     fn drop(&mut self) {
         self.leave();
     }
+}
+
+fn landed(stamp: u64, moved: &[(u64, u64)]) -> u64 {
+    moved
+        .iter()
+        .fold(stamp, |at, (from, to)| if at == *from { *to } else { at })
+}
+
+pub fn known_where_they_moved(known: &[u64], moved: &[(u64, u64)]) -> Vec<u64> {
+    let mut known = known.to_vec();
+    for stamp in known.clone() {
+        let now = landed(stamp, moved);
+        if !known.contains(&now) {
+            known.push(now);
+        }
+    }
+    known
+}
+
+fn followed_the_moves<S: PartySeat>(seat: &S, rows: &mut [(u64, u64)], heard: &mut SeatHeard) {
+    let moved = seat.moved();
+    if moved.is_empty() {
+        return;
+    }
+
+    for (stamp, _) in rows.iter_mut() {
+        *stamp = landed(*stamp, &moved);
+    }
+    heard.row = heard.row.map(|row| landed(row, &moved));
 }
 
 fn nanos_of(duration: Duration) -> u64 {
@@ -225,7 +256,7 @@ fn hosted_after<S: PartySeat>(
         }
     }
 
-    hosted(party, seat, stop, &rows);
+    hosted(party, seat, stop, rows);
 }
 
 fn as_the_party_knows(rows: &[(u64, u64)], mut song: PartySong) -> PartySong {
@@ -235,22 +266,23 @@ fn as_the_party_knows(rows: &[(u64, u64)], mut song: PartySong) -> PartySong {
     song
 }
 
-fn hosted<S: PartySeat>(party: &Party, seat: &S, stop: &AtomicBool, rows: &[(u64, u64)]) {
+fn hosted<S: PartySeat>(party: &Party, seat: &S, stop: &AtomicBool, mut rows: Vec<(u64, u64)>) {
     let mut told: Option<(PartyNow, u64)> = None;
 
     while !stop.load(Ordering::Acquire) {
         thread::sleep(LOOK_EVERY);
 
-        let heard = seat.heard();
+        let mut heard = seat.heard();
+        followed_the_moves(seat, &mut rows, &mut heard);
         let Some(anchor) = party.to_server(heard.at_nanos) else {
             continue;
         };
         let (song, next) = seat.songs_up_next();
         let now = PartyNow {
-            song: song.map(|song| as_the_party_knows(rows, song)),
+            song: song.map(|song| as_the_party_knows(&rows, song)),
             next: next
                 .into_iter()
-                .map(|song| as_the_party_knows(rows, song))
+                .map(|song| as_the_party_knows(&rows, song))
                 .collect(),
             playing: heard.mine == Mine::Playing,
             position_nanos: heard.position_nanos.unwrap_or(0),
@@ -328,6 +360,7 @@ where
         }
 
         let mut heard = seat.heard();
+        followed_the_moves(seat, &mut rows, &mut heard);
         let mut there = party.to_server(heard.at_nanos);
         let now = shown.now.clone();
         if now.is_some() {
@@ -617,6 +650,7 @@ mod tests {
         queue: Mutex<Vec<u64>>,
         answer: Mutex<SeatTakenUp>,
         asked_for: Mutex<Vec<u64>>,
+        moves: Mutex<Vec<(u64, u64)>>,
     }
 
     impl QueueSeat {
@@ -625,11 +659,19 @@ mod tests {
                 queue: Mutex::new(queue),
                 answer: Mutex::new(SeatTakenUp::InStep),
                 asked_for: Mutex::new(Vec::new()),
+                moves: Mutex::new(Vec::new()),
             }
         }
 
         fn answering(&self, answer: SeatTakenUp) {
             *self.answer.lock() = answer;
+        }
+
+        fn relocate(&self, from: u64, to: u64) {
+            self.moves.lock().push((from, to));
+            for stamp in self.queue.lock().iter_mut().filter(|stamp| **stamp == from) {
+                *stamp = to;
+            }
         }
     }
 
@@ -668,8 +710,13 @@ mod tests {
             (None, Vec::new())
         }
 
+        fn moved(&self) -> Vec<(u64, u64)> {
+            std::mem::take(&mut *self.moves.lock())
+        }
+
         fn added_here(&self, known: &[u64]) -> Vec<PartySong> {
             let mut queue = self.queue.lock();
+            let known = known_where_they_moved(known, &self.moves.lock());
             let added: Vec<u64> = queue
                 .iter()
                 .copied()
@@ -841,5 +888,38 @@ mod tests {
 
         assert_eq!(asked, vec![9]);
         assert_eq!(*seat.queue.lock(), vec![1_001]);
+    }
+
+    #[test]
+    fn a_row_whose_file_moves_is_known_where_it_went_and_never_asked_of_the_host() {
+        let seat = QueueSeat::holding(vec![7]);
+        let mut follow = Follow::default();
+        let mut rows = Vec::new();
+
+        assert!(taken_up_at(
+            &seat,
+            &mut follow,
+            &mut rows,
+            held(&[1, 2]),
+            &cue(1)
+        ));
+
+        let mut heard = seat.heard();
+        seat.relocate(1_001, 5_001);
+        seat.relocate(1_002, 5_002);
+
+        assert!(
+            added_here(&seat, &rows).is_empty(),
+            "a row moved before the seat looked was taken for one added here"
+        );
+
+        followed_the_moves(&seat, &mut rows, &mut heard);
+
+        assert_eq!(rows, vec![(5_001, 1), (5_002, 2)]);
+        assert_eq!(heard.row, Some(5_001));
+        assert!(added_here(&seat, &rows).is_empty());
+        assert!(seat.asked_for.lock().is_empty());
+        assert_eq!(*seat.queue.lock(), vec![5_001, 5_002]);
+        assert_eq!(standing_on(&seat, &mut follow, &rows, 1), Standing::InStep);
     }
 }

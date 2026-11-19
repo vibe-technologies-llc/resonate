@@ -1139,9 +1139,9 @@ own rows along (`Engine::follow_the_moves`: the queue, the playing track, a row 
 one opened ahead), so a playing zone plays on and a zone opening a row opens it where the file went,
 and the save that follows names every moved row by its new URI
 (`a_zone_opening_a_row_as_its_songs_move_plays_them_where_they_went_and_saves_them`). A zone a
-party is followed in is passed over, its live queue left as the host laid it, since the party reads a
-row by the stamp of its location
-(`a_moved_song_in_a_queue_a_party_is_followed_through_leaves_the_live_queue_alone`). A destination another row
+party is followed in moves too, its seat's known stamps following the move so the party still reads
+the row as the host's (`party.md`), while its kept queue stays the one from before the party
+(`a_moved_song_in_a_queue_a_party_is_followed_through_moves_there_and_the_kept_queue_stays_as_saved`). A destination another row
 still holds (the front end refuses a file that exists, so that row's file is gone) never fails the
 batch: where it names the same song as the moved one its history is handed over and it is deleted
 (`take_the_place_of_missing`'s merge), else it stays hidden under a `resonate-displaced:<id>` URI no

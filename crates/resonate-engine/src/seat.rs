@@ -1,12 +1,13 @@
-use std::{sync::Arc, time::Duration};
+use std::{mem, sync::Arc, time::Duration};
 
-use parking_lot::Mutex;
+use crossbeam_channel::Receiver;
+use parking_lot::{Mutex, MutexGuard};
 use resonate_audio::Moment;
-use resonate_core::{Frames, QueueStamp, Resumable, Resumption, Span};
+use resonate_core::{Frames, MediaLocation, QueueStamp, Resumable, Resumption, Span};
 
 use crate::{
     Command, Error, HeardAt, HeardClock, Placement, PlaybackState, Player, PlayerState, QueueItem,
-    Queued, RepeatMode, Result, Unclaimed, resumption_of,
+    Queued, RepeatMode, Result, Unclaimed, queue::landed_at, resumption_of, state::Relocated,
 };
 
 pub const TOO_NEAR_THE_END_TO_CHANGE_WHAT_FOLLOWS: Duration = Duration::from_secs(2);
@@ -40,10 +41,22 @@ struct Before {
     resumption: Resumption,
 }
 
+impl Before {
+    fn follow(&mut self, moved: &[(MediaLocation, MediaLocation)]) {
+        for row in &mut self.resumption.rows {
+            if let Some(to) = landed_at(&row.location, moved) {
+                row.location = to;
+            }
+        }
+    }
+}
+
 pub struct Seat {
     player: Arc<Player>,
     clock: HeardClock,
     before: Mutex<Option<Before>>,
+    moves: Receiver<Relocated>,
+    moved: Mutex<Vec<(QueueStamp, QueueStamp)>>,
 }
 
 fn row_stamp(row: &Resumable) -> QueueStamp {
@@ -57,9 +70,11 @@ fn seconds_of(frames: Frames, rate: u32) -> Duration {
 impl Seat {
     pub fn on(player: Arc<Player>) -> Self {
         Self {
+            moves: player.moves_watched(),
             player,
             clock: HeardClock::default(),
             before: Mutex::new(None),
+            moved: Mutex::new(Vec::new()),
         }
     }
 
@@ -353,7 +368,27 @@ impl Seat {
         self.player.send(Command::Play)
     }
 
+    fn gathered_moves(&self) -> MutexGuard<'_, Vec<(QueueStamp, QueueStamp)>> {
+        let mut moved = self.moved.lock();
+        for relocated in self.moves.try_iter() {
+            moved.extend_from_slice(&relocated.rows);
+            if let Some(before) = self.before.lock().as_mut() {
+                before.follow(&relocated.moved);
+            }
+        }
+        moved
+    }
+
+    pub fn moves_seen(&self) -> Vec<(QueueStamp, QueueStamp)> {
+        self.gathered_moves().clone()
+    }
+
+    pub fn take_the_moves(&self) -> Vec<(QueueStamp, QueueStamp)> {
+        mem::take(&mut *self.gathered_moves())
+    }
+
     pub fn put_back(&self) -> Result<()> {
+        drop(self.gathered_moves());
         let Some(before) = self.before.lock().take() else {
             return Ok(());
         };

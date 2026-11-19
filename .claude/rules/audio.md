@@ -883,7 +883,10 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   opening and the one opened ahead), `heard_as` included, so a zone handed the song after a move
   meets it in step; an opening not yet landed opens again where the file went
   (`a_playing_row_whose_file_was_moved_is_heard_as_the_row_it_became`,
-  `a_row_opening_while_its_file_is_moved_lands_where_the_file_went`). **A drag splices**:
+  `a_row_opening_while_its_file_is_moved_lands_where_the_file_went`). Before relocating anything it
+  tells every watching `Seat` (`MovesTold`) the moves and each queued row's old and new stamp
+  (`Queue::stamps_moved_by`), so a party's seat follows the rows it knows by stamp (`party.md`).
+  **A drag splices**:
   `Queue::move_rows` cuts the span out of `order` and `next` where its drawn positions fall
   (`Queue::lift`, `Vector::slice`, O(log n)), reads which side of the rows played next it lands on
   from the row before its landing (`waits_beside`: a row heard or played next before it makes it

@@ -889,6 +889,23 @@ impl Queue {
         self.order.len() + self.next.len()
     }
 
+    pub fn stamps_moved_by(
+        &self,
+        moved: &[(MediaLocation, MediaLocation)],
+    ) -> Vec<(QueueStamp, QueueStamp)> {
+        self.order
+            .iter()
+            .chain(self.next.iter())
+            .filter_map(|held| {
+                let to = landed_at(&held.item.location, moved)?;
+                Some((
+                    stamp_of([held.item.as_ref()]),
+                    QueueStamp::of([(&to, held.item.span)]),
+                ))
+            })
+            .collect()
+    }
+
     pub fn relocate(&mut self, moved: &[(MediaLocation, MediaLocation)]) -> bool {
         let mut relocated = relocated_in(&mut self.order, moved);
         relocated |= relocated_in(&mut self.next, moved);
