@@ -39,12 +39,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 
 
 ## Catalog
-- [S · 0.14.1] Organising onto a hard link of the same file deletes the filed track's row, its
-  listens, plays and favourite with it: `in_the_way` (`organise.rs`) answers `None` for the same
-  entry before asking whether a catalogued row stands there, the move lands as `Landing::Linked`,
-  and `files_moved` forgets the row at the destination as `Forgetting::Displaced`, which keeps no
-  listens and is meant for a stale row; a download client's hard link beside the filed copy, both
-  under one root with the same tags, does it on the next organise
+- [S · 0.14.1] Organising a second name of a filed track, a download client's hard link in another
+  folder, renames it in its own folder rather than filing it: `as_the_volume_names_it`
+  (`organise.rs`) sees the same file at the destination and narrows the landing to the link's own
+  folder, meant for a case-only rename on a case-insensitive volume, so `downloads/echoes.wav`
+  becomes `downloads/02 Echoes.wav` and the two names stay apart
 - [S · 0.14.1] A by-id MusicBrainz lookup is answered with the thinner copy a browse or an ISRC
   answer kept: `dated_at` (`kept.rs`) falls back to the `entities` index, which `Answer::entities`
   fills from `Recordings` (asked with `ISRC_INCLUDES`, no release groups) and from `Pressings` and
@@ -54,19 +53,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   catalogue number, album links and recording links away (`enriched.rs` writes them
   unconditionally); only whole entities should be indexed, against `musicbrainz.md`'s claim that
   they are
-- [S · 0.14.1] Tidying or pruning a playlist drops rows whose file name is not UTF-8 though the file
-  is there: `gone_from` (`playlist.rs`) asks `has_gone(Path::new(path))` of the stored escaped text,
-  not `store::path_of(path)`, so the stat finds nothing under a standing folder; `volumes::under`
-  in the same file reads the same text
-- [S · 0.14.1] Undoing the last retag passes over every file whose name is not UTF-8 as unreadable,
-  its new tags left in place: `last_retag` (`retag.rs`) builds `PathBuf::from` the escaped
-  `retagged.path`, and `track_at` encodes it again (doubling `U+FDD0`), where `last_resheet` reads
-  through `store::path_of`
-- [S · 0.14.1] With `follow_symlinks` on the scan catalogues a symlink to a file as a second track,
-  against `library.md` (a symlink is weighed only where it names a directory): `scan.rs` skips links
-  only with the switch off and reads one through `fs::metadata`; `identical_classes` then keeps the
-  path that sorts first, so `dedupe --apply` or the window's identical-songs fold can trash the
-  real file and keep the link, and organise renames the link itself
 - [M · 0.14.1] A phone's batch of moved documents that lands while a zone opens a row drops the
   moved songs from that zone: `documents_moved` (`organising.rs`) leaves such a zone's live queue
   on the old URIs and rekeys the catalog, so each moved song fails when reached and the next
