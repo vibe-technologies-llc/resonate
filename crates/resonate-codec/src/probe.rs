@@ -55,6 +55,12 @@ pub struct CoverArt {
     pub bytes: Vec<u8>,
 }
 
+impl CoverArt {
+    pub fn format_of_its_bytes(&self) -> ImageFormat {
+        ImageFormat::sniff(&self.bytes).unwrap_or(self.format)
+    }
+}
+
 pub fn probe(sources: &Sources, location: &MediaLocation) -> Result<MediaInfo> {
     if let Some(info) = stood_in(sources, location, None) {
         return Ok(info);
@@ -269,11 +275,8 @@ fn choose<T>(visuals: &[Visual], taken: &dyn Fn(ImageFormat, &[u8]) -> T) -> Opt
 }
 
 fn decode_visual<T>(visual: &Visual, taken: &dyn Fn(ImageFormat, &[u8]) -> T) -> Option<T> {
-    let format = visual
-        .media_type
-        .as_deref()
-        .and_then(from_media_type)
-        .or_else(|| from_magic(&visual.data))?;
+    let format = from_magic(&visual.data)
+        .or_else(|| visual.media_type.as_deref().and_then(from_media_type))?;
 
     held(format, &visual.data, taken)
 }
@@ -302,11 +305,8 @@ fn attached_cover<T>(
         if !named_as_a_cover(&file.name) {
             return None;
         }
-        let format = file
-            .media_type
-            .as_deref()
-            .and_then(from_media_type)
-            .or_else(|| from_magic(&file.data))?;
+        let format = from_magic(&file.data)
+            .or_else(|| file.media_type.as_deref().and_then(from_media_type))?;
 
         held(format, &file.data, taken)
     })
@@ -382,6 +382,36 @@ mod tests {
     }
 
     const PNG_MAGIC: [u8; 8] = [0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n'];
+
+    #[test]
+    fn a_picture_is_read_by_its_bytes_before_the_type_it_declares() {
+        let mislabelled = Visual {
+            media_type: Some("image/jpeg".to_owned()),
+            ..visual(None, 64)
+        };
+        let unsniffable = Visual {
+            media_type: Some("image/webp".to_owned()),
+            data: vec![0_u8; 64].into_boxed_slice(),
+            ..visual(None, 64)
+        };
+
+        assert_eq!(
+            decode_visual(&mislabelled, &copied).map(|art| art.format),
+            Some(ImageFormat::Png)
+        );
+        assert_eq!(
+            decode_visual(&unsniffable, &copied).map(|art| art.format),
+            Some(ImageFormat::Webp)
+        );
+        assert_eq!(
+            CoverArt {
+                format: ImageFormat::Jpeg,
+                bytes: mislabelled.data.to_vec(),
+            }
+            .format_of_its_bytes(),
+            ImageFormat::Png
+        );
+    }
 
     #[test]
     fn a_picture_larger_than_the_bound_is_declined_before_it_is_copied() {

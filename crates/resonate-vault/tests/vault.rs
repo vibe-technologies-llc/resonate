@@ -1096,6 +1096,29 @@ fn a_cover_read_back_out_of_the_vault_is_the_picture_that_went_in() {
 }
 
 #[test]
+fn a_cover_whose_bytes_are_not_the_format_it_was_labelled_is_kept_by_what_they_are() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let art = CoverArt {
+        format: ImageFormat::Jpeg,
+        ..picture(61, 47)
+    };
+
+    let held = vault.keep_cover(&art).expect("a kept cover");
+    let drawn = vault.picture(&held.path).expect("a drawable cover");
+
+    assert_eq!((held.width, held.height), (61, 47));
+    assert_eq!(
+        image::load_from_memory(&drawn.bytes)
+            .expect("a picture")
+            .to_rgba8(),
+        image::load_from_memory(&art.bytes)
+            .expect("a picture")
+            .to_rgba8()
+    );
+}
+
+#[test]
 fn an_animated_cover_is_kept_as_it_came_with_every_frame() {
     let tree = Tree::new();
     let vault = tree.vault();

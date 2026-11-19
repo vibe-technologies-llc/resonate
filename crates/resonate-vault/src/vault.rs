@@ -671,7 +671,7 @@ impl Vault {
         art: &CoverArt,
         lossless: Option<&cover::Drawn>,
     ) -> Result<Option<KeptCover>> {
-        if art.format != ImageFormat::Jpeg {
+        if art.format_of_its_bytes() != ImageFormat::Jpeg {
             return Ok(None);
         }
         let Some(transcoded) = transcoded::of(&art.bytes).filter(|transcoded| {
@@ -713,7 +713,7 @@ impl Vault {
         art: &CoverArt,
         (width, height): (u32, u32),
     ) -> Result<KeptCover> {
-        let extension = art.format.extension();
+        let extension = art.format_of_its_bytes().extension();
         let target = self.cover_path(key, extension);
         let staging = self.staged(extension)?;
         self.written_inside(&staging, &art.bytes)?;

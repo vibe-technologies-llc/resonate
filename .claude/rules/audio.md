@@ -186,7 +186,10 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   `catalog::whole` probes under `Copied` and files bytes where the picture is waited on, else into
   `Spares` (outside `ART_BYTES_HELD` until drawn). `MAX_COVER_BYTES` (24 MiB) is checked against
   `data.len()` before `to_vec` (oversized visuals are declined, not read failures); `choose` prefers
-  front cover, then `Other`/untyped, never icon, leaflet, back cover, disc, portrait.
+  front cover, then `Other`/untyped, never icon, leaflet, back cover, disc, portrait. A picture's
+  format is its magic bytes', its declared media type only where they name none (`decode_visual`,
+  the attachments too), and `decode_cover` and the vault read `CoverArt::format_of_its_bytes`, so a
+  mislabelled picture still draws.
 - **Engine catalog follows the file.** Each entry keeps file size+mtime (`Stamp`), weighed at most
   every `LOOKED_AT_THE_FILE_EVERY` by the reader thread (queued by the lookup, `Held::to_look`, after
   the lock is released); a changed file is forgotten and the revision bumped; a failed read

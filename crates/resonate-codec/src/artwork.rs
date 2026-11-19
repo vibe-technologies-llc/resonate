@@ -374,7 +374,7 @@ impl CoverArt {
     pub fn shorter_side(&self) -> Option<u32> {
         let (width, height) = image::ImageReader::with_format(
             std::io::Cursor::new(&self.bytes),
-            read_as(self.format),
+            read_as(self.format_of_its_bytes()),
         )
         .into_dimensions()
         .inspect_err(|error| tracing::debug!(%error, "a picture's size could not be read"))
@@ -414,8 +414,10 @@ impl Drop for DecodePermit {
 }
 
 pub fn decode_cover(art: &CoverArt) -> image::ImageResult<DynamicImage> {
-    let mut reader =
-        image::ImageReader::with_format(std::io::Cursor::new(&art.bytes), read_as(art.format));
+    let mut reader = image::ImageReader::with_format(
+        std::io::Cursor::new(&art.bytes),
+        read_as(art.format_of_its_bytes()),
+    );
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(LARGEST_COVER_SIDE);
     limits.max_image_height = Some(LARGEST_COVER_SIDE);
@@ -492,8 +494,8 @@ mod tests {
 
     use super::{
         COVERS_DECODED_AT_ONCE, CoverArt, Decoded, Drawing, EIGHT_BIT_FULL_SCALE, ImageFormat,
-        LARGEST_COVER_SIDE, LINEAR_FROM_EIGHT_BIT, Likeness, RGB, drawn_smaller, eight_bit,
-        linear_from_srgb, sides_within, srgb_from_linear,
+        LARGEST_COVER_SIDE, LINEAR_FROM_EIGHT_BIT, Likeness, RGB, decode_cover, drawn_smaller,
+        eight_bit, linear_from_srgb, sides_within, srgb_from_linear,
     };
 
     fn written_as_png(drawn: &RgbaImage) -> Option<CoverArt> {
@@ -554,6 +556,19 @@ mod tests {
         let drawn = RgbaImage::from_pixel(width, height, image::Rgba([shade, shade, shade, 255]));
 
         written_as_png(&drawn).expect("a flat image is written as PNG")
+    }
+
+    #[test]
+    fn a_cover_labelled_as_another_format_is_decoded_as_its_bytes_say() {
+        let mislabelled = CoverArt {
+            format: ImageFormat::Jpeg,
+            ..painted(12, 9, 80)
+        };
+
+        let decoded = decode_cover(&mislabelled).expect("a picture its bytes name");
+
+        assert_eq!((decoded.width(), decoded.height()), (12, 9));
+        assert_eq!(mislabelled.shorter_side(), Some(9));
     }
 
     #[test]

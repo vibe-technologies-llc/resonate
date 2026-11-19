@@ -88,7 +88,8 @@ pub(crate) fn as_jxl(art: &CoverArt) -> Result<Drawing> {
 
 fn carries_more_than_pixels(art: &CoverArt) -> Result<bool> {
     let held = || Cursor::new(art.bytes.as_slice());
-    let animated = match art.format {
+    let format = art.format_of_its_bytes();
+    let animated = match format {
         ImageFormat::Png => PngDecoder::new(held()).and_then(|decoder| decoder.is_apng()),
         ImageFormat::Webp => WebPDecoder::new(held()).map(|decoder| decoder.has_animation()),
         ImageFormat::Gif => GifDecoder::new(held()).map(|decoder| {
@@ -105,7 +106,7 @@ fn carries_more_than_pixels(art: &CoverArt) -> Result<bool> {
         return Ok(true);
     }
 
-    let profiled = image::ImageReader::with_format(held(), read_as(art.format))
+    let profiled = image::ImageReader::with_format(held(), read_as(format))
         .into_decoder()
         .and_then(|mut decoder| decoder.icc_profile())
         .map_err(unread)?;

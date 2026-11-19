@@ -269,8 +269,10 @@ here, add it there.
   build holds more: gpui's workspace turns on `dds`, `exr`, `ff`, `hdr`, `ico`, `pnm`, `qoi`, `tga`,
   `tiff` and `rayon` for `image` (`cargo tree -e features -i image`), so `exr`, `qoi`, `tiff` and
   `rayon` are compiled in wherever gpui is, and no manifest of ours can switch them off. They draw
-  nothing of ours: a picture is read with the format `ImageFormat` fixed from its media type or magic
-  bytes (`ImageReader::with_format` and `set_format`, `read_as`), never guessed (`with_guessed_format`,
+  nothing of ours: a picture is read with the format `ImageFormat` fixed from its magic bytes, else
+  its media type (`ImageReader::with_format` and `set_format`, `read_as`;
+  `CoverArt::format_of_its_bytes`, so PNG bytes labelled `image/jpeg` still draw:
+  `a_picture_is_read_by_its_bytes_before_the_type_it_declares`), never guessed (`with_guessed_format`,
   `load_from_memory` stay in tests), and `ImageFormat` names five, so a cover in any other format is
   none (`a_picture_in_a_format_the_vocabulary_does_not_name_is_not_a_cover`,
   `a_picture_in_a_format_the_vocabulary_does_not_name_is_never_drawn_as_one_it_does`). The phones'
