@@ -161,7 +161,7 @@ class Listening(
         library.pauseForRecording()
         val clip =
             try {
-                Microphone.record(ListenPlan.CLIP_SECONDS)
+                Microphone.record(library.words, ListenPlan.CLIP_SECONDS)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {

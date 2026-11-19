@@ -15,7 +15,7 @@ import org.resonate.android.nativecore.defaultPlaybackPreferences
 import org.resonate.android.nativecore.equaliserText
 import org.resonate.android.nativecore.parseEqProfile
 
-class PlaybackPreferencesStore(private val storage: SharedPreferences) {
+class PlaybackPreferencesStore(private val storage: SharedPreferences, private val words: Words) {
     fun read(): PlaybackPreferences {
         val defaults = defaultPlaybackPreferences()
         return defaults.copy(
@@ -63,21 +63,21 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
         val edit = choices(storage.edit(), preferences)
         edit.putString(CURVE, equaliserText(preferences.equaliser))
         edit.putString(CURVE_NAME, preferences.equaliser.name)
-        if (!edit.commit()) throw IOException("Sound settings could not be saved")
+        if (!edit.commit()) throw IOException(words.string(R.string.sound_settings_not_saved))
     }
 
     fun write(preferences: PlaybackPreferences, route: OutputRoute?) {
         if (route == null || !isBound(route)) return write(preferences)
         val edit = choices(storage.edit(), preferences)
         keepCurve(edit, route, preferences.equaliser)
-        if (!edit.commit()) throw IOException("Sound settings could not be saved")
+        if (!edit.commit()) throw IOException(words.string(R.string.sound_settings_not_saved))
     }
 
     fun followsSongRate(): Boolean = storage.getBoolean(FOLLOW_SONG_RATE, false)
 
     fun keepFollowsSongRate(follows: Boolean) {
         if (!storage.edit().putBoolean(FOLLOW_SONG_RATE, follows).commit())
-            throw IOException("Whether to match the song's sample rate could not be saved")
+            throw IOException(words.string(R.string.sound_song_rate_not_saved))
     }
 
     fun boundRoutes(): List<OutputRoute> =
@@ -94,7 +94,7 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
     fun bind(route: OutputRoute, curve: EqualiserCurve) {
         val edit = storage.edit().putString(ROUTE_NAMES + route.id, route.name)
         keepCurve(edit, route, curve)
-        if (!edit.commit()) throw IOException("The curve could not be kept for this output")
+        if (!edit.commit()) throw IOException(words.string(R.string.sound_curve_not_kept_for_output))
     }
 
     fun unbind(route: OutputRoute) {
@@ -104,7 +104,7 @@ class PlaybackPreferencesStore(private val storage: SharedPreferences) {
                 .remove(ROUTE_CURVES + route.id)
                 .remove(ROUTE_CURVE_NAMES + route.id)
                 .remove(ROUTE_NAMES + route.id)
-        if (!edit.commit()) throw IOException("The curve could not be forgotten for this output")
+        if (!edit.commit()) throw IOException(words.string(R.string.sound_curve_not_forgotten_for_output))
     }
 
     private fun choices(

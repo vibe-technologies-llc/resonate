@@ -178,7 +178,7 @@ object MusicDocuments {
         if (uri.authority != MediaStore.AUTHORITY) return
         val values = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
         check(context.contentResolver.update(uri, values, null, null) == 1) {
-            "The downloaded song could not be made available"
+            context.getString(R.string.transfer_not_made_available)
         }
     }
 
@@ -189,10 +189,12 @@ object MusicDocuments {
     fun delete(context: Context, uri: Uri) {
         if (uri.authority == MediaStore.AUTHORITY) {
             val removed = context.contentResolver.delete(uri, null, null)
-            check(removed > 0 || !rowStands(context, uri)) { "The song could not be removed" }
+            check(removed > 0 || !rowStands(context, uri)) {
+                context.getString(R.string.deletion_song_not_removed)
+            }
         } else {
             check(DocumentsContract.deleteDocument(context.contentResolver, uri)) {
-                "The song could not be removed"
+                context.getString(R.string.deletion_song_not_removed)
             }
         }
     }

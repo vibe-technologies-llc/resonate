@@ -35,7 +35,7 @@ class PlaybackPreferencesTest {
         val folder = File(context.cacheDir, name).apply { mkdirs() }
         val wave = File(folder, "tone.wav").apply { writeBytes(pcmTone(30)) }
         val storage = context.getSharedPreferences(name, Context.MODE_PRIVATE)
-        val store = PlaybackPreferencesStore(storage)
+        val store = PlaybackPreferencesStore(storage, ResourceWords(context.resources))
         val documents =
             object : Documents {
                 override fun openDocument(uri: String): Int =
@@ -124,7 +124,7 @@ class PlaybackPreferencesTest {
         try {
             assertTrue(storage.edit().putString("quality", "FAST").commit())
 
-            assertEquals(ResamplingQuality.LOW_LATENCY, PlaybackPreferencesStore(storage).read().quality)
+            assertEquals(ResamplingQuality.LOW_LATENCY, PlaybackPreferencesStore(storage, ResourceWords(context.resources)).read().quality)
         } finally {
             context.deleteSharedPreferences(name)
         }
@@ -134,7 +134,10 @@ class PlaybackPreferencesTest {
     fun aCurveBoundToAnOutputIsReadForThatOutputAndWrittenToItAlone() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val name = "route-test-${System.nanoTime()}"
-        val store = PlaybackPreferencesStore(context.getSharedPreferences(name, Context.MODE_PRIVATE))
+        val store = PlaybackPreferencesStore(
+                context.getSharedPreferences(name, Context.MODE_PRIVATE),
+                ResourceWords(context.resources),
+            )
         val buds = OutputRoute("v1:bluetooth:AA", "Buds")
         val car = OutputRoute("v1:bluetooth:BB", "Car")
         try {

@@ -27,8 +27,8 @@ object SweepRecorder {
             var track: AudioTrack? = null
             try {
                 if (record.state != AudioRecord.STATE_INITIALIZED)
-                    throw IOException("The microphone could not be opened")
-                val played = openTrack(rate, sweep.samples)
+                    throw IOException(context.getString(R.string.microphone_not_opened))
+                val played = openTrack(context, rate, sweep.samples)
                 track = played
                 val samples = FloatArray(wanted)
                 record.startRecording()
@@ -43,7 +43,7 @@ object SweepRecorder {
                             minOf(chunk, wanted - filled),
                             AudioRecord.READ_BLOCKING,
                         )
-                    if (read < 0) throw IOException("The microphone stopped answering")
+                    if (read < 0) throw IOException(context.getString(R.string.microphone_stopped_answering))
                     filled += read
                 }
                 samples
@@ -62,7 +62,7 @@ object SweepRecorder {
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_FLOAT,
             )
-        if (minimum <= 0) throw IOException("This phone has no microphone Resonate can use")
+        if (minimum <= 0) throw IOException(context.getString(R.string.microphone_missing))
         val manager = context.getSystemService(AudioManager::class.java)
         val unprocessed =
             manager.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED) == "true"
@@ -81,11 +81,11 @@ object SweepRecorder {
                 .setBufferSizeInBytes(maxOf(minimum, chunk * Float.SIZE_BYTES * 2))
                 .build()
         } catch (refused: SecurityException) {
-            throw IOException("Microphone access was refused", refused)
+            throw IOException(context.getString(R.string.microphone_refused), refused)
         }
     }
 
-    private fun openTrack(rate: Int, samples: List<Float>): AudioTrack {
+    private fun openTrack(context: Context, rate: Int, samples: List<Float>): AudioTrack {
         val track =
             AudioTrack.Builder()
                 .setAudioAttributes(
@@ -107,7 +107,7 @@ object SweepRecorder {
         val written = track.write(samples.toFloatArray(), 0, samples.size, AudioTrack.WRITE_BLOCKING)
         if (written != samples.size) {
             track.release()
-            throw IOException("The sweep could not be sent to the speaker")
+            throw IOException(context.getString(R.string.microphone_sweep_not_played))
         }
         return track
     }

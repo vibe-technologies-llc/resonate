@@ -342,6 +342,10 @@
     <string name="transfer_done_one">Downloaded %1$s · %2$d KiB</string>
     <string name="transfer_cancelled">Download cancelled</string>
     <string name="transfer_failed">Download failed</string>
+    <string name="transfer_service_not_started">The download service could not start</string>
+    <string name="transfer_service_late">The download service did not start</string>
+    <string name="transfer_not_recorded">The download could not be recorded</string>
+    <string name="transfer_not_made_available">The downloaded song could not be made available</string>
     <plurals name="transfer_done_batch">
         <item quantity="one">Downloaded %1$d of %2$d song</item>
         <item quantity="other">Downloaded %1$d of %2$d songs</item>
@@ -400,6 +404,7 @@
     <string name="features_folders_downloads_not_saved">The Downloads choice could not be saved</string>
     <string name="features_folders_downloads">Downloads</string>
     <string name="features_folders_music_folder">Music folder</string>
+    <string name="features_folders_already_held">%1$s holds or sits inside a folder already in your library</string>
     <string name="features_playlists_saved_search_kept">Saved “%1$s” among your playlists</string>
     <string name="features_playlists_already_kept">Already kept as “%1$s” among your playlists</string>
     <string name="features_playlists_kept">Kept “%1$s” among your playlists</string>
@@ -1081,6 +1086,10 @@
     <string name="provider_audd_not_saved">The AudD token could not be saved</string>
     <string name="provider_recognition_not_saved">Recognition key could not be saved</string>
     <string name="provider_sync_not_saved">Device sync settings could not be saved</string>
+    <string name="sound_settings_not_saved">Sound settings could not be saved</string>
+    <string name="sound_song_rate_not_saved">Whether to match the song\'s sample rate could not be saved</string>
+    <string name="sound_curve_not_kept_for_output">The curve could not be kept for this output</string>
+    <string name="sound_curve_not_forgotten_for_output">The curve could not be forgotten for this output</string>
     <string name="scrobbling_title">Scrobbling</string>
     <string name="scrobbling_intro">Songs you listen to through are queued on this device and sent to the accounts saved here while online features are on.</string>
     <string name="scrobbling_offline">Online features are off. Listens wait here until you turn them on.</string>
@@ -2336,6 +2345,11 @@
     <string name="listen_short_again">Again</string>
     <string name="listen_microphone_failed">The microphone could not be used</string>
     <string name="listen_asking_failed">The song could not be asked about</string>
+    <string name="microphone_missing">This phone has no microphone Resonate can use</string>
+    <string name="microphone_refused">Microphone access was refused</string>
+    <string name="microphone_not_opened">The microphone could not be opened</string>
+    <string name="microphone_stopped_answering">The microphone stopped answering</string>
+    <string name="microphone_sweep_not_played">The sweep could not be sent to the speaker</string>
 
     <string name="visualizer_title">Visualizer</string>
     <string name="visualizer_idle_title">Play a song to see it move</string>

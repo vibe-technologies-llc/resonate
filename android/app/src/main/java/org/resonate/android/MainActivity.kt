@@ -321,8 +321,10 @@ class MainActivity : ComponentActivity(), Host {
         if (overlapsGrantedFolder(uri)) {
             library.report(
                 IllegalArgumentException(
-                    "${uri.lastPathSegment.orEmpty().substringAfterLast('/').substringAfter(':')} " +
-                        "holds or sits inside a folder already in your library"
+                    library.words.string(
+                        R.string.features_folders_already_held,
+                        uri.lastPathSegment.orEmpty().substringAfterLast('/').substringAfter(':'),
+                    )
                 )
             )
             return

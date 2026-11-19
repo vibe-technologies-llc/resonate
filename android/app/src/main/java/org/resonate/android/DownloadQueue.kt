@@ -175,7 +175,9 @@ class DownloadQueue(
                 return
             }
             val accounts = seams.accounts()
-            check(accounts.isNotEmpty()) { "Set up a download provider first" }
+            check(accounts.isNotEmpty()) {
+                library.words.string(R.string.features_provider_set_up_first)
+            }
             library.holding { native ->
                 val song = checkNotNull(job(key)).song
                 val folder = Uri.parse(checkNotNull(job(key)).folder)
@@ -222,17 +224,20 @@ class DownloadQueue(
         try {
             context.startForegroundService(Intent(context, DownloadService::class.java))
         } catch (failure: Exception) {
-            throw IllegalStateException("The download service could not start", failure)
+            throw IllegalStateException(
+                library.words.string(R.string.transfer_service_not_started),
+                failure,
+            )
         }
         checkNotNull(withTimeoutOrNull(SERVICE_STARTS_WITHIN_MS) { serviceReady.await() }) {
-            "The download service did not start"
+            library.words.string(R.string.transfer_service_late)
         }
     }
 
     private fun journal(uri: Uri) {
         val left = settings.getStringSet(JOURNAL_KEY, emptySet()).orEmpty() + uri.toString()
         check(settings.edit().putStringSet(JOURNAL_KEY, left).commit()) {
-            "The download could not be recorded"
+            library.words.string(R.string.transfer_not_recorded)
         }
     }
 

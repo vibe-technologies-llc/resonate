@@ -14,7 +14,7 @@ object Microphone {
     const val RATE = 44_100
     private const val CHUNK_FRAMES = RATE / 10
 
-    suspend fun record(seconds: Int): HeardClip =
+    suspend fun record(words: Words, seconds: Int): HeardClip =
         withContext(Dispatchers.IO) {
             val wanted = RATE * seconds
             val minimum =
@@ -23,7 +23,7 @@ object Microphone {
                     AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_FLOAT,
                 )
-            if (minimum <= 0) throw IOException("This phone has no microphone Resonate can use")
+            if (minimum <= 0) throw IOException(words.string(R.string.microphone_missing))
             val record =
                 try {
                     AudioRecord.Builder()
@@ -38,11 +38,11 @@ object Microphone {
                         .setBufferSizeInBytes(maxOf(minimum, CHUNK_FRAMES * Float.SIZE_BYTES * 2))
                         .build()
                 } catch (refused: SecurityException) {
-                    throw IOException("Microphone access was refused", refused)
+                    throw IOException(words.string(R.string.microphone_refused), refused)
                 }
             try {
                 if (record.state != AudioRecord.STATE_INITIALIZED)
-                    throw IOException("The microphone could not be opened")
+                    throw IOException(words.string(R.string.microphone_not_opened))
                 val samples = FloatArray(wanted)
                 record.startRecording()
                 var filled = 0
@@ -55,7 +55,7 @@ object Microphone {
                             minOf(CHUNK_FRAMES, wanted - filled),
                             AudioRecord.READ_BLOCKING,
                         )
-                    if (read < 0) throw IOException("The microphone stopped answering")
+                    if (read < 0) throw IOException(words.string(R.string.microphone_stopped_answering))
                     filled += read
                 }
                 HeardClip(samples, RATE)

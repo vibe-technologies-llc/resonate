@@ -591,7 +591,10 @@ class LibraryRepository(private val context: Context) {
     }
 
     private fun preferencesStore() =
-        PlaybackPreferencesStore(context.getSharedPreferences("playback", Context.MODE_PRIVATE))
+        PlaybackPreferencesStore(
+            context.getSharedPreferences("playback", Context.MODE_PRIVATE),
+            words,
+        )
 
     fun search(text: String) {
         search = text

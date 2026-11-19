@@ -1,6 +1,7 @@
 package org.resonate.android
 
 import java.io.File
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -48,6 +49,33 @@ class WordsTest {
         assertTrue(prose.toString(), prose == listOf("Play next", "{} songs"))
     }
 
+    @Test
+    fun aFailureThrownOrReportedReachesTheBannerSoItsWordsAreProse() {
+        val source =
+            """
+            if (read < 0) throw IOException("The microphone stopped answering")
+            check(accounts.isNotEmpty()) { "Set up a download provider first" }
+            checkNotNull(started) { "The download service did not start" }
+            library.report(IllegalArgumentException("A folder is already in your library"))
+            Log.w("Resonate", "Kept for the log", IllegalStateException("A diagnostic"))
+            require(count > 0) { "A count must be above zero" }
+            val composed = staticCompositionLocalOf<Sheets> { error("No sheets in composition") }
+            """
+                .trimIndent()
+
+        val prose = Prose.of(source).map { it.text }
+
+        assertEquals(
+            listOf(
+                "The microphone stopped answering",
+                "Set up a download provider first",
+                "The download service did not start",
+                "A folder is already in your library",
+            ),
+            prose,
+        )
+    }
+
     private companion object {
         val PROPER =
             setOf(
@@ -82,13 +110,13 @@ data class Prose(val line: Int, val text: String) {
                 "Log.",
                 "require(",
                 "requireNotNull(",
-                "check(",
-                "checkNotNull(",
                 "error(",
                 "Exception(",
                 "Error(",
                 "testTag(",
             )
+
+        private val FAILURES = setOf("Exception(", "Error(")
 
         fun of(source: String): List<Prose> = Lexer(source).literals().filter { readsAsProse(it.text) }
 
@@ -165,8 +193,9 @@ data class Prose(val line: Int, val text: String) {
                         }
                         SAID_FOR_THE_LOG.any { source.startsWith(it, at) && !precededByName() } -> {
                             val marker = SAID_FOR_THE_LOG.first { source.startsWith(it, at) }
+                            val toTheListener = marker in FAILURES && thrownOrReported()
                             repeat(marker.length - 1) { step() }
-                            quietUntil.addLast(depth)
+                            if (!toTheListener) quietUntil.addLast(depth)
                         }
                         else -> step()
                     }
@@ -186,6 +215,14 @@ data class Prose(val line: Int, val text: String) {
                 var ahead = at
                 while (ahead < source.length && source[ahead] == ' ') ahead++
                 if (source.getOrNull(ahead) == '{') quietUntil.addLast(depth)
+            }
+
+            private fun thrownOrReported(): Boolean {
+                var named = at
+                while (named > 0 && source[named - 1].let { it.isLetterOrDigit() || it == '_' || it == '.' }) named--
+                val before = source.substring(0, named).trimEnd()
+                return before.endsWith("report(") ||
+                    (before.endsWith("throw") && before.getOrNull(before.length - 6)?.isLetterOrDigit() != true)
             }
 
             private fun precededByName(): Boolean {

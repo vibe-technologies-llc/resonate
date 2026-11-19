@@ -251,8 +251,12 @@ the hand-written `resonate-config.toml(5)` beside the English one.
   `TagField::as_str`), MCP's tool and prompt descriptions (read by a model, not a listener) and the
   words a reader matches in another program's output (`yt-dlp`'s, AutoEq's index).
 - **The phones hold the same rule.** Android's `WordsTest` walks `src/main/java` with a Kotlin reader
-  of the same heuristic, quiet inside `Log.`, `require`, `check`, `error`, an exception and
-  `testTag`, with its own `PROPER` and `STILL_TO_MOVE`. iOS's `test_strings.py` (`words.py`, under
+  of the same heuristic, quiet inside `Log.`, `require`, `error`, an exception made for the log and
+  `testTag`, with its own `PROPER` and `STILL_TO_MOVE`. A failure's message reaches the banner
+  (`LibraryRepository.report` says `failure.message`), so an exception thrown or handed to `report`
+  and a `check` or `checkNotNull` speak, and their words come from the resources
+  (`aFailureThrownOrReportedReachesTheBannerSoItsWordsAreProse`); `require` and `error` name a broken
+  invariant, a defect no listener is meant to read. iOS's `test_strings.py` (`words.py`, under
   `python3 -m unittest discover -s ios`) walks `Sources`, quiet inside logging, `print` and the
   preconditions, with its own two lists; it also holds every dotted key a view names
   (`Text("queue.clear")`, `String(localized:)`) to `Localizable.strings` or the stringsdict, and
