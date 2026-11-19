@@ -446,6 +446,109 @@ mod driven {
         assert_eq!(reach(&mut driven), None);
     }
 
+    fn edited_behind_the_window(driven: &mut Driven, command: resonate_engine::Command) {
+        let before = driven.read(|root, cx| root.player.read(cx).queued().revision);
+        driven.read(|root, cx| {
+            root.player
+                .read(cx)
+                .engine()
+                .send(command)
+                .expect("the engine takes a command");
+        });
+        driven.until(|root, cx| !root.player.read(cx).is_queued_at(before));
+    }
+
+    fn reached_song(driven: &mut Driven) -> Option<resonate_core::TrackId> {
+        driven.read(|root, cx| {
+            let row = root.reach(cx)?.row;
+            root.player.read(cx).queue().get(row).map(|item| item.id)
+        })
+    }
+
+    #[gpui::test]
+    fn a_queue_row_reached_before_a_sort_landed_from_elsewhere_names_the_same_song_delete_takes(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = queue_open(cx, &folder, &["one", "two", "three", "four"]);
+        let before = driven.queue();
+
+        driven.cx.simulate_keystrokes("end up");
+        driven.until(|root, cx| root.reach(cx).cloned() == Some(Reach::at(Shift::Queue, 2)));
+        edited_behind_the_window(
+            &mut driven,
+            resonate_engine::Command::Order(vec![2, 0, 3, 1]),
+        );
+
+        assert_eq!(reach(&mut driven), Some(Reach::at(Shift::Queue, 0)));
+        assert_eq!(reached_song(&mut driven), Some(before[2]));
+
+        driven.cx.simulate_keystrokes("delete");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 3);
+
+        assert_eq!(driven.queue(), [before[0], before[3], before[1]]);
+    }
+
+    #[gpui::test]
+    fn queue_rows_reached_before_a_row_landed_above_them_still_name_their_songs(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = queue_open(cx, &folder, &["one", "two", "three", "four"]);
+        let before = driven.queue();
+        let landing = driven.read(|root, cx| {
+            let queued = root.player.read(cx).queue();
+            let mut landing = resonate_engine::QueueItem::clone(&queued.to_vec()[3]);
+            landing.id = resonate_engine::unclaimed_id(queued.iter().map(AsRef::as_ref));
+            landing
+        });
+
+        driven.cx.simulate_keystrokes("end up shift-up");
+        driven
+            .until(|root, cx| root.reach(cx).cloned() == Some(Reach::spanning(Shift::Queue, 2, 1)));
+        edited_behind_the_window(
+            &mut driven,
+            resonate_engine::Command::Insert {
+                items: vec![landing],
+                at: resonate_engine::Placement::At(0),
+                play: false,
+            },
+        );
+
+        assert_eq!(
+            reach(&mut driven),
+            Some(Reach::spanning(Shift::Queue, 3, 2))
+        );
+        assert_eq!(reached_song(&mut driven), Some(before[1]));
+
+        driven.cx.simulate_keystrokes("delete");
+        driven.until(|root, cx| root.player.read(cx).queue().len() == 3);
+
+        assert_eq!(driven.queue()[1..], [before[0], before[3]]);
+    }
+
+    #[gpui::test]
+    fn a_queue_row_raised_twice_by_its_keys_stays_reached_as_it_climbs(cx: &mut TestAppContext) {
+        let folder = Folder::new();
+        let mut driven = queue_open(cx, &folder, &["one", "two", "three", "four"]);
+        let before = driven.queue();
+
+        driven.cx.simulate_keystrokes("end");
+        driven.until(|root, cx| root.reach(cx).cloned() == Some(Reach::at(Shift::Queue, 3)));
+        driven.cx.simulate_keystrokes("alt-up");
+        driven.until(|root, cx| {
+            root.player.read(cx).queue().get(2).map(|item| item.id) == Some(before[3])
+        });
+        driven.cx.simulate_keystrokes("alt-up");
+        driven.until(|root, cx| {
+            root.player.read(cx).queue().get(1).map(|item| item.id) == Some(before[3])
+        });
+
+        assert_eq!(driven.queue(), [before[0], before[3], before[1], before[2]]);
+        assert_eq!(reach(&mut driven), Some(Reach::at(Shift::Queue, 1)));
+        assert_eq!(reached_song(&mut driven), Some(before[3]));
+    }
+
     #[gpui::test]
     fn backspace_after_a_jump_has_lapsed_takes_nothing_out_of_the_queue(cx: &mut TestAppContext) {
         let folder = Folder::new();

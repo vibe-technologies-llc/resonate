@@ -151,6 +151,22 @@ impl Chosen {
         Self(vec![rows])
     }
 
+    pub(crate) fn of_rows(rows: impl IntoIterator<Item = usize>) -> Self {
+        let mut rows: Vec<usize> = rows.into_iter().collect();
+        rows.sort_unstable();
+        rows.dedup();
+
+        let mut runs: Vec<Span> = Vec::new();
+        for row in rows {
+            match runs.last_mut() {
+                Some(last) if last.last() + 1 == row => *last = Span::between(last.first(), row),
+                _ => runs.push(Span::one(row)),
+            }
+        }
+
+        Self(runs)
+    }
+
     pub(crate) fn count(&self) -> usize {
         self.0.iter().map(|span| span.rows()).sum()
     }
@@ -356,6 +372,32 @@ impl Reach {
             row: self.row.min(last),
             chosen: self.chosen,
             apart: self.apart.clone().within(held),
+        })
+    }
+
+    pub(crate) fn followed(&self, now_at: impl Fn(usize) -> Option<usize>) -> Option<Self> {
+        let chosen = Chosen::of_rows(self.selected().rows().filter_map(&now_at));
+        let (anchor, row) = (now_at(self.anchor), now_at(self.row));
+
+        if let (Some(anchor), Some(row), Some(run)) = (anchor, row, chosen.single())
+            && self.chosen
+            && Span::between(anchor, row) == run
+        {
+            return Some(Self::spanning(self.shift, anchor, row));
+        }
+        let row = row.or_else(|| chosen.first())?;
+        let stands_on_the_chosen = chosen.holds(row);
+
+        Some(Self {
+            shift: self.shift,
+            anchor: row,
+            row,
+            chosen: stands_on_the_chosen,
+            apart: if stands_on_the_chosen {
+                chosen.without(row)
+            } else {
+                chosen
+            },
         })
     }
 

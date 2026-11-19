@@ -250,6 +250,7 @@ impl RootView {
             return;
         }
 
+        self.follow_the_queue_reach(cx);
         self.follow_the_playing_row(player, cx);
         self.look_for_lyrics(cx);
         match player.read(cx).moved() {

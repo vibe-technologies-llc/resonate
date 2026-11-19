@@ -143,7 +143,12 @@ impl RootView {
     ) {
         match shift {
             Shift::Listing(_) => {}
-            Shift::Queue => self.send_by_position(Command::Move { rows, to }, cx),
+            Shift::Queue => {
+                let drawn_at = self.player.read(cx).queued().revision;
+                self.browsing
+                    .update(cx, |browsing, _| browsing.queue_moved_at(drawn_at));
+                self.send_by_position(Command::Move { rows, to }, cx);
+            }
             Shift::Playlist(playlist) => self.library.update(cx, |library, cx| {
                 let drawn = library.playlist_as_drawn();
                 library.move_in_playlist(playlist, rows, to, drawn, cx);
@@ -172,10 +177,16 @@ impl RootView {
     ) {
         match (over, chosen.single()) {
             (&CarriedOver::Queue { drawn_at }, Some(rows)) => {
-                self.send_by_position_at(drawn_at, Command::Move { rows, to }, cx);
+                self.move_queue_rows_at(drawn_at, rows, to, cx);
             }
             _ => self.shift_chosen(shift, chosen, to, cx),
         }
+    }
+
+    fn move_queue_rows_at(&self, revision: u64, rows: Span, to: usize, cx: &mut Context<Self>) {
+        self.browsing
+            .update(cx, |browsing, _| browsing.queue_moved_at(revision));
+        self.send_by_position_at(revision, Command::Move { rows, to }, cx);
     }
 
     pub(crate) fn shift_chosen(

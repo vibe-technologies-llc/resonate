@@ -102,7 +102,17 @@ the root's list:
   Sort pop-up's list, the shelves and strips by id, `BrowsePanes::shelf`, and each playlist's rows
   where it was left, `left_at`), `Orders` (an opened playlist's row order and whether it is kept, a
   saved search's order and cap, and the Sort pop-up: what it sorts, where it stands, what was typed
-  into it), the reach (`Reach`, the rows the keys stand on in any listing, the queue's included),
+  into it), the reach (`Reach`, the rows the keys stand on in any listing, the queue's included;
+  **a queue reach follows its songs across a revision**: `set_reach` notes the queue it was set over
+  (`QueueReachOver`), and `RootView::follow_the_queue_reach`, run whenever the zone shown moves,
+  carries it by each row's `QueueItem` id (`Reach::followed`) wherever a sort, MPRIS, the terminal,
+  another device, a guest or *Play next* moved the queue, so Delete, the move keys and Enter act on
+  the songs reached; rows whose songs left are let go of and, where none is left, it stays on the
+  row it stood on, as after Delete; a reach set right after the window's own move, as the move keys
+  set it, already stands where that move leaves it (`BrowsePanes::queue_moved_at`):
+  `a_queue_row_reached_before_a_sort_landed_from_elsewhere_names_the_same_song_delete_takes`,
+  `queue_rows_reached_before_a_row_landed_above_them_still_name_their_songs`,
+  `a_queue_row_raised_twice_by_its_keys_stays_reached_as_it_climbs`),
   what a read draws around the rows (`AroundTheRows`: the opened artist's `ArtistDetail`, the
   records on its shelf and its totals, the sung offer and the spelling offered `instead`, taken from
   `Landed`, below) and an album's other pressings (`Pressed`: the album, the `Pressings` and the

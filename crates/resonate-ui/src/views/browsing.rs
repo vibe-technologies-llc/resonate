@@ -4,7 +4,8 @@ use ahash::{AHashMap, AHashSet};
 use gpui::{
     App, Context, Entity, Pixels, Point, ScrollHandle, Subscription, Task, UniformListScrollHandle,
 };
-use resonate_core::{AlbumId, PlaylistId, Span};
+use resonate_core::{AlbumId, PlaylistId, Span, TrackId};
+use resonate_engine::{QueueRows, Queued};
 use resonate_library::{Direction, Kept, RowOrder, SortOrder};
 
 use crate::{
@@ -51,10 +52,31 @@ struct Pressed {
     _asking: Task<()>,
 }
 
+enum QueueReachOver {
+    Drawn { revision: u64, rows: QueueRows },
+    TheMoveSentAt(u64),
+}
+
+impl QueueReachOver {
+    fn drawn(queued: &Queued) -> Self {
+        Self::Drawn {
+            revision: queued.revision,
+            rows: queued.rows.clone(),
+        }
+    }
+}
+
+#[derive(Default)]
+struct QueueReach {
+    over: Option<QueueReachOver>,
+    moved_at: Option<u64>,
+}
+
 pub(crate) struct BrowsePanes {
     pub(crate) scrolls: Scrolls,
     pub(crate) orders: Orders,
     pub(crate) reach: Option<Reach>,
+    queue_reach: QueueReach,
     around: AroundTheRows,
     pressed: Option<Pressed>,
     _landing: Subscription,
@@ -88,6 +110,7 @@ impl BrowsePanes {
                 ordering_typed: TypeAhead::default(),
             },
             reach: None,
+            queue_reach: QueueReach::default(),
             around: AroundTheRows::default(),
             pressed: None,
             _landing: cx.observe(library, |panes, library, cx| {
@@ -238,6 +261,57 @@ impl BrowsePanes {
             .map(Reach::rows)
     }
 
+    fn reach_over(&mut self, reach: Option<Reach>, queued: &Queued) {
+        self.queue_reach.over = match reach.as_ref().map(|reach| reach.shift) {
+            Some(Shift::Queue) => Some(match self.queue_reach.moved_at {
+                Some(sent_at) if sent_at == queued.revision => {
+                    QueueReachOver::TheMoveSentAt(sent_at)
+                }
+                _ => QueueReachOver::drawn(queued),
+            }),
+            _ => None,
+        };
+        if reach.is_none() {
+            self.queue_reach.moved_at = None;
+        }
+        self.reach = reach;
+    }
+
+    pub(crate) const fn queue_moved_at(&mut self, revision: u64) {
+        self.queue_reach.moved_at = Some(revision);
+    }
+
+    pub(crate) fn follow_the_queue(&mut self, now: &Queued) {
+        let Some(reach) = self
+            .reach
+            .as_ref()
+            .filter(|reach| reach.shift == Shift::Queue)
+        else {
+            return;
+        };
+        let followed = match &self.queue_reach.over {
+            Some(QueueReachOver::Drawn { revision, .. }) if *revision == now.revision => return,
+            Some(QueueReachOver::TheMoveSentAt(sent_at)) if *sent_at == now.revision => return,
+            Some(QueueReachOver::Drawn { rows: then, .. }) => {
+                let placed: AHashMap<TrackId, usize> = now
+                    .rows
+                    .iter()
+                    .enumerate()
+                    .map(|(row, item)| (item.id, row))
+                    .collect();
+                let now_at =
+                    |row: usize| then.get(row).and_then(|item| placed.get(&item.id).copied());
+                reach
+                    .followed(now_at)
+                    .or_else(|| reach.within(now.rows.len()))
+            }
+            Some(QueueReachOver::TheMoveSentAt(_)) | None => reach.within(now.rows.len()),
+        };
+
+        self.reach = followed;
+        self.queue_reach.over = Some(QueueReachOver::drawn(now));
+    }
+
     pub(crate) fn let_go_of_the_reach_where(&mut self, held: impl FnOnce(Shift) -> bool) {
         if self.reach.as_ref().is_some_and(|reach| held(reach.shift)) {
             self.reach = None;
@@ -268,8 +342,15 @@ impl RootView {
     }
 
     pub(crate) fn set_reach(&self, reach: Option<Reach>, cx: &mut App) {
+        let queued = self.player.read(cx).queued();
         self.browsing
-            .update(cx, |browsing, _| browsing.reach = reach);
+            .update(cx, |browsing, _| browsing.reach_over(reach, &queued));
+    }
+
+    pub(crate) fn follow_the_queue_reach(&self, cx: &mut App) {
+        let queued = self.player.read(cx).queued();
+        self.browsing
+            .update(cx, |browsing, _| browsing.follow_the_queue(&queued));
     }
 
     pub(crate) fn around_the_rows<'a>(&self, cx: &'a App) -> &'a AroundTheRows {
