@@ -4,27 +4,18 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Android
-- [S · 0.14.1] Tapping a song in the queue sheet plays another once the window has scrolled:
-  `QueueSheet.kt` hands `model.jump` an absolute row (`queue.first + …`), `Resonate.kt`'s `jump` is
-  `seekToDefaultPosition(index)`, and `RustMediaPlayer.handleSeek` reads that index as a position in
-  the shown window and adds `shown.first` again (`Seeking.of`), so past row 50 a tap plays row
-  `2 × first + i` or one past the end; the sheet's moves go through `library.request` and are right
-- [S · 0.14.1] The widget's play, next and previous do nothing while the playback service is not
-  running (after the task is swiped away, or a process restart): `ResonateWidgets.kt` binds a
-  `MediaController`, calls `prepare()`/`play()` and releases it at once, nothing starts the
-  service, so it is unbound and destroyed while `onPlaybackResumption` still waits for the engine;
-  the headset's path through `MediaButtonReceiver` works cold
-- [M · 0.14.1] The session gives up audio focus and its foreground notification while another zone
-  plays: the snapshot `RustMediaPlayer` reads is the shown zone's, so showing a stopped or empty
-  zone reads as `stoppedItself` (focus abandoned) and `STATE_IDLE` (the notification and the
-  foreground state dropped under `SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER`), and focus loss,
-  becoming noisy, *Close* and `onTaskRemoved` pause or stop the shown zone alone, so a zone on a
-  USB DAC plays on unseen after the task is dismissed, against `android.md`
-- [S · 0.14.1] Failures the listener reads are English literals in exceptions, past `WordsTest`
-  (quiet inside an exception): the folder already in the library (`MainActivity.kt`), no usable
-  microphone (`Microphone.kt`, `SweepRecorder.kt`, shown by `Listening.kt` as `failure.message`),
-  `PlaybackPreferencesStore.kt`, `DownloadQueue.kt` and `MusicDocuments.kt`, all reaching the banner
-  or a sheet; each should be `words.string(R.string.…)` as `OpenedFiles` does
+- [S · blocked: design] The widget's previous and next do nothing while the playback service is not
+  running: play starts the service as the headset's key does (`WidgetPresses`), but a skip that
+  starts nothing cannot meet the foreground-service rule, and Media3's own `MediaButtonReceiver`
+  passes over every key but play cold; whether a cold skip should start playing the row before or
+  after is the open choice
+
+## iOS
+- [M · 0.14.1] The iPhone's session gives up Now Playing while another zone plays: it follows the
+  zone shown alone, so showing a stopped or empty zone drops the lock-screen controls and an
+  interruption or a route lost pauses only the shown zone, while a zone on another output plays on;
+  the boundary's snapshot now carries `heard_elsewhere` and `pause_sounding_zones`,
+  `play_zones` and `stop_every_zone`, which Android's session uses (`android.md`)
 
 ## Security
 - [M · blocked: design] A device that joins a shared playlist after a hostile editor compacted it
