@@ -32,10 +32,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `now()` stays at `i64::MAX` and every later change of a key compares equal to the held one and is
   dropped; a stamp too far past the wall clock should be refused as shared playlists now refuse one
   (`STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS`)
-- [S · 0.14.1] A paired device's MusicBrainz answer can make the receiver reserve gigabytes:
-  `list` (`resonate-musicbrainz`'s `wire.rs`) calls `Vec::with_capacity(count)` with a count
-  `count_of(ITEM_AT_LEAST = 1)` allows up to one per remaining byte, for values of hundreds of bytes
-  each; the reservation should be capped
 
 
 ## Catalog
@@ -44,28 +40,10 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`organise.rs`) sees the same file at the destination and narrows the landing to the link's own
   folder, meant for a case-only rename on a case-insensitive volume, so `downloads/echoes.wav`
   becomes `downloads/02 Echoes.wav` and the two names stay apart
-- [S · 0.14.1] A by-id MusicBrainz lookup is answered with the thinner copy a browse or an ISRC
-  answer kept: `dated_at` (`kept.rs`) falls back to the `entities` index, which `Answer::entities`
-  fills from `Recordings` (asked with `ISRC_INCLUDES`, no release groups) and from `Pressings` and
-  `ArtistPressings` (`PRESSING_INCLUDES`, no labels or links), so `told_where_it_sits` re-asking
-  `recording(id)` still has no release kinds and lands a single or a compilation as the album, and
-  a refresh of an album whose own answer went stale takes the pressing and writes its label,
-  catalogue number, album links and recording links away (`enriched.rs` writes them
-  unconditionally); only whole entities should be indexed, against `musicbrainz.md`'s claim that
-  they are
 - [M · 0.14.1] A phone's batch of moved documents that lands while a zone opens a row drops the
   moved songs from that zone: `documents_moved` (`organising.rs`) leaves such a zone's live queue
   on the old URIs and rekeys the catalog, so each moved song fails when reached and the next
   `save_zone` (`ids_held_at`) leaves it out of the saved queue for good
-- [S · 0.14.1] `resonate playlists --refresh` stops at the first followed profile or playlist that
-  fails: `profile_followed(...)?` and `refreshed(...)?` (`followed.rs`) end the run, so a deleted
-  Deezer profile (`NoProfileAtTheLink`, naming no profile) or one lapsed sign-in refreshes nothing
-  after it, where the window's `refreshed_where_due` tells each failure and goes on
-- [S · 0.14.1] Following MusicBrainz's published changes stops for the rest of the window's session:
-  the follower (`musicbrainz.rs`) leaves once `online` is off and nothing calls
-  `follow_the_changes` when it is turned back on, and a mirror switched off and on within its 60 s
-  sleep finds `FOLLOWING` still held by the cancelled thread, which then clears it on leaving, so
-  the copy goes stale
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as
