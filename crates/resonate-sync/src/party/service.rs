@@ -751,6 +751,7 @@ impl Running {
                 self.host_id = Some(host);
                 self.closes_before_welcome = 0;
                 self.no_room_answers = 0;
+                self.forget_the_servers_clock();
             }
             Some(FromServer::Refused(Refusal::NoSuchRoom)) => {
                 self.no_room_answers += 1;
@@ -1030,6 +1031,11 @@ impl Running {
         self.shown.write().apart = apart;
     }
 
+    fn forget_the_servers_clock(&self) {
+        self.clock.write().forget_what_was_measured();
+        self.shown.write().round_trip = None;
+    }
+
     fn forget_the_hosts_time(&mut self) {
         self.hosts_time = None;
         self.clock.write().correct_by(0);
@@ -1119,7 +1125,112 @@ impl Running {
 
 #[cfg(test)]
 mod tests {
+    use tokio::net::{TcpListener, TcpStream};
+
     use super::*;
+
+    const AN_OLD_SERVERS_UPTIME: u64 = 3_600_000_000_000;
+    const A_NEW_SERVERS_UPTIME: u64 = 5_000_000_000;
+    const PONGS_BEFORE_THE_RESTART: usize = 3;
+    const THE_NEW_SERVER_ANSWERS_AFTER: Duration = Duration::from_millis(20);
+    const READ_WITHIN: u64 = 500_000_000;
+    const THE_RESTART_IS_READ_WITHIN: Duration = Duration::from_secs(10);
+
+    async fn a_session_served(
+        stream: TcpStream,
+        uptime: u64,
+        answering_after: Duration,
+        pongs: usize,
+    ) {
+        let Ok(mut accepted) = crate::web::accepted(stream, None).await else {
+            return;
+        };
+        let Ok(Some(_room)) = accepted.incoming.read().await else {
+            return;
+        };
+        let welcome = FromServer::RoomWelcome {
+            members: Vec::new(),
+            host: DeviceId([0; 16]),
+        };
+        if accepted.outgoing.send(&welcome.encoded()).await.is_err() {
+            return;
+        }
+
+        let mut answered = 0;
+        while answered < pongs {
+            let Ok(Some(frame)) = accepted.incoming.read().await else {
+                return;
+            };
+            let Ok(ToServer::RoomPing { nonce }) = ToServer::decoded(&frame) else {
+                continue;
+            };
+            sleep(answering_after).await;
+            let pong = FromServer::RoomPong {
+                nonce,
+                at_nanos: nonce + uptime,
+            };
+            if accepted.outgoing.send(&pong.encoded()).await.is_err() {
+                return;
+            }
+            answered += 1;
+        }
+    }
+
+    async fn a_server_restarted_after_a_few_pongs(listener: TcpListener) {
+        let Ok((first, _)) = listener.accept().await else {
+            return;
+        };
+        a_session_served(
+            first,
+            AN_OLD_SERVERS_UPTIME,
+            Duration::ZERO,
+            PONGS_BEFORE_THE_RESTART,
+        )
+        .await;
+
+        while let Ok((next, _)) = listener.accept().await {
+            a_session_served(
+                next,
+                A_NEW_SERVERS_UPTIME,
+                THE_NEW_SERVER_ANSWERS_AFTER,
+                usize::MAX,
+            )
+            .await;
+        }
+    }
+
+    #[tokio::test]
+    async fn a_party_whose_server_restarted_reads_the_new_servers_clock_alone() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("bound");
+        let port = listener.local_addr().expect("an address").port();
+        let serving = tokio::spawn(a_server_restarted_after_a_few_pongs(listener));
+        let began = std::time::Instant::now();
+        let now = move || u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX);
+
+        let party = Party::host(PartySettings {
+            server: format!("ws://127.0.0.1:{port}/"),
+            trusted: None,
+            name: String::new(),
+            now_nanos: Arc::new(now),
+            time_server: None,
+        })
+        .expect("a party");
+        let deadline = Instant::now() + THE_RESTART_IS_READ_WITHIN;
+        let read_the_new_clock = loop {
+            let here = now();
+            let read = party
+                .to_server(here)
+                .is_some_and(|there| there.abs_diff(here + A_NEW_SERVERS_UPTIME) < READ_WITHIN);
+            if read || Instant::now() >= deadline {
+                break read;
+            }
+            sleep(Duration::from_millis(50)).await;
+        };
+        drop(party);
+        serving.abort();
+
+        assert!(read_the_new_clock);
+    }
 
     fn named(of: u8, name: &str) -> (DeviceId, String) {
         (DeviceId([of; 16]), name.to_owned())

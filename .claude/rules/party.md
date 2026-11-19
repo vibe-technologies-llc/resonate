@@ -39,7 +39,11 @@ new token, so a guest who leaves and comes back through the link is a new member
 
 Each seat pings the room once a second and sets `ServerClock` from the **quickest answer of the last
 60 s** (`RoomPong`'s nanos come from the server's monotonic clock, since `now()` is wall seconds). A gap
-over 10 s, a suspended machine, forgets the window. Min-RTT removes queueing but not a path's asymmetry,
+over 10 s, a suspended machine, forgets the window, and **so does every `RoomWelcome`**
+(`ServerClock::forget_what_was_measured`): that clock counts from the server process's start, so a
+server restarted between two sessions reads from another origin, and a quick answer of the old
+process kept in the window would put a guest off by its whole uptime
+(`a_party_whose_server_restarted_reads_the_new_servers_clock_alone`). Min-RTT removes queueing but not a path's asymmetry,
 so the error between two people is bounded by half their round trip, not known.
 
 **Measured**, `RESONATE_PARTY_SERVER=wss://resonate.tecnio.dev/ cargo nextest run -p resonate-server

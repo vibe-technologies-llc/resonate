@@ -48,6 +48,10 @@ impl ServerClock {
         }
     }
 
+    pub fn forget_what_was_measured(&mut self) {
+        self.samples.clear();
+    }
+
     fn best(&self) -> Option<&Sample> {
         self.samples.iter().min_by_key(|sample| sample.round_trip)
     }
@@ -115,6 +119,21 @@ mod tests {
 
         assert_eq!(clock.round_trip(), Some(Duration::from_millis(100)));
         assert_eq!(clock.to_server(60_050 * MS), Some(90_050 * MS));
+    }
+
+    #[test]
+    fn a_clock_that_forgot_what_it_measured_is_set_by_the_answers_after_alone() {
+        let mut clock = ServerClock::default();
+
+        clock.answered(0, 3_600_000 * MS + MS, 2 * MS);
+        clock.forget_what_was_measured();
+
+        assert_eq!(clock.to_server(0), None);
+
+        clock.answered(2_000 * MS, 50 * MS, 2_100 * MS);
+
+        assert_eq!(clock.round_trip(), Some(Duration::from_millis(100)));
+        assert_eq!(clock.to_server(2_050 * MS), Some(50 * MS));
     }
 
     #[test]
