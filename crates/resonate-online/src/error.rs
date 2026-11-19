@@ -112,6 +112,13 @@ pub enum Error {
         op: LookupOp,
         limit: usize,
     },
+
+    #[error("a clip could not be signed for {host:?}")]
+    Unsigned {
+        host: Host,
+        #[source]
+        source: Box<resonate_analysis::Error>,
+    },
 }
 
 impl Error {
@@ -161,7 +168,7 @@ impl Error {
                 op,
                 status,
             },
-            Self::Unreadable { .. } | Self::TooLarge { .. } => {
+            Self::Unreadable { .. } | Self::TooLarge { .. } | Self::Unsigned { .. } => {
                 resonate_eq::Error::Unreadable { provider, op }
             }
         }
@@ -182,7 +189,7 @@ impl Error {
                 op,
                 status,
             },
-            Self::Unreadable { .. } | Self::TooLarge { .. } => {
+            Self::Unreadable { .. } | Self::TooLarge { .. } | Self::Unsigned { .. } => {
                 resonate_lyrics::Error::Unreadable { provider, op }
             }
         }
@@ -198,6 +205,7 @@ impl Error {
             Self::Refused { status, .. } => resonate_listen::Error::Refused { service, status },
             Self::Unreadable { .. } => resonate_listen::Error::Unreadable { service },
             Self::TooLarge { .. } => resonate_listen::Error::TooLarge { service },
+            Self::Unsigned { .. } => resonate_listen::Error::Unsigned { service },
         }
     }
 }
@@ -211,6 +219,9 @@ impl From<Error> for resonate_library::Error {
             Error::Refused { op, status, .. } => Self::Refused { op, status },
             Error::Unreadable { op, .. } => Self::Unreadable { op },
             Error::TooLarge { op, limit, .. } => Self::TooLarge { op, limit },
+            Error::Unsigned { .. } => Self::Unreadable {
+                op: LookupOp::Recognise,
+            },
         }
     }
 }

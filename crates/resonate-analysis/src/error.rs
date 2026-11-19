@@ -1,6 +1,6 @@
 use std::result;
 
-use resonate_core::StreamSpec;
+use resonate_core::{SampleRate, StreamSpec};
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -40,6 +40,13 @@ pub enum Error {
         source: Box<resonate_dsp::Error>,
     },
 
+    #[error("a clip at {from} could not be brought to the rate a signature is written at")]
+    Signing {
+        from: SampleRate,
+        #[source]
+        source: Box<resonate_dsp::Error>,
+    },
+
     #[error("the analysis was stopped before it reached the end of the stream")]
     Stopped,
 }
@@ -51,6 +58,7 @@ impl Error {
             Self::Conformity { .. }
             | Self::Equalising { .. }
             | Self::Correcting { .. }
+            | Self::Signing { .. }
             | Self::Stopped => false,
         }
     }

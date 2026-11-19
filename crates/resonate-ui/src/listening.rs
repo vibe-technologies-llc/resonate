@@ -149,7 +149,8 @@ fn stage_after(error: &ListenError) -> Stage {
         ListenError::Unreachable { .. } => Stage::Unreached,
         ListenError::Refused { .. }
         | ListenError::Unreadable { .. }
-        | ListenError::TooLarge { .. } => Stage::Refused,
+        | ListenError::TooLarge { .. }
+        | ListenError::Unsigned { .. } => Stage::Refused,
     }
 }
 
@@ -490,7 +491,8 @@ fn noted(error: &ListenError) {
         ListenError::Unreachable { .. }
         | ListenError::Refused { .. }
         | ListenError::Unreadable { .. }
-        | ListenError::TooLarge { .. } => {
+        | ListenError::TooLarge { .. }
+        | ListenError::Unsigned { .. } => {
             tracing::warn!(%error, "what was heard could not be named");
         }
         ListenError::Stopped | ListenError::NothingHeard => {}

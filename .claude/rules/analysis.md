@@ -279,7 +279,11 @@ object). Library reaches `study` (enrichment) and `print` (moved files).
   failed analysis.
 - **A clip is signed, never printed**: AcoustID filters by a whole recording's `duration`, matches
   from its start. Listen asks Shazam and AudD; AcoustID only a file printed whole. `signature_of`
-  writes Shazam's signature from the documented format: mono, 16 kHz via `Resampler` at `LowLatency`,
+  writes Shazam's signature from the documented format: mono, 16 kHz via `Resampler` at `LowLatency`
+  (in stages, halving the rate while it is over `LARGEST_STAGE_RATIO` times 16 kHz, since the
+  resampler refuses a ratio past 32: a 705.6 or 768 kHz file is signed
+  (`a_clip_at_a_rate_beyond_the_resamplers_reach_is_signed_in_stages`); a stage the resampler refuses is
+  `Error::Signing`, never an empty signal),
   at most `SIGNED_SECONDS_AT_MOST` from the middle, as a `data:audio/vnd.shazam.sig;base64,` URI.
   `Signature::is_worth_asking` holds it to `FEWEST_PEAKS_A_SECOND`: `Shazam::signed` asks nothing
   about a steady tone or lone click, for Listen and `ByEar` alike.

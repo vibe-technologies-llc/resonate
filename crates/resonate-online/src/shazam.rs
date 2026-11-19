@@ -156,7 +156,10 @@ impl Shazam {
         mono: &[f32],
         rate: SampleRate,
     ) -> crate::Result<Option<(Heard, Option<String>)>> {
-        let signature = signature_of(mono, rate);
+        let signature = signature_of(mono, rate).map_err(|source| crate::Error::Unsigned {
+            host: Host::Shazam,
+            source: Box::new(source),
+        })?;
         if !signature.is_worth_asking() {
             tracing::debug!(
                 peaks = signature.peaks(),
@@ -325,6 +328,34 @@ mod tests {
             shazam.signed(&vec![0.1; steady.len()], rate),
             Ok(None)
         ));
+    }
+
+    #[test]
+    fn a_clip_at_a_rate_far_above_sixteen_kilohertz_is_still_signed_and_asked() {
+        let client = Arc::new(Client::new(crate::Identity::of_this_build()));
+        client.reach(false);
+        let shazam = Shazam::new(Arc::clone(&client));
+        let rate = SampleRate::new(768_000).expect("a rate");
+        let seconds = 6;
+        let frames = seconds * rate.hz() as usize;
+        let played: Vec<f32> = (0..frames)
+            .map(|n| {
+                let at = f64::from(n as u32) / f64::from(rate.hz());
+                let pitch = if ((at * 4.0) as u32).is_multiple_of(2) {
+                    440.0
+                } else {
+                    2_000.0
+                };
+                (0.4 * (std::f64::consts::TAU * pitch * at).sin()) as f32
+            })
+            .collect();
+
+        let answered = shazam.signed(&played, rate);
+
+        assert!(
+            matches!(answered, Err(crate::Error::Offline { .. })),
+            "{answered:?}"
+        );
     }
 
     #[test]

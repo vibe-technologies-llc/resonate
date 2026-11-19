@@ -62,6 +62,9 @@ pub enum Error {
 
     #[error("the clip is larger than {service} takes")]
     TooLarge { service: SourceId },
+
+    #[error("the clip could not be signed for {service}")]
+    Unsigned { service: SourceId },
 }
 
 impl Error {

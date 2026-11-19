@@ -5,7 +5,7 @@ use resonate_dsp::{FilterPhase, Processor, Quality, Resampler, ResamplerConfig};
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
 use smallvec::SmallVec;
 
-use crate::print::standard_base64;
+use crate::{Error, Result, print::standard_base64};
 
 const SIGNED_AT: SampleRate = SampleRate::HZ_16000;
 const SIGNED_AT_ID: u32 = 3;
@@ -54,6 +54,8 @@ const BANDS_HZ: [(f64, f64); 4] = [
 ];
 const FRAME_DELTA_ESCAPE: u8 = 0xff;
 const RESAMPLED_IN_BLOCKS: usize = 4_096;
+const LARGEST_STAGE_RATIO: u32 = 16;
+const DECIMATED_BY: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Signature {
@@ -92,41 +94,60 @@ struct Peak {
     bin: u16,
 }
 
-pub fn signature_of(mono: &[f32], rate: SampleRate) -> Signature {
-    let resampled = at_sixteen_kilohertz(mono, rate);
+pub fn signature_of(mono: &[f32], rate: SampleRate) -> Result<Signature> {
+    let resampled = at_sixteen_kilohertz(mono, rate)?;
     let kept = middle_of(&resampled);
     let mut signing = Signing::new();
     for hop in kept.as_chunks::<HOP>().0 {
         signing.hear(hop);
     }
-    serialised(&signing.bands, kept.len() as u32)
+    Ok(serialised(&signing.bands, kept.len() as u32))
 }
 
-fn at_sixteen_kilohertz(mono: &[f32], rate: SampleRate) -> Vec<f64> {
-    let widened: Vec<f64> = mono.iter().map(|sample| f64::from(*sample)).collect();
-    if rate == SIGNED_AT {
-        return widened;
+fn at_sixteen_kilohertz(mono: &[f32], rate: SampleRate) -> Result<Vec<f64>> {
+    let mut samples: Vec<f64> = mono.iter().map(|sample| f64::from(*sample)).collect();
+    let mut at = rate;
+    while at != SIGNED_AT {
+        let to = next_stage_from(at);
+        samples = resampled(&samples, at, to).map_err(|source| Error::Signing {
+            from: rate,
+            source: Box::new(source),
+        })?;
+        at = to;
     }
-    let Ok(mut resampler) = Resampler::new(ResamplerConfig {
-        input_rate: rate,
-        output_rate: SIGNED_AT,
+    Ok(samples)
+}
+
+fn next_stage_from(rate: SampleRate) -> SampleRate {
+    if rate.hz() <= SIGNED_AT.hz() * LARGEST_STAGE_RATIO {
+        return SIGNED_AT;
+    }
+    SampleRate::new(rate.hz().div_ceil(DECIMATED_BY)).unwrap_or(SIGNED_AT)
+}
+
+fn resampled(
+    samples: &[f64],
+    from: SampleRate,
+    to: SampleRate,
+) -> std::result::Result<Vec<f64>, resonate_dsp::Error> {
+    let mut resampler = Resampler::new(ResamplerConfig {
+        input_rate: from,
+        output_rate: to,
         channels: ChannelLayout::Mono,
         quality: Quality::LowLatency,
         phase: FilterPhase::Linear,
         max_frames_in: RESAMPLED_IN_BLOCKS,
-    }) else {
-        return Vec::new();
-    };
-    let mut resampled = Vec::with_capacity(widened.len() / 2);
+    })?;
+    let mut resampled = Vec::with_capacity(samples.len() / 2);
     let mut scratch = vec![0.0; resampler.max_output_frames(RESAMPLED_IN_BLOCKS)];
-    for block in widened.chunks(RESAMPLED_IN_BLOCKS) {
+    for block in samples.chunks(RESAMPLED_IN_BLOCKS) {
         let made = resampler.process(block, &mut scratch).frames_out;
         resampled.extend_from_slice(scratch.get(..made).unwrap_or_default());
     }
     let mut tail = vec![0.0; resampler.max_flush_frames()];
     let drained = resampler.flush(&mut tail);
     resampled.extend_from_slice(tail.get(..drained).unwrap_or_default());
-    resampled
+    Ok(resampled)
 }
 
 fn middle_of(samples: &[f64]) -> Vec<f64> {
@@ -459,7 +480,8 @@ mod tests {
         let signature = signature_of(
             &tone(&[440.0, 2_000.0], SampleRate::HZ_48000, 6.0),
             SampleRate::HZ_48000,
-        );
+        )
+        .expect("a signature");
         let bytes = signature.bytes();
         assert_eq!(word(bytes, 0), HEADER_MAGIC);
         assert_eq!(word(bytes, 4), crc32(&bytes[8..]));
@@ -478,7 +500,8 @@ mod tests {
         let signature = signature_of(
             &notes(&[440.0, 2_000.0], SampleRate::HZ_44100, 6.0),
             SampleRate::HZ_44100,
-        );
+        )
+        .expect("a signature");
         let bands = bands_of(&signature);
         let tags: Vec<u32> = bands.iter().map(|(tag, _)| *tag - FIRST_BAND_TAG).collect();
         assert!(
@@ -510,11 +533,12 @@ mod tests {
     #[test]
     fn a_steady_tone_or_a_lone_click_leaves_too_few_peaks_to_be_worth_asking_about() {
         let rate = SampleRate::HZ_48000;
-        let steady = signature_of(&tone(&[440.0], rate, 12.0), rate);
+        let steady = signature_of(&tone(&[440.0], rate, 12.0), rate).expect("a signature");
         let mut clicked = vec![0.0; 12 * rate.hz() as usize];
         clicked[6 * rate.hz() as usize] = 0.9;
-        let clicked = signature_of(&clicked, rate);
-        let played = signature_of(&notes(&[440.0, 2_000.0], rate, 12.0), rate);
+        let clicked = signature_of(&clicked, rate).expect("a signature");
+        let played =
+            signature_of(&notes(&[440.0, 2_000.0], rate, 12.0), rate).expect("a signature");
 
         assert!(!steady.is_worth_asking(), "{} peaks", steady.peaks());
         assert!(!clicked.is_worth_asking(), "{} peaks", clicked.peaks());
@@ -526,7 +550,40 @@ mod tests {
                 .map(|(_, peaks)| peaks.len())
                 .sum::<usize>()
         );
-        assert!(!signature_of(&[], rate).is_worth_asking());
+        assert!(
+            !signature_of(&[], rate)
+                .expect("a signature")
+                .is_worth_asking()
+        );
+    }
+
+    #[test]
+    fn a_clip_at_a_rate_beyond_the_resamplers_reach_is_signed_in_stages() {
+        let played = |rate: SampleRate| {
+            signature_of(&notes(&[440.0, 2_000.0], rate, 6.0), rate).expect("a signature")
+        };
+        let reference = played(SampleRate::HZ_48000);
+
+        for hz in [705_600, 768_000] {
+            let rate = SampleRate::new(hz).expect("a rate");
+            let signature = played(rate);
+
+            assert!(
+                signature.is_worth_asking(),
+                "{rate}: {} peaks",
+                signature.peaks()
+            );
+            assert!(
+                signature.sample_ms().abs_diff(reference.sample_ms()) < 50,
+                "{rate}"
+            );
+            assert!(
+                signature.peaks().abs_diff(reference.peaks()) * 4 < reference.peaks(),
+                "{rate}: {} peaks against {}",
+                signature.peaks(),
+                reference.peaks()
+            );
+        }
     }
 
     #[test]

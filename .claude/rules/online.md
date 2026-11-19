@@ -555,7 +555,8 @@ nothing asked** (`no_account_asks_nothing_of_the_api_and_a_pasted_link_keeps_its
 - **`Client::exchange` is the one loop for GET and POST**, `Posted` body or none. A POST carries
   `Content-Language: en_US`, and `Content-Encoding: gzip` only where `Posted::packed_form` made it.
 - **Shazam is asked a signature, never audio.** `Shazam::recognise` posts `signature_of` the clip's
-  mono mix with fresh `uuid` v4 ids, a zeroed location, UTC and this build's agent. Empty `matches`
+  mono mix (a signature that cannot be written is `Error::Unsigned`, `resonate_listen::Error::Unsigned`
+  for a listener, not a silent nothing; one with too few peaks is still not asked) with fresh `uuid` v4 ids, a zeroed location, UTC and this build's agent. Empty `matches`
   = nothing heard. The cover (`coverarthq`) comes from `AppleArtwork` only over https on
   `mzstatic.com` or a subdomain (`shared::on_host`); the song's page only over https on
   `shazam.com`, else `Heard::link` is `None`. The endpoint is undocumented, likeliest to change;
