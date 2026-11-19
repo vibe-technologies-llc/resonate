@@ -83,6 +83,7 @@ impl RootView {
     ) {
         let library = self.library.read(cx).catalog();
         let scopes = albums.into_iter().map(Selection::Album).collect();
+        let zone = self.zone_acted_on();
 
         cx.spawn(async move |this, cx| {
             let read = cx
@@ -90,7 +91,9 @@ impl RootView {
                 .spawn(async move { read_each(&library, scopes) })
                 .await;
             let _ = this.update(cx, |this, cx| match read {
-                Ok(tracks) => this.landed(&tracks, into, drawn, cx),
+                Ok(tracks) => {
+                    this.act_on_the_zone(zone, |this| this.landed(&tracks, into, drawn, cx))
+                }
                 Err(error) => {
                     tracing::error!(%error, "a dragged album could not be read");
                     toast::tell(toast::could_not(words::root::read_that_album(), &error), cx);

@@ -435,13 +435,17 @@ impl RootView {
 
     pub(super) fn play_what_was_downloaded(&mut self, track: TrackId, cx: &mut Context<Self>) {
         let catalog = self.library.read(cx).catalog();
+        let zone = self.zone_acted_on();
+
         cx.spawn(async move |this, cx| {
             let read = cx
                 .background_executor()
                 .spawn(async move { catalog.track(track) })
                 .await;
             let played = this.update(cx, |this, cx| match read {
-                Ok(Some(track)) => this.play(slice::from_ref(&track), 0, cx),
+                Ok(Some(track)) => {
+                    this.act_on_the_zone(zone, |this| this.play(slice::from_ref(&track), 0, cx));
+                }
                 Ok(None) => {}
                 Err(error) => {
                     tracing::warn!(%error, "a downloaded song could not be read to play");

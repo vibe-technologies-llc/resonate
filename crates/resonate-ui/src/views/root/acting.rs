@@ -284,6 +284,7 @@ impl RootView {
     ) {
         let (library, asked) = self.library.read(cx).listing_whole();
         let drawn = self.library.read(cx).as_drawn();
+        let zone = self.zone_acted_on();
 
         self.listing_whole = cx.spawn_in(window, async move |this, cx| {
             let read = cx
@@ -292,7 +293,9 @@ impl RootView {
                 .await;
 
             let outcome = this.update_in(cx, |this, window, cx| match read {
-                Ok(listing) => then(this, drawn.ordered(listing.into()), window, cx),
+                Ok(listing) => this.act_on_the_zone(zone, |this| {
+                    then(this, drawn.ordered(listing.into()), window, cx);
+                }),
                 Err(error) => {
                     tracing::error!(%error, "the whole listing could not be read");
                     toast::tell(
@@ -312,6 +315,7 @@ impl RootView {
         then: impl FnOnce(&mut Self, Arc<[Track]>, &mut Window, &mut Context<Self>) + 'static,
     ) {
         let (library, asked) = self.library.read(cx).whole_library();
+        let zone = self.zone_acted_on();
 
         self.listing_whole = cx.spawn_in(window, async move |this, cx| {
             let read = cx
@@ -320,7 +324,9 @@ impl RootView {
                 .await;
 
             let outcome = this.update_in(cx, |this, window, cx| match read {
-                Ok(tracks) => then(this, tracks.into(), window, cx),
+                Ok(tracks) => {
+                    this.act_on_the_zone(zone, |this| then(this, tracks.into(), window, cx));
+                }
                 Err(error) => {
                     tracing::error!(%error, "the whole library could not be read");
                     toast::tell(
@@ -392,6 +398,7 @@ impl RootView {
         then: impl FnOnce(&mut Self, Arc<[Track]>, &mut Window, &mut Context<Self>) + 'static,
     ) {
         let (library, asked) = self.library.read(cx).rows_of(query);
+        let zone = self.zone_acted_on();
 
         self.listing_whole = cx.spawn_in(window, async move |this, cx| {
             let read = cx
@@ -400,7 +407,7 @@ impl RootView {
                 .await;
 
             let outcome = this.update_in(cx, |this, window, cx| match read {
-                Ok(rows) => then(this, rows.into(), window, cx),
+                Ok(rows) => this.act_on_the_zone(zone, |this| then(this, rows.into(), window, cx)),
                 Err(error) => {
                     tracing::error!(%error, "a suggestion's rows could not be read");
                     toast::tell(
@@ -433,6 +440,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let library = self.library.read(cx).catalog();
+        let zone = self.zone_acted_on();
 
         self.listing_whole = cx.spawn_in(window, async move |this, cx| {
             let read = cx
@@ -441,8 +449,10 @@ impl RootView {
                 .await;
 
             let outcome = this.update(cx, |this, cx| match read {
-                Ok(listing) if now => this.play(&listing, 0, cx),
-                Ok(listing) => this.queue(&listed(&listing), at, cx),
+                Ok(listing) => this.act_on_the_zone(zone, |this| match now {
+                    true => this.play(&listing, 0, cx),
+                    false => this.queue(&listed(&listing), at, cx),
+                }),
                 Err(error) => {
                     tracing::error!(%error, "a scoped listing could not be read");
                     toast::tell(

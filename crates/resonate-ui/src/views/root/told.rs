@@ -91,7 +91,31 @@ impl RootView {
         toast::is_showing(cx)
     }
 
+    pub(crate) fn zone_acted_on(&self) -> ZoneId {
+        self.acting_on.unwrap_or_else(|| self.switcher.selected())
+    }
+
+    pub(crate) fn player_acted_on(&self) -> &Entity<PlayerModel> {
+        self.acting_on
+            .and_then(|acting_on| self.zones.iter().find(|zone| zone.id == acting_on))
+            .map_or(&self.player, |zone| &zone.player)
+    }
+
+    pub(crate) fn act_on_the_zone(&mut self, zone: ZoneId, act: impl FnOnce(&mut Self)) {
+        if !self.zones.iter().any(|shown| shown.id == zone) {
+            tracing::debug!(%zone, "the zone acted on was taken away before its rows were read");
+            return;
+        }
+        let around = self.acting_on.replace(zone);
+        act(self);
+        self.acting_on = around;
+    }
+
     pub(crate) fn send(&self, command: Command, cx: &mut Context<Self>) {
+        self.send_to(self.zone_acted_on(), command, cx);
+    }
+
+    pub(crate) fn send_to(&self, zone: ZoneId, command: Command, cx: &mut Context<Self>) {
         let command = match command {
             Command::Load {
                 items,
@@ -110,14 +134,14 @@ impl RootView {
             other => other,
         };
         let kind = command.kind();
-        if let Err(error) = Self::zones(cx).send(self.switcher.selected(), command) {
+        if let Err(error) = Self::zones(cx).send(zone, command) {
             tracing::warn!(%error, command = ?kind, "the engine refused a command");
             toast::tell(Notice::Trouble(zones::refusal(&error, &self.switcher)), cx);
         }
     }
 
     pub(crate) fn send_by_position(&self, command: Command, cx: &mut Context<Self>) {
-        self.player.read(cx).send_by_position(command);
+        self.player_acted_on().read(cx).send_by_position(command);
     }
 
     pub(crate) fn send_by_position_at(
@@ -126,7 +150,9 @@ impl RootView {
         command: Command,
         cx: &mut Context<Self>,
     ) {
-        self.player.read(cx).send_by_position_at(revision, command);
+        self.player_acted_on()
+            .read(cx)
+            .send_by_position_at(revision, command);
     }
 
     pub(crate) fn report(&self, notice: Notice, cx: &mut Context<Self>) {

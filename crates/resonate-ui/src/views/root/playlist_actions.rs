@@ -28,6 +28,7 @@ impl RootView {
             return;
         }
         let library = self.library.read(cx).catalog();
+        let zone = self.zone_acted_on();
 
         cx.spawn(async move |this, cx| {
             let read = cx
@@ -35,7 +36,7 @@ impl RootView {
                 .spawn(async move { library.playlist_entries(playlist, None) })
                 .await;
             let _ = this.update(cx, |this, cx| match read {
-                Ok(entries) => then(this, entries, cx),
+                Ok(entries) => this.act_on_the_zone(zone, |this| then(this, entries, cx)),
                 Err(error) => {
                     tracing::error!(%error, playlist = playlist.get(), "a playlist could not be read");
                     toast::tell(toast::could_not(words::root::read_that_playlist(), &error), cx);
@@ -81,6 +82,7 @@ impl RootView {
             return;
         };
         let library = self.library.read(cx).catalog();
+        let zone = self.zone_acted_on();
 
         cx.spawn(async move |this, cx| {
             let read = cx
@@ -94,11 +96,14 @@ impl RootView {
                 })
                 .await;
             let _ = this.update(cx, |this, cx| match read {
-                Ok(entries) if now => {
-                    this.plays_in_order(cx);
-                    this.play_playlist(first, &entries, 0, false, cx);
-                }
-                Ok(entries) => this.queue(&entries, at, cx),
+                Ok(entries) => this.act_on_the_zone(zone, |this| {
+                    if now {
+                        this.plays_in_order(cx);
+                        this.play_playlist(first, &entries, 0, false, cx);
+                    } else {
+                        this.queue(&entries, at, cx);
+                    }
+                }),
                 Err(error) => {
                     tracing::error!(%error, "playlists could not be read");
                     toast::tell(
@@ -160,7 +165,7 @@ impl RootView {
         drawn_at: u64,
         cx: &mut Context<Self>,
     ) {
-        if !self.player.read(cx).is_queued_at(drawn_at) {
+        if !self.player_acted_on().read(cx).is_queued_at(drawn_at) {
             return;
         }
         self.queue_under(entries, Placement::At(row), Some(drawn_at), cx);
@@ -173,7 +178,7 @@ impl RootView {
         drawn_at: Option<u64>,
         cx: &mut Context<Self>,
     ) {
-        let items = playlists::queue_items(entries, &self.player.read(cx).queue());
+        let items = playlists::queue_items(entries, &self.player_acted_on().read(cx).queue());
         let rows = items.len();
         if rows == 0 {
             return;
@@ -183,7 +188,7 @@ impl RootView {
             .filter_map(|entry| entry.track.clone())
             .collect();
 
-        let play = self.player.read(cx).state().current.is_none();
+        let play = self.player_acted_on().read(cx).state().current.is_none();
 
         self.library
             .update(cx, |library, _| library.remember(&scanned));

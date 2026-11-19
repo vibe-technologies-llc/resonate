@@ -566,7 +566,16 @@ so `editing` sees it.
   run on the background executor (a player opens its own PipeWire client). Renaming swaps the control
   for a `Field` (`zone_name`, in `text_fields`): `enter` names it, escape or a press outside leaves it.
   `RootView::send` goes through `Zones::send`, and a refusal is a toast naming the zone in the way
-  (`zones::refusal`); `store`/`forget` drop the `sink` and `volume` keys for any zone but the first
+  (`zones::refusal`). **A command lands on the zone it was asked on, not the one shown when an await
+  ends**: `send` addresses `zone_acted_on`, the zone shown unless `act_on_the_zone` aims it
+  elsewhere, and every play or queue that reads the catalog first (`with_everything_listed`,
+  `with_the_whole_library`, `with_the_rows_of`, `plays_everything_in_each`, `with_playlist_entries`,
+  `queue_the_playlists`, `landed_albums`, `play_what_was_downloaded`) takes `zone_acted_on` at the
+  press and acts inside `act_on_the_zone` once the read lands, so the queue it reads and the rows it
+  sends are that zone's (`player_acted_on`) and a zone taken away meanwhile is left alone
+  (`the_whole_library_played_on_one_zone_lands_there_though_another_is_shown_before_it_is_read`,
+  `a_playlist_queued_on_one_zone_lands_there_though_another_is_shown_before_it_is_read`); `send_to`
+  addresses a zone held elsewhere (the listening test's, `eq.md`); `store`/`forget` drop the `sink` and `volume` keys for any zone but the first
   (`settings::is_the_zones_own`), its device and volume being kept with the zone. The output
   picker routes through `route_to` and marks a device another zone holds *Held bit-perfect by …*.
 - **`PlayerModel::state` returns a borrow of the model, not a copy.** Clone it before anything taking

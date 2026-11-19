@@ -657,6 +657,7 @@ pub struct RootView {
     listing_whole: Task<()>,
     pub(crate) zones: Vec<ZoneShown>,
     pub(crate) switcher: Switcher,
+    acting_on: Option<ZoneId>,
     pub(crate) naming_the_zone: Option<ZoneId>,
     pub(crate) magnified: Option<Magnified>,
     pointer_inside: bool,

@@ -341,6 +341,7 @@ impl RootView {
             earlier_plays_asked: false,
             zones: shown_zones,
             switcher,
+            acting_on: None,
             naming_the_zone: None,
             came_from: Vec::new(),
             goes_forward: Vec::new(),

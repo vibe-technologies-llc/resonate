@@ -2007,4 +2007,113 @@ mod driven {
         assert!(driven.read(|root, _| root.replacing.is_none()));
         assert!(opus.exists() && flac.exists(), "a file went");
     }
+
+    fn queued_on(driven: &mut Driven, zone: resonate_core::ZoneId) -> usize {
+        driven.read(|root, cx| {
+            root.zones
+                .iter()
+                .find(|shown| shown.id == zone)
+                .map_or(0, |shown| shown.player.read(cx).queue().len())
+        })
+    }
+
+    fn a_second_zone_behind_the_first(driven: &mut Driven) -> resonate_core::ZoneId {
+        let root = driven.root.clone();
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.add_a_zone(cx)));
+        driven.until(|root, _| root.zones.len() == 2);
+        let second = driven.read(|root, _| root.switcher.selected());
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.show_zone(resonate_core::ZoneId::FIRST, cx);
+            });
+        });
+        driven.settle();
+        second
+    }
+
+    #[gpui::test]
+    fn the_whole_library_played_on_one_zone_lands_there_though_another_is_shown_before_it_is_read(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        for name in ["one", "two", "three"] {
+            folder.tone(&format!("{name}.wav"), 1);
+        }
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let root = driven.root.clone();
+        let second = a_second_zone_behind_the_first(&mut driven);
+
+        driven.cx.update(|window, cx| {
+            root.update(cx, |root, cx| {
+                root.with_the_whole_library(window, cx, |this, tracks, _, cx| {
+                    this.play(&tracks, 0, cx);
+                });
+                root.show_zone(second, cx);
+            });
+        });
+        driven.until(|root, cx| {
+            root.zones
+                .iter()
+                .any(|shown| !shown.player.read(cx).queue().is_empty())
+        });
+
+        assert_eq!(driven.read(|root, _| root.switcher.selected()), second);
+        assert_eq!(queued_on(&mut driven, resonate_core::ZoneId::FIRST), 3);
+        assert_eq!(
+            queued_on(&mut driven, second),
+            0,
+            "the zone turned to took the play"
+        );
+    }
+
+    #[gpui::test]
+    fn a_playlist_queued_on_one_zone_lands_there_though_another_is_shown_before_it_is_read(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let songs = queued(&folder, &["one", "two"]);
+        let library = catalog();
+        Driven::scanned(&library, &folder);
+        let playlist = library.create_playlist("Evening").expect("a playlist");
+        library
+            .add_to_playlist(
+                playlist,
+                &songs
+                    .iter()
+                    .map(|song| Cut::whole(resonate_core::MediaLocation::local(song)))
+                    .collect::<Vec<_>>(),
+            )
+            .expect("the rows appended");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+        let root = driven.root.clone();
+        let second = a_second_zone_behind_the_first(&mut driven);
+
+        driven.cx.update(|_, cx| {
+            root.update(cx, |root, cx| {
+                root.queue_the_playlists(
+                    vec![playlist],
+                    resonate_engine::Placement::Queued,
+                    false,
+                    cx,
+                );
+                root.show_zone(second, cx);
+            });
+        });
+        driven.until(|root, cx| {
+            root.zones
+                .iter()
+                .any(|shown| !shown.player.read(cx).queue().is_empty())
+        });
+
+        assert_eq!(queued_on(&mut driven, resonate_core::ZoneId::FIRST), 2);
+        assert_eq!(
+            queued_on(&mut driven, second),
+            0,
+            "the zone turned to took the rows"
+        );
+    }
 }
