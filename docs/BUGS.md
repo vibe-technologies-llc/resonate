@@ -41,24 +41,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `now()` stays at `i64::MAX` and every later change of a key compares equal to the held one and is
   dropped; a stamp too far past the wall clock should be refused as shared playlists now refuse one
   (`STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS`)
-- [S · 0.14.1] A phone hosting a party names no song when the song is a document whose URI holds a
-  `%` (every Android SAF URI, an iOS file name with a space): `song_of` (`together.rs`) asks
-  `documents.uri = ?` with `location.to_uri()`, which escapes `%` and `:` again, where the catalog
-  stores `document_uri`'s spelling, so `songs_up_next` tells guests nothing, and a guest's own
-  document song added mid-party is taken out of its queue by `added_here` and never requested;
-  `unmeasured` (`catalog_extras.rs`) compares the same way, so *Fit the preamp to the queue* decodes
-  every song though its peaks are kept
-- [S · 0.14.1] Removing the zone a phone's party is seated on leaves the party driving its player:
-  `remove_zone` (`zoning.rs`) neither leaves nor refuses while `Room.zone` is that zone, so the
-  follow thread plays on a zone `zones()` no longer lists, and the next zone added, given the same
-  id by `Zones::next_id`, reads as following the party (its queue never saved, `documents_moved`
-  passing it over)
-- [S · 0.14.1] A party's clock mixes readings from before and after a server restart: one
-  `ServerClock` lives as long as the `Party` and is never cleared on a new session, its window is
-  forgotten only after a 10 s gap while reconnects retry within 1-15 s, and `RoomPong` counts from
-  the server process's start, so for up to `CLOCK_WINDOW` the quickest sample may be the old
-  process's, off by its whole uptime, and a guest seeks to nonsense; samples should be cleared on
-  every `RoomWelcome`
 - [S · 0.14.1] A paired device's MusicBrainz answer can make the receiver reserve gigabytes:
   `list` (`resonate-musicbrainz`'s `wire.rs`) calls `Vec::with_capacity(count)` with a count
   `count_of(ITEM_AT_LEAST = 1)` allows up to one per remaining byte, for values of hundreds of bytes
