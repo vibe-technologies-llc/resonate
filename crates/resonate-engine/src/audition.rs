@@ -6,7 +6,7 @@ use std::{
 use resonate_audio::{NodeName, SinkId, SinkInfo};
 use resonate_codec::{DecodeStatus, Decoder, Placement, Sources};
 use resonate_core::{
-    AppliedGain, AudioBuffer, Frames, SampleData, SampleFormat, StreamSpec, Trim, Volume, abx::Arm,
+    AppliedGain, AudioBuffer, Frames, SampleFormat, StreamSpec, Trim, Volume, abx::Arm,
 };
 use resonate_dsp::{Chain, DitherKind, FilterPhase, NoiseShaping, Quality, Restoration};
 
@@ -335,14 +335,15 @@ pub fn levels_of(
         match decoder.next_block(&mut block) {
             Ok(DecodeStatus::EndOfStream | DecodeStatus::Reformatted(_)) => break,
             Ok(DecodeStatus::Decoded) => {
-                let SampleData::F32(samples) = block.data() else {
-                    continue;
-                };
-                for piece in samples.chunks(MEASURED_IN_BLOCKS_OF * channels_in) {
-                    widened.clear();
-                    widened.extend(piece.iter().map(|&sample| f64::from(sample)));
+                let samples = block.data();
+                let mut from = 0;
+                while from < samples.len() {
+                    widened.resize(MEASURED_IN_BLOCKS_OF * channels_in, 0.0);
+                    let taken = samples.widen_into(from, &mut widened);
+                    widened.truncate(taken);
                     a.run(&widened, channels_in, channels_out);
                     b.run(&widened, channels_in, channels_out);
+                    from += taken;
                 }
             }
             Err(source) => return Err(Error::Decode { track, source }),

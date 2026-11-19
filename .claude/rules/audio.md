@@ -1292,6 +1292,18 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   convolution over it against the block route: within 2e-7 at Balanced, 2e-10 at High and 3e-11 at Very high,
   each the level's own ripple, since the direct sum keeps the faint images the block path drops; Low latency within 1e-12.
   `docs/RESAMPLING.md` measures all of it against SoXR.
+- **A float sample is made finite once, where it enters the chain.** `SampleData::widen_into` turns a
+  NaN or an infinity of an `F32` buffer into 0.0 (`finite_or_silent`); a float source of 64 bits
+  reaches it as `F32` too, since the decoder copies it out as one. Every source sample reaching the
+  chain passes it (`Engine::convert`, the recall, the listening test's level match), so the block
+  resampler, which packs a stereo pair into one complex lane and transforms a whole window at once,
+  and the convolver, whose response reaches back 10 s, never spread one bad sample over a block of
+  both channels
+  (`a_nan_or_an_infinity_widens_to_silence_and_its_neighbours_keep_their_values`,
+  `one_non_finite_float_sample_leaves_every_resampled_frame_heard_in_both_channels`,
+  `one_non_finite_float_sample_leaves_every_convolved_frame_heard_in_both_channels`). The
+  equaliser's `usable` and the dither's `in_range` stay: they keep a denormal tail, an unstable
+  section's blow-up and an over out of what the stages make themselves.
 - **Dither: flat or shaped path, f64; the plan's curve picks.** `Dither::prepare` resolves
   `NoiseShaping::at` the output rate once; `None` requantises with no error history and allocates
   none. Worked in target-grid steps in f64 (f32 rounded the noise near full scale). Output clamps to

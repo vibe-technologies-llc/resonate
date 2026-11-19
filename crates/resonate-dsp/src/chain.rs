@@ -570,7 +570,7 @@ impl ChainBuilder {
 #[cfg(test)]
 mod tests {
     use resonate_core::{
-        BitDepth, ChannelLayout, Decibels, Gain, SampleFormat, SampleRate, Volume,
+        BitDepth, ChannelLayout, Decibels, Gain, SampleData, SampleFormat, SampleRate, Volume,
     };
 
     use super::*;
@@ -1200,5 +1200,105 @@ mod tests {
 
         guarded.process(&vec![0.25; 2 * BLOCK], &mut output);
         assert_eq!(guarded.frames_held_after_the_gain(), delay);
+    }
+
+    const NON_FINITE_BLOCKS: usize = 32;
+    const HEARD_IN_WINDOWS_OF: usize = 256;
+    const AUDIBLE_AT_LEAST: f64 = 1e-3;
+
+    fn widened_with_one_non_finite_sample(frames: usize, which: f32) -> Vec<f64> {
+        let mut samples: Vec<f32> = (0..frames * 2)
+            .map(|at| ((at / 2) as f32 * 0.013).sin() * 0.5)
+            .collect();
+        samples[frames] = which;
+        let decoded = SampleData::F32(samples);
+
+        let mut wide = vec![0.0; frames * 2];
+        decoded.widen_into(0, &mut wide);
+        wide
+    }
+
+    fn heard_through(chain: &mut Chain, input: &[f64]) -> Vec<f64> {
+        let mut heard = Vec::new();
+        let mut output = vec![0.0; chain.max_output_frames() * 2];
+        for block in input.chunks(BLOCK * 2) {
+            let count = chain.process(block, &mut output);
+            heard.extend_from_slice(&output[..count.frames_out * 2]);
+        }
+        heard
+    }
+
+    fn assert_every_frame_is_heard_in_both_channels(heard: &[f64]) {
+        assert!(
+            heard.iter().all(|sample| sample.is_finite()),
+            "a non-finite sample reached the output"
+        );
+
+        let first_heard = heard
+            .iter()
+            .position(|sample| sample.abs() > AUDIBLE_AT_LEAST)
+            .expect("the chain was heard at all");
+        let (windows, _) = heard[first_heard / 2 * 2..].as_chunks::<{ HEARD_IN_WINDOWS_OF * 2 }>();
+        let settled = &windows[1..windows.len() - 1];
+        for (at, window) in settled.iter().enumerate() {
+            for channel in 0..2 {
+                let loudest = window
+                    .iter()
+                    .skip(channel)
+                    .step_by(2)
+                    .fold(0.0_f64, |most, sample| most.max(sample.abs()));
+                assert!(
+                    loudest > AUDIBLE_AT_LEAST,
+                    "window {at} of channel {channel} fell silent around the non-finite sample"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn one_non_finite_float_sample_leaves_every_resampled_frame_heard_in_both_channels() {
+        for which in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let input = widened_with_one_non_finite_sample(BLOCK * NON_FINITE_BLOCKS, which);
+            let mut chain = Chain::builder(spec(SampleRate::HZ_44100))
+                .max_frames_in(BLOCK)
+                .push(Box::new(
+                    Resampler::new(ResamplerConfig {
+                        input_rate: SampleRate::HZ_44100,
+                        output_rate: SampleRate::HZ_48000,
+                        channels: ChannelLayout::Stereo,
+                        quality: Quality::High,
+                        phase: FilterPhase::Linear,
+                        max_frames_in: BLOCK,
+                    })
+                    .expect("a valid resampler configuration"),
+                ))
+                .build()
+                .expect("a resampler builds");
+
+            let heard = heard_through(&mut chain, &input);
+
+            assert_every_frame_is_heard_in_both_channels(&heard);
+        }
+    }
+
+    #[test]
+    fn one_non_finite_float_sample_leaves_every_convolved_frame_heard_in_both_channels() {
+        let taps: Vec<f64> = (0..3_000)
+            .map(|at| (-(at as f64) / 300.0).exp() * 0.1)
+            .collect();
+        let impulse = Arc::new(Impulse::new(SampleRate::HZ_48000, vec![taps]).expect("an impulse"));
+
+        for which in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let input = widened_with_one_non_finite_sample(BLOCK * NON_FINITE_BLOCKS, which);
+            let mut chain = Chain::builder(spec(SampleRate::HZ_48000))
+                .max_frames_in(BLOCK)
+                .push(Box::new(Convolver::new(Arc::clone(&impulse))))
+                .build()
+                .expect("a convolver builds");
+
+            let heard = heard_through(&mut chain, &input);
+
+            assert_every_frame_is_heard_in_both_channels(&heard);
+        }
     }
 }

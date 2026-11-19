@@ -93,7 +93,7 @@ impl SampleData {
             Self::S32(samples) => widened(samples, from, wide, |sample| {
                 f64::from(sample) / f64::from(SampleFormat::S32.full_scale())
             }),
-            Self::F32(samples) => widened(samples, from, wide, f64::from),
+            Self::F32(samples) => widened(samples, from, wide, finite_or_silent),
         }
     }
 
@@ -226,6 +226,14 @@ impl AudioBuffer {
         dst.spec = StreamSpec::new(self.spec.rate, self.spec.channels, dst.spec.format);
         dst.set_frames(self.frames);
         convert(&self.data, &mut dst.data);
+    }
+}
+
+fn finite_or_silent(sample: f32) -> f64 {
+    if sample.is_finite() {
+        f64::from(sample)
+    } else {
+        0.0
     }
 }
 
@@ -590,6 +598,25 @@ mod tests {
             words,
             SampleData::S16(vec![0, 2, -2, i16::MAX, i16::MIN, 0])
         );
+    }
+
+    #[test]
+    fn a_nan_or_an_infinity_widens_to_silence_and_its_neighbours_keep_their_values() {
+        let source = SampleData::F32(vec![
+            0.25,
+            f32::NAN,
+            -0.5,
+            f32::INFINITY,
+            0.125,
+            f32::NEG_INFINITY,
+            -1.0,
+        ]);
+        let mut wide = vec![9.0; 7];
+
+        let widened = source.widen_into(0, &mut wide);
+
+        assert_eq!(widened, 7);
+        assert_eq!(wide, [0.25, 0.0, -0.5, 0.0, 0.125, 0.0, -1.0]);
     }
 
     #[test]
