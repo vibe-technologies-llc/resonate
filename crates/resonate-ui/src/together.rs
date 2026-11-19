@@ -174,6 +174,12 @@ pub trait Together: Send + Sync {
     fn hand_over(&self, person: [u8; 16]);
 }
 
+pub(crate) fn leave_a_party_seated_on(together: &dyn Together, zone: ZoneId) {
+    if together.party().is_some_and(|party| party.zone == zone) {
+        together.leave_party();
+    }
+}
+
 pub(crate) fn is_an_invitation(text: &str) -> bool {
     let text = text.trim();
     let lowered = text.to_ascii_lowercase();

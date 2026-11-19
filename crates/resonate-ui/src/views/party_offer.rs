@@ -162,6 +162,7 @@ pub(crate) mod joined {
         pub(crate) dismissed: Mutex<Vec<PartyRequestId>>,
         pub(crate) sharing: Mutex<Option<SharedSeen>>,
         pub(crate) seen_asked: Mutex<usize>,
+        pub(crate) left: Mutex<usize>,
     }
 
     impl Joining {
@@ -217,7 +218,10 @@ pub(crate) mod joined {
             false
         }
 
-        fn leave_party(&self) {}
+        fn leave_party(&self) {
+            *self.left.lock() += 1;
+            self.at.lock().take();
+        }
 
         fn turn_out(&self, _: [u8; 16]) {}
 

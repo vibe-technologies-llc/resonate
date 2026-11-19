@@ -262,7 +262,12 @@ read `ListeningParty.chat` (`PartyChatLine`, `PartySaying`) and say through `par
 party from its drawing thread (`Together::party`, `following`, `party_shown`), and a search takes seconds.
 Playing a request next clones what it needs out of the lock, and leaving takes the room out and drops it
 outside it, since dropping joins the seat's thread. Beginning or joining leaves any party first, so the
-old seat puts its queue back before the new one remembers it.
+old seat puts its queue back before the new one remembers it. **Taking away the zone a party is
+seated on leaves the party first** (the window's `leave_a_party_seated_on`, the phones'
+`party_left_on`), as removing any zone is the listener's own choice; a party left on it would go on
+driving a player no zone lists, and the next zone added, given the same id, would read as following
+it (`a_zone_taken_away_from_under_a_party_leaves_it_and_one_beside_it_does_not`,
+`a_zone_taken_away_from_under_a_party_leaves_it_and_a_zone_added_after_follows_nothing`).
 
 ## Surfaces
 

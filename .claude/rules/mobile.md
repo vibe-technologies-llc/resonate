@@ -780,7 +780,9 @@ command the shown one); the snapshot names it (`Snapshot.zone`) with `Zones::rev
 revision may equal the last. `zones()` lists each zone as a `PlayerZone` (id, name, route, requested
 device, shown, volume, transport and the title it plays), `show_zone`, `add_zone(name, device, route)` (a
 blank name is *Zone N*), `rename_zone` (blank is `ZoneUnnamed`), `remove_zone` (the first is
-`FirstZoneStays`; its listen is settled and its catalog rows go), `select_zone_output(zone, device,
+`FirstZoneStays`; a listening party seated on it is left first, `party_left_on`, as the window's
+`leave_a_party_seated_on` does, so no party drives a player `zones()` no longer lists and the next
+zone added under the same id follows nothing; its listen is settled and its catalog rows go), `select_zone_output(zone, device,
 route)` and `hand_over_to(zone)`, which hands the shown zone's song to another through
 `Zones::hand_over` (`lockstep.rs`; the boundary does not wait on the handover thread) and shows that
 zone. `select_output` and `output_device`/`output_stream` read the shown zone's `Routing`; follow-song-rate,

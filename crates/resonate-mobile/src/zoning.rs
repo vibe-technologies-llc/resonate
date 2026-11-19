@@ -525,6 +525,7 @@ impl MobilePlayer {
         let zones = self.playing.zones()?;
         let listening = self.playing.zoned(id)?;
 
+        self.party_left_on(id);
         if let Err(error) = self.settle_listening(&listening) {
             tracing::warn!(%error, zone, "the listen of a zone taken away was not kept");
         }
@@ -591,7 +592,7 @@ impl MobilePlayer {
         Ok(())
     }
 
-    fn zone_added(&self, name: &str, device: i32, route: String) -> Result<Zone> {
+    pub(crate) fn zone_added(&self, name: &str, device: i32, route: String) -> Result<Zone> {
         let zones = self.playing.zones()?;
         let id = zones.next_id().ok_or(resonate_engine::Error::NoZoneLeft)?;
         let name = ZoneName::given(name).unwrap_or_else(|| ZoneName::first_given_to(id));

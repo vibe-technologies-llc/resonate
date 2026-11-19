@@ -363,8 +363,12 @@ impl RootView {
             .update(cx, |library, cx| library.forget_the_zone(id, cx));
 
         let zones = Self::zones(cx);
+        let together = cx.global::<ResonateApp>().together.clone();
         cx.background_executor()
             .spawn(async move {
+                if let Some(together) = together {
+                    crate::together::leave_a_party_seated_on(together.as_ref(), id);
+                }
                 if let Err(error) = zones.remove(id) {
                     tracing::warn!(%error, zone = %id, "a zone could not be taken away");
                 }

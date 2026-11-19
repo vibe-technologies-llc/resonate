@@ -817,6 +817,12 @@ impl MobilePlayer {
         Ok(())
     }
 
+    pub(crate) fn party_left_on(&self, zone: ZoneId) {
+        let left = self.together.party.lock().take_if(|room| room.zone == zone);
+
+        drop(left);
+    }
+
     pub(crate) fn party_following(&self, zone: ZoneId) -> bool {
         self.together
             .party
@@ -937,6 +943,66 @@ mod tests {
 
         assert_eq!(song.recording.title, "Echoes");
         assert_eq!(song.recording.artist, "Pink Floyd");
+    }
+
+    fn a_party_nowhere_reached() -> PartySettings {
+        PartySettings {
+            server: "ws://127.0.0.1:9".to_owned(),
+            trusted: None,
+            name: String::new(),
+            now_nanos: Arc::new(|| Moment::now().nanos()),
+            time_server: None,
+        }
+    }
+
+    #[test]
+    fn a_zone_taken_away_from_under_a_party_leaves_it_and_a_zone_added_after_follows_nothing() {
+        let harness = crate::harness::Harness::new();
+        let host = Party::host(a_party_nowhere_reached()).expect("a host");
+        let guest = Party::join(a_party_nowhere_reached(), &host.shown().code).expect("a guest");
+
+        let study = harness
+            .player
+            .zone_added("Study", 0, String::new())
+            .expect("a second zone");
+        harness
+            .player
+            .show_zone(study.id.get())
+            .expect("the study shown");
+        harness.player.party_seated(guest).expect("seated");
+
+        assert!(harness.player.party_following(study.id));
+
+        harness
+            .player
+            .remove_zone(study.id.get())
+            .expect("the study taken away");
+        let kitchen = harness
+            .player
+            .zone_added("Kitchen", 0, String::new())
+            .expect("another zone");
+
+        assert_eq!(kitchen.id, study.id);
+        assert!(harness.player.party_shown().is_none());
+        assert!(!harness.player.party_following(kitchen.id));
+    }
+
+    #[test]
+    fn a_zone_taken_away_beside_a_party_leaves_the_party_where_it_is() {
+        let harness = crate::harness::Harness::new();
+        let host = Party::host(a_party_nowhere_reached()).expect("a host");
+
+        let study = harness
+            .player
+            .zone_added("Study", 0, String::new())
+            .expect("a second zone");
+        harness.player.party_seated(host).expect("seated");
+        harness
+            .player
+            .remove_zone(study.id.get())
+            .expect("the study taken away");
+
+        assert!(harness.player.party_shown().is_some());
     }
 
     #[test]

@@ -772,6 +772,58 @@ mod driven {
         assert!(driven.read(|root, cx| root.party.read(cx).chat.read(cx).text().is_empty()));
     }
 
+    fn a_party_seated_on(zone: resonate_core::ZoneId) -> crate::together::PartySeen {
+        crate::together::PartySeen {
+            zone,
+            hosting: false,
+            link: A_PARTY_LINK.to_owned(),
+            reach: crate::together::PartyReached::Here,
+            people: Vec::new(),
+            standing: crate::together::PartyStanding::InStep,
+            song: None,
+            asked_for: Vec::new(),
+            round_trip: None,
+            apart: None,
+            chat: Vec::new(),
+            handing: None,
+        }
+    }
+
+    #[gpui::test]
+    fn a_zone_taken_away_from_under_a_party_leaves_it_and_one_beside_it_does_not(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+        let mut driven = queue_open(cx, &folder, &["one"]);
+        let root = driven.root.clone();
+        let joining = Arc::new(party_offer::joined::Joining::default());
+        let second = resonate_core::ZoneId::new(2).expect("a second zone");
+        let third = resonate_core::ZoneId::new(3).expect("a third zone");
+        together_over(&mut driven, joining.clone());
+
+        for _ in 0..2 {
+            driven
+                .cx
+                .update(|_, cx| root.update(cx, |root, cx| root.add_a_zone(cx)));
+        }
+        driven.until(|root, _| root.zones.len() == 3);
+        *joining.at.lock() = Some(a_party_seated_on(third));
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.remove_the_zone(second, cx)));
+        driven.until(|_, cx| cx.global::<ResonateApp>().zones.count() == 2);
+
+        assert_eq!(*joining.left.lock(), 0);
+
+        driven
+            .cx
+            .update(|_, cx| root.update(cx, |root, cx| root.remove_the_zone(third, cx)));
+        driven.until(|_, cx| cx.global::<ResonateApp>().zones.count() == 1);
+
+        assert_eq!(*joining.left.lock(), 1);
+        assert!(joining.at.lock().is_none());
+    }
+
     #[gpui::test]
     fn the_host_hands_the_party_to_someone_only_on_a_second_press(cx: &mut TestAppContext) {
         let folder = Folder::new();
