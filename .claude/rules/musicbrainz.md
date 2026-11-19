@@ -74,10 +74,14 @@ decodes both and requires a decoded value to read back as itself.
   past `A_MARK_NO_DEVICE_REACHES` is not one this store gave and moves nothing
   (`an_answers_number_never_goes_back_when_the_newest_is_swept_so_a_device_past_it_is_told_the_next`,
   `a_device_holding_a_mark_past_every_number_here_is_told_what_is_kept_next`).
-- **Answers are found by id too.** `entities` indexes every whole entity an answer holds (a
-  release, a recording, a group, an artist, every pressing of a list), so `recording(id)` is
-  answered by an ISRC answer that held it
-  (`an_entity_learnt_inside_another_answer_answers_a_lookup_by_its_id`).
+- **A lookup by id is answered by its own answer alone.** A recording an ISRC answer holds was
+  asked with fewer includes (no release groups), and a pressing a list holds with fewer than a
+  release by id (no labels, no links), so taking either for the lookup would land a single as the
+  album and refresh a label, a catalogue number and links away. So no entity inside another answer
+  is indexed; `recording(id)` misses until that lookup itself is kept
+  (`a_thinner_copy_held_inside_another_answer_never_answers_a_lookup_by_its_id`). A store that
+  indexed them before drops the index as it opens
+  (`a_recording_indexed_inside_an_isrc_answer_before_this_build_no_longer_answers_its_id`).
 - **Freshness.** An answer serves for `KEPT_FRESH_FOR` (30 days, the library's refresh). Older ones
   are deleted when the store opens and never taken from a device. **A stamp is never later than
   now**: one a device tells from a clock running ahead is kept as of now (`Kept::take`,
@@ -92,7 +96,9 @@ decodes both and requires a decoded value to read back as itself.
   (`answers_kept_before_they_were_numbered_go_on_from_the_newest_number`), the third
   `answers_by_age` (`AN_ANSWERS_AGE_IS_READ_OFF_AN_INDEX`), so the open's sweep of the stale and
   its bringing of a future stamp back to now read only the rows they change
-  (`answers_kept_before_their_age_was_indexed_stay_and_are_aged_off_the_index`). The steps a release shipped are
+  (`answers_kept_before_their_age_was_indexed_stay_and_are_aged_off_the_index`), the fourth drops
+  the index of entities held inside other answers
+  (`A_LOOKUP_BY_ID_IS_ANSWERED_BY_ITS_OWN_ANSWER_ALONE`). The steps a release shipped are
   pinned by their text's hash in `kept/released.rs` (`release.md`), since a counted `user_version`
   would leave an edited step and the shipped one apart silently. A later
   build's store is `Error::KeptVersion`

@@ -9,7 +9,6 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use crate::{
     Answer, Asked, Error, Result, Store, StoreOp,
     packed::{KEPT_PACKED_AT, packed, unpacked},
-    wire::mbid_bytes,
 };
 
 #[cfg(test)]
@@ -51,10 +50,15 @@ const AN_ANSWERS_AGE_IS_READ_OFF_AN_INDEX: &str = "
 CREATE INDEX answers_by_age ON answers(at);
 ";
 
+const A_LOOKUP_BY_ID_IS_ANSWERED_BY_ITS_OWN_ANSWER_ALONE: &str = "
+DROP TABLE entities;
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     AN_ANSWERS_NUMBER_NEVER_GOES_BACK,
     AN_ANSWERS_AGE_IS_READ_OFF_AN_INDEX,
+    A_LOOKUP_BY_ID_IS_ANSWERED_BY_ITS_OWN_ANSWER_ALONE,
 ];
 
 const FORGET_THE_STALE: &str = "DELETE FROM answers WHERE at < ?1";
@@ -194,31 +198,13 @@ impl Kept {
             )
             .optional()
             .map_err(read)?;
-        if let Some((packed, at)) = kept {
-            return Ok(Some(Dated {
+        kept.map(|(packed, at)| {
+            Ok(Dated {
                 answer: answer_of(&packed)?,
                 at: unsigned(at),
-            }));
-        }
-        let Some((entity, id)) = asked.names() else {
-            return Ok(None);
-        };
-        let within: Option<(Vec<u8>, i64)> = connection
-            .query_row(
-                "SELECT a.packed, a.at FROM entities e JOIN answers a ON a.key = e.key \
-                 WHERE e.mbid = ?1 AND e.kind = ?2 AND a.at >= ?3",
-                params![mbid_bytes(id).to_vec(), entity.code(), fresh_since(now)],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-            .map_err(Error::store(Store::Kept, StoreOp::Read))?;
-        let Some((packed, at)) = within else {
-            return Ok(None);
-        };
-        Ok(answer_of(&packed)?.entity(entity, id).map(|answer| Dated {
-            answer,
-            at: unsigned(at),
-        }))
+            })
+        })
+        .transpose()
     }
 
     pub fn keep(&self, asked: &Asked, answer: &Answer) -> Result<bool> {
@@ -249,7 +235,7 @@ impl Kept {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(Error::store(Store::Kept, StoreOp::Write))?;
-        let kept = written(&transaction, &asked.key(), at, came_from, &squeezed, answer)?;
+        let kept = written(&transaction, &asked.key(), at, came_from, &squeezed)?;
         transaction
             .commit()
             .map_err(Error::store(Store::Kept, StoreOp::Write))?;
@@ -340,14 +326,7 @@ impl Kept {
                 tracing::debug!("an answer another device kept does not answer what it names");
                 continue;
             }
-            if written(
-                &transaction,
-                &told.key,
-                at,
-                Some(device),
-                &told.packed,
-                &answer,
-            )? {
+            if written(&transaction, &told.key, at, Some(device), &told.packed)? {
                 taken += 1;
             }
         }
@@ -383,7 +362,6 @@ fn written(
     at: u64,
     came_from: Option<&str>,
     packed: &[u8],
-    answer: &Answer,
 ) -> Result<bool> {
     let write = || Error::store(Store::Kept, StoreOp::Write);
     let held: Option<i64> = transaction
@@ -407,21 +385,16 @@ fn written(
             params![key, signed(at), seq, came_from, packed],
         )
         .map_err(write())?;
-    for (entity, id) in answer.entities() {
-        transaction
-            .execute(
-                "INSERT INTO entities (mbid, kind, key) VALUES (?1, ?2, ?3) \
-                 ON CONFLICT (mbid, kind) DO UPDATE SET key = excluded.key",
-                params![mbid_bytes(&id).to_vec(), entity.code(), key],
-            )
-            .map_err(write())?;
-    }
     Ok(true)
 }
 
 #[cfg(test)]
 mod tests {
+    use resonate_core::{Isrc, Mbid};
+    use resonate_library::Recording;
+
     use super::*;
+    use crate::wire::mbid_bytes;
 
     fn kept_at_the_first_shape(newest: i64) -> Connection {
         let connection = Connection::open_in_memory().expect("a store in memory");
@@ -492,7 +465,7 @@ mod tests {
             .query_row("SELECT count(*) FROM answers", [], |row| row.get(0))
             .expect("counted");
 
-        assert_eq!(version, 3);
+        assert_eq!(usize::try_from(version).expect("a count"), MIGRATIONS.len());
         assert_eq!(held, 1, "the fresh answer was lost or the stale one kept");
         for statement in [FORGET_THE_STALE, BRING_THE_FUTURE_BACK_TO_NOW] {
             let plan = plan_of(&connection, statement);
@@ -501,5 +474,61 @@ mod tests {
                 "{statement} reads every answer: {plan}"
             );
         }
+    }
+
+    #[test]
+    fn a_recording_indexed_inside_an_isrc_answer_before_this_build_no_longer_answers_its_id() {
+        let echoes = Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid");
+        let code = Isrc::new("GBN9Y7100006").expect("a code");
+        let coded = Asked::Isrc(code.clone());
+        let thin = Answer::Recordings(vec![Recording {
+            id: echoes.clone(),
+            title: "Echoes".to_owned(),
+            credit: Vec::new(),
+            length: None,
+            isrcs: vec![code],
+            releases: Vec::new(),
+        }]);
+        let squeezed = packed(&thin.encoded(), KEPT_PACKED_AT).expect("packed");
+
+        let indexed = Connection::open_in_memory().expect("a store in memory");
+        for step in &MIGRATIONS[..3] {
+            indexed.execute_batch(step).expect("a released step");
+        }
+        indexed
+            .pragma_update(None, "user_version", 3)
+            .expect("the third shape's stamp");
+        indexed
+            .execute(
+                "INSERT INTO answers (key, at, seq, came_from, packed) VALUES (?1, ?2, 1, NULL, ?3)",
+                params![coded.key(), signed(now()), squeezed],
+            )
+            .expect("an isrc answer of the third shape");
+        indexed
+            .execute(
+                "INSERT INTO entities (mbid, kind, key) VALUES (?1, ?2, ?3)",
+                params![
+                    mbid_bytes(&echoes).to_vec(),
+                    crate::Entity::Recording.code(),
+                    coded.key()
+                ],
+            )
+            .expect("its recording indexed by id");
+
+        let kept = Kept::over(indexed).expect("carried forward");
+
+        let indexes: i64 = kept
+            .connection
+            .lock()
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE name = 'entities'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the schema read");
+
+        assert_eq!(kept.answer(&Asked::Recording(echoes)).expect("read"), None);
+        assert_eq!(kept.answer(&coded).expect("read"), Some(thin));
+        assert_eq!(indexes, 0);
     }
 }

@@ -127,21 +127,47 @@ fn a_search_is_kept_under_its_folded_words_and_a_miss_is_never_kept() {
     assert_eq!(kept.answer(&asked("  ÉCHOES ")).expect("read"), Some(found));
 }
 
+fn pressing_of_meddle() -> Release {
+    Release {
+        id: mbid(MEDDLE),
+        group: None,
+        title: "Meddle".to_owned(),
+        credit: Vec::new(),
+        date: Some("1971-10-30".to_owned()),
+        country: None,
+        label: None,
+        catalog_number: None,
+        barcode: None,
+        kind: None,
+        disambiguation: None,
+        has_front_cover: false,
+        links: Vec::new(),
+        media: Vec::new(),
+    }
+}
+
 #[test]
-fn an_entity_learnt_inside_another_answer_answers_a_lookup_by_its_id() {
+fn a_thinner_copy_held_inside_another_answer_never_answers_a_lookup_by_its_id() {
     let kept = Kept::in_memory().expect("a kept store");
     let coded = Asked::Isrc(Isrc::new("GBN9Y7100006").expect("a code"));
+    let pressed = Asked::ReleasesOfGroup(mbid(TIME));
 
     kept.keep(&coded, &Answer::Recordings(vec![echoes()]))
+        .expect("kept");
+    kept.keep(&pressed, &Answer::Pressings(vec![pressing_of_meddle()]))
         .expect("kept");
 
     assert_eq!(
         kept.answer(&Asked::Recording(mbid(ECHOES))).expect("read"),
-        Some(Answer::Recording(Some(echoes())))
+        None
     );
     assert_eq!(
-        kept.answer(&Asked::Recording(mbid(MEDDLE))).expect("read"),
+        kept.answer(&Asked::Release(mbid(MEDDLE))).expect("read"),
         None
+    );
+    assert_eq!(
+        kept.answer(&coded).expect("read"),
+        Some(Answer::Recordings(vec![echoes()]))
     );
 }
 

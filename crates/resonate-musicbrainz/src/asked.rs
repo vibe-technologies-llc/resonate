@@ -97,16 +97,6 @@ impl Asked {
         self.canonical().encoded()
     }
 
-    pub fn names(&self) -> Option<(Entity, &Mbid)> {
-        match self {
-            Self::Release(id) => Some((Entity::Release, id)),
-            Self::Recording(id) => Some((Entity::Recording, id)),
-            Self::Group(id) => Some((Entity::Group, id)),
-            Self::Artist(id) => Some((Entity::Artist, id)),
-            _ => None,
-        }
-    }
-
     pub fn is_answered_by(&self, answer: &Answer) -> bool {
         match (self, answer) {
             (Self::Release(id), Answer::Release(release)) => {
@@ -378,60 +368,6 @@ impl Answer {
             Self::Pressings(found) => found.is_empty(),
             Self::Discography(discography) => discography.releases.is_empty(),
             Self::ArtistPressings(pressings) => pressings.pressings.is_empty(),
-        }
-    }
-
-    pub fn entities(&self) -> Vec<(Entity, Mbid)> {
-        match self {
-            Self::Release(Some(release)) => vec![(Entity::Release, release.id.clone())],
-            Self::Pressings(releases) => releases
-                .iter()
-                .map(|release| (Entity::Release, release.id.clone()))
-                .collect(),
-            Self::ArtistPressings(pressings) => pressings
-                .pressings
-                .iter()
-                .map(|release| (Entity::Release, release.id.clone()))
-                .collect(),
-            Self::Recording(Some(recording)) => vec![(Entity::Recording, recording.id.clone())],
-            Self::Recordings(recordings) => recordings
-                .iter()
-                .map(|recording| (Entity::Recording, recording.id.clone()))
-                .collect(),
-            Self::Group(Some(group)) => vec![(Entity::Group, group.id.clone())],
-            Self::Artist(Some(artist)) => vec![(Entity::Artist, artist.mbid.clone())],
-            _ => Vec::new(),
-        }
-    }
-
-    pub fn entity(self, entity: Entity, id: &Mbid) -> Option<Self> {
-        match (entity, self) {
-            (Entity::Release, Self::Release(Some(release))) if release.id == *id => {
-                Some(Self::Release(Some(release)))
-            }
-            (Entity::Release, Self::Pressings(releases)) => releases
-                .into_iter()
-                .find(|release| release.id == *id)
-                .map(|release| Self::Release(Some(release))),
-            (Entity::Release, Self::ArtistPressings(pressings)) => pressings
-                .pressings
-                .into_iter()
-                .find(|release| release.id == *id)
-                .map(|release| Self::Release(Some(release))),
-            (Entity::Recording, Self::Recording(Some(recording))) if recording.id == *id => {
-                Some(Self::Recording(Some(recording)))
-            }
-            (Entity::Recording, Self::Recordings(recordings)) => recordings
-                .into_iter()
-                .find(|recording| recording.id == *id)
-                .map(|recording| Self::Recording(Some(recording))),
-            (Entity::Group, Self::Group(Some(group))) if group.id == *id => {
-                Some(Self::Group(Some(group)))
-            }
-            (Entity::Artist, Self::Artist(Some(artist))) if artist.mbid == *id => {
-                Some(Self::Artist(Some(artist)))
-            }
-            _ => None,
         }
     }
 }
