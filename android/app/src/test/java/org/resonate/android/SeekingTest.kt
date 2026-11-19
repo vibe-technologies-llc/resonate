@@ -3,6 +3,7 @@ package org.resonate.android
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class SeekingTest {
@@ -55,5 +56,19 @@ class SeekingTest {
         assertEquals(Seeking.Within(42_000u), within)
         assertEquals(Seeking.Within(7_000u), theRowPlaying)
         assertEquals(Seeking.Within(0u), beforeTheStart)
+    }
+
+    @Test
+    fun aRowTheQueueSheetNamesIsJumpedToAsNamedHoweverFarTheWindowHasScrolled() {
+        val windowFirst = 50
+        val sheetRow = 62
+
+        val chosen = Seeking.chosenRow(sheetRow)
+        val countedFromTheWindowAgain =
+            Seeking.of(Player.COMMAND_SEEK_TO_MEDIA_ITEM, sheetRow, C.TIME_UNSET, windowFirst, playing)
+
+        assertEquals(Seeking.ToRow(62u, 0u), chosen)
+        assertNotEquals(chosen, countedFromTheWindowAgain)
+        assertEquals(Seeking.ToRow(0u, 0u), Seeking.chosenRow(-1))
     }
 }

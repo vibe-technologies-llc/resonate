@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
 import org.resonate.android.LibraryFeatures
 import org.resonate.android.LibraryRepository
 import org.resonate.android.R
+import org.resonate.android.Seeking
 import org.resonate.android.mediaItem
 import org.resonate.android.nativecore.MobilePlayer
 import org.resonate.android.nativecore.Track
@@ -108,8 +109,9 @@ class Playback(
         remote()?.seekTo(positionMs)
     }
 
-    fun jump(index: Int) {
-        remote()?.seekToDefaultPosition(index)
+    fun jump(row: Int) {
+        val chosen = Seeking.chosenRow(row)
+        library.request { it.jumpToAt(chosen.row, chosen.positionMs) }
     }
 
     fun shuffle(enabled: Boolean) {

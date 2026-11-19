@@ -12,6 +12,8 @@ sealed interface Seeking {
     data class ToRow(val row: UInt, val positionMs: ULong) : Seeking
 
     companion object {
+        fun chosenRow(row: Int): ToRow = ToRow(row.coerceAtLeast(0).toUInt(), 0u)
+
         fun of(
             seekCommand: Int,
             mediaItemIndex: Int,

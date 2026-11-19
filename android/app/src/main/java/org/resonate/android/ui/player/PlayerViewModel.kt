@@ -147,7 +147,7 @@ class PlayerViewModel(private val resonate: Resonate) : ViewModel() {
 
     fun volume(value: Float) = resonate.playback.volume(value)
 
-    fun jump(index: Int) = resonate.playback.jump(index)
+    fun jump(row: Int) = resonate.playback.jump(row)
 
     fun move(from: Int, to: Int) {
         if (from == to) return

@@ -210,8 +210,8 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
                     }
                 }
                 items(queue.history, key = { rowKey(it) }) { track ->
-                    val index = queue.first + queue.history.indexOf(track)
-                    QueueRow(model, track, onClick = { model.jump(index) }, sheets = sheets, selection = selection.row(rowKey(track)))
+                    val row = queue.first + queue.history.indexOf(track)
+                    QueueRow(model, track, onClick = { model.jump(row) }, sheets = sheets, selection = selection.row(rowKey(track)))
                 }
             }
             queue.current?.let { current ->
