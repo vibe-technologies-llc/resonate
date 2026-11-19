@@ -88,25 +88,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   bit differs from the decoder's (`Channel count mismatch`) and keeps no stream-channel state a
   mono packet could be decoded against, so the fix is a decoder that switches (upstream or vendored)
 
-## Windows
-- [S · 0.14.1] A desktop recording does not follow a change of the default output: `opened_for`
-  (`wasapi_capture.rs`) binds loopback to the default render endpoint once and the loop watches for
-  no change, `lost` being set only by a failing call, so after a headset becomes the default the old
-  endpoint delivers nothing, the clip is padded with silence and recognition fails; `windows.md`
-  says a changed default is a loss that reopens the capture
-- [S · 0.14.1] A file URI spelt with a lowercase drive letter (`file:///c:/Music/a.flac`, VS Code's
-  `file:///c%3A/…`) finds no catalog row: `path_of_uri_rest` and `verbatim` (`windows_uri.rs`) keep
-  the spelling, while the scan stores `fs::canonicalize`'s, so an imported playlist's song plays but
-  is tied to no row, against `windows.md`'s claim that `from_uri` yields the scan's spelling
-- [S · 0.14.1] The WASAPI render loop never sees a stream broken while its event stays quiet:
-  `serving.rs` skips `cycle()` whenever `wait_for_room` times out, and failure is learnt only there,
-  so a chosen endpoint unplugged or reformatted that stops signalling leaves the zone playing with
-  its position frozen and a drain unsettled, where the capture loop calls into the client every
-  turn; a timeout while streaming should probe `GetCurrentPadding`
 
 ## macOS
-- [S · 0.14.1] The window never offers *Desktop* on a Mac though the process tap records it:
-  `DESKTOP_IS_HEARD` (`hearing.rs`) is still `cfg!(not(target_os = "macos"))` from before the tap,
-  so the Listen pane draws only *Microphone* and the default stays `Microphone(None)`; only
-  `listen_from = "desktop"` in the file reaches what `macos.md` describes
 
