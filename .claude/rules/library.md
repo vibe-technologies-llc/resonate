@@ -457,7 +457,10 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
     guarded. A file that *is* there keeps its row.
 - **Every walk hazard but a lost worker is stepped past.** A directory past `MAX_DEPTH` is warned
   over, not read, every row kept. A symlink is weighed only where it names a directory (and
-  `follow_symlinks` is on); every directory is walked once by its canonical path
+  `follow_symlinks` is on): one naming a file is never catalogued, switch or not, so a song is
+  never held twice and a dedupe or an organise never keeps or moves the link over the file it
+  names (`a_link_naming_a_file_is_never_catalogued_whether_links_are_followed_or_not`, the walk and
+  `audio_below` alike); every directory is walked once by its canonical path
   (`Visited::first_time_through`). A link whose canonical target is inside a registered root, or
   holds one, is never followed (`Walking::reaches_a_root`, over every root `roots` holds): else
   files are stored twice under both paths or filed under the wrong root. Not stepped past: a

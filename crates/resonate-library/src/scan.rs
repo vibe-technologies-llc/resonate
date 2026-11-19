@@ -1047,7 +1047,10 @@ fn walk(walking: &Walking<'_>, visited: &mut Visited, mounted: &mut Vec<PathBuf>
                 }
             };
 
-            if kind.is_symlink() && metadata.is_dir() && !followed(&path, visited, walking) {
+            if kind.is_symlink() && !metadata.is_dir() {
+                continue;
+            }
+            if kind.is_symlink() && !followed(&path, visited, walking) {
                 continue;
             }
             if metadata.is_dir() {
@@ -1236,11 +1239,7 @@ fn audio_below(walking: &Walking<'_>, folder: &Path) -> Vec<(PathBuf, Metadata)>
 
     entries
         .flatten()
-        .filter(|entry| {
-            entry.file_type().is_ok_and(|kind| {
-                !kind.is_dir() && (walking.options.follow_symlinks || !kind.is_symlink())
-            })
-        })
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_file()))
         .map(|entry| naming::composed(entry.path()))
         .filter(|path| is_audio(path) && !is_passed_over(path))
         .filter_map(|path| {

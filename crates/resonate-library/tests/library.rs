@@ -60,7 +60,9 @@ use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
     ProviderOp, Providers, Result as ProvidedResult, TURNED_TO_APART, WhyAway,
 };
-use support::{allow_writing, can_write, forbid_writing, link_to_directory, unlink_directory};
+use support::{
+    allow_writing, can_write, forbid_writing, link_to_directory, link_to_file, unlink_directory,
+};
 
 use crate::support;
 
@@ -3245,6 +3247,55 @@ fn a_link_to_a_folder_inside_another_links_target_is_walked_once_whichever_comes
     )?;
 
     assert_eq!(titles(&all(&library)?), vec!["One"]);
+    Ok(())
+}
+
+#[test]
+fn a_link_naming_a_file_is_never_catalogued_whether_links_are_followed_or_not() -> Result<()> {
+    let tree = Tree::new();
+    let shared = Tree::new();
+    let song = tree.write("album/song.wav", &Wav::new().text(TITLE, "Song").build());
+    shared.write("far.wav", &Wav::new().text(TITLE, "Far").build());
+
+    let linked = [
+        link_to_file(&song, &tree.path().join("alias.wav")),
+        link_to_file(&song, &tree.path().join("album/also.wav")),
+        link_to_directory(shared.path(), &tree.path().join("shared")),
+    ];
+    if linked.contains(&false) {
+        return Ok(());
+    }
+
+    let mut followed = Vec::new();
+    for follow_symlinks in [false, true] {
+        let library = Library::open_in_memory()?;
+        scan(
+            &library,
+            &ScanOptions {
+                follow_symlinks,
+                ..options(&tree)
+            },
+        )?;
+        followed.push(
+            all(&library)?
+                .into_iter()
+                .filter_map(|track| track.location.as_path().map(Path::to_path_buf))
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    let canonical = tree
+        .path()
+        .canonicalize()
+        .expect("the fixture tree has a canonical path");
+    assert_eq!(followed[0], vec![canonical.join("album/song.wav")]);
+    assert_eq!(
+        followed[1].iter().collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            &canonical.join("album/song.wav"),
+            &canonical.join("shared/far.wav")
+        ])
+    );
     Ok(())
 }
 
