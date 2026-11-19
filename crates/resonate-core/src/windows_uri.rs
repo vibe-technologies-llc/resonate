@@ -41,17 +41,20 @@ pub fn path_of_uri_rest(decoded: &[u8]) -> Option<Vec<u8>> {
         return Some(network);
     }
     match (drive_of(rooted), rooted.get(2)) {
-        (Some(_), None | Some(&SLASH)) => Some(backwards(rooted)),
+        (Some(_), None | Some(&SLASH)) => Some(backwards(&drive_folded(rooted))),
         _ => Some(backwards(decoded)),
     }
 }
 
 pub(crate) fn verbatim(path: Vec<u8>) -> Vec<u8> {
-    if path.starts_with(VERBATIM) {
-        return path;
+    if let Some(prefixed) = path.strip_prefix(VERBATIM) {
+        return match drive_folded(prefixed) {
+            Cow::Owned(folded) => [VERBATIM, &folded].concat(),
+            Cow::Borrowed(_) => path,
+        };
     }
     if drive_of(&path).is_some() && path.get(2) == Some(&BACKSLASH) {
-        return [VERBATIM, &path].concat();
+        return [VERBATIM, &drive_folded(&path)].concat();
     }
     match path.strip_prefix(NETWORK) {
         Some(share)
@@ -123,6 +126,24 @@ mod tests {
         assert_eq!(
             path_of_uri_rest(b"/C:/Music/Meddle #1.flac"),
             Some(br"C:\Music\Meddle #1.flac".to_vec())
+        );
+    }
+
+    #[test]
+    fn a_drive_spelt_in_lower_case_is_read_back_in_the_case_canonicalising_writes() {
+        assert_eq!(
+            path_of_uri_rest(b"/c:/Music/a.flac"),
+            Some(br"C:\Music\a.flac".to_vec())
+        );
+        assert_eq!(path_of_uri_rest(b"/d:"), Some(b"D:".to_vec()));
+        assert_eq!(
+            verbatim(br"c:\Music\a.flac".to_vec()),
+            br"\\?\C:\Music\a.flac"
+        );
+        assert_eq!(verbatim(br"\\?\c:\a.flac".to_vec()), br"\\?\C:\a.flac");
+        assert_eq!(
+            verbatim(br"\\?\UNC\nas\music\a.flac".to_vec()),
+            br"\\?\UNC\nas\music\a.flac"
         );
     }
 

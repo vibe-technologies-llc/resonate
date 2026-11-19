@@ -246,7 +246,8 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   (`windows_uri`, tested on every host); `\\?\` prefixes are dropped; `from_uri` takes the rest of
   the URI back to a `\` path **written verbatim** (`windows_uri::verbatim`: `\\?\C:\…`,
   `\\?\UNC\host\share\…`; a `.` or `..` segment is refused, since Windows never normalises a
-  verbatim path), the spelling `fs::canonicalize` gives and so the one the scan stores,
+  verbatim path; a drive letter spelt in lower case, `file:///c:/…` or VS Code's `file:///c%3A/…`, is
+  written in capitals), the spelling `fs::canonicalize` gives and so the one the scan stores,
   so a song kept as a URI (the resumed queue, a delivery's offer, a playlist, `OpenUri`) finds its
   catalog row again; the binary's `from_here` writes a path that does not exist yet the same way.
   A playlist sheet's `file://` row is read through the same `from_uri` (`sheet::local_file`), so an M3U
