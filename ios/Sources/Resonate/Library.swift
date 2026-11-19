@@ -528,7 +528,7 @@ final class Library {
         zoneTicks = 0
         zonesListed = wanted
         request({ $0.zones() }) { [self] read in
-            if read != zones { zones = read }
+            if read != zones { take(zones: read) }
         }
     }
 
@@ -772,10 +772,18 @@ final class Library {
             try change(native)
             return native.zones()
         }) { [self] read in
-            zones = read
+            take(zones: read)
             zonesListed = nil
             nudgePoll()
         }
+    }
+
+    private func take(zones read: [PlayerZone]) {
+        if let shownVolume = ZoneVolume.afterShowing(read, over: zones) {
+            volumeOwed = nil
+            volume = shownVolume
+        }
+        zones = read
     }
 
     func nudgePoll() {

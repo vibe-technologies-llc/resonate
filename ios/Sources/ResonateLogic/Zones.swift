@@ -18,6 +18,15 @@ public struct ZonesListed: Equatable {
     }
 }
 
+public enum ZoneVolume {
+    public static func afterShowing(_ read: [PlayerZone], over kept: [PlayerZone]) -> Float? {
+        guard let shown = read.first(where: \.shown), let before = kept.first(where: \.shown), before.id != shown.id else {
+            return nil
+        }
+        return shown.volume
+    }
+}
+
 public enum ZonePlan {
     public static let first: UInt32 = 1
 

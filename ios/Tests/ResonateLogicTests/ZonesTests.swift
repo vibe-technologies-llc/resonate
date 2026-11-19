@@ -21,6 +21,21 @@ import Testing
         #expect(same.isDue(after: read, zones: 2, ticks: ZonesListed.readEveryTicks))
     }
 
+    @Test func theVolumeIsReadAgainFromTheZoneShownOnlyWhenAnotherIsShown() {
+        let first = { (shown: Bool) in zone(1, shown: shown, volume: 0.3) }
+        let second = { (shown: Bool) in zone(2, shown: shown, volume: 0.8) }
+
+        let switched = ZoneVolume.afterShowing([first(false), second(true)], over: [first(true), second(false)])
+        let handedBack = ZoneVolume.afterShowing([first(true), second(false)], over: [first(false), second(true)])
+        let unmoved = ZoneVolume.afterShowing([zone(1, shown: true, volume: 0.9), second(false)], over: [first(true), second(false)])
+        let firstListed = ZoneVolume.afterShowing([first(true)], over: [])
+
+        #expect(switched == 0.8)
+        #expect(handedBack == 0.3)
+        #expect(unmoved == nil)
+        #expect(firstListed == nil)
+    }
+
     @Test func theSongIsHandedOnlyToAnotherZoneAndTheFirstZoneStays() {
         #expect(ZonePlan.mayHandOver(to: 2, shown: 1, shownHolds: true))
         #expect(!ZonePlan.mayHandOver(to: 1, shown: 1, shownHolds: true))
@@ -44,4 +59,11 @@ import Testing
         #expect(ZonePlan.line(.playing, playing: "Echoes", on: "Living room streamer") == "Living room streamer · Playing Echoes")
         #expect(ZonePlan.line(.paused, playing: nil, on: nil) == "Paused")
     }
+}
+
+private func zone(_ id: UInt32, shown: Bool, volume: Float) -> PlayerZone {
+    PlayerZone(
+        id: id, name: "", route: "", device: 0, shown: shown, volume: volume,
+        transport: .paused, playing: nil, renderer: nil, rendererName: nil
+    )
 }
