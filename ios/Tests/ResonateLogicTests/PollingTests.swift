@@ -163,6 +163,15 @@ import Testing
         #expect(Polling.steady(one) != Polling.steady(snapshot(.playing, current: track(1), shuffle: true)))
     }
 
+    @Test func aZonePlayingUnseenIsSteadyAsItPlaysOnButNotWhenItBeginsOrStops() {
+        let shownStopped = snapshot(.stopped, heardElsewhere: soundingElsewhere(positionMs: 1_000))
+        let playedOn = snapshot(.stopped, heardElsewhere: soundingElsewhere(positionMs: 9_000))
+
+        #expect(Polling.steady(shownStopped) == Polling.steady(playedOn))
+        #expect(Polling.steady(shownStopped) != Polling.steady(snapshot(.stopped)))
+        #expect(Polling.steady(shownStopped) != Polling.steady(snapshot(.stopped, heardElsewhere: soundingElsewhere(.loading))))
+    }
+
     @Test func aSleepTimerCountingDownIsSteadyButOneThatIsSetOrClearedIsNot() {
         var running = snapshot(.playing)
         running.sleepRemainingMs = 50_000

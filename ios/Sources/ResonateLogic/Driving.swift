@@ -28,8 +28,8 @@ public struct SessionAsked: Sendable {
         asked = true
     }
 
-    public mutating func owed(by transport: Transport) -> Bool {
-        guard transport == .playing || transport == .loading else {
+    public mutating func owed(by snapshot: Snapshot) -> Bool {
+        guard snapshot.anyZoneSounds else {
             asked = false
             return false
         }

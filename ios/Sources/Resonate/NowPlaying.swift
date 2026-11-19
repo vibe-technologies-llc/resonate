@@ -27,6 +27,7 @@ final class NowPlaying {
     private var lockScreen: LockScreenArtwork?
     private var artworkTrack: Track?
     private var shown: Shown?
+    private var heardLast: HeardElsewhere?
     private var written: WrittenPosition?
     private var observers: [NSObjectProtocol] = []
     private var ratedTrack: UInt64?
@@ -136,8 +137,7 @@ final class NowPlaying {
         let native = native
         Work.enqueueInOrder { [weak self] in
             Self.configureSession()
-            let now = try? native?.transport()
-            if now != .playing, now != .loading {
+            if let state = try? native?.snapshot(), !state.anyZoneSounds {
                 try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
             }
             Task { @MainActor in self?.reportRoute(rebind: false) }
@@ -209,17 +209,19 @@ final class NowPlaying {
             case .ended: .ended(shouldResume: options?.contains(.shouldResume) == true)
             default: nil
             }
-        switch interruptions.heard(heard, transport: library.transport) {
-        case .pause: library.pause()
-        case .resume: library.resume()
+        perform(interruptions.heard(heard))
+    }
+
+    private func perform(_ action: SessionAction) {
+        switch action {
+        case .pauseSounding: library.pauseSoundingZones { [weak self] paused in self?.interruptions.paused(paused) }
+        case .resume(let zones): library.playZones(zones)
         case .nothing: break
         }
     }
 
     private func routeChanged(_ reason: AVAudioSession.RouteChangeReason?) {
-        if reason == .oldDeviceUnavailable, interruptions.lostTheDevice() == .pause {
-            library.pause()
-        }
+        if reason == .oldDeviceUnavailable { perform(interruptions.lostTheDevice()) }
         guard !listening else { return }
         reportRoute(rebind: false)
     }
@@ -230,16 +232,29 @@ final class NowPlaying {
         return .success
     }
 
+    private func answer(_ command: LockScreenCommand) -> MPRemoteCommandHandlerStatus {
+        let speaksFor = shown?.speaksFor ?? .shown
+        return whenLoaded { library in
+            switch ZonesHeard.answering(command, speaksFor: speaksFor) {
+            case .nothing: break
+            case .resumeShown: library.resume()
+            case .pauseShown: library.pause()
+            case .toggleShown: library.toggle()
+            case .pauseSounding: library.pauseSoundingZones()
+            }
+        }
+    }
+
     private func registerCommands() {
         let commands = MPRemoteCommandCenter.shared()
         commands.playCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.whenLoaded { $0.resume() } ?? .commandFailed }
+            MainActor.assumeIsolated { self?.answer(.play) ?? .commandFailed }
         }
         commands.pauseCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.whenLoaded { $0.pause() } ?? .commandFailed }
+            MainActor.assumeIsolated { self?.answer(.pause) ?? .commandFailed }
         }
         commands.togglePlayPauseCommand.addTarget { [weak self] _ in
-            MainActor.assumeIsolated { self?.whenLoaded { $0.toggle() } ?? .commandFailed }
+            MainActor.assumeIsolated { self?.answer(.toggle) ?? .commandFailed }
         }
         commands.stopCommand.addTarget { [weak self] _ in
             MainActor.assumeIsolated { self?.whenLoaded { $0.stop() } ?? .commandFailed }
@@ -292,15 +307,16 @@ final class NowPlaying {
 
     private func enableCommands(for shown: Shown?) {
         let commands = MPRemoteCommandCenter.shared()
-        let loaded = shown != nil
         let available = CommandAvailability(shown)
 
+        for command in [commands.playCommand, commands.pauseCommand, commands.togglePlayPauseCommand] {
+            command.isEnabled = available.loaded
+        }
         for command in [
-            commands.playCommand, commands.pauseCommand, commands.togglePlayPauseCommand, commands.stopCommand,
-            commands.previousTrackCommand, commands.changePlaybackPositionCommand, commands.changeShuffleModeCommand,
-            commands.changeRepeatModeCommand, commands.likeCommand,
+            commands.stopCommand, commands.previousTrackCommand, commands.changePlaybackPositionCommand,
+            commands.changeShuffleModeCommand, commands.changeRepeatModeCommand, commands.likeCommand,
         ] {
-            command.isEnabled = loaded
+            command.isEnabled = available.steers
         }
         commands.nextTrackCommand.isEnabled = available.next
         commands.likeCommand.isActive = shown?.track.favourite ?? false
@@ -314,7 +330,7 @@ final class NowPlaying {
     }
 
     func queueChanged() {
-        guard let shown, shown.queueCount != library.queue.count else { return }
+        guard let shown, shown.speaksFor == .shown, shown.queueCount != library.queue.count else { return }
         rewrite()
     }
 
@@ -328,18 +344,24 @@ final class NowPlaying {
     private func releaseSessionIfDone(_ snapshot: Snapshot) {
         guard release.owed(by: snapshot, listening: listening), let native else { return }
         Work.enqueueInOrder {
-            guard let now = try? native.transport(), now != .playing, now != .loading else { return }
+            guard let state = try? native.snapshot(), !state.anyZoneSounds else { return }
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         }
     }
 
-    func update(_ snapshot: Snapshot, answered: Snapshot? = nil, forced: Bool = false) {
+    func update(_ given: Snapshot, answered: Snapshot? = nil, forced: Bool = false) {
+        var snapshot = given
+        if answered == nil {
+            snapshot.heardElsewhere = heardLast
+        } else {
+            heardLast = snapshot.heardElsewhere
+        }
         if let answered {
             releaseSessionIfDone(answered)
-            if sessionAsked.owed(by: answered.transport), !listening { activate() }
+            if sessionAsked.owed(by: answered), !listening { activate() }
         }
         let center = MPNowPlayingInfoCenter.default()
-        guard let track = snapshot.current else {
+        guard let spoken = NowPlayingSpoken(snapshot) else {
             guard shown != nil || center.nowPlayingInfo != nil else { return }
             center.nowPlayingInfo = nil
             center.playbackState = .stopped
@@ -353,6 +375,8 @@ final class NowPlaying {
             enableCommands(for: nil)
             return
         }
+        let track = spoken.track
+        let elsewhere = spoken.zoneHeard != nil
         if artworkFor?.track != track.pictureKey || artworkFor?.revision != track.artRevision {
             artworkFor = (track.pictureKey, track.artRevision)
             artworkTrack = track
@@ -362,24 +386,25 @@ final class NowPlaying {
         }
         let next = Shown(
             track: track,
-            transport: snapshot.transport,
-            durationMs: snapshot.durationMs,
-            queueIndex: Int(snapshot.queueIndex),
-            queueCount: library.queue.count,
-            shuffle: snapshot.shuffle,
-            repeatMode: snapshot.repeat,
+            transport: spoken.transport,
+            durationMs: spoken.durationMs,
+            queueIndex: elsewhere ? 0 : Int(snapshot.queueIndex),
+            queueCount: elsewhere ? 1 : library.queue.count,
+            shuffle: !elsewhere && snapshot.shuffle,
+            repeatMode: elsewhere ? 0 : snapshot.repeat,
             artRevision: track.artRevision,
-            artworkReady: artwork != nil
+            artworkReady: artwork != nil,
+            zoneHeard: spoken.zoneHeard
         )
         let now = ContinuousClock.now
-        let drift = written.map { abs($0.expected(at: now) - Double(snapshot.positionMs)) } ?? .infinity
+        let drift = written.map { abs($0.expected(at: now) - Double(spoken.positionMs)) } ?? .infinity
 
         if track.id != ratedTrack {
             ratedTrack = track.id
             askRate(of: track)
         }
         guard next.rewrites(over: shown, forced: forced, drift: drift) else { return }
-        write(next, position: snapshot.positionMs, at: now)
+        write(next, position: spoken.positionMs, at: now)
     }
 
     private func write(_ next: Shown, position: UInt64, at now: ContinuousClock.Instant) {

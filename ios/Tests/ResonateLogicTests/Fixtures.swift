@@ -53,7 +53,8 @@ func snapshot(
     queueRevision: UInt64 = 1,
     catalogRevision: UInt64 = 1,
     zone: UInt32 = 1,
-    zonesRevision: UInt64 = 0
+    zonesRevision: UInt64 = 0,
+    heardElsewhere: HeardElsewhere? = nil
 ) -> Snapshot {
     Snapshot(
         transport: transport,
@@ -73,6 +74,23 @@ func snapshot(
         queueRevision: queueRevision,
         catalogRevision: catalogRevision,
         zone: zone,
-        zonesRevision: zonesRevision
+        zonesRevision: zonesRevision,
+        heardElsewhere: heardElsewhere
+    )
+}
+
+func soundingElsewhere(
+    _ transport: Transport = .playing,
+    in zone: UInt32 = 2,
+    current: Track? = track(9),
+    positionMs: UInt64 = 0,
+    durationMs: UInt64 = 200_000
+) -> HeardElsewhere {
+    HeardElsewhere(
+        zone: zone,
+        transport: transport,
+        current: current,
+        positionMs: positionMs,
+        durationMs: durationMs
     )
 }

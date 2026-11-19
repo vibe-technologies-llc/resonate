@@ -5,75 +5,102 @@ import Testing
 @testable import ResonateLogic
 
 @Suite struct InterruptionPolicyTests {
-    @Test func aCallBeginningWhilePlayingPausesAndTheEndResumesWhereTheSystemSaysTo() {
+    @Test func aCallBeginningPausesEveryZoneThatSoundsAndTheEndResumesThoseItPaused() {
         var policy = InterruptionPolicy()
 
-        let outcome1 = policy.heard(.began, transport: .playing)
-        #expect(outcome1 == .pause)
-        #expect(policy.resumesAfterwards)
-        let outcome2 = policy.heard(.ended(shouldResume: true), transport: .paused)
-        #expect(outcome2 == .resume)
-        #expect(!policy.resumesAfterwards)
+        let began = policy.heard(.began)
+        policy.paused([1, 3])
+        let owed = policy.resumesAfterwards
+        let ended = policy.heard(.ended(shouldResume: true))
+
+        #expect(began == .pauseSounding)
+        #expect(owed == [1, 3])
+        #expect(ended == .resume([1, 3]))
+        #expect(policy.resumesAfterwards.isEmpty)
     }
 
-    @Test func anInterruptionBeginningWhileLoadingResumesToo() {
+    @Test func anInterruptionThatFoundNothingSoundingNeverStartsMusicWhenItEnds() {
         var policy = InterruptionPolicy()
 
-        _ = policy.heard(.began, transport: .loading)
+        let began = policy.heard(.began)
+        policy.paused([])
+        let ended = policy.heard(.ended(shouldResume: true))
 
-        let outcome1 = policy.heard(.ended(shouldResume: true), transport: .paused)
-        #expect(outcome1 == .resume)
-    }
-
-    @Test func anInterruptionBeginningWhilePausedNeverStartsMusicWhenItEnds() {
-        var policy = InterruptionPolicy()
-
-        let outcome1 = policy.heard(.began, transport: .paused)
-        #expect(outcome1 == .pause)
-        #expect(!policy.resumesAfterwards)
-        let outcome2 = policy.heard(.ended(shouldResume: true), transport: .paused)
-        #expect(outcome2 == .nothing)
+        #expect(began == .pauseSounding)
+        #expect(ended == .nothing)
     }
 
     @Test func anInterruptionEndingWithoutTheSystemsLeaveDoesNotResume() {
         var policy = InterruptionPolicy()
-        _ = policy.heard(.began, transport: .playing)
+        _ = policy.heard(.began)
+        policy.paused([2])
 
-        let outcome1 = policy.heard(.ended(shouldResume: false), transport: .paused)
-        #expect(outcome1 == .nothing)
-        #expect(!policy.resumesAfterwards)
+        let ended = policy.heard(.ended(shouldResume: false))
+
+        #expect(ended == .nothing)
+        #expect(policy.resumesAfterwards.isEmpty)
     }
 
     @Test func anEndWithNoBeginningDoesNothingAndNeverResumesTwice() {
         var policy = InterruptionPolicy()
 
-        let outcome1 = policy.heard(.ended(shouldResume: true), transport: .paused)
-        #expect(outcome1 == .nothing)
+        let unbegun = policy.heard(.ended(shouldResume: true))
+        _ = policy.heard(.began)
+        policy.paused([1])
+        let first = policy.heard(.ended(shouldResume: true))
+        let second = policy.heard(.ended(shouldResume: true))
 
-        _ = policy.heard(.began, transport: .playing)
-        let outcome2 = policy.heard(.ended(shouldResume: true), transport: .paused)
-        #expect(outcome2 == .resume)
-        let outcome3 = policy.heard(.ended(shouldResume: true), transport: .paused)
-        #expect(outcome3 == .nothing)
+        #expect(unbegun == .nothing)
+        #expect(first == .resume([1]))
+        #expect(second == .nothing)
+    }
+
+    @Test func zonesPausedOutsideAnInterruptionAreNeverResumed() {
+        var policy = InterruptionPolicy()
+
+        policy.paused([1, 2])
+        _ = policy.heard(.began)
+        let ended = policy.heard(.ended(shouldResume: true))
+
+        #expect(ended == .nothing)
+    }
+
+    @Test func aSecondBeginningKeepsTheZonesTheFirstPausedOnce() {
+        var policy = InterruptionPolicy()
+        _ = policy.heard(.began)
+        policy.paused([2])
+
+        let again = policy.heard(.began)
+        policy.paused([])
+        policy.paused([2, 1])
+        let ended = policy.heard(.ended(shouldResume: true))
+
+        #expect(again == .pauseSounding)
+        #expect(ended == .resume([2, 1]))
     }
 
     @Test func aTypeTheSystemSentWithoutOneIsIgnored() {
         var policy = InterruptionPolicy()
-        _ = policy.heard(.began, transport: .playing)
+        _ = policy.heard(.began)
+        policy.paused([1])
 
-        let outcome1 = policy.heard(nil, transport: .paused)
-        #expect(outcome1 == .nothing)
-        #expect(policy.resumesAfterwards)
+        let unnamed = policy.heard(nil)
+
+        #expect(unnamed == .nothing)
+        #expect(policy.resumesAfterwards == [1])
     }
 
-    @Test func theHeadphonesLeavingPausesAndTakesBackAnyOwedResume() {
+    @Test func theHeadphonesLeavingPausesEveryZoneThatSoundsAndTakesBackAnyOwedResume() {
         var policy = InterruptionPolicy()
-        _ = policy.heard(.began, transport: .playing)
+        _ = policy.heard(.began)
+        policy.paused([1, 2])
 
-        let outcome1 = policy.lostTheDevice()
-        #expect(outcome1 == .pause)
-        let outcome2 = policy.heard(.ended(shouldResume: true), transport: .paused)
-        #expect(outcome2 == .nothing)
+        let lost = policy.lostTheDevice()
+        policy.paused([3])
+        let ended = policy.heard(.ended(shouldResume: true))
+
+        #expect(lost == .pauseSounding)
+        #expect(ended == .nothing)
     }
 }
 
@@ -123,6 +150,56 @@ import Testing
         #expect(!outcome2)
     }
 
+    @Test func theZoneShownStoppingKeepsTheSessionWhileAnotherZoneSounds() {
+        var release = SessionRelease()
+
+        let playing = release.owed(by: snapshot(.playing, heardElsewhere: soundingElsewhere()), listening: false)
+        let stoppedWhileHeard = release.owed(by: snapshot(.stopped, heardElsewhere: soundingElsewhere()), listening: false)
+        let lastFellSilent = release.owed(by: snapshot(.stopped), listening: false)
+
+        #expect(!playing)
+        #expect(!stoppedWhileHeard)
+        #expect(lastFellSilent)
+    }
+
+    @Test func aSleepTimerPausingTheZoneShownKeepsTheSessionWhileAnotherZoneSounds() {
+        var release = SessionRelease()
+
+        _ = release.owed(by: snapshot(.playing, sleepRemainingMs: 5_000, heardElsewhere: soundingElsewhere()), listening: false)
+        let sleptOff = release.owed(by: snapshot(.paused, heardElsewhere: soundingElsewhere()), listening: false)
+
+        #expect(!sleptOff)
+    }
+
+    @Test func showingAStoppedZoneIsNotAStopThoughTheOneLeftWasPlaying() {
+        var release = SessionRelease()
+
+        _ = release.owed(by: snapshot(.playing, zone: 1), listening: false)
+        let shownAnother = release.owed(by: snapshot(.stopped, zone: 2, heardElsewhere: soundingElsewhere(in: 1)), listening: false)
+        let thatOneStopped = release.owed(by: snapshot(.stopped, zone: 2), listening: false)
+
+        #expect(!shownAnother)
+        #expect(thatOneStopped)
+    }
+
+    @Test func showingAStoppedZoneWhileTheOneLeftIsPausedOwesNothing() {
+        var release = SessionRelease()
+
+        _ = release.owed(by: snapshot(.paused, zone: 1), listening: false)
+        let shownAnother = release.owed(by: snapshot(.stopped, zone: 2), listening: false)
+
+        #expect(!shownAnother)
+    }
+
+    @Test func aZoneHeardElsewhereFallingSilentKeepsTheSessionWhileTheZoneShownIsPaused() {
+        var release = SessionRelease()
+
+        _ = release.owed(by: snapshot(.paused, heardElsewhere: soundingElsewhere()), listening: false)
+        let elsewhereSilent = release.owed(by: snapshot(.paused), listening: false)
+
+        #expect(!elsewhereSilent)
+    }
+
     @Test func listeningKeepsTheSessionWhateverStops() {
         var release = SessionRelease()
 
@@ -169,6 +246,28 @@ import Testing
     @Test func aQueueNotYetReadCountsAsEndedUnlessItRepeats() {
         #expect(!CommandAvailability(shown(index: 0, count: 0)).next)
     }
+
+    @Test func aZoneHeardElsewhereOffersPlayAndPauseAlone() {
+        let heard = NowPlayingShown(
+            track: track(9),
+            transport: .playing,
+            durationMs: 1_000,
+            queueIndex: 0,
+            queueCount: 3,
+            shuffle: false,
+            repeatMode: NowPlayingShown.repeatsAll,
+            artRevision: 0,
+            artworkReady: true,
+            zoneHeard: 2
+        )
+
+        let available = CommandAvailability(heard)
+
+        #expect(available.loaded)
+        #expect(!available.steers)
+        #expect(!available.next)
+        #expect(CommandAvailability(shown(index: 0, count: 3)).steers)
+    }
 }
 
 @Suite struct NowPlayingRewriteTests {
@@ -180,7 +279,8 @@ import Testing
         count: Int = 3,
         shuffle: Bool = false,
         repeatMode: UInt32 = 0,
-        artwork: Bool = true
+        artwork: Bool = true,
+        zoneHeard: UInt32? = nil
     ) -> NowPlayingShown {
         NowPlayingShown(
             track: track(id, favourite: favourite),
@@ -191,7 +291,8 @@ import Testing
             shuffle: shuffle,
             repeatMode: repeatMode,
             artRevision: 0,
-            artworkReady: artwork
+            artworkReady: artwork,
+            zoneHeard: zoneHeard
         )
     }
 
@@ -221,6 +322,7 @@ import Testing
         shownChange { $0.shown(shuffle: true) },
         shownChange { $0.shown(repeatMode: 1) },
         shownChange { $0.shown(artwork: false) },
+        shownChange { $0.shown(zoneHeard: 2) },
     ])
     func anyChangeOfWhatIsShownIsWritten(change: ShownChange) {
         #expect(change.make(self).rewrites(over: shown(), forced: false, drift: 0))
@@ -236,6 +338,7 @@ import Testing
         #expect(shown(count: 9).commandsChanged(from: shown()))
         #expect(shown(shuffle: true).commandsChanged(from: shown()))
         #expect(shown(repeatMode: 2).commandsChanged(from: shown()))
+        #expect(shown(zoneHeard: 2).commandsChanged(from: shown()))
     }
 }
 

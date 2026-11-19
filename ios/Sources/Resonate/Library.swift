@@ -1079,6 +1079,17 @@ final class Library {
         steer(.stopped) { try $0.stop() }
     }
 
+    func pauseSoundingZones(then paused: @escaping @MainActor @Sendable ([UInt32]) -> Void = { _ in }) {
+        nudgePoll()
+        request({ try $0.pauseSoundingZones() }, then: paused)
+    }
+
+    func playZones(_ zones: [UInt32]) {
+        guard !zones.isEmpty else { return }
+        nowPlaying.activate()
+        request { try $0.playZones(zones: zones) }
+    }
+
     func next() {
         steerSong(by: 1) { try $0.next() }
     }

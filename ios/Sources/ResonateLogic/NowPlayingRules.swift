@@ -8,61 +8,83 @@ public enum SessionInterruption: Equatable, Sendable {
 
 public enum SessionAction: Equatable, Sendable {
     case nothing
-    case pause
-    case resume
+    case pauseSounding
+    case resume([UInt32])
 }
 
 public struct InterruptionPolicy: Sendable {
-    private var resumeAfter = false
+    private var interrupted = false
+    private var zonesPaused: [UInt32] = []
 
     public init() {}
 
-    public mutating func heard(_ interruption: SessionInterruption?, transport: Transport) -> SessionAction {
+    public mutating func heard(_ interruption: SessionInterruption?) -> SessionAction {
         switch interruption {
         case .began?:
-            resumeAfter = transport == .playing || transport == .loading
-            return .pause
+            interrupted = true
+            return .pauseSounding
         case .ended(let shouldResume)?:
-            defer { resumeAfter = false }
-            return resumeAfter && shouldResume ? .resume : .nothing
+            defer { forget() }
+            return interrupted && shouldResume && !zonesPaused.isEmpty ? .resume(zonesPaused) : .nothing
         case nil:
             return .nothing
         }
     }
 
-    public mutating func lostTheDevice() -> SessionAction {
-        resumeAfter = false
-        return .pause
+    public mutating func paused(_ zones: [UInt32]) {
+        guard interrupted else { return }
+        zonesPaused += zones.filter { !zonesPaused.contains($0) }
     }
 
-    public var resumesAfterwards: Bool { resumeAfter }
+    public mutating func lostTheDevice() -> SessionAction {
+        forget()
+        return .pauseSounding
+    }
+
+    private mutating func forget() {
+        interrupted = false
+        zonesPaused = []
+    }
+
+    public var resumesAfterwards: [UInt32] { interrupted ? zonesPaused : [] }
 }
 
 public struct SessionRelease: Sendable {
     private var lastTransport: Transport?
+    private var lastZone: UInt32?
     private var wasSleeping = false
+    private var elsewhereSounded = false
 
     public init() {}
 
     public mutating func owed(by snapshot: Snapshot, listening: Bool) -> Bool {
         let sleeping = snapshot.sleepRemainingMs != nil
-        let stopped = snapshot.transport == .stopped && lastTransport != nil && lastTransport != .stopped
-        let sleptOff = snapshot.transport == .paused && lastTransport == .playing && wasSleeping && !sleeping
+        let elsewhereSounds = snapshot.heardElsewhere?.transport.sounds == true
+        let sameZone = lastZone == snapshot.zone
+        let stopped =
+            sameZone && snapshot.transport == .stopped && lastTransport != nil && lastTransport != .stopped
+        let sleptOff =
+            sameZone && snapshot.transport == .paused && lastTransport == .playing && wasSleeping && !sleeping
+        let lastHeardElsewhereFellSilent = elsewhereSounded && !elsewhereSounds && snapshot.transport == .stopped
         lastTransport = snapshot.transport
+        lastZone = snapshot.zone
         wasSleeping = sleeping
-        return (stopped || sleptOff) && !listening
+        elsewhereSounded = elsewhereSounds
+        return (stopped || sleptOff || lastHeardElsewhereFellSilent) && !elsewhereSounds && !listening
     }
 }
 
 public struct CommandAvailability: Equatable, Sendable {
     public let loaded: Bool
+    public let steers: Bool
     public let next: Bool
 
     public init(_ shown: NowPlayingShown?) {
         loaded = shown != nil
+        steers = loaded && shown?.zoneHeard == nil
         let lastRow = (shown?.queueIndex ?? 0) + 1 >= (shown?.queueCount ?? 0)
         let wraps = shown?.repeatMode == NowPlayingShown.repeatsAll
-        next = loaded && (!lastRow || wraps)
+        next = steers && (!lastRow || wraps)
     }
 }
 
@@ -76,6 +98,7 @@ public struct NowPlayingShown: Equatable, Sendable {
     public let repeatMode: UInt32
     public let artRevision: UInt64
     public let artworkReady: Bool
+    public let zoneHeard: UInt32?
 
     public init(
         track: Track,
@@ -86,7 +109,8 @@ public struct NowPlayingShown: Equatable, Sendable {
         shuffle: Bool,
         repeatMode: UInt32,
         artRevision: UInt64,
-        artworkReady: Bool
+        artworkReady: Bool,
+        zoneHeard: UInt32? = nil
     ) {
         self.track = track
         self.transport = transport
@@ -97,10 +121,13 @@ public struct NowPlayingShown: Equatable, Sendable {
         self.repeatMode = repeatMode
         self.artRevision = artRevision
         self.artworkReady = artworkReady
+        self.zoneHeard = zoneHeard
     }
 
     public static let driftBeforeRewriteMs: Double = 1500
     public static let repeatsAll: UInt32 = 2
+
+    public var speaksFor: SessionSpeaksFor { zoneHeard == nil ? .shown : .elsewhere }
 
     public func rewrites(over shown: NowPlayingShown?, forced: Bool, drift: Double) -> Bool {
         forced || self != shown || drift > Self.driftBeforeRewriteMs
@@ -109,7 +136,7 @@ public struct NowPlayingShown: Equatable, Sendable {
     public func commandsChanged(from shown: NowPlayingShown?) -> Bool {
         track.favourite != shown?.track.favourite || queueIndex != shown?.queueIndex
             || queueCount != shown?.queueCount || shuffle != shown?.shuffle
-            || repeatMode != shown?.repeatMode || shown == nil
+            || repeatMode != shown?.repeatMode || zoneHeard != shown?.zoneHeard || shown == nil
     }
 }
 

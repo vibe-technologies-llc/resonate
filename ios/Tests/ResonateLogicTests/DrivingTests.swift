@@ -40,10 +40,10 @@ import Testing
     @Test func sessionIsAskedOnceWhereSoundBeganWithNoAskOfItsOwn() {
         var session = SessionAsked()
 
-        let paused = session.owed(by: .paused)
-        let began = session.owed(by: .playing)
-        let playingOn = session.owed(by: .playing)
-        let stopped = session.owed(by: .stopped)
+        let paused = session.owed(by: snapshot(.paused))
+        let began = session.owed(by: snapshot(.playing))
+        let playingOn = session.owed(by: snapshot(.playing))
+        let stopped = session.owed(by: snapshot(.stopped))
 
         #expect(!paused)
         #expect(began)
@@ -52,15 +52,31 @@ import Testing
 
         session.ask()
 
-        let loadingAsked = session.owed(by: .loading)
-        let playingAsked = session.owed(by: .playing)
-        let pausedAgain = session.owed(by: .paused)
-        let beganAgain = session.owed(by: .loading)
+        let loadingAsked = session.owed(by: snapshot(.loading))
+        let playingAsked = session.owed(by: snapshot(.playing))
+        let pausedAgain = session.owed(by: snapshot(.paused))
+        let beganAgain = session.owed(by: snapshot(.loading))
 
         #expect(!loadingAsked)
         #expect(!playingAsked)
         #expect(!pausedAgain)
         #expect(beganAgain)
+    }
+
+    @Test func soundBegunInAZoneNotShownAsksTheSessionAndShowingAnotherKeepsIt() {
+        var session = SessionAsked()
+
+        let beganUnseen = session.owed(by: snapshot(.stopped, heardElsewhere: soundingElsewhere()))
+        let showingIt = session.owed(by: snapshot(.playing, zone: 2))
+        let showingTheEmptyOne = session.owed(by: snapshot(.stopped, heardElsewhere: soundingElsewhere()))
+        let everyZoneSilent = session.owed(by: snapshot(.stopped))
+        let beganAgainUnseen = session.owed(by: snapshot(.stopped, heardElsewhere: soundingElsewhere(.loading)))
+
+        #expect(beganUnseen)
+        #expect(!showingIt)
+        #expect(!showingTheEmptyOne)
+        #expect(!everyZoneSilent)
+        #expect(beganAgainUnseen)
     }
 
     @Test func aReadSetsThePlacesApartFromWhatElseItShows() {

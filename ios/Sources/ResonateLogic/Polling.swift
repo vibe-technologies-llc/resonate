@@ -100,6 +100,7 @@ public enum Polling {
         var steady = state
         steady.positionMs = 0
         steady.durationMs = 0
+        steady.heardElsewhere?.positionMs = 0
         steady.sleepRemainingMs = state.sleepRemainingMs.map { _ in 0 }
         steady.outputRate = 0
         steady.underruns = 0

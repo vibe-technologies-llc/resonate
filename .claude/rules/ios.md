@@ -495,8 +495,22 @@ sync seals its records and talks QUIC (TLS) of its own.
   behind it (running), so a rescan always keeps covers and sheets afresh.
 - **`NowPlaying`** owns the audio session (`.playback`, long-form), off the main actor as above
   (a route report asked while another is reading is the one applied, carrying any rebind owed), reports the route to Rust,
-  pauses on an interruption (resuming when the system says so, whether it began while playing or loading, as `Library.pause` pauses both) and when the old route disappears,
-  and drives the remote commands and now-playing info. **The lock screen's cover is
+  pauses on an interruption and when the old route disappears, and drives the remote commands and
+  now-playing info. **The session is held while any zone sounds**, not only the zone shown, as
+  Android's is (`android.md`): the snapshot names the first other zone that plays or loads
+  (`Snapshot.heard_elsewhere`, `mobile.md`). An interruption beginning and the old route disappearing
+  pause every zone that sounds (`pause_sounding_zones`, through `Library.pauseSoundingZones`, whether
+  it plays or loads); `InterruptionPolicy` keeps the zones an interruption paused
+  (`InterruptionPolicy.paused`) and its end with `.shouldResume` plays exactly those again
+  (`Library.playZones`, `play_zones`, activating the session first), while a lost route takes back
+  any resume owed. While the zone shown is silent and another sounds, the now-playing info speaks
+  for that one (`NowPlayingSpoken`, `Snapshot.spokenElsewhere`, `ZonesHeard.speaksFor`): its song,
+  place and length, playing, one row of one, with play, pause and toggle alone enabled
+  (`CommandAvailability.steers`); its pause and toggle pause every zone that sounds and its play
+  does nothing (`ZonesHeard.answering`), so showing an empty or stopped zone keeps the lock-screen
+  controls while a zone on a renderer plays. `Polling.steady` sets that zone's position aside as it
+  does the shown zone's, so a steered or rewritten snapshot, read from `Library.snapshot`, carries
+  the zone the last poll heard (`heardLast`) in place of its own. **The lock screen's cover is
   decoded at the size it asks**: the info carries the 384 px `.card` picture first, inside a
   `LockScreenArtwork` (a `Mutex` of the pictures held per `ArtworkBucket`) whose
   `MPMediaItemArtwork` handler, synchronous on a MediaPlayer queue, answers the bucket fitting the
@@ -506,10 +520,11 @@ sync seals its records and talks QUIC (TLS) of its own.
   from row thumbnails in the shared cache), and the info is written again with a fresh
   `MPMediaItemArtwork` over the same holder, so the system asks again and gets it. The bounds given
   are the picture's shape at 1024 px. The category is set at start but the session is activated only on play
-  (`activate()`), so opening Resonate never stops another app's audio; it is deactivated with
+  (`activate()`, and from the poll where sound began in any zone without one, `SessionAsked`), so opening Resonate never stops another app's audio; it is deactivated with
   `.notifyOthersOnDeactivation` when the transport turns stopped (Stop, the queue's end) or a sleep
-  timer paused it (`releaseSessionIfDone`, on the transport's lane and only if nothing plays by
-  then, decided from the snapshot the engine answered, never a steered one: a steered stop ran ahead of the stop itself, found the transport still playing and was never owed again; the lock screen meanwhile shows the steered snapshot the app shows), so the app audio it interrupted may resume. **The session is asked for
+  timer paused it while no other zone sounds, or the last zone heard elsewhere fell silent with the
+  zone shown stopped, never for showing another zone (`SessionRelease`; `releaseSessionIfDone`, on the transport's lane and only if no zone
+  plays by then (`Snapshot.anyZoneSounds`), decided from the snapshot the engine answered, never a steered one: a steered stop ran ahead of the stop itself, found the transport still playing and was never owed again; the lock screen meanwhile shows the steered snapshot the app shows), so the app audio it interrupted may resume. **The session is asked for
   the playing song's rate** (`preferRate`): on every song change and activation (a `play` or `jump` names the song it loads, `activate(loading:)`, not the one on the lock screen), while "Match the
   song's sample rate" is on (the output page; `follow-song-rate` in the `playback` suite, on by
   default), `setPreferredSampleRate(track.rate)`, `0` (no preference) while off, then the route is
@@ -593,8 +608,8 @@ sync seals its records and talks QUIC (TLS) of its own.
   is not in `Resonate.entitlements` (a free signing would refuse the profile) and the search is
   expected to be refused (`FEATURES.md`; not yet seen on a device). `Library.zones` is read when `zone` or `zones_revision`
   moves and every eighth tick while there are several (`ZonesListed`), and after each change the
-  sheet makes (`changeZones`); the lock screen reads the snapshot, so it follows the zone shown
-  (`ZonesTests`). *What renderers play* (`RendererFormatsSheet`) lists every renderer found and every
+  sheet makes (`changeZones`); the lock screen reads the snapshot, so it follows the zone shown,
+  or the zone heard while the one shown is silent (`ZonesTests`, `ZonesHeardTests`). *What renderers play* (`RendererFormatsSheet`) lists every renderer found and every
   one tried (`Library.renderersLearnt`, read as it opens, `readRenderersLearnt`), with *Try*
   (`learnWhatRendererPlays`, one at a time on `Work.aside`, since a run lasts up to a minute and a half,
   `tryingRenderer` and `rendererHeard` holding the run and the trials heard) and *Forget*
@@ -2271,7 +2286,7 @@ other status is a failure, a blank write deletes, an update that finds nothing a
 under `AccountStore`; a suite name given to `PlaybackPreferencesStore`, `AccountStore` and
 `DownloadJournal` (a `UserDefaults` is not `Sendable`, so the structs keep the name); the places,
 suites and a count of keychain deletions handed to `Erasure.everything`. `NowPlaying`'s decisions (`InterruptionPolicy`, `SessionRelease`, `CommandAvailability`,
-`NowPlayingShown.rewrites`), `BackgroundHold`'s hold, expire and launch machine (`HoldMachine`, which
+`NowPlayingShown.rewrites`, `NowPlayingSpoken`, `ZonesHeard`), `BackgroundHold`'s hold, expire and launch machine (`HoldMachine`, which
 returns the `HoldEffect`s the class performs) and the sync landing's journal (`LandingJournal`) are
 the module's, the classes only performing what they say. A test lists the suite
 names the sources use and refuses one `Erasure.suites` lacks. A name the module exports can meet a C function of the same name in a file
