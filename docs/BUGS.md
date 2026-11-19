@@ -27,15 +27,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
 ## Formats
-- [S · 0.14.1] A vault object an earlier build narrowed past live bits stays lossy: the encoder's
-  stamp moved (`Encoding::OF_THIS_BUILD`), so every row is weighed again, but a renewal landing on
-  another key is taken only where it is smaller, and the lossless 32-bit object is larger than the
-  narrowed FLAC, so the narrowed one wins while its source is still there to keep whole
-- [S · 0.14.1] A leading ID3 tag over 16 MiB is never moved into a WAVE's `id3 ` chunk, and says the
-  wrong thing: lofty's read allocation limit (`GlobalOptions::DEFAULT_ALLOCATION_LIMIT`, 16 MiB)
-  refuses the staged copy first, so the write answers `TagsUnread` rather than a typed refusal
-  naming the size; a picture lofty writes into a WAVE's chunk can still pass `read_id3_chunk`'s
-  `MAX_ID3_CHUNK_BYTES`, so writer and reader should share one bound
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader
