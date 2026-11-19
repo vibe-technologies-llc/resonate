@@ -63,9 +63,12 @@ fn spelled_decibels(gain: BandGain) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use resonate_core::{
         SampleRate,
-        eq::{FITTED_AT, Profile, Q, THIRD_OCTAVE_CENTRES, sweep},
+        abx::{Arm, Arms},
+        eq::{FITTED_AT, Preamp, Profile, Q, THIRD_OCTAVE_CENTRES, sweep},
     };
 
     use super::*;
@@ -215,6 +218,75 @@ mod tests {
                 "{rate}"
             );
             assert!(played.target().is_some());
+        }
+    }
+
+    const RATES_A_FIT_IS_TRIED_AT: [SampleRate; 3] = [
+        SampleRate::HZ_44100,
+        SampleRate::HZ_48000,
+        SampleRate::HZ_96000,
+    ];
+    const MOVED_BY_HAND_MILLI_DECIBELS: i32 = -3_000;
+    const TREBLE_LIFTED_PAST_FULL_SCALE: &str =
+        "GraphicEQ: 20 0; 1000 0; 10000 6; 16000 12; 20000 12";
+
+    fn fitted_preamps_differ_off_48_khz() -> Arc<Profile> {
+        Arc::new(Profile::fitted_to(target(TREBLE_LIFTED_PAST_FULL_SCALE)))
+    }
+
+    fn moved_by_hand() -> Arc<Profile> {
+        let mut moved = Profile::fitted_to(target(TREBLE_LIFTED_PAST_FULL_SCALE));
+        moved.set_preamp(
+            Preamp::from_milli_decibels(
+                moved.preamp().milli_decibels() + MOVED_BY_HAND_MILLI_DECIBELS,
+            )
+            .expect("in range"),
+        );
+        Arc::new(moved)
+    }
+
+    #[test]
+    fn a_curve_fitted_again_at_the_rate_it_already_plays_at_is_left_as_it_is() {
+        for kept in [fitted_preamps_differ_off_48_khz(), moved_by_hand()] {
+            for rate in RATES_A_FIT_IS_TRIED_AT {
+                let once = kept.at_rate(rate);
+                let twice = once.at_rate(rate);
+
+                assert_eq!(twice, once, "{rate}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_curve_fitted_at_one_rate_and_then_another_is_the_curve_fitted_at_the_last() {
+        let kept = moved_by_hand();
+
+        for first in RATES_A_FIT_IS_TRIED_AT {
+            for then in RATES_A_FIT_IS_TRIED_AT {
+                let through = kept.at_rate(first).at_rate(then);
+                let straight = kept.at_rate(then);
+
+                assert_eq!(through, straight, "{first} then {then}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_levelled_arm_of_a_listening_test_plays_at_the_preamp_it_was_matched_at() {
+        let kept = moved_by_hand();
+        assert_ne!(
+            kept.at_rate(SampleRate::HZ_44100).preamp(),
+            kept.preamp(),
+            "the curve fits one preamp at every rate, so it proves nothing"
+        );
+
+        for rate in RATES_A_FIT_IS_TRIED_AT {
+            let arms = Arms::matched(&kept.at_rate(rate), rate).expect("matched");
+            let matched = arms.profile(Arm::A);
+            let played = Arc::new(matched.clone()).at_rate(rate);
+
+            assert_eq!(played.preamp(), matched.preamp(), "{rate}");
+            assert_eq!(played.bands(), matched.bands(), "{rate}");
         }
     }
 

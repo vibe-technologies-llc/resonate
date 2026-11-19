@@ -786,7 +786,13 @@ impl Turned {
 pub struct Profile {
     preamp: Preamp,
     bands: Vec<Band>,
-    target: Option<Arc<Target>>,
+    curve: Option<Curve>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct Curve {
+    target: Arc<Target>,
+    fitted_at: SampleRate,
 }
 
 impl Profile {
@@ -797,7 +803,7 @@ impl Profile {
         Ok(Self {
             preamp,
             bands,
-            target: None,
+            curve: None,
         })
     }
 
@@ -807,30 +813,36 @@ impl Profile {
         Self {
             preamp: fit.preamp,
             bands: fit.bands.to_vec(),
-            target: Some(target),
+            curve: Some(Curve {
+                target,
+                fitted_at: FITTED_AT,
+            }),
         }
     }
 
     pub fn target(&self) -> Option<&Target> {
-        self.target.as_deref()
+        self.curve.as_ref().map(|curve| &*curve.target)
     }
 
     pub fn at_rate(self: &Arc<Self>, rate: SampleRate) -> Arc<Self> {
-        let Some(target) = self.target.as_ref() else {
+        let Some(curve) = self.curve.as_ref() else {
             return Arc::clone(self);
         };
-        if rate == FITTED_AT {
+        if rate == curve.fitted_at {
             return Arc::clone(self);
         }
 
-        let beyond_the_fit =
-            self.preamp.milli_decibels() - target.fit_at(FITTED_AT).preamp.milli_decibels();
-        let fit = target.fit_at(rate);
+        let beyond_the_fit = self.preamp.milli_decibels()
+            - curve.target.fit_at(curve.fitted_at).preamp.milli_decibels();
+        let fit = curve.target.fit_at(rate);
         Arc::new(Self {
             preamp: Preamp::from_milli_decibels(fit.preamp.milli_decibels() + beyond_the_fit)
                 .unwrap_or(fit.preamp),
             bands: fit.bands.to_vec(),
-            target: Some(Arc::clone(target)),
+            curve: Some(Curve {
+                target: Arc::clone(&curve.target),
+                fitted_at: rate,
+            }),
         })
     }
 
@@ -852,7 +864,7 @@ impl Profile {
 
     pub fn band_mut(&mut self, at: usize) -> Option<&mut Band> {
         let band = self.bands.get_mut(at)?;
-        self.target = None;
+        self.curve = None;
         Some(band)
     }
 
@@ -861,7 +873,7 @@ impl Profile {
             return Err(Error::TooManyBands(self.bands.len() + 1));
         }
         self.bands.push(band);
-        self.target = None;
+        self.curve = None;
         Ok(())
     }
 
@@ -870,7 +882,7 @@ impl Profile {
             return false;
         }
         self.bands.remove(at);
-        self.target = None;
+        self.curve = None;
         true
     }
 

@@ -1091,10 +1091,18 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   warp near Nyquist is part of what a 48 kHz fit compensates). In `resonate-core::eq`: `Target` =
   quantised `TargetPoint`s, sorted, de-duplicated, thinned past `TARGET_POINTS_AT_MOST` (1024);
   `Profile::fitted_to` fits at `FITTED_AT` (48 kHz); `Profile::at_rate` gives the fit at another
-  rate. `eq_config` asks it for the stream rate before weighing transparency. A `Target` caches fits
+  rate. `eq_config` asks it for the stream rate before weighing transparency. A profile's `Curve`
+  keeps the rate its bands were fitted at, so `at_rate` is idempotent and a chain of them is the
+  last one alone: asked for the rate it is already at, a profile is left as it is, which is what
+  keeps the listening test's levelled arm A (handed to `Arms::matched` already at the stream rate,
+  then asked again by `eq_config`) at the preamp it was matched at
+  (`a_curve_fitted_again_at_the_rate_it_already_plays_at_is_left_as_it_is`,
+  `a_curve_fitted_at_one_rate_and_then_another_is_the_curve_fitted_at_the_last`,
+  `the_levelled_arm_of_a_listening_test_plays_at_the_preamp_it_was_matched_at`). A `Target` caches fits
   for the eight `FITS_KEPT_FOR` rates (44.1 to 384 kHz) in a `OnceLock`, outside `PartialEq`/`Hash`,
   holding bands not a `Profile` (a cycle through its own `Arc`), since a retune re-plans on every
-  volume step. A hand-moved preamp is carried as its distance from the fitted one. A `Target`
+  volume step. A hand-moved preamp is carried as its distance from the preamp fitted at the
+  `Curve`'s rate. A `Target`
   profile is written as `Preamp:` plus the `GraphicEQ:` line, gains trimmed to the milli-dB; filter
   lines beside one are passed over. `band_mut`, `push`, `remove` let go of the curve.
 
