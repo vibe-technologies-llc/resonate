@@ -82,6 +82,26 @@ pub(crate) fn partial_from(at: usize, total: usize, headers: &[&str]) -> Vec<u8>
     )
 }
 
+pub(crate) const CAPPED_AT: usize = 20;
+
+pub(crate) fn capped_partial(head: &str, cap: usize) -> Vec<u8> {
+    let at = asked_from(&lower(head)).unwrap_or_default();
+    let end = (at + cap).min(WHOLE_BODY.len());
+    let range = format!("Content-Range: bytes {at}-{}/{}", end - 1, WHOLE_BODY.len());
+    answering(
+        "206 Partial Content",
+        &[range.as_str()],
+        &WHOLE_BODY[at..end],
+        end - at,
+    )
+}
+
+pub(crate) fn emptied_partial(head: &str) -> Vec<u8> {
+    let at = asked_from(&lower(head)).unwrap_or_default();
+    let range = format!("Content-Range: bytes {at}-{at}/{}", WHOLE_BODY.len());
+    answering("206 Partial Content", &[range.as_str()], b"", 0)
+}
+
 pub(crate) fn lower(head: &str) -> String {
     head.to_ascii_lowercase()
 }

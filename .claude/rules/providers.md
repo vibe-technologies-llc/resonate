@@ -373,7 +373,12 @@ plumbing, so a `ureq` bump is made once:
   re-transcoded meanwhile is never joined old head to new tail
   (`a_file_replaced_between_the_break_and_the_resume_is_not_joined_old_head_to_new_tail`). The first resume is at once, each later one waits `waited_before`
   (`resumed_after` doubling, at most 8 s), or a 429/502/503/504's `Retry-After`. `Ranged::opened`
-  asks a first request answered 429/502/503/504 again the same way.
+  asks a first request answered 429/502/503/504 again the same way. **A body that ends under its
+  total is a break-off too**: a server capping each `206` (an open range answered with a slice) ends
+  an answer at `Content-Range`'s end, so a read of `0` while `read` is under `total` asks again from
+  `read`, `RESUMES_AT_MOST` asks with no byte between them ending in `ErrorKind::UnexpectedEof`
+  (`a_server_capping_every_partial_answer_still_yields_the_whole_body`,
+  `a_server_answering_nothing_more_under_the_total_ends_in_an_error_after_a_bounded_number_of_asks`).
 - **A `Held` that can be checked is asked with `Range` and `If-Range`** (`asking_to_resume`; a partial
   is checkable by a strong validator or a known total, never by neither and never empty). The answer
   is read by `Ranged::continuing_held`: a `200` begins again from 0; a `206` is taken only if its

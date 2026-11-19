@@ -379,6 +379,10 @@ impl Ranged {
         self.length
     }
 
+    fn ended_short(&self, buf: &[u8]) -> bool {
+        !buf.is_empty() && self.total.is_some_and(|total| self.read < total)
+    }
+
     fn resumed_after(&mut self, broken_off: io::Error) -> io::Result<()> {
         let mut last = broken_off;
         let mut asked_for = None;
@@ -434,6 +438,9 @@ impl Read for Ranged {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         loop {
             match self.reader.read(buf) {
+                Ok(0) if self.ended_short(buf) => {
+                    self.resumed_after(io::Error::from(ErrorKind::UnexpectedEof))?;
+                }
                 Ok(read) => {
                     if read > 0 {
                         self.read += read as u64;
@@ -454,10 +461,68 @@ mod tests {
     use crate::{
         Trusted, configured,
         testing::{
-            CUT_AT, WHOLE_BODY, answering, coded_as_asked, cut_first_answer, lower, opened,
-            partial_from, serving,
+            Answer, CAPPED_AT, CUT_AT, WHOLE_BODY, answering, capped_partial, coded_as_asked,
+            cut_first_answer, emptied_partial, lower, opened, partial_from, serving,
         },
     };
+
+    const OPENED_PART_WAY: u64 = 10;
+
+    #[test]
+    fn a_server_capping_every_partial_answer_still_yields_the_whole_body() {
+        let (url, heads) = serving(vec![
+            Box::new(|head| capped_partial(head, CAPPED_AT)),
+            Box::new(|head| capped_partial(head, CAPPED_AT)),
+            Box::new(|head| capped_partial(head, CAPPED_AT)),
+            Box::new(|head| capped_partial(head, CAPPED_AT)),
+        ]);
+        let agent = configured(Duration::from_secs(5), Trusted::BuiltInRoots)
+            .build()
+            .new_agent();
+        let mut ranged = Ranged::opened_from(agent, url, OPENED_PART_WAY, Duration::ZERO)
+            .expect("the first partial answer");
+        let mut read = Vec::new();
+
+        ranged.read_to_end(&mut read).expect("the whole is read");
+
+        assert_eq!(read, &WHOLE_BODY[OPENED_PART_WAY as usize..]);
+        assert_eq!(ranged.read_so_far(), WHOLE_BODY.len() as u64);
+        let asked_from: Vec<String> = heads
+            .lock()
+            .iter()
+            .filter_map(|head| {
+                lower(head)
+                    .lines()
+                    .find_map(|line| line.strip_prefix("range: ").map(str::to_owned))
+            })
+            .collect();
+        assert_eq!(
+            asked_from,
+            ["bytes=10-", "bytes=30-", "bytes=50-", "bytes=70-"]
+        );
+    }
+
+    #[test]
+    fn a_server_answering_nothing_more_under_the_total_ends_in_an_error_after_a_bounded_number_of_asks()
+     {
+        let mut answers: Vec<Answer> = vec![Box::new(|head| capped_partial(head, CAPPED_AT))];
+        answers.extend((0..RESUMES_AT_MOST + 2).map(|_| Box::new(emptied_partial) as Answer));
+        let (url, heads) = serving(answers);
+        let agent = configured(Duration::from_secs(5), Trusted::BuiltInRoots)
+            .build()
+            .new_agent();
+        let mut ranged = Ranged::opened_from(agent, url, OPENED_PART_WAY, Duration::ZERO)
+            .expect("the first partial answer");
+        let mut read = Vec::new();
+
+        let error = ranged
+            .read_to_end(&mut read)
+            .expect_err("the song ends under its total");
+
+        assert_eq!(error.kind(), ErrorKind::UnexpectedEof);
+        assert_eq!(read, &WHOLE_BODY[OPENED_PART_WAY as usize..30]);
+        assert_eq!(heads.lock().len(), 1 + RESUMES_AT_MOST as usize);
+    }
 
     #[test]
     fn a_download_cut_off_is_asked_for_again_with_its_validator_and_read_on() {

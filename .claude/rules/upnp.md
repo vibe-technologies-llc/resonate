@@ -698,7 +698,10 @@ core and `resonate-audio`.
   start, the same 64 MiB bound
   (`a_chunked_song_is_read_whole_and_a_seek_reads_through_to_where_it_lands`). A seek drops the answer and
   the next read asks from there; reads wait `SILENT_AT_MOST` (15 s) each, a connect
-  `CONNECTED_WITHIN` (3 s). `ServerFound::fetched` and `picture` (a cover, `ANSWER_BYTES_AT_MOST`)
+  `CONNECTED_WITHIN` (3 s). **An answer ending under `length` is asked again from the place**
+  (a server capping each `206`), at most `ASKED_AGAIN_AT_MOST` asks with no byte between them, then
+  `UnexpectedEof` (`a_server_capping_every_partial_answer_is_asked_again_from_where_it_ended`).
+  `ServerFound::fetched` and `picture` (a cover, `ANSWER_BYTES_AT_MOST`)
   refuse an address off the server's host
   (`a_song_found_on_a_server_is_fetched_as_served_and_seeks_by_range`).
 - **Fuzzed** (`read_a_listing`, the `dlna` target): any text as DIDL-Lite and as a SOAP answer to Browse

@@ -13,6 +13,8 @@ pub const CONNECTED_WITHIN: Duration = Duration::from_secs(3);
 
 pub const SILENT_AT_MOST: Duration = Duration::from_secs(15);
 
+const ASKED_AGAIN_AT_MOST: u32 = 5;
+
 const PASSED_OVER_AT_MOST: u64 = 64 << 20;
 
 const DISCARDED_IN: usize = 64 << 10;
@@ -257,19 +259,27 @@ impl Read for Fetched {
         if buf.is_empty() || self.length.is_some_and(|length| self.position >= length) {
             return Ok(0);
         }
-        if self.answer.is_none() {
-            let answer = self.asked_from(self.position).map_err(io::Error::other)?;
-            self.answer = Some(answer);
+        let mut asked_without_a_byte = 0;
+        loop {
+            if self.answer.is_none() {
+                let answer = self.asked_from(self.position).map_err(io::Error::other)?;
+                self.answer = Some(answer);
+            }
+            let Some(answer) = &mut self.answer else {
+                return Ok(0);
+            };
+            let read = answer.read(buf)?;
+            let ended_short = read == 0 && self.length.is_some_and(|length| self.position < length);
+            if !ended_short {
+                self.position += read as u64;
+                return Ok(read);
+            }
+            if asked_without_a_byte == ASKED_AGAIN_AT_MOST {
+                return Err(io::ErrorKind::UnexpectedEof.into());
+            }
+            asked_without_a_byte += 1;
+            self.answer = None;
         }
-        let Some(answer) = &mut self.answer else {
-            return Ok(0);
-        };
-        let read = answer.read(buf)?;
-        if read == 0 && self.length.is_some_and(|length| self.position < length) {
-            return Err(io::ErrorKind::UnexpectedEof.into());
-        }
-        self.position += read as u64;
-        Ok(read)
     }
 }
 
@@ -353,6 +363,82 @@ mod tests {
             body: BufReader::new(Cursor::new(Vec::new()).chain(stream)),
             framing: Framing::Chunked(Chunk::SizeNext),
         }
+    }
+
+    const SONG_BYTES: usize = 100;
+
+    const CAPPED_AT: usize = 30;
+
+    const SOUGHT_TO: u64 = 40;
+
+    fn song() -> Vec<u8> {
+        (0..SONG_BYTES).map(|at| at as u8).collect()
+    }
+
+    fn asked_from_of(head: &str) -> usize {
+        head.lines()
+            .find_map(|line| line.strip_prefix("Range: bytes="))
+            .and_then(|range| range.strip_suffix('-'))
+            .and_then(|from| from.parse().ok())
+            .unwrap_or_default()
+    }
+
+    fn serving_capped_answers(answers: usize, cap: usize) -> Located {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bound");
+        let at = listener.local_addr().expect("an address");
+        std::thread::spawn(move || {
+            for _ in 0..answers {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                let mut head = Vec::new();
+                let mut buffer = [0; 512];
+                while head_end(&head).is_none() {
+                    match stream.read(&mut buffer) {
+                        Ok(0) | Err(_) => break,
+                        Ok(read) => head.extend_from_slice(&buffer[..read]),
+                    }
+                }
+                let from = asked_from_of(&String::from_utf8_lossy(&head));
+                let end = (from + cap).min(SONG_BYTES);
+                let reply = format!(
+                    "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {from}-{}/{SONG_BYTES}\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n",
+                    end.saturating_sub(1),
+                    end - from,
+                );
+                let _ = stream.write_all(reply.as_bytes());
+                let _ = stream.write_all(&song()[from..end]);
+            }
+        });
+        Located::parse(&format!("http://{at}/song")).expect("an address")
+    }
+
+    #[test]
+    fn a_server_capping_every_partial_answer_is_asked_again_from_where_it_ended() {
+        let mut fetched = Fetched::open(serving_capped_answers(8, CAPPED_AT)).expect("opened");
+        let mut whole = Vec::new();
+        fetched.read_to_end(&mut whole).expect("read whole");
+        let landed = fetched.seek(SeekFrom::Start(SOUGHT_TO)).expect("a seek");
+        let mut after = Vec::new();
+        fetched.read_to_end(&mut after).expect("read from there");
+
+        assert_eq!(whole, song());
+        assert_eq!(landed, SOUGHT_TO);
+        assert_eq!(after, &song()[SOUGHT_TO as usize..]);
+    }
+
+    #[test]
+    fn a_server_answering_nothing_under_its_length_is_asked_a_bounded_number_of_times() {
+        let mut fetched =
+            Fetched::open(serving_capped_answers(ASKED_AGAIN_AT_MOST as usize + 3, 0))
+                .expect("opened");
+        let mut read = Vec::new();
+
+        let error = fetched.read_to_end(&mut read).expect_err("ends short");
+
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+        assert!(read.is_empty());
     }
 
     #[test]
