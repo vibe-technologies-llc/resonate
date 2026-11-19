@@ -114,24 +114,76 @@ pub fn import(
 }
 
 pub fn refresh_every_kept(library: &Library, config: &Config) -> Result<()> {
-    let profiles = library.profiles_followed()?;
-    if profiles.is_empty() && library.playlists_kept_in_step()?.is_empty() {
+    if library.profiles_followed()?.is_empty() && library.playlists_kept_in_step()?.is_empty() {
         said!("{}", words::followed::none_in_step());
         return Ok(());
     }
 
     let reference = online::reference_asked_for(config, Asking::ForTheListener)?;
-    for (profile, _) in profiles {
-        if profile == ProfileLink::SpotifyAccount && !config.spotify_signed_in() {
+    refreshed_every_kept(library, reference.as_ref(), config.spotify_signed_in())
+}
+
+fn refreshed_every_kept(
+    library: &Library,
+    reference: &dyn Reference,
+    spotify_signed_in: bool,
+) -> Result<()> {
+    let mut failed = 0;
+    for (profile, _) in library.profiles_followed()? {
+        if profile == ProfileLink::SpotifyAccount && !spotify_signed_in {
             said!("{}", words::followed::spotify_not_signed_in());
             continue;
         }
-        profile_followed(library, reference.as_ref(), &profile, Upkeep::InStep)?;
+        if let Err(error) = profile_followed(library, reference, &profile, Upkeep::InStep) {
+            told!(
+                "{}",
+                words::followed::profile_not_read_again(
+                    profile.page(),
+                    profile.service(),
+                    with_its_causes(&error),
+                )
+            );
+            failed += 1;
+        }
     }
     for (playlist, source) in library.playlists_kept_in_step()? {
-        refreshed(library, reference.as_ref(), playlist, &source).map_err(said_to_sign_in_again)?;
+        if let Err(error) =
+            refreshed(library, reference, playlist, &source).map_err(said_to_sign_in_again)
+        {
+            told!(
+                "{}",
+                words::followed::playlist_not_read_again(
+                    named(library, playlist),
+                    source.link.service(),
+                    with_its_causes(&error),
+                )
+            );
+            failed += 1;
+        }
     }
-    Ok(())
+    match failed {
+        0 => Ok(()),
+        failed => Err(Error::FollowedUnread { failed }),
+    }
+}
+
+fn named(library: &Library, playlist: PlaylistId) -> String {
+    library
+        .playlist(playlist)
+        .ok()
+        .flatten()
+        .map_or_else(|| playlist.to_string(), |held| held.name)
+}
+
+fn with_its_causes(error: &Error) -> String {
+    let mut said = error.to_string();
+    let mut cause = std::error::Error::source(error);
+    while let Some(under) = cause {
+        said.push_str(": ");
+        said.push_str(&under.to_string());
+        cause = under.source();
+    }
+    said
 }
 
 pub fn refresh(library: &Library, config: &Config, playlist: &Playlist) -> Result<()> {
@@ -263,4 +315,207 @@ fn beyond_the_library(wanted: usize, found: usize, unnamed: usize) -> String {
         said.push_str(&format!(" · {}", words::followed::unnamed(unnamed)));
     }
     said
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    use resonate_core::{Isrc, Link, Mbid, SourceId};
+    use resonate_library::{
+        AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings, ArtistProfile,
+        Barcode, BarcodeMatch, CoverArt, Discography, GroupAsked, GroupMatch, LinkNames,
+        LinkedPlaylist, LinkedProfile, LyricText, LyricsAsked, ProfilePlaylist, Recording,
+        RecordingAsked, RecordingMatch, Release, ReleaseAsked, ReleaseGroup, ReleaseMatch,
+        SongLink, SongsAsked, StreamAsked,
+    };
+
+    use super::*;
+
+    const DELETED: ProfileLink = ProfileLink::Deezer(1);
+    const STILL_THERE: ProfileLink = ProfileLink::Deezer(2);
+
+    struct Profiles {
+        source: SourceId,
+        deleted: AtomicBool,
+        still_there_read: AtomicUsize,
+    }
+
+    impl Profiles {
+        fn new() -> Self {
+            Self {
+                source: SourceId::new("profiles").expect("a source"),
+                deleted: AtomicBool::new(false),
+                still_there_read: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    fn the_playlist_of(link: &ProfileLink) -> PlaylistLink {
+        match link {
+            ProfileLink::Deezer(user) => PlaylistLink::Deezer(user * 10),
+            ProfileLink::SpotifyAccount => PlaylistLink::SpotifyLiked,
+        }
+    }
+
+    impl Reference for Profiles {
+        fn source(&self) -> &SourceId {
+            &self.source
+        }
+
+        fn release(&self, _: &Mbid) -> resonate_library::Result<Option<Release>> {
+            Ok(None)
+        }
+
+        fn find_release(&self, _: &ReleaseAsked) -> resonate_library::Result<Vec<ReleaseMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn releases_by_barcode(&self, _: &Barcode) -> resonate_library::Result<Vec<BarcodeMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn recording(&self, _: &Mbid) -> resonate_library::Result<Option<Recording>> {
+            Ok(None)
+        }
+
+        fn recordings_of_isrc(&self, _: &Isrc) -> resonate_library::Result<Vec<Recording>> {
+            Ok(Vec::new())
+        }
+
+        fn find_recording(
+            &self,
+            _: &RecordingAsked,
+        ) -> resonate_library::Result<Vec<RecordingMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn find_songs(&self, _: &SongsAsked) -> resonate_library::Result<Vec<RecordingMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn release_group(&self, _: &Mbid) -> resonate_library::Result<Option<ReleaseGroup>> {
+            Ok(None)
+        }
+
+        fn find_release_group(&self, _: &GroupAsked) -> resonate_library::Result<Vec<GroupMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn find_albums(&self, _: &str) -> resonate_library::Result<Vec<AlbumMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn group_cover(&self, _: &Mbid) -> resonate_library::Result<Option<CoverArt>> {
+            Ok(None)
+        }
+
+        fn artist(&self, _: &Mbid) -> resonate_library::Result<Option<ArtistProfile>> {
+            Ok(None)
+        }
+
+        fn find_artist(&self, _: &str) -> resonate_library::Result<Vec<ArtistMatch>> {
+            Ok(Vec::new())
+        }
+
+        fn release_groups_of(&self, _: &Mbid, _: u32) -> resonate_library::Result<Discography> {
+            Ok(Discography::default())
+        }
+
+        fn releases_of_group(&self, _: &Mbid) -> resonate_library::Result<Vec<Release>> {
+            Ok(Vec::new())
+        }
+
+        fn releases_of_artist(
+            &self,
+            _: &Mbid,
+            _: u32,
+        ) -> resonate_library::Result<ArtistPressings> {
+            Ok(ArtistPressings::default())
+        }
+
+        fn cover(&self, _: &Mbid, _: Option<&Mbid>) -> resonate_library::Result<Option<CoverArt>> {
+            Ok(None)
+        }
+
+        fn portrait(&self, _: &[Link]) -> resonate_library::Result<Option<CoverArt>> {
+            Ok(None)
+        }
+
+        fn streamed_at(&self, _: &StreamAsked) -> resonate_library::Result<Option<Link>> {
+            Ok(None)
+        }
+
+        fn lyrics(&self, _: &LyricsAsked) -> resonate_library::Result<Option<LyricText>> {
+            Ok(None)
+        }
+
+        fn song_linked(&self, _: &SongLink) -> resonate_library::Result<Option<LinkNames>> {
+            Ok(None)
+        }
+
+        fn album_linked(&self, _: &AlbumLink) -> resonate_library::Result<Option<AlbumNames>> {
+            Ok(None)
+        }
+
+        fn artist_linked(&self, _: &ArtistLink) -> resonate_library::Result<Option<String>> {
+            Ok(None)
+        }
+
+        fn playlist_linked(
+            &self,
+            link: &PlaylistLink,
+        ) -> resonate_library::Result<Option<LinkedPlaylist>> {
+            Ok(Some(LinkedPlaylist {
+                name: link.page(),
+                songs: Vec::new(),
+            }))
+        }
+
+        fn profile_linked(
+            &self,
+            link: &ProfileLink,
+        ) -> resonate_library::Result<Option<LinkedProfile>> {
+            if *link == DELETED && self.deleted.load(Ordering::Relaxed) {
+                return Ok(None);
+            }
+            if *link == STILL_THERE {
+                self.still_there_read.fetch_add(1, Ordering::Relaxed);
+            }
+            Ok(Some(LinkedProfile {
+                name: link.page(),
+                playlists: vec![ProfilePlaylist {
+                    title: link.page(),
+                    link: the_playlist_of(link),
+                }],
+            }))
+        }
+
+        fn artist_at(&self, _: &str) -> resonate_library::Result<Option<Mbid>> {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn a_profile_deleted_on_its_service_is_told_and_the_next_is_still_read_again() {
+        let library = Library::open_in_memory().expect("a catalog");
+        let profiles = Profiles::new();
+        for profile in [DELETED, STILL_THERE] {
+            library
+                .follow_profile(&profiles, &profile, Upkeep::InStep)
+                .expect("followed")
+                .expect("a profile the service showed");
+        }
+        profiles.deleted.store(true, Ordering::Relaxed);
+        let read_before = profiles.still_there_read.load(Ordering::Relaxed);
+
+        let refreshed = refreshed_every_kept(&library, &profiles, false);
+        let read_after = profiles.still_there_read.load(Ordering::Relaxed);
+
+        assert!(matches!(
+            refreshed,
+            Err(Error::FollowedUnread { failed: 1 })
+        ));
+        assert_eq!(read_after, read_before + 1);
+    }
 }

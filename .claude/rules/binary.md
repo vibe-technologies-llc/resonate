@@ -73,7 +73,11 @@ paths:
   them. A public Deezer profile's link (`followed::profile_named_by`, read before a playlist link)
   is `Library::follow_profile` under the same `--upkeep` (`NoProfileAtTheLink` where private), each
   playlist said and then the profile, what was let go, deleted there or unread. `playlists
-  --refresh` follows every followed profile, then reads every playlist kept in step now; `playlist NAME --refresh`,
+  --refresh` follows every followed profile, then reads every playlist kept in step now; one that
+  fails (a profile deleted there, a lapsed sign-in) is told on the terminal with its error and the
+  rest are still read, as the window's `refreshed_where_due` goes on, the command ending as
+  `FollowedUnread` with the count that failed
+  (`a_profile_deleted_on_its_service_is_told_and_the_next_is_still_read_again`); `playlist NAME --refresh`,
   `--upkeep once|in-step` and `--forget-link` act on one; the listing's FROM column says the service
   and how it follows.
 - **A playlist's higher quality versions are listed and kept from the terminal** (`lossy.rs`, the

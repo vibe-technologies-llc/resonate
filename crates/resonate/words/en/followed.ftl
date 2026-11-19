@@ -57,3 +57,5 @@ unnamed = { $songs ->
     [one] { $songs } song
    *[other] { $songs } songs
 } named nothing MusicBrainz knows
+profile-not-read-again = { $page }: could not be read again from { $service }: { $error }
+playlist-not-read-again = { $name }: could not be read again from { $service }: { $error }

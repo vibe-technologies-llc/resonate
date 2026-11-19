@@ -344,6 +344,9 @@ pub enum Error {
     #[error("the profile is private, or the service shows no playlist of it")]
     NoProfileAtTheLink,
 
+    #[error("{failed} of the profiles and playlists followed could not be read again")]
+    FollowedUnread { failed: usize },
+
     #[error("no sink named {0} is present in the graph")]
     SinkNotFound(NodeName),
 
