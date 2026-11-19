@@ -51,6 +51,10 @@ and `enrich` still says `OnlineOff`. The phones wrap their `Online` the same way
 LEB128 `Writer` and `Reader`, MBIDs as 16 raw bytes). One encoding serves the kept store, the peer
 payloads and the mirror's documents. `Asked::key` is the encoding of the ask with every searched
 text folded (`folded_letters`, trimmed), so `ÉCHOES ` and `echoes` share a key.
+A list's count is held to the bytes left, one an item, but an item decodes to a value of hundreds
+of bytes, so a list reserves at most `ITEMS_RESERVED_AT_MOST` (256) items ahead and grows past them
+as they are read: a device's answer cannot make the receiver reserve gigabytes
+(`a_count_past_what_is_reserved_reserves_no_more_and_the_list_still_reads_whole`).
 
 **An answer must answer what it names** (`Asked::is_answered_by`):
 

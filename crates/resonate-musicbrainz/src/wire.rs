@@ -13,6 +13,7 @@ use crate::{Error, Malformed, Result};
 pub const MBID_BYTES: usize = 16;
 pub const LONGEST_TEXT: usize = 64 * 1024;
 const ITEM_AT_LEAST: usize = 1;
+const ITEMS_RESERVED_AT_MOST: usize = 256;
 const MBID_GROUPS: [usize; 5] = [8, 4, 4, 4, 12];
 
 #[derive(Default)]
@@ -544,7 +545,7 @@ impl<'a> Reader<'a> {
 
     fn list<T>(&mut self, mut read: impl FnMut(&mut Self) -> Result<T>) -> Result<Vec<T>> {
         let count = self.count_of(ITEM_AT_LEAST)?;
-        let mut items = Vec::with_capacity(count);
+        let mut items = reserved_for(count);
         for _ in 0..count {
             items.push(read(self)?);
         }
@@ -897,6 +898,10 @@ pub fn mbid_of(raw: [u8; MBID_BYTES]) -> Mbid {
     Mbid::new(&dashed).unwrap_or_else(|_| unreachable!("thirty-two hex digits dashed as an mbid"))
 }
 
+fn reserved_for<T>(count: usize) -> Vec<T> {
+    Vec::with_capacity(count.min(ITEMS_RESERVED_AT_MOST))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1098,5 +1103,25 @@ mod tests {
         for cut in 0..bytes.len() {
             assert!(Reader::new(&bytes[..cut]).credit().is_err(), "{cut}");
         }
+    }
+
+    #[test]
+    fn a_count_past_what_is_reserved_reserves_no_more_and_the_list_still_reads_whole() {
+        let told = 4 * ITEMS_RESERVED_AT_MOST;
+        let empties = vec![String::new(); told];
+        let bytes = written(|writer| {
+            writer.number(u64::try_from(told).expect("a count"));
+            for empty in &empties {
+                writer.text(empty);
+            }
+        });
+
+        let reservation = reserved_for::<Credit>(usize::MAX / 2);
+        let mut reader = Reader::new(&bytes);
+        let read = reader.texts().expect("a whole list");
+
+        assert!(reservation.capacity() <= ITEMS_RESERVED_AT_MOST);
+        assert_eq!(read, empties);
+        reader.done().expect("nothing left");
     }
 }
