@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     ffi::OsStr,
     fs::{self, File, OpenOptions},
-    io::{self, Seek as _, SeekFrom, Write as _},
+    io::{self, Read as _, Seek as _, SeekFrom, Write as _},
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -264,9 +264,14 @@ pub(crate) fn staged_elsewhere_name(track: &Path) -> io::Result<PathBuf> {
 }
 
 pub fn names_a_cut_short_write(path: &Path) -> bool {
-    path.file_name().and_then(kept_by).is_some_and(|kept| {
-        kept.left == Left::TornWholeCopy || writer::writer_of(path, kept.writer) == Writer::Gone
-    })
+    cut_short_and_left_by(path, Owner::this_user())
+}
+
+fn cut_short_and_left_by(path: &Path, owner: Owner) -> bool {
+    owner.owns_the_file_at(path)
+        && path.file_name().and_then(kept_by).is_some_and(|kept| {
+            kept.left == Left::TornWholeCopy || writer::writer_of(path, kept.writer) == Writer::Gone
+        })
 }
 
 pub(crate) struct WholeCopy {
@@ -812,6 +817,7 @@ pub enum Mended {
     Untouched,
     ChangedSince,
     Unreadable,
+    NotOurs,
     TrackNotAFile,
 }
 
@@ -858,25 +864,50 @@ fn track_reached(track: &Path) -> io::Result<Reached> {
     reached(track, OpenOptions::new().read(true).write(true))
 }
 
-pub fn mend_a_cut_short_write(journal: &Path) -> io::Result<Mended> {
-    let kept = journal.file_name().and_then(kept_by);
+fn ours_to_mend(left: &Path, owner: Owner) -> io::Result<Option<File>> {
+    let Reached::File(file) = reached(left, OpenOptions::new().read(true))? else {
+        return Ok(None);
+    };
+    Ok(owner.owns(&file.metadata()?).then_some(file))
+}
+
+fn passed_over(left: &Path) -> Mended {
+    tracing::warn!(path = %left.display(), "what a tag write left is a link or another user's, so it is passed over");
+    Mended::NotOurs
+}
+
+fn read_whole(file: &File) -> io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    (&*file).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+pub fn mend_a_cut_short_write(left: &Path) -> io::Result<Mended> {
+    mended_as(left, Owner::this_user())
+}
+
+fn mended_as(left: &Path, owner: Owner) -> io::Result<Mended> {
+    let kept = left.file_name().and_then(kept_by);
     if let Some(kept) = kept.filter(|kept| kept.left != Left::Undo) {
-        return match track_named_by(folder_of(journal), &kept)? {
-            Some(track) => finished_writing_back(journal, &track),
+        return match track_named_by(folder_of(left), &kept)? {
+            Some(track) => finished_writing_back(left, &track, owner),
             None => {
-                tracing::warn!(path = %journal.display(), "the whole copy a tag write left names no one track, so it is left where it is");
+                tracing::warn!(path = %left.display(), "the whole copy a tag write left names no one track, so it is left where it is");
                 Ok(Mended::Unplaced)
             }
         };
     }
 
-    let bytes = fs::read(journal)?;
-    let mended = match decoded(Journalled::Beside(folder_of(journal)), &bytes) {
+    let Some(journal) = ours_to_mend(left, owner)? else {
+        return Ok(passed_over(left));
+    };
+    let bytes = read_whole(&journal)?;
+    let mended = match decoded(Journalled::Beside(folder_of(left)), &bytes) {
         Some(kept) => rolled_back(&kept)?,
         None => Mended::Unreadable,
     };
-    fs::remove_file(journal)?;
-    tracing::info!(path = %journal.display(), ?mended, "mended a tag write cut short");
+    fs::remove_file(left)?;
+    tracing::info!(path = %left.display(), ?mended, "mended a tag write cut short");
     Ok(mended)
 }
 
@@ -896,8 +927,10 @@ fn track_named_by(folder: &Path, kept: &KeptBy<'_>) -> io::Result<Option<PathBuf
     })
 }
 
-fn finished_writing_back(whole: &Path, track: &Path) -> io::Result<Mended> {
-    let copy = File::open(whole)?;
+fn finished_writing_back(whole: &Path, track: &Path, owner: Owner) -> io::Result<Mended> {
+    let Some(copy) = ours_to_mend(whole, owner)? else {
+        return Ok(passed_over(whole));
+    };
     let (length, _) = bound_of(&copy)?;
     let mended = match Record::read(&copy, length)? {
         Record::Absent | Record::Unreadable => Mended::Unreadable,
@@ -1022,8 +1055,10 @@ fn carried_on(file: &File, kept: &Kept, length: u64) -> io::Result<Mended> {
     Ok(Mended::CarriedOn)
 }
 
-fn finished_from_elsewhere(whole: &Path, kept: &KeptBy<'_>) -> io::Result<Mended> {
-    let copy = File::open(whole)?;
+fn finished_from_elsewhere(whole: &Path, kept: &KeptBy<'_>, owner: Owner) -> io::Result<Mended> {
+    let Some(copy) = ours_to_mend(whole, owner)? else {
+        return Ok(passed_over(whole));
+    };
     let mended = match bound_of(&copy)? {
         (_, Bound::Beside) => return Ok(Mended::Unplaced),
         (length, Bound::Away(track)) if track.file_name().is_some_and(|name| kept.names(name)) => {
@@ -1041,8 +1076,15 @@ fn finished_from_elsewhere(whole: &Path, kept: &KeptBy<'_>) -> io::Result<Mended
     Ok(mended)
 }
 
-fn rolled_back_from_elsewhere(journal: &Path, kept_by: &KeptBy<'_>) -> io::Result<Mended> {
-    let bytes = fs::read(journal)?;
+fn rolled_back_from_elsewhere(
+    journal: &Path,
+    kept_by: &KeptBy<'_>,
+    owner: Owner,
+) -> io::Result<Mended> {
+    let Some(file) = ours_to_mend(journal, owner)? else {
+        return Ok(passed_over(journal));
+    };
+    let bytes = read_whole(&file)?;
     let mended = match decoded(Journalled::Away, &bytes) {
         Some(kept)
             if kept
@@ -1085,12 +1127,14 @@ fn mend_what_was_left_by(folders: &[PathBuf], owner: Owner) {
             let Some(kept) = kept_by(&name) else {
                 continue;
             };
-            if !names_a_cut_short_write(&path) {
+            if !cut_short_and_left_by(&path, owner) {
                 continue;
             }
             let mended = match kept.left {
-                Left::Undo => rolled_back_from_elsewhere(&path, &kept),
-                Left::WholeCopy | Left::TornWholeCopy => finished_from_elsewhere(&path, &kept),
+                Left::Undo => rolled_back_from_elsewhere(&path, &kept, owner),
+                Left::WholeCopy | Left::TornWholeCopy => {
+                    finished_from_elsewhere(&path, &kept, owner)
+                }
             };
             if let Err(error) = mended {
                 tracing::warn!(%error, path = %path.display(), "a tag write cut short could not be mended from what it kept outside the track's folder");
@@ -1117,9 +1161,10 @@ fn finished_over_the_track_named(
     whole: &Path,
     kept: &KeptBy<'_>,
     track: &Path,
+    owner: Owner,
 ) -> io::Result<Mended> {
     match track_named_by(folder_of(whole), kept)? {
-        Some(named) if named == track => finished_writing_back(whole, track),
+        Some(named) if named == track => finished_writing_back(whole, track, owner),
         Some(_) | None => {
             tracing::warn!(path = %whole.display(), track = %track.display(), "the whole copy a tag write left names no one track, so it is left where it is");
             Ok(Mended::Unplaced)
@@ -1128,6 +1173,10 @@ fn finished_over_the_track_named(
 }
 
 pub(crate) fn mend_what_a_dead_writer_left(track: &Path) {
+    mend_what_a_dead_writer_left_as(track, Owner::this_user());
+}
+
+fn mend_what_a_dead_writer_left_as(track: &Path, owner: Owner) {
     let Some(name) = track.file_name() else {
         return;
     };
@@ -1140,13 +1189,13 @@ pub(crate) fn mend_what_a_dead_writer_left(track: &Path) {
         let Some(kept) = kept_by(&entry_name).filter(|kept| kept.names(name)) else {
             continue;
         };
-        if !names_a_cut_short_write(&path) {
+        if !cut_short_and_left_by(&path, owner) {
             continue;
         }
         let mended = match kept.left {
-            Left::Undo => mend_a_cut_short_write(&path),
+            Left::Undo => mended_as(&path, owner),
             Left::WholeCopy | Left::TornWholeCopy => {
-                finished_over_the_track_named(&path, &kept, track)
+                finished_over_the_track_named(&path, &kept, track, owner)
             }
         };
         if let Err(error) = mended {
@@ -2054,5 +2103,67 @@ mod tests {
         );
         assert_eq!(fs::read(&target).expect("the linked file"), torn);
         assert!(!journal.exists(), "the journal was left");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_journal_that_is_a_link_is_passed_over() {
+        let folder = Folder::new("linked-undo");
+        let (track, journal, _, torn) = torn_beside_a_journal(&folder);
+        let kept = folder.0.join("kept elsewhere");
+        fs::rename(&journal, &kept).expect("the journal moved away");
+        std::os::unix::fs::symlink(&kept, &journal).expect("a link named as a journal");
+
+        assert!(!names_a_cut_short_write(&journal));
+        assert_eq!(
+            mend_a_cut_short_write(&journal).expect("a mend"),
+            Mended::NotOurs
+        );
+        mend_what_a_dead_writer_left(&track);
+
+        assert_eq!(fs::read(&track).expect("the track"), torn);
+        assert!(
+            fs::symlink_metadata(&journal).is_ok_and(|left| left.is_symlink()),
+            "the link was taken away"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn what_another_user_left_beside_the_track_is_passed_over() {
+        let folder = Folder::new("another-users-beside");
+        let (track, journal, was, torn) = torn_beside_a_journal(&folder);
+        let ours = Owner::this_user();
+        let theirs = Owner::user(ours.id().wrapping_add(1));
+
+        assert!(!cut_short_and_left_by(&journal, theirs));
+        assert_eq!(
+            mended_as(&journal, theirs).expect("a mend"),
+            Mended::NotOurs
+        );
+        mend_what_a_dead_writer_left_as(&track, theirs);
+
+        assert_eq!(fs::read(&track).expect("the track"), torn);
+        assert!(journal.exists(), "another user's journal was taken away");
+
+        mend_what_a_dead_writer_left_as(&track, ours);
+
+        assert_eq!(fs::read(&track).expect("the track"), was);
+        assert!(!journal.exists(), "our own journal was left");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_whole_copy_another_user_left_beside_the_track_is_passed_over() {
+        let folder = Folder::new("another-users-whole");
+        let was = paged(2, 10, 40);
+        let tagged = paged(2, 90, 140);
+        let (track, whole) = left_written_back_partway(&folder, &was, &tagged);
+        let theirs = Owner::user(Owner::this_user().id().wrapping_add(1));
+
+        assert_eq!(mended_as(&whole, theirs).expect("a mend"), Mended::NotOurs);
+
+        assert_eq!(fs::read(&track).expect("the track"), was);
+        assert!(whole.exists(), "another user's copy was taken away");
     }
 }

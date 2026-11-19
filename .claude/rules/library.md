@@ -1681,7 +1681,14 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `an_undo_kept_under_the_spool_by_another_user_is_not_rolled_back`,
   `an_undo_kept_under_the_spool_naming_another_track_than_its_name_writes_nothing`). A dead
   writer's journal is mended by the next write to that track and by the scan, which looks in each
-  folder before reading a file there. **The track a journal or copy names**, beside or
+  folder before reading a file there. **Beside the track the spool's guards hold too:** a journal
+  or whole copy is looked at only where it is a regular file this user owns
+  (`cut_short_and_left_by`, then `ours_to_mend`, which opens it without following a link and asks
+  the owner of what it opened), so another account's planted undo in a shared folder, or a link
+  named as one, is `Mended::NotOurs` and left where it is
+  (`what_another_user_left_beside_the_track_is_passed_over`,
+  `a_whole_copy_another_user_left_beside_the_track_is_passed_over`,
+  `a_journal_that_is_a_link_is_passed_over`); and the track a journal or copy names, beside or
   under the spool, is opened without following a link (`track_reached`: `OFlags::NOFOLLOW` on Unix, a
   `symlink_metadata` refusal elsewhere), so a link standing in its place writes nothing through it
   (`Mended::TrackNotAFile`, `a_whole_copy_beside_a_link_writes_nothing_through_it`,
