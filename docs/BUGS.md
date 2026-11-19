@@ -26,23 +26,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `PlaybackPreferencesStore.kt`, `DownloadQueue.kt` and `MusicDocuments.kt`, all reaching the banner
   or a sheet; each should be `words.string(R.string.…)` as `OpenedFiles` does
 
-## iOS
-- [S · 0.14.1] Deleting a song, folding identical copies, a deletion told by another device and
-  *Erase all data* count a file that could not be reached as gone: `Folders.removed` answers
-  `!fileExists` when `removeItem` fails, which is true for an unplugged drive, a revoked grant or
-  an iCloud file the system offloaded, and the non-fresh `root(id)` hands back the cached URL, so
-  `unreachableIsGone: false` never applies; the catalog forgets the row (or tells every device), and
-  an erase drops the folder grants and exits with the file still there, against `ios.md`'s offline
-  cloud folder; only `NSFileNoSuchFileError`/`ENOENT` under a reachable folder is gone
-- [S · 0.14.1] The Processing page's volume slider shows the zone shown at launch: `Library.volume`
-  is read once in `open()`, and `changeZones`, `listZones` and a handover never set it again, so
-  after showing another zone the slider reads the first zone's level and the first touch jumps the
-  playing zone to it
-- [S · 0.14.1] A paired device reporting a first row near 2³² crashes the driven-device page:
-  `DrivenRows.row` (`Driving.swift`) adds with Swift's trapping `+` and `moveDown` with `row + 1`,
-  while the boundary's `counted` (`sync/driving.rs`) saturates an oversized `first_row` to
-  `u32::MAX`
-
 ## Security
 - [S · 0.14.1] The scan overwrites or truncates whatever a planted whole copy names: every folder
   walked passes its entries through `mend_a_cut_short_write` (`scan.rs`'s

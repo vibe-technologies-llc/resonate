@@ -97,7 +97,7 @@ paths:
   poll`**, as `import` and `playlist --refresh` leave theirs: the command starts no fetch. Neither
   flag takes another mode flag or the transport's (`conflicts_with_all`), a playlist holding no lossy
   song says so, and a name no playlist answers to is `NoSuchPlaylist` as everywhere. Nothing is
-  trashed unless a lossless copy is held (`a_lossy_song_with_neither_is_left_and_nothing_is_trashed`).
+  trashed unless a lossless copy is held (`a_lossy_song_with_neither_is_left_as_it_is`).
 - **`spotify` signs in to an app the listener registered and reads that account** (`spotify.rs`):
   bare, it prints the address to approve and waits (`online::signed_in_to_spotify`,
   `NoSpotifyClient` before anything is asked, the first interrupt `SpotifySignInCancelled`), keeping
