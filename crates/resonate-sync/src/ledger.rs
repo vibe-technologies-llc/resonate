@@ -217,7 +217,23 @@ const MIGRATIONS: &[&str] = &[
     SONGS_DELETED_EVERYWHERE,
     LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED,
     UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS,
+    STAMPS_PAST_THE_BOUND_ARE_RESTAMPED,
 ];
+
+const STAMPS_PAST_THE_BOUND_ARE_RESTAMPED: &str = "
+CREATE TEMP VIEW wall AS SELECT CAST(unixepoch('now', 'subsec') * 1000000000 AS INTEGER) AS nanos;
+UPDATE devices SET nanos = (SELECT nanos FROM wall), owed = 1 WHERE nanos > (SELECT nanos FROM wall) + 86400000000000;
+UPDATE playlists SET nanos = (SELECT nanos FROM wall), owed = 1 WHERE nanos > (SELECT nanos FROM wall) + 86400000000000;
+UPDATE queries SET nanos = (SELECT nanos FROM wall), owed = 1 WHERE nanos > (SELECT nanos FROM wall) + 86400000000000;
+UPDATE favourites SET nanos = (SELECT nanos FROM wall), owed = 1 WHERE nanos > (SELECT nanos FROM wall) + 86400000000000;
+UPDATE handoffs SET nanos = (SELECT nanos FROM wall), owed = 1 WHERE nanos > (SELECT nanos FROM wall) + 86400000000000;
+UPDATE shares SET nanos = (SELECT nanos FROM wall), owed = 1 WHERE nanos > (SELECT nanos FROM wall) + 86400000000000;
+UPDATE layouts SET nanos = (SELECT nanos FROM wall), owed = 1 WHERE nanos > (SELECT nanos FROM wall) + 86400000000000;
+UPDATE answers SET nanos = (SELECT nanos FROM wall), owed = 1 WHERE nanos > (SELECT nanos FROM wall) + 86400000000000;
+UPDATE deletions SET nanos = (SELECT nanos FROM wall), owed = 1 WHERE nanos > (SELECT nanos FROM wall) + 86400000000000;
+UPDATE state SET clock = (SELECT nanos FROM wall) WHERE clock < (SELECT nanos FROM wall);
+DROP VIEW wall;
+";
 
 const LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED: &str = "
 CREATE INDEX listens_told_by_time ON listens(at) WHERE owed = 0;
@@ -4196,6 +4212,149 @@ mod tests {
         let reopened = Ledger::over(ledger.connection).expect("reopened");
 
         assert_eq!(reopened.clock.last(), ahead);
+    }
+
+    const A_MILLISECOND_IN_NANOS: i64 = 1_000_000;
+
+    const STAMPED_ROWS: [(&str, &str); 9] = [
+        (
+            "devices",
+            "INSERT INTO devices (device, name, platform, nanos, stamped_by) VALUES (X'01', 'Desk', 0, ?1, X'09')",
+        ),
+        (
+            "playlists",
+            "INSERT INTO playlists (key, name, entries, here, nanos, stamped_by) VALUES (X'01', 'Summer', X'', X'', ?1, X'09')",
+        ),
+        (
+            "queries",
+            "INSERT INTO queries (key, name, nanos, stamped_by) VALUES (X'01', 'Top', ?1, X'09')",
+        ),
+        (
+            "favourites",
+            "INSERT INTO favourites (key, recording, favoured, nanos, stamped_by) VALUES ('a', X'', 1, ?1, X'09')",
+        ),
+        (
+            "handoffs",
+            "INSERT INTO handoffs (device, rows, at, position, playing, nanos, stamped_by) VALUES (X'01', X'', 0, 0, 0, ?1, X'09')",
+        ),
+        (
+            "shares",
+            "INSERT INTO shares (code, member, personal, nanos, stamped_by) VALUES ('code', X'01', X'02', ?1, X'09')",
+        ),
+        (
+            "layouts",
+            "INSERT INTO layouts (device, layout, nanos, stamped_by) VALUES (X'01', '{title}', ?1, X'09')",
+        ),
+        (
+            "answers",
+            "INSERT INTO answers (key, kind, file, recording, answer, nanos, stamped_by) VALUES ('a', 0, X'', X'', X'', ?1, X'09')",
+        ),
+        (
+            "deletions",
+            "INSERT INTO deletions (key, named, recording, deleted, nanos, stamped_by, heard) VALUES ('a', 'a', X'', 1, ?1, X'09', 0)",
+        ),
+    ];
+
+    fn laid_before_the_restamp(clock: i64) -> Connection {
+        let connection = Connection::open_in_memory().expect("a connection");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == STAMPS_PAST_THE_BOUND_ARE_RESTAMPED)
+            .expect("the step is in the chain");
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("the ledger of before");
+        }
+        connection
+            .execute(
+                "INSERT INTO state (id, device, clock) VALUES (1, ?1, ?2)",
+                params![[3_u8; 16].as_slice(), clock],
+            )
+            .expect("a state row");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(before).expect("a count"),
+            )
+            .expect("stamped");
+        connection
+    }
+
+    fn stamp_and_owed_of(ledger: &Ledger, table: &str) -> (i64, Vec<u8>, i64) {
+        ledger
+            .connection
+            .query_row(
+                &format!("SELECT nanos, stamped_by, owed FROM {table}"),
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("a stamped row")
+    }
+
+    #[test]
+    fn a_stamp_past_the_bound_is_restamped_to_the_wall_clock_in_every_table_keeping_its_device() {
+        let connection = laid_before_the_restamp(i64::MAX);
+        for (_, insert) in STAMPED_ROWS {
+            connection
+                .execute(insert, params![i64::MAX])
+                .expect("a row an older build stamped near the end of time");
+        }
+        let before = wall_nanos();
+
+        let ledger = Ledger::over(connection).expect("carried forward");
+        let after = wall_nanos();
+
+        for (table, _) in STAMPED_ROWS {
+            let (nanos, by, owed) = stamp_and_owed_of(&ledger, table);
+            assert!(
+                (before - A_MILLISECOND_IN_NANOS..=after + A_MILLISECOND_IN_NANOS).contains(&nanos),
+                "{table}: {nanos}"
+            );
+            assert_eq!(by, [9_u8], "{table}");
+            assert_eq!(owed, 1, "{table}");
+        }
+    }
+
+    #[test]
+    fn a_stamp_within_the_bound_keeps_its_stamp_and_owes_nothing_new_when_the_restamp_runs() {
+        let connection = laid_before_the_restamp(0);
+        let ahead = wall_nanos() + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS / 2;
+        for (_, insert) in STAMPED_ROWS {
+            connection
+                .execute(insert, params![ahead])
+                .expect("a row stamped by a clock running fast");
+        }
+
+        let ledger = Ledger::over(connection).expect("carried forward");
+
+        for (table, _) in STAMPED_ROWS {
+            let (nanos, _, owed) = stamp_and_owed_of(&ledger, table);
+            assert_eq!(nanos, ahead, "{table}");
+            assert_eq!(owed, 0, "{table}");
+        }
+    }
+
+    #[test]
+    fn the_restamp_lifts_a_clock_lagging_behind_it_so_the_next_stamp_outranks_the_restamped_rows() {
+        let connection = laid_before_the_restamp(1);
+        connection
+            .execute(STAMPED_ROWS[1].1, params![i64::MAX])
+            .expect("a playlist an older build stamped near the end of time");
+
+        let mut ledger = Ledger::over(connection).expect("carried forward");
+        let (restamped, _, _) = stamp_and_owed_of(&ledger, "playlists");
+        let next = ledger.clock.now(ledger.device);
+
+        assert!(next.nanos > restamped);
+    }
+
+    #[test]
+    fn the_restamp_step_is_bound_by_the_day_the_ledger_refuses_a_stamp_past() {
+        let bound = STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS.to_string();
+
+        assert!(STAMPS_PAST_THE_BOUND_ARE_RESTAMPED.contains(&format!("+ {bound}")));
     }
 
     #[test]

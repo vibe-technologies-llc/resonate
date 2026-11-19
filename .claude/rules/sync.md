@@ -168,7 +168,8 @@ recording key and when the catalog refused the song, *The service* below;
 the `layouts` table, a device's organise layout, below; `SONGS_DELETED_EVERYWHERE`: the `deletions`
 table and `state.joined`, below; `LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED`: an index on a told
 listen's `at`, so a look's aging never scans the table; `UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS`:
-`answers.named` and `state.held_mark`, below); `user_version` counts the steps laid, a change appends a
+`answers.named` and `state.held_mark`, below; `STAMPS_PAST_THE_BOUND_ARE_RESTAMPED`: data only, in
+the stamps bullet below); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
 (`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`); the steps a release
 shipped are pinned by their text's hash in `ledger/released.rs`'s `STEPS_RELEASED` (`release.md`). All merging lives here, once for both
@@ -183,7 +184,18 @@ platforms; the catalog seam stays thin.
   ledger opened with a saved clock past it sets the clock back to the wall (`Clock::from_saved`, the
   stored column unchanged)
   (`a_change_stamped_far_past_the_wall_clock_is_refused_and_a_later_honest_edit_still_lands`,
-  `a_clock_saved_far_past_the_wall_clock_is_set_back_when_the_ledger_opens`).
+  `a_clock_saved_far_past_the_wall_clock_is_set_back_when_the_ledger_opens`). **A row already stored
+  past it is restamped once**, by the step `STAMPS_PAST_THE_BOUND_ARE_RESTAMPED`: every stamped
+  table (`devices`, `playlists`, `queries`, `favourites`, `handoffs`, `shares`, `layouts`,
+  `answers`, `deletions`) takes the wall clock in SQL, keeps its `stamped_by` and is owed so a peer
+  hears it, and `state.clock` is lifted to that wall so the next stamp outranks the rows. A step
+  rather than a sweep on every open, since an arrival past the bound is refused and nothing stored
+  can pass it again, and the tables have no index on `nanos`. Each device restamps on its own, so
+  two holding one row end with stamps apart and the same value; the next honest edit is stamped
+  after both and wins on both, though an edit made on a device that restamped before another
+  device's restamp is overtaken by that later stamp, the value then converging on the restamped
+  one (`a_stamp_past_the_bound_is_restamped_to_the_wall_clock_in_every_table_keeping_its_device`,
+  `two_devices_holding_a_playlist_stamped_near_the_end_of_time_restamp_apart_and_converge_on_the_next_honest_edit`).
 - **A look diffs the catalog against what was last synced, so no catalog mutator knows about
   sync.** Playlists: a local playlist is `(id, created)` (undo re-inserts under one id and SQLite
   reuses discarded ids); a digest of name and entries (`merge::projection_digest`) moved means an

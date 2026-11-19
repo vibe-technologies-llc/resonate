@@ -1,4 +1,9 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process, thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use resonate_core::{
     Answer, Figure, Link, Mbid, Recording, SharedBandPeaks, SharedCredit, SharedLyrics,
@@ -7,6 +12,7 @@ use resonate_core::{
 use resonate_sync::{
     Catalog, Change, Follow, Ledger, LocalListen, LocalPlaylistId, Me, Platform, SpaceId,
 };
+use rusqlite::Connection;
 
 use crate::shelf::{Shelf, song};
 
@@ -145,6 +151,42 @@ fn titles(device: &Device, name: &str) -> Vec<String> {
         .playlist_named(name)
         .unwrap_or_else(|| panic!("{name} on {}", device.me.name))
         .1
+}
+
+fn scratch_folder(name: &str) -> PathBuf {
+    let folder = std::env::temp_dir().join(format!(
+        "resonate-ledger-{name}-{}-{}",
+        process::id(),
+        days_ago(0)
+    ));
+    fs::create_dir_all(&folder).expect("a scratch folder");
+    folder
+}
+
+fn device_over_a_file(name: &str, titles: &[&str], path: &Path) -> Device {
+    let mut device = Device::new(name, titles);
+    device.ledger = Ledger::open(path).expect("a ledger");
+    device.ledger.enter_space(SPACE).expect("a space");
+    device
+}
+
+fn reopened_as_an_older_build_left_it(device: &mut Device, path: &Path) {
+    device.ledger = Ledger::in_memory().expect("a ledger standing in while the file is written");
+    let connection = Connection::open(path).expect("the file");
+    let laid: i64 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("the steps laid");
+    connection
+        .execute("UPDATE playlists SET nanos = ?1", [i64::MAX])
+        .expect("a playlist stamped near the end of time");
+    connection
+        .execute("UPDATE state SET clock = ?1", [i64::MAX])
+        .expect("a clock frozen there");
+    connection
+        .pragma_update(None, "user_version", laid - 1)
+        .expect("the step not yet laid");
+    drop(connection);
+    device.ledger = Ledger::open(path).expect("the ledger opened by the build that restamps");
 }
 
 #[test]
@@ -721,6 +763,70 @@ fn a_change_stamped_far_past_the_wall_clock_is_refused_and_a_later_honest_edit_s
         .expect("a stamped change");
     assert!(newest_stamp < i64::MAX);
     assert_eq!(titles(&phone, "Summer"), ["A", "B"]);
+}
+
+#[test]
+fn a_playlist_an_older_build_stamped_near_the_end_of_time_takes_a_later_honest_edit_once_the_ledger_opens()
+ {
+    let folder = scratch_folder("restamped");
+    let path = folder.join("sync.sqlite");
+    let mut desk = Device::new("Desk", &["A", "B", "C"]);
+    let mut phone = device_over_a_file("Phone", &["A", "B", "C"], &path);
+    let summer = desk.shelf.make_playlist("Summer", &["A"]);
+    sync(&mut desk, &mut phone);
+    phone.send();
+    reopened_as_an_older_build_left_it(&mut phone, &path);
+
+    desk.shelf.edit_playlist(summer, &["A", "B"]);
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+    let on_the_phone = titles(&phone, "Summer");
+    drop(phone);
+    fs::remove_dir_all(&folder).expect("cleared");
+
+    assert_eq!(on_the_phone, ["A", "B"]);
+    assert_eq!(titles(&desk, "Summer"), ["A", "B"]);
+}
+
+#[test]
+fn two_devices_holding_a_playlist_stamped_near_the_end_of_time_restamp_apart_and_converge_on_the_next_honest_edit()
+ {
+    let folder = scratch_folder("restamped-apart");
+    let desk_path = folder.join("desk.sqlite");
+    let phone_path = folder.join("phone.sqlite");
+    let mut desk = device_over_a_file("Desk", &["A", "B", "C"], &desk_path);
+    let mut phone = device_over_a_file("Phone", &["A", "B", "C"], &phone_path);
+    let summer = desk.shelf.make_playlist("Summer", &["A"]);
+    sync(&mut desk, &mut phone);
+    phone.send();
+    let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
+    reopened_as_an_older_build_left_it(&mut desk, &desk_path);
+    thread::sleep(Duration::from_millis(5));
+    reopened_as_an_older_build_left_it(&mut phone, &phone_path);
+
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+    let after_the_restamps = (titles(&desk, "Summer"), titles(&phone, "Summer"));
+    desk.shelf.edit_playlist(summer, &["A", "B"]);
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+    let after_the_desk_edits = (titles(&desk, "Summer"), titles(&phone, "Summer"));
+    phone.shelf.edit_playlist(on_phone, &["A", "C"]);
+    sync(&mut phone, &mut desk);
+    sync(&mut desk, &mut phone);
+    let after_the_phone_edits = (titles(&desk, "Summer"), titles(&phone, "Summer"));
+    drop((desk, phone));
+    fs::remove_dir_all(&folder).expect("cleared");
+
+    assert_eq!(after_the_restamps, (vec!["A".into()], vec!["A".into()]));
+    assert_eq!(
+        after_the_desk_edits,
+        (vec!["A".into(), "B".into()], vec!["A".into(), "B".into()])
+    );
+    assert_eq!(
+        after_the_phone_edits,
+        (vec!["A".into(), "C".into()], vec!["A".into(), "C".into()])
+    );
 }
 
 #[test]
