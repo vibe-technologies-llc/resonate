@@ -232,10 +232,12 @@ struct Row {
     removed: Option<Stamp>,
 }
 
+const NO_KEY: [u8; PUBLIC_BYTES] = [0; PUBLIC_BYTES];
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Person {
     pub name: String,
-    pub public: [u8; PUBLIC_BYTES],
+    public: Option<[u8; PUBLIC_BYTES]>,
     stamp: Stamp,
     left: Option<Stamp>,
 }
@@ -243,6 +245,16 @@ pub struct Person {
 impl Person {
     pub fn is_here(&self) -> bool {
         self.left.is_none_or(|left| left < self.stamp)
+    }
+
+    pub const fn public(&self) -> Option<&[u8; PUBLIC_BYTES]> {
+        self.public.as_ref()
+    }
+
+    fn keyed_first(&mut self, public: [u8; PUBLIC_BYTES]) {
+        if public != NO_KEY {
+            self.public.get_or_insert(public);
+        }
     }
 }
 
@@ -333,22 +345,22 @@ impl SharedList {
             } => {
                 let Some(person) = self.person_of(*member, || Person {
                     name: name.clone(),
-                    public: *public,
+                    public: None,
                     stamp: *stamp,
                     left: None,
                 }) else {
                     return;
                 };
+                person.keyed_first(*public);
                 if *stamp >= person.stamp {
                     person.name.clone_from(name);
-                    person.public = *public;
                     person.stamp = *stamp;
                 }
             }
             SharedOp::Left { member, stamp } => {
                 let Some(person) = self.person_of(*member, || Person {
                     name: String::new(),
-                    public: [0; PUBLIC_BYTES],
+                    public: None,
                     stamp: Stamp {
                         nanos: i64::MIN,
                         device: stamp.device,
@@ -440,7 +452,7 @@ impl SharedList {
             ops.push(SharedOp::Member {
                 member: *member,
                 name: person.name.clone(),
-                public: person.public,
+                public: person.public.unwrap_or(NO_KEY),
                 stamp: person.stamp,
             });
             if let Some(stamp) = person.left {
@@ -646,7 +658,7 @@ mod tests {
                 ops.push(SharedOp::Member {
                     member: numbered(at),
                     name: String::from("Grace"),
-                    public: [8; PUBLIC_BYTES],
+                    public: [7; PUBLIC_BYTES],
                     stamp: stamp(2, 1),
                 });
             }
@@ -893,6 +905,63 @@ mod tests {
             stamp: stamp(3, 1),
         });
         assert_eq!(list.people().count(), 1);
+    }
+
+    #[test]
+    fn a_later_member_op_from_another_writer_renames_someone_but_never_replaces_their_key() {
+        let member = MemberId([1; MEMBER_BYTES]);
+        let theirs = SharedOp::Member {
+            member,
+            name: "Ada".to_owned(),
+            public: [1; PUBLIC_BYTES],
+            stamp: stamp(1, 1),
+        };
+        let forged = SharedOp::Member {
+            member,
+            name: "Ada (new)".to_owned(),
+            public: [9; PUBLIC_BYTES],
+            stamp: stamp(50, 2),
+        };
+        let mut list = SharedList::default();
+
+        list.apply(&theirs);
+        let changed = list.apply(&forged);
+        let (_, person) = list.people().next().expect("Ada is here");
+
+        assert!(changed);
+        assert_eq!(person.name, "Ada (new)");
+        assert_eq!(person.public(), Some(&[1; PUBLIC_BYTES]));
+    }
+
+    #[test]
+    fn someone_heard_leaving_before_joining_takes_the_key_they_join_with_and_a_snapshot_keeps_none()
+    {
+        let member = MemberId([1; MEMBER_BYTES]);
+        let left = SharedOp::Left {
+            member,
+            stamp: stamp(1, 1),
+        };
+        let joined = SharedOp::Member {
+            member,
+            name: "Ada".to_owned(),
+            public: [1; PUBLIC_BYTES],
+            stamp: stamp(2, 1),
+        };
+        let mut only_left = SharedList::default();
+        let mut from_a_snapshot = SharedList::default();
+        let mut both = SharedList::default();
+
+        only_left.apply(&left);
+        for op in only_left.as_ops() {
+            from_a_snapshot.apply(&op);
+        }
+        from_a_snapshot.apply(&joined);
+        both.apply(&left);
+        both.apply(&joined);
+        let (_, person) = from_a_snapshot.people().next().expect("Ada is here");
+
+        assert_eq!(person.public(), Some(&[1; PUBLIC_BYTES]));
+        assert_eq!(from_a_snapshot, both);
     }
 
     #[test]

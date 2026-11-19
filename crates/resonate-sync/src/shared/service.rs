@@ -34,7 +34,7 @@ use crate::{
         invitation::{Invited, link_to, web_link_to},
         moved::{
             LARGEST_SEATS_OPENED, Personal, Seat, access_from, decoded_seats, encoded_seats,
-            seat_for,
+            seats_after,
         },
         op::{
             BUNDLE_OPS_AT_MOST, EntryId, LARGEST_BUNDLE_OPENED, MemberId, SharedList, SharedOp,
@@ -1467,22 +1467,14 @@ impl Running {
 
     fn seats_after(&self, at: usize, removing: Option<MemberId>) -> Result<Vec<Seat>> {
         let kept = &self.lists[at];
-        let fresh = Access::minted()?;
-        let mut seats: Vec<Seat> = Vec::new();
-        for (member, person) in kept.list.people() {
-            if Some(member) != removing {
-                seats.push(seat_for(member, &person.public, &fresh)?);
-            }
-        }
-        if !seats.iter().any(|seat| seat.member == kept.me.member) {
-            seats.push(seat_for(
-                kept.me.member,
-                &kept.me.personal.public(),
-                &fresh,
-            )?);
-        }
 
-        Ok(seats)
+        seats_after(
+            &kept.list,
+            kept.me.member,
+            &kept.me.personal,
+            removing,
+            &Access::minted()?,
+        )
     }
 
     fn followed(

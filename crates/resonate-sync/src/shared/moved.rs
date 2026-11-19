@@ -10,7 +10,7 @@ use crate::{
     key::{expand, random_bytes},
     shared::{
         Access,
-        op::{MEMBER_BYTES, MemberId, PEOPLE_KEPT_AT_MOST, PUBLIC_BYTES},
+        op::{MEMBER_BYTES, MemberId, PEOPLE_KEPT_AT_MOST, PUBLIC_BYTES, SharedList},
     },
     wire::{Reader, Writer},
 };
@@ -69,6 +69,27 @@ pub fn seat_for(member: MemberId, public: &[u8; PUBLIC_BYTES], access: &Access) 
     sealed.extend_from_slice(&in_out);
 
     Ok(Seat { member, sealed })
+}
+
+pub fn seats_after(
+    list: &SharedList,
+    me: MemberId,
+    personal: &Personal,
+    removing: Option<MemberId>,
+    access: &Access,
+) -> Result<Vec<Seat>> {
+    let mut seats = Vec::new();
+    for (member, person) in list.people() {
+        if member == me || Some(member) == removing {
+            continue;
+        }
+        if let Some(public) = person.public() {
+            seats.push(seat_for(member, public, access)?);
+        }
+    }
+    seats.push(seat_for(me, &personal.public(), access)?);
+
+    Ok(seats)
 }
 
 pub fn access_from(seat: &Seat, personal: &Personal) -> Result<Access> {
@@ -141,6 +162,7 @@ pub fn decoded_seats(bytes: &[u8]) -> Result<Vec<Seat>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{DeviceId, Stamp, key::DEVICE_BYTES, shared::op::SharedOp};
 
     const ADA: MemberId = MemberId([1; MEMBER_BYTES]);
 
@@ -173,6 +195,53 @@ mod tests {
         let again = Personal::from_bytes(ada.to_bytes());
 
         assert_eq!(ada.public(), again.public());
+    }
+
+    fn joined(list: &mut SharedList, member: MemberId, public: [u8; PUBLIC_BYTES], nanos: i64) {
+        list.apply(&SharedOp::Member {
+            member,
+            name: "Someone".to_owned(),
+            public,
+            stamp: Stamp {
+                nanos,
+                device: DeviceId([2; DEVICE_BYTES]),
+            },
+        });
+    }
+
+    #[test]
+    fn a_removal_seals_the_removers_seat_to_their_own_key_whatever_the_list_holds_for_them() {
+        let ada = Personal::minted().expect("a secret");
+        let grace = Personal::minted().expect("a secret");
+        let mallory = Personal::minted().expect("a secret");
+        let access = Access::minted().expect("a key");
+        let grace_member = MemberId([2; MEMBER_BYTES]);
+        let mallory_member = MemberId([3; MEMBER_BYTES]);
+        let mut list = SharedList::default();
+
+        joined(&mut list, ADA, mallory.public(), 1);
+        joined(&mut list, grace_member, grace.public(), 2);
+        joined(&mut list, grace_member, mallory.public(), 3);
+        joined(&mut list, mallory_member, mallory.public(), 4);
+        let seats = seats_after(&list, ADA, &ada, Some(mallory_member), &access).expect("sealed");
+        let seat_of = |member: MemberId| {
+            seats
+                .iter()
+                .find(|seat| seat.member == member)
+                .expect("a seat")
+        };
+
+        assert_eq!(seats.len(), 2);
+        assert_eq!(access_from(seat_of(ADA), &ada).ok(), Some(access.clone()));
+        assert_eq!(
+            access_from(seat_of(grace_member), &grace).ok(),
+            Some(access)
+        );
+        assert!(
+            seats
+                .iter()
+                .all(|seat| access_from(seat, &mallory).is_err())
+        );
     }
 
     #[test]

@@ -74,7 +74,16 @@ confirms, escape declines and the window is raised), and *Join* hands the link t
 the ordinary case here. A row has a random `EntryId`, a fractional `Place` (`shared/place.rs`, last
 writer wins) and a removal that is final; adding a song again is a new row, so the same song may stand
 twice. A place read off the wire ends in a byte other than zero, as every place minted here does, or its record is refused (`Malformed::NotAPlace`), and `Place::between` stops at the high place's end, answering a place past the low one where the two leave no room, so no place a member sends can hold another's client in a loop. The name is last writer wins, and a `Member` carries a typed name and an x25519 public key. Every
-op is idempotent and commutative (`however_the_records_cross_every_device_ends_on_the_same_list`). Two
+op is idempotent and commutative (`however_the_records_cross_every_device_ends_on_the_same_list`),
+but for one thing no honest writer does: **the first key heard for a `MemberId` stands** (`Person::public`).
+A later `Member` may rename the person, never rekey them, since editors are not told apart and one
+about to be removed could otherwise put their own key under everyone else's id and open every seat
+of the reset (`a_later_member_op_from_another_writer_renames_someone_but_never_replaces_their_key`).
+A member's key never changes honestly (a listener's devices share one `Me` per list through
+`Change::Share`), and an id is random, not derived from the key, so the rule needs no stored change.
+An all-zero key is no key: a snapshot writes it for someone heard only leaving, and the key they join
+with is taken after it
+(`someone_heard_leaving_before_joining_takes_the_key_they_join_with_and_a_snapshot_keeps_none`). Two
 people adding at one spot both keep their song, ordered by entry id. A snapshot is the state as ops, so
 compaction needs no second format; an op of a later build is passed over. **A list shows at most
 `ROWS_AT_MOST` (10 000) rows**, the first by place and entry id after the fold, so a stranger's
@@ -165,7 +174,9 @@ link included, keeps their copy as their own list (`shared_unflag`)
 
 **The seats are read after the space is caught up**: `reset_once` opens the session, reads every
 record to the `Welcome`'s head (`caught_up`) and only then seals a seat for each person the list
-holds, so someone who joined since this device last read the list keeps theirs, and the songs heard
+holds (`seats_after`: someone with no key gets none, and the resetting device's own seat is always
+sealed to its own personal key, whatever the list holds for its id:
+`a_removal_seals_the_removers_seat_to_their_own_key_whatever_the_list_holds_for_them`), so someone who joined since this device last read the list keeps theirs, and the songs heard
 on the way reach the catalog (`written_if`)
 (`a_reset_seats_someone_who_joined_since_this_device_last_read_the_list`). A join reaching the server
 between that read and the `Close` (one round trip) is as one made after the reset: its link is
