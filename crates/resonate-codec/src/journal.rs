@@ -595,6 +595,12 @@ impl Stood {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn recorded_against(track: &Path, tagged: &[u8]) -> Vec<u8> {
+    let stood = Stood::of(&File::open(track).expect("the track")).expect("a record of the track");
+    [tagged, &stood.encoded(tagged.len() as u64)].concat()
+}
+
 #[cfg(fuzzing)]
 pub(crate) fn read_a_whole_copy(copy: &File) {
     let Ok((length, _)) = bound_of(copy) else {
@@ -806,6 +812,50 @@ pub enum Mended {
     Untouched,
     ChangedSince,
     Unreadable,
+    TrackNotAFile,
+}
+
+enum Reached {
+    File(File),
+    Gone,
+    NotAFile,
+}
+
+fn reached(path: &Path, options: &OpenOptions) -> io::Result<Reached> {
+    match fs::symlink_metadata(path) {
+        Ok(standing) if !standing.is_file() => return Ok(Reached::NotAFile),
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Reached::Gone),
+        Err(error) => return Err(error),
+    }
+    let file = match unfollowed(options.clone()).open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Reached::Gone),
+        Err(error) => return Err(error),
+    };
+    Ok(match file.metadata()?.is_file() {
+        true => Reached::File(file),
+        false => Reached::NotAFile,
+    })
+}
+
+#[cfg(unix)]
+fn unfollowed(mut options: OpenOptions) -> OpenOptions {
+    use std::os::unix::fs::OpenOptionsExt as _;
+
+    use rustix::fs::OFlags;
+
+    options.custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits().cast_signed());
+    options
+}
+
+#[cfg(not(unix))]
+const fn unfollowed(options: OpenOptions) -> OpenOptions {
+    options
+}
+
+fn track_reached(track: &Path) -> io::Result<Reached> {
+    reached(track, OpenOptions::new().read(true).write(true))
 }
 
 pub fn mend_a_cut_short_write(journal: &Path) -> io::Result<Mended> {
@@ -850,10 +900,9 @@ fn finished_writing_back(whole: &Path, track: &Path) -> io::Result<Mended> {
     let copy = File::open(whole)?;
     let (length, _) = bound_of(&copy)?;
     let mended = match Record::read(&copy, length)? {
-        Record::Unreadable => Mended::Unreadable,
-        Record::Absent => written_back_over(&copy, length, track, None)?,
+        Record::Absent | Record::Unreadable => Mended::Unreadable,
         Record::Kept { copy_length, stood } => {
-            written_back_over(&copy, copy_length, track, Some(&stood))?
+            written_back_over(&copy, copy_length, track, &stood)?
         }
     };
     fs::remove_file(whole)?;
@@ -861,24 +910,16 @@ fn finished_writing_back(whole: &Path, track: &Path) -> io::Result<Mended> {
     Ok(mended)
 }
 
-fn written_back_over(
-    copy: &File,
-    length: u64,
-    track: &Path,
-    stood: Option<&Stood>,
-) -> io::Result<Mended> {
-    let file = match OpenOptions::new().read(true).write(true).open(track) {
-        Ok(file) => file,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Mended::ChangedSince),
-        Err(error) => return Err(error),
+fn written_back_over(copy: &File, length: u64, track: &Path, stood: &Stood) -> io::Result<Mended> {
+    let file = match track_reached(track)? {
+        Reached::File(file) => file,
+        Reached::Gone => return Ok(Mended::ChangedSince),
+        Reached::NotAFile => return Ok(Mended::TrackNotAFile),
     };
-    let standing = stood
-        .map(|stood| stood.standing(&file, copy, length))
-        .transpose()?;
-    match standing {
-        Some(Standing::ChangedSince) => Ok(Mended::ChangedSince),
-        Some(Standing::Finished) => Ok(Mended::Finished),
-        Some(Standing::Unfinished) | None => {
+    match stood.standing(&file, copy, length)? {
+        Standing::ChangedSince => Ok(Mended::ChangedSince),
+        Standing::Finished => Ok(Mended::Finished),
+        Standing::Unfinished => {
             laid_over(copy, length, &file).map_err(Laying::into_error)?;
             Ok(Mended::WrittenBack)
         }
@@ -886,10 +927,10 @@ fn written_back_over(
 }
 
 fn rolled_back(kept: &Kept) -> io::Result<Mended> {
-    let file = match OpenOptions::new().read(true).write(true).open(&kept.track) {
-        Ok(file) => file,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Mended::ChangedSince),
-        Err(error) => return Err(error),
+    let file = match track_reached(&kept.track)? {
+        Reached::File(file) => file,
+        Reached::Gone => return Ok(Mended::ChangedSince),
+        Reached::NotAFile => return Ok(Mended::TrackNotAFile),
     };
     let length = file.metadata()?.len();
     if length < kept.stood.min(kept.lands) || length > kept.stood.max(kept.lands) {
@@ -988,7 +1029,7 @@ fn finished_from_elsewhere(whole: &Path, kept: &KeptBy<'_>) -> io::Result<Mended
         (length, Bound::Away(track)) if track.file_name().is_some_and(|name| kept.names(name)) => {
             match Record::read(&copy, length)? {
                 Record::Kept { copy_length, stood } => {
-                    written_back_over(&copy, copy_length, &track, Some(&stood))?
+                    written_back_over(&copy, copy_length, &track, &stood)?
                 }
                 Record::Absent | Record::Unreadable => Mended::Unreadable,
             }
@@ -1176,7 +1217,7 @@ mod tests {
             .concat(),
         ));
         fs::write(&track, [9_u8; 40]).expect("a torn track");
-        fs::write(&whole, [4_u8; 24]).expect("the whole copy");
+        fs::write(&whole, recorded_against(&track, &[4_u8; 24])).expect("the whole copy");
         left_long_ago(&whole);
 
         assert!(names_a_cut_short_write(&whole));
@@ -1196,7 +1237,7 @@ mod tests {
             .join(format!(".Breathe.flac.{NEVER_A_PROCESS}-0{WHOLE_SUFFIX}"));
 
         fs::write(&track, [9_u8; 40]).expect("a torn track");
-        fs::write(&whole, [4_u8; 24]).expect("the whole copy");
+        fs::write(&whole, recorded_against(&track, &[4_u8; 24])).expect("the whole copy");
         left_long_ago(&whole);
 
         assert!(names_a_cut_short_write(&whole));
@@ -1214,13 +1255,22 @@ mod tests {
         held
     }
 
-    fn left_written_back_partway(folder: &Folder, was: &[u8], tagged: &[u8]) -> (PathBuf, PathBuf) {
+    fn about_to_be_written_back(
+        folder: &Folder,
+        was: &[u8],
+        tagged: &[u8],
+    ) -> (PathBuf, WholeCopy, Held) {
         let track = folder.0.join("Any Colour You Like.flac");
         let staged = folder.0.join(".Any Colour You Like.staged.flac");
         fs::write(&track, was).expect("a track");
         let held = staged_holding(&staged, tagged);
 
         let whole = WholeCopy::named_beside(&staged, &held, &track).expect("a whole copy");
+        (track, whole, held)
+    }
+
+    fn left_written_back_partway(folder: &Folder, was: &[u8], tagged: &[u8]) -> (PathBuf, PathBuf) {
+        let (track, whole, _) = about_to_be_written_back(folder, was, tagged);
         (track, whole.copy)
     }
 
@@ -1351,7 +1401,7 @@ mod tests {
         let ours = folder
             .0
             .join(kept_name(OsStr::new("Brain Damage.flac"), WHOLE_SUFFIX));
-        fs::write(&ours, [2_u8; 8]).expect("a copy being written back");
+        fs::write(&ours, recorded_against(&track, &[2_u8; 8])).expect("a copy being written back");
         assert!(!names_a_cut_short_write(&ours));
 
         let torn = WholeCopy {
@@ -1405,7 +1455,7 @@ mod tests {
             .0
             .join(naming::named_within(".", OsStr::new(&name), &stamped));
         assert!(whole.file_name().expect("a name").len() <= naming::NAME_BYTES_AT_MOST);
-        fs::write(&whole, [3_u8; 8]).expect("the whole copy");
+        fs::write(&whole, recorded_against(&track, &[3_u8; 8])).expect("the whole copy");
 
         assert_eq!(
             mend_a_cut_short_write(&whole).expect("a mend"),
@@ -1914,5 +1964,95 @@ mod tests {
         assert!(another.exists(), "another track's journal was mended");
         assert!(!names_a_cut_short_write(&ours));
         assert!(names_a_cut_short_write(&another));
+    }
+
+    #[test]
+    fn a_whole_copy_that_records_nothing_of_the_track_writes_nothing_over_it() {
+        let folder = Folder::new("unrecorded");
+        let track = folder.0.join("Speak to Me.flac");
+        let was = paged(2, 30, 7);
+        fs::write(&track, &was).expect("a track");
+        let emptied = folder.0.join(format!(
+            ".Speak to Me.flac.{NEVER_A_PROCESS}-0{WHOLE_SUFFIX}"
+        ));
+        let planted = folder.0.join(format!(
+            ".Speak to Me.flac.{NEVER_A_PROCESS}-1{WHOLE_SUFFIX}"
+        ));
+        fs::write(&emptied, []).expect("an empty copy");
+        fs::write(&planted, paged(1, 3, 200)).expect("a copy with no record");
+        left_long_ago(&emptied);
+        left_long_ago(&planted);
+
+        assert!(names_a_cut_short_write(&emptied));
+        assert_eq!(
+            mend_a_cut_short_write(&emptied).expect("a mend"),
+            Mended::Unreadable
+        );
+        mend_what_a_dead_writer_left(&track);
+
+        assert_eq!(fs::read(&track).expect("the track"), was);
+        assert!(!emptied.exists(), "the empty copy was left");
+        assert!(!planted.exists(), "the copy with no record was left");
+    }
+
+    #[cfg(unix)]
+    fn linked_in_place_of(track: &Path, holding: &[u8]) -> PathBuf {
+        let target = folder_of(track).join("elsewhere");
+        fs::write(&target, holding).expect("a file the link points at");
+        fs::remove_file(track).expect("the track taken away");
+        std::os::unix::fs::symlink(&target, track).expect("a link in the track's place");
+        target
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_whole_copy_beside_a_link_writes_nothing_through_it() {
+        let folder = Folder::new("whole-beside-a-link");
+        let was = paged(2, 10, 40);
+        let tagged = paged(2, 90, 140);
+        let (track, whole) = left_written_back_partway(&folder, &was, &tagged);
+        let target = linked_in_place_of(&track, &was);
+
+        assert_eq!(
+            mend_a_cut_short_write(&whole).expect("a mend"),
+            Mended::TrackNotAFile
+        );
+        assert_eq!(fs::read(&target).expect("the linked file"), was);
+        assert!(!whole.exists(), "the whole copy was left");
+    }
+
+    #[cfg(unix)]
+    fn torn_beside_a_journal(folder: &Folder) -> (PathBuf, PathBuf, Vec<u8>, Vec<u8>) {
+        let track = folder.0.join("On the Run.flac");
+        let was = vec![1_u8; 32];
+        fs::write(&track, &was).expect("a track");
+        let journal = left_by_a_dead_writer(
+            &track,
+            32,
+            &[Change {
+                start: 0,
+                before: was[..8].to_vec(),
+                after: &[2; 8],
+            }],
+        );
+        let mut torn = was.clone();
+        torn[..4].fill(2);
+        fs::write(&track, &torn).expect("a torn write");
+        (track, journal, was, torn)
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_journal_beside_a_link_rolls_nothing_back_through_it() {
+        let folder = Folder::new("undo-beside-a-link");
+        let (track, journal, _, torn) = torn_beside_a_journal(&folder);
+        let target = linked_in_place_of(&track, &torn);
+
+        assert_eq!(
+            mend_a_cut_short_write(&journal).expect("a mend"),
+            Mended::TrackNotAFile
+        );
+        assert_eq!(fs::read(&target).expect("the linked file"), torn);
+        assert!(!journal.exists(), "the journal was left");
     }
 }

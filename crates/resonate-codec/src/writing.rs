@@ -2017,7 +2017,7 @@ mod tests {
     use crate::{
         ImageFormat, Pictured,
         insert::{Copying, Refusing},
-        journal::WHOLE_SUFFIX,
+        journal::{WHOLE_SUFFIX, recorded_against},
         left_alone::left_long_ago,
         riff,
     };
@@ -2165,7 +2165,7 @@ mod tests {
         let name = track.file_name().expect("a named track").to_string_lossy();
         let copy = track.with_file_name(format!(".{name}.{NEVER_A_PROCESS}-0{WHOLE_SUFFIX}"));
 
-        fs::write(&copy, whole).expect("a whole copy");
+        fs::write(&copy, recorded_against(track, whole)).expect("a whole copy");
         left_long_ago(&copy);
         copy
     }

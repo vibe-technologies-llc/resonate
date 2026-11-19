@@ -1681,7 +1681,12 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `an_undo_kept_under_the_spool_by_another_user_is_not_rolled_back`,
   `an_undo_kept_under_the_spool_naming_another_track_than_its_name_writes_nothing`). A dead
   writer's journal is mended by the next write to that track and by the scan, which looks in each
-  folder before reading a file there. **A write mends before it stamps and reads:**
+  folder before reading a file there. **The track a journal or copy names**, beside or
+  under the spool, is opened without following a link (`track_reached`: `OFlags::NOFOLLOW` on Unix, a
+  `symlink_metadata` refusal elsewhere), so a link standing in its place writes nothing through it
+  (`Mended::TrackNotAFile`, `a_whole_copy_beside_a_link_writes_nothing_through_it`,
+  `a_journal_beside_a_link_rolls_nothing_back_through_it`). The writer resolves a link before it
+  keeps anything, so what it leaves always names the file itself. **A write mends before it stamps and reads:**
   `FileTags::write` runs `mend_what_dead_writers_left` (the track's journal and whole copies, the
   spool's, a dead writer's staging) before `Taken` stamps the track and before anything reads it,
   on every path (the `id3 ` rechunk and Matroska too), so the mend never moves the stamp the write
@@ -1724,7 +1729,10 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   names none, so the copy stays `Unplaced` whichever track is being written,
   `a_whole_copy_cut_to_a_name_two_tracks_share_is_finished_over_neither`), and only over a track still between the
   two (`Stood::standing`): `Mended::WrittenBack`, `Finished`, `ChangedSince` (a page neither:
-  another program's edit, copy dropped), `Unreadable` (record failing its check writes nothing).
+  another program's edit, copy dropped), `Unreadable` (record failing its check, or no record at
+  all, `Record::Absent`, writes nothing and the copy goes: every release writes the record, so a
+  copy without one is planted or another program's, and an empty one would otherwise cut the
+  track to nothing, `a_whole_copy_that_records_nothing_of_the_track_writes_nothing_over_it`).
 - **A row cut out of a shared file is written into the sheet that cuts it, never into the file.**
   A path with more than one row, or one row carrying a span, is planned by `sheeted.rs` as one
   `SheetWrite` (`Retagging::sheets`): a cut a file embeds (no `sheet_modified`) or whose sheet is not
