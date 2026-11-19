@@ -16,7 +16,7 @@ impl Engine {
         if let Some(ahead) = self.ahead.as_mut() {
             ahead.look();
         }
-        if !self.playing || self.opening.is_some() {
+        if !self.playing || self.opening.is_some() || self.past_the_boundary.is_some() {
             return;
         }
         let (Some(track), Some(_)) = (self.track.as_ref(), self.output.as_ref()) else {

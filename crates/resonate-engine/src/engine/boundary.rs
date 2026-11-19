@@ -4,8 +4,8 @@ use resonate_codec::Packing;
 use resonate_core::{Frames, Gain};
 
 use super::{
-    Ahead, Boundary, Engine, Filled, HANDED_ON_WHILE_THE_RING_HOLDS, Handing, Track, Unwrapped,
-    Waiting, levelled,
+    Ahead, Boundary, Engine, Filled, HANDED_ON_WHILE_THE_RING_HOLDS, Handing, PastTheBoundary,
+    Track, Unwrapped, Waiting, levelled,
     output::{Output, heard_amplitude},
 };
 use crate::{
@@ -24,7 +24,7 @@ impl Engine {
 
     pub(super) fn pump(&mut self) {
         self.fill_owed = false;
-        if self.failing_past_the_boundary.is_some() {
+        if self.past_the_boundary.is_some() {
             self.hand_on_the_leaving_tail();
             return;
         }
@@ -286,7 +286,15 @@ impl Engine {
     }
 
     pub(super) fn drop_what_lies_past_the_boundary(&mut self) -> bool {
-        let (Some(boundary), Some(output)) = (self.boundaries.back(), self.output.as_mut()) else {
+        self.boundaries
+            .len()
+            .checked_sub(1)
+            .is_some_and(|last| self.drop_what_lies_past(last))
+    }
+
+    fn drop_what_lies_past(&mut self, turn: usize) -> bool {
+        let (Some(boundary), Some(output)) = (self.boundaries.get(turn), self.output.as_mut())
+        else {
             return false;
         };
         let producer = &mut output.producer;
@@ -303,7 +311,15 @@ impl Engine {
     }
 
     pub(super) fn the_leaving_tail_waits_in_the_chain(&self) -> bool {
-        let (Some(boundary), Some(output)) = (self.boundaries.back(), self.output.as_ref()) else {
+        self.boundaries
+            .len()
+            .checked_sub(1)
+            .is_some_and(|last| self.the_tail_waits_in_the_chain(last))
+    }
+
+    fn the_tail_waits_in_the_chain(&self, turn: usize) -> bool {
+        let (Some(boundary), Some(output)) = (self.boundaries.get(turn), self.output.as_ref())
+        else {
             return false;
         };
         let producer = &output.producer;
@@ -329,16 +345,60 @@ impl Engine {
         if self.drop_what_lies_past_the_boundary() {
             return;
         }
-        if let Some(error) = self.failing_past_the_boundary.take() {
-            self.failing(error, Waiting::NoLonger);
+        match self.past_the_boundary.take() {
+            Some(PastTheBoundary::Failing(error)) => self.failing(error, Waiting::NoLonger),
+            Some(PastTheBoundary::TakenAway) | None => {}
         }
+    }
+
+    pub(super) fn take_away_what_no_longer_follows(&mut self) {
+        if self.past_the_boundary.is_some() {
+            return;
+        }
+        let Some(turn) = self.first_turn_into_a_row_no_longer_next() else {
+            return;
+        };
+        if !self.drop_what_lies_past(turn) && !self.the_tail_waits_in_the_chain(turn) {
+            return;
+        }
+
+        if let Some(entering) = self.boundaries.drain(turn + 1..).next() {
+            self.track = Some(entering.leaving);
+        }
+        self.past_the_boundary = Some(PastTheBoundary::TakenAway);
+        self.ahead = self
+            .queue
+            .follows_naturally_after(turn)
+            .cloned()
+            .map(|next| match self.ahead.take() {
+                Some(ahead) if ahead.opening.item == next && !ahead.lost => ahead,
+                Some(_) | None => Ahead::begin(next, &self.sources),
+            });
+    }
+
+    fn first_turn_into_a_row_no_longer_next(&self) -> Option<usize> {
+        let entering = self
+            .boundaries
+            .iter()
+            .skip(1)
+            .map(|boundary| &boundary.leaving)
+            .chain(self.track.as_ref());
+        entering
+            .take(self.boundaries.len())
+            .enumerate()
+            .find(|(turn, track)| {
+                self.queue
+                    .follows_naturally_after(*turn)
+                    .is_none_or(|next| !track.plays(next))
+            })
+            .map(|(turn, _)| turn)
     }
 
     pub(super) fn fail_what_waited_for_the_boundary(&mut self) {
         if !self.boundaries.is_empty() {
             return;
         }
-        if let Some(error) = self.failing_past_the_boundary.take() {
+        if let Some(PastTheBoundary::Failing(error)) = self.past_the_boundary.take() {
             self.fail(error);
         }
     }
@@ -362,6 +422,8 @@ impl Engine {
         let Some(boundary) = self.boundaries.pop_front() else {
             return false;
         };
+        let taken_away = self.boundaries.is_empty()
+            && matches!(self.past_the_boundary, Some(PastTheBoundary::TakenAway));
         let entering = match self.boundaries.front() {
             Some(next) => Some(next.leaving.id),
             None => self.track.as_ref().map(|track| track.id),
@@ -378,7 +440,7 @@ impl Engine {
             self.finish_the_queue();
             return false;
         }
-        if self.queue.current().map(|item| item.id) != Some(entering) {
+        if taken_away || self.queue.current().map(|item| item.id) != Some(entering) {
             tracing::debug!("the queue moved while the next row was heard ahead; it opens afresh");
             if sleeps {
                 self.nods_off();
@@ -422,7 +484,7 @@ impl Engine {
             return false;
         };
         self.boundaries.clear();
-        self.failing_past_the_boundary = None;
+        self.past_the_boundary = None;
         self.track = Some(boundary.leaving);
         if let Some(output) = self.output.as_mut() {
             output.rendered_for_another = true;

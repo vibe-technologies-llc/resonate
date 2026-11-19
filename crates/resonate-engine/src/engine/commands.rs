@@ -86,6 +86,7 @@ impl Engine {
             _ => self.apply(command),
         };
         let outcome = self.carried_on_past_a_stranded_row(outcome);
+        self.take_away_what_no_longer_follows();
 
         if outcome.is_ok() && self.opening.is_some() && self.openings_begun != begun {
             self.deferred.push(Deferred {

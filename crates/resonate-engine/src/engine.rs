@@ -332,6 +332,11 @@ impl Ahead {
     }
 }
 
+enum PastTheBoundary {
+    Failing(Error),
+    TakenAway,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Waiting {
     ForTheBoundary,
@@ -382,6 +387,10 @@ impl Track {
         };
         track.measure_where_wanted(sources, config);
         track
+    }
+
+    fn plays(&self, item: &QueueItem) -> bool {
+        self.id == item.id && self.location == item.location && self.span == item.span
     }
 
     fn relocate(&mut self, to: MediaLocation) {
@@ -551,7 +560,7 @@ pub struct Engine {
     opening: Option<Opening>,
     ahead: Option<Ahead>,
     boundaries: VecDeque<Boundary>,
-    failing_past_the_boundary: Option<Error>,
+    past_the_boundary: Option<PastTheBoundary>,
     announced: Option<u64>,
     stale_sinks: bool,
     formats_owed: bool,
@@ -738,7 +747,7 @@ impl Engine {
             opening: None,
             ahead: None,
             boundaries: VecDeque::new(),
-            failing_past_the_boundary: None,
+            past_the_boundary: None,
             announced: None,
             stale_sinks,
             formats_owed: false,

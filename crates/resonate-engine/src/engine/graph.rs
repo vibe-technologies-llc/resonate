@@ -5,7 +5,7 @@ use resonate_audio::{Downstream, StreamEvent, StreamState};
 use resonate_core::{Frames, RtFault, StreamSpec};
 
 use super::{
-    Drained, Engine, GRAPH_BACK_WITHIN, MAX_RENEGOTIATIONS, SINK_TIMEOUT, Tail,
+    Drained, Engine, GRAPH_BACK_WITHIN, MAX_RENEGOTIATIONS, PastTheBoundary, SINK_TIMEOUT, Tail,
     UNDERRUNS_TOLD_EVERY, Waiting, output::Output,
 };
 use crate::{Error, Event, Result, TransportState, surveying::Surveying};
@@ -479,7 +479,7 @@ impl Engine {
                     && (self.drop_what_lies_past_the_boundary()
                         || self.the_leaving_tail_waits_in_the_chain())
                 {
-                    self.failing_past_the_boundary = Some(error);
+                    self.past_the_boundary = Some(PastTheBoundary::Failing(error));
                     return;
                 }
                 if !self.pass_every_boundary() {

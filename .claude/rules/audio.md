@@ -421,15 +421,26 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   Reached, `pass_the_boundary`
   raises `TrackFinished` and `TrackStarted`, advances the queue as a natural skip (a seek counted
   where the row repeats), resets the heard floor, renegotiations and failures, and pauses where the
-  sleep timer ends here, so MPRIS, the played count and the scrobble follow the frame heard. A queue
-  edited meanwhile so that it lands elsewhere starts that row afresh (`start`). **Anything that
+  sleep timer ends here, so MPRIS, the played count and the scrobble follow the frame heard. **A
+  queue edited so that a waiting boundary would enter another row takes that row away at once**:
+  after every command `take_away_what_no_longer_follows` weighs each boundary's entering `Track`
+  against `Queue::follows_naturally_after` (`Track::plays`: id, location and span), and at the first
+  that differs splices away what was written past its `at` as a failing row does (below), drops the
+  boundaries after it, holds `PastTheBoundary::TakenAway` while nothing more is pumped and opens
+  the row now following ahead; once the graph reaches the boundary, `pass_the_boundary` starts that
+  row afresh (`start`, taking the opened row), so no frame of the row removed, moved away or
+  cleared is heard (`removing_the_row_a_boundary_waits_to_enter_leaves_none_of_it_heard`,
+  `moving_the_row_a_boundary_waits_to_enter_leaves_none_of_it_heard`,
+  `clearing_the_rows_a_boundary_waits_to_enter_leaves_none_of_them_heard`). Where the graph has
+  already read past `at`, or a splice is under way, nothing is taken away and the queue landing
+  elsewhere starts that row afresh as ever. **Anything that
   rebuilds the row first takes the boundary back** (`take_the_boundary_back`, from `rebind_with`,
   a seek that passed `judge_the_seek`, `Previous`, a lost graph, a failure not the entering row's): the leaving `Track` comes
   back at its heard position, the entering one is dropped and the output is marked
   `rendered_for_another`, so no seek reuses it in place. **A refused seek leaves the boundary alone**: `judge_the_seek` weighs the seek against `seeking_track` (the leaving row while a boundary waits) and answers `SeekOutOfRange` or `NotSeekable`, or a seek to where a stream that cannot seek already is as nothing to do, all before any boundary is taken back; `SeekBy` takes it back only to move on to the next row (`a_seek_past_the_end_refused_while_a_boundary_waits_leaves_the_handover_gapless`). **A failure of the entering row waits for
   the graph to reach its boundary**: `drop_what_lies_past_the_boundary` splices away only what was
   written past the last boundary's `at` (`splice(at, written)`), the failure is held in
-  `failing_past_the_boundary` while nothing more is pumped, and once `reach_the_boundary` has
+  `past_the_boundary` (`PastTheBoundary::Failing`) while nothing more is pumped, and once `reach_the_boundary` has
   passed every boundary on time (`TrackFinished`, `TrackStarted` as the graph hears them) it fails
   as ever (`fail_what_waited_for_the_boundary`), so the leaving row's tail is heard whole rather
   than faded out by `start` retiring the output

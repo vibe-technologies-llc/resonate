@@ -6856,6 +6856,114 @@ fn a_seek_refused_while_a_boundary_waits_leaves_the_handover_gapless(
     Ok(())
 }
 
+fn the_row_a_boundary_waits_to_enter_is_never_heard_once_an_edit_takes_it_away(
+    edit: Command,
+    settled: impl Fn(&Player, &[i16]) -> bool,
+    what: &str,
+) -> Result<()> {
+    const LEAVING_LEVEL: i16 = 8_000;
+    const TAKEN_AWAY_LEVEL: i16 = 12_000;
+    const PULLED_BEFORE_THE_EDIT: usize = 14_000;
+    const TOLERANCE: i16 = 16;
+
+    let tree = Tree::new();
+    let leaving = tree.write("leaving.wav", &steady(LEAVING_LEVEL, FRAMES));
+    let taken_away = tree.write("taken.wav", &steady(TAKEN_AWAY_LEVEL, FRAMES));
+    let following = tree.write("following.wav", &steady(FOLLOWING_LEVEL, FRAMES));
+    let frame = frame_bytes(SampleFormat::S16);
+
+    let (player, graph) = settled_over(
+        vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
+        Arc::new(Sources::local()),
+        ring_deep(),
+    )?;
+    player.send(Command::Load {
+        items: vec![
+            track(&leaving, 1),
+            track(&taken_away, 2),
+            track(&following, 3),
+        ],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    play_until(
+        &player,
+        &graph,
+        SHORT_PULL_FRAMES * frame,
+        |_, graph| graph.played.len() >= PULLED_BEFORE_THE_EDIT * frame,
+        "the leaving row to play until its end is in the ring",
+    );
+    thread::sleep(Duration::from_millis(300));
+    assert!(
+        plays(&player, 1),
+        "the boundary was reached before the edit"
+    );
+
+    player.request(edit)?.wait_for(PATIENCE)?;
+    play_until(
+        &player,
+        &graph,
+        SHORT_PULL_FRAMES * frame,
+        |player, graph| settled(player, &left_words(&graph.played)),
+        what,
+    );
+
+    let heard = left_words(&graph.lock().played);
+    let (before, past) = heard.split_at(FRAMES);
+    assert!(
+        before
+            .iter()
+            .all(|word| (word - LEAVING_LEVEL).abs() <= TOLERANCE),
+        "the leaving row was not heard whole up to the boundary"
+    );
+    assert_eq!(
+        past.iter().position(|word| *word > TOLERANCE),
+        None,
+        "the row taken away was heard past the boundary"
+    );
+    Ok(())
+}
+
+const FOLLOWING_LEVEL: i16 = -8_000;
+const FOLLOWING_HEARD_WITHIN: i16 = 16;
+
+fn the_following_row_plays(player: &Player, heard: &[i16]) -> bool {
+    plays(player, 3)
+        && heard
+            .iter()
+            .any(|word| (word - FOLLOWING_LEVEL).abs() <= FOLLOWING_HEARD_WITHIN)
+}
+
+#[test]
+fn removing_the_row_a_boundary_waits_to_enter_leaves_none_of_it_heard() -> Result<()> {
+    the_row_a_boundary_waits_to_enter_is_never_heard_once_an_edit_takes_it_away(
+        Command::Remove(Span::one(1)),
+        the_following_row_plays,
+        "the row now following to play",
+    )
+}
+
+#[test]
+fn moving_the_row_a_boundary_waits_to_enter_leaves_none_of_it_heard() -> Result<()> {
+    the_row_a_boundary_waits_to_enter_is_never_heard_once_an_edit_takes_it_away(
+        Command::Move {
+            rows: Span::one(1),
+            to: 2,
+        },
+        the_following_row_plays,
+        "the row now following to play",
+    )
+}
+
+#[test]
+fn clearing_the_rows_a_boundary_waits_to_enter_leaves_none_of_them_heard() -> Result<()> {
+    the_row_a_boundary_waits_to_enter_is_never_heard_once_an_edit_takes_it_away(
+        Command::Clear,
+        |player, _| player.state().playback == PlaybackState::Stopped,
+        "the queue to run out after the leaving row",
+    )
+}
+
 #[test]
 fn a_seek_past_the_end_refused_while_a_boundary_waits_leaves_the_handover_gapless() -> Result<()> {
     let tree = Tree::new();

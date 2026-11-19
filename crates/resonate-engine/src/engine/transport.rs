@@ -202,7 +202,7 @@ impl Engine {
         self.retire_the_output();
         self.track = None;
         self.boundaries.clear();
-        self.failing_past_the_boundary = None;
+        self.past_the_boundary = None;
         self.ahead = None;
         self.opening = None;
         self.answer_the_deferred(Ok(()));
