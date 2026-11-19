@@ -14,7 +14,6 @@ struct LibraryView: View {
         let search = library.librarySearch
         let shelf = navigation.libraryShelf
         LibraryShelfContent(shelf: shelf)
-            .contentMargins(.top, reveal.band, for: .scrollContent)
             .overlay(alignment: .top) { LibrarySearchField(shelf: shelf) }
             .safeAreaBar(edge: .top, spacing: 0) {
                 if arrangement == .stack { LibraryShelfRow(indicator: indicator) }
@@ -48,18 +47,18 @@ struct ScrollPlace: Equatable {
 @MainActor
 @Observable
 final class LibrarySearchReveal {
-    private(set) var shown = true
+    private(set) var shown = false
     private(set) var band: CGFloat = 0
     @ObservationIgnored private var reveal = SearchReveal()
 
     func scrolled(_ place: ScrollPlace) {
-        reveal.scrolled(to: place.offset, within: place.range, band: Double(band))
+        reveal.scrolled(to: place.offset, within: place.range)
         if shown != reveal.shown { shown = reveal.shown }
     }
 
     func startOver() {
         reveal.startOver()
-        if !shown { shown = true }
+        if shown { shown = false }
     }
 
     func measured(band height: CGFloat) {
@@ -435,6 +434,7 @@ struct ShelfHeader<Controls: View>: View {
 
 struct LibraryFound: View {
     @Environment(Library.self) private var library
+    @Environment(LibrarySearchReveal.self) private var reveal: LibrarySearchReveal?
     let scope: SearchScope
 
     var body: some View {
@@ -444,6 +444,7 @@ struct LibraryFound: View {
             SearchResults(search: search, scope: .constant(scope)) { Keyboard.stow() }.equatable().themedRows()
         }
         .listStyle(.plain)
+        .contentMargins(.top, reveal?.band ?? 0, for: .scrollContent)
         .scrollDismissesKeyboard(.immediately)
         .revealsLibrarySearch()
         .environment(SelectedSongs?.none)

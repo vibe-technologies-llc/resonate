@@ -1372,9 +1372,9 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   its own order. The completions offered
   (`offeredCompletions`) are folded once as an answer lands, not at each read.
 - **The Library tab searches the shelf shown**: one field over `Library.librarySearch`
-  (`LibrarySearchField`, a glass capsule with *Cancel* while focused, laid over the shelf under the
-  tab row, the shelves' scroll content starting below it, `contentMargins`), the tab row its scope,
-  so there is no scope bar and text typed survives a change of shelf. Songs, Albums and Artists draw `SearchResults` at their own scope (`LibraryFound`),
+  (`LibrarySearchField`, a glass capsule with *Cancel* while focused, floating over the shelf under
+  the tab row; only the results' list, `LibraryFound`, starts below it, `contentMargins`, since the
+  field stays while it holds text), the tab row its scope, so there is no scope bar and text typed survives a change of shelf. Songs, Albums and Artists draw `SearchResults` at their own scope (`LibraryFound`),
   since `search_library` answers all three at once, and Playlists folds the names (below) and keeps no search; the *Top*
   view of all three is the Search tab's. Nothing found is said for the shelf's own kind. *Did you mean* where nothing matched; the grammar's `reads` as chips;
   completions as a row of glass capsules of the words alone heading the results (`SearchCompletions`, at most five,
@@ -1387,16 +1387,17 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   off `SearchModel` keeps nothing and offers nothing; turning it off forgets what both searches
   kept.
   Completions are never offered under the field while typing: a list there sat over the results
-  and moved with every answer. **The field goes as the shelf scrolls down and comes back as it
-  scrolls up**, anywhere in the list (`SearchReveal`, `ResonateLogic`, held by
-  `LibraryShelvesTests`: shown within its own height of the top, gone once the list has moved
-  `turnsAfter` (24 pt) further down past it, back once it has moved as far up, a turn counting
-  afresh and a bounce past either end counting nothing). Every shelf's scroll view reports its
-  place (`revealsLibrarySearch`, `onScrollGeometryChange`) to `LibrarySearchReveal`, read by the
-  field alone, which slides up under the row and fades in a spring (a fade under Reduce Motion)
-  and never moves the bar or the content: the shelves' top margin is the field's height whether it
-  is shown or not, so nothing a scroll does lays the page out again. It stays while focused, while
-  it holds text and while VoiceOver runs, and a change of shelf shows it. The results and the browsed music are two `List`s (`SongsList`), so a
+  and moved with every answer. **The field is hidden until the shelf scrolls up**, anywhere in the
+  list or as a pull down at its top (`SearchReveal`, `ResonateLogic`, held by
+  `LibraryShelvesTests`: shown once the list has moved `turnsAfter` (24 pt) up, gone once it has
+  moved as far down, a turn counting afresh; the pull's bounce back to the top and a bounce past
+  the foot count nothing). A page opens and a change of shelf starts with it hidden. Every shelf's
+  scroll view reports its place (`revealsLibrarySearch`, `onScrollGeometryChange`) to
+  `LibrarySearchReveal`, read by the field alone, which slides down from under the row and fades
+  in a spring (a fade under Reduce Motion) over the rows, never moving the bar or the content, so
+  nothing a scroll does lays the page out again; a margin kept for it at the top of the browsed
+  shelves stood empty while it was hidden. It stays while focused, while it holds text and while
+  VoiceOver runs. The results and the browsed music are two `List`s (`SongsList`), so a
   search beginning or ending swaps one list for the other instead of deleting or inserting every
   browsed row in one. A lit string is kept per text, query and column (`lit`, up to 4096), so a
   redraw asks `highlights` across the boundary only for text it has not lit. Searching spans the catalog: filters shape browsing

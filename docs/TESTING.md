@@ -140,8 +140,8 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [M · blocked: hardware] The iOS Home feed and the Library's four shelves are proved by their logic
   in tests and a clean build, and the Library's tab row was rebuilt after it juddered on an iPhone;
   still to be seen there: the row's one capsule sliding across after a shelf's scroll view is
-  swapped and following a drag, the Library's own search field going as a shelf scrolls down and
-  coming back as it scrolls up under a bar of one height, its recent searches while focused, the thumb
+  swapped and following a drag, the Library's own search field hidden until a shelf scrolls up or is
+  pulled down at its top, under a bar of one height, its recent searches while focused, the thumb
   appearing from `onScrollGeometryChange` on a `List` and the frame after a drag moves the Songs
   window, the selection bar against the minimising tab bar and the mini
   player, each shelf's toolbar, *Jump back in*'s tiles sizing themselves in their row, the

@@ -114,22 +114,17 @@ public struct ShelfRowDrag: Equatable, Sendable {
 public struct SearchReveal: Equatable, Sendable {
     public static let turnsAfter: Double = 24
 
-    public private(set) var shown = true
+    public private(set) var shown = false
     private var last: Double?
     private var travelled: Double = 0
 
     public init() {}
 
-    public mutating func scrolled(to offset: Double, within range: Double, band: Double) {
-        let place = min(max(offset, 0), max(range, 0))
+    public mutating func scrolled(to offset: Double, within range: Double) {
+        let place = min(offset, max(range, 0))
         defer { last = place }
-        guard place > band else {
-            shown = true
-            travelled = 0
-            return
-        }
         guard let last else { return }
-        let moved = place - max(last, band)
+        let moved = place >= last ? max(place, 0) - max(last, 0) : place - last
         guard moved != 0 else { return }
         if travelled != 0, (moved > 0) != (travelled > 0) { travelled = 0 }
         travelled += moved
@@ -141,7 +136,7 @@ public struct SearchReveal: Equatable, Sendable {
     }
 
     public mutating func startOver() {
-        shown = true
+        shown = false
         last = nil
         travelled = 0
     }
