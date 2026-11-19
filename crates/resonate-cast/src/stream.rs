@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    io,
     net::SocketAddr,
     sync::{
         Arc,
@@ -111,6 +112,46 @@ impl Hold {
     }
 }
 
+struct Offer {
+    server: Arc<Server>,
+    token: Token,
+    feed: Arc<Feed>,
+    hold: Hold,
+}
+
+impl Offer {
+    fn withdrawn<T>(&self, stopping: impl FnOnce() -> T) -> Option<T> {
+        self.feed.close();
+        self.server.withdraw(self.token);
+        self.hold.let_go(stopping)
+    }
+}
+
+impl Drop for Offer {
+    fn drop(&mut self) {
+        self.withdrawn(|| ());
+    }
+}
+
+type Spawn = fn(thread::Builder, Box<dyn FnOnce() + Send>) -> io::Result<thread::JoinHandle<()>>;
+
+fn a_thread(
+    builder: thread::Builder,
+    work: Box<dyn FnOnce() + Send>,
+) -> io::Result<thread::JoinHandle<()>> {
+    builder.spawn(work)
+}
+
+fn apart(work: impl FnOnce() + Send + 'static, spawn: Spawn) -> SinkResult<()> {
+    let builder = thread::Builder::new().name("resonate-cast-stream".to_owned());
+    spawn(builder, Box::new(work))
+        .map(drop)
+        .map_err(|source| SinkError::Backend {
+            op: Operation::Open,
+            source,
+        })
+}
+
 pub(crate) fn open(
     device: Arc<Device>,
     server: &Arc<Server>,
@@ -153,10 +194,12 @@ pub(crate) fn open(
     let watched = Watch {
         device,
         link,
-        server: Arc::clone(server),
-        token,
-        feed,
-        hold,
+        offer: Offer {
+            server: Arc::clone(server),
+            token,
+            feed,
+            hold,
+        },
         offered: Offered {
             address,
             kind: carriage.kind_of(spec),
@@ -164,13 +207,7 @@ pub(crate) fn open(
         },
         announce,
     };
-    thread::Builder::new()
-        .name("resonate-cast-stream".to_owned())
-        .spawn(move || watched.run(&steered))
-        .map_err(|source| SinkError::Backend {
-            op: Operation::Open,
-            source,
-        })?;
+    apart(move || watched.run(&steered), a_thread)?;
 
     let steering = Steering(steer);
     Ok(SinkStream::new(
@@ -224,10 +261,7 @@ enum Reading {
 struct Watch {
     device: Arc<Device>,
     link: Link,
-    server: Arc<Server>,
-    token: Token,
-    feed: Arc<Feed>,
-    hold: Hold,
+    offer: Offer,
     offered: Offered,
     announce: Sender<StreamEvent>,
 }
@@ -244,18 +278,18 @@ impl Watch {
         loop {
             match steered.recv_timeout(STEERED_EVERY) {
                 Ok(Steer::Active(true)) => {
-                    self.feed.set_active(true);
-                    match self.hold.steer(|| self.play(&mut played)) {
+                    self.offer.feed.set_active(true);
+                    match self.offer.hold.steer(|| self.play(&mut played)) {
                         Some(Ok(true)) => state = self.moved(state, StreamState::Streaming),
                         Some(Err(error)) => state = self.failed(state, &error),
                         Some(Ok(false)) | None => {}
                     }
                 }
                 Ok(Steer::Active(false)) => {
-                    self.feed.set_active(false);
+                    self.offer.feed.set_active(false);
                     if let Some(played) = &played
                         && let Some(Err(error)) =
-                            self.hold.steer(|| self.media(played, Asked::Pause))
+                            self.offer.hold.steer(|| self.media(played, Asked::Pause))
                     {
                         tracing::debug!(%error, receiver = %self.device.id(), "a Cast receiver did not pause");
                     }
@@ -264,7 +298,7 @@ impl Watch {
                     }
                 }
                 Ok(Steer::Drain) => {
-                    self.feed.drain();
+                    self.offer.feed.drain();
                     drain_asked = true;
                 }
                 Ok(Steer::Close) | Err(RecvTimeoutError::Disconnected) => break,
@@ -284,7 +318,7 @@ impl Watch {
                         drained = true;
                         let _ = self.announce.send(StreamEvent::Drained);
                     }
-                    Some(Reading::Gone) if self.hold.steer(|| ()).is_some() => {
+                    Some(Reading::Gone) if self.offer.hold.steer(|| ()).is_some() => {
                         state = self.failed(
                             state,
                             &Error::Closed {
@@ -297,7 +331,7 @@ impl Watch {
             }
             if state != StreamState::Failed
                 && !self.link.is_alive()
-                && self.hold.steer(|| ()).is_some()
+                && self.offer.hold.steer(|| ()).is_some()
             {
                 state = self.failed(
                     state,
@@ -314,7 +348,11 @@ impl Watch {
             let Some(played) = played.as_ref() else {
                 continue;
             };
-            let Some(answer) = self.hold.steer(|| self.media(played, Asked::MediaStatus)) else {
+            let Some(answer) = self
+                .offer
+                .hold
+                .steer(|| self.media(played, Asked::MediaStatus))
+            else {
                 continue;
             };
             let reading = answer.and_then(|answer| {
@@ -352,9 +390,7 @@ impl Watch {
             }
         }
 
-        self.feed.close();
-        self.server.withdraw(self.token);
-        let stopped = self.hold.let_go(|| match &played {
+        let stopped = self.offer.withdrawn(|| match &played {
             Some(played) => self.media(played, Asked::Stop).map(drop),
             None => Ok(()),
         });
@@ -368,7 +404,7 @@ impl Watch {
             return self.media(played, Asked::Play).map(|_| true);
         }
         let session = device::launched(&self.link)?;
-        if !self.hold.is_mine() {
+        if !self.offer.hold.is_mine() {
             return Ok(false);
         }
         let entry = loaded(&self.link, &session.transport, &self.offered)?;
@@ -404,7 +440,7 @@ impl Watch {
     ) -> Option<Reading> {
         let entries = entries_in(said)?;
         let Some(entry) = entries.iter().find(|entry| entry.session == played.session) else {
-            let ended = drain_asked && self.feed.ended_at().is_some();
+            let ended = drain_asked && self.offer.feed.ended_at().is_some();
             return match (ended, asked) {
                 (true, _) => Some(Reading::Drained),
                 (false, true) => Some(Reading::Gone),
@@ -412,7 +448,7 @@ impl Watch {
             };
         };
         if let Some(heard) = entry.heard {
-            self.feed.heard_through(heard);
+            self.offer.feed.heard_through(heard);
         }
         match entry.idle {
             Some(Idle::Finished) if drain_asked => Some(Reading::Drained),
@@ -421,9 +457,12 @@ impl Watch {
                 let drained = drain_asked
                     && entry
                         .heard
-                        .zip(self.feed.ended_at())
+                        .zip(self.offer.feed.ended_at())
                         .is_some_and(|(heard, ended)| {
-                            self.feed.frames_of(heard.saturating_add(HEARD_WITHIN)) >= ended
+                            self.offer
+                                .feed
+                                .frames_of(heard.saturating_add(HEARD_WITHIN))
+                                >= ended
                         });
                 Some(if drained {
                     Reading::Drained
@@ -556,11 +595,61 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr};
 
     use crossbeam_channel::bounded;
+    use resonate_core::{ChannelLayout, SampleRate, StreamSpec};
+    use resonate_upnp::{Carriage, Silence, Wrapping};
 
     use super::*;
 
     fn receiver() -> SocketAddr {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8009)
+    }
+
+    fn silent_feed() -> Arc<Feed> {
+        let spec = StreamSpec::new(
+            SampleRate::HZ_44100,
+            ChannelLayout::Stereo,
+            SampleFormat::S16,
+        );
+        let carriage = Carriage::new(
+            Wrapping::Wave,
+            vec![SampleRate::HZ_44100],
+            vec![ChannelLayout::Stereo],
+        );
+        Arc::new(Feed::new(
+            spec,
+            carriage,
+            Box::new(Silence),
+            Arc::new(StreamClock::behind_by(Frames::ZERO)),
+        ))
+    }
+
+    fn refused(
+        _: thread::Builder,
+        _: Box<dyn FnOnce() + Send>,
+    ) -> io::Result<thread::JoinHandle<()>> {
+        Err(io::ErrorKind::WouldBlock.into())
+    }
+
+    #[test]
+    fn a_stream_whose_thread_cannot_start_withdraws_its_offer_and_frees_its_receiver() {
+        let server = Server::start(IpAddr::V4(Ipv4Addr::LOCALHOST)).expect("a stream server");
+        let lanes = Lanes::default();
+        let feed = silent_feed();
+        let offer = Offer {
+            server: Arc::clone(&server),
+            token: server.offer(Arc::clone(&feed)),
+            feed: Arc::clone(&feed),
+            hold: lanes.taken(receiver()),
+        };
+
+        let started = apart(move || drop(offer), refused);
+
+        assert!(started.is_err());
+        assert_eq!(Arc::strong_count(&feed), 1, "the feed is still served");
+        assert!(
+            lanes.idle(receiver()).is_some(),
+            "the receiver is still held"
+        );
     }
 
     #[test]

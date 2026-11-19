@@ -185,6 +185,9 @@ codec are dev-dependencies, for the end-to-end tests.
   it has lost it (`a_stream_taking_a_receiver_over_does_not_wait_for_a_call_the_old_one_is_making`). A new `LOAD` replaces what the receiver plays, dropping its buffer, so no
   `STOP` is needed before it; a stream closing while it holds the lane sends media `STOP` for its
   own session. The receiver application is never stopped, so the next stream needs no launch.
+  The token and the lane are an `Offer`, as UPnP's: dropped without its `Watch` having run (the
+  thread failing to start) it still closes the feed, withdraws the token and lets go of the lane
+  (`a_stream_whose_thread_cannot_start_withdraws_its_offer_and_frees_its_receiver`).
 - **The receiver's clock is read**: every `STATUS_ASKED_EVERY` (500 ms) while streaming, a media
   `GET_STATUS`'s `currentTime` (fractional seconds, through `Duration::try_from_secs_f64`, so an oversized figure is no reading) against the frames served is the delay
   published through `Feed::heard_through` (a fractional reading is a point there, never the

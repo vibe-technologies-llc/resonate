@@ -335,7 +335,11 @@ identifies the listener), reads a declared, chunked or close-delimited body, and
   address under the lock; a `Watch` sends `Play`, `Pause` and `GetPositionInfo` only while its
   stream still holds the lane (`Hold::steer`), and its closing `Stop` only where it lets go of a
   lane it held (`Hold::let_go`). So a retiring stream's late pause or stop never reaches the stream
-  that replaced it, whichever closes first.
+  that replaced it, whichever closes first. **The token and the lane are an `Offer`, let go of on
+  every way out**: dropped (a renderer refusing `SetAVTransportURI`, the stream's thread failing to
+  start, the `Watch` ending) it closes the feed, withdraws the token and lets go of the lane it
+  still holds, so a stream that never ran leaves nothing served and the renderer idle for the next
+  (`a_stream_whose_thread_cannot_start_withdraws_its_offer_and_frees_its_renderer`).
 - **A pause is the renderer's own `Pause`**, heard at once; the feed stops pulling, so on `Play` the
   renderer resumes the very buffer it held and the ring continues it frame for frame.
 - **The volume is always the renderer's** (`HardwareVolume::Always`, which `Attenuator::of` hands

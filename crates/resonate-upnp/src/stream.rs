@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    io,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -90,6 +91,46 @@ impl Hold {
     }
 }
 
+struct Offer {
+    server: Arc<Server>,
+    token: Token,
+    feed: Arc<Feed>,
+    hold: Hold,
+}
+
+impl Offer {
+    fn withdrawn<T>(&self, stopping: impl FnOnce() -> T) -> Option<T> {
+        self.feed.close();
+        self.server.withdraw(self.token);
+        self.hold.let_go(stopping)
+    }
+}
+
+impl Drop for Offer {
+    fn drop(&mut self) {
+        self.withdrawn(|| ());
+    }
+}
+
+type Spawn = fn(thread::Builder, Box<dyn FnOnce() + Send>) -> io::Result<thread::JoinHandle<()>>;
+
+fn a_thread(
+    builder: thread::Builder,
+    work: Box<dyn FnOnce() + Send>,
+) -> io::Result<thread::JoinHandle<()>> {
+    builder.spawn(work)
+}
+
+fn apart(work: impl FnOnce() + Send + 'static, spawn: Spawn) -> SinkResult<()> {
+    let builder = thread::Builder::new().name("resonate-upnp-stream".to_owned());
+    spawn(builder, Box::new(work))
+        .map(drop)
+        .map_err(|source| SinkError::Backend {
+            op: Operation::Open,
+            source,
+        })
+}
+
 impl Drop for Steering {
     fn drop(&mut self) {
         let _ = self.0.send(Steer::Close);
@@ -121,19 +162,21 @@ pub(crate) fn open(
         Arc::clone(&clock),
     ));
     let token = server.offer(Arc::clone(&feed));
+    let offer = Offer {
+        server: Arc::clone(server),
+        token,
+        feed,
+        hold,
+    };
     {
-        let mut held = hold.lane.lock();
-        if held.replace(hold.mine).is_some()
+        let mut held = offer.hold.lane.lock();
+        if held.replace(offer.hold.mine).is_some()
             && let Err(error) = renderer.stop()
         {
             tracing::debug!(%error, renderer = %renderer.udn(), "a renderer did not stop what it held before a new stream");
         }
-        if let Err(error) = offered(&renderer, &carriage, server, token, request) {
-            *held = None;
-            server.withdraw(token);
-            return Err(error.into());
-        }
-    }
+        offered(&renderer, &carriage, server, token, request)
+    }?;
 
     let (announce, events) = unbounded();
     let (steer, steered) = unbounded();
@@ -145,19 +188,10 @@ pub(crate) fn open(
 
     let watched = Watch {
         renderer,
-        server: Arc::clone(server),
-        hold,
-        token,
-        feed,
+        offer,
         announce,
     };
-    thread::Builder::new()
-        .name("resonate-upnp-stream".to_owned())
-        .spawn(move || watched.run(&steered))
-        .map_err(|source| SinkError::Backend {
-            op: Operation::Open,
-            source,
-        })?;
+    apart(move || watched.run(&steered), a_thread)?;
 
     let steering = Steering(steer);
     Ok(SinkStream::new(
@@ -195,10 +229,7 @@ fn offered(
 
 struct Watch {
     renderer: Arc<Renderer>,
-    server: Arc<Server>,
-    hold: Hold,
-    token: Token,
-    feed: Arc<Feed>,
+    offer: Offer,
     announce: Sender<StreamEvent>,
 }
 
@@ -214,8 +245,8 @@ impl Watch {
         loop {
             match steered.recv_timeout(POSITION_ASKED_EVERY) {
                 Ok(Steer::Active(true)) => {
-                    self.feed.set_active(true);
-                    match self.hold.steer(|| self.renderer.play()) {
+                    self.offer.feed.set_active(true);
+                    match self.offer.hold.steer(|| self.renderer.play()) {
                         Some(Ok(())) => {
                             playing_asked = true;
                             state = self.moved(state, StreamState::Streaming);
@@ -225,9 +256,9 @@ impl Watch {
                     }
                 }
                 Ok(Steer::Active(false)) => {
-                    self.feed.set_active(false);
+                    self.offer.feed.set_active(false);
                     if playing_asked
-                        && let Some(Err(error)) = self.hold.steer(|| self.renderer.pause())
+                        && let Some(Err(error)) = self.offer.hold.steer(|| self.renderer.pause())
                     {
                         tracing::debug!(%error, renderer = %self.renderer.udn(), "a renderer did not pause");
                     }
@@ -236,7 +267,7 @@ impl Watch {
                     }
                 }
                 Ok(Steer::Drain) => {
-                    self.feed.drain();
+                    self.offer.feed.drain();
                     drain_asked = true;
                 }
                 Ok(Steer::Close) | Err(RecvTimeoutError::Disconnected) => break,
@@ -247,17 +278,18 @@ impl Watch {
                 continue;
             }
             asked_at = Instant::now();
-            let Some(heard) = self.hold.steer(|| self.renderer.heard()) else {
+            let Some(heard) = self.offer.hold.steer(|| self.renderer.heard()) else {
                 continue;
             };
             match heard {
                 Ok(Some(heard)) => {
                     unanswered = 0;
-                    self.feed.heard_through(heard);
+                    self.offer.feed.heard_through(heard);
                     if drain_asked
                         && !drained
-                        && let Some(ended) = self.feed.ended_at()
+                        && let Some(ended) = self.offer.feed.ended_at()
                         && self
+                            .offer
                             .feed
                             .frames_of(heard.saturating_add(HEARD_TO_THE_SECOND))
                             >= ended
@@ -277,9 +309,7 @@ impl Watch {
             }
         }
 
-        self.feed.close();
-        self.server.withdraw(self.token);
-        let stopped = self.hold.let_go(|| {
+        let stopped = self.offer.withdrawn(|| {
             if playing_asked {
                 self.renderer.stop()
             } else {
@@ -318,5 +348,40 @@ impl Watch {
         };
         let _ = self.announce.send(event);
         StreamState::Failed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, Ipv4Addr};
+
+    use super::*;
+    use crate::testing::silent_feed;
+
+    fn refused(
+        _: thread::Builder,
+        _: Box<dyn FnOnce() + Send>,
+    ) -> io::Result<thread::JoinHandle<()>> {
+        Err(io::ErrorKind::WouldBlock.into())
+    }
+
+    #[test]
+    fn a_stream_whose_thread_cannot_start_withdraws_its_offer_and_frees_its_renderer() {
+        let server = Server::start(IpAddr::V4(Ipv4Addr::LOCALHOST)).expect("a stream server");
+        let holders = Holders::default();
+        let udn = Udn::new("uuid:4c1b3a27-0000-4000-8000-000000000001");
+        let feed = silent_feed();
+        let offer = Offer {
+            server: Arc::clone(&server),
+            token: server.offer(Arc::clone(&feed)),
+            feed: Arc::clone(&feed),
+            hold: holders.idle(&udn).expect("an idle renderer"),
+        };
+
+        let started = apart(move || drop(offer), refused);
+
+        assert!(started.is_err());
+        assert_eq!(Arc::strong_count(&feed), 1, "the feed is still served");
+        assert!(holders.idle(&udn).is_some(), "the renderer is still held");
     }
 }
