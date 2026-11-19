@@ -18,7 +18,6 @@ private enum SearchArea: CaseIterable {
 
 struct SearchTab: View {
     @Environment(Library.self) private var library
-    @Environment(Navigation.self) private var navigation
     @State private var seeAll: SearchScope?
     @State private var actions = OnlineSongActions()
     @State private var savingSearch = false
@@ -59,6 +58,11 @@ struct SearchTab: View {
             .themedRows()
         }
         .listStyle(.plain)
+        .overlay {
+            if search.query.isEmpty, search.recents.isEmpty {
+                SearchPrompt()
+            }
+        }
         .safeAreaBar(edge: .top, spacing: 0) {
             if !search.query.isEmpty, !OnlineAsked.isLink(search.query) {
                 SearchAreaChooser(area: $area)
@@ -67,7 +71,7 @@ struct SearchTab: View {
             }
         }
         .scrollDismissesKeyboard(.immediately)
-        .searchable(text: Binding(get: { search.text }, set: enter), prompt: "search.title")
+        .searchable(text: Binding(get: { search.text }, set: enter), prompt: "search.prompt")
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
         .onSubmit(of: .search) { remember(search) }
@@ -81,9 +85,6 @@ struct SearchTab: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { savingSearch = true } label: { Label("search.save-as-playlist", systemImage: "bookmark") }
                 }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { navigation.listening = true } label: { Label("search.listen", systemImage: "ear") }
             }
         }
         .sheet(isPresented: $savingSearch) {
@@ -158,20 +159,10 @@ struct OnlineOffRow: View {
 }
 
 struct SearchStart: View {
-    @Environment(Navigation.self) private var navigation
     let search: SearchModel
     let choose: (String) -> Void
 
     var body: some View {
-        Section("search.discover") {
-            Button { navigation.listening = true } label: {
-                ToolRow(title: said("search.discover.recognise"), detail: said("search.discover.recognise.detail"), symbol: "ear")
-            }
-            .buttonStyle(.plain)
-            NavigationLink(value: Destination.wanted) {
-                ToolRow(title: said("search.discover.wanted"), detail: said("search.discover.wanted.detail"), symbol: "bookmark")
-            }
-        }
         if !search.recents.isEmpty {
             Section {
                 ForEach(search.recents, id: \.self) { recent in
@@ -198,12 +189,16 @@ struct SearchStart: View {
                 }
             }
         }
+    }
+}
+
+private struct SearchPrompt: View {
+    var body: some View {
         ContentUnavailableView(
             "search.start.title",
             systemImage: "magnifyingglass",
             description: Text("search.start.detail")
         )
-        .listRowSeparator(.hidden)
     }
 }
 

@@ -1426,9 +1426,11 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   Downloads live on a toolbar button's page (`DownloadsButton`), also on the online Songs and
   release pages, never above their results; its filled icon and spoken active count follow the
   queue independently of the search page. The page keeps provider setup, retry, cancellation and
-  clearing finished jobs. With no text, Discover offers *Recognise a song* and *Saved for later*,
-  followed by recent searches and a hint. There is no `.searchSuggestions` overlay; the ear stays
-  in the toolbar. Library tools' *Search* opens this tab through `Navigation.openSearch`.
+  clearing finished jobs. With no text the tab lists recent searches, or, with none, `SearchPrompt`
+  (*Find music*) centred over the empty list; recognising a song and *Saved for later* live in
+  Library tools alone, so the toolbar holds Downloads and *Save as playlist*. The field's prompt is
+  *Songs, albums, artists*. There is no `.searchSuggestions` overlay. Library tools' *Search* opens
+  this tab through `Navigation.openSearch`.
 - **Search's rows sit close**: a completion is a glass capsule 8 pt taller than its line, its row
   inset 6 pt above and 2 pt below and scrolled within 16 pt content margins
   (`contentMargins(.horizontal:for: .scrollContent)`), and *See all* reaches 12 pt above and below
@@ -1975,7 +1977,7 @@ the backdrop, the toolbar's menu (refresh, add lyrics) and the `LyricAttribution
 
 - **Listen names the song playing around the iPhone** (`Listening.swift`, `ListenViews.swift`), the
   desktop's Listen sheet (`ui.md`) on the microphone: a sheet (`Navigation.listening`, medium and
-  large) opened from the Search tab's labelled *Recognise a song* row, its ear, or Library tools'
+  large) opened from Library tools'
   *Listen*, recording at once; closing it
   or the scene going to the background stops a recording and drops the ask about it.
   `Listening.stage` walks `ListenStage` (recording, asking, then found, unknown, silent, unreached,
