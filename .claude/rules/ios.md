@@ -357,7 +357,7 @@ sync seals its records and talks QUIC (TLS) of its own.
   folders as well as the app's own; nothing else in those folders), then `Erasure.everything`
   empties Application Support, Caches, Documents and tmp, removes the `library-features`,
   `playback`, `provider-accounts` and `appearance` suites and the standard domain, and deletes
-  every keychain class, then the app exits. `Erasure.everything` counts what stays (a file or folder it could not remove, a keychain class refusing with a status other than success or not found) and returns it as `ErasureLeftovers` beside the songs `Folders.delete` could not remove: with anything left the app does not exit, and the overlay names each kind and asks to close Resonate and erase again, since the next launch would resume from the catalog or sync key that stayed. With the pairing code gone, other devices hear nothing. The sync poll and the arrivals task are awaited, not only cancelled, so a landing in progress is in the second read; the run holds a background task, and `ErasingOverlay` on the root view blocks every tap and closes the open sheets. When `Folders.delete` could not remove some song (a read-only grant, an offline cloud folder) the bookmarks (`Folders.kept`) are not erased, the app does not exit, and the overlay says how many songs stayed and to close Resonate.
+  every keychain class, then the app exits. `Erasure.everything` counts what stays (a file or folder it could not remove, a keychain class refusing with a status other than success or not found) and returns it as `ErasureLeftovers` beside the songs `Folders.delete` could not remove: with anything left the app does not exit, and the overlay names each kind and asks to close Resonate and erase again, since the next launch would resume from the catalog or sync key that stayed. With the pairing code gone, other devices hear nothing. The sync poll and the arrivals task are awaited, not only cancelled, so a landing in progress is in the second read; the run holds a background task, and `ErasingOverlay` on the root view blocks every tap and closes the open sheets. When `Folders.delete` could not remove some song (a read-only grant, an offline cloud folder, an unplugged drive: `FileRemoval` counts only a file missing under a root still there as gone) the bookmarks (`Folders.kept`) are not erased, the app does not exit, and the overlay says how many songs stayed and to close Resonate.
 - **The sync page leads with what is happening; setup sits a step away** (`SyncView.swift`). The
   page is the *Sync this iPhone* switch, then a status section (`SyncStateRow`: spinner, *Up to
   date* check, warning or the network mark, a headline and `syncStanding`; *Sync now* turning into
@@ -1263,8 +1263,11 @@ every route change (a pair of headphones at the same rate included), not from th
   (`Features.songDeletable`, which `tagsWritable` builds on); it sets `Navigation.deleting`, and the
   confirmation is presented by `DeleteSongsConfirmation` on the root view, or on Now Playing while
   the cover is up (the root cannot present over it). `Library.deleteSongs` removes each file with
-  `Folders.deleteSong`, which, unlike `delete`, never counts an unreachable folder's file as gone,
-  so a song whose file stays keeps its row; only the songs whose files went are forgotten
+  `Folders.deleteSong`, which, unlike `delete`, never counts a file of a folder it no longer knows as gone,
+  so a song whose file stays keeps its row; for both, a removal that fails is gone only where it says no
+  such file (`fileNoSuchFile` or `ENOENT`, beneath too) and the folder's root is still there
+  (`FileRemoval`, `FileRemovalTests`), so an unplugged drive, a revoked grant or an offline cloud file
+  is never forgotten nor told to other devices; only the songs whose files went are forgotten
   (`forget_deleted_songs`), and the rest are told as `DeletionFailure.filesKept`. While sync is on
   (`Features.syncsWithOtherDevices`) it also offers *Delete from every device*, the same confirmation
   over `SongsToDelete.everywhere`, forgetting through `forget_songs_deleted_everywhere`; the sync poll

@@ -438,13 +438,7 @@ final class Folders: Documents, @unchecked Sendable {
             return false
         }
         defer { document.close() }
-        let url = document.url
-        do {
-            try FileManager.default.removeItem(at: url)
-            return true
-        } catch {
-            return !FileManager.default.fileExists(atPath: url.path)
-        }
+        return FileRemoval.removed(document.url, under: document.root)
     }
 
     private func folder(_ id: String, _ name: String, _ found: FolderAccess) -> MusicFolder {
