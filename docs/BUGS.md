@@ -27,6 +27,11 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 ## Sync and together
+- [S · 0.14.1] A song whose file moves while a party is followed is lost to the party: a guest's rows
+  are known by a `QueueStamp` of their location, so on the desktop a `Command::Relocate` (organise,
+  which reaches every zone) makes the moved row read as a song added here, and `added_here` takes it
+  out and asks the host for it; on the phones `documents_moved` leaves the following zone on the old
+  URIs instead, so the song fails when reached; the seat's known stamps should follow the move
 - [S · 0.14.1] A synced row a paired device stamped near `i64::MAX` before the ledger refused such
   stamps still wins every later write of its key: the ledger now refuses a stamp more than a day
   past the wall clock and sets a saved clock back on load (`Clock::from_saved`), but rows already
@@ -40,10 +45,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`organise.rs`) sees the same file at the destination and narrows the landing to the link's own
   folder, meant for a case-only rename on a case-insensitive volume, so `downloads/echoes.wav`
   becomes `downloads/02 Echoes.wav` and the two names stay apart
-- [M · 0.14.1] A phone's batch of moved documents that lands while a zone opens a row drops the
-  moved songs from that zone: `documents_moved` (`organising.rs`) leaves such a zone's live queue
-  on the old URIs and rekeys the catalog, so each moved song fails when reached and the next
-  `save_zone` (`ids_held_at`) leaves it out of the saved queue for good
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as
