@@ -3,7 +3,7 @@ use std::{slice, time::Instant};
 use gpui::{
     AnimationElement, Context, Div, Role, SharedString, Stateful, div, prelude::*, px, rgb,
 };
-use resonate_core::TrackId;
+use resonate_core::{TrackId, ZoneId};
 
 use super::{DOWNLOADS_PANEL_GAP, DOWNLOADS_TOGGLE_PRESS, RootView};
 use crate::{
@@ -362,7 +362,8 @@ impl RootView {
                         words::root::play_download_hint(),
                     ),
                     move |this, _, cx| {
-                        this.play_what_was_downloaded(track, cx);
+                        let zone = this.zone_acted_on();
+                        this.play_what_was_downloaded(track, zone, cx);
                     },
                     cx,
                 ))
@@ -433,9 +434,13 @@ impl RootView {
             .child(actions)
     }
 
-    pub(super) fn play_what_was_downloaded(&mut self, track: TrackId, cx: &mut Context<Self>) {
+    pub(super) fn play_what_was_downloaded(
+        &mut self,
+        track: TrackId,
+        zone: ZoneId,
+        cx: &mut Context<Self>,
+    ) {
         let catalog = self.library.read(cx).catalog();
-        let zone = self.zone_acted_on();
 
         cx.spawn(async move |this, cx| {
             let read = cx

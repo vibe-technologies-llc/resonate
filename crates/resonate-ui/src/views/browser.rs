@@ -1648,8 +1648,9 @@ impl RootView {
             .names(hint)
             .on_click(cx.listener(move |this, _, _, cx| {
                 let wanted = fetched.clone();
+                let zone = this.zone_acted_on();
                 this.library
-                    .update(cx, |library, cx| library.fetch_and_play(wanted, cx));
+                    .update(cx, |library, cx| library.fetch_and_play(wanted, zone, cx));
             }))
     }
 
@@ -3731,8 +3732,10 @@ impl MissingOnAnAlbum {
                     Icon::Play,
                     words::menu::download_and_play(),
                     move |this, _, cx| {
-                        this.library
-                            .update(cx, |library, cx| library.want_and_play(release_track, cx));
+                        let zone = this.zone_acted_on();
+                        this.library.update(cx, |library, cx| {
+                            library.want_and_play(release_track, zone, cx);
+                        });
                     },
                 )
                 .apart()
@@ -3752,8 +3755,9 @@ fn found_menu(at: Point<Pixels>, found: &Found) -> Menu {
             words::menu::download_and_play(),
             move |this, _, cx| {
                 let wanted = played.clone();
+                let zone = this.zone_acted_on();
                 this.library
-                    .update(cx, |library, cx| library.fetch_and_play(wanted, cx));
+                    .update(cx, |library, cx| library.fetch_and_play(wanted, zone, cx));
             },
         )
         .apart()
@@ -4726,7 +4730,7 @@ mod tests {
 
         use gpui::{ClipboardItem, Point, TestAppContext};
         use parking_lot::Mutex;
-        use resonate_core::{Isrc, SourceId};
+        use resonate_core::{Isrc, SourceId, ZoneId};
         use resonate_library::{
             AlbumLink, AlbumMatch, AlbumNames, ArtistLink, ArtistMatch, ArtistPressings,
             ArtistProfile, Barcode, BarcodeMatch, CoverArt, Credit, Discography, EnrichOptions,
@@ -5702,6 +5706,79 @@ mod tests {
                 positions.lock().clone(),
                 vec![None],
                 "the one ask began from what the search found, before the release was read"
+            );
+        }
+
+        #[gpui::test]
+        fn a_found_song_pressed_on_one_zone_plays_there_though_another_is_shown_when_it_lands(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let music = Folder::new();
+            let file = folder.tone("delivered.wav", 1);
+            let reaching = Reaching {
+                reference: Arc::new(MusicBrainz::new()),
+                register: Arc::new(move |_: &Supplying<'_>| {
+                    Providers::none().and(Arc::new(Delivers {
+                        source: SourceId::new("shop").expect("a source name"),
+                        file: file.clone(),
+                        positions: Arc::default(),
+                    }))
+                }),
+            };
+            let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+            let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
+            let music_folder = music.path().to_path_buf();
+            driven.cx.update(|_, cx| {
+                gpui::BorrowAppContext::update_global::<crate::ResonateApp, _>(cx, |global, _| {
+                    global.music_folder = Some(music_folder);
+                });
+            });
+            driven
+                .root
+                .update(&mut driven.cx, |root, cx| root.add_a_zone(cx));
+            driven.until(|root, _| root.zones.len() == 2);
+            let second = driven.read(|root, _| root.switcher.selected());
+            driven.root.update(&mut driven.cx, |root, cx| {
+                root.show_zone(ZoneId::FIRST, cx);
+            });
+            driven.settle();
+
+            typed(&mut driven, "Heroes Tonight");
+            driven.until(|root, cx| !root.library.read(cx).found().is_empty());
+            driven.root.update(&mut driven.cx, |root, cx| {
+                let found = root
+                    .library
+                    .read(cx)
+                    .found()
+                    .first()
+                    .cloned()
+                    .expect("a song found on MusicBrainz");
+                let zone = root.zone_acted_on();
+                root.library
+                    .update(cx, |library, cx| library.fetch_and_play(found, zone, cx));
+                root.show_zone(second, cx);
+            });
+            driven.until(|root, cx| {
+                root.zones
+                    .iter()
+                    .any(|shown| !shown.player.read(cx).queue().is_empty())
+            });
+
+            let queued_on = |driven: &mut Driven, zone: ZoneId| {
+                driven.read(|root, cx| {
+                    root.zones
+                        .iter()
+                        .find(|shown| shown.id == zone)
+                        .map_or(0, |shown| shown.player.read(cx).queue().len())
+                })
+            };
+            assert_eq!(driven.read(|root, _| root.switcher.selected()), second);
+            assert_eq!(queued_on(&mut driven, ZoneId::FIRST), 1);
+            assert_eq!(
+                queued_on(&mut driven, second),
+                0,
+                "the zone turned to while it downloaded took the play"
             );
         }
 

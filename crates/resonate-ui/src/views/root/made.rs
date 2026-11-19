@@ -19,6 +19,7 @@ use crate::{
     EqualiserModel, LibraryModel, LyricsModel, ResonateApp, Setting, SettingChange, WindowSize,
     analysis::AnalysisModel,
     app::attend,
+    downloads::Arrival,
     listening::ListenModel,
     models::Scale,
     serial::Serial,
@@ -169,8 +170,8 @@ impl RootView {
             if !relocated.is_empty() {
                 this.send(Command::Relocate(relocated), cx);
             }
-            if let Some(track) = arrived {
-                this.play_what_was_downloaded(track, cx);
+            if let Some(Arrival { track, zone }) = arrived {
+                this.play_what_was_downloaded(track, zone, cx);
             }
             this.read_the_shares(cx);
             if this.typing.waiting_for_the_results && !library.read(cx).is_reading_the_search() {

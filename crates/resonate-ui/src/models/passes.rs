@@ -1,12 +1,13 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use gpui::Context;
-use resonate_core::{MediaLocation, TrackId};
+use resonate_core::MediaLocation;
 use resonate_library::{
     Copies, OrganiseStats, OrganiseSummary, RetagStats, RetagSummary, ScanStats,
 };
 
 use super::{LibraryModel, Pass, Planned};
+use crate::downloads::Arrival;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IdenticalSong {
@@ -102,7 +103,7 @@ impl LibraryModel {
         }
     }
 
-    pub fn take_arrival(&mut self) -> Option<TrackId> {
+    pub(crate) fn take_arrival(&mut self) -> Option<Arrival> {
         self.arrived.take()
     }
 

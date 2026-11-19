@@ -2,7 +2,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use ahash::AHashMap;
 use gpui::SharedString;
-use resonate_core::{AlbumId, Calendar, SourceId, TrackId, WantId};
+use resonate_core::{AlbumId, Calendar, SourceId, TrackId, WantId, ZoneId};
 use resonate_library::{Found, Issued, Mbid, RecordingRelease, Want};
 
 use crate::words;
@@ -268,7 +268,14 @@ impl Download {
 #[derive(Clone, Debug)]
 struct Awaited {
     recording: Mbid,
+    zone: ZoneId,
     pressed: Instant,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Arrival {
+    pub(crate) track: TrackId,
+    pub(crate) zone: ZoneId,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -344,8 +351,12 @@ impl Downloads {
         moved
     }
 
-    pub(crate) fn play_once_landed(&mut self, recording: Mbid, pressed: Instant) {
-        self.awaited = Some(Awaited { recording, pressed });
+    pub(crate) fn play_once_landed(&mut self, recording: Mbid, zone: ZoneId, pressed: Instant) {
+        self.awaited = Some(Awaited {
+            recording,
+            zone,
+            pressed,
+        });
     }
 
     pub(crate) fn is_awaited(&self, recording: &Mbid) -> bool {
@@ -358,8 +369,9 @@ impl Downloads {
         &mut self,
         standings: &AHashMap<WantId, WantStanding>,
         now: Instant,
-    ) -> Option<TrackId> {
+    ) -> Option<Arrival> {
         let awaited = self.awaited.as_ref()?;
+        let zone = awaited.zone;
         let overdue = now.saturating_duration_since(awaited.pressed) > PLAYED_IF_LANDED_WITHIN;
         let download = self.of(&awaited.recording);
         let held = download
@@ -375,6 +387,7 @@ impl Downloads {
             self.awaited = None;
         }
         held.filter(|_| !overdue)
+            .map(|track| Arrival { track, zone })
     }
 
     pub(crate) fn restored(&mut self, unfinished: Vec<Unfinished>) {
@@ -613,20 +626,32 @@ mod tests {
         let late = pressed + PLAYED_IF_LANDED_WITHIN + Duration::from_secs(1);
 
         for downloads in [&mut quick, &mut slow, &mut unscanned] {
-            downloads.play_once_landed(found(ECHOES).recording, pressed);
+            downloads.play_once_landed(found(ECHOES).recording, ZoneId::FIRST, pressed);
         }
         quick.followed(&landed);
         slow.followed(&landed);
         unscanned.followed(&offered);
         unpressed.followed(&landed);
 
-        assert_eq!(quick.landed_to_play(&landed, pressed), Some(track));
+        assert_eq!(
+            quick.landed_to_play(&landed, pressed),
+            Some(Arrival {
+                track,
+                zone: ZoneId::FIRST
+            })
+        );
         assert_eq!(quick.landed_to_play(&landed, pressed), None, "played once");
         assert_eq!(slow.landed_to_play(&landed, late), None);
         assert!(!slow.is_awaited(&found(ECHOES).recording));
         assert_eq!(unscanned.landed_to_play(&offered, pressed), None);
         assert!(unscanned.is_awaited(&found(ECHOES).recording));
-        assert_eq!(unscanned.landed_to_play(&landed, pressed), Some(track));
+        assert_eq!(
+            unscanned.landed_to_play(&landed, pressed),
+            Some(Arrival {
+                track,
+                zone: ZoneId::FIRST
+            })
+        );
         assert_eq!(unpressed.landed_to_play(&landed, pressed), None);
     }
 
@@ -639,8 +664,8 @@ mod tests {
         let gave_up =
             AHashMap::from_iter([(want(1), standing(now, TRIES_BEFORE_GIVING_UP, false))]);
 
-        given_up.play_once_landed(found(ECHOES).recording, pressed);
-        dismissed.play_once_landed(found(ECHOES).recording, pressed);
+        given_up.play_once_landed(found(ECHOES).recording, ZoneId::FIRST, pressed);
+        dismissed.play_once_landed(found(ECHOES).recording, ZoneId::FIRST, pressed);
         given_up.followed(&gave_up);
         dismissed.dismiss(&found(ECHOES).recording);
 

@@ -87,8 +87,9 @@ impl RootView {
             }
             Shift::Listing(Listed::Tracks) => {
                 if let Some(found) = self.library.read(cx).found_at(row) {
+                    let zone = self.zone_acted_on();
                     self.library
-                        .update(cx, |library, cx| library.fetch_and_play(found, cx));
+                        .update(cx, |library, cx| library.fetch_and_play(found, zone, cx));
                     return;
                 }
                 let Some((played, start)) = self.library.read(cx).played_from(row) else {

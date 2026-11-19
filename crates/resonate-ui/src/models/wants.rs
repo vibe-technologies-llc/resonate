@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::SystemTime};
 
 use gpui::{App, Context};
-use resonate_core::{ArtistId, ReleaseTrackId, WantId};
+use resonate_core::{ArtistId, ReleaseTrackId, WantId, ZoneId};
 use resonate_library::{Found, Issued, Mbid, Performer, RecordingRelease};
 
 use super::{Change, LibraryModel, Wanted, watched::brought_back};
@@ -12,15 +12,22 @@ impl LibraryModel {
         self.want_awaiting(release_track, None, cx);
     }
 
-    pub fn want_and_play(&mut self, release_track: ReleaseTrackId, cx: &mut Context<Self>) {
-        let recording = self.recording_of(release_track);
+    pub fn want_and_play(
+        &mut self,
+        release_track: ReleaseTrackId,
+        zone: ZoneId,
+        cx: &mut Context<Self>,
+    ) {
+        let recording = self
+            .recording_of(release_track)
+            .map(|recording| (recording, zone));
         self.want_awaiting(release_track, recording, cx);
     }
 
     fn want_awaiting(
         &mut self,
         release_track: ReleaseTrackId,
-        awaited: Option<Mbid>,
+        awaited: Option<(Mbid, ZoneId)>,
         cx: &mut Context<Self>,
     ) {
         let library = Arc::clone(&self.library);
@@ -32,8 +39,8 @@ impl LibraryModel {
 
             let landed = this.update(cx, |this, cx| {
                 this.wants_landed(wanted, Change::Want.doing(), Wanted::ThePlaylists, cx);
-                if let Some(recording) = awaited {
-                    this.play_if_landing(recording);
+                if let Some((recording, zone)) = awaited {
+                    this.play_if_landing(recording, zone);
                 }
             });
             let _ = landed;

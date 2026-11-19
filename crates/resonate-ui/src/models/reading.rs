@@ -276,12 +276,12 @@ impl LibraryModel {
             self.delivered.downloads.restored(wants.unfinished);
         }
         self.delivered.downloads.followed(&wants.standings);
-        if let Some(track) = self
+        if let Some(landed) = self
             .delivered
             .downloads
             .landed_to_play(&wants.standings, Instant::now())
         {
-            self.arrived = Some(track);
+            self.arrived = Some(landed);
         }
         self.wishes.standings = wants.standings;
     }

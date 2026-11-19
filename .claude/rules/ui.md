@@ -583,7 +583,7 @@ so `editing` sees it.
   ends**: `send` addresses `zone_acted_on`, the zone shown unless `act_on_the_zone` aims it
   elsewhere, and every play or queue that reads the catalog first (`with_everything_listed`,
   `with_the_whole_library`, `with_the_rows_of`, `plays_everything_in_each`, `with_playlist_entries`,
-  `queue_the_playlists`, `landed_albums`, `play_what_was_downloaded`) takes `zone_acted_on` at the
+  `queue_the_playlists`, `landed_albums`, `play_what_was_downloaded`, whose zone travels with the pending fetch as an `Arrival`) takes `zone_acted_on` at the
   press and acts inside `act_on_the_zone` once the read lands, so the queue it reads and the rows it
   sends are that zone's (`player_acted_on`) and a zone taken away meanwhile is left alone
   (`the_whole_library_played_on_one_zone_lands_there_though_another_is_shown_before_it_is_read`,
@@ -2268,15 +2268,17 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
     and *Download from a release* nesting the releases the heart's right press lists
     (`a_right_press_on_a_song_found_on_musicbrainz_downloads_it_without_waiting_to_play_it`). `wanting` holds a task per recording.
     **A song pressed plays once it lands, if it lands within half a minute.** The row's press, `enter`
-    on a found row and on *Top results* call `LibraryModel::fetch_and_play`: `want_found`, then
-    `Downloads::play_once_landed` (one song awaited, the latest press winning; the heart, a release
+    on a found row and on *Top results* call `LibraryModel::fetch_and_play` with the zone acted on at the press: `want_found`, then
+    `Downloads::play_once_landed` (one song awaited with its zone, the latest press winning; the heart, a release
     from its menu, a pasted link and *Ask again* only want). `take_the_wants` asks
-    `Downloads::landed_to_play`, which answers the held `TrackId` once the want is delivered and
+    `Downloads::landed_to_play`, which answers an `Arrival` (the held `TrackId` and the zone pressed on) once the want is delivered and
     scanned within `PLAYED_IF_LANDED_WITHIN` (30 s) of the press and lets go of a song that took longer,
     gave up or was dismissed; `RootView`'s observer drains `take_arrival` into
-    `play_what_was_downloaded`
+    `play_what_was_downloaded`, which plays inside `act_on_the_zone` of the arrival's zone, so a song
+    plays where it was asked though another zone is shown by then
     (`a_song_pressed_plays_once_it_lands_unless_it_took_longer_than_half_a_minute`,
-    `a_found_song_pressed_lands_once_as_the_held_track_and_plays`). While underway the row's cover
+    `a_found_song_pressed_lands_once_as_the_held_track_and_plays`,
+    `a_found_song_pressed_on_one_zone_plays_there_though_another_is_shown_when_it_lands`). While underway the row's cover
     wears `fetching_over`: `kit::cover_veil()` and `Icon::Spinner` turning in the
     accent (`motion.md`).
   - **A search reaches MB as seldom as it can and never leaves the listener looking at nothing.** MB

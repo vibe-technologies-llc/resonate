@@ -79,7 +79,7 @@ pub use self::{
 use crate::{
     ResonateApp,
     asking::Underway,
-    downloads::{Downloads, Unfinished, WantStanding},
+    downloads::{Arrival, Downloads, Unfinished, WantStanding},
     format,
     held::Rows,
     keys,
@@ -1080,7 +1080,7 @@ pub struct LibraryModel {
     query: String,
     typed_on_the_scope: bool,
     search: Search,
-    arrived: Option<TrackId>,
+    arrived: Option<Arrival>,
     sourcing: Sourcing,
     playing: bool,
     revision: u64,

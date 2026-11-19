@@ -4,7 +4,7 @@ use std::{
 };
 
 use gpui::{Context, SharedString, Task};
-use resonate_core::{AlbumId, ArtistId};
+use resonate_core::{AlbumId, ArtistId, ZoneId};
 use resonate_library::{ArtistFound, Found, Mbid, PollOptions};
 use resonate_providers::Providers;
 
@@ -99,13 +99,13 @@ impl LibraryModel {
         self.wishes.wanting.insert(recording, wanting);
     }
 
-    pub fn fetch_and_play(&mut self, found: Found, cx: &mut Context<Self>) {
+    pub fn fetch_and_play(&mut self, found: Found, zone: ZoneId, cx: &mut Context<Self>) {
         let recording = found.recording.clone();
         self.want_found(found, cx);
-        self.play_if_landing(recording);
+        self.play_if_landing(recording, zone);
     }
 
-    pub(super) fn play_if_landing(&mut self, recording: Mbid) {
+    pub(super) fn play_if_landing(&mut self, recording: Mbid, zone: ZoneId) {
         let landing = self
             .delivered
             .downloads
@@ -114,7 +114,7 @@ impl LibraryModel {
         if landing {
             self.delivered
                 .downloads
-                .play_once_landed(recording, Instant::now());
+                .play_once_landed(recording, zone, Instant::now());
         }
     }
 

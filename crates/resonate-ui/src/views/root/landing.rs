@@ -44,8 +44,9 @@ impl RootView {
             }
             TopEntry::Found(at) => {
                 if let Some(found) = library.found().get(at).cloned() {
+                    let zone = self.zone_acted_on();
                     self.library
-                        .update(cx, |library, cx| library.fetch_and_play(found, cx));
+                        .update(cx, |library, cx| library.fetch_and_play(found, zone, cx));
                 }
             }
             TopEntry::Album(at) => {
