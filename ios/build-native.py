@@ -1,9 +1,11 @@
 import argparse
 import os
 from pathlib import Path
+import plistlib
 import shutil
 import subprocess
 
+import building
 import icons
 
 TRIPLE = "aarch64-apple-ios"
@@ -138,3 +140,5 @@ accents = icons.resonate_accents(repository)
 (generated / "ResonateNative/Accents.swift").write_text(swift_accents(accents))
 draw_icons(generated / "icons", accents)
 draw_primary_icon(repository / "ios/Resonate/Icon.png")
+app_info = plistlib.loads((repository / "ios/Resonate/Info.plist").read_bytes())
+(generated / "WidgetInfo.plist").write_bytes(plistlib.dumps(building.widget_info(app_info)))

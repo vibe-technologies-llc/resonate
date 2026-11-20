@@ -54,6 +54,21 @@ opens; iOS ends an app whose language changes, so the next open tells it again.
 hold, a key named anywhere else (it would show raw), a key nothing names, a count that is not a
 plural of `one` and `other`, and a prompt `InfoPlist.strings` says otherwise than `Info.plist`.
 
+## Home Screen widgets
+
+The small Playback Shortcuts widget opens Now Playing. The medium widget also opens Search
+and shuffles the local library through the same catalog read and playback queue as Siri. A
+shuffle opens Now Playing when it finds songs and shows the empty-library message otherwise.
+`WidgetLink` shares the routes between the app and the extension. The root view handles the
+widget host before handing other URLs to the existing invitation, pairing and document flow.
+
+The widget uses one static timeline entry and opens the app on tap. It reads the English strings
+copied into its own bundle. `build-native.py` writes its Info.plist from the app's version, build
+and device family, so a release sets those once. xtool keeps Foundation's extension launcher
+and the widget target roots Swift's `_main` with `-u` so xtool 1.24 retains the widget body.
+Launching through Swift's entry point directly can trap during extension startup. The clean
+build check uses LLVM's nm on Linux to verify both symbols. [xtool's linker fix](https://github.com/xtool-org/xtool/pull/393)
+
 ## Releasing for sideloading
 
 `python3 ios/release.py vX.Y.Z` (`release.md`) builds the native library, the app and its App

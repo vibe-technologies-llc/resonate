@@ -6,6 +6,19 @@ ERROR = re.compile(r"^(?:\S.*?:\d+:\d+: |ld: )?error: ")
 COMPLETE = re.compile(r"^Build complete!", re.MULTILINE)
 
 
+def widget_info(app):
+    return {
+        "CFBundleShortVersionString": app["CFBundleShortVersionString"],
+        "CFBundleVersion": app["CFBundleVersion"],
+        "CFBundleDisplayName": app["CFBundleDisplayName"],
+        "CFBundleLocalizations": app["CFBundleLocalizations"],
+        "CFBundleSupportedPlatforms": ["iPhoneOS"],
+        "UIDeviceFamily": app["UIDeviceFamily"],
+        "UIRequiredDeviceCapabilities": ["arm64"],
+        "NSExtension": {"NSExtensionPointIdentifier": "com.apple.widgetkit-extension"},
+    }
+
+
 def plain(output):
     return STYLE.sub("", output)
 

@@ -4,6 +4,11 @@ product: Resonate
 infoPath: Resonate/Info.plist
 iconPath: Resonate/Icon.png
 entitlementsPath: Resonate/Resonate.entitlements
+extensions:
+  - product: ResonateWidgets
+    infoPath: Generated/WidgetInfo.plist
+    resources:
+      - Resonate/en.lproj
 resources:
   - Resonate/PrivacyInfo.xcprivacy
   - Resonate/en.lproj

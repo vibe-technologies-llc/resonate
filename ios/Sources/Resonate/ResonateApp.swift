@@ -1,6 +1,7 @@
 import AppIntents
 import ResonateLogic
 import ResonateNative
+import ResonateWidgetLinks
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -23,7 +24,6 @@ struct ResonateApp: App {
                 .monospacedDigit()
                 .environment(library)
                 .onAppear { library.start() }
-                .onOpenURL { library.open($0) }
         }
         .onChange(of: phase) { _, now in
             switch now {
@@ -346,6 +346,7 @@ struct RootView: View {
             }
         }
         .disabled(library.erasing)
+        .onOpenURL(perform: open)
         .overlay { ErasingOverlay() }
         .onChange(of: library.erasing) { _, erasing in
             guard erasing else { return }
@@ -361,6 +362,35 @@ struct RootView: View {
             library.features.sharing = nil
         }
         .environment(navigation)
+    }
+
+    private func open(_ url: URL) {
+        guard WidgetLink.recognizes(url) else {
+            library.open(url)
+            return
+        }
+        guard !library.erasing, let link = WidgetLink(url: url) else { return }
+        switch link {
+        case .nowPlaying:
+            navigation.nowPlaying = true
+        case .search:
+            navigation.openSearch()
+        case .shuffle:
+            Task {
+                do {
+                    library.start()
+                    library.openAgain()
+                    let native = try await library.player()
+                    if try await library.shuffleEntireLibrary(from: native) {
+                        navigation.nowPlaying = true
+                    } else {
+                        library.notice(said("siri.shuffle.empty"))
+                    }
+                } catch {
+                    library.report(error)
+                }
+            }
+        }
     }
 
     private func stack<Content: View>(_ root: Root, @ViewBuilder content: () -> Content) -> some View {

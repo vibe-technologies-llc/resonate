@@ -1850,3 +1850,7 @@
 "variants.detail" = "The version checked plays when the song is pressed.";
 "variants.reading" = "Reading the versions kept";
 "variants.default" = "Plays when pressed";
+"widget.description" = "Open Now Playing, shuffle your library, or search for music.";
+"widget.now-playing" = "Now Playing";
+"widget.shuffle" = "Shuffle Library";
+"widget.title" = "Playback Shortcuts";

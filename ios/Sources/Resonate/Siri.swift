@@ -145,12 +145,8 @@ enum Spoken {
     }
 
     static func shuffleEverything(in library: Library, from native: MobilePlayer) async throws -> IntentDialog {
-        let everything = defaultTrackFilter()
-        let tracks = try await Work.aside { try Library.everyPage { try native.filteredTracks(filter: everything, offset: $0, limit: Library.page) } }
-
-        guard !tracks.isEmpty else { return "\(said("siri.shuffle.empty"))" }
-        library.shuffle(tracks)
-        return "\(said("siri.shuffle.shuffling"))"
+        let shuffled = try await library.shuffleEntireLibrary(from: native)
+        return "\(shuffled ? said("siri.shuffle.shuffling") : said("siri.shuffle.empty"))"
     }
 }
 

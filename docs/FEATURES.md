@@ -18,8 +18,6 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
   written by hand the way `app-intents.py` writes Siri's metadata (the CoreUI format is
   undocumented and nothing here can read one back without a device), each accent alternate
   carrying its own variants
-- [M · blocked: xtool] iOS has no widget: a WidgetKit extension xtool builds is linked empty and,
-  linked whole, traps in `ExtensionFoundation` before a widget registers (xtool issue 313)
 - [M · blocked: Apple] iOS has no CarPlay: the CarPlay audio entitlement is granted by Apple to a
   paid team on request, and a free signing cannot carry it
 - [M · blocked: Apple] iOS zones share one output: `AVAudioSession` sends the app to one route at

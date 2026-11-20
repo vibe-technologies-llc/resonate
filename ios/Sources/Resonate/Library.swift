@@ -1015,6 +1015,16 @@ final class Library {
         play(rows, at: Int.random(in: 0..<max(rows.count, 1)), shuffle: true)
     }
 
+    func shuffleEntireLibrary(from native: MobilePlayer) async throws -> Bool {
+        let everything = defaultTrackFilter()
+        let tracks = try await Work.aside {
+            try Self.everyPage { try native.filteredTracks(filter: everything, offset: $0, limit: Self.page) }
+        }
+        guard !tracks.isEmpty, !erasing else { return false }
+        shuffle(tracks)
+        return true
+    }
+
     func playServed(_ uris: [String], at index: Int, shuffle: Bool = false) {
         guard !uris.isEmpty else { return }
         let start = UInt32(min(max(index, 0), uris.count - 1))

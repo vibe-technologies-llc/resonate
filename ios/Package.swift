@@ -13,7 +13,7 @@ let intentProtocols = root.appendingPathComponent("Resonate/AppIntentsProtocols.
 let app: [Target] = [
     .target(
         name: "Resonate",
-        dependencies: ["ResonateNative", "ResonateLogic"],
+        dependencies: ["ResonateNative", "ResonateLogic", "ResonateWidgetLinks"],
         path: "Sources/Resonate",
         swiftSettings: [
             .unsafeFlags([
@@ -22,15 +22,27 @@ let app: [Target] = [
                 "-Xfrontend", intentProtocols,
             ])
         ]
-    )
+    ),
+    .target(
+        name: "ResonateWidgets",
+        dependencies: ["ResonateWidgetLinks"],
+        swiftSettings: [.unsafeFlags(["-application-extension"])],
+        linkerSettings: [
+            .unsafeFlags(["-Xlinker", "-application_extension", "-Xlinker", "-u", "-Xlinker", "_main"])
+        ]
+    ),
 ]
 
 let package = Package(
     name: "Resonate",
     defaultLocalization: "en",
     platforms: [.iOS(.v26)],
-    products: onTheHost ? [] : [.library(name: "Resonate", targets: ["Resonate"])],
+    products: onTheHost ? [] : [
+        .library(name: "Resonate", targets: ["Resonate"]),
+        .library(name: "ResonateWidgets", targets: ["ResonateWidgets"]),
+    ],
     targets: [
+        .target(name: "ResonateWidgetLinks"),
         .systemLibrary(name: "ResonateNativeFFI", path: "Generated/ResonateNativeFFI"),
         .target(
             name: "ResonateNative",
@@ -52,7 +64,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ResonateLogicTests",
-            dependencies: ["ResonateLogic"],
+            dependencies: ["ResonateLogic", "ResonateWidgetLinks"],
             path: "Tests/ResonateLogicTests"
         ),
     ] + (onTheHost ? [] : app)
