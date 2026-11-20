@@ -1827,8 +1827,14 @@ struct QueueSections: View {
                             QueueHeading(title: said("player.queue.up-next"))
                             Spacer(minLength: 0)
                             if library.features.explore && library.features.online {
-                                Button("explore.mix-queue", systemImage: "sparkles") {
+                                Button {
                                     Task { await library.mixSuggestionsIntoQueue() }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "sparkles")
+                                            .accessibilityHidden(true)
+                                        Text("explore.mix-queue")
+                                    }
                                 }
                                 .font(.caption)
                                 .buttonStyle(.borderless)
