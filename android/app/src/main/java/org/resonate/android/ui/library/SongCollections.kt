@@ -1,10 +1,7 @@
 package org.resonate.android.ui.library
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
@@ -12,38 +9,50 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.resonate.android.DownloadPlan
 import org.resonate.android.R
+import org.resonate.android.heldKey
 import org.resonate.android.nativecore.ExploreScope
+import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Mix
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.SuggestedSearch
 import org.resonate.android.ui.components.LocalSheets
-import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.PlaylistCover
 import org.resonate.android.ui.components.SongSelectionBar
 import org.resonate.android.ui.components.TrackRow
 import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.resonateViewModel
+import org.resonate.android.ui.search.DownloadCard
+import org.resonate.android.ui.search.DownloadChooser
+import org.resonate.android.ui.search.Downloads
 import org.resonate.android.words
 
 data class MixPage(val tracks: List<Track>, val covers: List<ULong>)
@@ -197,19 +206,51 @@ private fun SongCollection(
     val resonate = LocalResonate.current
     val sheets = LocalSheets.current
     val exploreEnabled by resonate.features.explore.collectAsStateWithLifecycle()
-    var exploring by remember(exploreScope, exploreEnabled) { mutableStateOf(false) }
-    if (exploreScope != null && exploreEnabled && exploring) {
-        Page(title) { padding ->
-            Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
-                ExploreTabs(exploring = true, change = { exploring = it })
-                ExploreSongs(exploreScope)
-            }
+    val online by resonate.features.online.collectAsStateWithLifecycle()
+    val jobs by resonate.features.downloads.jobs.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    val downloads = remember(resonate, scope) { Downloads(resonate, scope) }
+    var mixExplore by remember(exploreScope, exploreEnabled) { mutableStateOf(false) }
+    var exploreRetry by remember(exploreScope) { mutableIntStateOf(0) }
+    var dismissed by remember(exploreScope) { mutableStateOf(emptySet<String>()) }
+    var choosing by remember(exploreScope) { mutableStateOf<SearchSong?>(null) }
+    val mixFeed = rememberMixExplore(exploreScope, exploreScope != null && exploreEnabled && mixExplore, exploreRetry)
+    val suggested =
+        if (exploreScope != null && exploreEnabled && mixExplore) {
+            mixFeed.valueOrNull()?.songs.orEmpty().filter { it.song.uri !in dismissed }
+        } else {
+            emptyList()
         }
-        return
-    }
+    val heldDownloads = DownloadPlan.held(jobs)
     val tracks = loaded.valueOrNull().orEmpty()
     val selection = rememberSelection<ULong>()
     LaunchedEffect(tracks) { selection.retain(tracks.map { it.id }) }
+    val playBlended: (List<Track>, Int, Boolean) -> Unit = { shown, startAt, shuffled ->
+        if (mixExplore && suggested.isNotEmpty()) {
+            scope.launch {
+                val byId = shown.associateBy { it.id }
+                val queue =
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            resonate.library.holding { native ->
+                                native.weaveMixQueue(shown.map { it.id }, suggested, shuffled)
+                            }
+                        }.getOrNull()
+                    }
+                if (!queue.isNullOrEmpty()) {
+                    resonate.playback.playMixed(queue, byId, if (shuffled) 0 else startAt)
+                } else if (shuffled) {
+                    resonate.playShuffled(shown)
+                } else {
+                    resonate.playInOrder(shown)
+                }
+            }
+        } else if (shuffled) {
+            resonate.playShuffled(shown)
+        } else {
+            resonate.playback.play(shown, startAt)
+        }
+    }
     CollectionPage(
         title,
         loaded,
@@ -265,9 +306,6 @@ private fun SongCollection(
             )
         },
     ) { shown ->
-        if (exploreScope != null && exploreEnabled) {
-            item("explore-tabs") { ExploreTabs(exploring = false, change = { exploring = it }) }
-        }
         item("header") {
             CollectionHeader(
                 title = title,
@@ -285,23 +323,78 @@ private fun SongCollection(
                             )
                         }
                     },
-                onPlay = { resonate.playInOrder(shown) },
-                onShuffle = { resonate.playShuffled(shown) },
+                onPlay = { playBlended(shown, 0, false) },
+                onShuffle = { playBlended(shown, 0, true) },
                 playable = shown.isNotEmpty(),
                 cover = cover,
             )
         }
+        if (exploreScope != null && exploreEnabled) {
+            item("explore-toggle") {
+                ExploreMixToggle(enabled = mixExplore, onToggle = { mixExplore = !mixExplore })
+            }
+            if (mixExplore) {
+                item("explore-downloads") { DownloadCard(downloads) }
+                val note =
+                    when {
+                        !online -> R.string.explore_offline
+                        mixFeed is Loaded.Loading -> R.string.explore_loading
+                        mixFeed is Loaded.Failed -> R.string.explore_failed
+                        mixFeed.valueOrNull()?.services == 0u -> R.string.explore_services
+                        suggested.isEmpty() -> R.string.explore_empty
+                        else -> null
+                    }
+                if (note != null) {
+                    item("explore-note") {
+                        Text(
+                            stringResource(note),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (mixFeed is Loaded.Failed) {
+                            TextButton(onClick = { exploreRetry++ }) {
+                                Text(stringResource(R.string.explore_retry))
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if (shown.isEmpty()) item("empty") { EmptyCollection(detail = empty) }
-        shown.forEachIndexed { index, track ->
-            item("row:$index:${track.id}") {
-                TrackRow(
-                    track,
-                    onClick = { resonate.playback.play(shown, index) },
-                    playing = track.id == playing,
-                    onMore = { sheets.song(track) },
-                    selection = selection.row(track.id),
-                )
+        val entries =
+            if (mixExplore && suggested.isNotEmpty()) weaveAndroidMix(shown, suggested)
+            else shown.mapIndexed { index, track -> MixListEntry.Local(track, index) }
+        entries.forEachIndexed { index, entry ->
+            when (entry) {
+                is MixListEntry.Local -> {
+                    val track = entry.track
+                    item("row:$index:${track.id}") {
+                        TrackRow(
+                            track,
+                            onClick = { playBlended(shown, index, false) },
+                            playing = track.id == playing,
+                            onMore = { sheets.song(track) },
+                            selection = selection.row(track.id),
+                        )
+                    }
+                }
+                is MixListEntry.Suggested -> {
+                    val offer = entry.song
+                    item("suggested:$index:${offer.song.uri}") {
+                        ExploreWovenRow(
+                            offer = offer,
+                            queued = offer.download.heldKey() in heldDownloads,
+                            onPlay = { playBlended(shown, index, false) },
+                            onDownload = {
+                                downloads.request(listOf(offer.download)) { choosing = offer.download }
+                            },
+                            onDismiss = { dismissed = dismissed + offer.song.uri },
+                        )
+                    }
+                }
             }
         }
     }
+    choosing?.let { song -> DownloadChooser(song, downloads) { choosing = null } }
 }

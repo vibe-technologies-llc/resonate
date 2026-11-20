@@ -1037,6 +1037,32 @@ final class Library {
         }
     }
 
+    func playMixed(_ songs: [QueueSong], at index: Int) {
+        guard !songs.isEmpty else { return }
+        let start = UInt32(min(max(index, 0), songs.count - 1))
+
+        nowPlaying.activate()
+        steer(.loading) { native in
+            try native.loadSongs(songs: songs, startAt: start, autoplay: false)
+            try native.setShuffle(shuffled: false)
+            try native.play()
+        }
+    }
+
+    func exploreDownload(for uri: String) async -> ExploreSong? {
+        guard let native = try? await player() else { return nil }
+        return await Work.aside { native.exploreDownloadFor(uri: uri) }
+    }
+
+    func mixSuggestionsIntoQueue() async {
+        let zone = TimeZone.current
+        let identifier = zone.identifier
+        let offset = Int32(zone.secondsFromGMT())
+        _ = try? await features.serverAnswer {
+            try $0.mixSuggestionsIntoQueue(timeZone: identifier, utcOffsetSeconds: offset)
+        }
+    }
+
     func shuffleServed(_ uris: [String]) {
         playServed(uris, at: Int.random(in: 0..<max(uris.count, 1)), shuffle: true)
     }

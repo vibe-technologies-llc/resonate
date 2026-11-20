@@ -2400,15 +2400,22 @@
     <string name="variants_title">Variants of %1$s</string>
     <string name="variants_detail">The version checked plays when the song is pressed</string>
     <string name="explore_title">Explore</string>
-    <string name="explore_library">Library</string>
+    <string name="explore_playlist_overline">Explore</string>
     <string name="explore_setting">Show Explore suggestions</string>
-    <string name="explore_setting_detail">Find songs to stream from your enabled music services.</string>
+    <string name="explore_setting_detail">Generate discovery playlists and weave streamed suggestions into your mixes from enabled music services.</string>
     <string name="explore_loading">Finding songs to explore…</string>
     <string name="explore_empty">No new songs found for these artists.</string>
     <string name="explore_offline">Go online to find songs to explore.</string>
     <string name="explore_services">Enable a streaming service to find songs.</string>
     <string name="explore_failed">Some music services could not be searched.</string>
     <string name="explore_retry">Retry</string>
-    <string name="explore_play">Play %1$s</string>
+    <string name="explore_refresh">Refresh</string>
+    <string name="explore_download_all">Download all</string>
+    <string name="explore_mix_mode">Include suggestions</string>
+    <string name="explore_suggested_badge">Suggested · %1$s</string>
+    <string name="explore_dismiss">Skip %1$s</string>
     <string name="explore_download">Download %1$s</string>
+    <string name="explore_downloaded">Queued %1$s for download</string>
+    <string name="explore_mix_queue">Mix in suggestions</string>
+    <string name="explore_playlist_gone">This explore playlist is no longer available.</string>
 </resources>

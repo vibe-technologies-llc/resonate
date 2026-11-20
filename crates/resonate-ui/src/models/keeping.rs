@@ -9,7 +9,7 @@ use std::{
 };
 
 use gpui::{App, Context};
-use resonate_core::TrackId;
+use resonate_core::{MediaLocation, TrackId};
 use resonate_library::{
     ExploreOffer, KeepSummary, KeptAs, KeptSong, Library, PlaylistToKeep, PollOptions, SongToKeep,
 };
@@ -40,17 +40,112 @@ impl LibraryModel {
         );
     }
 
+    pub(crate) fn is_explored_queued(&self, location: &MediaLocation) -> bool {
+        self.keeps.explored_queued.contains(location)
+    }
+
+    pub(super) fn read_explored_queued(&mut self, cx: &mut Context<Self>) {
+        let library = Arc::clone(&self.library);
+        self.keeps._explored_queued = cx.spawn(async move |this, cx| {
+            let read = cx
+                .background_executor()
+                .spawn(async move { library.kept_explored_locations() })
+                .await;
+            if let Ok(locations) = read {
+                let _ = this.update(cx, |this, cx| {
+                    if this.keeps.explored_queued != locations {
+                        this.keeps.explored_queued = locations;
+                        cx.notify();
+                    }
+                });
+            }
+        });
+    }
+
     pub(crate) fn keep_explored(&mut self, song: ExploreOffer, cx: &mut Context<Self>) {
-        self.keep_what_was_pressed(
-            move |library| {
-                let title = song.song.title.clone();
-                Ok(Some(match library.keep_explored(song)? {
-                    KeptSong::Queued => words::suggestions::queued_for_download(title),
-                    KeptSong::AlreadyHeld(_) => words::models::already_held().to_owned(),
-                }))
-            },
-            cx,
-        );
+        let location = song.location.clone();
+        self.keeps.explored_queued.insert(location.clone());
+        cx.notify();
+        self.library.deliver_into(delivery_folder(cx));
+        let library = Arc::clone(&self.library);
+        cx.spawn(async move |this, cx| {
+            let pressed = cx
+                .background_executor()
+                .spawn(async move {
+                    let title = song.song.title.clone();
+                    Ok(match library.keep_explored(song)? {
+                        KeptSong::Queued => (true, words::suggestions::queued_for_download(title)),
+                        KeptSong::AlreadyHeld(_) => {
+                            (false, words::models::already_held().to_owned())
+                        }
+                    })
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| match pressed {
+                Ok((queued, said)) => {
+                    if !queued {
+                        this.keeps.explored_queued.remove(&location);
+                    }
+                    toast::tell(Notice::Done(said), cx);
+                    this.keep_what_is_queued(cx);
+                    cx.notify();
+                }
+                Err(error) => {
+                    this.keeps.explored_queued.remove(&location);
+                    this.tell_of_a_keep_refused(&error, cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    pub(crate) fn keep_explored_all(&mut self, songs: Vec<ExploreOffer>, cx: &mut Context<Self>) {
+        if songs.is_empty() {
+            return;
+        }
+        for song in &songs {
+            self.keeps.explored_queued.insert(song.location.clone());
+        }
+        cx.notify();
+        self.library.deliver_into(delivery_folder(cx));
+        let library = Arc::clone(&self.library);
+        cx.spawn(async move |this, cx| {
+            let pressed = cx
+                .background_executor()
+                .spawn(async move {
+                    let mut queued = 0usize;
+                    let mut held = 0usize;
+                    for song in songs {
+                        match library.keep_explored(song)? {
+                            KeptSong::Queued => queued += 1,
+                            KeptSong::AlreadyHeld(_) => held += 1,
+                        }
+                    }
+                    Ok((queued, held))
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.read_explored_queued(cx);
+                match pressed {
+                    Ok((queued, held)) => {
+                        if queued > 0 {
+                            toast::tell(
+                                Notice::Done(words::suggestions::queued_many_for_download(queued)),
+                                cx,
+                            );
+                            this.keep_what_is_queued(cx);
+                        } else if held > 0 {
+                            toast::tell(
+                                Notice::Noted(words::models::already_held().to_owned()),
+                                cx,
+                            );
+                        }
+                    }
+                    Err(error) => this.tell_of_a_keep_refused(&error, cx),
+                }
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn keep_as_a_version(

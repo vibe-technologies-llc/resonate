@@ -854,6 +854,8 @@ struct Keeps {
     pass: Option<KeepPass>,
     owed: bool,
     tally: KeepSummary,
+    explored_queued: std::collections::BTreeSet<MediaLocation>,
+    _explored_queued: Task<()>,
     _running: Task<()>,
     _again: Task<()>,
 }
@@ -1245,6 +1247,8 @@ impl LibraryModel {
                 pass: None,
                 owed: false,
                 tally: KeepSummary::default(),
+                explored_queued: std::collections::BTreeSet::new(),
+                _explored_queued: Task::ready(()),
                 _running: Task::ready(()),
                 _again: Task::ready(()),
             },

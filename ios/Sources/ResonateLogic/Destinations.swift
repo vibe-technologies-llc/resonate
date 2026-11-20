@@ -13,6 +13,7 @@ public enum Destination: Hashable, Codable, Sendable {
     case tools
     case folders
     case suggestions
+    case explorePlaylist(String, String)
     case mix(String)
     case statistics
     case wanted

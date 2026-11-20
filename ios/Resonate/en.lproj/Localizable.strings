@@ -1857,14 +1857,20 @@
 "widget.title" = "Playback Shortcuts";
 
 "explore.title" = "Explore";
-"explore.library" = "Library";
 "explore.setting" = "Show Explore suggestions";
-"explore.setting.detail" = "Find songs to stream from your enabled music services.";
+"explore.setting.detail" = "Generate discovery playlists and weave streamed suggestions into your mixes from enabled music services.";
 "explore.loading" = "Finding songs to explore…";
 "explore.empty" = "No new songs found for these artists.";
 "explore.offline" = "Go online to find songs to explore.";
 "explore.services" = "Enable a streaming service to find songs.";
 "explore.failed" = "Some music services could not be searched.";
 "explore.retry" = "Retry";
-"explore.play" = "Play %@";
+"explore.refresh" = "Refresh";
+"explore.download-all" = "Download all";
+"explore.mix-mode" = "Include suggestions";
+"explore.suggested" = "Suggested · %@";
+"explore.dismiss" = "Skip %@";
 "explore.download" = "Download %@";
+"explore.downloaded" = "Queued %@ for download";
+"explore.mix-queue" = "Mix in suggestions";
+"explore.playlist-gone" = "This explore playlist is no longer available.";

@@ -110,7 +110,9 @@ pub fn read_a_playlist_sheet(text: &str) {
 }
 
 pub use explore::{
-    ExploreCache, ExploreOffer, ExploreResult, ExploreTrack, artists_for_explore, explore_seeds,
+    ExploreBlueprint, ExploreCache, ExploreOffer, ExplorePlaylist, ExplorePlaylistKind,
+    ExplorePlaylists, ExploreProfile, ExploreResult, ExploreTrack, HydratedBlueprints, MixEntry,
+    artists_for_explore, explore_blueprints, explore_seeds, weave_mix,
 };
 
 pub use crate::{
@@ -236,9 +238,9 @@ pub use crate::{
         weighed_again,
     },
     suggest::{
-        ARTISTS_OF_LATE_AT_MOST, ArtistHeard, Candidate, Filing, Kind as SuggestionKind, Kinship,
-        OF_LATE, PICTURED_BY_AT_MOST, Reason, Suggestion, Weighed, artists_as_heard,
-        artists_heard_lately, genres_ranked_by, lists_to_offer, worth_offering,
+        ARTISTS_OF_LATE_AT_MOST, ArtistHeard, Candidate, Filing, HALF_A_YEAR,
+        Kind as SuggestionKind, Kinship, OF_LATE, PICTURED_BY_AT_MOST, Reason, Suggestion, Weighed,
+        artists_as_heard, artists_heard_lately, genres_ranked_by, lists_to_offer, worth_offering,
     },
     sung::{BETTERED_AFTER, LyricsAhead, MISSED_AGAIN_AFTER},
     supply::{

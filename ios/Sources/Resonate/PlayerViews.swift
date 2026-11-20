@@ -626,7 +626,12 @@ struct PlayerTitles: View {
                 .contentTransition(.opacity)
                 .handover(value: track?.pictureKey)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let track { FavouriteButton(track: track).font(.title2) }
+            if let track {
+                if track.isServed {
+                    ExploreDownloadButton(uri: track.uri).font(.title2)
+                }
+                FavouriteButton(track: track).font(.title2)
+            }
         }
         .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
             var seen = tallest
@@ -722,7 +727,12 @@ struct CompactTitles: View {
                 .contentTransition(.opacity)
                 .handover(value: track?.pictureKey)
             Spacer(minLength: 0)
-            if let track { FavouriteButton(track: track).font(.title3) }
+            if let track {
+                if track.isServed {
+                    ExploreDownloadButton(uri: track.uri).font(.title3)
+                }
+                FavouriteButton(track: track).font(.title3)
+            }
         }
     }
 
@@ -1813,7 +1823,19 @@ struct QueueSections: View {
                 }
                 if parts.next.isEmpty {
                     Section {
-                        QueueHeading(title: said("player.queue.up-next"))
+                        HStack {
+                            QueueHeading(title: said("player.queue.up-next"))
+                            Spacer(minLength: 0)
+                            if library.features.explore && library.features.online {
+                                Button("explore.mix-queue", systemImage: "sparkles") {
+                                    Task { await library.mixSuggestionsIntoQueue() }
+                                }
+                                .font(.caption)
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
                         if parts.rest.isEmpty, parts.beyond == 0 {
                             Text("player.queue.nothing-more").secondaryInk()
                         } else {
@@ -1972,8 +1994,13 @@ struct QueueRow: View {
 
     var body: some View {
         let favourite = library.isFavourite(row)
-        TrackRow(track: row, current: current, ownsMenus: false) {
-            library.jump(to: row)
+        HStack(spacing: 8) {
+            TrackRow(track: row, current: current, ownsMenus: false) {
+                library.jump(to: row)
+            }
+            if row.isServed {
+                ExploreDownloadButton(uri: row.uri)
+            }
         }
         .swipeActions(edge: .trailing) {
             Button("player.queue.remove", systemImage: "minus.circle", role: .destructive) {

@@ -51,3 +51,8 @@ on-the-clipboard = { $name } is on the clipboard
 unknown-artist = Unknown artist
 untitled-track = track { $id }
 now-playing-saying = Now playing: { $song }
+download-playing-hint = Download this suggested song to your library
+downloaded-playing-hint = Queued for download
+download-to-library = Download to library
+suggested-from = Suggested · { $service }
+

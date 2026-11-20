@@ -30,7 +30,7 @@ use crate::{
         Pane,
         gives_way::{SignalWidths, StatusWidths, signal_kept, status_kept},
         hint::Names,
-        kit::{self, KeepsItsWidth},
+        kit::{self, KeepsItsWidth, Press},
         listing::Pictured,
         menu::{self, Called, Menu},
         reorder::{self, LiftedTo},
@@ -637,6 +637,20 @@ impl RootView {
 
     fn played_title(&self, playing: &Playing, idle: bool, cx: &mut Context<Self>) -> Div {
         let favouring = playing.track.map(Favoured::Track);
+        let explored = playing
+            .track
+            .is_none()
+            .then(|| {
+                playing
+                    .cover
+                    .file
+                    .as_ref()
+                    .and_then(|file| self.server.read(cx).explored_offer(file).cloned())
+            })
+            .flatten();
+        let explored_queued = explored
+            .as_ref()
+            .is_some_and(|offer| self.library.read(cx).is_explored_queued(&offer.location));
 
         div()
             .flex()
@@ -667,6 +681,28 @@ impl RootView {
             )
             .when_some(favouring, |line, what| {
                 line.child(self.favour_mark("playing-favourite", what, playing.favourite, cx))
+            })
+            .when_some(explored, |line, offer| {
+                line.child(if explored_queued {
+                    kit::mark_when(
+                        Press::Greyed,
+                        "playing-downloaded",
+                        Icon::Check,
+                        words::transport::downloaded_playing_hint(),
+                        CONTROL_GROUP,
+                    )
+                } else {
+                    self.in_the_standing_ring(
+                        "playing-download",
+                        kit::icon_button(
+                            "playing-download",
+                            Icon::Download,
+                            words::transport::download_playing_hint(),
+                        ),
+                        move |this, _, cx| this.download_explored(&offer, cx),
+                        cx,
+                    )
+                })
             })
     }
 
@@ -841,6 +877,26 @@ impl RootView {
                 quality: quality_width,
             },
         );
+
+        let explored_service = playing
+            .track
+            .is_none()
+            .then(|| {
+                playing
+                    .cover
+                    .file
+                    .as_ref()
+                    .and_then(|file| self.server.read(cx).explored_offer(file))
+                    .map(|offer| words::transport::suggested_from(offer.service.as_str()))
+            })
+            .flatten();
+        if let Some(suggested) = explored_service {
+            path = path.child(
+                kit::figure(suggested)
+                    .flex_none()
+                    .text_color(rgb(theme::accent())),
+            );
+        }
 
         match (playing.codec, quality) {
             (Some(codec), quality) => {
@@ -1705,6 +1761,13 @@ fn what_plays_menu(
         favourite,
     } = root.playing_now(cx);
     let file = root.playing_file(cx);
+    let explored = track
+        .is_none()
+        .then(|| {
+            file.as_ref()
+                .and_then(|(location, _)| root.server.read(cx).explored_offer(location).cloned())
+        })
+        .flatten();
 
     Menu::at(at)
         .when_some(cover, |menu, seen| {
@@ -1714,6 +1777,15 @@ fn what_plays_menu(
         })
         .does(Icon::Inspector, words::menu::inspect(), |this, _, cx| {
             this.set_pane(Pane::Inspector, cx);
+        })
+        .when_some(explored, |menu, offer| {
+            menu.does(
+                Icon::Download,
+                words::transport::download_to_library(),
+                move |this, _, cx| {
+                    this.download_explored(&offer, cx);
+                },
+            )
         })
         .apart()
         .when_some(track, |menu, track| {

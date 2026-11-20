@@ -24,6 +24,7 @@ import org.resonate.android.R
 import org.resonate.android.Seeking
 import org.resonate.android.mediaItem
 import org.resonate.android.nativecore.MobilePlayer
+import org.resonate.android.nativecore.QueueSong
 import org.resonate.android.nativecore.Track
 
 interface Host {
@@ -84,6 +85,22 @@ class Playback(
         val remote = remote() ?: return
         if (uris.isEmpty()) return
         remote.setMediaItems(uris.map(::servedItem), index.coerceIn(uris.indices), 0)
+        remote.prepare()
+        remote.play()
+    }
+
+    fun playMixed(songs: List<QueueSong>, tracksById: Map<ULong, Track>, index: Int = 0) {
+        val remote = remote() ?: return
+        if (songs.isEmpty()) return
+        val items =
+            songs.mapNotNull { song ->
+                when (song) {
+                    is QueueSong.Library -> tracksById[song.id]?.mediaItem()
+                    is QueueSong.Served -> servedItem(song.uri)
+                }
+            }
+        if (items.isEmpty()) return
+        remote.setMediaItems(items, index.coerceIn(items.indices), 0)
         remote.prepare()
         remote.play()
     }

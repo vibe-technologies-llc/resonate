@@ -174,6 +174,7 @@ pub(crate) struct Served {
     slot: Slot,
     known: Mutex<BTreeMap<MediaLocation, ServedSong>>,
     marked: Mutex<BTreeMap<MediaLocation, bool>>,
+    explored_songs: Mutex<BTreeMap<MediaLocation, crate::explore::ExploreSong>>,
     pub(crate) explore: resonate_library::ExploreCache,
 }
 
@@ -298,6 +299,21 @@ impl Served {
         *held = services;
         self.known.lock().clear();
         self.marked.lock().clear();
+        self.explored_songs.lock().clear();
+    }
+
+    pub(crate) fn remember_explore_songs(&self, songs: &[crate::explore::ExploreSong]) {
+        let mut held = self.explored_songs.lock();
+        for song in songs {
+            if let Some(location) = MediaLocation::from_uri(&song.song.uri) {
+                held.insert(location, song.clone());
+            }
+        }
+    }
+
+    pub(crate) fn explore_song_at(&self, uri: &str) -> Option<crate::explore::ExploreSong> {
+        let location = MediaLocation::from_uri(uri)?;
+        self.explored_songs.lock().get(&location).cloned()
     }
 
     fn remember(&self, songs: &mut [ServedSong]) {
@@ -589,6 +605,58 @@ impl MobilePlayer {
 
     pub fn add_served_to_queue(&self, uris: Vec<String>) -> Result<()> {
         self.queue_served(uris, Placement::At)
+    }
+
+    pub fn queue_songs(&self, songs: Vec<QueueSong>, play_next: bool) -> Result<()> {
+        let ids: Vec<u64> = songs
+            .iter()
+            .filter_map(|song| match song {
+                QueueSong::Library { id } => Some(*id),
+                QueueSong::Served { .. } => None,
+            })
+            .collect();
+        let held = self
+            .catalog
+            .tracks_by_id(&ids)?
+            .into_iter()
+            .map(|track| {
+                Ok(QueueItem::whole(
+                    TrackId::new(track.id)?,
+                    location(&track.uri)?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let held = self.as_chosen(held)?;
+        self.edit_queue(|queued, _| {
+            let mut existing: Vec<QueueItem> =
+                queued.rows.iter().map(|item| (**item).clone()).collect();
+            existing.extend(held.iter().cloned());
+            let mut minting = Unclaimed::beside(&existing);
+            let mut held_iter = held.iter().cloned();
+            let items = songs
+                .iter()
+                .filter_map(|song| match song {
+                    QueueSong::Library { .. } => held_iter.next().map(Ok),
+                    QueueSong::Served { uri } => Some(self.served_item(uri, &mut minting)),
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if items.is_empty() {
+                return Ok(None);
+            }
+            if queued.rows.is_empty() {
+                return Ok(Some(Command::Resume(paused(items, 0))));
+            }
+            let at = if play_next {
+                Placement::Next
+            } else {
+                Placement::At(queued.rows.len())
+            };
+            Ok(Some(Command::Insert {
+                items,
+                at,
+                play: false,
+            }))
+        })
     }
 }
 
@@ -1656,5 +1724,59 @@ mod tests {
         );
         assert!(matches!(named, Named::Mix(_)));
         assert_eq!(songs[0].title, "Echoes");
+    }
+
+    #[test]
+    fn explore_playlists_weave_mix_queue_and_remember_downloads_for_streamed_songs() {
+        let harness = online();
+        let (server, _asked) = fake_asked();
+        let account = of(MusicProvider::Jellyfin, server);
+        harness.player.serve_from(vec![account]);
+        let mut local = harness.songs[0].clone();
+        local.artist = "Pink Floyd".to_owned();
+        local.title = "A Local Song".to_owned();
+        local.genre = "Progressive Rock".to_owned();
+        harness
+            .player
+            .catalog
+            .upsert(local.clone())
+            .expect("a seed");
+
+        let feed = harness
+            .player
+            .explore_playlists(String::new(), 0, false)
+            .expect("explore playlists are generated");
+        assert_eq!(feed.services, 1);
+        assert_eq!(feed.failed, 0);
+        assert!(!feed.playlists.is_empty());
+        let first = &feed.playlists[0];
+        assert_eq!(first.id, "discover-mix");
+        assert_eq!(first.songs.len(), 1);
+        let offer = &first.songs[0];
+        assert_eq!(offer.song.uri, "jellyfin:track/jso-1");
+
+        let remembered = harness
+            .player
+            .explore_download_for(offer.song.uri.clone())
+            .expect("the download offer is remembered for queue and now playing");
+        assert_eq!(remembered.song.title, "One of These Days");
+        assert_eq!(
+            remembered.download.served.as_deref(),
+            Some("jellyfin:track/jso-1")
+        );
+
+        let woven = harness
+            .player
+            .weave_mix_queue(vec![local.id], vec![offer.clone()], false)
+            .expect("local and streamed songs weave together");
+        assert_eq!(
+            woven,
+            vec![
+                QueueSong::Library { id: local.id },
+                QueueSong::Served {
+                    uri: "jellyfin:track/jso-1".to_owned(),
+                },
+            ]
+        );
     }
 }

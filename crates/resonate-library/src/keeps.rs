@@ -499,6 +499,31 @@ impl Library {
         })
     }
 
+    pub fn kept_explored_locations(&self) -> Result<std::collections::BTreeSet<MediaLocation>> {
+        self.inner().read(|connection| {
+            let mut query = connection
+                .prepare_cached(
+                    "SELECT source, served_id FROM kept_songs
+                      WHERE served_catalog IS NOT NULL AND served_id IS NOT NULL
+                        AND landed IS NULL AND gone = 0",
+                )
+                .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+            let rows = query
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            let mut locations = std::collections::BTreeSet::new();
+            for row in rows {
+                let (source, id) = row.map_err(|source| Error::store(StoreOp::Query, source))?;
+                if let Some(location) = crate::explore::served_song_location(&source, &id) {
+                    locations.insert(location);
+                }
+            }
+            Ok(locations)
+        })
+    }
+
     pub fn keeps_replacing_queued(&self) -> Result<u64> {
         self.inner().read(|connection| {
             connection

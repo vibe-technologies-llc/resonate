@@ -252,7 +252,7 @@ pub(crate) struct ServerModel {
     covers: Recent<AtSide<CoverKey>, Option<Picture>>,
     fetching: Underway<CoverKey>,
     favoured: AHashMap<MediaLocation, bool>,
-    explored: VecDeque<ServedSong>,
+    explored: VecDeque<(ExploreOffer, ServedSong)>,
     scale: Scale,
     shown: bool,
     owes_a_first_page: bool,
@@ -347,9 +347,10 @@ impl ServerModel {
     }
 
     pub(crate) fn remember_explore(&mut self, offer: &ExploreOffer) {
-        self.explored.retain(|song| song.location != offer.location);
+        self.explored
+            .retain(|(held, _)| held.location != offer.location);
         let song = &offer.song;
-        self.explored.push_front(ServedSong {
+        let served = ServedSong {
             location: offer.location.clone(),
             title: song.title.clone(),
             artist: song.artist.clone(),
@@ -363,12 +364,29 @@ impl ServerModel {
                 .map(|cover| ServedCover(cover.as_str().to_owned())),
             favourite: song.favourite,
             rating: song.rating,
-        });
+        };
+        self.explored.push_front((offer.clone(), served));
         self.explored.truncate(COVERS_HELD.get());
     }
 
+    pub(crate) fn remember_explored(&mut self, offers: &[ExploreOffer]) {
+        for offer in offers {
+            self.remember_explore(offer);
+        }
+    }
+
     pub(crate) fn explored(&self, location: &MediaLocation) -> Option<&ServedSong> {
-        self.explored.iter().find(|song| &song.location == location)
+        self.explored
+            .iter()
+            .find(|(held, _)| &held.location == location)
+            .map(|(_, song)| song)
+    }
+
+    pub(crate) fn explored_offer(&self, location: &MediaLocation) -> Option<&ExploreOffer> {
+        self.explored
+            .iter()
+            .find(|(held, _)| &held.location == location)
+            .map(|(offer, _)| offer)
     }
 
     pub(crate) fn is_favoured(&self, song: &ServedSong) -> bool {
@@ -508,6 +526,20 @@ impl ServerModel {
         self.fetching.forget();
     }
 
+    pub(crate) fn cover_of_offer(
+        &mut self,
+        offer: &ExploreOffer,
+        drawn: Drawn,
+        cx: &mut Context<Self>,
+    ) -> Option<Picture> {
+        let known = offer
+            .song
+            .cover
+            .as_ref()
+            .map(|cover| ServedCover(cover.as_str().to_owned()));
+        self.cover(&offer.location, known.as_ref(), drawn, cx)
+    }
+
     pub(crate) fn cover(
         &mut self,
         of: &MediaLocation,
@@ -516,7 +548,10 @@ impl ServerModel {
         cx: &mut Context<Self>,
     ) -> Option<Picture> {
         let serves = self.serving(of).or_else(|| self.serves())?;
-        let key = CoverKey::of(of, known);
+        let remembered = known
+            .cloned()
+            .or_else(|| self.explored(of).and_then(|song| song.cover.clone()));
+        let key = CoverKey::of(of, remembered.as_ref());
         let wanted = AtSide {
             key: key.clone(),
             side: drawn.side(self.scale),
@@ -531,7 +566,7 @@ impl ServerModel {
 
         let side = wanted.side;
         let location = of.clone();
-        let known = known.cloned();
+        let known = remembered;
         let fetched = cx
             .background_executor()
             .spawn(async move { serves.cover(&location, known.as_ref(), side.get()) });
@@ -579,8 +614,11 @@ impl ServerModel {
         known: Option<&ServedCover>,
         drawn: Drawn,
     ) -> bool {
+        let remembered = known
+            .cloned()
+            .or_else(|| self.explored(of).and_then(|song| song.cover.clone()));
         let wanted = AtSide {
-            key: CoverKey::of(of, known),
+            key: CoverKey::of(of, remembered.as_ref()),
             side: drawn.side(self.scale),
         };
         matches!(self.covers.peek(&wanted), Some(None))

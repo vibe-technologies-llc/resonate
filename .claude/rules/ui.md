@@ -3214,7 +3214,13 @@ A song row nests Share into song.link and Upload file to Catbox (public). The up
 
 ### Explore in Suggestions
 
-Suggestions has an Explore shelf with playback and download actions. A local mix opens on
-Library and offers an Explore tab seeded by that mix. A background read belongs to the
-scope and provider configuration that asked for it. Turning off Show Explore suggestions in
-Online settings hides both surfaces. An explicit keep enters the Downloads queue.
+Suggestions places a generated Explore playlists shelf right below Made for you, rendering
+each `ExplorePlaylist` as a mosaic card with Play and Queue controls and opening into a full
+playlist view with Play, Shuffle, Queue, Download all and Refresh actions. An opened local
+mix offers an Include suggestions toggle (`mix_explore_button`) that weaves streamed
+`ExploreOffer`s inline (`weave_suggestion_tracks`) and loads blended local and streamed queues
+via `play_mixed` and `queue_mixed`. `ServerModel` remembers full `ExploreOffer` metadata and
+covers so `QueuePane` and the playback bar show Suggested badges, cover art and one-click
+Download controls (`download_explored`, reflected via `LibraryModel::is_explored_queued`),
+beside `mix_suggestions_into_queue` in the Queue heading. Turning off Show Explore suggestions
+in Online settings hides all Explore surfaces. An explicit keep enters the Downloads queue.

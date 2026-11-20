@@ -9,8 +9,8 @@ use gpui::{
 use resonate_core::AlbumId;
 use resonate_engine::Placement;
 use resonate_library::{
-    Library, PICTURED_BY_AT_MOST, Reason, SavedQuery, Search, Suggestion, SuggestionKind, Track,
-    TrackQuery,
+    ExploreOffer, Library, MixEntry, PICTURED_BY_AT_MOST, Reason, SavedQuery, Search, Suggestion,
+    SuggestionKind, Track, TrackQuery,
 };
 
 use crate::{
@@ -95,7 +95,8 @@ impl SuggestionsPane {
     }
 
     fn open(&mut self, query: Option<SavedQuery>, cx: &mut Context<Self>) {
-        self.explore.library();
+        self.explore.open_playlist(None);
+        self.explore.mix_changed();
         let Some(query) = query else {
             self.opened = None;
             self._previewing = Task::ready(());
@@ -172,14 +173,17 @@ impl RootView {
         let offered = Arc::clone(&pane.offered);
         let opened = pane.opened.clone();
         let scroll = pane.shelves.clone();
-        let exploring_mix = pane.explore.exploring_mix();
+        let has_explore_playlist = pane.explore.opened_playlist().is_some();
+        if self.explore_enabled(cx)
+            && has_explore_playlist
+            && let Some(playlist_view) = self.opened_explore_playlist(cx)
+        {
+            return playlist_view;
+        }
         if let Some(opened) = opened
             && let Some(suggestion) = offered.iter().find(|held| held.query == opened.query)
         {
             let suggestion = suggestion.clone();
-            if self.explore_enabled(cx) && exploring_mix {
-                return self.explored_suggestion(&suggestion, cx);
-            }
             return self.opened_suggestion(&suggestion, &opened.tracks, cx);
         }
 
@@ -197,6 +201,7 @@ impl RootView {
             .overflow_y_scroll()
             .track_scroll(&scroll);
         let shelved = in_shelf_order(&offered);
+        let mut explore_placed = false;
         for kind in SuggestionKind::ALL {
             let cards: Vec<AnyElement> = shelved
                 .iter()
@@ -209,32 +214,37 @@ impl RootView {
                         .into_any_element()
                 })
                 .collect();
-            if cards.is_empty() {
-                continue;
+            if !cards.is_empty() {
+                shelves = shelves.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_4()
+                        .child(kit::group_title(kind.name()).flex_none())
+                        .child(
+                            div()
+                                .flex()
+                                .flex_wrap()
+                                .content_start()
+                                .gap(px(theme::grid_gap()))
+                                .children(cards),
+                        ),
+                );
             }
-            shelves = shelves.child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_4()
-                    .child(kit::group_title(kind.name()).flex_none())
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .content_start()
-                            .gap(px(theme::grid_gap()))
-                            .children(cards),
-                    ),
-            );
+            if explore && kind == SuggestionKind::ForYou {
+                shelves = shelves.child(self.explore_playlists_shelf(cx));
+                explore_placed = true;
+            }
         }
 
-        if explore {
+        if explore && !explore_placed {
             shelves = shelves
                 .when(nothing, |shelves| {
                     shelves.child(kit::figure(words::suggestions::scan_more()))
                 })
-                .child(self.explore_shelf(None, cx));
+                .child(self.explore_playlists_shelf(cx));
+        } else if explore && nothing {
+            shelves = shelves.child(kit::figure(words::suggestions::scan_more()));
         }
         kit::pane()
             .child(suggestions_heading(offered.len()))
@@ -417,12 +427,47 @@ impl RootView {
         let shown = tracks.len();
         let rows = Rows::from(Arc::clone(tracks));
         let scroll = self.suggestions.read(cx).rows();
+        let explore_allowed = self.explore_enabled(cx);
+        let mix_mode = explore_allowed && self.suggestions.read(cx).explore.mix_mode();
+        let (mix_page, mix_offers) = if mix_mode {
+            self.mix_explore_state(&suggestion.query, cx)
+        } else {
+            (explore::MixPage::Idle, Vec::new())
+        };
+        let mix_banner = if mix_mode {
+            self.mix_explore_banner(&mix_page, mix_offers.len(), cx)
+        } else {
+            None
+        };
+        let woven: Option<Arc<[MixEntry<Track>]>> = if mix_mode && !mix_offers.is_empty() {
+            Some(explore::weave_suggestion_tracks(tracks, mix_offers.clone()).into())
+        } else {
+            None
+        };
+        let list_len = woven.as_ref().map_or(shown, |entries| entries.len());
 
         let actions = kit::action_row()
             .flex_nowrap()
             .pt_2()
-            .child(self.play_suggestion("opened-suggestion-play", &suggestion.query, cx))
-            .child(self.shuffle_suggestion(&suggestion.query, cx))
+            .child(self.play_suggestion(
+                "opened-suggestion-play",
+                &suggestion.query,
+                mix_mode.then(|| mix_offers.clone()),
+                cx,
+            ))
+            .child(self.shuffle_suggestion(
+                &suggestion.query,
+                mix_mode.then(|| mix_offers.clone()),
+                cx,
+            ))
+            .child(self.queue_suggestion(
+                &suggestion.query,
+                mix_mode.then(|| mix_offers.clone()),
+                cx,
+            ))
+            .when(explore_allowed, |row| {
+                row.child(self.mix_explore_button(mix_mode, cx))
+            })
             .child(self.save_mark("opened-suggestion-save", suggestion, cx))
             .child(self.in_the_pane_ring(
                 kit::icon_button(
@@ -475,9 +520,7 @@ impl RootView {
 
         kit::pane()
             .child(heading)
-            .when(self.explore_enabled(cx), |pane| {
-                pane.child(self.explore_tabs(false, cx))
-            })
+            .children(mix_banner)
             .child(listing::columns(
                 "#",
                 true,
@@ -493,12 +536,59 @@ impl RootView {
                     scroll.clone(),
                     uniform_list(
                         "suggestion-tracks",
-                        shown,
+                        list_len,
                         cx.processor(move |this, range: Range<usize>, _, cx| {
                             this.suggestions.update(cx, |pane, cx| {
                                 pane.preview_further(range.end, cx);
                             });
                             let mut drawn = Vec::new();
+                            if let Some(entries) = &woven {
+                                for index in range {
+                                    let Some(entry) = entries.get(index) else {
+                                        continue;
+                                    };
+                                    match entry {
+                                        MixEntry::Local(track) => {
+                                            let local_index = entries[..index]
+                                                .iter()
+                                                .filter(|item| matches!(item, MixEntry::Local(_)))
+                                                .count();
+                                            let shift = Shift::Listing(Listed::Suggested);
+                                            let row = this.track_row(
+                                                &rows,
+                                                local_index,
+                                                track,
+                                                Rowed {
+                                                    playing: playing == Some(track.id),
+                                                    plays: Plays::TheseRows,
+                                                    reach: this.at_the_reach(
+                                                        shift,
+                                                        local_index,
+                                                        cx,
+                                                    ),
+                                                    chooses: Some(Chooses::among(
+                                                        Listed::Suggested,
+                                                        local_index,
+                                                    )),
+                                                },
+                                                cx,
+                                            );
+                                            drawn.push(this.marked_where_reached(
+                                                shift,
+                                                local_index,
+                                                row,
+                                                cx,
+                                            ));
+                                        }
+                                        MixEntry::Suggested(offer) => {
+                                            drawn.push(
+                                                this.woven_mix_row(entries, index, offer, cx),
+                                            );
+                                        }
+                                    }
+                                }
+                                return drawn;
+                            }
                             for index in range {
                                 let Some(track) = rows.get(index) else {
                                     continue;
@@ -598,6 +688,35 @@ impl RootView {
         )
     }
 
+    fn queue_suggestion(
+        &self,
+        query: &SavedQuery,
+        explore_offers: Option<Vec<ExploreOffer>>,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let queueing = query.clone();
+
+        self.in_the_pane_ring(
+            kit::icon_button(
+                "opened-suggestion-queue",
+                Icon::QueueLast,
+                words::suggestions::queue_hint(),
+            ),
+            move |this, window, cx| {
+                let offers = explore_offers.clone();
+                this.with_the_rows_of(&queueing, window, cx, move |this, rows, _, cx| {
+                    if let Some(offers) = offers.filter(|offers| !offers.is_empty()) {
+                        let woven = explore::weave_suggestion_tracks(&rows, offers);
+                        this.queue_mixed(&woven, Placement::Queued, cx);
+                    } else {
+                        this.queue(&listed(&rows), Placement::Queued, cx);
+                    }
+                });
+            },
+            cx,
+        )
+    }
+
     fn queue_mark(
         &self,
         id: impl Into<gpui::ElementId>,
@@ -622,6 +741,7 @@ impl RootView {
         &self,
         id: impl Into<gpui::ElementId>,
         query: &SavedQuery,
+        explore_offers: Option<Vec<ExploreOffer>>,
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let playing = query.clone();
@@ -635,16 +755,27 @@ impl RootView {
                 Tone::Primary,
             ),
             move |this, window, cx| {
-                this.with_the_rows_of(&playing, window, cx, |this, rows, _, cx| {
-                    this.plays_in_order(cx);
-                    this.play(&rows, 0, cx);
+                let offers = explore_offers.clone();
+                this.with_the_rows_of(&playing, window, cx, move |this, rows, _, cx| {
+                    if let Some(offers) = offers.filter(|offers| !offers.is_empty()) {
+                        let woven = explore::weave_suggestion_tracks(&rows, offers);
+                        this.play_mixed(&woven, 0, false, cx);
+                    } else {
+                        this.plays_in_order(cx);
+                        this.play(&rows, 0, cx);
+                    }
                 });
             },
             cx,
         )
     }
 
-    fn shuffle_suggestion(&self, query: &SavedQuery, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn shuffle_suggestion(
+        &self,
+        query: &SavedQuery,
+        explore_offers: Option<Vec<ExploreOffer>>,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         let shuffling = query.clone();
 
         self.in_the_pane_ring(
@@ -656,8 +787,14 @@ impl RootView {
                 Tone::Outlined,
             ),
             move |this, window, cx| {
-                this.with_the_rows_of(&shuffling, window, cx, |this, rows, _, cx| {
-                    this.play_shuffled(&rows, cx);
+                let offers = explore_offers.clone();
+                this.with_the_rows_of(&shuffling, window, cx, move |this, rows, _, cx| {
+                    if let Some(offers) = offers.filter(|offers| !offers.is_empty()) {
+                        let woven = explore::weave_suggestion_tracks(&rows, offers);
+                        this.play_mixed(&woven, 0, true, cx);
+                    } else {
+                        this.play_shuffled(&rows, cx);
+                    }
                 });
             },
             cx,

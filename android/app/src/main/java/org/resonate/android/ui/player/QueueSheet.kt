@@ -79,6 +79,8 @@ import org.resonate.android.ui.components.rememberReorder
 import org.resonate.android.ui.components.rememberSelection
 import org.resonate.android.ui.components.reorderActions
 import org.resonate.android.ui.components.reorderable
+import org.resonate.android.ui.library.ExploreDownloadButton
+import org.resonate.android.ui.library.MixIntoQueueButton
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
 import org.resonate.android.ui.shownTitle
@@ -140,6 +142,7 @@ fun QueueSheet(model: PlayerViewModel, onDismiss: () -> Unit) {
                 }
             }
             if (queue.size > 0) {
+                MixIntoQueueButton()
                 IconButton(
                     onClick = {
                         sheets.name(saveAsPlaylist) { model.saveAsPlaylist(it) }
@@ -368,20 +371,20 @@ private fun QueueRow(
                 selection = selection,
                 onMore = if (handle == null) ({ sheets.song(track, queueId = track.queueId) }) else null,
                 trailing =
-                    handle?.let { drag ->
+                    if (handle != null || track.id == 0uL) {
                         {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (track.id == 0uL) ExploreDownloadButton(track.uri)
                                 IconButton(onClick = { sheets.song(track, queueId = track.queueId) }) {
                                     Icon(
                                         Icons.Rounded.MoreVert,
                                         stringResource(R.string.queue_more_options),
                                     )
-
                                 }
-                                drag()
+                                handle?.invoke()
                             }
                         }
-                    },
+                    } else null,
             )
         }
     }

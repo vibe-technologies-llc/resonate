@@ -21,7 +21,7 @@ use crate::{
     views::{
         browser::ROW_CONTROLS,
         hint,
-        kit::{self, EndsInAnEllipsis, Tone},
+        kit::{self, EndsInAnEllipsis, Press, Tone},
         listing::{self, Pictured},
         menu::{self, Called, Menu},
         playlists::{Held, ROW_GROUP},
@@ -853,12 +853,33 @@ impl RootView {
                                             ),
                                     };
 
-                                    if let Some(song) =
-                                        this.server.read(cx).explored(&item.location)
-                                    {
-                                        drawn.title = SharedString::from(song.title.clone());
-                                        if let Some(artist) = &song.artist {
+                                    let explored_offer = this
+                                        .server
+                                        .read(cx)
+                                        .explored_offer(&item.location)
+                                        .cloned();
+                                    let explored_queued = explored_offer.as_ref().is_some_and(
+                                        |offer| {
+                                            this.library
+                                                .read(cx)
+                                                .is_explored_queued(&offer.location)
+                                        },
+                                    );
+                                    let explored_badge = explored_offer.as_ref().map(|offer| {
+                                        SharedString::from(words::queue::suggested_from(
+                                            offer.service.as_str(),
+                                        ))
+                                    });
+                                    if let Some(offer) = &explored_offer {
+                                        drawn.title = SharedString::from(offer.song.title.clone());
+                                        if let Some(artist) = &offer.song.artist {
                                             drawn.artist = SharedString::from(artist.clone());
+                                        }
+                                        if drawn.length.is_empty()
+                                            && let Some(length) = offer.song.length
+                                        {
+                                            drawn.length =
+                                                SharedString::from(format::spanned(length));
                                         }
                                     }
                                     let cover = this.cover(
@@ -937,7 +958,18 @@ impl RootView {
                                             .ends_in_an_ellipsis(),
                                         ))
                                         .when(fitted.format, |row| {
-                                            row.child(listing::format_cell(drawn.shape))
+                                            row.child(match explored_badge {
+                                                Some(badge) => div()
+                                                    .w(px(theme::row_format()))
+                                                    .flex_none()
+                                                    .truncate()
+                                                    .ends_in_an_ellipsis()
+                                                    .child(
+                                                        kit::figure(badge)
+                                                            .text_color(rgb(theme::accent())),
+                                                    ),
+                                                None => listing::format_cell(drawn.shape),
+                                            })
                                         })
                                         .when(fitted.heard, |row| {
                                             row.child(listing::heard(
@@ -949,6 +981,35 @@ impl RootView {
                                         .child(listing::length_cell(drawn.length))
                                         .child(
                                             this.row_controls(("queue-controls", index), cx)
+                                                .when_some(
+                                                    explored_offer.clone(),
+                                                    |controls, offer| {
+                                                        controls.child(if explored_queued {
+                                                            kit::mark_when(
+                                                                Press::Greyed,
+                                                                ("queue-downloaded", index),
+                                                                Icon::Check,
+                                                                words::queue::downloaded_song_hint(),
+                                                                ROW_GROUP,
+                                                            )
+                                                        } else {
+                                                            this.in_the_pane_ring(
+                                                                kit::icon_button(
+                                                                    ("queue-download", index),
+                                                                    Icon::Download,
+                                                                    words::queue::download_song_hint(),
+                                                                ),
+                                                                move |this, _, cx| {
+                                                                    cx.stop_propagation();
+                                                                    this.download_explored(
+                                                                        &offer, cx,
+                                                                    );
+                                                                },
+                                                                cx,
+                                                            )
+                                                        })
+                                                    },
+                                                )
                                                 .child(this.mover(
                                                     "raise",
                                                     Step::Above,
@@ -1039,6 +1100,18 @@ impl RootView {
                                                             Command::JumpTo(index),
                                                             cx,
                                                         );
+                                                    },
+                                                )
+                                                .when_some(
+                                                    explored_offer.clone(),
+                                                    |menu, offer| {
+                                                        menu.does(
+                                                            Icon::Download,
+                                                            words::queue::download_to_library(),
+                                                            move |this, _, cx| {
+                                                                this.download_explored(&offer, cx);
+                                                            },
+                                                        )
                                                     },
                                                 )
                                                 .apart()
@@ -1163,44 +1236,70 @@ impl RootView {
                         .children(continuing)
                         .child(hint::explains("queue-moving", reorder::moving_hint()))
                         .when(queued, |bar| {
-                            bar.child(self.orders_a_listing("order-queue", Ordered::Queue, cx))
-                                .child(self.in_the_pane_ring(
+                            let can_mix = self.explore_enabled(cx)
+                                && cx.global::<ResonateApp>().online.enabled
+                                && !cx
+                                    .global::<ResonateApp>()
+                                    .sourcing
+                                    .providers(
+                                        &cx.global::<ResonateApp>().online,
+                                        crate::settings::Asking::EveryProvider,
+                                    )
+                                    .song_catalogs()
+                                    .is_empty();
+                            bar.when(can_mix, |bar| {
+                                bar.child(self.in_the_pane_ring(
                                     kit::button(
-                                        "clear-queue",
-                                        Some(Icon::Discard),
-                                        words::queue::clear(),
-                                        words::queue::clear_hint(),
+                                        "queue-mix-suggestions",
+                                        Some(Icon::Suggestions),
+                                        words::queue::mix_in_suggestions(),
+                                        words::queue::mix_in_suggestions_hint(),
                                         Tone::Ghost,
                                     ),
                                     |this, _, cx| {
-                                        let queued = this.player.read(cx).queue();
-                                        let Some(last) = queued.len().checked_sub(1) else {
-                                            return;
-                                        };
-                                        this.drop_rows(Shift::Queue, Span::between(0, last), cx);
+                                        this.mix_suggestions_into_queue(cx);
                                     },
                                     cx,
                                 ))
-                                .child(self.in_the_pane_ring(
-                                    kit::button(
-                                        "queue-to-playlist-all",
-                                        Some(Icon::Plus),
-                                        words::queue::save_as_a_playlist(),
-                                        words::queue::queued_hint(),
-                                        Tone::Outlined,
-                                    ),
-                                    |this, window, cx| {
-                                        let queued: Arc<[Cut]> = this
-                                            .player
-                                            .read(cx)
-                                            .queue()
-                                            .iter()
-                                            .map(|item| queued_cut(item))
-                                            .collect();
-                                        this.hold_for_a_playlist(Held::of(queued), window, cx);
-                                    },
-                                    cx,
-                                ))
+                            })
+                            .child(self.orders_a_listing("order-queue", Ordered::Queue, cx))
+                            .child(self.in_the_pane_ring(
+                                kit::button(
+                                    "clear-queue",
+                                    Some(Icon::Discard),
+                                    words::queue::clear(),
+                                    words::queue::clear_hint(),
+                                    Tone::Ghost,
+                                ),
+                                |this, _, cx| {
+                                    let queued = this.player.read(cx).queue();
+                                    let Some(last) = queued.len().checked_sub(1) else {
+                                        return;
+                                    };
+                                    this.drop_rows(Shift::Queue, Span::between(0, last), cx);
+                                },
+                                cx,
+                            ))
+                            .child(self.in_the_pane_ring(
+                                kit::button(
+                                    "queue-to-playlist-all",
+                                    Some(Icon::Plus),
+                                    words::queue::save_as_a_playlist(),
+                                    words::queue::queued_hint(),
+                                    Tone::Outlined,
+                                ),
+                                |this, window, cx| {
+                                    let queued: Arc<[Cut]> = this
+                                        .player
+                                        .read(cx)
+                                        .queue()
+                                        .iter()
+                                        .map(|item| queued_cut(item))
+                                        .collect();
+                                    this.hold_for_a_playlist(Held::of(queued), window, cx);
+                                },
+                                cx,
+                            ))
                         })
                         .when(taken_out.is_some(), |bar| {
                             bar.child(self.in_the_pane_ring(

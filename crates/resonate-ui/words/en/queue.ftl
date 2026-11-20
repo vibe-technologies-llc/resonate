@@ -36,3 +36,15 @@ takes-out-again = Take the rows last put back out of the queue again. { $behind 
     [one] One more put back is behind it
    *[other] More put backs are behind it
 }
+suggested-from = Suggested · { $service }
+download-song-hint = Download this suggested song to your library
+downloaded-song-hint = Queued for download
+download-to-library = Download to library
+mix-in-suggestions = Mix in suggestions
+mix-in-suggestions-hint = Weave suggested streamed songs into the upcoming queue
+mixed-in-suggestions = { $count ->
+    [one] Mixed { $count } suggested song into the queue
+   *[other] Mixed { $count } suggested songs into the queue
+}
+no-queue-suggestions = No new suggested songs were found for this queue
+

@@ -46,7 +46,7 @@ const A_LONG_PLAYER: Duration = Duration::from_secs(10 * 60);
 const A_SLOW_BURNER: Duration = Duration::from_secs(6 * 60);
 const SHORT_AND_SHARP: Duration = Duration::from_secs(2 * 60);
 const A_MONTH: Duration = Duration::from_secs(30 * SECONDS_PER_DAY);
-const HALF_A_YEAR: Duration = Duration::from_secs(180 * SECONDS_PER_DAY);
+pub const HALF_A_YEAR: Duration = Duration::from_secs(180 * SECONDS_PER_DAY);
 pub const OF_LATE: Duration = Duration::from_secs(90 * SECONDS_PER_DAY);
 
 const NEVER_PLAYED: u32 = 0;
@@ -350,6 +350,18 @@ impl Kinship {
         kindred_to(self, seed, &AHashSet::new())
     }
 
+    pub(crate) fn artists_in_genre(&self, genre: &str) -> Vec<String> {
+        let sought = store::folded_letters(genre);
+        let mut matched: Vec<String> = self
+            .artists
+            .values()
+            .filter(|(_, genres)| genres.contains(&sought))
+            .map(|(name, _)| name.clone())
+            .collect();
+        matched.sort_by_key(|one| one.to_lowercase());
+        matched
+    }
+
     pub fn of(shelved: &[(String, String)]) -> Self {
         let (artists, holders) = artists_and_who_shares_their_genres(shelved);
 
@@ -368,6 +380,10 @@ pub struct Filing {
 impl Filing {
     pub(crate) const fn kinship(&self) -> &Kinship {
         &self.kin
+    }
+
+    pub(crate) fn genres(&self) -> &[String] {
+        &self.genres
     }
 
     pub fn of(
@@ -776,7 +792,7 @@ fn names_a_decade(name: &str) -> bool {
     !figures.is_empty() && figures.chars().all(|letter| letter.is_ascii_digit())
 }
 
-fn billed_as(name: &str) -> String {
+pub(crate) fn billed_as(name: &str) -> String {
     if name.chars().any(char::is_uppercase) {
         return name.to_owned();
     }
@@ -857,7 +873,7 @@ fn never_played_of(heard: &[ArtistHeard]) -> Vec<&str> {
         .collect()
 }
 
-fn left_behind_of(heard: &[ArtistHeard], before: SystemTime) -> Vec<&str> {
+pub(crate) fn left_behind_of(heard: &[ArtistHeard], before: SystemTime) -> Vec<&str> {
     heard
         .iter()
         .filter(|artist| {
@@ -880,7 +896,7 @@ pub(crate) fn heard_of_late(inner: &Inner, now: SystemTime) -> Result<Vec<String
     })
 }
 
-fn what_you_play(inner: &Inner, now: SystemTime) -> Result<(Vec<String>, Vec<String>)> {
+pub(crate) fn what_you_play(inner: &Inner, now: SystemTime) -> Result<(Vec<String>, Vec<String>)> {
     let lately = heard_of_late(inner, now)?;
     let played_most = genres_ranked(inner, [THE_GENRES_PLAYED, THE_GENRES_OF_THE_ARTISTS_PLAYED])?;
 

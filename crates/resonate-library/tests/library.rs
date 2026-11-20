@@ -34483,14 +34483,15 @@ fn explore_uses_the_library_and_mix_seeds_and_keeps_new_songs_from_answering_ser
     let found = library.explore(Some(&mix), &sources, &cache, false)?;
     assert_eq!(found.songs.len(), 1);
     assert_eq!(found.songs[0].song.id.as_str(), "new");
+    assert_eq!(first.searched.lock().len(), 2);
+    assert_eq!(songs_under(&tree).len(), 2);
+
+    library.explore(Some(&mix), &sources, &cache, true)?;
+    assert_eq!(first.searched.lock().len(), 3);
     assert_eq!(
         first.searched.lock().last().map(String::as_str),
         Some("the orbiters")
     );
-    assert_eq!(songs_under(&tree).len(), 2);
-
-    library.explore(Some(&mix), &sources, &cache, true)?;
-    assert_eq!(first.searched.lock().len(), 4);
     Ok(())
 }
 
@@ -34520,6 +34521,7 @@ fn an_explored_song_streams_without_a_copy_and_its_exact_download_survives_reope
     assert_eq!(library.keep_explored(offer.clone())?, KeptSong::Queued);
     assert_eq!(library.keep_explored(offer.clone())?, KeptSong::Queued);
     assert_eq!(library.keeps_served_queued()?, 1);
+    assert!(library.kept_explored_locations()?.contains(&location));
     drop(library);
 
     let library = Library::open(&database)?;
@@ -34566,4 +34568,181 @@ fn explore_rotates_direct_and_related_artists_and_stays_stable_within_the_day() 
         resonate_library::explore_seeds(&direct, &kinship, 1),
         ["Second", "Third", "Kindred Three", "Kindred Two"],
     );
+}
+
+#[test]
+fn explore_blueprints_and_playlists_generate_custom_curated_lists_and_share_cache() -> Result<()> {
+    let profile = resonate_library::ExploreProfile {
+        recent_artists: vec!["The Orbiters".to_owned(), "Solar Drift".to_owned()],
+        favourite_artists: vec!["Lunar Echo".to_owned()],
+        top_artists: vec!["The Orbiters".to_owned(), "Solar Drift".to_owned()],
+        left_behind_artists: vec!["Old Comet".to_owned()],
+        top_genres: vec!["space rock".to_owned()],
+    };
+    let kinship = resonate_library::Kinship::of(&[
+        ("The Orbiters".to_owned(), "space rock".to_owned()),
+        ("Solar Drift".to_owned(), "space rock".to_owned()),
+        ("Kindred Star".to_owned(), "space rock".to_owned()),
+        ("Lunar Echo".to_owned(), "dream pop".to_owned()),
+        ("Old Comet".to_owned(), "space rock".to_owned()),
+    ]);
+    let blueprints = resonate_library::explore_blueprints(&profile, &kinship, 0);
+    assert!(
+        blueprints
+            .iter()
+            .any(|bp| bp.kind == resonate_library::ExplorePlaylistKind::DiscoverMix)
+    );
+    assert!(
+        blueprints
+            .iter()
+            .any(|bp| bp.kind == resonate_library::ExplorePlaylistKind::BeyondArtist)
+    );
+    assert!(
+        blueprints
+            .iter()
+            .any(|bp| bp.kind == resonate_library::ExplorePlaylistKind::GenreDiscovery)
+    );
+    assert!(
+        blueprints
+            .iter()
+            .any(|bp| bp.kind == resonate_library::ExplorePlaylistKind::FavouritesExpansion)
+    );
+    assert!(
+        blueprints
+            .iter()
+            .any(|bp| bp.kind == resonate_library::ExplorePlaylistKind::RediscoverBeyond)
+    );
+
+    let (tree, library) = a_music_folder()?;
+    held_as(&tree, "held.wav", "Held Song", RATE as usize);
+    tree.write(
+        "other.wav",
+        &Wav::new()
+            .frames(RATE as usize)
+            .text(ARTIST, "Solar Drift")
+            .text(TITLE, "Owned Drift")
+            .build(),
+    );
+    scan(&library, &options(&tree))?;
+
+    let mut song_a = explore_song("a1", "Orbit One", "The Orbiters");
+    song_a.album = Some("Album One".to_owned());
+    let mut song_b = explore_song("a2", "Orbit Two", "The Orbiters");
+    song_b.album = Some("Album One".to_owned());
+    let mut song_c = explore_song("a3", "Orbit Three", "The Orbiters");
+    song_c.album = Some("Album One".to_owned());
+    let song_d = explore_song("b1", "Drift Away", "Solar Drift");
+    let song_e = explore_song("b2", "Drift Back", "Solar Drift");
+
+    let service = Arc::new(ExploreCatalog::with(
+        "first",
+        vec![
+            explore_song("held", "Held Song", "The Orbiters"),
+            song_a,
+            song_b,
+            song_c,
+            song_d,
+            song_e,
+        ],
+    ));
+    let sources = [resonate_providers::SongCatalog::new(
+        "first".to_owned(),
+        service.clone(),
+    )];
+    let cache = resonate_library::ExploreCache::default();
+
+    let first_run = library.explore_playlists(&sources, &cache, false)?;
+    assert!(!first_run.playlists.is_empty());
+    let searches_after_first = service.searched.lock().len();
+    assert_eq!(searches_after_first, 2);
+    let discover = &first_run.playlists[0];
+    assert_eq!(
+        discover.kind,
+        resonate_library::ExplorePlaylistKind::DiscoverMix
+    );
+    assert!(
+        discover
+            .songs
+            .iter()
+            .all(|offer| offer.song.title != "Held Song")
+    );
+    let album_one_count = discover
+        .songs
+        .iter()
+        .filter(|offer| offer.song.album.as_deref() == Some("Album One"))
+        .count();
+    assert!(album_one_count <= 2);
+
+    let second_run = library.explore_playlists(&sources, &cache, false)?;
+    assert_eq!(second_run, first_run);
+    assert_eq!(service.searched.lock().len(), searches_after_first);
+    Ok(())
+}
+
+#[test]
+fn weave_mix_interleaves_streamed_suggestions_and_avoids_adjacent_same_artist() {
+    let source = SourceId::new("first").expect("a source");
+    let make_offer = |id: &str, title: &str, artist: &str| {
+        let song = explore_song(id, title, artist);
+        let location = resonate_providers::Named::Song(song.id.clone()).location(&source);
+        resonate_library::ExploreOffer {
+            catalog: "first".to_owned(),
+            service: "Test".to_owned(),
+            location,
+            song,
+        }
+    };
+
+    let local = vec![
+        ("L1", "Alpha"),
+        ("L2", "Beta"),
+        ("L3", "Gamma"),
+        ("L4", "Delta"),
+        ("L5", "Epsilon"),
+        ("L6", "Zeta"),
+        ("L7", "Eta"),
+    ];
+    let suggestions = vec![
+        make_offer("s1", "Sug One", "Gamma"),
+        make_offer("s2", "Sug Two", "Nova"),
+        make_offer("s3", "Sug Three", "Orion"),
+    ];
+    let woven = resonate_library::weave_mix(local, |(_, artist)| Some(*artist), suggestions);
+
+    assert_eq!(woven.len(), 9);
+    assert!(matches!(
+        woven[0],
+        resonate_library::MixEntry::Local(("L1", _))
+    ));
+    assert!(matches!(
+        woven[1],
+        resonate_library::MixEntry::Local(("L2", _))
+    ));
+    assert!(matches!(
+        woven[2],
+        resonate_library::MixEntry::Local(("L3", _))
+    ));
+    match &woven[3] {
+        resonate_library::MixEntry::Suggested(offer) => {
+            assert_eq!(offer.song.artist.as_deref(), Some("Nova"));
+        }
+        resonate_library::MixEntry::Local(_) => panic!("expected a suggested song after 3 locals"),
+    }
+    assert!(matches!(
+        woven[4],
+        resonate_library::MixEntry::Local(("L4", _))
+    ));
+    assert!(matches!(
+        woven[5],
+        resonate_library::MixEntry::Local(("L5", _))
+    ));
+    assert!(matches!(
+        woven[6],
+        resonate_library::MixEntry::Local(("L6", _))
+    ));
+    assert!(matches!(woven[7], resonate_library::MixEntry::Suggested(_)));
+    assert!(matches!(
+        woven[8],
+        resonate_library::MixEntry::Local(("L7", _))
+    ));
 }

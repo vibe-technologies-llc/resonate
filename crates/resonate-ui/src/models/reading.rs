@@ -23,6 +23,7 @@ impl LibraryModel {
         self.forget_what_the_catalog_may_have_changed();
         self.name_what_is_held_again(cx);
         self.read_the_versions_chosen(cx);
+        self.read_explored_queued(cx);
         self.read(Wanted::Everything, cx);
     }
 

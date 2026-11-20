@@ -72,6 +72,8 @@ sealed interface Screen : NavKey {
 
     @Serializable data object Suggestions : Screen
 
+    @Serializable data class ExplorePlaylist(val id: String, val name: String) : Screen
+
     @Serializable data object IdenticalSongs : Screen
 
     @Serializable data object Wanted : Screen

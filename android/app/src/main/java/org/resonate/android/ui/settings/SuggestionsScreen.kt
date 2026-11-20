@@ -29,6 +29,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -45,17 +48,17 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import org.resonate.android.R
-import org.resonate.android.nativecore.ExploreScope
 import org.resonate.android.nativecore.SuggestedList
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.icon
-import org.resonate.android.ui.library.ExploreSongs
 import org.resonate.android.ui.library.Loaded
 import org.resonate.android.ui.library.Retry
 import org.resonate.android.ui.library.catalogRead
+import org.resonate.android.ui.library.icon
+import org.resonate.android.ui.library.rememberExplorePlaylists
 import org.resonate.android.ui.library.valueOrNull
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.navigation.Screen
@@ -79,6 +82,9 @@ fun SuggestionsScreen() {
     val model = resonateViewModel { SuggestionsViewModel(it) }
     val loaded by model.lists.collectAsStateWithLifecycle()
     val explore by LocalResonate.current.features.explore.collectAsStateWithLifecycle()
+    val online by LocalResonate.current.features.online.collectAsStateWithLifecycle()
+    var exploreRetry by remember { mutableIntStateOf(0) }
+    val exploreFeed = if (explore) rememberExplorePlaylists(exploreRetry) else null
     val navigator = LocalNavigator.current
     val scheme = MaterialTheme.colorScheme
     val palettes =
@@ -136,7 +142,58 @@ fun SuggestionsScreen() {
                         }
                     }
                 }
-                shelves.forEach { (shelf, lists) ->
+                val shelfEntries = shelves.entries.toList()
+                val placeExploreAfter = if (shelfEntries.isNotEmpty()) 0 else -1
+                if (explore && placeExploreAfter < 0) {
+                    item(key = "explore-shelf", span = { GridItemSpan(maxLineSpan) }) {
+                        Text(
+                            stringResource(R.string.explore_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                    val playlists = exploreFeed?.valueOrNull()?.playlists.orEmpty()
+                    items(playlists.size, key = { "explore:${playlists[it].id}" }) { index ->
+                        val playlist = playlists[index]
+                        val (container, content) = palettes[playlist.kind.ordinal % palettes.size]
+                        SuggestionCard(
+                            key = "explore-${playlist.id}",
+                            title = playlist.name,
+                            subtitle = playlist.detail,
+                            icon = playlist.kind.icon,
+                            container = container,
+                            content = content,
+                        ) {
+                            navigator.open(Screen.ExplorePlaylist(playlist.id, playlist.name))
+                        }
+                    }
+                    val message =
+                        when {
+                            !online -> R.string.explore_offline
+                            exploreFeed is Loaded.Loading -> R.string.explore_loading
+                            exploreFeed is Loaded.Failed -> R.string.explore_failed
+                            exploreFeed?.valueOrNull()?.services == 0u -> R.string.explore_services
+                            playlists.isEmpty() -> R.string.explore_empty
+                            else -> null
+                        }
+                    if (message != null) {
+                        item(key = "explore-status", span = { GridItemSpan(maxLineSpan) }) {
+                            Column {
+                                Text(
+                                    stringResource(message),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = scheme.onSurfaceVariant,
+                                )
+                                if (exploreFeed is Loaded.Failed || (exploreFeed?.valueOrNull()?.failed ?: 0u) > 0u) {
+                                    TextButton(onClick = { exploreRetry++ }) {
+                                        Text(stringResource(R.string.explore_retry))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                shelfEntries.forEachIndexed { shelfIndex, (shelf, lists) ->
                     item(key = "shelf:$shelf", span = { GridItemSpan(maxLineSpan) }) {
                         Text(
                             shelf,
@@ -158,16 +215,53 @@ fun SuggestionsScreen() {
                             navigator.open(list.screen)
                         }
                     }
-                }
-                if (explore) {
-                    item(key = "explore", span = { GridItemSpan(maxLineSpan) }) {
-                        Column {
+                    if (explore && shelfIndex == placeExploreAfter) {
+                        item(key = "explore-shelf", span = { GridItemSpan(maxLineSpan) }) {
                             Text(
                                 stringResource(R.string.explore_title),
                                 style = MaterialTheme.typography.titleMedium,
                                 modifier = Modifier.padding(top = 8.dp),
                             )
-                            ExploreSongs(ExploreScope.Library)
+                        }
+                        val playlists = exploreFeed?.valueOrNull()?.playlists.orEmpty()
+                        items(playlists.size, key = { "explore:${playlists[it].id}" }) { index ->
+                            val playlist = playlists[index]
+                            val (container, content) = palettes[playlist.kind.ordinal % palettes.size]
+                            SuggestionCard(
+                                key = "explore-${playlist.id}",
+                                title = playlist.name,
+                                subtitle = playlist.detail,
+                                icon = playlist.kind.icon,
+                                container = container,
+                                content = content,
+                            ) {
+                                navigator.open(Screen.ExplorePlaylist(playlist.id, playlist.name))
+                            }
+                        }
+                        val message =
+                            when {
+                                !online -> R.string.explore_offline
+                                exploreFeed is Loaded.Loading -> R.string.explore_loading
+                                exploreFeed is Loaded.Failed -> R.string.explore_failed
+                                exploreFeed?.valueOrNull()?.services == 0u -> R.string.explore_services
+                                playlists.isEmpty() -> R.string.explore_empty
+                                else -> null
+                            }
+                        if (message != null) {
+                            item(key = "explore-status", span = { GridItemSpan(maxLineSpan) }) {
+                                Column {
+                                    Text(
+                                        stringResource(message),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = scheme.onSurfaceVariant,
+                                    )
+                                    if (exploreFeed is Loaded.Failed || (exploreFeed?.valueOrNull()?.failed ?: 0u) > 0u) {
+                                        TextButton(onClick = { exploreRetry++ }) {
+                                            Text(stringResource(R.string.explore_retry))
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

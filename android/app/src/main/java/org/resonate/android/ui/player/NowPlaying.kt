@@ -117,6 +117,7 @@ import org.resonate.android.ui.components.openArtistOf
 import org.resonate.android.ui.components.rememberCover
 import org.resonate.android.ui.components.rememberLargeText
 import org.resonate.android.ui.components.rememberTitleMaxLines
+import org.resonate.android.ui.library.ExploreDownloadButton
 import org.resonate.android.ui.navigation.LocalNavigator
 import org.resonate.android.ui.quality
 import org.resonate.android.ui.shownArtist
@@ -428,6 +429,9 @@ private fun ColumnScope.Controls(
                         },
                 )
             }
+        }
+        if (track != null && track.served) {
+            ExploreDownloadButton(track.uri)
         }
         val favourite = track?.favourite == true
         IconToggleButton(

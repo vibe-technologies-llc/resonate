@@ -24,15 +24,32 @@ tracks = { $count ->
 preview-that-suggestion = preview that suggestion
 
 explore = Explore
-library-songs = Library
+explore-playlist-eyebrow = Explore · Generated playlist
 show-explore = Show Explore suggestions
-show-explore-detail = Find songs to stream from your enabled music services.
+show-explore-detail = Generate discovery playlists and weave streamed suggestions into your mixes from enabled music services.
 explore-loading = Finding songs to explore…
 explore-empty = No new songs found for these artists.
 explore-no-services = Enable a streaming service to find songs.
 explore-offline = Go online to find songs to explore.
 explore-failed = Some music services could not be searched.
 explore-retry = Retry
+explore-refresh = Refresh
+explore-refresh-hint = Ask your streaming services for fresh suggestions
+explore-download-all = Download all
+explore-download-all-hint = Download every song in this playlist to your library
+explore-mix-mode = Include suggestions
+explore-mix-mode-hint = Weave streamed song suggestions into this mix and its queue
+explore-mix-active = { $count ->
+    [one] Including { $count } suggested song to stream
+   *[other] Including { $count } suggested songs to stream
+}
+explore-suggested-badge = Suggested · { $service }
+explore-dismiss-song = Skip { $title } from this mix
 queued-for-download = Queued { $title } for download
-explore-play-song = Play { $title }
+queued-many-for-download = { $count ->
+    [one] Queued { $count } song for download
+   *[other] Queued { $count } songs for download
+}
 explore-download-song = Download { $title }
+explore-downloaded-song = Queued { $title } for download
+explore-queue-hint = Add this playlist to the queue

@@ -1335,8 +1335,12 @@ A failed enrichment band measurement in an opted-in recognition pass is marked i
 
 ### Explore in mixes
 
-`ExploreScope` takes the catalogue as a whole, a saved search, or the built-in mix's track
-filter. The native player reads the shared recommendation algorithm through the document
-catalog and registers its returned metadata with the existing served queue. A song chosen
-for download carries the original catalog namespace so replacing a service account's server
-cannot silently substitute another song under the same ID.
+`MobilePlayer::explore_playlists` builds generated Explore playlists from the document catalog
+using `explore_blueprints` and the shared per-artist `ExploreCache`, while `ExploreScope`
+still seeds per-mix discovery from the catalogue, a saved search, or a built-in mix filter.
+`MobilePlayer::weave_mix_queue` interleaves streamed `ExploreSong`s into local track IDs as
+`QueueSong`s for mixed playback, `MobilePlayer::mix_suggestions_into_queue` weaves streamed
+suggestions into the active queue, and `MobilePlayer::explore_download_for` hands back the
+remembered download payload (carrying the original catalog namespace so replacing a service
+account's server cannot silently substitute another song under the same ID) for queue and
+Now Playing download buttons.

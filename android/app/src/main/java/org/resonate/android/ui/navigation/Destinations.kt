@@ -10,6 +10,7 @@ import org.resonate.android.ui.equaliser.RoomCorrectionScreen
 import org.resonate.android.ui.home.HomeScreen
 import org.resonate.android.ui.library.AlbumScreen
 import org.resonate.android.ui.library.ArtistScreen
+import org.resonate.android.ui.library.ExplorePlaylistScreen
 import org.resonate.android.ui.library.FavouritesScreen
 import org.resonate.android.ui.library.LibraryScreen
 import org.resonate.android.ui.library.MixScreen
@@ -74,6 +75,7 @@ fun ScreenContent(screen: Screen) {
         Screen.LibraryTools -> LibraryToolsScreen()
         Screen.Statistics -> StatisticsScreen()
         Screen.Suggestions -> SuggestionsScreen()
+        is Screen.ExplorePlaylist -> ExplorePlaylistScreen(screen)
         Screen.IdenticalSongs -> IdenticalSongsScreen()
         Screen.Wanted -> WantedScreen()
         Screen.Providers -> ProvidersScreen()

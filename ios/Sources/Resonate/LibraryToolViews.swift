@@ -390,10 +390,14 @@ struct SuggestionsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 16) {
+                let gridColumns = [GridItem(.adaptive(minimum: cardWidth), spacing: 16, alignment: .top)]
                 Text("suggestions.lead").foregroundStyle(.secondary)
-                ForEach(offered.shelves, id: \.name) { shelf in
+                if library.features.explore && offered.shelves.isEmpty {
+                    ExplorePlaylistsSection(columns: gridColumns)
+                }
+                ForEach(Array(offered.shelves.enumerated()), id: \.element.name) { index, shelf in
                     Text(shelf.name).font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: cardWidth), spacing: 16, alignment: .top)], spacing: 20) {
+                    LazyVGrid(columns: gridColumns, spacing: 20) {
                         ForEach(shelf.mixes) { mix in
                             SuggestedMixCard(
                                 mix: mix,
@@ -402,10 +406,9 @@ struct SuggestionsView: View {
                             )
                         }
                     }
-                }
-                if library.features.explore {
-                    Text("explore.title").font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader)
-                    ExploreSongs(scope: .library)
+                    if library.features.explore && index == 0 {
+                        ExplorePlaylistsSection(columns: gridColumns)
+                    }
                 }
             }
             .padding(.horizontal, 16)
@@ -431,37 +434,92 @@ struct MixView: View {
     @State private var mix: SuggestedMix?
     @State private var resolved = false
     @State private var exploring = false
+    @State private var mixExploreFeed: ExploreFeed?
+    @State private var mixExploreLoaded = false
+    @State private var mixExploreRetry = 0
+    @State private var dismissed: Set<String> = []
     @State private var tracks: [Track] = []
     @State private var covers: [Track] = []
     @State private var read = false
     @State private var failure: String?
 
+    private var activeSuggestions: [ExploreSong] {
+        guard library.features.explore && exploring else { return [] }
+        return (mixExploreFeed?.songs ?? []).filter { !dismissed.contains($0.song.uri) }
+    }
+
     var body: some View {
         Group {
             if let mix {
+                let suggestions = activeSuggestions
+                let entries = exploring && !suggestions.isEmpty
+                    ? weaveSwiftMix(tracks: tracks, suggestions: suggestions)
+                    : tracks.enumerated().map { MixListEntry.local($0.element, $0.offset) }
                 List {
-                    if library.features.explore {
-                        Picker("explore.title", selection: $exploring) {
-                            Text("explore.library").tag(false)
-                            Text("explore.title").tag(true)
-                        }
-                        .pickerStyle(.segmented)
+                    CollectionHeader(title: mix.title, subtitle: mix.detail, tracks: tracks, outline: .rounded(Self.corner)) {
+                        MosaicArtwork(covers: covers, mark: mix.mark, name: mix.title, corner: Self.corner)
                     }
-                    if library.features.explore && exploring {
-                        ExploreSongs(scope: mix.exploreScope)
-                    } else {
-                        CollectionHeader(title: mix.title, subtitle: mix.detail, tracks: tracks, outline: .rounded(Self.corner)) {
-                            MosaicArtwork(covers: covers, mark: mix.mark, name: mix.title, corner: Self.corner)
-                        }
-                        if let failure {
-                            ReadFailure(text: failure) { Task { await load(mix) } }
-                        } else if read, tracks.isEmpty {
-                            Text("mix.empty").foregroundStyle(.secondary)
-                        }
-                        ForEach(tracks, id: \.id) { track in
-                            TrackRow(track: track) {
-                                library.play(tracks, selected: track)
+                    if library.features.explore {
+                        HStack {
+                            Toggle("explore.mix-mode", systemImage: "sparkles", isOn: $exploring)
+                                .toggleStyle(.button)
+                                .buttonStyle(.bordered)
+                            if exploring && !suggestions.isEmpty {
+                                Button("explore.refresh", systemImage: "arrow.clockwise") {
+                                    dismissed.removeAll()
+                                    mixExploreRetry += 1
+                                }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
                             }
+                            Spacer(minLength: 0)
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        if exploring {
+                            if !library.features.online {
+                                Text("explore.offline").foregroundStyle(.secondary).listRowBackground(Color.clear)
+                            } else if !mixExploreLoaded {
+                                ProgressView("explore.loading").listRowBackground(Color.clear)
+                            } else if let feed = mixExploreFeed {
+                                if feed.services == 0 {
+                                    Text("explore.services").foregroundStyle(.secondary).listRowBackground(Color.clear)
+                                } else if suggestions.isEmpty && feed.failed > 0 {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("explore.failed").foregroundStyle(.secondary)
+                                        Button("explore.retry") { mixExploreRetry += 1 }.buttonStyle(.borderless)
+                                    }
+                                    .listRowBackground(Color.clear)
+                                } else if suggestions.isEmpty {
+                                    Text("explore.empty").foregroundStyle(.secondary).listRowBackground(Color.clear)
+                                }
+                            } else {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("explore.failed").foregroundStyle(.secondary)
+                                    Button("explore.retry") { mixExploreRetry += 1 }.buttonStyle(.borderless)
+                                }
+                                .listRowBackground(Color.clear)
+                            }
+                        }
+                    }
+                    if let failure {
+                        ReadFailure(text: failure) { Task { await load(mix) } }
+                    } else if read, tracks.isEmpty {
+                        Text("mix.empty").foregroundStyle(.secondary)
+                    }
+                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                        switch entry {
+                        case .local(let track, _):
+                            TrackRow(track: track) {
+                                playMix(startingAt: index, shuffled: false, suggestions: suggestions)
+                            }
+                            .listRowBackground(Color.clear)
+                        case .suggested(let offer, _):
+                            ExploreWovenRow(
+                                offer: offer,
+                                onPlay: { playMix(startingAt: index, shuffled: false, suggestions: suggestions) },
+                                onDismiss: { dismissed.insert(offer.song.uri) }
+                            )
                             .listRowBackground(Color.clear)
                         }
                     }
@@ -473,12 +531,28 @@ struct MixView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     if library.features.explore && exploring {
-                        DownloadsButton()
-                    } else {
-                        CollectionMenu(tracks: tracks, keeping: mix.kept, keepingAs: mix.title)
+                        ToolbarItem(placement: .topBarTrailing) { DownloadsButton() }
                     }
+                    CollectionMenu(tracks: tracks, keeping: mix.kept, keepingAs: mix.title)
                 }
                 .downloadDestinationPrompt()
+                .task(id: "\(exploring)-\(mixExploreRetry)-\(library.features.servedGeneration)-\(library.features.online)") {
+                    guard library.features.explore && exploring && library.features.online else { return }
+                    mixExploreLoaded = false
+                    let now = Date()
+                    let zone = TimeZone.current
+                    let identifier = zone.identifier
+                    let offset = Int32(zone.secondsFromGMT(for: now))
+                    let scope = mix.exploreScope
+                    let refresh = mixExploreRetry > 0
+                    let found = try? await library.features.serverAnswer {
+                        try $0.explore(scope: scope, timeZone: identifier, utcOffsetSeconds: offset, refresh: refresh)
+                    }
+                    if !Task.isCancelled {
+                        mixExploreFeed = found
+                        mixExploreLoaded = true
+                    }
+                }
             } else if resolved {
                 ContentUnavailableView("mix.gone", systemImage: "square.stack")
             } else {
@@ -488,6 +562,29 @@ struct MixView: View {
         .background { CatalogReading(subject: id) { await resolveAndLoad() } }
         .onChange(of: library.features.explore) { _, enabled in
             if !enabled { exploring = false }
+        }
+    }
+
+    private func playMix(startingAt index: Int, shuffled: Bool, suggestions: [ExploreSong]) {
+        guard exploring && !suggestions.isEmpty else {
+            if shuffled {
+                library.shuffle(tracks)
+            } else if tracks.indices.contains(index) {
+                library.play(tracks, selected: tracks[index])
+            } else {
+                library.play(tracks, at: 0)
+            }
+            return
+        }
+        let ids = tracks.map(\.id)
+        Task {
+            guard let native = try? await library.player() else { return }
+            let songs = try? await Work.onScreen {
+                try native.weaveMixQueue(localIds: ids, suggestions: suggestions, shuffled: shuffled)
+            }
+            if let songs, !songs.isEmpty {
+                library.playMixed(songs, at: shuffled ? 0 : index)
+            }
         }
     }
 

@@ -1853,6 +1853,9 @@ the mark, while shutdown preserves it. Overriding that choice made every explici
 
 ### Explore in Suggestions
 
-Suggestions offers an Explore shelf, and local mix screens offer Library and Explore tabs.
-The Online settings switch persists the choice and defaults to on. The Explore rows use
-the service player and the existing download chooser.
+Suggestions places generated Explore playlist cards right under the first shelf, opening
+`ExplorePlaylistScreen` with Play, Shuffle, Download all and Refresh controls. Local mix
+screens offer an Include suggestions toggle (`ExploreMixToggle`) that weaves streamed rows
+inline (`ExploreWovenRow`) and plays blended queues via `playMixed`. `QueueSheet` and
+`NowPlaying` show `ExploreDownloadButton` on remembered streamed suggestions, and `QueueSheet`
+offers `MixIntoQueueButton`. The Online settings switch persists the choice and defaults to on.

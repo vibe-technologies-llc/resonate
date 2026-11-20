@@ -1,6 +1,7 @@
 use std::{fs, path::Path};
 
 const SAYS_WORDS: &[&str] = &[
+    "explore.rs",
     "import.rs",
     "outcomes.rs",
     "playlist.rs",

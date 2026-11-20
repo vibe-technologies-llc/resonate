@@ -2466,6 +2466,10 @@ up, so a slow first album is shown as started.
 
 ### Explore in Suggestions
 
-Suggestions includes an Explore shelf and an opened local mix starts on Library beside its
-Explore tab. The Online settings switch persists the choice and defaults to on. Explore uses
-the service player and the usual download destination sheet.
+Suggestions places `ExplorePlaylistsSection` right below the first shelf, opening
+`ExplorePlaylistView` with Play, Shuffle, Download all and Refresh controls. `MixView` offers
+an Include suggestions toggle that weaves `ExploreWovenRow` entries inline via `weaveSwiftMix`
+and loads blended queues through `playMixed`. Now Playing and `QueueRow` show
+`ExploreDownloadButton` for remembered streamed suggestions, and the queue header offers
+mixing suggestions into the active queue. The Online settings switch persists the choice and
+defaults to on.

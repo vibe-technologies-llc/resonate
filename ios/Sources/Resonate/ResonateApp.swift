@@ -581,6 +581,7 @@ struct DestinationView: View {
         case .tools: LibraryToolsView()
         case .folders: FoldersView()
         case .suggestions: SuggestionsView()
+        case .explorePlaylist(let id, let name): ExplorePlaylistView(id: id, fallbackName: name)
         case .mix(let id): MixView(id: id)
         case .statistics: StatisticsView()
         case .wanted: WantedView()

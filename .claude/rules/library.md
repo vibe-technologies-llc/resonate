@@ -2904,10 +2904,14 @@ A track keeps its file content advisory as nullable `tracks.explicit`: true for 
 
 ### Explore
 
-Explore uses the artists heard over the last ninety days, with favourites and the largest
-artist groups as fallbacks. An opened mix supplies the artists its query holds. The existing
-genre kinship supplies related artists, with a daily turn through each group. Searches are
-bounded to four artists per eligible service, and rows arrive in artist order with up to
-three songs per artist. The same day's reads share provider results where the artist choices
-and service instances agree. Held copies are checked again against each result. An absent
-service costs its offers and the other results still stand.
+`explore_blueprints` plans daily discovery playlists (`ExplorePlaylistKind`: `DiscoverMix`,
+`BeyondArtist`, `GenreDiscovery`, `FavouritesExpansion`, `RediscoverBeyond`) purely from the
+listener's local `ExploreProfile` (artists heard over the last ninety days, favourites,
+largest artist groups, left-behind artists, top genres) and the `Kinship` graph with a daily
+turn. `ExploreCache` caches search results per `(day, artist, SongCatalog)` so multiple
+playlists and mix reads share provider calls instead of re-querying overlapping artists.
+`HydratedBlueprints::curate` excludes held copies (`ExploreTrack::is_the_song`), spreads
+albums and spaces artists across playlists; `weave_mix` interleaves streamed `ExploreOffer`s
+into local mix tracks (`MixEntry`) at a bounded cadence while avoiding adjacent duplicate
+artists. `Library::kept_explored_locations` reports queued served keeps for UI state.
+An absent service costs its offers and the other results still stand.

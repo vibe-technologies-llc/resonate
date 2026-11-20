@@ -789,6 +789,7 @@ every service credential and sign-in and both scrobbling services (Last.fm, List
 
 ### Explore settings
 
-`explore`, on by default, shows the streaming recommendations on Suggestions and the
-Explore tab in local mixes. Online settings writes the switch. The provider registry uses
-the current Online and Hosted Services settings for both surfaces.
+`explore`, on by default, shows the generated Explore playlists on Suggestions, the Include
+suggestions mode in local mixes, and queue suggestion mixing. Online settings writes the
+switch. The provider registry uses the current Online and Hosted Services settings for all
+Explore surfaces.
