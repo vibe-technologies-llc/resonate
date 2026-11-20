@@ -26,24 +26,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.TrendingUp
-import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.rounded.Spellcheck
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.Explore
-import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GroupAdd
 import androidx.compose.material.icons.rounded.FilterList
-import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.TravelExplore
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -68,7 +60,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -92,8 +83,8 @@ import org.resonate.android.nativecore.LibrarySearch
 import org.resonate.android.nativecore.SearchColumn
 import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.Track
-import org.resonate.android.ui.Mix
 import org.resonate.android.ui.components.ArtistPortrait
+import org.resonate.android.ui.components.BrowseShortcuts
 import org.resonate.android.ui.components.EmptyState
 import org.resonate.android.ui.components.LocalSheets
 import org.resonate.android.ui.components.RowSelection
@@ -173,7 +164,6 @@ fun LibraryResults(
                     browse(
                         recent = recent,
                         online = online,
-                        columns = columns,
                         search = model::search,
                         forget = model::forget,
                         forgetAll = model::forgetAll,
@@ -233,18 +223,6 @@ fun LazyListScope.loading() {
     }
 }
 
-private class BrowseTile(@StringRes val title: Int, val icon: ImageVector, val screen: Screen)
-
-private val browseTiles =
-    listOf(
-        BrowseTile(R.string.browse_favourites, Icons.Rounded.Favorite, Screen.Favourites),
-        BrowseTile(Mix.RECENTLY_ADDED.title, Icons.Rounded.Schedule, Screen.Mix(Mix.RECENTLY_ADDED)),
-        BrowseTile(Mix.MOST_PLAYED.title, Icons.AutoMirrored.Rounded.TrendingUp, Screen.Mix(Mix.MOST_PLAYED)),
-        BrowseTile(Mix.NEVER_HEARD.title, Icons.Rounded.Explore, Screen.Mix(Mix.NEVER_HEARD)),
-        BrowseTile(Mix.HIGH_RESOLUTION.title, Icons.Rounded.HighQuality, Screen.Mix(Mix.HIGH_RESOLUTION)),
-        BrowseTile(R.string.settings_wanted_title, Icons.Outlined.BookmarkBorder, Screen.Wanted),
-    )
-
 private class SearchTip(@StringRes val label: Int, val query: String)
 
 private val searchTips =
@@ -292,7 +270,6 @@ fun LazyListScope.recentSearches(
 private fun LazyListScope.browse(
     recent: List<String>,
     online: Boolean,
-    columns: Int,
     search: (String) -> Unit,
     forget: (String) -> Unit,
     forgetAll: () -> Unit,
@@ -301,21 +278,7 @@ private fun LazyListScope.browse(
 ) {
     if (!online) item(key = "online-off") { OnlineOffCard(turnOnline) }
     recentSearches(recent, search, forget, forgetAll)
-    item(key = "browse-header") { SectionHeader(stringResource(R.string.search_browse)) }
-    val tileColumns = (columns).coerceAtMost(3).coerceAtLeast(2)
-    browseTiles.chunked(tileColumns).forEachIndexed { row, tiles ->
-        item(key = "browse-$row") {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                tiles.forEach { tile ->
-                    BrowseCard(tile, Modifier.weight(1f)) { open(tile.screen) }
-                }
-                repeat(tileColumns - tiles.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
-    }
+    item(key = "browse") { BrowseShortcuts(open) }
     item(key = "tips-header") { SectionHeader(stringResource(R.string.search_tips)) }
     item(key = "tips") {
         FlowRow(
@@ -337,39 +300,6 @@ private fun LazyListScope.browse(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = Sizes.gutter, vertical = 12.dp),
         )
-    }
-}
-
-@Composable
-private fun BrowseCard(tile: BrowseTile, modifier: Modifier, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = modifier.testTag("browse-tile"),
-        shape = MaterialTheme.shapes.large,
-        colors =
-            CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-            ),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                tile.icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(22.dp),
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                stringResource(tile.title),
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }
 

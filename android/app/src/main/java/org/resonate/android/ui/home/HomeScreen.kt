@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import org.resonate.android.R
 import org.resonate.android.ui.LocalResonate
+import org.resonate.android.ui.components.BrowseShortcuts
 import org.resonate.android.ui.components.CollectionRow
 import org.resonate.android.ui.components.HandoffRow
 import org.resonate.android.ui.components.IconTile
@@ -129,6 +130,7 @@ private fun HomeFeedList(model: HomeViewModel, empty: Boolean, padding: PaddingV
         val newPlaylist = stringResource(R.string.library_new_playlist)
         val seeAll = stringResource(R.string.search_see_all)
         LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxSize().testTag("home")) {
+            item("browse") { BrowseShortcuts(navigator::open) }
             if (empty) {
                 item("welcome") { WelcomeWords(Modifier.fillMaxWidth()) }
             } else {
