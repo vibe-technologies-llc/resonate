@@ -84,6 +84,8 @@ private struct SettingsEntry: View {
             SleepTimerButton(matched: matched)
         case .online:
             OnlineSwitch(matched: matched)
+        case .explore:
+            ExploreSwitch(matched: matched)
         case .version:
             ToolRow(title: place.title, detail: Self.version, symbol: place.symbol, detailLines: 1)
         case .erase:
@@ -217,6 +219,22 @@ private struct OnlineSwitch: View {
                 detail: matched ?? said(features.online ? "settings.online.on" : "settings.online.off"),
                 symbol: SettingsPlace.online.symbol,
                 detailLines: 1
+            )
+        }
+    }
+}
+
+private struct ExploreSwitch: View {
+    @Environment(Library.self) private var library
+    let matched: String?
+
+    var body: some View {
+        let features = library.features
+        Toggle(isOn: Binding(get: { features.explore }, set: { features.explore = $0 })) {
+            ToolRow(
+                title: SettingsPlace.explore.title,
+                detail: matched ?? SettingsPlace.explore.summary,
+                symbol: SettingsPlace.explore.symbol
             )
         }
     }

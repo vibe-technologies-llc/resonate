@@ -30,20 +30,6 @@ pub(crate) const NAMES_APART: &str = ", ";
 
 const BITS_WHERE_NONE_ARE_KNOWN: u8 = 16;
 
-const KEPT_AS_WHAT_IT_IS_NAMED: &str = "flac";
-
-const EXTENSIONS_OF_MEDIA_TYPES: [(&str, &str); 9] = [
-    ("audio/flac", "flac"),
-    ("audio/x-flac", "flac"),
-    ("audio/mpeg", "mp3"),
-    ("audio/mp4", "m4a"),
-    ("audio/x-m4a", "m4a"),
-    ("audio/ogg", "ogg"),
-    ("audio/opus", "opus"),
-    ("audio/wav", "wav"),
-    ("audio/x-wav", "wav"),
-];
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum VersionSearch {
     Better,
@@ -420,22 +406,6 @@ pub(crate) fn kept_as_a_variant(
     Ok(())
 }
 
-fn extension_of(known: Option<&str>, media_type: Option<&str>) -> String {
-    let named = known
-        .and_then(|format| resonate_providers::Extension::new(format).ok())
-        .map(|extension| extension.as_str().to_owned());
-    let typed = || {
-        let media_type = media_type?.split(';').next()?.trim().to_ascii_lowercase();
-        EXTENSIONS_OF_MEDIA_TYPES
-            .iter()
-            .find(|(typed, _)| *typed == media_type)
-            .map(|(_, extension)| (*extension).to_owned())
-    };
-    named
-        .or_else(typed)
-        .unwrap_or_else(|| KEPT_AS_WHAT_IT_IS_NAMED.to_owned())
-}
-
 #[uniffi::export]
 impl MobilePlayer {
     pub fn version_searches(&self, id: u64) -> Result<Vec<VersionSearchOffered>> {
@@ -660,9 +630,16 @@ impl MobilePlayer {
         let offer = MediaLocation::from_uri(uri)
             .ok_or(Error::InvalidUri)
             .and_then(|location| {
-                let (streamed, provider) = self.served.streamed_to_keep(&location)?;
+                let (streamed, provider) = self
+                    .served
+                    .streamed_to_keep(&location, job.song.served_catalog.as_deref())?;
                 let known = self.served.song_at(&location).format;
-                let extension = extension_of(known.as_deref(), streamed.media_type.as_deref());
+                let extension = resonate_providers::stream_extension(
+                    known.as_deref(),
+                    streamed.media_type.as_deref(),
+                )
+                .as_str()
+                .to_owned();
                 self.downloads
                     .served(job, streamed, extension, provider, uri.to_owned())
             });
@@ -1027,8 +1004,17 @@ mod tests {
 
     #[test]
     fn a_file_is_named_by_its_known_format_else_by_its_media_type() {
-        assert_eq!(extension_of(Some("FLAC"), Some("audio/mpeg")), "flac");
-        assert_eq!(extension_of(None, Some("audio/mp4; codecs=alac")), "m4a");
-        assert_eq!(extension_of(Some("not a format"), None), "flac");
+        assert_eq!(
+            resonate_providers::stream_extension(Some("FLAC"), Some("audio/mpeg")).as_str(),
+            "flac"
+        );
+        assert_eq!(
+            resonate_providers::stream_extension(None, Some("audio/mp4; codecs=alac")).as_str(),
+            "m4a"
+        );
+        assert_eq!(
+            resonate_providers::stream_extension(Some("not a format"), None).as_str(),
+            "flac"
+        );
     }
 }

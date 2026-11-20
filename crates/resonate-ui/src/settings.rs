@@ -418,6 +418,7 @@ impl Setting {
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Online {
     pub enabled: bool,
+    pub explore_disabled: bool,
     pub after_scan: bool,
     pub enrich_on_metered: bool,
     pub musicbrainz_mirror: bool,
@@ -521,6 +522,7 @@ impl fmt::Debug for Online {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self {
             enabled,
+            explore_disabled,
             after_scan,
             enrich_on_metered,
             musicbrainz_mirror,
@@ -562,6 +564,7 @@ impl fmt::Debug for Online {
 
         f.debug_struct(stringify!(Online))
             .field("enabled", enabled)
+            .field("explore_disabled", explore_disabled)
             .field("after_scan", after_scan)
             .field("enrich_on_metered", enrich_on_metered)
             .field("musicbrainz_mirror", musicbrainz_mirror)

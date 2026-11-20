@@ -49,7 +49,9 @@ fun servedMediaId(uri: String): String? = uri.takeIf(::isServedUri)
 
 private val DownloadAccount.hosted: Boolean
     get() =
-        (provider == MusicProvider.MONOCHROME || provider == MusicProvider.HIFI_API) && server.isBlank()
+        server.isBlank() &&
+            (provider == MusicProvider.MONOCHROME ||
+                (provider == MusicProvider.HIFI_API && password.isBlank()))
 
 fun ProviderAccountBook?.servedAccounts(online: Boolean, hostedServices: Boolean): List<DownloadAccount> =
     if (!online || this == null) emptyList() else asked.filter { hostedServices || !it.hosted }

@@ -21,6 +21,10 @@ impl Extension {
         Ok(Self(bare.to_ascii_lowercase().into_boxed_str()))
     }
 
+    pub(crate) fn flac() -> Self {
+        Self("flac".into())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }

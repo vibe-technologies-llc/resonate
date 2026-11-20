@@ -235,6 +235,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
             measures: Some(Arc::new(measuring::Sweeping)),
             online: resonate_ui::Online {
                 enabled: config.is_on(Switch::Online),
+                explore_disabled: !config.is_on(Switch::Explore),
                 after_scan: config.is_on(Switch::EnrichAfterScan),
                 enrich_on_metered: config.is_on(Switch::EnrichOnMetered),
                 musicbrainz_mirror: config.is_on(Switch::MusicbrainzMirror),

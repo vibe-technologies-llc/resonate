@@ -7,7 +7,9 @@ use std::{
 
 use resonate_core::SourceId;
 
-use crate::{Delivered, Identity, Obtained, ProviderOp, Result, WhyAway, in_place::not_offered};
+use crate::{
+    Delivered, Identity, Obtained, ProviderOp, Result, SongCatalog, WhyAway, in_place::not_offered,
+};
 
 const UNPROVIDED: &str = "unprovided";
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(50);
@@ -145,6 +147,7 @@ impl Away {
 pub struct Providers {
     providers: Vec<Arc<dyn Provider>>,
     narrowed: bool,
+    song_catalogs: Vec<SongCatalog>,
 }
 
 impl Providers {
@@ -152,6 +155,7 @@ impl Providers {
         Self {
             providers: vec![Arc::new(Unprovided::default())],
             narrowed: false,
+            song_catalogs: Vec::new(),
         }
     }
 
@@ -163,6 +167,12 @@ impl Providers {
             .any(|provider| is_a_source(provider) && provider.source() != source);
         let narrowed = Self {
             narrowed: self.narrowed || others_left_out,
+            song_catalogs: self
+                .song_catalogs
+                .iter()
+                .filter(|catalog| catalog.service().scheme() == source)
+                .cloned()
+                .collect(),
             ..Self::none()
         };
 
@@ -185,6 +195,16 @@ impl Providers {
     }
 
     #[must_use]
+    pub fn with_song_catalog(mut self, catalog: SongCatalog) -> Self {
+        self.song_catalogs.push(catalog);
+        self
+    }
+
+    pub fn song_catalogs(&self) -> &[SongCatalog] {
+        &self.song_catalogs
+    }
+
+    #[must_use]
     pub fn without_last_resorts(&self) -> Self {
         Self {
             providers: self
@@ -194,6 +214,7 @@ impl Providers {
                 .cloned()
                 .collect(),
             narrowed: self.narrowed,
+            song_catalogs: self.song_catalogs.clone(),
         }
     }
 

@@ -26,6 +26,7 @@ public enum SettingsOpening: Equatable, Sendable {
     case page(Destination)
     case sleepTimer
     case online
+    case explore
     case version
     case erase
 }
@@ -44,6 +45,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
     case folders
     case enrichment
     case online
+    case explore
     case providers
     case server
     case scrobbling
@@ -67,7 +69,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
             .processing, .output, .playback, .sleepTimer:
             .sound
         case .folders, .enrichment: .library
-        case .online, .providers, .server, .scrobbling, .spotify: .online
+        case .online, .explore, .providers, .server, .scrobbling, .spotify: .online
         case .sync, .syncSongs, .syncConnection, .syncControl: .devices
         case .accent, .background: .appearance
         case .searchHistory, .notices, .version, .erase: .app
@@ -97,6 +99,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .folders: .page(.folders)
         case .enrichment: .page(.enrichment)
         case .online: .online
+        case .explore: .explore
         case .providers: .page(.providers)
         case .server: .page(.server)
         case .scrobbling: .page(.scrobbling)
@@ -129,6 +132,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .folders: said("settings.folders.title")
         case .enrichment: said("settings.enrichment.title")
         case .online: said("settings.online.title")
+        case .explore: said("explore.setting")
         case .providers: said("settings.providers.title")
         case .server: said("settings.server.title")
         case .scrobbling: said("settings.scrobbling.title")
@@ -161,6 +165,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .folders: said("settings.folders.summary")
         case .enrichment: said("settings.enrichment.summary")
         case .online: said("settings.online.summary")
+        case .explore: said("explore.setting.detail")
         case .providers: said("settings.providers.summary")
         case .server: said("settings.server.summary")
         case .scrobbling: said("settings.scrobbling.summary")
@@ -193,6 +198,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
         case .folders: "folder"
         case .enrichment: "photo.on.rectangle.angled"
         case .online: "globe"
+        case .explore: "safari"
         case .providers: "arrow.down.circle"
         case .server: "server.rack"
         case .scrobbling: "dot.radiowaves.left.and.right"
@@ -334,6 +340,7 @@ public enum SettingsPlace: String, CaseIterable, Identifiable, Sendable {
                 said("settings.online.inner.offline"),
                 said("settings.online.inner.network"),
             ]
+        case .explore: []
         case .providers:
             [
                 said("settings.providers.inner.download-provider"),

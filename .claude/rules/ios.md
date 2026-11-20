@@ -2460,3 +2460,9 @@ until a priority request or worker completion wakes it. A network turn stalled b
 or a long service cooldown ends within the client's pacing bound; cancellation frees a paced wait
 without switching off online features. The progress count includes the item currently being looked
 up, so a slow first album is shown as started.
+
+### Explore in Suggestions
+
+Suggestions includes an Explore shelf and an opened local mix starts on Library beside its
+Explore tab. The Online settings switch persists the choice and defaults to on. Explore uses
+the service player and the usual download destination sheet.

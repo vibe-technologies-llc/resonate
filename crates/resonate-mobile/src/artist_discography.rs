@@ -218,6 +218,7 @@ fn kept_song(row: &rusqlite::Row<'_>) -> rusqlite::Result<SearchSong> {
             .collect(),
         held: false,
         served: None,
+        served_catalog: None,
     })
 }
 

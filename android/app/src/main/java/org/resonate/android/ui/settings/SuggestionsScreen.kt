@@ -45,11 +45,14 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import org.resonate.android.R
+import org.resonate.android.nativecore.ExploreScope
 import org.resonate.android.nativecore.SuggestedList
+import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.icon
+import org.resonate.android.ui.library.ExploreSongs
 import org.resonate.android.ui.library.Loaded
 import org.resonate.android.ui.library.Retry
 import org.resonate.android.ui.library.catalogRead
@@ -75,6 +78,7 @@ class SuggestionsViewModel(resonate: Resonate) : ViewModel() {
 fun SuggestionsScreen() {
     val model = resonateViewModel { SuggestionsViewModel(it) }
     val loaded by model.lists.collectAsStateWithLifecycle()
+    val explore by LocalResonate.current.features.explore.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
     val scheme = MaterialTheme.colorScheme
     val palettes =
@@ -152,6 +156,18 @@ fun SuggestionsScreen() {
                             content = content,
                         ) {
                             navigator.open(list.screen)
+                        }
+                    }
+                }
+                if (explore) {
+                    item(key = "explore", span = { GridItemSpan(maxLineSpan) }) {
+                        Column {
+                            Text(
+                                stringResource(R.string.explore_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                            ExploreSongs(ExploreScope.Library)
                         }
                     }
                 }

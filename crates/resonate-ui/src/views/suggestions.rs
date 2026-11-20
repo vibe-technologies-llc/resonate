@@ -1,3 +1,5 @@
+mod explore;
+
 use std::{ops::Range, rc::Rc, sync::Arc};
 
 use gpui::{
@@ -44,6 +46,7 @@ pub(crate) struct SuggestionsPane {
     offered: Arc<[Suggestion]>,
     opened: Option<Previewed>,
     _previewing: Task<()>,
+    explore: explore::ExplorePane,
     _landing: Subscription,
 }
 
@@ -61,6 +64,7 @@ impl SuggestionsPane {
             offered: Arc::default(),
             opened: None,
             _previewing: Task::ready(()),
+            explore: explore::ExplorePane::default(),
             _landing: cx.observe(library, |pane, library, cx| {
                 pane.take_what_landed(&library, cx);
             }),
@@ -91,6 +95,7 @@ impl SuggestionsPane {
     }
 
     fn open(&mut self, query: Option<SavedQuery>, cx: &mut Context<Self>) {
+        self.explore.library();
         let Some(query) = query else {
             self.opened = None;
             self._previewing = Task::ready(());
@@ -167,14 +172,19 @@ impl RootView {
         let offered = Arc::clone(&pane.offered);
         let opened = pane.opened.clone();
         let scroll = pane.shelves.clone();
+        let exploring_mix = pane.explore.exploring_mix();
         if let Some(opened) = opened
             && let Some(suggestion) = offered.iter().find(|held| held.query == opened.query)
         {
             let suggestion = suggestion.clone();
+            if self.explore_enabled(cx) && exploring_mix {
+                return self.explored_suggestion(&suggestion, cx);
+            }
             return self.opened_suggestion(&suggestion, &opened.tracks, cx);
         }
 
         let nothing = offered.is_empty();
+        let explore = self.explore_enabled(cx);
 
         let mut shelves = div()
             .id("suggestions")
@@ -219,16 +229,23 @@ impl RootView {
             );
         }
 
+        if explore {
+            shelves = shelves
+                .when(nothing, |shelves| {
+                    shelves.child(kit::figure(words::suggestions::scan_more()))
+                })
+                .child(self.explore_shelf(None, cx));
+        }
         kit::pane()
             .child(suggestions_heading(offered.len()))
-            .when(nothing, |pane| {
+            .when(nothing && !explore, |pane| {
                 pane.child(empty(
                     Icon::Suggestions,
                     words::suggestions::nothing_offered(),
                     Some(words::suggestions::scan_more()),
                 ))
             })
-            .when(!nothing, |pane| {
+            .when(!nothing || explore, |pane| {
                 pane.child(
                     div()
                         .relative()
@@ -458,6 +475,9 @@ impl RootView {
 
         kit::pane()
             .child(heading)
+            .when(self.explore_enabled(cx), |pane| {
+                pane.child(self.explore_tabs(false, cx))
+            })
             .child(listing::columns(
                 "#",
                 true,

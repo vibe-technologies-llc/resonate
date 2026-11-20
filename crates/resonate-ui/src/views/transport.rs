@@ -1119,23 +1119,31 @@ impl RootView {
         }
 
         let tags = tags.map(|info| &info.tags);
+        let offered = file
+            .as_ref()
+            .and_then(|file| self.server.read(cx).explored(file));
         let stem = file.as_ref().map(format::stem);
 
         Playing {
             track: None,
             favourite: false,
             title: SharedString::from(
-                tags.and_then(|tags| tags.title.clone())
+                offered
+                    .map(|song| song.title.clone())
+                    .or_else(|| tags.and_then(|tags| tags.title.clone()))
                     .or(stem)
                     .unwrap_or_else(|| words::transport::untitled_track(current.id.to_string())),
             ),
             artist: SharedString::from(
-                tags.and_then(|tags| tags.artist.clone())
+                offered
+                    .and_then(|song| song.artist.clone())
+                    .or_else(|| tags.and_then(|tags| tags.artist.clone()))
                     .unwrap_or_else(|| words::transport::unknown_artist().to_owned()),
             ),
             artist_id: None,
-            album: tags
-                .and_then(|tags| tags.album.clone())
+            album: offered
+                .and_then(|song| song.album.clone())
+                .or_else(|| tags.and_then(|tags| tags.album.clone()))
                 .map(SharedString::from),
             codec,
             cover: Cover { album: None, file },

@@ -22,3 +22,17 @@ tracks = { $count ->
    *[other] { $count } tracks
 }
 preview-that-suggestion = preview that suggestion
+
+explore = Explore
+library-songs = Library
+show-explore = Show Explore suggestions
+show-explore-detail = Find songs to stream from your enabled music services.
+explore-loading = Finding songs to explore…
+explore-empty = No new songs found for these artists.
+explore-no-services = Enable a streaming service to find songs.
+explore-offline = Go online to find songs to explore.
+explore-failed = Some music services could not be searched.
+explore-retry = Retry
+queued-for-download = Queued { $title } for download
+explore-play-song = Play { $title }
+explore-download-song = Download { $title }

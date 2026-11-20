@@ -158,6 +158,24 @@ impl Reachable {
         }
     }
 
+    pub fn song_catalog_namespace(&self) -> Option<String> {
+        let endpoint = |url: &str| {
+            let url = url.trim().trim_end_matches('/');
+            let authority = url.split_once("://")?.1.split('/').next()?;
+            (!authority.is_empty() && !authority.contains('@') && !url.contains(['?', '#']))
+                .then(|| url.to_owned())
+        };
+        match self {
+            Self::Subsonic(login) => endpoint(&login.url),
+            Self::Jellyfin(login) => endpoint(&login.url),
+            Self::HifiApi(Hosting::Custom(url)) | Self::Monochrome(Hosting::Custom(url)) => {
+                endpoint(url)
+            }
+            Self::YoutubeMusic(_) => None,
+            _ => Some(self.scheme().to_owned()),
+        }
+    }
+
     #[must_use]
     pub const fn fetches_for_wants(&self) -> bool {
         !matches!(self, Self::Jellyfin(_))

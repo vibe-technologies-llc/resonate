@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.NewReleases
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PlayCircle
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SearchOff
@@ -79,6 +80,7 @@ import org.resonate.android.words
 
 class SettingsViewModel(private val resonate: Resonate) : ViewModel() {
     val online = resonate.features.online
+    val explore = resonate.features.explore
     val appearance = resonate.features.appearance.appearance
     val serving = resonate.features.served.serving
     val preferences = resonate.library.preferences
@@ -89,6 +91,8 @@ class SettingsViewModel(private val resonate: Resonate) : ViewModel() {
     val newerRelease = resonate.features.releases.newer
 
     fun setOnline(enabled: Boolean) = resonate.features.setOnline(enabled)
+
+    fun setExplore(enabled: Boolean) = resonate.features.setExplore(enabled)
 
     fun allowNotifications() = resonate.host.allowNotifications()
 
@@ -117,6 +121,7 @@ private val Setting.icon: ImageVector
             Setting.SUGGESTIONS -> Icons.AutoMirrored.Rounded.QueueMusic
             Setting.WANTED -> Icons.Rounded.BookmarkBorder
             Setting.ONLINE -> Icons.Rounded.Public
+            Setting.EXPLORE -> Icons.Rounded.Explore
             Setting.PROVIDERS -> Icons.Rounded.CloudDownload
             Setting.SERVER -> Icons.Rounded.Cloud
             Setting.SCROBBLING -> Icons.Rounded.History
@@ -152,6 +157,7 @@ private val Setting.destination: Screen?
             Setting.SYNC -> Screen.Sync
             Setting.APPEARANCE -> Screen.Appearance
             Setting.ONLINE,
+            Setting.EXPLORE,
             Setting.NOTIFICATIONS,
             Setting.UPDATES,
             Setting.VERSION -> null
@@ -183,6 +189,7 @@ fun SettingsScreen() {
     val context = LocalContext.current
     val words = words()
     val online by model.online.collectAsStateWithLifecycle()
+    val explore by model.explore.collectAsStateWithLifecycle()
     val appearance by model.appearance.collectAsStateWithLifecycle()
     val serving by model.serving.collectAsStateWithLifecycle()
     val preferences by model.preferences.collectAsStateWithLifecycle()
@@ -244,6 +251,15 @@ fun SettingsScreen() {
                                 checked = online,
                                 onCheckedChange = model::setOnline,
                                 modifier = Modifier.testTag("setting-online"),
+                            )
+                        Setting.EXPLORE ->
+                            SwitchRow(
+                                title = title,
+                                icon = setting.icon,
+                                supporting = detail ?: ownDetail,
+                                checked = explore,
+                                onCheckedChange = model::setExplore,
+                                modifier = Modifier.testTag("setting-explore"),
                             )
                         Setting.APPEARANCE ->
                             SettingRow(

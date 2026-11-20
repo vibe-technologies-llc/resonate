@@ -11,7 +11,7 @@ use std::{
 use gpui::{App, Context};
 use resonate_core::TrackId;
 use resonate_library::{
-    KeepSummary, KeptAs, KeptSong, Library, PlaylistToKeep, PollOptions, SongToKeep,
+    ExploreOffer, KeepSummary, KeptAs, KeptSong, Library, PlaylistToKeep, PollOptions, SongToKeep,
 };
 
 use super::{
@@ -35,6 +35,19 @@ impl LibraryModel {
                     KeptSong::Queued => None,
                     KeptSong::AlreadyHeld(_) => Some(words::models::already_held().to_owned()),
                 })
+            },
+            cx,
+        );
+    }
+
+    pub(crate) fn keep_explored(&mut self, song: ExploreOffer, cx: &mut Context<Self>) {
+        self.keep_what_was_pressed(
+            move |library| {
+                let title = song.song.title.clone();
+                Ok(Some(match library.keep_explored(song)? {
+                    KeptSong::Queued => words::suggestions::queued_for_download(title),
+                    KeptSong::AlreadyHeld(_) => words::models::already_held().to_owned(),
+                }))
             },
             cx,
         );
@@ -118,15 +131,16 @@ impl LibraryModel {
         }
         let library = Arc::clone(&self.library);
         self.keeps._running = cx.spawn(async move |this, cx| {
-            let queued = cx
-                .background_executor()
-                .spawn(async move {
-                    match youtube_music {
-                        true => library.keeps_pending(),
-                        false => library.keeps_replacing_queued(),
-                    }
-                })
-                .await;
+            let queued =
+                cx.background_executor()
+                    .spawn(async move {
+                        match youtube_music {
+                            true => library.keeps_pending(),
+                            false => Ok(library.keeps_replacing_queued()?
+                                + library.keeps_served_queued()?),
+                        }
+                    })
+                    .await;
             match queued {
                 Ok(0) => {}
                 Ok(_) => {

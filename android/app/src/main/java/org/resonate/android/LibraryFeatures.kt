@@ -237,6 +237,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             .map { DownloadPlan.summary(library.words, it) }
             .stateIn(derivedScope, SharingStarted.Eagerly, null)
     val online = MutableStateFlow(settings.getBoolean("online", true))
+    val explore = MutableStateFlow(settings.getBoolean("explore", true))
     val hostedServices = MutableStateFlow(settings.getBoolean("hosted-services", true))
     val enrichOnMetered = MutableStateFlow(settings.getBoolean("enrich-on-metered", false))
     val downloadOnMetered = MutableStateFlow(StoredChoices.downloadOnMetered(settings::storedFlag))
@@ -665,6 +666,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
             together.onlineTurned(enabled)
             applySync(native)
         }
+    }
+
+    fun setExplore(enabled: Boolean) {
+        explore.value = enabled
+        settings.edit().putBoolean("explore", enabled).apply()
     }
 
     fun setHostedServices(enabled: Boolean) {

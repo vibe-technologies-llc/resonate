@@ -14,6 +14,7 @@ mod downloads;
 mod enrichment;
 mod equaliser;
 mod error;
+mod explore;
 mod failure;
 mod features;
 mod foreign;

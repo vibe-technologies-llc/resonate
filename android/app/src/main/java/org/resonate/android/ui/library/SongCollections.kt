@@ -1,6 +1,10 @@
 package org.resonate.android.ui.library
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
@@ -12,6 +16,9 @@ import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.ViewModel
@@ -23,12 +30,14 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import org.resonate.android.R
+import org.resonate.android.nativecore.ExploreScope
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.LocalResonate
 import org.resonate.android.ui.Mix
 import org.resonate.android.ui.Resonate
 import org.resonate.android.ui.SuggestedSearch
 import org.resonate.android.ui.components.LocalSheets
+import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.PlaylistCover
 import org.resonate.android.ui.components.SongSelectionBar
 import org.resonate.android.ui.components.TrackRow
@@ -131,6 +140,7 @@ fun MixScreen(mix: Mix) {
         onRetry = model.retry::again,
         playing = playing,
         tag = "mix",
+        exploreScope = ExploreScope.Filtered(mix.filter()),
         empty = stringResource(R.string.library_mix_empty),
     ) { side ->
         PlaylistCover(covers, side, shape = MaterialTheme.shapes.extraLarge)
@@ -155,6 +165,7 @@ fun SuggestedScreen(suggested: Screen.Suggested) {
         onRetry = model.retry::again,
         playing = playing,
         tag = "suggested",
+        exploreScope = ExploreScope.Saved(suggested.search.native()),
         empty = stringResource(R.string.library_suggested_empty),
         keep = { resonate.features.keepSearchAsPlaylist(suggested.name, suggested.search.native()) },
     ) { side ->
@@ -180,10 +191,22 @@ private fun SongCollection(
     empty: String,
     detail: String? = null,
     keep: (() -> Unit)? = null,
+    exploreScope: ExploreScope? = null,
     cover: @Composable (androidx.compose.ui.unit.Dp) -> Unit,
 ) {
     val resonate = LocalResonate.current
     val sheets = LocalSheets.current
+    val exploreEnabled by resonate.features.explore.collectAsStateWithLifecycle()
+    var exploring by remember(exploreScope, exploreEnabled) { mutableStateOf(false) }
+    if (exploreScope != null && exploreEnabled && exploring) {
+        Page(title) { padding ->
+            Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
+                ExploreTabs(exploring = true, change = { exploring = it })
+                ExploreSongs(exploreScope)
+            }
+        }
+        return
+    }
     val tracks = loaded.valueOrNull().orEmpty()
     val selection = rememberSelection<ULong>()
     LaunchedEffect(tracks) { selection.retain(tracks.map { it.id }) }
@@ -242,6 +265,9 @@ private fun SongCollection(
             )
         },
     ) { shown ->
+        if (exploreScope != null && exploreEnabled) {
+            item("explore-tabs") { ExploreTabs(exploring = false, change = { exploring = it }) }
+        }
         item("header") {
             CollectionHeader(
                 title = title,

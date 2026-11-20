@@ -786,3 +786,9 @@ file an older build wrote opens where its settings went
 `a_remembered_category_whose_settings_moved_opens_the_category_holding_them_now`). Accounts holds
 every service credential and sign-in and both scrobbling services (Last.fm, ListenBrainz); Library's
 *Rescan, refresh and retag* page the scan, lookup progress and tag controls.
+
+### Explore settings
+
+`explore`, on by default, shows the streaming recommendations on Suggestions and the
+Explore tab in local mixes. Online settings writes the switch. The provider registry uses
+the current Online and Hosted Services settings for both surfaces.

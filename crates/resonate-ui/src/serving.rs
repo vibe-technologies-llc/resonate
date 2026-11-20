@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     num::{NonZeroU32, NonZeroUsize},
     sync::Arc,
 };
@@ -6,7 +7,7 @@ use std::{
 use ahash::AHashMap;
 use gpui::{Context, Task};
 use resonate_core::{MediaLocation, SourceId};
-use resonate_library::{CoverArt, ImageFormat, SongToKeep};
+use resonate_library::{CoverArt, ExploreOffer, ImageFormat, SongToKeep};
 use resonate_providers::{Error as ProviderError, Named};
 
 use crate::{
@@ -251,6 +252,7 @@ pub(crate) struct ServerModel {
     covers: Recent<AtSide<CoverKey>, Option<Picture>>,
     fetching: Underway<CoverKey>,
     favoured: AHashMap<MediaLocation, bool>,
+    explored: VecDeque<ServedSong>,
     scale: Scale,
     shown: bool,
     owes_a_first_page: bool,
@@ -268,6 +270,7 @@ impl ServerModel {
             covers: Recent::new(COVERS_HELD),
             fetching: Underway::fetching_from_one_server(),
             favoured: AHashMap::new(),
+            explored: VecDeque::new(),
             scale: Scale::ONE,
             shown: false,
             owes_a_first_page: false,
@@ -343,6 +346,31 @@ impl ServerModel {
             .is_some_and(|serves| serves.keeps_songs())
     }
 
+    pub(crate) fn remember_explore(&mut self, offer: &ExploreOffer) {
+        self.explored.retain(|song| song.location != offer.location);
+        let song = &offer.song;
+        self.explored.push_front(ServedSong {
+            location: offer.location.clone(),
+            title: song.title.clone(),
+            artist: song.artist.clone(),
+            album: song.album.clone(),
+            track: song.track,
+            length: song.length,
+            format: song.suffix.clone(),
+            cover: song
+                .cover
+                .as_ref()
+                .map(|cover| ServedCover(cover.as_str().to_owned())),
+            favourite: song.favourite,
+            rating: song.rating,
+        });
+        self.explored.truncate(COVERS_HELD.get());
+    }
+
+    pub(crate) fn explored(&self, location: &MediaLocation) -> Option<&ServedSong> {
+        self.explored.iter().find(|song| &song.location == location)
+    }
+
     pub(crate) fn is_favoured(&self, song: &ServedSong) -> bool {
         self.favoured
             .get(&song.location)
@@ -390,6 +418,7 @@ impl ServerModel {
             .unwrap_or_default();
         self.services = opened;
         self.favoured.clear();
+        self.explored.clear();
         self.trail = vec![Place::Artists];
         self.forget_the_covers(cx);
         self.read(cx);

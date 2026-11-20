@@ -833,6 +833,7 @@ impl Group {
                     words::settings_find::musicbrainz_network_internet_covers_lyrics_lrclib(),
                 keys: &[
                     ConfigKey::Online,
+                    ConfigKey::Explore,
                     ConfigKey::MusicbrainzMirror,
                     ConfigKey::MusicbrainzReplicationToken,
                     ConfigKey::OfferMusicbrainzCopy,

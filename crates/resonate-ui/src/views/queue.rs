@@ -837,7 +837,7 @@ impl RootView {
                                     let current = part == Part::Playing;
                                     let waiting = part == Part::Next;
                                     let heard = part == Part::Heard;
-                                    let drawn = match track {
+                                    let mut drawn = match track {
                                         Some(track) => {
                                             let favourite =
                                                 this.library.read(cx).favours_track(&track);
@@ -853,6 +853,14 @@ impl RootView {
                                             ),
                                     };
 
+                                    if let Some(song) =
+                                        this.server.read(cx).explored(&item.location)
+                                    {
+                                        drawn.title = SharedString::from(song.title.clone());
+                                        if let Some(artist) = &song.artist {
+                                            drawn.artist = SharedString::from(artist.clone());
+                                        }
+                                    }
                                     let cover = this.cover(
                                         Pictured::Track {
                                             album: drawn.album,

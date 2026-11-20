@@ -306,6 +306,9 @@ pub enum Error {
     LookupsHeldByTheMeter,
     #[error("{}", words::errors::no_served_server())]
     NoServedServer,
+
+    #[error("{}", words::errors::explore_already_held())]
+    ExploreAlreadyHeld,
     #[error("{}", words::errors::heard(.0.to_string()))]
     Heard(#[from] resonate_listen::Error),
     #[error("{}", words::errors::invalid_playlist_name())]

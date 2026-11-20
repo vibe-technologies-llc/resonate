@@ -85,6 +85,9 @@ final class Features {
             together.networkRulesChanged()
         }
     }
+    var explore: Bool {
+        didSet { settings.set(explore, forKey: "explore") }
+    }
     private(set) var servedGeneration = 0
     @ObservationIgnored private var servedGiven: [DownloadAccount]?
     private(set) var served = ServedChoice()
@@ -234,6 +237,7 @@ final class Features {
 
     init(library: Library) {
         self.library = library
+        explore = settings.object(forKey: "explore") == nil || settings.bool(forKey: "explore")
         online = settings.object(forKey: "online") == nil ? true : settings.bool(forKey: "online")
         hostedServices = settings.object(forKey: "hosted-services") == nil ? true : settings.bool(forKey: "hosted-services")
         enrichOnMetered = settings.bool(forKey: "enrich-on-metered")

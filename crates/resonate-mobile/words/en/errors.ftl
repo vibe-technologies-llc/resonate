@@ -163,3 +163,5 @@ no-history-user = Name the { $service ->
 no-lastfm-application = Give the API key and shared secret of your Last.fm app first
 lossy-for-a-replacement = The downloaded file is lossy, and a lossless copy was asked for as a higher quality version
 not-a-variant = That copy is not kept as a version of this song
+
+explore-already-held = This song is already in your library.

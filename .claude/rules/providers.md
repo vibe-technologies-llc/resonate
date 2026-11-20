@@ -1214,3 +1214,13 @@ service offers it.
   (`a_song_pressed_while_a_pass_runs_waits_for_it_and_is_asked_by_the_next_pass`,
   `a_poll_asked_for_during_a_pass_goes_first_and_the_pass_is_begun_again_after_it`,
   `what_was_left_queued_is_taken_up_at_open_only_while_youtube_music_is_on`).
+
+### Songs offered by Explore
+
+An Explore row has the service's song ID and its catalog namespace. A desktop keep remembers
+both through `A_KEEP_CAN_NAME_ITS_STREAMED_SONG` so a restarted pass can ask the original
+catalog directly. The file goes through the usual staging, validation, tagging and scan.
+The phones put the same namespace and ID into their exact served download offer, which goes
+through the usual document destination and indexing. Streaming from either Explore surface
+uses the services played in place. Online and the hosted-services setting determine which
+services are reachable. Searching sends artist names through the service's existing client.

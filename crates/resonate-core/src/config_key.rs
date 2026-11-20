@@ -114,6 +114,7 @@ keys! {
     FollowDesktopScheme = "follow-desktop-scheme";
     FollowDesktopTextSize = "follow-desktop-text-size";
     Online = "online", on;
+    Explore = "explore", on;
     EnrichAfterScan = "enrich-after-scan", on;
     EnrichOnMetered = "enrich-on-metered", off;
     MusicbrainzMirror = "musicbrainz-mirror", off;

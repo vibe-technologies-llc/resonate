@@ -34323,3 +34323,247 @@ fn deleting_more_tracks_than_one_query_reads_forgets_every_row_and_names_an_unkn
     assert!(all(&library)?.is_empty());
     Ok(())
 }
+
+struct ExploreCatalog {
+    source: SourceId,
+    suggestions: Vec<resonate_providers::Song>,
+    searched: Mutex<Vec<String>>,
+    opened: Mutex<Vec<String>>,
+    away: bool,
+}
+
+impl ExploreCatalog {
+    fn with(scheme: &str, suggestions: Vec<resonate_providers::Song>) -> Self {
+        Self {
+            source: source(scheme),
+            suggestions,
+            searched: Mutex::default(),
+            opened: Mutex::default(),
+            away: false,
+        }
+    }
+}
+
+impl resonate_providers::PlaysInPlace for ExploreCatalog {
+    fn scheme(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn title(&self) -> &'static str {
+        "Test catalog"
+    }
+
+    fn artists(&self) -> ProvidedResult<Vec<resonate_providers::Artist>> {
+        Ok(Vec::new())
+    }
+
+    fn artist(
+        &self,
+        _: &resonate_providers::Id,
+    ) -> ProvidedResult<resonate_providers::ArtistAlbums> {
+        Err(resonate_providers::not_offered(
+            &self.source,
+            ProviderOp::Browse,
+        ))
+    }
+
+    fn album(&self, _: &resonate_providers::Id) -> ProvidedResult<resonate_providers::AlbumSongs> {
+        Err(resonate_providers::not_offered(
+            &self.source,
+            ProviderOp::Browse,
+        ))
+    }
+
+    fn search(&self, words: &str) -> ProvidedResult<resonate_providers::Found> {
+        self.searched.lock().push(words.to_owned());
+        if self.away {
+            return Err(ProvidedError::Busy {
+                provider: self.source.clone(),
+                op: ProviderOp::Search,
+            });
+        }
+        Ok(resonate_providers::Found {
+            songs: self.suggestions.clone(),
+            ..Default::default()
+        })
+    }
+
+    fn streamed(
+        &self,
+        id: &resonate_providers::Id,
+    ) -> ProvidedResult<resonate_providers::Streamed> {
+        self.opened.lock().push(id.to_string());
+        let audio = Wav::new().frames(RATE as usize).build();
+        let length = audio.len() as u64;
+        Ok(resonate_providers::Streamed::seeking(
+            io::Cursor::new(audio),
+            Some(length),
+            Some("audio/wav".to_owned()),
+        ))
+    }
+
+    fn cover(&self, _: &resonate_providers::Id, _: u32) -> ProvidedResult<Vec<u8>> {
+        Err(resonate_providers::not_offered(
+            &self.source,
+            ProviderOp::Cover,
+        ))
+    }
+
+    fn cover_of(&self, _: &resonate_providers::Named) -> ProvidedResult<resonate_providers::Id> {
+        Err(resonate_providers::not_offered(
+            &self.source,
+            ProviderOp::Cover,
+        ))
+    }
+}
+
+fn explore_song(id: &str, title: &str, artist: &str) -> resonate_providers::Song {
+    let mut song =
+        resonate_providers::Song::only(resonate_providers::Id::new(id).expect("a provider id"));
+    song.title = title.to_owned();
+    song.artist = Some(artist.to_owned());
+    song.length = Some(Duration::from_secs(1));
+    song.suffix = Some("wav".to_owned());
+    song
+}
+
+#[test]
+fn explore_uses_the_library_and_mix_seeds_and_keeps_new_songs_from_answering_services() -> Result<()>
+{
+    let (tree, library) = a_music_folder()?;
+    held_as(&tree, "held.wav", "Held Song", RATE as usize);
+    tree.write(
+        "other.wav",
+        &Wav::new()
+            .frames(RATE as usize)
+            .text(ARTIST, "Other Artist")
+            .text(TITLE, "Another Song")
+            .build(),
+    );
+    scan(&library, &options(&tree))?;
+
+    let first = Arc::new(ExploreCatalog::with(
+        "first",
+        vec![
+            explore_song("held", "Held Song", "The Orbiters"),
+            explore_song("new", "A New Song", "The Orbiters"),
+            explore_song("other", "A New Song", "Other Artist"),
+            explore_song("else", "Unrelated", "Unrelated Artist"),
+        ],
+    ));
+    let second = Arc::new(ExploreCatalog::with(
+        "second",
+        vec![explore_song("duplicate", "A New Song", "THE ORBITERS")],
+    ));
+    let away = Arc::new(ExploreCatalog {
+        away: true,
+        ..ExploreCatalog::with("away", Vec::new())
+    });
+    let sources = [
+        resonate_providers::SongCatalog::new("first".to_owned(), first.clone()),
+        resonate_providers::SongCatalog::new("second".to_owned(), second.clone()),
+        resonate_providers::SongCatalog::new("away".to_owned(), away.clone()),
+    ];
+    let cache = resonate_library::ExploreCache::default();
+
+    let home = library.explore(None, &sources, &cache, false)?;
+    assert_eq!(home.failed, 1);
+    assert_eq!(home.songs.len(), 2);
+    assert!(home.songs.iter().all(|offer| offer.catalog == "first"));
+    assert_eq!(first.searched.lock().len(), 2);
+    assert_eq!(away.searched.lock().len(), 1);
+    assert!(first.opened.lock().is_empty());
+    assert_eq!(library.explore(None, &sources, &cache, false)?, home);
+    assert_eq!(first.searched.lock().len(), 2);
+
+    let mix = SavedQuery {
+        text: Some("artist:=\"the orbiters\"".to_owned()),
+        ..SavedQuery::default()
+    };
+    let found = library.explore(Some(&mix), &sources, &cache, false)?;
+    assert_eq!(found.songs.len(), 1);
+    assert_eq!(found.songs[0].song.id.as_str(), "new");
+    assert_eq!(
+        first.searched.lock().last().map(String::as_str),
+        Some("the orbiters")
+    );
+    assert_eq!(songs_under(&tree).len(), 2);
+
+    library.explore(Some(&mix), &sources, &cache, true)?;
+    assert_eq!(first.searched.lock().len(), 4);
+    Ok(())
+}
+
+#[test]
+fn an_explored_song_streams_without_a_copy_and_its_exact_download_survives_reopening() -> Result<()>
+{
+    let (tree, library, database) = a_music_folder_on_disk()?;
+    let service = Arc::new(ExploreCatalog::with("exact", Vec::new()));
+    let song = explore_song("song-42", "The Chosen Song", "The Orbiters");
+    let location = resonate_providers::Named::Song(song.id.clone()).location(&service.source);
+    let offer = resonate_library::ExploreOffer {
+        catalog: "first".to_owned(),
+        service: "Test catalog".to_owned(),
+        location: location.clone(),
+        song,
+    };
+    let playing = Arc::clone(&service);
+    let sources = Sources::local().and(Arc::new(resonate_library::PlayedInPlace::new(
+        service.source.clone(),
+        move |_: &SourceId| Some(Arc::clone(&playing) as Arc<dyn resonate_providers::PlaysInPlace>),
+    )));
+    let (decoder, _) =
+        resonate_codec::Decoder::open(&sources, &location).expect("the stream plays");
+    drop(decoder);
+    assert!(songs_under(&tree).is_empty());
+
+    assert_eq!(library.keep_explored(offer.clone())?, KeptSong::Queued);
+    assert_eq!(library.keep_explored(offer.clone())?, KeptSong::Queued);
+    assert_eq!(library.keeps_served_queued()?, 1);
+    drop(library);
+
+    let library = Library::open(&database)?;
+    delivering_into(&library, &tree);
+    let changed = Providers::none().with_song_catalog(resonate_providers::SongCatalog::new(
+        "another catalog".to_owned(),
+        service.clone(),
+    ));
+    assert_eq!(library.keep_pending(&changed, &|| false)?.landed, 0);
+    assert_eq!(*service.opened.lock(), ["song-42"]);
+    let providers = changed.with_song_catalog(resonate_providers::SongCatalog::new(
+        "first".to_owned(),
+        service.clone(),
+    ));
+    assert_eq!(library.keep_pending(&providers, &|| false)?.landed, 1);
+    assert_eq!(*service.opened.lock(), ["song-42", "song-42"]);
+    assert_eq!(songs_under(&tree).len(), 1);
+
+    scan(&library, &options(&tree))?;
+    let tracks = library.tracks(&TrackQuery::default())?;
+    assert_eq!(tracks.len(), 1);
+    assert_eq!(tracks[0].title, "The Chosen Song");
+    assert_eq!(
+        library.keep_explored(offer)?,
+        KeptSong::AlreadyHeld(tracks[0].id)
+    );
+    assert_eq!(library.keeps_served_queued()?, 0);
+    Ok(())
+}
+
+#[test]
+fn explore_rotates_direct_and_related_artists_and_stays_stable_within_the_day() {
+    let direct = ["First", "Second", "Third"].map(str::to_owned);
+    let kinship = resonate_library::Kinship::of(&[
+        ("First".to_owned(), "Jazz".to_owned()),
+        ("Kindred One".to_owned(), "Jazz".to_owned()),
+        ("Kindred Two".to_owned(), "Jazz".to_owned()),
+        ("Kindred Three".to_owned(), "Jazz".to_owned()),
+    ]);
+    let today = resonate_library::explore_seeds(&direct, &kinship, 0);
+    assert_eq!(today, ["First", "Second", "Kindred One", "Kindred Three"]);
+    assert_eq!(resonate_library::explore_seeds(&direct, &kinship, 0), today);
+    assert_eq!(
+        resonate_library::explore_seeds(&direct, &kinship, 1),
+        ["Second", "Third", "Kindred Three", "Kindred Two"],
+    );
+}

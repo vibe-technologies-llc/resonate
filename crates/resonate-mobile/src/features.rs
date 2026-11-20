@@ -239,6 +239,8 @@ pub struct SearchSong {
     pub held: bool,
     #[uniffi(default)]
     pub served: Option<String>,
+    #[uniffi(default)]
+    pub served_catalog: Option<String>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -881,6 +883,7 @@ pub(crate) fn search_song(song: RecordingMatch, album_asked: &[String]) -> Searc
         isrcs: song.isrcs.iter().map(ToString::to_string).collect(),
         held: false,
         served: None,
+        served_catalog: None,
     }
 }
 

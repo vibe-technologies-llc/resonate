@@ -559,7 +559,7 @@ impl Searching {
         Ok((index, found))
     }
 
-    fn admitted_in_order(
+    pub(crate) fn admitted_in_order(
         &self,
         catalog: &Catalog,
         filter: &TrackFilter,

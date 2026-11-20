@@ -189,6 +189,7 @@ impl RootView {
         let library = self.library.read(cx);
         let on = library.is_online();
         let reachable = library.has_reference();
+        let explore = !cx.global::<ResonateApp>().online.explore_disabled;
 
         let rows = kit::rows()
             .child(self.in_the_ring(
@@ -200,6 +201,17 @@ impl RootView {
                     "reference-lookups",
                 ),
                 move |this, _, cx| this.set_online(!on, cx),
+                cx,
+            ))
+            .child(self.in_the_ring(
+                "show-explore",
+                switch_row(
+                    words::suggestions::show_explore(),
+                    words::suggestions::show_explore_detail(),
+                    explore,
+                    "show-explore",
+                ),
+                move |this, _, cx| this.set_explore(!explore, cx),
                 cx,
             ))
             .when(on && !reachable, |body| {
@@ -638,6 +650,13 @@ impl RootView {
 }
 
 impl RootView {
+    pub(crate) fn set_explore(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        cx.update_global::<ResonateApp, _>(|global, _| global.online.explore_disabled = !enabled);
+        self.clear_explore(cx);
+        self.store(&Setting::Switched(Switch::Explore, enabled), cx);
+        cx.refresh_windows();
+    }
+
     pub(crate) fn set_online(&mut self, on: bool, cx: &mut Context<Self>) {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.enabled = on);
         self.library

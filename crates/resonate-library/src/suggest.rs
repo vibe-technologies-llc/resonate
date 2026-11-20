@@ -346,6 +346,10 @@ pub struct Kinship {
 }
 
 impl Kinship {
+    pub(crate) fn related(&self, seed: &str) -> Vec<String> {
+        kindred_to(self, seed, &AHashSet::new())
+    }
+
     pub fn of(shelved: &[(String, String)]) -> Self {
         let (artists, holders) = artists_and_who_shares_their_genres(shelved);
 
@@ -362,6 +366,10 @@ pub struct Filing {
 }
 
 impl Filing {
+    pub(crate) const fn kinship(&self) -> &Kinship {
+        &self.kin
+    }
+
     pub fn of(
         years: impl IntoIterator<Item = (i32, u64)>,
         genres: impl IntoIterator<Item = (String, u64)>,
@@ -442,7 +450,7 @@ pub fn artists_heard_lately(heard: impl IntoIterator<Item = (String, u64)>) -> V
     )
 }
 
-fn the_artists_as_heard(inner: &Inner) -> Result<Vec<ArtistHeard>> {
+pub(crate) fn the_artists_as_heard(inner: &Inner) -> Result<Vec<ArtistHeard>> {
     inner
         .read(|connection| {
             let mut statement = connection
@@ -861,15 +869,19 @@ fn left_behind_of(heard: &[ArtistHeard], before: SystemTime) -> Vec<&str> {
         .collect()
 }
 
-fn what_you_play(inner: &Inner, now: SystemTime) -> Result<(Vec<String>, Vec<String>)> {
+pub(crate) fn heard_of_late(inner: &Inner, now: SystemTime) -> Result<Vec<String>> {
     let of_late = store::to_nanos(now.checked_sub(OF_LATE).unwrap_or(UNIX_EPOCH));
-    let lately = inner.read(|connection| {
+    inner.read(|connection| {
         names_read(
             connection,
             THE_ARTISTS_HEARD_LATELY,
             params![of_late, ARTISTS_OF_LATE_AT_MOST],
         )
-    })?;
+    })
+}
+
+fn what_you_play(inner: &Inner, now: SystemTime) -> Result<(Vec<String>, Vec<String>)> {
+    let lately = heard_of_late(inner, now)?;
     let played_most = genres_ranked(inner, [THE_GENRES_PLAYED, THE_GENRES_OF_THE_ARTISTS_PLAYED])?;
 
     Ok((lately, played_most))

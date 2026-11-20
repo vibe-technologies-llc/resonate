@@ -2901,3 +2901,13 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
 A track keeps its file content advisory as nullable `tracks.explicit`: true for explicit, false for a censored take and null for unmarked. The appended `TRACKS_KEEP_THEIR_CONTENT_ADVISORY` migration marks existing rows `probe_again`, so the next incremental scan reads their advisory without discarding library metadata. A rescan replaces the advisory with what the file now says.
 
 `Reference::share_file` optionally uploads a whole local file and returns its public URL; references without upload support return nothing. This explicit file sharing action is separate from `Shared::written`, which still produces streaming links alone.
+
+### Explore
+
+Explore uses the artists heard over the last ninety days, with favourites and the largest
+artist groups as fallbacks. An opened mix supplies the artists its query holds. The existing
+genre kinship supplies related artists, with a daily turn through each group. Searches are
+bounded to four artists per eligible service, and rows arrive in artist order with up to
+three songs per artist. The same day's reads share provider results where the artist choices
+and service instances agree. Held copies are checked again against each result. An absent
+service costs its offers and the other results still stand.

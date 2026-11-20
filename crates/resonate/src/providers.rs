@@ -133,6 +133,7 @@ fn in_place(accounts: &Accounts, made: &Made, online: bool) -> InPlace {
 }
 
 #[cfg(feature = "online")]
+#[derive(Clone)]
 enum Built {
     Subsonic(Arc<Subsonic>),
     Jellyfin(Arc<Jellyfin>),
@@ -718,9 +719,21 @@ fn registry(inbox: Option<&Path>, accounts: &Accounts, made: &Made) -> Providers
     accounts
         .0
         .iter()
-        .filter(|reachable| reachable.fetches_for_wants())
-        .filter_map(|reachable| made.built(reachable).provider())
-        .fold(with_inbox(inbox), Providers::and)
+        .fold(with_inbox(inbox), |providers, reachable| {
+            let built = made.built(reachable);
+            let providers = match reachable.song_catalog_namespace() {
+                Some(namespace) => providers.with_song_catalog(
+                    resonate_providers::SongCatalog::new(namespace, built.clone().in_place()),
+                ),
+                None => providers,
+            };
+            if reachable.fetches_for_wants()
+                && let Some(provider) = built.provider()
+            {
+                return providers.and(provider);
+            }
+            providers
+        })
 }
 
 #[cfg(not(feature = "online"))]

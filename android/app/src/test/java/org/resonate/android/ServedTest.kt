@@ -89,6 +89,14 @@ class ServedTest {
     }
 
     @Test
+    fun aKeyedCatalogIsServedWithHostedServicesOff() {
+        val account = hosted(MusicProvider.HIFI_API).copy(password = "key")
+        val book = ProviderAccountBook().saved(1, account)
+
+        assertEquals(listOf(account), book.servedAccounts(online = true, hostedServices = false))
+    }
+
+    @Test
     fun declinedHostedServicesLeaveOnlyTheNamedServers() {
         val book =
             ProviderAccountBook()

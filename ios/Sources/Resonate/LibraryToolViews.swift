@@ -274,6 +274,13 @@ struct SuggestedMix: Identifiable, Sendable {
         self.mark = mark
     }
 
+    var exploreScope: ExploreScope {
+        switch source {
+        case .filter(let filter): .filtered(filter: filter)
+        case .search(let search): .saved(search: search)
+        }
+    }
+
     var kept: SavedSearch? {
         if case .search(let search) = source { search } else { nil }
     }
@@ -371,11 +378,17 @@ struct SuggestionsView: View {
                         }
                     }
                 }
+                if library.features.explore {
+                    Text("explore.title").font(.title3.weight(.semibold)).accessibilityAddTraits(.isHeader)
+                    ExploreSongs(scope: .library)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 20)
         }
         .navigationTitle("tools.suggestions")
+        .toolbar { if library.features.explore { DownloadsButton() } }
+        .downloadDestinationPrompt()
         .background {
             CatalogReading {
                 guard let found = await OfferedMixes.read(in: library), found != offered else { return }
@@ -392,6 +405,7 @@ struct MixView: View {
     let id: String
     @State private var mix: SuggestedMix?
     @State private var resolved = false
+    @State private var exploring = false
     @State private var tracks: [Track] = []
     @State private var covers: [Track] = []
     @State private var read = false
@@ -401,19 +415,30 @@ struct MixView: View {
         Group {
             if let mix {
                 List {
-                    CollectionHeader(title: mix.title, subtitle: mix.detail, tracks: tracks, outline: .rounded(Self.corner)) {
-                        MosaicArtwork(covers: covers, mark: mix.mark, name: mix.title, corner: Self.corner)
-                    }
-                    if let failure {
-                        ReadFailure(text: failure) { Task { await load(mix) } }
-                    } else if read, tracks.isEmpty {
-                        Text("mix.empty").foregroundStyle(.secondary)
-                    }
-                    ForEach(tracks, id: \.id) { track in
-                        TrackRow(track: track) {
-                            library.play(tracks, selected: track)
+                    if library.features.explore {
+                        Picker("explore.title", selection: $exploring) {
+                            Text("explore.library").tag(false)
+                            Text("explore.title").tag(true)
                         }
-                        .listRowBackground(Color.clear)
+                        .pickerStyle(.segmented)
+                    }
+                    if library.features.explore && exploring {
+                        ExploreSongs(scope: mix.exploreScope)
+                    } else {
+                        CollectionHeader(title: mix.title, subtitle: mix.detail, tracks: tracks, outline: .rounded(Self.corner)) {
+                            MosaicArtwork(covers: covers, mark: mix.mark, name: mix.title, corner: Self.corner)
+                        }
+                        if let failure {
+                            ReadFailure(text: failure) { Task { await load(mix) } }
+                        } else if read, tracks.isEmpty {
+                            Text("mix.empty").foregroundStyle(.secondary)
+                        }
+                        ForEach(tracks, id: \.id) { track in
+                            TrackRow(track: track) {
+                                library.play(tracks, selected: track)
+                            }
+                            .listRowBackground(Color.clear)
+                        }
                     }
                 }
                 .listStyle(.plain)
@@ -421,7 +446,14 @@ struct MixView: View {
                 .scrollContentBackground(.hidden)
                 .navigationTitle(mix.title)
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbar { CollectionMenu(tracks: tracks, keeping: mix.kept, keepingAs: mix.title) }
+                .toolbar {
+                    if library.features.explore && exploring {
+                        DownloadsButton()
+                    } else {
+                        CollectionMenu(tracks: tracks, keeping: mix.kept, keepingAs: mix.title)
+                    }
+                }
+                .downloadDestinationPrompt()
             } else if resolved {
                 ContentUnavailableView("mix.gone", systemImage: "square.stack")
             } else {
@@ -429,6 +461,9 @@ struct MixView: View {
             }
         }
         .background { CatalogReading(subject: id) { await resolveAndLoad() } }
+        .onChange(of: library.features.explore) { _, enabled in
+            if !enabled { exploring = false }
+        }
     }
 
     private func resolveAndLoad() async {

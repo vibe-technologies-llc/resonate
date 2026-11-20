@@ -12,14 +12,14 @@ use resonate_codec::{
 };
 use resonate_core::{AlbumId, Gate, Link, Locator, MediaLocation, SourceId, TrackId};
 use resonate_providers::{
-    ANSWERED_ALONE_WITHIN, Answer, Asking, Away, Delivered, Delivery, Identity, Providers,
-    TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER, WhyAway,
+    ANSWERED_ALONE_WITHIN, Answer, Asking, Away, Delivered, Delivery, Id, Identity, Providers,
+    SongCatalog, TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER, WhyAway,
 };
 use rusqlite::{Connection, OptionalExtension as _, Row as SqlRow, Transaction, params};
 
 use crate::{
-    Cut, DeliveryFolder, Error, Library, PollOptions, PollProgress, Result, StoreOp, TagEdit,
-    TagField, Want,
+    Cut, DeliveryFolder, Error, ExploreOffer, ExploreTrack, Library, PollOptions, PollProgress,
+    Result, StoreOp, TagEdit, TagField, Want,
     filed::{self, AlbumToFile, ToFile, Unfiled},
     organise,
     pass::PassKind,
@@ -44,7 +44,8 @@ const KEEPS_QUEUED: &str =
                 OR EXISTS (SELECT 1 FROM versions_kept vk WHERE vk.kept_id = kept_songs.id),
             EXISTS (SELECT 1 FROM replacements_kept rk WHERE rk.kept_id = kept_songs.id)
                 OR EXISTS (SELECT 1 FROM versions_kept vk
-                            WHERE vk.kept_id = kept_songs.id AND vk.lossless = 1)
+                            WHERE vk.kept_id = kept_songs.id AND vk.lossless = 1),
+            served_catalog, served_id, served_suffix
        FROM kept_songs WHERE landed IS NULL AND gone = 0 ORDER BY tried, asked, id";
 
 const THE_SONG_A_KEEP_IS_FOR: &str = "SELECT t.path, t.album_id
@@ -205,15 +206,38 @@ impl HeldCopy {
     }
 }
 
+struct ServedKeep {
+    catalog: String,
+    id: String,
+    suffix: Option<String>,
+}
+
 struct Queued {
     id: i64,
     song: SongToKeep,
     playlist: Option<String>,
     for_a_song: bool,
     lossless_only: bool,
+    served: Option<ServedKeep>,
 }
 
 impl Queued {
+    fn song_catalog<'a>(&self, providers: &'a Providers) -> Option<&'a SongCatalog> {
+        let served = self.served.as_ref()?;
+        providers.song_catalogs().iter().find(|catalog| {
+            catalog.service().scheme() == &self.song.source && catalog.namespace() == served.catalog
+        })
+    }
+
+    fn exact_delivery(&self, providers: &Providers) -> Option<Providers> {
+        let served = self.served.as_ref()?;
+        let id = Id::new(&served.id)?;
+        Some(
+            self.song_catalog(providers)?
+                .delivery(id, served.suffix.clone()),
+        )
+    }
+
     fn identity(&self) -> Identity {
         match self.for_a_song {
             true => Identity {
@@ -288,8 +312,45 @@ impl Drop for KeepUnderWay<'_> {
 
 impl Library {
     pub fn keep_song(&self, song: SongToKeep) -> Result<Kept> {
+        self.keep_one(song, None)
+    }
+
+    pub fn keep_explored(&self, offer: ExploreOffer) -> Result<Kept> {
+        if let Some(id) =
+            self.held_explored(&ExploreTrack::of(&offer.song), offer.song.artist.as_deref())?
+        {
+            return Ok(Kept::AlreadyHeld(id));
+        }
+        let served = ServedKeep {
+            catalog: offer.catalog,
+            id: offer.song.id.to_string(),
+            suffix: offer.song.suffix,
+        };
+        let key = format!(
+            "\u{1f}{}:{}{}",
+            served.catalog.len(),
+            served.catalog,
+            served.id
+        );
+        let song = SongToKeep {
+            source: offer.location.source().clone(),
+            video: key,
+            title: offer.song.title,
+            artist: offer.song.artist,
+            album: offer.song.album,
+            length: offer.song.length,
+            cover: offer.song.cover.as_ref().map(ToString::to_string),
+        };
+        self.keep_one(song, Some(&served))
+    }
+
+    fn keep_one(&self, song: SongToKeep, served: Option<&ServedKeep>) -> Result<Kept> {
         self.a_folder_to_keep_into()?;
         refused_untitled(&song)?;
+        let previously_landed = served
+            .map(|_| self.exact_landing(&song))
+            .transpose()?
+            .flatten();
         let copy = self.copy_of(&song)?;
         if let Some(HeldCopy {
             track: Some(track), ..
@@ -304,8 +365,15 @@ impl Library {
             }
             None => WhatLanded::IsForgotten,
         };
-        self.inner()
-            .write(|transaction| queued_alone(transaction, &song, what_landed))?;
+        self.inner().write(|transaction| {
+            queued_alone(
+                transaction,
+                &song,
+                what_landed,
+                served,
+                previously_landed.as_deref(),
+            )
+        })?;
         Ok(Kept::Queued)
     }
 
@@ -318,7 +386,7 @@ impl Library {
                 .optional()
                 .map_err(|source| Error::store(StoreOp::Query, source))?
                 .ok_or(Error::UnknownTrack(track))?;
-            queued_alone(transaction, &song, WhatLanded::Stays)?;
+            queued_alone(transaction, &song, WhatLanded::Stays, None, None)?;
             let keep: i64 = transaction
                 .query_row(
                     THE_KEEP_OF_A_SONG_ALONE,
@@ -418,6 +486,16 @@ impl Library {
                 )
                 .map(i64::cast_unsigned)
                 .map_err(|source| Error::store(StoreOp::Query, source))
+        })
+    }
+
+    pub fn keeps_served_queued(&self) -> Result<u64> {
+        self.inner().read(|connection| {
+            connection.query_row(
+                "SELECT count(*) FROM kept_songs WHERE served_catalog IS NOT NULL AND landed IS NULL AND gone = 0",
+                [],
+                |row| row.get::<_, i64>(0)
+            ).map(i64::cast_unsigned).map_err(|source| Error::store(StoreOp::Query, source))
         })
     }
 
@@ -585,7 +663,10 @@ impl Library {
         let queued = self.inner().read(keeps_queued)?;
         Ok(queued
             .into_iter()
-            .filter(|row| providers.only(&row.song.source).has_a_source())
+            .filter(|row| match row.served {
+                Some(_) => row.song_catalog(providers).is_some(),
+                None => providers.only(&row.song.source).has_a_source(),
+            })
             .collect())
     }
 
@@ -666,7 +747,16 @@ impl Library {
         }
 
         let progress = walking.progress;
-        let answer = asked(row, walking.providers, progress, &mut walking.away);
+        let exact = if row.served.is_some() {
+            let Some(exact) = row.exact_delivery(walking.providers) else {
+                return Ok(Turn::Unkept);
+            };
+            Some(exact)
+        } else {
+            None
+        };
+        let sources = exact.as_ref().unwrap_or(walking.providers);
+        let answer = asked(row, sources, progress, &mut walking.away);
         if answer.cancelled {
             return Ok(Turn::Over);
         }
@@ -686,7 +776,7 @@ impl Library {
         let album = row.song.album();
         let picture = match row.for_a_song {
             true => self.picture_of_its_song(row),
-            false => pictured(&row.song, walking.providers),
+            false => pictured(&row.song, sources),
         };
         let song = row.song.to_file(album.as_ref(), picture.as_ref());
         let drawn = supply::drawn(
@@ -847,6 +937,16 @@ impl Library {
         let copy = self.first_there(copies, |copy| &copy.held)?;
 
         Ok(copy.map(HeldCopy::of))
+    }
+
+    fn exact_landing(&self, song: &SongToKeep) -> Result<Option<String>> {
+        self.inner().read(|connection| {
+            connection.query_row(
+                "SELECT landed FROM kept_songs WHERE source = ?1 AND video = ?2 AND playlist IS NULL",
+                params![song.source.as_str(), song.video],
+                |row| row.get(0)
+            ).optional().map(Option::flatten).map_err(|source| Error::store(StoreOp::Query, source))
+        })
     }
 
     fn landed_before(&self, song: &SongToKeep) -> Result<Option<HeldCopy>> {
@@ -1148,7 +1248,7 @@ fn landed_bare(connection: &Connection) -> Result<Vec<LandedBare>> {
     let mut statement = connection
         .prepare_cached(
             "SELECT id, source, video, landed FROM kept_songs
-              WHERE landed IS NOT NULL AND cover IS NULL AND picture_asked IS NULL
+              WHERE landed IS NOT NULL AND served_catalog IS NULL AND cover IS NULL AND picture_asked IS NULL
                 AND gone = 0
               ORDER BY id",
         )
@@ -1240,15 +1340,19 @@ fn queued_alone(
     transaction: &Transaction<'_>,
     song: &SongToKeep,
     what_landed: WhatLanded,
+    served: Option<&ServedKeep>,
+    previously_landed: Option<&str>,
 ) -> Result<()> {
     transaction
         .execute(
-            "INSERT INTO kept_songs (source, video, title, artist, album, length, asked, cover)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?9)
+            "INSERT INTO kept_songs
+                 (source, video, title, artist, album, length, asked, cover,
+                  served_catalog, served_id, served_suffix)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?9, ?10, ?11, ?12)
              ON CONFLICT (source, video) WHERE playlist IS NULL
              DO UPDATE SET gone = 0, tried = NULL, tries = 0,
                            cover = coalesce(excluded.cover, cover),
-                           landed = CASE WHEN ?8 THEN NULL ELSE landed END",
+                           landed = CASE WHEN ?8 AND (?10 IS NULL OR landed IS ?13) THEN NULL ELSE landed END",
             params![
                 song.source.as_str(),
                 song.video,
@@ -1259,6 +1363,10 @@ fn queued_alone(
                 store::to_nanos(SystemTime::now()),
                 what_landed == WhatLanded::IsForgotten,
                 song.cover,
+                served.map(|served| served.catalog.as_str()),
+                served.map(|served| served.id.as_str()),
+                served.and_then(|served| served.suffix.as_deref()),
+                previously_landed,
             ],
         )
         .map(drop)
@@ -1373,6 +1481,14 @@ fn queued_at(row: &SqlRow<'_>) -> rusqlite::Result<Option<Queued>> {
         playlist: row.get(7)?,
         for_a_song: row.get(9)?,
         lossless_only: row.get(10)?,
+        served: match (row.get(11)?, row.get(12)?) {
+            (Some(catalog), Some(id)) => Some(ServedKeep {
+                catalog,
+                id,
+                suffix: row.get(13)?,
+            }),
+            _ => None,
+        },
     }))
 }
 

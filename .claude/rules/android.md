@@ -1844,3 +1844,9 @@ keeping the original failure and its resumable mark. A network failure must not 
 shown as running while an otherwise unrelated library decode continues. Cleanup only supplies
 its own cancellation when the caller has not already stopped the pass; a listener's Stop removes
 the mark, while shutdown preserves it. Overriding that choice made every explicit Stop resume.
+
+### Explore in Suggestions
+
+Suggestions offers an Explore shelf, and local mix screens offer Library and Explore tabs.
+The Online settings switch persists the choice and defaults to on. The Explore rows use
+the service player and the existing download chooser.

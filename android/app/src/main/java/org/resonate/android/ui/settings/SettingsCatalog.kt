@@ -203,6 +203,12 @@ enum class Setting(
             R.string.settings_inner_network,
         ),
     ),
+    EXPLORE(
+        SettingsGroup.ONLINE,
+        R.string.explore_setting,
+        R.string.explore_setting_detail,
+        emptyList(),
+    ),
     PROVIDERS(
         SettingsGroup.ONLINE,
         R.string.settings_providers_title,

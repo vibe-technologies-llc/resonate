@@ -20,6 +20,7 @@ impl RootView {
 
         match switch {
             Switch::Online => library.is_online(),
+            Switch::Explore => !app.online.explore_disabled,
             Switch::EnrichAfterScan => library.enriches_after_scan(),
             Switch::Study => library.studies(),
             Switch::FetchLyrics => library.fetches_lyrics(),
@@ -61,6 +62,7 @@ impl RootView {
 
         match switch {
             Switch::Online => self.set_online(on, cx),
+            Switch::Explore => self.set_explore(on, cx),
             Switch::EnrichAfterScan => self.set_after_scan(on, cx),
             Switch::Study => self.set_studies(on, cx),
             Switch::FetchLyrics => self.set_lyrics(on, cx),

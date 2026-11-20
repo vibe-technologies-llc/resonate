@@ -6,8 +6,10 @@ mod listing;
 mod pacing;
 mod provider;
 mod sign_in;
+mod song_catalog;
 
 pub use resonate_core::titles::{Rating, rating_in_the_title};
+pub use song_catalog::{SongCatalog, stream_extension};
 
 pub use crate::{
     delivery::{

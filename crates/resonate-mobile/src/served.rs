@@ -5,7 +5,7 @@ use resonate_codec::Sources;
 use resonate_core::{MediaLocation, Resumable, Resumption, SourceId, TrackId};
 use resonate_engine::{Command, Placement, QueueItem, QueueRows, Unclaimed};
 use resonate_library::{PlayedInPlace, Reachable};
-use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Song};
+use resonate_providers::{Album, Artist, Found, Id, Mix, Named, PlaysInPlace, Song, SongCatalog};
 
 use crate::{
     Error, MobilePlayer, Result, Track,
@@ -174,6 +174,7 @@ pub(crate) struct Served {
     slot: Slot,
     known: Mutex<BTreeMap<MediaLocation, ServedSong>>,
     marked: Mutex<BTreeMap<MediaLocation, bool>>,
+    pub(crate) explore: resonate_library::ExploreCache,
 }
 
 impl Served {
@@ -201,6 +202,50 @@ impl Served {
             .into_iter()
             .map(|service| service.plays)
             .collect()
+    }
+
+    pub(crate) fn song_catalogs(&self) -> Vec<SongCatalog> {
+        Self::catalogs_of(&self.slot.read())
+    }
+
+    fn catalogs_of(services: &[Service]) -> Vec<SongCatalog> {
+        services
+            .iter()
+            .filter_map(|service| {
+                Some(SongCatalog::new(
+                    service.reachable.song_catalog_namespace()?,
+                    Arc::clone(&service.plays),
+                ))
+            })
+            .collect()
+    }
+
+    pub(crate) fn explored(
+        &self,
+        expected: &[SongCatalog],
+        offers: Vec<resonate_library::ExploreOffer>,
+    ) -> Result<Vec<(resonate_library::ExploreOffer, ServedSong)>> {
+        let standing = self.slot.read();
+        let current = Self::catalogs_of(&standing);
+        if current.len() != expected.len()
+            || !current
+                .iter()
+                .zip(expected)
+                .all(|(one, other)| one.same_service(other))
+        {
+            return Err(Error::NoServedServer);
+        }
+        let mut rows = Vec::with_capacity(offers.len());
+        for offer in offers {
+            let service = standing
+                .iter()
+                .find(|service| service.plays.scheme() == offer.location.source())
+                .ok_or(Error::NoServedServer)?;
+            let mut song = service.song_of(offer.song.clone());
+            self.remember(std::slice::from_mut(&mut song));
+            rows.push((offer, song));
+        }
+        Ok(rows)
     }
 
     fn named(&self, scheme: &str) -> Result<Service> {
@@ -301,8 +346,14 @@ impl Served {
     pub(crate) fn streamed_to_keep(
         &self,
         location: &MediaLocation,
+        catalog: Option<&str>,
     ) -> Result<(resonate_providers::Streamed, MusicProvider)> {
         let service = self.named(location.source().as_str())?;
+        if let Some(catalog) = catalog
+            && service.reachable.song_catalog_namespace().as_deref() != Some(catalog)
+        {
+            return Err(Error::NoServedServer);
+        }
         let Some(Named::Song(id)) = service.plays.named_by(location) else {
             return Err(Error::InvalidUri);
         };
@@ -657,7 +708,7 @@ mod tests {
         asked_log.lock().push(asked.clone());
         let (kind, body): (&str, Vec<u8>) = if asked.contains("/Users/AuthenticateByName") {
             ("application/json", JELLYFIN_SIGNED_IN.into())
-        } else if asked.contains("/Artists/AlbumArtists") {
+        } else if asked.contains("/Artists/AlbumArtists") || asked.contains("/Artists?") {
             ("application/json", JELLYFIN_ARTISTS.into())
         } else if asked.contains("/Items/jar-1") {
             ("application/json", JELLYFIN_ARTIST.into())
@@ -749,6 +800,92 @@ mod tests {
             password: String::new(),
             ..of(MusicProvider::Monochrome, fake())
         }
+    }
+
+    #[test]
+    fn explore_streams_a_suggested_song_and_saves_its_exact_id_on_request() {
+        use std::{fs::File, os::fd::IntoRawFd};
+
+        use crate::explore::ExploreScope;
+
+        let harness = online();
+        let (server, asked) = fake_asked();
+        let account = of(MusicProvider::Jellyfin, server);
+        harness.player.serve_from(vec![account.clone()]);
+        let mut local = harness.songs[0].clone();
+        local.artist = "Pink Floyd".to_owned();
+        local.title = "A Local Song".to_owned();
+        harness.player.catalog.upsert(local).expect("a seed");
+
+        let feed = harness
+            .player
+            .explore(ExploreScope::Library, String::new(), 0, false)
+            .expect("recommendations are read");
+        assert_eq!(feed.services, 1);
+        assert_eq!(feed.failed, 0);
+        assert_eq!(feed.songs.len(), 1);
+        let offer = &feed.songs[0];
+        assert_eq!(offer.song.title, "One of These Days");
+        assert_eq!(offer.song.uri, "jellyfin:track/jso-1");
+        assert!(!asked.lock().iter().any(|path| path.contains("/stream")));
+        let location = MediaLocation::from_uri(&offer.song.uri).expect("a location");
+        probe(&harness.player.sources, &location).expect("the stream plays");
+        let path = harness.folder.join("explore.wav");
+        assert!(!path.exists());
+
+        let (another_server, another_asked) = fake_asked();
+        let another_server = of(MusicProvider::Jellyfin, another_server);
+        let stale = harness.player.begin_download(offer.download.clone());
+        assert!(matches!(
+            harness.player.find_download(stale, vec![another_server]),
+            Err(Error::NoServedServer)
+        ));
+        assert!(another_asked.lock().is_empty());
+        let before_download = asked.lock().len();
+
+        let job = harness.player.begin_download(offer.download.clone());
+        let download = harness
+            .player
+            .find_download(job, vec![account])
+            .expect("the exact song is offered");
+        let file = File::create(&path).expect("a destination");
+        assert!(
+            harness
+                .player
+                .download_offer(job, file.into_raw_fd())
+                .expect("the song is received")
+                > 0
+        );
+        let track = harness
+            .player
+            .index_download(job, "content://test/explore.wav".to_owned(), download.name)
+            .expect("the song is indexed");
+        assert_eq!(track.title, "One of These Days");
+        let requests = asked.lock();
+        let streamed: Vec<_> = requests[before_download..]
+            .iter()
+            .filter(|path| path.contains("/stream"))
+            .collect();
+        assert!(!streamed.is_empty());
+        assert!(
+            streamed
+                .iter()
+                .all(|path| path.contains("/Audio/jso-1/stream"))
+        );
+        drop(requests);
+
+        let found = harness
+            .player
+            .explore(ExploreScope::Library, String::new(), 0, false)
+            .expect("the collected song is read");
+        assert!(found.songs.is_empty());
+        harness.player.configure_online(false);
+        assert!(matches!(
+            harness
+                .player
+                .explore(ExploreScope::Library, String::new(), 0, false),
+            Err(Error::OnlineOff)
+        ));
     }
 
     #[test]

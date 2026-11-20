@@ -83,6 +83,7 @@ pub(crate) fn songs_of(release: &Release) -> Vec<SearchSong> {
             isrcs: track.isrcs.clone(),
             held: false,
             served: None,
+            served_catalog: None,
         })
         .collect()
 }
@@ -184,6 +185,7 @@ fn kept_song(row: &rusqlite::Row<'_>) -> rusqlite::Result<SearchSong> {
             .collect(),
         held: false,
         served: None,
+        served_catalog: None,
     })
 }
 

@@ -1196,6 +1196,13 @@ impl MobilePlayer {
     pub fn find_download(&self, job: u64, accounts: Vec<DownloadAccount>) -> Result<DownloadOffer> {
         let job = self.downloads.job(job)?;
         job.settled(self.require_online())?;
+        if job.song.served_catalog.is_some() {
+            self.serve_from(accounts);
+            job.settled(self.check_explore_download(&job.song))?;
+            return self
+                .found_served(&job, job.song.served.as_deref().unwrap_or_default())
+                .offer;
+        }
         let client = Arc::clone(self.services.online.client());
         let reaching = move || client.is_reaching();
         let refused = self.catalog.refused_offers(&job.song, SystemTime::now())?;

@@ -10,6 +10,7 @@ mod enrich;
 mod enriched;
 mod error;
 mod everywhere;
+mod explore;
 mod filed;
 mod filters;
 mod fingerprint;
@@ -107,6 +108,10 @@ pub use resonate_vault::{
 pub fn read_a_playlist_sheet(text: &str) {
     let _ = crate::sheet::parse(text, std::path::Path::new("/music"));
 }
+
+pub use explore::{
+    ExploreCache, ExploreOffer, ExploreResult, ExploreTrack, artists_for_explore, explore_seeds,
+};
 
 pub use crate::{
     chosen::{Chosen, ChosenVersion, Played, Variants},
