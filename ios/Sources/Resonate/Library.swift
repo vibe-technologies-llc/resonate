@@ -1051,7 +1051,7 @@ final class Library {
 
     func exploreDownload(for uri: String) async -> ExploreSong? {
         guard let native = try? await player() else { return nil }
-        return await Work.aside { native.exploreDownloadFor(uri: uri) }
+        return (try? await Work.aside { native.exploreDownloadFor(uri: uri) }) ?? nil
     }
 
     func mixSuggestionsIntoQueue() async {

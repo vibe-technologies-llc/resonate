@@ -533,7 +533,9 @@ struct MixView: View {
                     if library.features.explore && exploring {
                         ToolbarItem(placement: .topBarTrailing) { DownloadsButton() }
                     }
-                    CollectionMenu(tracks: tracks, keeping: mix.kept, keepingAs: mix.title)
+                    ToolbarItem(placement: .topBarTrailing) {
+                        CollectionMenu(tracks: tracks, keeping: mix.kept, keepingAs: mix.title)
+                    }
                 }
                 .downloadDestinationPrompt()
                 .task(id: "\(exploring)-\(mixExploreRetry)-\(library.features.servedGeneration)-\(library.features.online)") {
