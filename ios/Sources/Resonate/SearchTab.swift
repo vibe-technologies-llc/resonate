@@ -58,11 +58,6 @@ struct SearchTab: View {
             .themedRows()
         }
         .listStyle(.plain)
-        .overlay {
-            if search.query.isEmpty, search.recents.isEmpty {
-                SearchPrompt()
-            }
-        }
         .safeAreaBar(edge: .top, spacing: 0) {
             if !search.query.isEmpty, !OnlineAsked.isLink(search.query) {
                 SearchAreaChooser(area: $area)
@@ -158,11 +153,12 @@ struct OnlineOffRow: View {
     }
 }
 
-struct SearchStart: View {
+private struct SearchStart: View {
     let search: SearchModel
     let choose: (String) -> Void
 
     var body: some View {
+        SearchBrowse()
         if !search.recents.isEmpty {
             Section {
                 ForEach(search.recents, id: \.self) { recent in
@@ -192,13 +188,45 @@ struct SearchStart: View {
     }
 }
 
-private struct SearchPrompt: View {
+private struct SearchBrowse: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @ScaledMetric(relativeTo: .subheadline) private var tileWidth: CGFloat = 146
+
     var body: some View {
-        ContentUnavailableView(
-            "search.start.title",
-            systemImage: "magnifyingglass",
-            description: Text("search.start.detail")
-        )
+        let columns = typeSize.isAccessibilitySize ? GridItem(.flexible()) : GridItem(.adaptive(minimum: tileWidth), spacing: 8)
+        Section("search.browse") {
+            LazyVGrid(columns: [columns], spacing: 8) {
+                shortcut(said("favourites.title"), symbol: "heart", destination: .favourites)
+                ForEach(SuggestedMix.searchBrowse) { mix in
+                    shortcut(mix.title, symbol: mix.mark, destination: .mix(mix.id))
+                }
+                shortcut(said("wanted.title"), symbol: "bookmark", destination: .wanted)
+            }
+            .frame(maxWidth: 560)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .listRowSeparator(.hidden)
+        }
+    }
+
+    private func shortcut(_ title: String, symbol: String, destination: Destination) -> some View {
+        NavigationLink(value: destination) {
+            HStack(spacing: 8) {
+                Image(systemName: symbol)
+                    .foregroundStyle(Color.worn)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .foregroundStyle(.primary)
+            }
+            .font(.subheadline.weight(.semibold))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+            .background(Color.cardGroundOnAPlainPage, in: .rect(cornerRadius: 12))
+            .contentShape(.rect(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .navigationLinkIndicatorVisibility(.hidden)
+        .simultaneousGesture(TapGesture().onEnded { Keyboard.stow() })
     }
 }
 

@@ -1119,6 +1119,9 @@
 "search.area.library" = "Library";
 "search.area.online" = "Online";
 "search.area.spoken" = "Search in";
+"search.browse" = "Browse";
+"search.browse.high-resolution" = "High resolution";
+"search.browse.never-heard" = "Never heard";
 "search.did-you-mean" = "Did you mean %@?";
 "search.heading.library" = "Library";
 "search.heading.online" = "Online";
@@ -1155,8 +1158,6 @@
 "search.see-all" = "See all";
 "search.see-all.spoken" = "See all %@";
 "search.showing-best" = "Top %lld shown. Add a word to narrow it.";
-"search.start.detail" = "Songs, albums, artists or a shared link.";
-"search.start.title" = "Find music";
 "search.title" = "Search";
 "selection.all" = "Select all";
 "selection.clear" = "Clear selection";

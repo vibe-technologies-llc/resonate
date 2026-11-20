@@ -1457,11 +1457,14 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   Downloads live on a toolbar button's page (`DownloadsButton`), also on the online Songs and
   release pages, never above their results; its filled icon and spoken active count follow the
   queue independently of the search page. The page keeps provider setup, retry, cancellation and
-  clearing finished jobs. With no text the tab lists recent searches, or, with none, `SearchPrompt`
-  (*Find music*) centred over the empty list; recognising a song and *Saved for later* live in
-  Library tools alone, so the toolbar holds Downloads and *Save as playlist*. The field's prompt is
-  *Songs, albums, artists*. There is no `.searchSuggestions` overlay. Library tools' *Search* opens
-  this tab through `Navigation.openSearch`.
+  clearing finished jobs. With no text `SearchBrowse` puts compact *Browse* buttons above recent
+  searches, in a grid that adapts to the width and stacks at accessibility text sizes. The links
+  open *Favourites*, *Recently added*, *Most played*, *Never heard*, *High resolution* and
+  *Saved for later* on the Search stack. The four browse mixes use `TrackFilter` like Android
+  and have fixed ids so a restored page can resolve them without reading the suggested lists.
+  Listen is reached through Library tools. The field's prompt is *Songs, albums, artists*. There
+  is no `.searchSuggestions` overlay. Library tools' *Search* opens this tab through
+  `Navigation.openSearch`.
 - **Search's rows sit close**: *See all* reaches 12 pt above and below
   its line through its content shape while laying out at the line's height
   (`SeeAllHeader.reachBeyondTheLine`), so a header never stands 44 pt tall.

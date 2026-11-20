@@ -2,6 +2,8 @@ import ResonateLogic
 import ResonateNative
 import SwiftUI
 
+private let highResolutionRate: UInt32 = 88_200
+
 struct ToolRow: View {
     @ScaledMetric(relativeTo: .body) private var iconColumn: CGFloat = 28
     let title: String
@@ -287,6 +289,29 @@ struct SuggestedMix: Identifiable, Sendable {
 
     static var yours: [SuggestedMix] { madeYours() }
 
+    static var searchBrowse: [SuggestedMix] {
+        var added = defaultTrackFilter()
+        added.order = .added
+        added.descending = true
+        var played = defaultTrackFilter()
+        played.order = .plays
+        played.descending = true
+        var unheard = defaultTrackFilter()
+        unheard.unplayed = true
+        var highResolution = defaultTrackFilter()
+        highResolution.minimumRate = highResolutionRate
+        return [
+            SuggestedMix(id: "browse-recently-added", title: said("collections.order.added"), detail: "", filter: added, mark: "clock"),
+            SuggestedMix(id: "browse-most-played", title: said("collections.order.plays"), detail: "", filter: played, mark: "chart.line.uptrend.xyaxis"),
+            SuggestedMix(id: "browse-never-heard", title: said("search.browse.never-heard"), detail: "", filter: unheard, mark: "play.slash"),
+            SuggestedMix(id: "browse-high-resolution", title: said("search.browse.high-resolution"), detail: "", filter: highResolution, mark: "waveform"),
+        ]
+    }
+
+    static func fixed(_ id: String) -> SuggestedMix? {
+        yours.first { $0.id == id } ?? searchBrowse.first { $0.id == id }
+    }
+
     private static func madeYours() -> [SuggestedMix] {
         var favourites = defaultTrackFilter()
         favourites.favourites = true
@@ -467,7 +492,7 @@ struct MixView: View {
     }
 
     private func resolveAndLoad() async {
-        var found = SuggestedMix.yours.first { $0.id == id }
+        var found = SuggestedMix.fixed(id)
         if found == nil, let offered = await OfferedMixes.read(in: library) {
             found = offered.named(id)
             resolved = true
@@ -585,8 +610,8 @@ struct FilterSheet: View {
                 Toggle("filter.favourites-only", isOn: $filter.favourites)
                 Toggle("filter.unplayed-only", isOn: $filter.unplayed)
                 Toggle("filter.high-resolution-only", isOn: Binding(
-                    get: { filter.minimumRate >= 88200 },
-                    set: { filter.minimumRate = $0 ? 88200 : 0 }
+                    get: { filter.minimumRate >= highResolutionRate },
+                    set: { filter.minimumRate = $0 ? highResolutionRate : 0 }
                 ))
                 Stepper(filter.minimumBits == 0 ? said("filter.bits.any") : said("filter.bits.at-least", Int(filter.minimumBits)), value: $filter.minimumBits, in: 0...32, step: 8)
                 Picker("filter.sort-by", selection: $filter.order) {
