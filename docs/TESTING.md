@@ -100,15 +100,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
-- [S · 0.15.0] Android Home's feed was seen on a phone emulator alone: on a wide window or tablet,
-  *Jump back in* four across with eight tiles and the glance's words beside its chart, and at font
-  scale 1.3 or more one tile across with the glance stacked, are still to be seen
-- [S · 0.15.0] Android Home's *Your devices* had no paired device on the emulator: a device row
-  opening `SyncDeviceScreen` and driving its zones, and a handoff row continuing the song, are
-  still to be seen with a phone paired to a desktop
-- [S · 0.15.0] Android Home's refreshing is proved by its logic alone: a pull that rescans and
-  brings a new album into *Recently added*, and a counted play moving *Jump back in* and the glance
-  once the player collapses, are still to be seen on the emulator
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
