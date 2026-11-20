@@ -1,0 +1,10 @@
+first-given = Zone { $zone }
+remote-trust-title = Dirigé par vos autres appareils
+remote-trust-asked = Ce que vos autres appareils peuvent faire ici
+remote-trust-told = Vos autres appareils conduisent celui-ci à partir de leur liste d’appareils.
+everything = Tout
+playback-only = Lecture seulement
+nothing = Rien.
+everything-means = Jouer, faire une pause, sauter, rechercher, définir le volume et changer la file d’attente
+playback-only-means = Jouer, faire une pause, sauter, chercher et définir le volume, mais ne pas déplacer ou supprimer des chansons
+nothing-means = Ils ne peuvent ni voir ni changer ce qui joue ici.

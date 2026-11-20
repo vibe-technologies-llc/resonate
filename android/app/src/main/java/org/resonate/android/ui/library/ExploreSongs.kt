@@ -435,7 +435,7 @@ fun ExplorePlaylistScreen(screen: Screen.ExplorePlaylist) {
                                 }
                             ) {
                                 Icon(Icons.Rounded.PlayArrow, null)
-                                Text(stringResource(R.string.collection_play))
+                                Text(stringResource(R.string.rows_play))
                             }
                             OutlinedButton(
                                 onClick = {
@@ -444,7 +444,7 @@ fun ExplorePlaylistScreen(screen: Screen.ExplorePlaylist) {
                                 }
                             ) {
                                 Icon(Icons.Rounded.Shuffle, null)
-                                Text(stringResource(R.string.collection_shuffle))
+                                Text(stringResource(R.string.rows_shuffle))
                             }
                             IconButton(
                                 onClick = {

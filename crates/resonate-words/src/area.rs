@@ -3,7 +3,7 @@ use std::{borrow::Cow, sync::OnceLock};
 use fluent_bundle::{FluentArgs, FluentResource, FluentValue, concurrent::FluentBundle};
 use unic_langid::LanguageIdentifier;
 
-use crate::{Language, spoken};
+use crate::{Language, language::is_right_to_left, spoken};
 
 pub struct Area {
     ids: &'static [&'static str],
@@ -98,18 +98,13 @@ impl Area {
 
     fn bundle_of(&self, language: Language) -> Option<FluentBundle<FluentResource>> {
         let (_, source) = self.sources.iter().find(|(held, _)| *held == language)?;
-        let identified = language
-            .tag()
-            .parse::<LanguageIdentifier>()
-            .unwrap_or_default();
         let resource =
             FluentResource::try_new((*source).to_owned()).unwrap_or_else(|(resource, errors)| {
                 tracing::warn!(%language, ?errors, "words that did not all read");
                 resource
             });
 
-        let mut bundle = FluentBundle::new_concurrent(vec![identified]);
-        bundle.set_use_isolating(false);
+        let mut bundle = bundle_for(language.identifier());
         bundle.set_formatter(Some(crate::figures::fluent));
         if let Err(errors) = bundle.add_builtins() {
             tracing::warn!(%language, ?errors, "builtin functions that were not all taken");
@@ -153,6 +148,13 @@ impl Area {
             None => id.to_owned(),
         }
     }
+}
+
+fn bundle_for(identifier: LanguageIdentifier) -> FluentBundle<FluentResource> {
+    let isolated = is_right_to_left(&identifier);
+    let mut bundle = FluentBundle::new_concurrent(vec![identifier]);
+    bundle.set_use_isolating(isolated);
+    bundle
 }
 
 #[cfg(test)]
@@ -219,6 +221,23 @@ mod tests {
             ),
             "Echoes from the queue"
         );
+    }
+
+    #[test]
+    fn a_right_to_left_sentence_isolates_an_inserted_name() {
+        let mut bundle = bundle_for("ar".parse().unwrap());
+        let resource = FluentResource::try_new("song = تشغيل { $title } الآن".to_owned()).unwrap();
+        bundle.add_resource(resource).unwrap();
+        let pattern = bundle.get_message("song").unwrap().value().unwrap();
+        let mut args = FluentArgs::new();
+        args.set("title", "Echoes (Live)");
+        let mut errors = Vec::new();
+
+        assert_eq!(
+            bundle.format_pattern(pattern, Some(&args), &mut errors),
+            "تشغيل \u{2068}Echoes (Live)\u{2069} الآن"
+        );
+        assert!(errors.is_empty());
     }
 
     #[test]

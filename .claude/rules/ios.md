@@ -29,13 +29,13 @@ None of this is in CI: the SDK cannot be fetched without the listener's Apple ID
 
 ## Words
 
-Every word the app shows is said through `Resonate/en.lproj` (`language.md`): `Localizable.strings`
+The app and widget read their words from `Resonate/en.lproj` and `Resonate/fr.lproj` (`language.md`): `Localizable.strings`
 keyed by dotted names (`area.thing`), `Localizable.stringsdict` for a count (`NSStringPluralRuleType`,
 `one` and `other`; a sentence holding a count is one key, its count a variable of the format),
 `InfoPlist.strings` for the name and the permission prompts. They are plain text, so no
-string-catalog compiler is needed on Linux; `xtool.yml`'s `resources` copies the folder to the
+string-catalog compiler is needed on Linux; `xtool.yml`'s `resources` copies both folders to each
 bundle root, `Package.swift` sets `defaultLocalization: "en"` and `Info.plist` names `en` as
-`CFBundleDevelopmentRegion` and in `CFBundleLocalizations`. A view names a key as the first argument
+`CFBundleDevelopmentRegion` and lists both languages in `CFBundleLocalizations`. A view names a key as the first argument
 of a SwiftUI initialiser taking a `LocalizedStringKey` (`Text("queue.clear")`, `Button`, `Label`,
 `Section`, `.navigationTitle`, an alert's title); everywhere else, and wherever there are
 arguments or a choice between keys, the words are `said(key, arguments...)` (`ResonateLogic`'s
@@ -62,7 +62,7 @@ shuffle opens Now Playing when it finds songs and shows the empty-library messag
 `WidgetLink` shares the routes between the app and the extension. The root view handles the
 widget host before handing other URLs to the existing invitation, pairing and document flow.
 
-The widget uses one static timeline entry and opens the app on tap. It reads the English strings
+The widget uses one static timeline entry and opens the app on tap. It reads the localized strings
 copied into its own bundle. `build-native.py` writes its Info.plist from the app's version, build
 and device family, so a release sets those once. xtool keeps Foundation's extension launcher
 and the widget target roots Swift's `_main` with `-u` so xtool 1.24 retains the widget body.

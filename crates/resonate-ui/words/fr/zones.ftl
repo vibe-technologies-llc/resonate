@@ -1,0 +1,15 @@
+name-this-zone = Nommer cette zone
+add-a-zone = Ajouter une zone
+rename-the-zone = Renommer cette zone...
+remove-the-zone = Supprimer cette zone
+move-playback-to = Déplacer la lecture vers { $zone }
+playing-in = Jouer dans { $zone } maintenant
+playing-in-the-other-zone = Jouer dans l’autre zone maintenant
+zone-saying = Zone: { $zone }, { $at } de { $count }. Chaque zone joue sa propre file d’attente à son propre appareil
+zones-saying = Zones : ajouter une pour jouer une autre file d’attente à un autre périphérique
+device-held-by = { $zone } joue ce périphérique bit-perfect, donc il ne peut pas être partagé
+device-held-by-another-zone = Une autre zone joue ce périphérique bit-perfect, donc il ne peut pas être partagé
+nothing-to-hand-over = Il n’y a rien dans la file d’attente de cette zone à déplacer
+handover-unheard-by = { $zone } n’a pas commencé à jouer, donc la musique est restée là où elle était et sa propre file d’attente a été remise en place.
+handover-unheard-by-the-other-zone = L’autre zone n’a pas commencé à jouer, donc la musique est restée là où elle était et sa propre file d’attente a été remise en place.
+zone-added = { $zone } ajouté

@@ -1,0 +1,16 @@
+judged = étudié { $studied }- véritable { $genuine }- suspect { $suspect }- faux { $fake }- perte { $lossy }
+named = non jugé { $unjudged }- reconnu { $recognised }- mal nommé { $misnamed }
+none-match = rien n’a été étudié
+verdict = VERDICT
+cutoff = COUVERTURE
+bits = BITS
+loudness = LEURS
+range = RÉGIME
+heard-as = ENSEMBLE
+artist = ARTISTE
+title = TITRE
+taken = { $artist } — { $title } | enregistrement { $recording } | score { $score }
+not-recognised = non reconnu
+kilohertz = { $value } kHz
+lufs = { $value } LUFS
+lu = { $value } LU

@@ -1,0 +1,12 @@
+subsonic-note = Un serveur Subsonic propre — Navidrome, Airsonic, Gonic — est demandé pour chaque piste marquée recherchée, par l’identifiant MusicBrainz de l’enregistrement ou son ISRC et jamais par un titre, et ce qu’il détient est conservé dans la voûte. Interrogé dès que les trois sont donnés, et seulement pendant que Online est sur; le mot de passe est envoyé comme un jeton salé, jamais comme il a été dactylographié.
+jellyfin-note = Un Jellyfin ou un serveur Emby de votre propre est parcouru et joué là où il est, dans le volet Services, avec rien téléchargé. Interrogé dès que les trois sont donnés, et seulement pendant que Online est sur; le mot de passe est envoyé pour se connecter et le jeton qu’il répond avec est ce que chaque demande ultérieure porte.
+not-a-server = L’adresse d’un serveur commence par http:// ou https://, comme http://music.local:4533
+the-servers-address-as-http-music = L’adresse du serveur, comme http://music.local:4533, puis appuyez sur Entrée
+the-servers-address-as-http-music-2 = L’adresse du serveur, comme http://music.local:8096, puis appuyez sur Entrée
+the-name-you-sign-in-with = Le nom avec lequel vous vous connectez, puis appuyez sur Entrée
+its-password-then-press-enter = Son mot de passe, puis appuyez sur Entrée
+server = Serveur
+user = Utilisateur
+password = Mot de passe
+server-no-longer-asked = Le serveur { $service } n’est plus demandé
+server-asked-from-now-on = Le serveur { $service } est demandé dès maintenant

@@ -1,0 +1,10 @@
+expand = Étendre d’autres appareils
+collapse = Effacer d’autres dispositifs
+other-devices = Autres dispositifs
+playing = Jouer
+paused = Pausées
+previous-song = Chanson précédente
+pause = Pause
+play = Lire
+next-song = Chanson suivante
+control-on = { $label } sur { $device } · { $zone }

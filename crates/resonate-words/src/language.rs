@@ -3,33 +3,39 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use unic_langid::{CharacterDirection, LanguageIdentifier};
+
 static SPOKEN: AtomicUsize = AtomicUsize::new(Language::English.index());
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Language {
     #[default]
     English,
+    French,
 }
 
 impl Language {
-    pub const ALL: [Self; 1] = [Self::English];
+    pub const ALL: [Self; 2] = [Self::English, Self::French];
     pub const COUNT: usize = Self::ALL.len();
 
     pub const fn tag(self) -> &'static str {
         match self {
             Self::English => "en",
+            Self::French => "fr",
         }
     }
 
     pub const fn endonym(self) -> &'static str {
         match self {
             Self::English => "English",
+            Self::French => "Français",
         }
     }
 
     pub const fn by_tag(tag: &str) -> Self {
         match tag.as_bytes() {
             b"en" => Self::English,
+            b"fr" => Self::French,
             _ => panic!("no language carries this tag"),
         }
     }
@@ -40,9 +46,21 @@ impl Language {
             .find(|language| language.tag().eq_ignore_ascii_case(tag))
     }
 
+    pub fn is_right_to_left(self) -> bool {
+        is_right_to_left(&self.identifier())
+    }
+
+    pub(crate) fn identifier(self) -> LanguageIdentifier {
+        self.tag().parse().unwrap_or_default()
+    }
+
     pub(crate) const fn index(self) -> usize {
         self as usize
     }
+}
+
+pub(crate) fn is_right_to_left(identifier: &LanguageIdentifier) -> bool {
+    identifier.character_direction() == CharacterDirection::RTL
 }
 
 impl fmt::Display for Language {
@@ -61,7 +79,11 @@ pub enum LanguageChoice {
 impl LanguageChoice {
     const SYSTEM: &str = "system";
 
-    pub const ALL: [Self; 1 + Language::COUNT] = [Self::System, Self::Chosen(Language::English)];
+    pub const ALL: [Self; 1 + Language::COUNT] = [
+        Self::System,
+        Self::Chosen(Language::English),
+        Self::Chosen(Language::French),
+    ];
 
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -138,18 +160,22 @@ mod tests {
             Language::English
         );
         assert_eq!(negotiated(&["de-AT"]), Language::English);
+        assert_eq!(
+            negotiated(&["ja-JP", "fr_CA.UTF-8", "en"]),
+            Language::French
+        );
         assert_eq!(negotiated(&[] as &[&str]), Language::English);
     }
 
     #[test]
     fn a_chosen_language_outranks_the_systems() {
-        let reads = ["de-AT".to_owned()];
+        let reads = ["fr-CA".to_owned()];
 
         assert_eq!(
             LanguageChoice::Chosen(Language::English).language(&reads),
             Language::English
         );
-        assert_eq!(LanguageChoice::System.language(&reads), Language::English);
+        assert_eq!(LanguageChoice::System.language(&reads), Language::French);
     }
 
     #[test]

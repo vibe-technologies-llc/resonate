@@ -1,12 +1,11 @@
 # Language
 
-Every word a listener reads comes out of a catalog, never a literal at the place it is drawn. English
-is the only language shipped; adding another is adding files and one enum variant, not touching
-the code that says the words.
+Every word a listener reads comes out of a catalog, never a literal at the place it is drawn. The
+catalogs speak English and French. English supplies the message signatures and the fallback.
 
 ## The Rust catalog
 
-- **`resonate-words` is the runtime and reaches no workspace crate.** `Language` (`English`, its
+- **`resonate-words` is the runtime and reaches no workspace crate.** `Language` (`English` and `French`, its
   `tag`, its `endonym`, which is never translated), `LanguageChoice` (`System` or `Chosen`, the
   `language` key's type), `negotiated` (the first tag a listener reads whose primary language is
   spoken here, else English), `speak`/`spoken` (the one process-wide language, an atomic) and
@@ -16,8 +15,11 @@ the code that says the words.
   `LANG` there follows the region, not the languages the listener put in order). The lyrics sidecar
   reads the same list (`lyrics.md`).
 - **`Area` holds one `.ftl` file in every language that ships it.** A bundle per language is built
-  on first use (`fluent-bundle`'s concurrent bundle, isolation marks off), so English pays nothing
-  for languages not spoken. `plain(index)` formats a message with no variables once per language and
+  on first use (`fluent-bundle`'s concurrent bundle), so English pays nothing for languages not
+  spoken. Fluent isolates an interpolated value in right-to-left sentences, according to the
+  bundle's language, so a Latin song title or a number does not change the order of the surrounding
+  words. Left-to-right catalogs retain the existing output.
+  `plain(index)` formats a message with no variables once per language and
   keeps it, so it is `&'static str` (`Choice::label`, a const-like label stay static);
   `formatted(index, args)` formats each call. A message missing from the spoken language is said in
   English and logged; one missing from English says its id.
@@ -188,8 +190,15 @@ A `Language` variant (tag, endonym, `ALL`, `by_tag`); `words/<tag>/` beside ever
 every area and message; `values-<tag>/strings.xml` on Android; `<tag>.lproj` and
 `CFBundleLocalizations` on iOS; the `language` key's man page entry names the tag; the desktop
 entry's and the metainfo's keys and elements in the tag, as the catalog says them; the packages
-install `<tag>/*.1` from the build's output folder under `man/<tag>/man1`, and a translated copy of
-the hand-written `resonate-config.toml(5)` beside the English one.
+install `<tag>/*.1` from the build's output folder under `man/<tag>/man1`. A translated copy of
+the hand-written `resonate-config.toml(5)` in `packaging/<tag>/` is installed by
+`install-manuals.sh` under `man/<tag>/man5`. The Linux recipes and macOS bundle use the same
+installer, and the RPM marks each locale's files with its language.
+
+The desktop reads direction from the spoken language. Its shell places the sidebar on the right
+for right-to-left text, moves the sidebar border inward, and draws its primary navigation rows
+with the icon and selection mark on the right. Direction changes with the same refresh as the
+words.
 
 ## The checks
 

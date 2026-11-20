@@ -1,0 +1,10 @@
+piped-play = enter / p play or pause n next track b track précédent
+piped-seek = f [temps] avant 10s r [temps] arrière 10s <time> chercher à (90, 1:30, 2m)
+piped-volume = + [étape] plus fort 5% - [étape] plus silencieux
+piped-repeat = l cycle répéter x arrêt q quitter ? cette aide
+piped-sleep = z [spéc] sommeil dans 30m, ou z <mins> / z 1h30m / z piste / z file d’attente / z hors
+keyed-play = espace / p jouer ou pause n prochain morceau b piste précédente
+keyed-seek = f / → en avant 10s r / ← en arrière 10s <time> entrer chercher à
+keyed-volume = + / ↑ plus fort 5% - / ♥ plus silencieux
+keyed-repeat = l cycle répéter x arrêt q quitter ? ces touches
+keyed-sleep = z dorm in 30m : tapez n’importe quelle ligne de la forme piped prend — :f 45, :z track

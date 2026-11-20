@@ -46,7 +46,7 @@ cargo build --release --locked --target "$triple" --package resonate --bin reson
 cargo build --release --locked --target "$triple" --package resonate-signin
 
 release="target/$triple/release"
-generated=$(find "$release/build" -name resonate.1 -print -quit)
+generated=$(find "$release/build" -path '*/out/resonate.1' -print -quit)
 test -n "$generated"
 generated=$(dirname "$generated")
 
@@ -63,15 +63,14 @@ staging="$work/Resonate"
 application="$staging/Resonate.app"
 contents="$application/Contents"
 resources="$contents/Resources"
-mkdir -p "$contents/MacOS" "$resources/Fonts" "$resources/man/man1" "$resources/man/man5" "$resources/completions"
+mkdir -p "$contents/MacOS" "$resources/Fonts" "$resources/completions"
 
 cp "$release/resonate" "$contents/MacOS/resonate"
 cp "$release/resonate-signin" "$contents/MacOS/resonate-signin"
 sed "s/@VERSION@/$numeric/g" "$here/Info.plist" >"$contents/Info.plist"
 cp "$here/resonate.icns" "$resources/resonate.icns"
 cp LICENSE COPYRIGHT "$resources/"
-cp "$generated"/*.1 "$resources/man/man1/"
-cp packaging/resonate-config.toml.5 "$resources/man/man5/"
+sh packaging/install-manuals.sh "$generated" "$resources/man"
 cp "$generated/resonate.bash" "$generated/_resonate" "$generated/resonate.fish" "$resources/completions/"
 
 fetched "$inter_archive" "$inter_sha256" "$work/inter.zip"

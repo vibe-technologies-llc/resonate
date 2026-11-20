@@ -1,0 +1,9 @@
+billed = { $title } — { $artist }
+track = Voie { $track }
+volume = Volume { $percent } %
+shuffle = shuffle
+repeat-queue = répéter la file d’attente
+repeat-track = répéter la piste
+sleep-in = dormir dans { $left }
+sleep-at-the-end-of-the-track = dormir à la fin de la piste
+sleep-at-the-end-of-the-queue = dormir à la fin de la file d’attente

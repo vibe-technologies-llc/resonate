@@ -51,15 +51,14 @@ cargo build --locked --release --package resonate-signin
 
 %install
 built=${CARGO_TARGET_DIR:-target}/release
-generated=$(find "$built/build" -name resonate.1 -printf '%h\n' -quit)
+generated=$(find "$built/build" -path '*/out/resonate.1' -printf '%h\n' -quit)
 test -n "$generated"
 install -Dm755 "$built/resonate" %{buildroot}%{_bindir}/resonate
 install -Dm755 "$built/resonate-signin" %{buildroot}%{_bindir}/resonate-signin
 install -Dm644 packaging/resonate.desktop %{buildroot}%{_datadir}/applications/resonate.desktop
 install -Dm644 packaging/resonate.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/resonate.svg
 install -Dm644 packaging/org.resonate.Resonate.metainfo.xml %{buildroot}%{_datadir}/metainfo/org.resonate.Resonate.metainfo.xml
-install -Dm644 -t %{buildroot}%{_mandir}/man1 "$generated"/*.1
-install -Dm644 -t %{buildroot}%{_mandir}/man5 packaging/resonate-config.toml.5
+sh packaging/install-manuals.sh "$generated" %{buildroot}%{_mandir}
 install -Dm644 "$generated/resonate.bash" %{buildroot}%{_datadir}/bash-completion/completions/resonate
 install -Dm644 "$generated/_resonate" %{buildroot}%{_datadir}/zsh/site-functions/_resonate
 install -Dm644 "$generated/resonate.fish" %{buildroot}%{_datadir}/fish/vendor_completions.d/resonate.fish
@@ -77,6 +76,8 @@ install -Dm644 "$generated/resonate.fish" %{buildroot}%{_datadir}/fish/vendor_co
 %{_datadir}/metainfo/org.resonate.Resonate.metainfo.xml
 %{_mandir}/man1/resonate*.1*
 %{_mandir}/man5/resonate-config.toml.5*
+%lang(fr) %{_mandir}/fr/man1/resonate*.1*
+%lang(fr) %{_mandir}/fr/man5/resonate-config.toml.5*
 %{_datadir}/bash-completion/completions/resonate
 %{_datadir}/zsh/site-functions/_resonate
 %{_datadir}/fish/vendor_completions.d/resonate.fish

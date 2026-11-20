@@ -1,0 +1,9 @@
+would-write = { $file } : écrirait ses paroles en { $sheet }
+written = { $file }: a écrit ses paroles dans { $sheet }
+already-said = { $file }: { $sheet } détient déjà ses paroles
+not-in-the-catalog = { $file }: pas dans le catalogue
+not-a-file-of-its-own = { $file } : une ligne coupée d’un fichier partagé ou conservée dans la chambre forte n’a pas de feuille lyrique de sa propre
+nothing-kept = { $file } : il n’y a pas de paroles récupérées.
+stands = { $file }: { $sheet } est déjà à côté d’elle; --replace écrit dessus
+outranked = { $file }: { $sheet } est lu avant toute feuille écrite à côté, donc rien n’a été écrit
+unwritten = { $file } : ses paroles ne pouvaient pas être écrites ({ $error })

@@ -37,7 +37,7 @@ build() {
 package() {
   cd "$_pkgname-$_version"
   local built="${CARGO_TARGET_DIR:-target}/release" generated
-  generated="$(find "$built/build" -name "$_pkgname.1" -printf '%h\n' -quit)"
+  generated="$(find "$built/build" -path "*/out/$_pkgname.1" -printf '%h\n' -quit)"
 
   install -Dm755 "$built/$_pkgname" "$pkgdir/usr/bin/$_pkgname"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
@@ -50,8 +50,7 @@ package() {
   install -Dm644 packaging/org.resonate.Resonate.metainfo.xml \
     "$pkgdir/usr/share/metainfo/org.resonate.Resonate.metainfo.xml"
 
-  install -Dm644 -t "$pkgdir/usr/share/man/man1" "$generated"/*.1
-  install -Dm644 -t "$pkgdir/usr/share/man/man5" packaging/resonate-config.toml.5
+  sh packaging/install-manuals.sh "$generated" "$pkgdir/usr/share/man"
   install -Dm644 "$generated/$_pkgname.bash" \
     "$pkgdir/usr/share/bash-completion/completions/$_pkgname"
   install -Dm644 "$generated/_$_pkgname" "$pkgdir/usr/share/zsh/site-functions/_$_pkgname"

@@ -6,6 +6,7 @@
 
   <name>Resonate</name>
   <summary>Bit-perfect music playback through PipeWire</summary>
+  <summary xml:lang="fr">Lecture audio bit-perfect avec PipeWire</summary>
 
   <description>
     <p>
@@ -25,6 +26,9 @@
       and DSD in DSF and DFF are decoded; a cue sheet beside a single-file rip is read as the album
       it cuts.
     </p>
+    <p xml:lang="fr">Resonate est un lecteur de musique conçu pour les amateurs de son. Il utilise PipeWire directement, sans couche de compatibilité PulseAudio ou ALSA. Il consulte les fréquences prises en charge par la sortie audio et adopte celle de la source si le matériel le permet. Dans les autres cas, ses filtres polyphasés assurent le rééchantillonnage.</p>
+    <p xml:lang="fr">Resonate indexe votre collection dans une bibliothèque d’albums, d’artistes et de listes de lecture. Il propose une syntaxe de recherche, lit les paroles depuis les fichiers associés ou les métadonnées et prend en charge ReplayGain. Son interface MPRIS sur le bus de session relie les touches multimédias et les commandes de lecture du bureau au lecteur.</p>
+    <p xml:lang="fr">Formats pris en charge : FLAC, ALAC, AAC, MP3, Vorbis, Opus, PCM non compressé dans WAV, AIFF et CAF, Matroska, MP4 et DSD dans DSF et DFF. Un fichier CUE associé à un enregistrement en un seul fichier permet de lire les pistes séparément.</p>
   </description>
 
   <url type="homepage">https://github.com/vibe-technologies-llc/resonate</url>
@@ -70,6 +74,13 @@
     <keyword>flac</keyword>
     <keyword>pipewire</keyword>
     <keyword>bit-perfect</keyword>
+
+    <keyword xml:lang="fr">musique</keyword>
+    <keyword xml:lang="fr">audio</keyword>
+    <keyword xml:lang="fr">lecteur</keyword>
+    <keyword xml:lang="fr">flac</keyword>
+    <keyword xml:lang="fr">pipewire</keyword>
+    <keyword xml:lang="fr">bit-perfect</keyword>
   </keywords>
 
   <releases>

@@ -1,0 +1,9 @@
+asking = Joignez-vous à cette soirée d’écoute ?
+this-computer = cet ordinateur
+the-zone = la zone { $zone }
+saying = Un lien demande { $named } d’arrêter ce qu’il joue et de suivre la fête de quelqu’un à la place.
+not-joining = Restez comme vous êtes
+join-hint = Arrêtez ce qui joue et suivez la fête à la place
+could-not-join = Ce parti n’a pas pu être rejoint
+cancel = Annuler
+join = Joindre

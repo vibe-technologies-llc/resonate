@@ -151,8 +151,8 @@ reach. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Later: Language
 
-- [L] The first language beside English: a `Language` variant, every crate's `words/<tag>/`, Android's `values-<tag>/` and iOS's `<tag>.lproj` (`language.md`).
-- [M] Right-to-left languages: Fluent's isolation marks are off, and the window's layout is never mirrored.
+- [M] Right-to-left languages: add a catalog that uses the mirrored shell, mirror the remaining
+  desktop controls and panes, and verify mixed-direction text and navigation on each platform.
 
 ## Later: Sources and providers
 - [M · blocked: service] A Spotify playlist the account only follows is read off its public page,

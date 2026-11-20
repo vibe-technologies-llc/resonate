@@ -1,0 +1,1862 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>artist.lacked.show-all</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Afficher tout %lld chanson</string>
+			<key>other</key>
+			<string>Montrer tout %lld chansons</string>
+		</dict>
+	</dict>
+	<key>counted.albums</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld album</string>
+			<key>other</key>
+			<string>%lld albums</string>
+		</dict>
+	</dict>
+	<key>counted.artists</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld artiste</string>
+			<key>other</key>
+			<string>%lld artistes</string>
+		</dict>
+	</dict>
+	<key>counted.covers</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld couverture</string>
+			<key>other</key>
+			<string>%lld couvre</string>
+		</dict>
+	</dict>
+	<key>counted.hours</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld heure</string>
+			<key>other</key>
+			<string>%lld heures</string>
+		</dict>
+	</dict>
+	<key>counted.lyrics-sheets</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld feuille de paroles</string>
+			<key>other</key>
+			<string>%lld feuilles de paroles</string>
+		</dict>
+	</dict>
+	<key>counted.minutes</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld minute</string>
+			<key>other</key>
+			<string>%lld minutes</string>
+		</dict>
+	</dict>
+	<key>counted.plays</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld jouer</string>
+			<key>other</key>
+			<string>%lld pièces</string>
+		</dict>
+	</dict>
+	<key>counted.songs</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>deleting.files-kept</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld fichier ne pouvait pas être supprimé; son dossier ne laisserait pas aller</string>
+			<key>other</key>
+			<string>%lld fichiers ne pouvaient pas être supprimés; leurs dossiers ne les laisseraient pas partir</string>
+		</dict>
+	</dict>
+	<key>deleting.identical.deleted</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Supprimé %#@files@; chaque chanson en garde une</string>
+		<key>files</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld fichier identique</string>
+			<key>other</key>
+			<string>%lld fichiers identiques</string>
+		</dict>
+	</dict>
+	<key>deleting.songs.confirm</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Supprimer la chanson</string>
+			<key>other</key>
+			<string>Supprimer %lld chansons</string>
+		</dict>
+	</dict>
+	<key>deleting.everywhere.message</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Son fichier est supprimé de votre iPhone, et vos autres appareils qui laissent d’autres appareils supprimer des chansons supprimer leur copie aussi.</string>
+			<key>other</key>
+			<string>Leurs fichiers sont supprimés de votre iPhone, et vos autres appareils qui laissent d’autres appareils supprimer des chansons supprimer leurs copies aussi.</string>
+		</dict>
+	</dict>
+	<key>deleting.songs.deleted</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Chanson supprimée %lld</string>
+			<key>other</key>
+			<string>Supprimé %lld chansons</string>
+		</dict>
+	</dict>
+	<key>deleting.songs.message</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Son fichier est supprimé de votre iPhone, et il quitte la file d’attente, vos playlists et vos favoris.</string>
+			<key>other</key>
+			<string>Leurs fichiers sont supprimés de votre iPhone, et ils quittent la file d’attente, vos listes de lecture et vos favoris.</string>
+		</dict>
+	</dict>
+	<key>deleting.songs.title</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Supprimer %lld chanson?</string>
+			<key>other</key>
+			<string>Supprimer %lld chansons?</string>
+		</dict>
+	</dict>
+	<key>downloads.background.progress</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%lld de %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>downloads.folder.title</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Télécharger %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>enrichment.covers-again.asking</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Demande de nouveau %#@albums@</string>
+		<key>albums</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld album</string>
+			<key>other</key>
+			<string>%lld albums</string>
+		</dict>
+	</dict>
+	<key>enrichment.refresh.detail</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Chercher des couvertures, des détails et des paroles pour %#@songs@ encore</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>enrichment.refresh.message</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Les couvertures, les portraits d’artiste, les détails et les paroles sont regardés à nouveau pour %#@songs@. Cela fonctionne pendant que Resonate est ouvert et peut prendre un certain temps.</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>equaliser.curve.custom</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Courbe personnalisée · %#@bands@</string>
+		<key>bands</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld bande</string>
+			<key>other</key>
+			<string>%lld bandes</string>
+		</dict>
+	</dict>
+	<key>equaliser.loaded</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Charges %@: %#@bands@</string>
+		<key>bands</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld bande</string>
+			<key>other</key>
+			<string>%lld bandes</string>
+		</dict>
+	</dict>
+	<key>equaliser.loaded.approximated</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@filters@ approximatif</string>
+		<key>filters</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld filtre</string>
+			<key>other</key>
+			<string>%lld filtres</string>
+		</dict>
+	</dict>
+	<key>equaliser.loaded.clamped</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@values@ détenus dans les limites</string>
+		<key>values</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld valeur</string>
+			<key>other</key>
+			<string>%lld valeurs</string>
+		</dict>
+	</dict>
+	<key>equaliser.loaded.passed-over</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@lines@ passé au-dessus</string>
+		<key>lines</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld ligne</string>
+			<key>other</key>
+			<string>%lld lignes</string>
+		</dict>
+	</dict>
+	<key>erasure.left.files</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld le fichier propre à l’application n’a pas pu être supprimé.</string>
+			<key>other</key>
+			<string>%lld les fichiers propres à l’application n’ont pas pu être supprimés.</string>
+		</dict>
+	</dict>
+	<key>erasure.left.keys</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld La clé sauvegardée n’a pas pu être supprimée.</string>
+			<key>other</key>
+			<string>%lld Les clés sauvegardées ne peuvent pas être supprimées.</string>
+		</dict>
+	</dict>
+	<key>erasure.left.songs</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson ne pouvait pas être supprimé et reste dans son dossier, qui Resonate conserve.</string>
+			<key>other</key>
+			<string>%lld chansons ne pouvaient pas être supprimées et rester dans leurs dossiers, qui Resonate conserve.</string>
+		</dict>
+	</dict>
+	<key>folders.scanning.detail</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson jusqu’à présent</string>
+			<key>other</key>
+			<string>%lld chansons jusqu’à présent</string>
+		</dict>
+	</dict>
+	<key>headphone-correction.more</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@models@ correspondent. Tapez plus du nom pour restreindre la liste.</string>
+		<key>models</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld plus de modèle</string>
+			<key>other</key>
+			<string>%lld plus de modèles</string>
+		</dict>
+	</dict>
+	<key>headphone-correction.replace.message</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%2$@ remplace le %1$#@bands@ que vous avez maintenant.</string>
+		<key>bands</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld bande</string>
+			<key>other</key>
+			<string>%lld bandes</string>
+		</dict>
+	</dict>
+	<key>identical.delete.confirm</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Supprimer le fichier %lld</string>
+			<key>other</key>
+			<string>Supprimer les fichiers %lld</string>
+		</dict>
+	</dict>
+	<key>identical.delete.title</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Supprimer le fichier %lld?</string>
+			<key>other</key>
+			<string>Supprimer les fichiers %lld?</string>
+		</dict>
+	</dict>
+	<key>library.hidden-gone</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson dont le fichier est parti était cachée</string>
+			<key>other</key>
+			<string>%lld chansons dont les fichiers ont disparu étaient cachées</string>
+		</dict>
+	</dict>
+	<key>library.hidden-gone.fetching</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@songs@ · récupération de vos appareils</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson dont le fichier est parti était cachée</string>
+			<key>other</key>
+			<string>%lld chansons dont les fichiers ont disparu étaient cachées</string>
+		</dict>
+	</dict>
+	<key>linked.imported.kept</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Garder %@ en phase avec %@ · %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson ici</string>
+			<key>other</key>
+			<string>%lld chansons ici</string>
+		</dict>
+	</dict>
+	<key>linked.imported.kept.downloading</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Garder %@ en phase avec %@ · %#@songs@, %lld téléchargé</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson ici</string>
+			<key>other</key>
+			<string>%lld chansons ici</string>
+		</dict>
+	</dict>
+	<key>linked.imported.once</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Importé %#@songs@; %lld manquant encore</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson locale</string>
+			<key>other</key>
+			<string>%lld chansons locales</string>
+		</dict>
+	</dict>
+	<key>linked.profile.following</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Après %@ le %@ · %#@playlists@</string>
+		<key>playlists</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld Liste de lecture</string>
+			<key>other</key>
+			<string>%lld Listes de lecture</string>
+		</dict>
+	</dict>
+	<key>linked.profile.moved</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Transféré %#@playlists@ de %@ à Resonate</string>
+		<key>playlists</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld Liste de lecture</string>
+			<key>other</key>
+			<string>%lld Listes de lecture</string>
+		</dict>
+	</dict>
+	<key>linked.profile.new-playlists</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld nouvelle liste de lecture</string>
+			<key>other</key>
+			<string>%lld nouvelles listes de lecture</string>
+		</dict>
+	</dict>
+	<key>linked.refreshed.added</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson ajoutée</string>
+			<key>other</key>
+			<string>%lld chansons ajoutées</string>
+		</dict>
+	</dict>
+	<key>listening-test.begin</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Début %#@trials@</string>
+		<key>trials</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld procès</string>
+			<key>other</key>
+			<string>%lld procès</string>
+		</dict>
+	</dict>
+	<key>listening.fact.all-time.caption</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>en tout · %#@plays@</string>
+		<key>plays</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld jouer</string>
+			<key>other</key>
+			<string>%lld pièces</string>
+		</dict>
+	</dict>
+	<key>listening.fact.all-time.spoken</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%@ en tout, %#@plays@</string>
+		<key>plays</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld jouer</string>
+			<key>other</key>
+			<string>%lld pièces</string>
+		</dict>
+	</dict>
+	<key>listening.fact.run</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld jour</string>
+			<key>other</key>
+			<string>%lld jours</string>
+		</dict>
+	</dict>
+	<key>listening.fact.run.spoken</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld jour de suite</string>
+			<key>other</key>
+			<string>%lld jours de suite</string>
+		</dict>
+	</dict>
+	<key>listening.glance.resting.spoken</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Tous les temps, %@ écoutaient, %#@plays@</string>
+		<key>plays</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld jouer</string>
+			<key>other</key>
+			<string>%lld pièces</string>
+		</dict>
+	</dict>
+	<key>measurement.fitted</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Monté %#@bands@ vers %@: éteint par %@ dB avant, %@ dB après</string>
+		<key>bands</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld bande</string>
+			<key>other</key>
+			<string>%lld bandes</string>
+		</dict>
+	</dict>
+	<key>measurement.fitted.clamped</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld valeur retenue aux limites</string>
+			<key>other</key>
+			<string>%lld valeurs retenues dans les limites</string>
+		</dict>
+	</dict>
+	<key>measurement.fitted.passed-over</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld ligne du fichier passée</string>
+			<key>other</key>
+			<string>%lld lignes du fichier passé</string>
+		</dict>
+	</dict>
+	<key>not-in-library.heading.releases</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Pas dans votre bibliothèque · %#@releases@</string>
+		<key>releases</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld libération</string>
+			<key>other</key>
+			<string>%lld rejets</string>
+		</dict>
+	</dict>
+	<key>not-in-library.heading.songs</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Pas dans votre bibliothèque · %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>online.imported</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Importé %#@songs@; %lld manquant encore</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson locale</string>
+			<key>other</key>
+			<string>%lld chansons locales</string>
+		</dict>
+	</dict>
+	<key>organise.confirm.title</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Déplacer la chanson %lld ?</string>
+			<key>other</key>
+			<string>Déplacer %lld chansons ?</string>
+		</dict>
+	</dict>
+	<key>organise.filed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Classé %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>organise.moves.more</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>et %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld plus de chanson</string>
+			<key>other</key>
+			<string>%lld plus de chansons</string>
+		</dict>
+	</dict>
+	<key>organise.put-back</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Remettre %#@songs@ là où ils étaient</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>organise.unmoved</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%@; %#@songs@ ne pouvait être déplacé</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>output.buffer.spoken</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld milliseconde</string>
+			<key>other</key>
+			<string>%lld millisecondes</string>
+		</dict>
+	</dict>
+	<key>output.route.active</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Voie active · %#@channels@</string>
+		<key>channels</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld canal</string>
+			<key>other</key>
+			<string>%lld canaux</string>
+		</dict>
+	</dict>
+	<key>player.handoff</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Continuer %#@songs@ de %@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>player.handoff.playing</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Continuer %#@songs@ de %@ · jouer</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>player.queue.earlier</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson antérieure</string>
+			<key>other</key>
+			<string>%lld chansons antérieures</string>
+		</dict>
+	</dict>
+	<key>player.queue.more</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld plus de chanson</string>
+			<key>other</key>
+			<string>%lld plus de chansons</string>
+		</dict>
+	</dict>
+	<key>playlist.adding.add</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Ajouter %lld chanson</string>
+			<key>other</key>
+			<string>Ajouter %lld chansons</string>
+		</dict>
+	</dict>
+	<key>playlist.devices.fetch-missing</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Retirez %#@songs@ de %@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson manquante</string>
+			<key>other</key>
+			<string>%lld chansons manquantes</string>
+		</dict>
+	</dict>
+	<key>playlists.imported.all</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Importé %@: %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>playlists.imported.some</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Importé %@: %lld de %#@songs@ trouvé dans votre bibliothèque</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>queue.added</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Ajouté à la file d’attente</string>
+			<key>other</key>
+			<string>Ajout de %lld chansons dans la file d’attente</string>
+		</dict>
+	</dict>
+	<key>queue.playing-next</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Lecture suivante</string>
+			<key>other</key>
+			<string>Jouer %lld chansons suivant</string>
+		</dict>
+	</dict>
+	<key>release.download-all</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Télécharger tout %lld chanson</string>
+			<key>other</key>
+			<string>Télécharger toutes les chansons %lld</string>
+		</dict>
+	</dict>
+	<key>room.channels</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld canal</string>
+			<key>other</key>
+			<string>%lld canaux</string>
+		</dict>
+	</dict>
+	<key>scan.reading.counted</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Lecture du dossier musical... %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>scrobbling.history.kept.days</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@days@</string>
+		<key>days</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld jour</string>
+			<key>other</key>
+			<string>%lld jours</string>
+		</dict>
+	</dict>
+	<key>scrobbling.history.exported</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Exportation %#@listens@</string>
+		<key>listens</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld Écoute</string>
+			<key>other</key>
+			<string>%lld écoute</string>
+		</dict>
+	</dict>
+	<key>scrobbling.history.brought-in</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Extrait %#@listens@</string>
+		<key>listens</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld Écoute</string>
+			<key>other</key>
+			<string>%lld écoute</string>
+		</dict>
+	</dict>
+	<key>scrobbling.history.forgotten</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Oublié %#@listens@ plus ancien que l’histoire est conservé pour</string>
+		<key>listens</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld Écoute</string>
+			<key>other</key>
+			<string>%lld écoute</string>
+		</dict>
+	</dict>
+	<key>scrobbling.submitted</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Communication présentée %#@listens@</string>
+		<key>listens</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld Écoute</string>
+			<key>other</key>
+			<string>%lld écoute</string>
+		</dict>
+	</dict>
+	<key>scrobbling.told.loved</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>aimé %#@favourites@</string>
+		<key>favourites</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld favori</string>
+			<key>other</key>
+			<string>%lld Favoris</string>
+		</dict>
+	</dict>
+	<key>scrobbling.told.refused</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@loves@ refusé</string>
+		<key>loves</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld amour</string>
+			<key>other</key>
+			<string>%lld aime</string>
+		</dict>
+	</dict>
+	<key>scrobbling.told.taken-back</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>repris %#@loves@</string>
+		<key>loves</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld amour</string>
+			<key>other</key>
+			<string>%lld aime</string>
+		</dict>
+	</dict>
+	<key>settings.folders.available</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@folders@ · %lld disponible</string>
+		<key>folders</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld dossier</string>
+			<key>other</key>
+			<string>%lld dossiers</string>
+		</dict>
+	</dict>
+	<key>settings.sync.fetching</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Récupération %#@songs@ de vos appareils</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>statistics.chart.summary</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@periods@. Le plus était %@, %@</string>
+		<key>periods</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld période</string>
+			<key>other</key>
+			<string>%lld périodes</string>
+		</dict>
+	</dict>
+	<key>statistics.daily-average.over-days</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>sur %lld jour</string>
+			<key>other</key>
+			<string>sur %lld jours</string>
+		</dict>
+	</dict>
+	<key>sync.answer.synced</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Synthétisé avec %#@devices@</string>
+		<key>devices</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld dispositif</string>
+			<key>other</key>
+			<string>%lld dispositifs</string>
+		</dict>
+	</dict>
+	<key>sync.devices.remove-away</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Supprimer %#@devices@ qui sont absents</string>
+		<key>devices</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld dispositif</string>
+			<key>other</key>
+			<string>%lld dispositifs</string>
+		</dict>
+	</dict>
+	<key>sync.devices.removed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Supprimé %#@devices@</string>
+		<key>devices</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld dispositif</string>
+			<key>other</key>
+			<string>%lld dispositifs</string>
+		</dict>
+	</dict>
+	<key>sync.handoff.continuing</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Continu %#@songs@ de %@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>sync.landed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Kept %#@songs@ de vos appareils</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>sync.playlist.asking</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Demande %@ pour %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>sync.progress.fetching</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Récupération %#@songs@ de vos appareils</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>sync.progress.left</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson gauche</string>
+			<key>other</key>
+			<string>%lld chansons laissées</string>
+		</dict>
+	</dict>
+	<key>sync.standing.connected</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld appareil en ligne</string>
+			<key>other</key>
+			<string>%lld appareils en ligne</string>
+		</dict>
+	</dict>
+	<key>sync.standing.connecting.nearby</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Connexion · %#@devices@</string>
+		<key>devices</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld appareil sur ce réseau</string>
+			<key>other</key>
+			<string>%lld appareils sur ce réseau</string>
+		</dict>
+	</dict>
+	<key>sync.standing.nearby</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld appareil sur ce réseau</string>
+			<key>other</key>
+			<string>%lld appareils sur ce réseau</string>
+		</dict>
+	</dict>
+	<key>sync.standing.unreachable.nearby</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Serveur inaccessible · %#@devices@</string>
+		<key>devices</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld appareil sur ce réseau</string>
+			<key>other</key>
+			<string>%lld appareils sur ce réseau</string>
+		</dict>
+	</dict>
+	<key>sync.state.fetching</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Récupération %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>sync.state.sending</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Envoi %#@changes@</string>
+		<key>changes</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld changement</string>
+			<key>other</key>
+			<string>%lld changements</string>
+		</dict>
+	</dict>
+	<key>tags.failed.some</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%@ (%#@songs@ laissés tels quels)</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>tags.saved</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Enregistré les balises de %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>tags.some-unwritable</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld la chanson ne peut pas être écrite et sera laissée seule.</string>
+			<key>other</key>
+			<string>%lld les chansons ne peuvent pas être écrites et seront laissées seules.</string>
+		</dict>
+	</dict>
+	<key>tags.title</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>Modifier les étiquettes</string>
+			<key>other</key>
+			<string>Modifier les chansons %lld</string>
+		</dict>
+	</dict>
+	<key>tags.undone</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Remettez les étiquettes de %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>tally.found</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Trouvé %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson nouvelle ou modifiée</string>
+			<key>other</key>
+			<string>%lld chansons nouvelles ou modifiées</string>
+		</dict>
+	</dict>
+	<key>tally.read</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Lire %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>tally.stopped</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Lecture arrêtée après %#@songs@</string>
+		<key>songs</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson</string>
+			<key>other</key>
+			<string>%lld chansons</string>
+		</dict>
+	</dict>
+	<key>tally.unreached</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld dossier ne pouvait pas être lu</string>
+			<key>other</key>
+			<string>%lld les dossiers ne pouvaient pas être lus</string>
+		</dict>
+	</dict>
+	<key>wanted.saved</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Enregistré %#@recordings@ pour plus tard</string>
+		<key>recordings</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld enregistrement</string>
+			<key>other</key>
+			<string>%lld enregistrements</string>
+		</dict>
+	</dict>
+	<key>wanted.saved.some</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>Sauvé %lld de %#@recordings@ pour plus tard</string>
+		<key>recordings</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld enregistrement</string>
+			<key>other</key>
+			<string>%lld enregistrements</string>
+		</dict>
+	</dict>
+	<key>higher.told.chosen</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld chanson joue sa version de qualité supérieure à partir de maintenant</string>
+			<key>other</key>
+			<string>%lld chansons jouent leurs versions de meilleure qualité à partir de maintenant</string>
+		</dict>
+	</dict>
+	<key>higher.told.downloading</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld version est téléchargée en premier</string>
+			<key>other</key>
+			<string>%lld versions sont téléchargées en premier</string>
+		</dict>
+	</dict>
+	<key>higher.told.passed-over</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld version ne pouvait plus être conservée</string>
+			<key>other</key>
+			<string>%lld versions ne pouvaient plus être conservées</string>
+		</dict>
+	</dict>
+	<key>selection.count</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld sélectionné</string>
+			<key>other</key>
+			<string>%lld sélectionné</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

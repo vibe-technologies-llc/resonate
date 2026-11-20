@@ -4,6 +4,7 @@ const DESKTOP_ENTRY: &str = "resonate.desktop";
 const FLATPAK_MANIFEST: &str = "org.resonate.Resonate.yml";
 const METAINFO: &str = "org.resonate.Resonate.metainfo.xml";
 const CONFIG_MAN_PAGE: &str = "resonate-config.toml.5";
+const MANUAL_INSTALLER: &str = "install-manuals.sh";
 const PACKAGE_RECIPES: [&str; 6] = [
     "PKGBUILD",
     "resonate.spec",
@@ -81,12 +82,29 @@ fn element<'a>(document: &'a str, opening: &str, closing: &str) -> Option<&'a st
 
 #[test]
 fn every_package_installs_the_manual_of_the_settings_file() {
-    packaging(CONFIG_MAN_PAGE);
+    let installed = packaging(MANUAL_INSTALLER);
+    let english = packaging(CONFIG_MAN_PAGE);
+    let settings = |page: &str| {
+        page.lines()
+            .zip(page.lines().skip(1))
+            .filter(|(previous, _)| *previous == ".TP")
+            .map(|(_, name)| name.to_owned())
+            .collect::<Vec<_>>()
+    };
+
+    assert!(installed.contains(CONFIG_MAN_PAGE));
+    for language in resonate_words::Language::ALL {
+        if language == resonate_words::Language::English {
+            continue;
+        }
+        let localized = packaging(&format!("{language}/{CONFIG_MAN_PAGE}"));
+        assert_eq!(settings(&english), settings(&localized), "{language}");
+    }
 
     for recipe in PACKAGE_RECIPES {
         assert!(
-            packaging(recipe).contains(CONFIG_MAN_PAGE),
-            "{recipe} does not install {CONFIG_MAN_PAGE}"
+            packaging(recipe).contains(MANUAL_INSTALLER),
+            "{recipe} does not use the shared manual installer"
         );
     }
 }

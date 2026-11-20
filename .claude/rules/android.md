@@ -20,8 +20,8 @@ Host binding generation reads ELF metadata and needs no PipeWire. `versionName` 
 `Cargo.toml`'s `version` read by Gradle, and `versionCode` is derived from it (a pre-release's
 candidate digit, 9 for a final), so a release is versioned in one place.
 
-**Every word the app shows is a resource** (`language.md`): `res/values/strings.xml`, `<plurals>` for
-a count, the launcher's name `@string/app_name`; `generateLocaleConfig` and `res/resources.properties`
+**Every word the app shows is a resource** (`language.md`): English in `res/values/strings.xml` and
+French in `res/values-fr/strings.xml`, with `<plurals>` for a count, the launcher's name `@string/app_name`; `generateLocaleConfig` and `res/resources.properties`
 (`unqualifiedResLocale=en`) make the language the system's per-app setting, and `SpokenLanguages`
 tells the boundary the configuration's locales as the player opens and on every configuration change
 (`ResonateApplication.onConfigurationChanged`, once the engine is open). Composables read

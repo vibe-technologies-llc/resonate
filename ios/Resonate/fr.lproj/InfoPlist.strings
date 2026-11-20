@@ -1,0 +1,3 @@
+"CFBundleDisplayName" = "Resonate";
+"NSLocalNetworkUsageDescription" = "Resonate utilise le réseau local pour synchroniser vos appareils, lire sur des lecteurs réseau et partager votre musique si vous activez cette option.";
+"NSMicrophoneUsageDescription" = "Resonate utilise le microphone pendant quelques secondes pour identifier le morceau que vous lui demandez de reconnaître.";

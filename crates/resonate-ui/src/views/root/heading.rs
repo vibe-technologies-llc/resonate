@@ -247,6 +247,7 @@ impl RootView {
     }
 
     pub(super) fn sidebar(&self, window: &Window, cx: &mut Context<Self>) -> Stateful<Div> {
+        let right_to_left = resonate_words::spoken().is_right_to_left();
         let library = self.library.read(cx);
         let albums = library.albums_counted() as usize;
         let artists = library.artists_counted() as usize;
@@ -329,7 +330,8 @@ impl RootView {
             .flex_none()
             .flex_col()
             .w(px(theme::sidebar_width()))
-            .border_r_1()
+            .when(right_to_left, Styled::border_l_1)
+            .when(!right_to_left, Styled::border_r_1)
             .border_color(rgb(theme::border()))
             .bg(rgb(theme::surface()))
             .child(

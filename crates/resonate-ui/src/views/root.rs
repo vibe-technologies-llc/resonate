@@ -749,6 +749,7 @@ impl RootView {
 
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let right_to_left = resonate_words::spoken().is_right_to_left();
         spoken::listened_to(window.is_a11y_active());
         self.hand_the_reader_the_menu(window, cx);
         self.keep_the_focus_with_the_sheets(window, cx);
@@ -777,6 +778,7 @@ impl Render for RootView {
             .font_family(theme::ui_face())
             .text_size(px(theme::text_base()))
             .text_color(rgb(theme::text()))
+            .when(right_to_left, |app| app.text_right())
             .when(mouse_navigation, |app| {
                 app.on_mouse_down(
                     MouseButton::Navigate(NavigationDirection::Back),
@@ -963,6 +965,7 @@ impl Render for RootView {
             .child(
                 div()
                     .flex()
+                    .when(right_to_left, Styled::flex_row_reverse)
                     .flex_1()
                     .min_h(px(0.0))
                     .child(self.parts.sidebar())
@@ -1244,6 +1247,7 @@ pub(crate) fn empty(icon: Icon, message: &'static str, more: Option<&'static str
 }
 
 fn chosen_ground(chosen: bool) -> impl IntoElement {
+    let right_to_left = resonate_words::spoken().is_right_to_left();
     motion::flips(
         div()
             .absolute()
@@ -1252,14 +1256,15 @@ fn chosen_ground(chosen: bool) -> impl IntoElement {
             .bg(rgb(theme::raised())),
         "chosen",
         chosen,
-        |ground, from, to, share| {
+        move |ground, from, to, share| {
             let at = motion::turned(from, to, share);
             let grown = theme::chosen_mark() * at;
 
             ground.opacity(at).child(
                 div()
                     .absolute()
-                    .left_0()
+                    .when(right_to_left, Styled::right_0)
+                    .when(!right_to_left, Styled::left_0)
                     .top(px((theme::sidebar_row() - grown) / 2.0))
                     .w(px(2.0))
                     .h(px(grown))

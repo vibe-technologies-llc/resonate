@@ -9,9 +9,11 @@ extensions:
     infoPath: Generated/WidgetInfo.plist
     resources:
       - Resonate/en.lproj
+      - Resonate/fr.lproj
 resources:
   - Resonate/PrivacyInfo.xcprivacy
   - Resonate/en.lproj
+  - Resonate/fr.lproj
   - Generated/icons/IconMauve.png
   - Generated/icons/IconMauve@2x.png
   - Generated/icons/IconMauve@3x.png

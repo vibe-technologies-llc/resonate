@@ -67,7 +67,7 @@ build_player() {
     cargo build --locked --release --package resonate --bin resonate
 
     local generated
-    generated=$(find target/release/build -name resonate.1 -printf '%h\n' -quit)
+    generated=$(find target/release/build -path '*/out/resonate.1' -printf '%h\n' -quit)
     test -n "$generated"
 
     stage="$work/resonate"
@@ -75,9 +75,8 @@ build_player() {
     install -Dm644 packaging/resonate.desktop "$stage/usr/share/applications/resonate.desktop"
     install -Dm644 packaging/resonate.svg "$stage/usr/share/icons/hicolor/scalable/apps/resonate.svg"
     install -Dm644 packaging/org.resonate.Resonate.metainfo.xml "$stage/usr/share/metainfo/org.resonate.Resonate.metainfo.xml"
-    install -Dm644 -t "$stage/usr/share/man/man1" "$generated"/*.1
-    install -Dm644 -t "$stage/usr/share/man/man5" packaging/resonate-config.toml.5
-    gzip -9n "$stage"/usr/share/man/man1/*.1 "$stage"/usr/share/man/man5/*.5
+    sh packaging/install-manuals.sh "$generated" "$stage/usr/share/man"
+    find "$stage/usr/share/man" -type f -exec gzip -9n {} +
     install -Dm644 "$generated/resonate.bash" "$stage/usr/share/bash-completion/completions/resonate"
     install -Dm644 "$generated/_resonate" "$stage/usr/share/zsh/vendor-completions/_resonate"
     install -Dm644 "$generated/resonate.fish" "$stage/usr/share/fish/vendor_completions.d/resonate.fish"

@@ -1,0 +1,13 @@
+party-heading = Tu es invité à une soirée d’écoute
+party-saying = Ouvrez-le en Resonate pour écouter. Chacun joue sa propre copie de chaque chanson, donc rien n’est envoyé entre vous.
+shared-heading = Une playlist a été partagée avec vous
+shared-saying = Ouvrez-le dans Resonate pour le suivre. Le serveur ne peut pas le lire : votre navigateur l’ouvre ici avec la clé dans le lien, qui ne quitte jamais cette page.
+open = Ouvrir dans Resonate
+needs-script = Cette page a besoin de JavaScript pour donner l’invitation à Resonate.
+shared-reading = Ouverture de la playlist...
+shared-unnamed = Une liste de lecture partagée
+shared-empty = Cette playlist n’a pas encore de chansons.
+shared-unread = Cette page n’a pas pu ouvrir la liste de lecture. Ouvrez-la dans Resonate pour la voir.
+shared-unknown = Le serveur ne tient pas cette liste de lecture. Il peut avoir été enlevé.
+shared-moved = Cette liste de lecture a reçu un nouveau lien. Demandez-lui de continuer à suivre la liste de lecture.
+shared-unreached = Le serveur n’a pas pu être atteint. Essayez à nouveau dans un moment.

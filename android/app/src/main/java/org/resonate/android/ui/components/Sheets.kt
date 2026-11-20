@@ -237,6 +237,7 @@ private fun DeleteSongsDialog(tracks: List<Track>, everywhere: Boolean, dismiss:
                     if (everywhere) R.plurals.sheet_delete_everywhere_explained
                     else R.plurals.sheet_delete_explained,
                     tracks.size,
+                    tracks.size,
                 )
             )
         },

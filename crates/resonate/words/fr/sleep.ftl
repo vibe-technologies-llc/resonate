@@ -1,0 +1,9 @@
+reads-as = { $player }: { $reading }
+no-timer = Pas de minuterie de sommeil
+sleeping = dormir { $when }
+in = dans { $left }
+soon = Bientôt
+end-of-the-track = à la fin du jeu de piste
+end-of-the-queue = à la fin de la file d’attente
+minutes-and-seconds = { $minutes }m { $seconds }s
+hours-and-minutes = { $hours }h { $minutes }m

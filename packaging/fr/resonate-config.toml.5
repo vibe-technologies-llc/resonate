@@ -1,0 +1,699 @@
+.TH RESONATE-CONFIG.TOML 5 "" "resonate" "Formats de fichiers"
+.SH NOM
+resonate-config.toml \- le fichier de paramètres de resonate(1)
+.SH SYNOPSIS
+.I $XDG_CONFIG_HOME/resonate/config.toml
+.br
+.I \-\-config FICHIER
+.SH DESCRIPTION
+Le fichier de configuration est au format TOML.
+Une clé absente prend sa valeur par défaut. Une option de la ligne de commande correspondant
+à un réglage est prioritaire pour cette exécution. Une clé inconnue est ignorée avec un
+avertissement.
+Si une valeur ne peut pas être lue, seule la clé concernée reprend sa valeur par défaut.
+Un avertissement indique la clé. Un document TOML invalide est refusé.
+.PP
+La fenêtre, resonate\-eq et les commandes de connexion peuvent mettre à jour ce fichier.
+Les modifications préservent les commentaires et l’ordre des clés. Seul le propriétaire
+peut lire le fichier, puisqu’il peut contenir des secrets.
+La configuration est lue au démarrage. Les modifications externes prennent effet au prochain
+démarrage.
+.PP
+Un chemin est une chaîne de caractères. Une chaîne vide équivaut à une clé absente. Le signe
+.B ~
+en début de chemin désigne le dossier personnel. Une clé marquée
+.B secret
+ne figure jamais dans le journal ni dans les informations de débogage.
+Dans ses requêtes, le lecteur s’identifie par
+.IR resonate/<version> ,
+et transmet un contact, une clé ou un jeton uniquement si cette valeur a été renseignée ici.
+.SH SORTIE AUDIO
+.TP
+.B sink
+Chaîne. Valeur node.name de la sortie PipeWire. Par défaut : la sortie par défaut du graphe.
+.TP
+.B quality
+Chaîne : low-latency, balanced, high ou very-high. Qualité du rééchantillonnage. L’ancienne
+valeur fast équivaut à low-latency. Par défaut : high.
+.TP
+.B filter-phase
+Chaîne : linear, intermediate ou minimum. Phase du filtre de rééchantillonnage. linear produit
+des oscillations de part et d’autre d’un transitoire, tandis que minimum n’en produit qu’après.
+Par défaut : linear.
+.TP
+.B true-peak
+Booléen. Mesure le niveau de crête réel après égalisation et maintient le signal sous le maximum
+numérique pour éviter l’écrêtage. Par défaut : true.
+.TP
+.B restore-lossy
+Chaîne : off, repair ou extend. repair atténue les artefacts d’un encodeur MP3, AAC ou Vorbis
+sous sa fréquence de coupure. extend rétablit aussi les aigus supprimés au-dessus de cette
+fréquence. Par défaut : off.
+.TP
+.B crossfeed
+Chaîne : off, light, moderate ou strong. Ajoute à chaque canal une copie retardée et filtrée en
+passe-bas de l’autre canal. Le rendu au casque se rapproche de celui des enceintes, en
+particulier pour les sons placés d’un seul côté. Le niveau est ajusté pour limiter l’écrêtage.
+Valable en stéréo. Par défaut : off.
+.TP
+.B dither
+Chaîne : none, rectangular ou triangular. Dither appliqué lorsque la résolution de la sortie
+doit être réduite. Par défaut : triangular.
+.TP
+.B noise-shaping
+Chaîne : flat, lipshitz ou threshold. Courbe de mise en forme du bruit de dither. Par défaut :
+threshold.
+.TP
+.B replay-gain
+Chaîne : off, track ou album. Métadonnées ReplayGain utilisées pour normaliser le volume. Par
+défaut : off.
+.TP
+.B replay-gain-pre-amp
+Nombre de décibels de \-20 à 20. Valeur ajoutée à la correction ReplayGain. Par défaut : 0.
+.TP
+.B replay-gain-untagged
+Nombre de décibels de \-20 à 20. Correction pour les pistes sans métadonnées ReplayGain. Par
+défaut : 0.
+.TP
+.B bit-perfect
+Booléen. Adopte la fréquence d’échantillonnage de la source lorsque le périphérique le permet.
+Par défaut : true.
+.TP
+.B force-graph-rate
+Booléen. Demande à PipeWire d’utiliser la fréquence choisie pour tout le graphe audio. Par
+défaut : true.
+.TP
+.B dop
+Booléen. Encapsule le DSD dans le PCM en mode DoP. Avec false, le DSD est converti en PCM. Par
+défaut : false.
+.TP
+.B dsd-like-pcm
+Booléen. Décimate DSD au niveau de PCM; off, un maître DSD joue quelque 6 dB plus silencieux que
+la même musique dans PCM. Par défaut: false.
+.TP
+.B device-volume
+Booléen. Tourner le propre volume de l’appareil là où il en a un; off, les échantillons sont
+écalés. Un rendeur réseau tourne son propre volume quoi que ce soit dit, car un flux écalé n’est
+entendu qu’après ce que le rendeur détient. Par défaut: false.
+.TP
+.B volume
+Nombre de 0 à 1. La lecture du volume commence à. Par défaut: 1.
+.TP
+.B buffer-ms
+Entier de millisecondes. Combien d’audio est gardé tamponné devant l’appareil. Par défaut : 500.
+.TP
+.B bluetooth-wake
+Booléen. Gardez le casque Bluetooth de couper le début de la musique : un dispositif en pause
+est réveillé avant lui. Par défaut : false.
+.TP
+.B bluetooth-lead-ms
+Entier de millisecondes, de 0 à 5000. Combien de temps avant que la musique un Bluetooth
+appareil est réveillé. Par défaut: 750.
+.TP
+.B bluetooth-awake-s
+Entier de secondes, de 0 à 10800. Combien de temps un dispositif en pause Bluetooth est tenu
+éveillé. Par défaut: 300.
+.TP
+.B skip-repeats-queue
+Booléen. Ensuite, sous la répétition du track, répète la file d’attente; off, il continue à
+répéter le track. Par défaut: true.
+.TP
+.B previous-restarts
+Booléen. Précédent redémarre le track en jouant une fois qu’il est plus de trois secondes; off,
+il retourne toujours en arrière une ligne. Par défaut: true.
+.TP
+.B shuffle-style
+L’une des
+.BR random ,
+.B smart
+ou
+.BR albums .
+Comment le shuffle commande la file d’attente:
+.B random
+dans n’importe quel ordre;
+.B smart
+écarte chaque artiste et album sépare et garde les chansons entendues dans la dernière semaine
+pour la fin, comme les trois clés ci-dessous disent;
+.B albums
+joue des albums entiers dans leur propre ordre, les albums shuffled. Par défaut: smart.
+.TP
+.B shuffle-spreads-artists
+Booléen. Un smart shuffle diffuse les chansons d’un artiste à part. Par défaut: true.
+.TP
+.B shuffle-spreads-albums
+Booléen. Un smart shuffle diffuse les chansons d’un album à part. Par défaut: true.
+.TP
+.B shuffle-fresh-first
+Booléen. Un smart shuffle garde les chansons entendues la semaine dernière pour après le reste.
+Par défaut: true.
+.SH ÉGALISEUR
+.TP
+.B equaliser
+Booléen. Indique si l’égaliseur est activé. Par défaut : false.
+.TP
+.B equaliser-profile
+Chaîne ou true. Le profilé maintenu chaque appareil sans l’un de ses propres usages, ou true
+pour la courbe propre de l’appareil. Par défaut: none.
+.TP
+.B equaliser-for
+Table associant la valeur node.name d’une sortie à son profil, ou à true pour sa propre courbe.
+Une association qui ne désigne ni l’un ni l’autre est ignorée avec un avertissement. Par défaut
+: table vide.
+.TP
+.B equaliser-measurer
+String. Le mesureur dont la correction AutoEq est préférable lorsque plusieurs mesures d’un
+dispositif, pour resonate\-eq \-\-find et \-\-suggest (qui \-\-meater surpasse) et les
+suggestions du panneau. Un dispositif qu’il ne mesure pas conserve le classement habituel. Par
+défaut: none.
+.TP
+.B equaliser-measurer-for
+Tableau. Carte du nœud d’une sortie audio.name au mesureur préféré pour cet appareil seul, au lieu de
+égaliseur\-mesureur. Par défaut: empty.
+.TP
+.B convolution
+Chemin. Une réponse d’impulsion a été associée au signal, pour la correction de la pièce. Par
+défaut: none.
+.TP
+.B speaker-angle
+Nombre entier de degrés, 5 à 90. Jusqu’à quel point de chaque côté de l’avant les haut-parleurs
+se tiennent, pour un ensemble SOFA de réponses liées à la tête choisi comme correction de la
+pièce: les mesures les plus proches de cet angle sont lues, mélangées où plusieurs se trouvent
+près. Par défaut: 30.
+.TP
+.B speaker-elevation
+Nombre entier de degrés, \-30 à 60. Jusqu’au-dessus du niveau des oreilles (inférieur, si
+négatif) les haut-parleurs se tiennent, pour un ensemble SOFA de réponses liées à la tête choisi
+comme correction de salle: où les mesures entourent cette direction la réponse est interpolée
+entre les coins du triangle le tenant. Par défaut: 0.
+.TP
+.B head-yaw
+Nombre entier de degrés, \-90 à 90. Jusqu’où la tête de l’auditeur est tournée de l’avant, vers
+la gauche si elle est positive, pour un ensemble SOFA de réponses liées à la tête choisi comme
+correction de salle: les deux haut-parleurs sont levés que beaucoup de degrés autour de l’autre
+côté, et dans un ensemble de haut-parleurs mesurés à plusieurs orientations de la tête la vue la
+plus proche du tour est lue. Par défaut: 0.
+.SH BIBLIOTHÈQUE ET FICHIERS
+.TP
+.B library
+Chemin. La base de données de la bibliothèque. Par défaut : $XDG_DATA_HOME/resonate/librarydb.
+.TP
+.B vault
+Chemin. Le coffre géré, ouvert au prochain départ, qui doit exister. Par défaut: none; a vault
+is made seulement où resonate\-vault est demandé.
+.TP
+.B inbox
+Path. Un dossier dont les chansons resonate traitent comme un fournisseur et offrent aux désirs.
+Par défaut: none.
+.TP
+.B music-folder
+Chemin. Les nouvelles chansons d’un dossier ordinaire sont copiées. Par défaut : none.
+.TP
+.B file-dropped
+Booléen. Déposez une chanson sur la fenêtre dans le dossier de musique par organisation-comme.
+Par défaut : true.
+.TP
+.B organise-as
+Chaîne. La mise en page qui dépose une chanson, à partir des champs albumartist, artist, album,
+title, year, disc, track et ext, séparés par /. Par défaut : albumartist/album/disctrack title.
+.TP
+.B music-extensions
+Array des chaînes. Les listes d’extensions audio incluent, insensible à la casse, avec ou sans
+le point. Absent est chaque extension les scans de construction, vide est none. Par défaut:
+absent.
+.TP
+.B minimum-length-s
+Entier de secondes, de 0 à 600. Les inscriptions laissent une chanson plus courte que celle-ci.
+Par défaut : 0.
+.TP
+.B history-kept
+Chaîne pour toujours, ou un nombre entier de jours. Écouter et passer du temps plus vieux que
+cela sont oubliés sur chaque départ. Par défaut: forever.
+.TP
+.B resume
+Booléen. Recommencer avec la file d’attente, et la place dans la chanson, qui a été laissé. Par
+défaut: true.
+.TP
+.B renderers
+Booléen. Recherchez le réseau local pour UPnP les rendeurs multimédias et listez chacun comme
+une sortie à côté du serveur son, de sorte qu’une zone ou \fBsink\fR peut y jouer. Un \fBsink\fR
+nommant un (\fBupnp:\fR et son UDN) recherche quoi que ce soit. La liste des périphériques du
+panneau de paramètres le commute. Par défaut: false.
+.TP
+.B renderers-at
+Array de \fBhttp://\fR adresses de UPnP descriptions de périphérique des rendeurs, comme
+\fBhttp://192.168.1.20:49152/description.xml\fR, pour un réseau qui abandonne la recherche
+multicast. Chacun est atteint lorsque Resonate commence, peu importe ce que \fBrenderers\fR dit,
+et aucune recherche n’est envoyée au réseau à moins que \fBrenderers\fR ne soit activé. Par
+défaut : empty.
+.TP
+.B cast-at
+Tableau de récepteurs Google Cast désignés par leur adresse IP ou leur nom d’hôte, avec un port
+(\fB192.168.1.30:8009\fR, \fBkitchen.local:8009\fR) ou sans port (8009 par défaut), pour les
+réseaux qui bloquent la découverte multicast. La résolution est effectuée à chaque tentative, en
+arrière-plan. Un nom \fB.local\fR que le système ne peut pas résoudre est recherché par mDNS.
+Chaque adresse est essayée au démarrage, quel que soit le réglage \fBrenderers\fR, qui reste
+nécessaire pour la découverte sur le réseau. Un récepteur est identifié par \fBcast:at-\fR suivi
+de son adresse jusqu’à ce que la découverte le désigne par \fBcast:\fR suivi de son identifiant
+mDNS. Les deux formes de \fBsink\fR fonctionnent tant que l’adresse est conservée. Par défaut :
+tableau vide.
+.TP
+.B share-catalog-on-network
+Booléen. Alors que la fenêtre est ouverte, offrir le catalogue local au réseau local en tant que
+UPnP et DLNA serveur multimédia (nom de \fBoffer\fR), donc un point de contrôle (une application
+de streaming, BubbleUPnP, Kodi, VLC) peut parcourir ses artistes, albums, chansons et playlists
+et récupérer le fichier de chaque chanson telle qu’elle est. Il répond aux recherches sur le
+port 1900 et s’y annonce, ne sert que des appareils aux adresses privées, link-local ou
+loopback, et ne change rien dans le catalogue; une chanson coupée d’une feuille de queue est
+laissée en dehors. Le commutateur du panneau de paramètres l’allume et off à la fois. Défaut:
+false.
+.TP
+.B offer-name
+Chaîne. Le nom du catalogue offert sur le réseau est affiché sous un point de contrôle, le
+\fBfriendlyName\fR de l’appareil, de sorte que deux ordinateurs offrant le leur peuvent être
+dissociés. Blank ou absent, il est Resonate. Les espaces sont repliés sur un, les caractères de
+contrôle sont supprimés et il est coupé à 63 caractères. Le nom propre de l’ordinateur et le
+vôtre ne sont jamais lus. \fBresonate offer \-\-name\fR donne un pour une exécution. Un serveur
+en cours d’exécution prend un nom tapé dans le panneau de paramètres à la fois et est annoncé
+sous celui-ci. Par défaut: none.
+.TP
+.B flac-above-96k-for
+Tableau de noms de récepteurs (\fBupnp:\fR suivi de l’UDN, comme indiqué par \fBresonate sinks
+\-\-renderers\fR). Si un récepteur annonce le FLAC sans préciser la fréquence, le moteur ne lui
+propose que le FLAC jusqu’à 96 kHz et rééchantillonne au-delà. Pour les appareils de cette
+liste, il propose le FLAC jusqu’à 192 kHz, ce qui permet d’envoyer les flux à 176,4 et 192 kHz
+sans modification. Vérifiez que le récepteur accepte ces fréquences : sinon, la lecture reste
+silencieuse. Le retirer de la liste rétablit la limite de 96 kHz. Les appareils qui précisent
+leurs fréquences ou acceptent uniquement le WAVE ne sont pas concernés. Par défaut : tableau
+vide.
+.TP
+.B formats-learnt-for
+Table associant le nom d’un récepteur UPnP (\fBupnp:\fR suivi de l’UDN) ou Google Cast
+(\fBcast:\fR suivi de l’identifiant) aux formats vérifiés par \fBresonate sinks \-\-learn\fR ou
+par le test des formats dans les réglages. Le tableau peut contenir \fBflac-192000\fR ou
+\fBflac-176400\fR (FLAC stéréo à la fréquence indiquée), ainsi que \fBchannels-6\fR ou
+\fBchannels-8\fR (5.1 ou 7.1 à 48 kHz). Ces formats complètent ceux annoncés par l’appareil. Un
+tableau vide indique que l’appareil a été testé sans en lire aucun. Les valeurs inconnues sont
+ignorées. Supprimez une entrée pour effacer les résultats du test. Par défaut : table vide.
+.SH SERVICES EN LIGNE
+.TP
+.B online
+Booléen. False arrête toutes les requêtes réseau. Par défaut: true.
+.TP
+.B enrich-after-scan
+Booléen. Demandez la référence sur les albums et les artistes une fois qu’un scan a fini. Par
+défaut : true.
+.TP
+.B enrich-on-metered
+Booléen. Laissez les recherches des métadonnées, des couvertures, des portraits, des paroles et
+des corrections d’égalisation sortir pendant que la connexion est mesurée, comme NetworkManager
+le signale. False les saute jusqu’à ce qu’il ne soit pas; une connexion qui ne peut pas être
+dite est prise comme non mesurée. Par défaut: false.
+.TP
+.B musicbrainz-mirror
+Booléen. Conservez une copie de la base de données MusicBrainz sur cet appareil : son
+exportation est téléchargée (environ 7,5 Go) et lue dans un magasin compressé, indexé d’environ
+10 Go sous le dossier de données (la construction veut environ 50 Go de pièce et environ une
+heure), et demandé avant le réseau. Un appareil synchronisé qui est en ligne demande celui-ci
+pour ce qu’il regarde. La copie est cochée contre la plus récente exportation tous les 30 jours
+et construite à nouveau quand il y en a une plus récente. Par défaut : false.
+.TP
+.B musicbrainz-replication-token
+Chaîne, secret. Un jeton d’accès MetaBrainz (40 lettres et chiffres, de metabrainz.org) pour les
+paquets de réplication horaires de MusicBrainz. Avec cela, une copie conservée par musicbrainz-
+mirror conserve les tables de l’exportation à côté (environ 30 Go de plus) et applique les
+changements de chaque heure aux documents qu’ils touchent, de sorte que la copie n’est jamais
+plus d’une heure de retard. Par défaut : none.
+.TP
+.B offer-musicbrainz-copy
+Booléen. Offrez la copie conservée par musicbrainz-mirror, et les modifications qui suivent, à
+vos téléphones synchronisés, qui le chercheront entier pour répondre à leurs propres recherches.
+False la retient : un téléphone est dit comme si aucun appareil n’en tenait un et demande à cet
+appareil une recherche à la place. Lire comme le fichier se tient à chaque fois qu’un téléphone
+demande. Par défaut : true.
+.TP
+.B download-on-metered
+Booléen. Laissez les téléchargements des fournisseurs continuer pendant que la connexion est
+mesurée, comme NetworkManager le rapporte. False les retient jusqu’à ce qu’il ne soit pas, ou
+jusqu’à ce que cela soit activé; une connexion qui ne peut être dit est prise comme non mesurée.
+Une chanson jouée à partir d’un serveur n’est pas un téléchargement. Un fichier tenant le
+décrochage précédent est lu dans l’autre sens tour (true détient les téléchargements), à moins
+qu’il ne détient également téléchargement-sur-mesure, et le panneau de paramètres n’écrit que
+téléchargement-sur-mesure. Par défaut: true.
+.TP
+.B study
+Booléen. Étudier chaque track recherche trouve: son spectre, son intensité et l’impression. Par
+défaut: true.
+.TP
+.B fetch-lyrics
+Booléen. Demandez LRCLIB pour les paroles d’un track tel qu’il joue. Par défaut: true.
+.TP
+.B lyrics-language-from-locale
+Booléen. Choisissez parmi les feuilles lyriques nommées par langue par la locale. Par défaut:
+false.
+.TP
+.B identify-by-sound
+Booléen. Laissez une recherche reconnaître un track par son son lorsque ses balises ne nomment
+rien. Par défaut: false.
+.TP
+.B contact
+Chaîne, secret. Une adresse de contact envoyée avec des demandes aux services qui en demandent
+une. Par défaut : none.
+.TP
+.B explore
+Booléen. Afficher l’étagère Explorer et mélanger les onglets. La recherche nécessite en ligne.
+Par défaut: true.
+.TP
+.B hosted-services
+Booléen. Laissez un hifi-api vide ou absent et monochrome revenir aux services hébergés. Par
+défaut: true.
+.TP
+.B youtube-music
+Booléen. Demandez YouTube Music, à travers yt-dlp, ce qu’il n’y a rien d’autre. Rien n’est
+demandé tant qu’il est off. Par défaut: false.
+.TP
+.B youtube-music-cookies
+Chaîne, secret. Les cookies du compte: un navigateur comme yt-dlp nomme un (firefox, ou
+firefox:/path/to/profile) ou le chemin d’un fichier de cookies Netscape. Se connecter par la
+fenêtre de connexion (resonate ytmusic signe-in, ou les paramètres des comptes) écrit le jar
+youtube-music-cookies.txt dans le dossier de données et le nomme ici. Par défaut: none, the free
+tier.
+.TP
+.B yt-dlp
+Chaîne. Où se trouve le programme yt-dlp. Par défaut : none, the path is searched.
+.TP
+.B youtube-music-keep-order
+Booléen. Gardez une liste de lecture conservée dans l’ordre de YouTube; off, ses chansons se
+tiennent dans l’ordre où elles atterrissent. Par défaut: true.
+.TP
+.B acoustid-key
+Chaîne, secret. Une touche d’application AcoustID. Par défaut : none.
+.TP
+.B audd-token
+Chaîne, secret. Un jeton AudD. Par défaut: none.
+.TP
+.B listenbrainz-token
+String, secret. A ListenBrainz jeton qui brouille ce qui est entendu. Par défaut: none.
+.TP
+.B lastfm-key
+Chaîne, secret. La clé d’un compte API Last.fm enregistré par l’auditeur. Par défaut : none.
+.TP
+.B lastfm-secret
+Chaîne, secret. Le secret partagé de ce compte. Par défaut: none.
+.TP
+.B lastfm-session
+String, secret. La session resonate\-lastfm écrit. Les trois Last.fm clés sont nécessaires avant
+que quelque chose soit griffonné. Par défaut: none.
+.TP
+.B listen-from
+String: desktop, microphone, ou a node.name. What resonate\-écoute. Par défaut: desktop.
+.TP
+.B listen-for
+Entier de secondes, de 4 à 60. Combien de temps il écoute. Par défaut: 12.
+.SH SOURCES
+.TP
+.B subsonic
+Chaîne. L’adresse d’un serveur Subsonic. Par défaut: none.
+.TP
+.B subsonic-user
+Chaîne. Le compte Subsonic. Par défaut: none.
+.TP
+.B subsonic-password
+Chaîne, secret. Le mot de passe du compte Subsonic. Par défaut: none.
+.TP
+.B jellyfin
+Chaîne. L’adresse d’un serveur Jellyfin ou Emby, a parcouru et joué en place et n’a jamais été
+récupéré pour un besoin. Par défaut: none.
+.TP
+.B jellyfin-user
+Chaîne. Le compte Jellyfin ou Emby. Par défaut : none.
+.TP
+.B jellyfin-password
+Chaîne, secret. Le Jellyfin ou le mot de passe du compte Emby, envoyé uniquement pour se
+connecter. Par défaut : none.
+.TP
+.B jellyfin-token
+Chaîne secrète. Jeton d’accès obtenu avec Quick Connect (resonate jellyfin ou les réglages des
+comptes). Associé à jellyfin-user-id et jellyfin-device, il remplace jellyfin-password. La
+saisie d’un mot de passe efface le jeton. Par défaut : aucun.
+.TP
+.B jellyfin-user-id
+Chaîne. L’utilisateur Jellyfin le jeton gardé signe comme. Par défaut: none.
+.TP
+.B jellyfin-device
+Chaîne. L’identifiant de l’appareil le jeton conservé a été émis à. Par défaut: none.
+.TP
+.B tidal-client-id
+Chaîne. Les besoins de connexion du client TIDAL. Par défaut: none.
+.TP
+.B tidal-client-secret
+Chaîne secrète. Secret du client. Par défaut : aucun.
+.TP
+.B tidal-refresh-token
+Chaîne, secret. Ecrit par resonate\-tidal, et réécrit lorsque TIDAL la tourne. Par défaut: none.
+.TP
+.B spotify-client-id
+Chaîne. L’identifiant client d’une application que vous avez enregistrée au
+développeurspotify.com, dont la liste URIs redirection http://127.0.0.1:43879/spotify. Avec none
+set, aucun compte Spotify n’est offert ou demandé. Par défaut : none.
+.TP
+.B spotify-refresh-token
+Chaîne, secret. Ecrit par resonate\-spotify, et réécrit lorsque Spotify la tourne. Par défaut:
+none.
+.TP
+.B hifi-api
+Chaîne. L’adresse d’un serveur compatible TIDAL de l’auditeur. Par défaut : none.
+.TP
+.B hifi-secret
+Chaîne secrète. Clé du service hébergé de Resonate. Lorsqu’elle est renseignée, ce service
+s’ajoute aux autres fournisseurs pour la recherche des morceaux demandés. La clé lui est
+transmise sous forme de jeton et uniquement en HTTPS. Par défaut : aucun.
+.TP
+.B monochrome
+Chaîne. L’adresse d’un serveur Monochrome de l’auditeur. Par défaut: none.
+.SH APPAREILS
+.TP
+.B sync
+Booléen. Gardez les appareils à l’étape. Off chaque fois qu’en ligne est off, à moins que sync-
+nearby-only soit activé. Par défaut : true.
+.TP
+.B sync-nearby-only
+Booléen. N’utilisez pas de serveur: les périphériques se synchronisent uniquement sur le même
+réseau. Par défaut: false.
+.TP
+.B sync-server
+Chaîne. L’adresse du serveur de synchronisation. Blank est le serveur hébergé. Une adresse
+\fBws://\fR ou \fBwss://\fR atteint le serveur sur un WebSocket, qu’un proxy comme Cloudflare
+porte. Par défaut: blank.
+.TP
+.B sync-server-certificate
+Chemin. Un certificat PEM fait confiance à côté des racines system, pour un serveur de
+l’auditeur. Par défaut: none.
+.TP
+.B sync-stun
+Chaîne. Un serveur STUN (\fBhost\fR ou \fBhost:port\fR, port 3478 par défaut) qui indique à cet
+appareil son adresse publique, qu’il transmet à d’autres appareils pour se connecter
+directement. Nécessaire d’atteindre des appareils par l’intermédiaire d’un serveur qui n’est
+accessible que sur un WebSocket. Blank demande none. Défaut: blank.
+.TP
+.B sync-key
+Chaîne, secret. Le code d’appariement, haché et écrit au premier démarrage qui se synchronise.
+Par défaut : none.
+.TP
+.B sync-device
+Chaîne. Le nom d’autres appareils voir. Par défaut: the host's name and its system in brackets,
+as in studio (Linux), sinon le system seul.
+.TP
+.B shared-name
+Chaîne. Le nom que les autres personnes voient à côté de vous sur une playlist que vous partagez
+ou une partie d’écoute que vous rejoignez. Scellé du serveur; rien n’est envoyé là où il est
+vide. Par défaut: none.
+.TP
+.B sync-songs
+Array des chaînes : favorites, playlists, tout. Quelles chansons voyagent sur d’autres appareils
+sans être demandés; vide n’est que sur demande. Par défaut : empty.
+.TP
+.B sync-control
+String: everything, transport ou nothing. Ce qu’un autre appareil jumelé peut faire aux zones
+qu’il joue: tout (jouer, pause, sauter, chercher, définir le volume, sauter vers, déplacer et
+supprimer les lignes de queue), le transport (tout sauf déplacer et enlever les lignes) ou rien
+(pas même voir ce qui joue). Par défaut: everything.
+.TP
+.B sync-deletions-from-others
+Booléen. Laissez les autres appareils de l’auditeur supprimer les chansons ici: une chanson
+supprimée de chaque appareil sur un autre d’entre eux va à la poubelle ici aussi, où cet
+appareil l’a tenu avant la suppression a été faite. Off, la suppression est seulement rappelée,
+donc cet appareil garde sa copie et récupère none en arrière. Par défaut: true.
+.TP
+.B party-time-server
+Chaîne. Un serveur de temps (\fBhost\fR ou \fBhost:port\fR, port 123 par défaut) une partie
+auditeur demande l’heure de plus de SNTP, de sorte que l’horloge de chaque personne peut être
+comparée avec le temps de l’hôte au-delà de ce que l’aller-retour vers les limites du serveur de
+la partie. Une requête ne porte que la version du protocole et un timbre aléatoire. Un invité
+est déplacé seulement lorsque les deux personnes atteignent leur serveur de temps rapidement.
+Blank demande none. Par défaut: time.cloudflare.com.
+.TP
+.B discord
+Booléen. Dites à Discord ce qui est en jeu. Par défaut: false.
+.TP
+.B discord-app
+Chaîne de 17 à 20 chiffres. L’identifiant de l’application Discord ; rien n’est affiché sans
+elle. Par défaut : none.
+.TP
+.B discord-shows
+String: application, track ou album. Combien de ce qui est en jeu est dit. Par défaut: album.
+.TP
+.B discord-art
+Chaîne : cover, icon ou none. L’image montrée. Par défaut : cover.
+.TP
+.B discord-icon
+Chaîne. Le nom de l’actif affiché comme icône. Par défaut : none.
+.TP
+.B discord-progress
+Booléen. Montrez jusqu’où il est dans le track. Par défaut: true.
+.TP
+.B discord-paused
+Booléen. Continuez à montrer le track pendant qu’il est interrompu. Par défaut: false.
+.SH FENÊTRE
+.TP
+.B theme
+Chaîne : resonate, minuit, graphite, amoled, prune, rose-pine-pine-mocha, catppuccin-mocha,
+catppuccin-macchiato, catppuccin-frappe, nord, gruvbox-dark, tokyo-night, dracula, one-dark,
+solarized-dark, high-contrast, resonate-light ou high-contrast-light. Par défaut : resonate, or
+high-contrast pendant que le bureau demande plus de contraste et aucun thème n’est défini;
+.B follow-desktop-scheme
+un light bureau porte l’équivalent light du thème.
+.TP
+.B accent
+Chaîne : mauve, blue, teal, green, amber, peach ou red. La couleur de l’accent. Par défaut : the
+theme's own.
+.TP
+.B text-size
+Chaîne : small, medium, large, larger ou largest. La taille utilisée lorsque l’échelle de texte
+propre au bureau n’est pas suivie ou n’est pas dite. Par défaut : medium.
+.TP
+.B language
+Chaîne : system, en ou fr. Langue de la fenêtre, du terminal et des notifications. system
+utilise la première langue compatible de la liste système. Si aucune langue ne convient,
+Resonate utilise l’anglais. Le fichier est lu au démarrage. Par défaut : system.
+.TP
+.B region
+Chaîne : system ou une balise indiquant une région, par exemple en-GB, de-DE ou de-CH. Règle le
+groupement des nombres et l’ordre des éléments de date. Le nom des jours et des mois suit la
+langue choisie. system suit LC_ALL, LC_NUMERIC, LC_TIME ou LANG, ou la région du système sous
+Windows et macOS. Une balise doit indiquer une région. Par défaut : system.
+.TP
+.B follow-desktop-scheme
+Booléen. Portez le light ou l’équivalent sombre du thème comme demande le schéma de couleurs du
+bureau. Par défaut: true where
+.B theme
+n’est pas réglé, sinon false.
+.TP
+.B follow-desktop-text-size
+Booléen. Dessinez le texte à la taille la plus proche de l’échelle de texte du bureau. Par
+défaut: true where
+.B text-size
+n’est pas réglé, sinon false.
+.TP
+.B notify
+Booléen. Relever une notification de bureau lorsque le track change. Par défaut: true.
+.TP
+.B check-for-updates
+Booléen. Demandez au dépôt de ce build a été libéré de, au plus une fois par jour pendant que la
+fenêtre est ouverte, si une nouvelle version de Resonate est sortie, en disant rien d’autre que
+le nom et la version de ce build. Rien n’est demandé pendant que
+.B online
+est false, et une construction qui ne nomme aucun dépôt ne demande rien. Par défaut: true.
+.TP
+.B update-dismissed
+Chaîne. La version dont l’avis a été rejeté dans la fenêtre, de sorte qu’il n’est pas montré à
+nouveau; une version ultérieure est encore racontée. Écrit par la fenêtre. Par défaut: none.
+.TP
+.B minimise-button
+Booléen. Dessinez le bouton minimiser de la fenêtre. Par défaut : true.
+.TP
+.B maximise-button
+Booléen. Dessinez le bouton maximal de la fenêtre. Par défaut: true.
+.TP
+.B scroll-volume
+Booléen. La roue sur le lecteur change le volume. Par défaut: true.
+.TP
+.B mouse-navigation
+Booléen. Les boutons arrière et avant de la souris naviguent. Par défaut: true.
+.TP
+.B reduced-motion
+Booléen. Dessinez des menus, des feuilles, des notices, des commutateurs, des modifications de
+chansons, des barres de défilement et des paroles sans glisser, s’effacer ou glisser. Par défaut
+: false, or true while the desktop asks for reduced motion and no value is set.
+.TP
+.B scrollbars
+String: shown, auto-hide ou hidden. Un booléen lit encore, true comme montré et false comme
+caché. Par défaut: auto-hide.
+.TP
+.B artists-drawn
+Chaîne : grid ou list. Par défaut : grid.
+.TP
+.B spectrum-tilt
+Chaîne : flat, pink ou steep. La pente du spectre en décibels par octave. Par défaut : pink.
+.TP
+.B spectrum-floor
+Chaîne : 60, 78 ou 96, in decibels under full scale. Par défaut : 78.
+.TP
+.B spectrum-bands
+Chaîne : thirds, sixths ou twelfths of an octave. Par défaut : sixths.
+.TP
+.B spectrum-falls
+Chaîne : slowly, middling ou quickly. Comment fast les barres se replient. Par défaut :
+middling.
+.TP
+.B suggestions-tab
+Booléen. Afficher l’onglet Suggestions. Par défaut : true.
+.TP
+.B missing-tab
+Booléen. Afficher l’onglet manquant. Par défaut: false.
+.TP
+.B tab-counts
+Booléen. Comptez les lignes à côté du nom de chaque onglet. Par défaut : false.
+.TP
+.B remember-tab
+Booléen. Ouvrir sur l’onglet dernier utilisé; off, le dernier tab est supprimé. Par défaut:
+true.
+.TP
+.B last-tab
+Chaîne nommant un onglet: albums, artistes, titres, statistiques, file d’attente, playlists,
+fête, favoris, suggestions, manquant, serveur, paroles, inspecteur, visualisateur, analyse ou
+paramètres. Ecrit par la fenêtre.
+.TP
+.B remember-window-size
+Booléen. Ouvrir à la dernière taille utilisée; off, la taille de la fenêtre est supprimée. Par
+défaut: true.
+.TP
+.B window-size
+Chaîne WIDTHxHEIGHT en pixels, de 720x520 à 8192x8192. Ecrit par la fenêtre.
+.TP
+.B remember-settings-category
+Booléen. Ouvrez les paramètres de la dernière catégorie utilisée; off, la dernière catégorie de
+paramètres est supprimée. Par défaut: true.
+.TP
+.B last-settings-category
+Chaîne: sortie, traitement, égaliseur, lecture, bibliothèque, filtres, en ligne, reconnaissance,
+comptes, synchronisation, bureau, apparence, fenêtre ou environ. Ecrit par la fenêtre.
+L’orthographe enrichit et scrobble, qui construit précédemment écrit, encore lue, comme
+bibliothèque et comptes.
+.SH FICHIERS
+.TP
+.I $XDG_CONFIG_HOME/resonate/config.toml
+Le fichier de paramètres. Lorsque la variable est désinitialisée, le dossier de paramètres est
+~/.config/resonate/, sur macOS ~/Bibliothèque/Application Support/resonate/ et sur Windows
+%APPDATA%\eresonate\e.
+.TP
+.I $XDG_DATA_HOME/resonate/
+La bibliothèque, la voûte, les profils d’égalisation conservés et le registre de
+synchronisation. Lorsque la variable est désactivée, le dossier est ~/.local/share/resonate/,
+sur macOS ~/Library/Application Support/resonate/ et sur Windows %LOCALAPPDATA%\esonate\e.
+.TP
+.I $XDG_CACHE_HOME/resonate/
+Ce qui peut être fait à nouveau, comme les études conservées d’une chanson. Lorsque la variable
+est déréglée, le dossier est ~/.cache/resonate/, sur macOS ~/Bibliothèque/Caches/resonate/ et
+sur Windows %LOCALAPPDATA%\eresonate\e.
+.SH VOIR AUSSI
+.BR resonate (1)

@@ -1,0 +1,12 @@
+mauve = Mauve
+blue = Bleu
+teal = FEUILLES
+green = Vert
+amber = Ambre
+peach = Pêche
+red = Rouge
+small = Petites
+medium = Moyenne
+large = Grandes
+larger = Plus grande
+largest = Plus grande

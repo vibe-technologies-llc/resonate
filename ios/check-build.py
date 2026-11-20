@@ -40,8 +40,10 @@ def check_widget(app):
             raise SystemExit(f"check-build.py: the widget's {key} differs from {expected!r}")
     if not widget_info["CFBundleIdentifier"].startswith(app_info["CFBundleIdentifier"] + "."):
         raise SystemExit("check-build.py: the widget's bundle identifier must extend the app's")
-    if not (widget / "en.lproj/Localizable.strings").is_file():
-        raise SystemExit("check-build.py: the widget is missing its English strings")
+    for language in app_info["CFBundleLocalizations"]:
+        for bundle in (app, widget):
+            if not (bundle / f"{language}.lproj/Localizable.strings").is_file():
+                raise SystemExit(f"check-build.py: {bundle.name} is missing its {language} strings")
 
     nm = "nm" if platform.system() == "Darwin" else "llvm-nm"
     executable = widget / widget_info["CFBundleExecutable"]

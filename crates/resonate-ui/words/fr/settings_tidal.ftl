@@ -1,0 +1,44 @@
+sign-in-note = Connectez-vous à TIDAL demande TIDAL pour un code à approuver dans un navigateur avec l’identifiant du client ci-dessus, puis conserve le jeton de rafraîchissement en retour — rien n’est dactylographié dans cette fenêtre sauf le client.
+no-client = Donnez d’abord l’identifiant du client
+offline = TIDAL est signé à seulement pendant que Online est sur
+signed-in = Signé à TIDAL — il est demandé dès maintenant
+the-tidal-code-lapsed-before-it = Le code TIDAL a expiré avant son approbation
+tidal-was-told-not-to-sign = TIDAL a été dit de ne pas signer
+tidal-refused-the-client-id = TIDAL a refusé l’identité du client
+tidal-could-not-be-reached = TIDAL n’a pu être atteint
+tidal-refused-the-sign-in = TIDAL a refusé la signature
+tidals-certificate-is-not-one-this = TIDAL le certificat n’est pas un de ces fiducies de construction
+tidal-answered-something-this-build-cannot = TIDAL a répondu à quelque chose que cette construction ne peut pas lire
+tidal-note = Avec un identifiant client et un jeton de renouvellement TIDAL, chaque piste demandée est recherchée via votre abonnement à partir du lien TIDAL de MusicBrainz ou de l’ISRC. Seules les pistes complètes en FLAC sans perte sont retenues. La piste est téléchargée, reconditionnée en FLAC puis conservée dans l’archive ou dans le dossier de musique si aucune archive n’est ouverte. L’identifiant et le secret client appartiennent à l’application qui a reçu le jeton. Le service hifi-api hébergé est utilisé si aucun serveur personnalisé n’est défini. Les mêmes vérifications s’appliquent dans les deux cas. Monochrome recherche aussi le FLAC complet par ISRC et accepte un serveur personnalisé. Le réglage des services hébergés permet d’ignorer ceux-ci, sans empêcher l’utilisation d’un serveur personnalisé. La recherche commence dès la configuration, si les fonctions en ligne sont activées.
+the-client-id-the-token-was = Le client a identifié le jeton a été émis à, puis appuyez sur Entrée
+its-client-secret-if-it-has = Son secret client, s’il en a un, puis appuyez sur Entrée
+a-refresh-token-for-your-account = Un jeton de rafraîchissement pour votre compte, puis appuyez sur Entrée
+custom-hifi-api-server-address-blank = Adresse de serveur hifi-api personnalisée; blanc utilise le service hébergé
+a-key-your-resonate-server-lists = Une touche vos listes de serveurs Resonate, puis appuyez sur Entrée
+custom-monochrome-server-address-blank-uses = Adresse de serveur personnalisée Monochrome ; blanc utilise tracks.monochrome.st
+client-id = Nom du client
+client-secret = Le secret du client
+refresh-token = Jeton rafraîchi
+hifi-api-server = serveur hifi-api
+key = Clé
+monochrome-server = Monochrome serveur
+the-hosted-hifi-api-service-is = Le service hifi-api hébergé est demandé dès maintenant
+the-custom-hifi-api-server-is = Le serveur hifi-api personnalisé est demandé à partir de maintenant
+the-resonate-server-is-no-longer = Le serveur Resonate n’est plus demandé
+the-resonate-server-is-asked-with = Le serveur Resonate est demandé avec la clé
+the-hosted-monochrome-service-is-asked = Le service hébergé Monochrome est demandé dès maintenant
+the-custom-monochrome-server-is-asked = Le serveur personnalisé Monochrome est demandé dès maintenant
+tidal-is-no-longer-asked = TIDAL n’est plus demandé
+tidal-is-asked-from-now-on = TIDAL est demandé dès maintenant
+sign-in-to-tidal = Connexion à TIDAL
+asking-tidal = Demande TIDAL...
+code = Code
+open-the-page = Ouvrir la page
+stop = Arrêter
+ask-the-hosted-services = Demandez aux services hébergés
+off-hifi-api-and-monochrome-are = Off, hifi-api et Monochrome ne sont demandés qu’à un serveur nommé ci-dessus
+approve-the-code = Ouvrez { $page } et approuvez le code { $code } ; ceci attend jusqu’à TIDAL réponses, pour { $minutes ->
+    [one] { $minutes } minute
+   *[other] { $minutes } minutes
+} tout au plus.
+resonate-key-note = Les chansons recherchées sont demandées de { $host } avec cette clé, comme un jeton porteur sur https, et nulle part ailleurs. Interrogé dès qu’il est donné, et seulement pendant que Online est sur.

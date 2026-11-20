@@ -1,0 +1,11 @@
+sign-in-with-quick-connect = Connectez-vous avec Quick Connect
+asking-the-server = Demande au serveur...
+cancel = Annuler
+code = Code
+approve-it = Approuvez ce code dans une application Jellyfin dans laquelle vous êtes connecté (Settings, Quick Connect); cela attend que le serveur le déclare.
+quick-connect-off = Ce serveur a Quick Connect désactivé, alors connectez-vous avec le mot de passe
+not-begun = Le serveur Jellyfin n’a pas pu être demandé de code
+lapsed = Le code a expiré avant d’être approuvé, rien n’a été conservé
+denied = Le serveur Jellyfin a refusé Quick Connect
+unreached = Le serveur Jellyfin a arrêté de répondre, rien n’a été gardé
+signed-in-as = Signé à Jellyfin en tant que { $name }

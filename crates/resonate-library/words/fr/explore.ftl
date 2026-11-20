@@ -1,0 +1,10 @@
+discover-mix = Découvrez le mélange
+discover-mix-reason = Choisi dans ce que vous jouez et les artistes comme eux
+beyond-artist = Au-delà { $artist }
+beyond-artist-reason = Chansons inédites de { $artist } et artistes de famille
+genre-discovery = { $genre } découverte
+genre-discovery-reason = Fresh { $genre } au-delà de votre bibliothèque
+favourites-expansion = Plus comme vos favoris
+favourites-expansion-reason = Inspiré par les chansons que vous avez jouées
+rediscover-beyond = Nouveautés de vieux favoris
+rediscover-beyond-reason = Des coupures non entendues d’artistes que vous jouiez

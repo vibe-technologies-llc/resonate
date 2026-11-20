@@ -81,8 +81,47 @@ class Strings(unittest.TestCase):
             self.assertEqual(said, info[key], key)
         self.assertLessEqual({key for key in info if key.endswith("UsageDescription")}, prompts.keys())
 
-    def test_the_english_strings_land_in_the_bundle(self):
-        self.assertIn("  - Resonate/en.lproj\n", (words.ios / "xtool.yml").read_text())
+    def test_each_localization_is_complete_and_lands_in_the_app_and_widget(self):
+        app = words.english.parent
+        with (app / "Info.plist").open("rb") as plist:
+            tags = plistlib.load(plist)["CFBundleLocalizations"]
+        self.assertEqual(set(tags), {path.stem for path in app.glob("*.lproj")})
+        widget, application = (words.ios / "xtool.yml").read_text().split("\nresources:\n", 1)
+
+        for tag in tags:
+            folder = app / f"{tag}.lproj"
+            resource = f"- Resonate/{folder.name}"
+            self.assertIn("  " + resource, application.splitlines())
+            self.assertIn("      " + resource, widget.splitlines())
+            for table in ("Localizable.strings", "InfoPlist.strings"):
+                translated = words.strings_file(folder / table)
+                english = words.strings_file(words.english / table)
+                self.assertEqual(translated.keys(), english.keys(), table)
+                for key in english:
+                    self.assertEqual(formats(translated[key]), formats(english[key]), key)
+            with (folder / "Localizable.stringsdict").open("rb") as plist:
+                translated = plistlib.load(plist)
+            self.assertEqual(plural_formats(translated), plural_formats(words.plurals()), tag)
+
+
+def formats(text):
+    slots = re.findall(r"%(?:\d+\$)?(?:#@\w+@|@|lld|ld|d|%)", text)
+    if all(re.match(r"%\d+\$", slot) or slot == "%%" for slot in slots):
+        slots.sort()
+    return slots
+
+
+def plural_formats(plurals):
+    return {
+        key: {
+            field: {
+                name: formats(text) if name in ("one", "other") else text
+                for name, text in variable.items()
+            } if isinstance(variable, dict) else formats(variable)
+            for field, variable in entry.items()
+        }
+        for key, entry in plurals.items()
+    }
 
 
 class Prose(unittest.TestCase):

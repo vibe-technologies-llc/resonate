@@ -1,0 +1,12 @@
+what-the-desktop-plays = ce que le bureau joue
+the-default-microphone = le microphone par défaut
+listening = écouter { $heard } pour { $seconds } s
+nothing-known = rien { $asked } ne sait qu’on a entendu
+title = titre
+artist = artiste
+album = album
+year = année
+isrc = l’espèce
+recording = enregistrement
+link = lien
+heard-by = entendus par

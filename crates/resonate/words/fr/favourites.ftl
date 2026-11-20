@@ -1,0 +1,9 @@
+favourited = favori { $shown }
+already = { $shown } est déjà un favori
+took-off = a retiré { $shown } des favoris
+no-favourite = { $shown } n’est pas un favori
+by = { $title } par { $artist }
+tracks = VOYAGES
+albums = ALBUMES
+artists = ARTISTES
+none-yet = rien ici n’est encore un favori

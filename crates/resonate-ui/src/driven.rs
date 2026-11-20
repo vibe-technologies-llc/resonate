@@ -7609,17 +7609,17 @@ mod tests {
                 .is_some_and(|menus| menus.is_empty())
         );
 
-        driven.click(named("language", 1));
+        driven.click(named("language", 2));
         driven.until(|_, cx| {
-            cx.global::<ResonateApp>().language == LanguageChoice::Chosen(Language::English)
+            cx.global::<ResonateApp>().language == LanguageChoice::Chosen(Language::French)
         });
 
         let menus = driven.read(|_, cx| cx.get_menus()).expect("a menu bar");
         let names: Vec<_> = menus.iter().map(|menu| menu.name.to_string()).collect();
 
-        assert_eq!(resonate_words::spoken(), Language::English);
-        assert!(names.contains(&crate::words::app_menu::playback().to_owned()));
-        assert!(names.contains(&crate::words::app_menu::edit().to_owned()));
+        assert_eq!(resonate_words::spoken(), Language::French);
+        assert!(names.contains(&"Lecture".to_owned()));
+        assert!(names.contains(&"Édition".to_owned()));
     }
 
     #[gpui::test]

@@ -1,0 +1,10 @@
+hertz = { $hertz } Hz
+decibels = { $decibels } dB
+peak = Hauteur maximale
+low-shelf = Étagère basse
+high-shelf = Étagère haute
+low-pass = Passage inférieur
+high-pass = Passage haut
+notch = Notch
+band-pass = Carte de bande
+all-pass = Tous les passages

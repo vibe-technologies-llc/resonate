@@ -32,6 +32,10 @@ impl RootView {
                 words::root::enriching_hint(),
             )
             .flex()
+            .when(
+                resonate_words::spoken().is_right_to_left(),
+                Styled::flex_row_reverse,
+            )
             .items_center()
             .gap_2p5()
             .h(px(theme::sidebar_row()))
@@ -101,6 +105,10 @@ impl RootView {
             .group(PANE_GROUP)
             .relative()
             .flex()
+            .when(
+                resonate_words::spoken().is_right_to_left(),
+                Styled::flex_row_reverse,
+            )
             .items_center()
             .gap_2p5()
             .h(px(theme::sidebar_row()))

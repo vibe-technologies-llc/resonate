@@ -1,0 +1,1 @@
+decibels = { $decibels } dB

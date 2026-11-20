@@ -1,0 +1,2 @@
+listening = Écouter
+measuring = Mesure

@@ -15,8 +15,9 @@ the script to `AUDIO_EXTENSIONS`, to `APP_USER_MODEL_ID`, to the build script's 
 templates to the filler. PKGBUILD, RPM spec and Flatpak manifest all build the default-feature `resonate` binary plus
 desktop entry, icon, metainfo, man pages, completions. The `resonate*.1` man pages and completions
 come from the binary crate's build script, so a CLI change reaches every package with no second
-list; `resonate-config.toml.5`, the settings file's manual, is written by hand and installed from
-`packaging/` by each recipe (`every_package_installs_the_manual_of_the_settings_file`, and
+list; `resonate-config.toml.5`, the settings file's manual, is written by hand. The recipes call `install-manuals.sh` with Cargo’s
+output folder and the destination man directory. The installer uses the English pages at the root
+and installs each translation under its language tag (`every_package_installs_the_manual_of_the_settings_file`, and
 `binary.md` for what holds its keys in step). Desktop
 entry and metainfo `<provides>` are held to `MIME_TYPES` by tests (`binary.md`).
 
