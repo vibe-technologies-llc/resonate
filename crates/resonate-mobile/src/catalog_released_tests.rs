@@ -81,6 +81,7 @@ const STEPS_RELEASED: &[(&str, u64)] = &[
         0xb7adf00eee24582b,
     ),
     ("LYRICS_KEEP_HOW_FAR_AHEAD_THEY_RUN", 0xa37cc5c588536d00),
+    ("A_VERSION_IS_KEPT_BESIDE_ITS_SONG", 0xbc71afe39684696d),
 ];
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;

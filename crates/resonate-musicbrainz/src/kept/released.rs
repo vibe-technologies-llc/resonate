@@ -6,6 +6,10 @@ const STEPS_RELEASED: &[(&str, u64)] = &[
     ("V1", 0xddc7_6fa0_1522_807b),
     ("AN_ANSWERS_NUMBER_NEVER_GOES_BACK", 0x422a_1a27_329b_5e0a),
     ("AN_ANSWERS_AGE_IS_READ_OFF_AN_INDEX", 0x87e3_a7ac_598f_7241),
+    (
+        "A_LOOKUP_BY_ID_IS_ANSWERED_BY_ITS_OWN_ANSWER_ALONE",
+        0x3e14_8ca4_23cc_8d4e,
+    ),
 ];
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;

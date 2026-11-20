@@ -15,6 +15,7 @@ const STEPS_RELEASED: &[(&str, u64)] = &[
         0xa7c5_4a9d_b6d2_081c,
     ),
     ("UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS", 0x3c2c_a663_c83b_5864),
+    ("STAMPS_PAST_THE_BOUND_ARE_RESTAMPED", 0xd3c4_df7f_857e_0602),
 ];
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
