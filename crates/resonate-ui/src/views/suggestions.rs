@@ -436,30 +436,32 @@ impl RootView {
                 cx,
             ))
             .child(
-                kit::hero().child(kit::hero_art(sized, art)).child(
-                    div()
-                        .relative()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w(px(0.0))
-                        .gap_1()
-                        .child(kit::measures_the_hero(
-                            self.rooms.hero_height.clone(),
-                            hero,
-                            sized.laid_out(None),
-                        ))
-                        .child(kit::eyebrow(words::suggestions::suggestion_of(
-                            suggestion.reason.kind().name(),
-                        )))
-                        .child(kit::title(SharedString::from(suggestion.name.clone())))
-                        .child(kit::subtitle(SharedString::from(suggestion.reason.says())))
-                        .child(kit::figure(measured_shown(suggestion, shown)))
-                        .when(!reads.is_empty(), |column| {
-                            column.child(div().pt_1().child(listing::reads(&reads)))
-                        })
-                        .child(actions),
-                ),
+                kit::hero(self.rooms.hero_row.clone())
+                    .child(kit::hero_art(sized, art))
+                    .child(
+                        div()
+                            .relative()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w(px(0.0))
+                            .gap_1()
+                            .child(kit::measures_the_hero(
+                                self.rooms.hero_height.clone(),
+                                hero,
+                                sized.laid_out(),
+                            ))
+                            .child(kit::eyebrow(words::suggestions::suggestion_of(
+                                suggestion.reason.kind().name(),
+                            )))
+                            .child(kit::title(SharedString::from(suggestion.name.clone())))
+                            .child(kit::subtitle(SharedString::from(suggestion.reason.says())))
+                            .child(kit::figure(measured_shown(suggestion, shown)))
+                            .when(!reads.is_empty(), |column| {
+                                column.child(div().pt_1().child(listing::reads(&reads)))
+                            })
+                            .child(actions),
+                    ),
             );
 
         kit::pane()

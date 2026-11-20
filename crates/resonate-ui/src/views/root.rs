@@ -527,7 +527,7 @@ pub(crate) struct WindowScrolls {
 
 pub(crate) struct Rooms {
     pub(crate) grid_width: Rc<kit::GridWidth>,
-    pub(crate) hero_width: Rc<Cell<Pixels>>,
+    pub(crate) hero_row: Rc<Cell<Pixels>>,
     pub(crate) hero_height: Rc<Cell<kit::HeroMeasured>>,
     pub(crate) playing: Rc<Cell<Pixels>>,
     pub(crate) status: Rc<Cell<Pixels>>,

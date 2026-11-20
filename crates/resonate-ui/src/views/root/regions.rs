@@ -242,7 +242,7 @@ impl RootView {
         self.rooms
             .hero_height
             .get()
-            .side_for(of, theme::scope_cover())
+            .side_for(of, theme::scope_cover(), self.rooms.hero_row.get())
     }
 
     pub(crate) fn cover(&self, pictured: Pictured<'_>, cx: &mut Context<Self>) -> Div {

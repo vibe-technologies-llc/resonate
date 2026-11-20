@@ -1028,6 +1028,9 @@ impl RootView {
                 ))
             });
 
+        let hero = kit::hero_of((opened, &playlist_name, &under, &history));
+        let sized = self.hero_side(hero);
+
         let name_selector = div()
             .group("playlist-title")
             .flex()
@@ -1043,7 +1046,7 @@ impl RootView {
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.name_a_playlist(Naming::Rename(opened), window, cx);
                     }))
-                    .child(kit::hero_title(name, self.rooms.hero_width.get())),
+                    .child(kit::hero_title(name, sized.words_within())),
             )
             .child(
                 self.in_the_pane_ring(
@@ -1062,8 +1065,6 @@ impl RootView {
                 ),
             );
 
-        let hero = kit::hero_of((opened, &playlist_name, &under, &history));
-        let sized = self.hero_side(hero);
         let art = self.playlist_art(
             &playlist_name,
             named.as_ref().is_some_and(|named| named.query.is_some()),
@@ -1078,11 +1079,10 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .gap_1()
-            .child(kit::measures_its_width(self.rooms.hero_width.clone()))
             .child(kit::measures_the_hero(
                 self.rooms.hero_height.clone(),
                 hero,
-                sized.laid_out(Some(self.rooms.hero_width.get())),
+                sized.laid_out(),
             ))
             .child(kit::eyebrow(eyebrow))
             .child(name_selector)
@@ -1109,7 +1109,11 @@ impl RootView {
                 },
                 cx,
             )))
-            .child(kit::hero().child(kit::hero_art(sized, art)).child(about))
+            .child(
+                kit::hero(self.rooms.hero_row.clone())
+                    .child(kit::hero_art(sized, art))
+                    .child(about),
+            )
             .when(!reads.is_empty(), |pane| pane.child(listing::reads(&reads)))
             .when_some(naming, |pane, naming| {
                 pane.child(self.naming_row(naming, cx))

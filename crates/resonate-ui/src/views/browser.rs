@@ -2120,14 +2120,13 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .gap_1()
-            .child(kit::measures_its_width(self.rooms.hero_width.clone()))
             .child(kit::measures_the_hero(
                 self.rooms.hero_height.clone(),
                 hero,
-                sized.laid_out(Some(self.rooms.hero_width.get())),
+                sized.laid_out(),
             ))
             .child(kit::eyebrow(words::browser::album()))
-            .child(kit::hero_title(title, self.rooms.hero_width.get()))
+            .child(kit::hero_title(title, sized.words_within()))
             .when_some(owner, |column, (artist, name)| {
                 column.child(
                     div()
@@ -2178,9 +2177,11 @@ impl RootView {
                     }),
             );
 
-        kit::heading()
-            .child(self.way_back(cx))
-            .child(kit::hero().child(kit::hero_art(sized, cover)).child(about))
+        kit::heading().child(self.way_back(cx)).child(
+            kit::hero(self.rooms.hero_row.clone())
+                .child(kit::hero_art(sized, cover))
+                .child(about),
+        )
     }
 
     fn artist_page_heading(&self, id: ArtistId, cx: &mut Context<Self>) -> Div {
@@ -2222,7 +2223,7 @@ impl RootView {
             unheld,
             any_records > 0,
         ));
-        let sized = self.hero_side(hero);
+        let sized = self.hero_side(hero).once(around.artist_read == Some(id));
         let side = sized.side;
         let portrait = match self.library.update(cx, |library, cx| {
             library.portrait(id, Portrayed::OnThePage, cx)
@@ -2241,29 +2242,22 @@ impl RootView {
             .flex_1()
             .min_w(px(0.0))
             .gap_1()
-            .child(kit::measures_its_width(self.rooms.hero_width.clone()))
             .child(kit::measures_the_hero(
                 self.rooms.hero_height.clone(),
                 hero,
-                sized.laid_out(Some(self.rooms.hero_width.get())),
+                sized.laid_out(),
             ))
             .child(kit::eyebrow(words::browser::artist()))
             .child(kit::hero_title(
                 SharedString::from(name),
-                self.rooms.hero_width.get(),
+                sized.words_within(),
             ))
             .child(kit::subtitle(under))
             .when_some(profile, |column, profile| {
                 column.child(kit::subtitle(profile))
             })
             .when_some(
-                heard_on(
-                    self,
-                    "artist-heard-on",
-                    services,
-                    self.rooms.hero_width.get(),
-                    cx,
-                ),
+                heard_on(self, "artist-heard-on", services, sized.words_within(), cx),
                 Div::child,
             )
             .child(
@@ -2329,7 +2323,7 @@ impl RootView {
             );
 
         kit::heading().child(self.way_back(cx)).child(
-            kit::hero()
+            kit::hero(self.rooms.hero_row.clone())
                 .child(kit::hero_art(sized, portrait))
                 .child(about),
         )
@@ -4759,12 +4753,71 @@ mod tests {
             models::Selection,
             toast,
             views::{
+                kit,
                 menu::Menu,
                 reorder::{Listed, Shift},
                 root::{Deleting, Pane},
                 search::{SearchShows, TopEntry, TopRun},
             },
         };
+
+        #[gpui::test]
+        fn an_artists_picture_is_shown_only_at_the_side_its_page_settles_on(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            folder.tagged(
+                "short.wav",
+                1,
+                &[(b"INAM", "One"), (b"IART", "Air"), (b"IPRD", "Moon Safari")],
+            );
+            folder.tagged(
+                "long.wav",
+                1,
+                &[
+                    (b"INAM", "Two"),
+                    (
+                        b"IART",
+                        "An Artist Whose Name Runs Long Enough To Wrap Across The Title",
+                    ),
+                    (b"IPRD", "Another"),
+                ],
+            );
+            let library = Arc::new(Library::open_in_memory().expect("a catalog"));
+            Driven::scanned(&library, &folder);
+            let mut driven = Driven::open(cx, Arc::clone(&library));
+
+            for _ in 0..2 {
+                for at in 0..2 {
+                    driven
+                        .root
+                        .update(&mut driven.cx, |root, cx| root.set_pane(Pane::Artists, cx));
+                    driven.settle();
+                    let artist = driven
+                        .read(|root, cx| {
+                            root.library.read(cx).artists().get(at).map(|held| held.id)
+                        })
+                        .expect("an artist held");
+                    kit::HEROES_DRAWN.with_borrow_mut(Vec::clear);
+                    driven.root.update(&mut driven.cx, |root, cx| {
+                        root.opened(Selection::Artist(artist), cx);
+                    });
+                    driven.settle();
+
+                    let drawn = kit::HEROES_DRAWN.with_borrow(Clone::clone);
+                    let last = drawn.last().copied().expect("the page drawn");
+
+                    assert!(last.settled, "{drawn:?}");
+                    assert!(
+                        drawn
+                            .iter()
+                            .filter(|sized| sized.settled)
+                            .all(|sized| sized.side == last.side),
+                        "{drawn:?}"
+                    );
+                }
+            }
+        }
 
         const HEROES_TONIGHT: &str = "1a7d3b23-842a-4e57-8a8b-0f8b96a25f20";
         const HEROES_TONIGHT_RELEASE: &str = "d96b3b34-e52b-4f6a-bfa2-c52daddd64a1";

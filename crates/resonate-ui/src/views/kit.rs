@@ -1760,8 +1760,15 @@ pub(crate) fn way_back(
         )
 }
 
-pub(crate) fn hero() -> Div {
-    div().flex().items_end().gap_6()
+pub(crate) const HERO_GAP: f32 = 24.0;
+
+pub(crate) fn hero(row: Rc<Cell<Pixels>>) -> Div {
+    div()
+        .relative()
+        .flex()
+        .items_end()
+        .gap(px(HERO_GAP))
+        .child(measures_its_width(row))
 }
 
 pub(crate) fn hero_title(text: impl IntoElement + Spelt, room: Pixels) -> Stateful<Div> {
@@ -1837,50 +1844,62 @@ pub(crate) fn measures_the_grid(grid: Rc<GridWidth>) -> impl IntoElement {
 pub(crate) struct HeroMeasured {
     of: u64,
     laid_out: HeroLaidOut,
-    width: Pixels,
     height: Pixels,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct HeroLaidOut {
     side: f32,
-    wrapped_within: Option<Pixels>,
+    row: Pixels,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct HeroSide {
     pub(crate) side: f32,
     pub(crate) settled: bool,
+    row: Pixels,
 }
 
 impl HeroSide {
-    pub(crate) const fn laid_out(self, wrapped_within: Option<Pixels>) -> HeroLaidOut {
+    pub(crate) fn words_within(self) -> Pixels {
+        match self.row > px(0.0) {
+            true => (self.row - px(self.side + HERO_GAP)).max(px(0.0)),
+            false => px(0.0),
+        }
+    }
+
+    pub(crate) const fn laid_out(self) -> HeroLaidOut {
         HeroLaidOut {
             side: self.side,
-            wrapped_within,
+            row: self.row,
+        }
+    }
+
+    pub(crate) const fn once(self, landed: bool) -> Self {
+        Self {
+            settled: self.settled && landed,
+            ..self
         }
     }
 }
 
 impl HeroMeasured {
-    pub(crate) fn side_for(self, of: u64, unmeasured: f32) -> HeroSide {
+    pub(crate) fn side_for(self, of: u64, unmeasured: f32, row: Pixels) -> HeroSide {
         let measured = self.height > px(0.0);
         HeroSide {
             side: match measured {
                 true => self.height / px(1.0),
                 false => unmeasured,
             },
-            settled: measured && self.of == of && self.laid_out_as_it_measured(),
+            settled: measured && self.of == of && self.laid_out_as_it_measured(row),
+            row,
         }
     }
 
-    fn laid_out_as_it_measured(self) -> bool {
+    fn laid_out_as_it_measured(self, row: Pixels) -> bool {
         let drawn_at_its_height = px(self.laid_out.side) == self.height;
-        let wrapped_at_its_width = self
-            .laid_out
-            .wrapped_within
-            .is_none_or(|within| within == self.width);
-        drawn_at_its_height && wrapped_at_its_width
+        let wrapped_in_this_row = row > px(0.0) && self.laid_out.row == row;
+        drawn_at_its_height && wrapped_in_this_row
     }
 }
 
@@ -1900,7 +1919,6 @@ pub(crate) fn measures_the_hero(
             let now = HeroMeasured {
                 of,
                 laid_out,
-                width: bounds.size.width,
                 height: bounds.size.height,
             };
             if measured.get() != now {
@@ -1914,7 +1932,15 @@ pub(crate) fn measures_the_hero(
     .inset_0()
 }
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static HEROES_DRAWN: std::cell::RefCell<Vec<HeroSide>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
 pub(crate) fn hero_art(sized: HeroSide, art: impl IntoElement) -> Div {
+    #[cfg(test)]
+    HEROES_DRAWN.with_borrow_mut(|drawn| drawn.push(sized));
     div()
         .flex()
         .flex_none()
@@ -2170,42 +2196,43 @@ mod tests {
     use crate::views::spoken::{self, node_of};
 
     #[test]
-    fn a_hero_picture_waits_for_a_frame_laid_out_at_the_width_and_side_it_measured() {
+    fn a_hero_picture_waits_for_a_frame_drawn_at_the_height_it_measured_in_its_row() {
         let page = hero_of(("artist", 7));
-        let measured_at =
-            |side: f32, wrapped_within: Option<Pixels>, width: f32, height: f32| HeroMeasured {
-                of: page,
-                laid_out: HeroLaidOut {
-                    side,
-                    wrapped_within,
-                },
-                width: px(width),
-                height: px(height),
-            };
+        let row = px(900.0);
+        let measured_at = |side: f32, wrapped_in: Pixels, height: f32| HeroMeasured {
+            of: page,
+            laid_out: HeroLaidOut {
+                side,
+                row: wrapped_in,
+            },
+            height: px(height),
+        };
 
-        let wrapped_at_the_last_pages_width = measured_at(180.0, Some(px(640.0)), 520.0, 180.0);
-        let drawn_smaller_than_it_measured = measured_at(140.0, Some(px(520.0)), 520.0, 180.0);
-        let laid_out_as_measured = measured_at(180.0, Some(px(520.0)), 520.0, 180.0);
-        let nothing_wraps = measured_at(180.0, None, 520.0, 180.0);
+        let drawn_smaller_than_it_measured =
+            measured_at(140.0, row, 180.0).side_for(page, 120.0, row);
+        let wrapped_before_the_row_was_measured =
+            measured_at(180.0, px(0.0), 180.0).side_for(page, 120.0, row);
+        let laid_out_as_measured = measured_at(180.0, row, 180.0).side_for(page, 120.0, row);
+        let another_page =
+            measured_at(180.0, row, 180.0).side_for(hero_of(("album", 7)), 120.0, row);
 
-        assert!(
-            !wrapped_at_the_last_pages_width
-                .side_for(page, 120.0)
-                .settled
-        );
-        assert!(!drawn_smaller_than_it_measured.side_for(page, 120.0).settled);
-        assert!(laid_out_as_measured.side_for(page, 120.0).settled);
-        assert!(nothing_wraps.side_for(page, 120.0).settled);
-        assert!(
-            !laid_out_as_measured
-                .side_for(hero_of(("album", 7)), 120.0)
-                .settled
+        assert!(!drawn_smaller_than_it_measured.settled);
+        assert_eq!(drawn_smaller_than_it_measured.side, 180.0);
+        assert!(!wrapped_before_the_row_was_measured.settled);
+        assert!(laid_out_as_measured.settled);
+        assert!(!laid_out_as_measured.once(false).settled);
+        assert!(!another_page.settled);
+        assert!(!HeroMeasured::default().side_for(page, 120.0, row).settled);
+        assert_eq!(
+            laid_out_as_measured.words_within(),
+            px(900.0 - 180.0 - HERO_GAP)
         );
         assert_eq!(
-            drawn_smaller_than_it_measured.side_for(page, 120.0).side,
-            180.0
+            HeroMeasured::default()
+                .side_for(page, 120.0, px(0.0))
+                .words_within(),
+            px(0.0)
         );
-        assert!(!HeroMeasured::default().side_for(page, 120.0).settled);
     }
 
     #[cfg(not(target_os = "macos"))]
