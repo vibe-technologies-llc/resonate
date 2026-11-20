@@ -1520,15 +1520,31 @@ lyrics, the visualizer and the album, artist and playlist pages. The collection 
 draws nothing, so the app background behind it shows until the cover is sampled and its field fades
 in; it never opens on another colour first.
 
-- **The palette** (`Palette`, `Backdrop.palette` in `Artwork.swift`, off the main actor) is five
-  linear-sRGB colours with weights: a 32 by 32 sample of the cover in Oklab, k-means seeded by
-  lightness quantiles, six rounds. Near-black, near-white and grey pixels are dropped where at least
-  a third of the cover is vivid; a cover less than a sixteenth vivid (black, grey, white) is
-  clustered whole and keeps its own greys, its lightness held from 0.16 (`Palette.darkestGrey`) so a
-  black cover gives a near-black field; only a song without a cover takes the palette built around
-  the accent colour. A moving view whose cover is not yet sampled opens on that accent palette and crossfades to the cover's, never on black; the playing song's palette is sampled as soon as the song changes (`BackdropView.prepare`, through `NowPlayingOpening.prepare` from `Library.derive`, and again each time the scene becomes active), so Now Playing opens on its own field, and a moving view shows the palette remembered for its song (`PaletteMemory`) as soon as the song reaches it, before sampling the cover again. Each colour is held to
-  Oklab lightness 0.30 to 0.64 and chroma 0.07 to 0.19 (a grey stays grey), then pulled into gamut.
-  A superseded sample is dropped at once (cancellation is checked as soon as the cover arrives), so it never assigns the accent palette after a newer song's. Palettes are remembered per song and art revision, so a page opens on its field at once.
+- **The palette** (`Palette`, `Palette.sampled` in `Colour.swift`, `Backdrop.palette` in `Artwork.swift`, off the main actor) is five
+  linear-sRGB colours with weights: a 32 by 32 sample of the cover in Oklab, k-means seeded from the
+  median lightness and 98th-percentile farthest points in Oklab (catching real accents down to a few
+  percent of the cover while skipping isolated outlier specks), six rounds. Dark pixels are kept so
+  predominantly dark covers stay dark rather than lighting the whole screen with a small vivid logo;
+  only low-chroma near-white glare (`L >= 0.85`, chroma under `0.045`) is dropped where at least a
+  quarter of the cover is non-white and at least a sixteenth is vivid, while saturated yellows and
+  cyans at high lightness stay recognised as coloured. A cover less than a sixteenth vivid (black,
+  grey, white) is clustered whole and keeps its own greys. Lightness is compressed smoothly above a
+  knee rather than hard-clamped so bright covers keep tonal depth between blobs: coloured clusters
+  sit in `Palette.darkest` (`0.26`) to `Palette.lightest` (`0.54`) with chroma held to `0.055`–`0.17`,
+  and hueless clusters sit in `Palette.darkestGrey` (`0.14`) to `Palette.lightestGrey` (`0.42`) so
+  black covers stay near-black and white covers stay a dark neutral in dark mode, then pulled into
+  gamut. `BackdropTone.dark` (`0.08`, range `0.54`, chroma `0.95`, vignette `0.36`) and
+  `BackdropTone.light` (`0.58`, range `0.34`, chroma `0.62`, vignette `0.10`) hold every cover to
+  comfortable contrast against white in dark mode and black in light mode; only a song without a
+  cover takes the palette built around the accent colour. A moving view whose cover is not yet
+  sampled opens on that accent palette and crossfades to the cover's, never on black; the playing
+  song's palette is sampled as soon as the song changes (`BackdropView.prepare`, through
+  `NowPlayingOpening.prepare` from `Library.derive`, and again each time the scene becomes active),
+  so Now Playing opens on its own field, and a moving view shows the palette remembered for its song
+  (`PaletteMemory`) as soon as the song reaches it, before sampling the cover again. A superseded
+  sample is dropped at once (cancellation is checked as soon as the cover arrives), so it never
+  assigns the accent palette after a newer song's. Palettes are remembered per song and art revision,
+  so a page opens on its field at once.
 - **The shader** is Metal Shading Language in a Swift string (`BackdropShader.source`), compiled once
   per process with `makeLibrary(source:)` on a user-initiated task started in `ResonateApp.init` (`BackdropPipeline.prepare`), so the first page opens on the field rather than the gradient it falls back to while compiling (`BackdropPipeline`): the offline
   `metal` compiler in the SDK is an arm64 Mach-O that cannot run on the Linux host, so the package

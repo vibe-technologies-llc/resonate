@@ -52,15 +52,26 @@ public struct Palette: Sendable, Equatable {
         (-0.15, 0.1, 0.6),
         (0.5, -0.12, 0.75),
     ]
-    public static let darkest: Float = 0.3
-    public static let darkestGrey: Float = 0.16
-    private static let lightest: Float = 0.64
+    public static let darkest: Float = 0.26
+    public static let darkestGrey: Float = 0.14
+    public static let lightest: Float = 0.54
+    public static let lightestGrey: Float = 0.42
     private static let hueless: Float = 0.015
-    private static let dullest: Float = 0.07
-    private static let richest: Float = 0.19
-    private static let chromaLift: Float = 1.2
+    private static let dullest: Float = 0.055
+    private static let richest: Float = 0.17
+    private static let chromaLift: Float = 1.12
+    private static let compressionKneeShare: Float = 0.55
+    private static let compressionCurve: Float = 1.6
     private static let gamutSteps = 12
     private static let gamutShrink: Float = 0.88
+    private static let whiteGlareLightness: Float = 0.85
+    private static let whiteGlareChroma: Float = 0.045
+    private static let vividChroma: Float = 0.035
+    private static let colourlessBelowOneIn = 16
+    private static let keepNonWhiteFromOneIn = 4
+    private static let smallestWeight: Float = 0.06
+    private static let clusteringRounds = 6
+    private static let seedPercentile = 98
 
     public let colours: [SIMD3<Float>]
     public let weights: [Float]
@@ -68,6 +79,18 @@ public struct Palette: Sendable, Equatable {
     private init(colours: [SIMD3<Float>], weights: [Float]) {
         self.colours = colours
         self.weights = weights
+    }
+
+    public static func sampled(from pixels: [SIMD3<Float>]) -> Palette? {
+        guard !pixels.isEmpty else { return nil }
+        let vivid = pixels.filter(isVivid)
+
+        guard vivid.count * colourlessBelowOneIn >= pixels.count else {
+            return shaped(clustered(pixels), smallestWeight: smallestWeight, darkest: darkestGrey)
+        }
+        let nonWhite = pixels.filter { !isWhiteGlare($0) }
+        let chosen = nonWhite.count * keepNonWhiteFromOneIn >= pixels.count ? nonWhite : pixels
+        return shaped(clustered(chosen), smallestWeight: smallestWeight)
     }
 
     public static func around(accent: SIMD3<Float>) -> Palette {
@@ -104,11 +127,70 @@ public struct Palette: Sendable, Equatable {
         )
     }
 
+    private static func isWhiteGlare(_ lab: SIMD3<Float>) -> Bool {
+        lab.x >= whiteGlareLightness && Oklab.chroma(of: lab) < whiteGlareChroma
+    }
+
+    private static func isVivid(_ lab: SIMD3<Float>) -> Bool {
+        !isWhiteGlare(lab) && Oklab.chroma(of: lab) >= vividChroma
+    }
+
+    private static func clustered(_ points: [SIMD3<Float>]) -> [(centre: SIMD3<Float>, members: Int)] {
+        let byLightness = points.sorted { $0.x < $1.x }
+        var centres = [byLightness[byLightness.count / 2]]
+        var distances = byLightness.map { distanceSquared($0, centres[0]) }
+        let target = min(byLightness.count * seedPercentile / 100, byLightness.count - 1)
+
+        while centres.count < size {
+            let order = distances.indices.sorted { distances[$0] < distances[$1] }
+            let chosen = byLightness[order[target]]
+            centres.append(chosen)
+            for index in byLightness.indices {
+                distances[index] = min(distances[index], distanceSquared(byLightness[index], chosen))
+            }
+        }
+        var members = [Int](repeating: 0, count: size)
+
+        for _ in 0..<clusteringRounds {
+            var sums = [SIMD3<Float>](repeating: .zero, count: size)
+            members = [Int](repeating: 0, count: size)
+            for point in points {
+                let nearest = nearestCentre(to: point, among: centres)
+                sums[nearest] += point
+                members[nearest] += 1
+            }
+            for index in 0..<size where members[index] > 0 {
+                centres[index] = sums[index] / Float(members[index])
+            }
+        }
+        return zip(centres, members).map { (centre: $0, members: $1) }
+    }
+
+    private static func nearestCentre(to point: SIMD3<Float>, among centres: [SIMD3<Float>]) -> Int {
+        centres.indices.min { distanceSquared(point, centres[$0]) < distanceSquared(point, centres[$1]) } ?? 0
+    }
+
+    private static func distanceSquared(_ first: SIMD3<Float>, _ second: SIMD3<Float>) -> Float {
+        let difference = first - second
+        return difference.x * difference.x + difference.y * difference.y + difference.z * difference.z
+    }
+
+    private static func compressedLightness(_ lightness: Float, floor: Float, ceiling: Float) -> Float {
+        guard lightness > floor else { return floor }
+        let knee = floor + (ceiling - floor) * compressionKneeShare
+        guard lightness > knee else { return lightness }
+        let share = (min(lightness, 1) - knee) / (1 - knee)
+        return knee + (ceiling - knee) * (1 - Float(pow(Double(1 - share), Double(compressionCurve))))
+    }
+
     private static func richened(_ lab: SIMD3<Float>, darkest floor: Float = darkest) -> SIMD3<Float> {
         let chroma = (lab.y * lab.y + lab.z * lab.z).squareRoot()
         let hue = Float(atan2(Double(lab.z), Double(lab.y)))
-        let lightness = min(max(lab.x, floor), lightest)
-        var fitted = chroma < hueless ? chroma : min(max(chroma * chromaLift, dullest), richest)
+        let neutral = chroma < hueless
+        let effectiveFloor = neutral ? min(floor, darkestGrey) : floor
+        let effectiveCeiling = neutral ? lightestGrey : lightest
+        let lightness = compressedLightness(lab.x, floor: effectiveFloor, ceiling: effectiveCeiling)
+        var fitted = neutral ? chroma : min(max(chroma * chromaLift, dullest), richest)
 
         for _ in 0..<gamutSteps {
             let linear = Oklab.linear(fromLab: Oklab.polar(lightness: lightness, chroma: fitted, hue: hue))
@@ -121,8 +203,8 @@ public struct Palette: Sendable, Equatable {
 }
 
 public struct BackdropTone: Equatable, Sendable {
-    public static let dark = BackdropTone(lightnessFloor: 0.06, lightnessRange: 0.74, chroma: 1, vignette: 0.32)
-    public static let light = BackdropTone(lightnessFloor: 0.52, lightnessRange: 0.4, chroma: 0.7, vignette: 0.12)
+    public static let dark = BackdropTone(lightnessFloor: 0.08, lightnessRange: 0.54, chroma: 0.95, vignette: 0.36)
+    public static let light = BackdropTone(lightnessFloor: 0.58, lightnessRange: 0.34, chroma: 0.62, vignette: 0.10)
 
     public let lightnessFloor: Float
     public let lightnessRange: Float

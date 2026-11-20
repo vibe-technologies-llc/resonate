@@ -1,6 +1,5 @@
 import ResonateLogic
 import ResonateNative
-import simd
 import SwiftUI
 import UIKit
 
@@ -244,14 +243,7 @@ enum ShownArtwork {
 
 enum Backdrop {
     private static let sampleEdge = 32
-    private static let rounds = 6
     private static let opaqueEnough: UInt8 = 128
-    private static let blackest: Float = 0.18
-    private static let whitest: Float = 0.93
-    private static let greyest: Float = 0.035
-    private static let colourlessBelowOneIn = 16
-    private static let vividOnlyFromOneIn = 3
-    private static let smallestWeight: Float = 0.06
     private static let linearOfByte: [Float] = (0...255).map { byte in
         let encoded = Float(byte) / 255
         return encoded <= 0.04045 ? encoded / 12.92 : Float(pow((Double(encoded) + 0.055) / 1.055, 2.4))
@@ -262,22 +254,7 @@ enum Backdrop {
     }
 
     private static func sampled(_ image: UIImage) -> Palette? {
-        guard let pixels = labPixels(of: image), !pixels.isEmpty else { return nil }
-        let vivid = pixels.filter(isVivid)
-
-        guard vivid.count * colourlessBelowOneIn >= pixels.count else {
-            return Palette.shaped(clustered(pixels), smallestWeight: smallestWeight, darkest: Palette.darkestGrey)
-        }
-        let chosen = vivid.count * vividOnlyFromOneIn >= pixels.count ? vivid : pixels.filter(isMidtone)
-        return Palette.shaped(clustered(chosen), smallestWeight: smallestWeight)
-    }
-
-    private static func isMidtone(_ lab: SIMD3<Float>) -> Bool {
-        lab.x > blackest && lab.x < whitest
-    }
-
-    private static func isVivid(_ lab: SIMD3<Float>) -> Bool {
-        isMidtone(lab) && Oklab.chroma(of: lab) >= greyest
+        labPixels(of: image).flatMap(Palette.sampled(from:))
     }
 
     private static func labPixels(of image: UIImage) -> [SIMD3<Float>]? {
@@ -315,32 +292,6 @@ enum Backdrop {
 
     private static func unpremultiplied(_ channel: UInt8, _ alpha: UInt8) -> Int {
         min(Int(channel) * 255 / Int(alpha), 255)
-    }
-
-    private static func clustered(_ points: [SIMD3<Float>]) -> [(centre: SIMD3<Float>, members: Int)] {
-        let byLightness = points.sorted { $0.x < $1.x }
-        var centres = (0..<Palette.size).map { index in
-            byLightness[min((2 * index + 1) * byLightness.count / (2 * Palette.size), byLightness.count - 1)]
-        }
-        var members = [Int](repeating: 0, count: Palette.size)
-
-        for _ in 0..<rounds {
-            var sums = [SIMD3<Float>](repeating: .zero, count: Palette.size)
-            members = [Int](repeating: 0, count: Palette.size)
-            for point in points {
-                let nearest = nearestCentre(to: point, among: centres)
-                sums[nearest] += point
-                members[nearest] += 1
-            }
-            for index in 0..<Palette.size where members[index] > 0 {
-                centres[index] = sums[index] / Float(members[index])
-            }
-        }
-        return zip(centres, members).map { (centre: $0, members: $1) }
-    }
-
-    private static func nearestCentre(to point: SIMD3<Float>, among centres: [SIMD3<Float>]) -> Int {
-        centres.indices.min { simd_distance_squared(point, centres[$0]) < simd_distance_squared(point, centres[$1]) } ?? 0
     }
 }
 
