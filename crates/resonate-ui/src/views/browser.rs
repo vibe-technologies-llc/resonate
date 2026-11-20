@@ -2121,7 +2121,11 @@ impl RootView {
             .min_w(px(0.0))
             .gap_1()
             .child(kit::measures_its_width(self.rooms.hero_width.clone()))
-            .child(kit::measures_the_hero(self.rooms.hero_height.clone(), hero))
+            .child(kit::measures_the_hero(
+                self.rooms.hero_height.clone(),
+                hero,
+                sized.laid_out(Some(self.rooms.hero_width.get())),
+            ))
             .child(kit::eyebrow(words::browser::album()))
             .child(kit::hero_title(title, self.rooms.hero_width.get()))
             .when_some(owner, |column, (artist, name)| {
@@ -2238,7 +2242,11 @@ impl RootView {
             .min_w(px(0.0))
             .gap_1()
             .child(kit::measures_its_width(self.rooms.hero_width.clone()))
-            .child(kit::measures_the_hero(self.rooms.hero_height.clone(), hero))
+            .child(kit::measures_the_hero(
+                self.rooms.hero_height.clone(),
+                hero,
+                sized.laid_out(Some(self.rooms.hero_width.get())),
+            ))
             .child(kit::eyebrow(words::browser::artist()))
             .child(kit::hero_title(
                 SharedString::from(name),

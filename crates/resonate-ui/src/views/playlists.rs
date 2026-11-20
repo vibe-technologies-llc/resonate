@@ -1079,7 +1079,11 @@ impl RootView {
             .min_w(px(0.0))
             .gap_1()
             .child(kit::measures_its_width(self.rooms.hero_width.clone()))
-            .child(kit::measures_the_hero(self.rooms.hero_height.clone(), hero))
+            .child(kit::measures_the_hero(
+                self.rooms.hero_height.clone(),
+                hero,
+                sized.laid_out(Some(self.rooms.hero_width.get())),
+            ))
             .child(kit::eyebrow(eyebrow))
             .child(name_selector)
             .child(kit::subtitle(under))

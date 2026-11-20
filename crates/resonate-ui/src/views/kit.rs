@@ -1836,13 +1836,30 @@ pub(crate) fn measures_the_grid(grid: Rc<GridWidth>) -> impl IntoElement {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct HeroMeasured {
     of: u64,
+    laid_out: HeroLaidOut,
+    width: Pixels,
     height: Pixels,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct HeroLaidOut {
+    side: f32,
+    wrapped_within: Option<Pixels>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct HeroSide {
     pub(crate) side: f32,
     pub(crate) settled: bool,
+}
+
+impl HeroSide {
+    pub(crate) const fn laid_out(self, wrapped_within: Option<Pixels>) -> HeroLaidOut {
+        HeroLaidOut {
+            side: self.side,
+            wrapped_within,
+        }
+    }
 }
 
 impl HeroMeasured {
@@ -1853,8 +1870,17 @@ impl HeroMeasured {
                 true => self.height / px(1.0),
                 false => unmeasured,
             },
-            settled: measured && self.of == of,
+            settled: measured && self.of == of && self.laid_out_as_it_measured(),
         }
+    }
+
+    fn laid_out_as_it_measured(self) -> bool {
+        let drawn_at_its_height = px(self.laid_out.side) == self.height;
+        let wrapped_at_its_width = self
+            .laid_out
+            .wrapped_within
+            .is_none_or(|within| within == self.width);
+        drawn_at_its_height && wrapped_at_its_width
     }
 }
 
@@ -1864,11 +1890,17 @@ pub(crate) fn hero_of(says: impl Hash) -> u64 {
     hasher.finish()
 }
 
-pub(crate) fn measures_the_hero(measured: Rc<Cell<HeroMeasured>>, of: u64) -> impl IntoElement {
+pub(crate) fn measures_the_hero(
+    measured: Rc<Cell<HeroMeasured>>,
+    of: u64,
+    laid_out: HeroLaidOut,
+) -> impl IntoElement {
     canvas(
         move |bounds, window, _| {
             let now = HeroMeasured {
                 of,
+                laid_out,
+                width: bounds.size.width,
                 height: bounds.size.height,
             };
             if measured.get() != now {
@@ -2136,6 +2168,45 @@ impl<E: InteractiveElement> Found for E {}
 mod tests {
     use super::*;
     use crate::views::spoken::{self, node_of};
+
+    #[test]
+    fn a_hero_picture_waits_for_a_frame_laid_out_at_the_width_and_side_it_measured() {
+        let page = hero_of(("artist", 7));
+        let measured_at =
+            |side: f32, wrapped_within: Option<Pixels>, width: f32, height: f32| HeroMeasured {
+                of: page,
+                laid_out: HeroLaidOut {
+                    side,
+                    wrapped_within,
+                },
+                width: px(width),
+                height: px(height),
+            };
+
+        let wrapped_at_the_last_pages_width = measured_at(180.0, Some(px(640.0)), 520.0, 180.0);
+        let drawn_smaller_than_it_measured = measured_at(140.0, Some(px(520.0)), 520.0, 180.0);
+        let laid_out_as_measured = measured_at(180.0, Some(px(520.0)), 520.0, 180.0);
+        let nothing_wraps = measured_at(180.0, None, 520.0, 180.0);
+
+        assert!(
+            !wrapped_at_the_last_pages_width
+                .side_for(page, 120.0)
+                .settled
+        );
+        assert!(!drawn_smaller_than_it_measured.side_for(page, 120.0).settled);
+        assert!(laid_out_as_measured.side_for(page, 120.0).settled);
+        assert!(nothing_wraps.side_for(page, 120.0).settled);
+        assert!(
+            !laid_out_as_measured
+                .side_for(hero_of(("album", 7)), 120.0)
+                .settled
+        );
+        assert_eq!(
+            drawn_smaller_than_it_measured.side_for(page, 120.0).side,
+            180.0
+        );
+        assert!(!HeroMeasured::default().side_for(page, 120.0).settled);
+    }
 
     #[cfg(not(target_os = "macos"))]
     struct Names {

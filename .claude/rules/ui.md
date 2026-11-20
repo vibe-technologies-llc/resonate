@@ -814,8 +814,14 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
     hero, so a page opened on the height another page left, or whose lines landed since (an
     artist's profile, genres and services arrive after the page opens), drew its picture small and
     grew it a frame later. A `kit::HeroMeasured` keeps the height with the `kit::hero_of` of what
-    the column says (the page's id and its lines), and `kit::hero_art` holds the picture unseen,
-    in its place, until `HeroSide::settled` says the height is the one measured for those words.
+    the column says (the page's id and its lines) and the `kit::HeroLaidOut` the measured frame
+    was built with: the side it drew the picture at and the width its title and services wrapped
+    within (`HeroSide::laid_out`; none for a suggestion, whose words wrap at no measured width).
+    `kit::hero_art` holds the picture unseen, in its place, until `HeroSide::settled` says the
+    height was measured for those words in a frame that drew the picture at that height and wrapped
+    at the width it measured: the width is the other page's, or moves as the picture's side does,
+    so a frame wrapped at it measured a height the next frame rewraps away
+    (`a_hero_picture_waits_for_a_frame_laid_out_at_the_width_and_side_it_measured`).
   - Action row = the column's last child: Play, Shuffle (album, artist), favourite, a sort icon where
     the listing sorts. Shuffle begins at a time-chosen row and enables queue shuffle
     (`RootView::play_shuffled`). **Play plays in order**: every whole-list Play sends
