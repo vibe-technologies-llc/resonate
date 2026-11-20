@@ -233,7 +233,7 @@ serde_json = { version = "1.0.154", default-features = false, features = ["std"]
 serde-saphyr = { version = "2.2.0", default-features = false, features = ["deserialize"] }
 
 zbus = {
-    version = "6.3.0",
+    version = "6.4.0",
     default-features = false,
     features = ["default-rt", "proxy", "service"]
 }
@@ -273,7 +273,7 @@ tracing-subscriber = {
 clap_complete = { version = "4.6.12", default-features = false }
 clap_mangen = { version = "0.3.4", default-features = false }
 clap = {
-    version = "4.6.8",
+    version = "4.6.9",
     default-features = false,
     features = [
         "std",

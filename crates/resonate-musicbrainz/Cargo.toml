@@ -12,7 +12,7 @@ doctest = false
 download = ["dep:resonate-fetch", "dep:sha2", "dep:ureq"]
 
 [dependencies]
-mibz2 = { version = "0.5.6", default-features = false }
+mibz2 = { version = "0.5.7", default-features = false }
 parking_lot.workspace = true
 resonate-core.workspace = true
 resonate-fetch = { workspace = true, optional = true }
