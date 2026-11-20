@@ -1,6 +1,6 @@
 use gpui::{
-    AnyElement, Context, Div, MouseButton, Role, SharedString, Stateful, Window, div, prelude::*,
-    px, rgb,
+    AnyElement, Context, Div, MouseButton, Pixels, Role, SharedString, Stateful, Window, div,
+    prelude::*, px, rgb,
 };
 use resonate_core::AlbumId;
 
@@ -238,11 +238,8 @@ impl RootView {
         }
     }
 
-    pub(crate) fn hero_side(&self, of: u64) -> kit::HeroSide {
-        self.rooms
-            .hero_height
-            .get()
-            .side_for(of, theme::scope_cover(), self.rooms.hero_row.get())
+    pub(crate) fn hero_words_within(&self) -> Pixels {
+        kit::hero_words_within(self.rooms.hero_row.get())
     }
 
     pub(crate) fn cover(&self, pictured: Pictured<'_>, cx: &mut Context<Self>) -> Div {

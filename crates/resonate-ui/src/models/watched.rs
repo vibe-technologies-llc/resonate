@@ -681,7 +681,6 @@ pub(super) fn browsed(
             })?,
             None => Vec::new(),
         },
-        artist_read: artist,
         artist_totals: match artist {
             Some(artist) => library.artist_totals(artist)?,
             None => ArtistTotals::default(),

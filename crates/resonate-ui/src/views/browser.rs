@@ -2082,11 +2082,10 @@ impl RootView {
         let record = record.map(drop).or(findable.then_some(()));
         let favourite = library.favoured_album(id);
         let has_missing_tracks = album.is_some_and(|album| album.missing > 0);
-        let hero = kit::hero_of((id, &title, owner.as_ref().map(|(_, name)| name), &under));
-        let sized = self.hero_side(hero);
+        let words_within = self.hero_words_within();
 
         let cover = self.in_the_pane_ring(
-            self.cover_sized(Pictured::Album(id), Drawn::OnThePage, sized.side, cx)
+            self.cover_sized(Pictured::Album(id), Drawn::OnThePage, kit::hero_side(), cx)
                 .id("magnify-scoped-cover")
                 .said_as(Role::Button, words::transport::cover_hint())
                 .cursor_pointer()
@@ -2114,19 +2113,13 @@ impl RootView {
         );
 
         let about = div()
-            .relative()
             .flex()
             .flex_col()
             .flex_1()
             .min_w(px(0.0))
             .gap_1()
-            .child(kit::measures_the_hero(
-                self.rooms.hero_height.clone(),
-                hero,
-                sized.laid_out(),
-            ))
             .child(kit::eyebrow(words::browser::album()))
-            .child(kit::hero_title(title, sized.words_within()))
+            .child(kit::hero_title(title, words_within))
             .when_some(owner, |column, (artist, name)| {
                 column.child(
                     div()
@@ -2179,7 +2172,7 @@ impl RootView {
 
         kit::heading().child(self.way_back(cx)).child(
             kit::hero(self.rooms.hero_row.clone())
-                .child(kit::hero_art(sized, cover))
+                .child(kit::hero_art(cover))
                 .child(about),
         )
     }
@@ -2213,51 +2206,32 @@ impl RootView {
         let tracks = library.listed().rows as usize;
         let shows = self.shows.artist.within(any_records);
 
-        let hero = kit::hero_of((
-            id,
-            &name,
-            &under,
-            &profile,
-            &services,
-            genres.is_empty(),
-            unheld,
-            any_records > 0,
-        ));
-        let sized = self.hero_side(hero).once(around.artist_read == Some(id));
-        let side = sized.side;
+        let words_within = self.hero_words_within();
+        let side = kit::hero_side();
         let portrait = match self.library.update(cx, |library, cx| {
             library.portrait(id, Portrayed::OnThePage, cx)
         }) {
             Some(art) => portrait_frame(art, side).into_any_element(),
             None => kit::avatar(&name, true)
                 .size(px(side))
-                .text_size(px(side * theme::text_title() * 1.6 / theme::scope_cover()))
+                .text_size(px(theme::text_title() * 1.6))
                 .into_any_element(),
         };
 
         let about = div()
-            .relative()
             .flex()
             .flex_col()
             .flex_1()
             .min_w(px(0.0))
             .gap_1()
-            .child(kit::measures_the_hero(
-                self.rooms.hero_height.clone(),
-                hero,
-                sized.laid_out(),
-            ))
             .child(kit::eyebrow(words::browser::artist()))
-            .child(kit::hero_title(
-                SharedString::from(name),
-                sized.words_within(),
-            ))
+            .child(kit::hero_title(SharedString::from(name), words_within))
             .child(kit::subtitle(under))
             .when_some(profile, |column, profile| {
                 column.child(kit::subtitle(profile))
             })
             .when_some(
-                heard_on(self, "artist-heard-on", services, sized.words_within(), cx),
+                heard_on(self, "artist-heard-on", services, words_within, cx),
                 Div::child,
             )
             .child(
@@ -2324,7 +2298,7 @@ impl RootView {
 
         kit::heading().child(self.way_back(cx)).child(
             kit::hero(self.rooms.hero_row.clone())
-                .child(kit::hero_art(sized, portrait))
+                .child(kit::hero_art(portrait))
                 .child(about),
         )
     }
@@ -4762,7 +4736,7 @@ mod tests {
         };
 
         #[gpui::test]
-        fn an_artists_picture_is_shown_only_at_the_side_its_page_settles_on(
+        fn an_artists_picture_stands_at_its_side_from_the_first_frame_its_page_draws(
             cx: &mut TestAppContext,
         ) {
             let folder = Folder::new();
@@ -4786,36 +4760,34 @@ mod tests {
             let library = Arc::new(Library::open_in_memory().expect("a catalog"));
             Driven::scanned(&library, &folder);
             let mut driven = Driven::open(cx, Arc::clone(&library));
+            let side = gpui::px(kit::hero_side());
 
-            for _ in 0..2 {
-                for at in 0..2 {
-                    driven
-                        .root
-                        .update(&mut driven.cx, |root, cx| root.set_pane(Pane::Artists, cx));
-                    driven.settle();
-                    let artist = driven
-                        .read(|root, cx| {
-                            root.library.read(cx).artists().get(at).map(|held| held.id)
-                        })
-                        .expect("an artist held");
-                    kit::HEROES_DRAWN.with_borrow_mut(Vec::clear);
-                    driven.root.update(&mut driven.cx, |root, cx| {
-                        root.opened(Selection::Artist(artist), cx);
-                    });
-                    driven.settle();
+            for at in [0, 1, 0] {
+                driven
+                    .root
+                    .update(&mut driven.cx, |root, cx| root.set_pane(Pane::Artists, cx));
+                driven.settle();
+                let artist = driven
+                    .read(|root, cx| root.library.read(cx).artists().get(at).map(|held| held.id))
+                    .expect("an artist held");
 
-                    let drawn = kit::HEROES_DRAWN.with_borrow(Clone::clone);
-                    let last = drawn.last().copied().expect("the page drawn");
+                driven.root.update(&mut driven.cx, |root, cx| {
+                    root.opened(Selection::Artist(artist), cx);
+                });
+                driven.cx.update(|window, cx| window.draw(cx).clear(cx));
+                let first = driven.cx.debug_bounds(kit::HERO_ART);
+                driven.settle();
+                let settled = driven.cx.debug_bounds(kit::HERO_ART);
 
-                    assert!(last.settled, "{drawn:?}");
-                    assert!(
-                        drawn
-                            .iter()
-                            .filter(|sized| sized.settled)
-                            .all(|sized| sized.side == last.side),
-                        "{drawn:?}"
-                    );
-                }
+                assert_eq!(first.map(|drawn| drawn.size), Some(gpui::size(side, side)));
+                assert_eq!(
+                    settled.map(|drawn| drawn.size),
+                    Some(gpui::size(side, side))
+                );
+                assert_eq!(
+                    first.map(|drawn| drawn.origin.x),
+                    settled.map(|drawn| drawn.origin.x)
+                );
             }
         }
 

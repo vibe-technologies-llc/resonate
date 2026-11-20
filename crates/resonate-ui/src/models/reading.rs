@@ -383,7 +383,6 @@ impl LibraryModel {
         self.detail.album = browsed.album;
         self.landed.around = Some(AroundTheRows {
             artist: browsed.artist,
-            artist_read: browsed.artist_read,
             records: browsed.artist_albums.into(),
             totals: browsed.artist_totals,
             sung: browsed.sung,

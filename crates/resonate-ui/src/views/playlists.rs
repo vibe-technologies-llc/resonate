@@ -1028,8 +1028,7 @@ impl RootView {
                 ))
             });
 
-        let hero = kit::hero_of((opened, &playlist_name, &under, &history));
-        let sized = self.hero_side(hero);
+        let words_within = self.hero_words_within();
 
         let name_selector = div()
             .group("playlist-title")
@@ -1046,7 +1045,7 @@ impl RootView {
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.name_a_playlist(Naming::Rename(opened), window, cx);
                     }))
-                    .child(kit::hero_title(name, sized.words_within())),
+                    .child(kit::hero_title(name, words_within)),
             )
             .child(
                 self.in_the_pane_ring(
@@ -1069,21 +1068,15 @@ impl RootView {
             &playlist_name,
             named.as_ref().is_some_and(|named| named.query.is_some()),
             &albums,
-            sized.side,
+            kit::hero_side(),
             cx,
         );
         let about = div()
-            .relative()
             .flex()
             .flex_col()
             .flex_1()
             .min_w(px(0.0))
             .gap_1()
-            .child(kit::measures_the_hero(
-                self.rooms.hero_height.clone(),
-                hero,
-                sized.laid_out(),
-            ))
             .child(kit::eyebrow(eyebrow))
             .child(name_selector)
             .child(kit::subtitle(under))
@@ -1111,7 +1104,7 @@ impl RootView {
             )))
             .child(
                 kit::hero(self.rooms.hero_row.clone())
-                    .child(kit::hero_art(sized, art))
+                    .child(kit::hero_art(art))
                     .child(about),
             )
             .when(!reads.is_empty(), |pane| pane.child(listing::reads(&reads)))

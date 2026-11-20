@@ -389,9 +389,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let playing = self.playing_now(cx).track;
-        let hero = kit::hero_of((&suggestion.name, &suggestion.query.text, tracks.len()));
-        let sized = self.hero_side(hero);
-        let art = self.suggestion_art(suggestion, sized.side, Drawn::OnThePage, cx);
+        let art = self.suggestion_art(suggestion, kit::hero_side(), Drawn::OnThePage, cx);
         let reads = suggestion
             .query
             .text
@@ -437,20 +435,14 @@ impl RootView {
             ))
             .child(
                 kit::hero(self.rooms.hero_row.clone())
-                    .child(kit::hero_art(sized, art))
+                    .child(kit::hero_art(art))
                     .child(
                         div()
-                            .relative()
                             .flex()
                             .flex_col()
                             .flex_1()
                             .min_w(px(0.0))
                             .gap_1()
-                            .child(kit::measures_the_hero(
-                                self.rooms.hero_height.clone(),
-                                hero,
-                                sized.laid_out(),
-                            ))
                             .child(kit::eyebrow(words::suggestions::suggestion_of(
                                 suggestion.reason.kind().name(),
                             )))

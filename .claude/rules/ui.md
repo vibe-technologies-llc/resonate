@@ -803,29 +803,21 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
     at least and `kit::heading_row` wraps (`kit::actions`: `flex_wrap`, `max_w_full`, pushed right),
     so a long name is not ground to a letter and no action is pushed off.
   - **An album or artist is not a pane heading with a picture bolted on**: `album_page_heading` and
-    `artist_page_heading` = `kit::way_back` top left and a `kit::hero` under it. Cover, portrait or
-    opened suggestion's art is a square of the text column's own height at `Drawn::OnThePage`; column
-    = eyebrow, `kit::hero_title` at `text_title`, lines about it, bottom-aligned. The column's
-    height is read a frame behind by an absolute canvas (`kit::measures_the_hero` into
-    `Rooms::hero_height` via `hero_side`); its width is never measured: `kit::hero` measures the
-    whole row into `Rooms::hero_row`, which no side moves, and the title and the services wrap
-    within that row less the picture and `kit::HERO_GAP` (`HeroSide::words_within`, taken by
-    `kit::hero_title` and `kit::wraps_within`, since what wraps must be told its width). A column
-    that wrapped at a width measured a frame behind swung its height up and down as the picture
-    grew and its words rewrapped; wrapped within the row, a larger side only ever lengthens the
-    column, so the side climbs once to where it holds. Until the row is measured the cover uses
-    `scope_cover` and the title is one line ending in an ellipsis. **The picture is shown only at
-    the side its page settles on**: one cell serves every hero, so a page opened on the height
-    another page left, or whose lines landed since, drew its picture small and grew it a frame
-    later. A `kit::HeroMeasured` keeps the height with the `kit::hero_of` of what the column says
-    (the page's id and its lines) and the `kit::HeroLaidOut` it was drawn with (the picture's side
-    and the row its words wrapped within, `HeroSide::laid_out`), and `kit::hero_art` holds the
-    picture unseen, in its place, until `HeroSide::settled` says the height was measured for those
-    words in a frame that drew the picture at that height within this row. An artist's page also
-    waits for its own read (`HeroSide::once` over `AroundTheRows::artist_read`, the artist the
-    read that landed was for), since until it lands the lines are the last page's
-    (`a_hero_picture_waits_for_a_frame_drawn_at_the_height_it_measured_in_its_row`,
-    `an_artists_picture_is_shown_only_at_the_side_its_page_settles_on`).
+    `artist_page_heading` = `kit::way_back` top left and a `kit::hero` under it: the cover,
+    portrait or opened suggestion's art in `kit::hero_art`, and beside it a column of eyebrow,
+    `kit::hero_title` at `text_title` and lines about it, bottom-aligned. **The picture is one
+    fixed square, `kit::hero_side`** (`scope_cover`, the side it is decoded at for
+    `Drawn::OnThePage`, so it grows with the text size), never the column's height: gpui computes
+    a layout only in prepaint, after the heading's height is fixed, so a picture sized to the
+    words beside it was measured a frame behind and either drew small and grew, or slid the
+    column across as it settled, whatever held it back. A taller column stands higher than the
+    picture, its foot level with the picture's. What wraps must be told its width, and the column's
+    width is the row's less the picture: `kit::hero` measures the whole row into `Rooms::hero_row`,
+    which no page moves, and `RootView::hero_words_within` (`kit::hero_words_within`, the row less
+    `hero_side` and `kit::HERO_GAP`) is what `kit::hero_title` and the services'
+    `kit::wraps_within` take; until the row is first measured the title is one line ending in an
+    ellipsis (`a_heros_words_wrap_within_the_row_less_the_picture_and_its_gap`,
+    `an_artists_picture_stands_at_its_side_from_the_first_frame_its_page_draws`).
   - Action row = the column's last child: Play, Shuffle (album, artist), favourite, a sort icon where
     the listing sorts. Shuffle begins at a time-chosen row and enables queue shuffle
     (`RootView::play_shuffled`). **Play plays in order**: every whole-list Play sends

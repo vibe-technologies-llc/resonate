@@ -193,7 +193,6 @@ struct Browsed {
     release_tracks: Vec<HeldReleaseTrack>,
     release: Option<ReleaseDetail>,
     artist: Option<ArtistDetail>,
-    artist_read: Option<ArtistId>,
     artist_albums: Vec<Album>,
     artist_totals: ArtistTotals,
     album: Option<Album>,
@@ -875,7 +874,6 @@ struct Landed {
 #[derive(Default)]
 pub(crate) struct AroundTheRows {
     pub(crate) artist: Option<ArtistDetail>,
-    pub(crate) artist_read: Option<ArtistId>,
     pub(crate) records: Arc<[Album]>,
     pub(crate) totals: ArtistTotals,
     pub(crate) sung: Option<Sung>,

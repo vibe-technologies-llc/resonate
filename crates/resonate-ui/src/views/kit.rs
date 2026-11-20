@@ -1,10 +1,5 @@
-use std::{
-    cell::Cell,
-    hash::{Hash, Hasher as _},
-    rc::Rc,
-};
+use std::{cell::Cell, rc::Rc};
 
-use ahash::AHasher;
 use gpui::{
     AnyElement, App, BoxShadow, Div, ElementId, Font, FontWeight, MouseButton, Pixels, Rgba, Role,
     ScrollHandle, SharedString, Stateful, TruncateFrom, canvas, div, point, prelude::*, px,
@@ -1840,113 +1835,27 @@ pub(crate) fn measures_the_grid(grid: Rc<GridWidth>) -> impl IntoElement {
     .inset_0()
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct HeroMeasured {
-    of: u64,
-    laid_out: HeroLaidOut,
-    height: Pixels,
+pub(crate) fn hero_side() -> f32 {
+    theme::scope_cover()
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct HeroLaidOut {
-    side: f32,
-    row: Pixels,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct HeroSide {
-    pub(crate) side: f32,
-    pub(crate) settled: bool,
-    row: Pixels,
-}
-
-impl HeroSide {
-    pub(crate) fn words_within(self) -> Pixels {
-        match self.row > px(0.0) {
-            true => (self.row - px(self.side + HERO_GAP)).max(px(0.0)),
-            false => px(0.0),
-        }
-    }
-
-    pub(crate) const fn laid_out(self) -> HeroLaidOut {
-        HeroLaidOut {
-            side: self.side,
-            row: self.row,
-        }
-    }
-
-    pub(crate) const fn once(self, landed: bool) -> Self {
-        Self {
-            settled: self.settled && landed,
-            ..self
-        }
+pub(crate) fn hero_words_within(row: Pixels) -> Pixels {
+    match row > px(0.0) {
+        true => (row - px(hero_side() + HERO_GAP)).max(px(0.0)),
+        false => px(0.0),
     }
 }
 
-impl HeroMeasured {
-    pub(crate) fn side_for(self, of: u64, unmeasured: f32, row: Pixels) -> HeroSide {
-        let measured = self.height > px(0.0);
-        HeroSide {
-            side: match measured {
-                true => self.height / px(1.0),
-                false => unmeasured,
-            },
-            settled: measured && self.of == of && self.laid_out_as_it_measured(row),
-            row,
-        }
-    }
-
-    fn laid_out_as_it_measured(self, row: Pixels) -> bool {
-        let drawn_at_its_height = px(self.laid_out.side) == self.height;
-        let wrapped_in_this_row = row > px(0.0) && self.laid_out.row == row;
-        drawn_at_its_height && wrapped_in_this_row
-    }
-}
-
-pub(crate) fn hero_of(says: impl Hash) -> u64 {
-    let mut hasher = AHasher::default();
-    says.hash(&mut hasher);
-    hasher.finish()
-}
-
-pub(crate) fn measures_the_hero(
-    measured: Rc<Cell<HeroMeasured>>,
-    of: u64,
-    laid_out: HeroLaidOut,
-) -> impl IntoElement {
-    canvas(
-        move |bounds, window, _| {
-            let now = HeroMeasured {
-                of,
-                laid_out,
-                height: bounds.size.height,
-            };
-            if measured.get() != now {
-                measured.set(now);
-                window.request_animation_frame();
-            }
-        },
-        |_, _, _, _| {},
-    )
-    .absolute()
-    .inset_0()
-}
-
-#[cfg(test)]
-thread_local! {
-    pub(crate) static HEROES_DRAWN: std::cell::RefCell<Vec<HeroSide>> =
-        const { std::cell::RefCell::new(Vec::new()) };
-}
-
-pub(crate) fn hero_art(sized: HeroSide, art: impl IntoElement) -> Div {
-    #[cfg(test)]
-    HEROES_DRAWN.with_borrow_mut(|drawn| drawn.push(sized));
+pub(crate) fn hero_art(art: impl IntoElement) -> Div {
     div()
+        .debug_selector(|| HERO_ART.to_owned())
         .flex()
         .flex_none()
-        .when(!sized.settled, |art| art.opacity(0.0))
+        .size(px(hero_side()))
         .child(art)
 }
+
+pub(crate) const HERO_ART: &str = "hero-art";
 
 pub(crate) fn measures_its_height(measured: Rc<Cell<Pixels>>) -> impl IntoElement {
     canvas(
@@ -2196,43 +2105,15 @@ mod tests {
     use crate::views::spoken::{self, node_of};
 
     #[test]
-    fn a_hero_picture_waits_for_a_frame_drawn_at_the_height_it_measured_in_its_row() {
-        let page = hero_of(("artist", 7));
-        let row = px(900.0);
-        let measured_at = |side: f32, wrapped_in: Pixels, height: f32| HeroMeasured {
-            of: page,
-            laid_out: HeroLaidOut {
-                side,
-                row: wrapped_in,
-            },
-            height: px(height),
-        };
+    fn a_heros_words_wrap_within_the_row_less_the_picture_and_its_gap() {
+        let _worn = crate::theme::alongside();
 
-        let drawn_smaller_than_it_measured =
-            measured_at(140.0, row, 180.0).side_for(page, 120.0, row);
-        let wrapped_before_the_row_was_measured =
-            measured_at(180.0, px(0.0), 180.0).side_for(page, 120.0, row);
-        let laid_out_as_measured = measured_at(180.0, row, 180.0).side_for(page, 120.0, row);
-        let another_page =
-            measured_at(180.0, row, 180.0).side_for(hero_of(("album", 7)), 120.0, row);
-
-        assert!(!drawn_smaller_than_it_measured.settled);
-        assert_eq!(drawn_smaller_than_it_measured.side, 180.0);
-        assert!(!wrapped_before_the_row_was_measured.settled);
-        assert!(laid_out_as_measured.settled);
-        assert!(!laid_out_as_measured.once(false).settled);
-        assert!(!another_page.settled);
-        assert!(!HeroMeasured::default().side_for(page, 120.0, row).settled);
         assert_eq!(
-            laid_out_as_measured.words_within(),
-            px(900.0 - 180.0 - HERO_GAP)
+            hero_words_within(px(900.0)),
+            px(900.0 - hero_side() - HERO_GAP)
         );
-        assert_eq!(
-            HeroMeasured::default()
-                .side_for(page, 120.0, px(0.0))
-                .words_within(),
-            px(0.0)
-        );
+        assert_eq!(hero_words_within(px(0.0)), px(0.0));
+        assert_eq!(hero_words_within(px(hero_side())), px(0.0));
     }
 
     #[cfg(not(target_os = "macos"))]
