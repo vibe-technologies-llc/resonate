@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Favorite
@@ -70,6 +69,7 @@ import org.resonate.android.ui.library.LibraryOpening
 import org.resonate.android.ui.library.Shelf
 import org.resonate.android.ui.library.Shelves
 import org.resonate.android.ui.library.byline
+import org.resonate.android.ui.library.rememberRowHeldAtItsHead
 import org.resonate.android.ui.library.screen
 import org.resonate.android.ui.library.showLibrary
 import org.resonate.android.ui.library.shownTitle
@@ -275,7 +275,7 @@ private fun MixCard(list: SuggestedList, onOpen: () -> Unit, onPlay: () -> Unit)
 
 @Composable
 private fun RecentAlbums(albums: List<AlbumHit>, onOpen: (AlbumHit) -> Unit, onPlay: (AlbumHit) -> Unit) {
-    val list = rememberLazyListState()
+    val list = rememberRowHeldAtItsHead(albums.firstOrNull()?.key)
     val edge = min(RECENT_COVER * LocalDensity.current.fontScale, RECENT_COVER_WIDEST)
     LazyRow(
         state = list,

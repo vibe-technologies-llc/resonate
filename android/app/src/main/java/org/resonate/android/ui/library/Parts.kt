@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -39,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -254,6 +256,7 @@ fun <T> Shelf(
     content: @Composable (T) -> Unit,
 ) {
     LazyRow(
+        state = rememberRowHeldAtItsHead(items.firstOrNull()?.let(key)),
         modifier = modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = Sizes.gutter),
         horizontalArrangement = Arrangement.spacedBy(Shelves.spacing),
@@ -261,6 +264,22 @@ fun <T> Shelf(
         items(items.size, key = { key(items[it]) }) { content(items[it]) }
     }
 }
+
+@Composable
+fun rememberRowHeldAtItsHead(head: Any?): LazyListState {
+    val row = rememberLazyListState()
+    val shown = remember { ShownHead(head) }
+    if (shown.key != head) {
+        shown.key = head
+        Snapshot.withoutReadObservation { if (row.atItsHead) row.requestScrollToItem(0) }
+    }
+    return row
+}
+
+private class ShownHead(var key: Any?)
+
+private val LazyListState.atItsHead: Boolean
+    get() = firstVisibleItemIndex == 0 && firstVisibleItemScrollOffset == 0
 
 @Composable
 fun rememberPastHeader(list: LazyListState): Boolean {
