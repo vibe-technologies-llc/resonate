@@ -110,12 +110,12 @@ class BackgroundPlaybackTest {
                     eventually { (library.snapshot.value?.positionMs ?: 0uL) > position + 500uL }
                     context.sendBroadcast(
                         Intent(context, ResonatePlayerWidgetProvider::class.java)
-                            .setAction(ResonateWidgets.TOGGLE)
+                            .setAction(WidgetPresses.TOGGLE)
                     )
                     eventually { library.snapshot.value?.transport == Transport.PAUSED }
                     context.sendBroadcast(
                         Intent(context, ResonatePlayerWidgetProvider::class.java)
-                            .setAction(ResonateWidgets.TOGGLE)
+                            .setAction(WidgetPresses.TOGGLE)
                     )
                     eventually { library.snapshot.value?.transport == Transport.PLAYING }
                     assertTrue((library.snapshot.value?.positionMs ?: 0uL) > 0uL)
