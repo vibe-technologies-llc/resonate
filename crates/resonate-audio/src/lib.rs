@@ -22,8 +22,9 @@ pub use crate::{
     moment::{DeviceTime, Moment, Stamp},
     reshaping::refusal_of,
     sink::{
-        CAST_NODES, CardProfile, HardwareVolume, NodeName, Plugged, ProfileIndex, RENDERER_NODES,
-        SinkChange, SinkFormats, SinkId, SinkInfo, SinkPort, Words, sink_id_of,
+        CAST_NODES, CardProfile, HardwareVolume, NodeName, Plugged, ProfileIndex,
+        RECEIVER_IDS_FROM, RENDERER_IDS_FROM, RENDERER_NODES, SinkChange, SinkFormats, SinkId,
+        SinkInfo, SinkPort, Words, sink_id_of,
     },
     source::AudioSource,
     stream::{

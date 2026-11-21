@@ -27,8 +27,11 @@ engine is a dev-dependency, for the end-to-end test.
   `Beside::over(inner, network).and(casting)`. Its surveyor answers the wrapped backend's sinks
   and then every neighbour's; its opener and volume send a request whose `target` a neighbour
   owns (`Network::owns`: ids from `RENDERER_IDS_FROM`, `0xF000_0000`, above any PipeWire global;
-  Cast's sit below, from `0xE000_0000`) to that neighbour and the rest to the wrapped one; sink
-  changes from all arrive on one channel (a `resonate-upnp-sinks` thread selecting over them). A
+  Cast's sit below, from `0xE000_0000`) to that neighbour and the rest to the wrapped one.
+  `resonate-audio` defines both boundaries. `sink_id_of` keeps WASAPI and Core Audio's hashed
+  ids below both ranges so that local outputs reach their own backend even while discovery rests
+  (`windows_outputs_reach_the_local_graph_beside_network_renderers`). Sink changes from all
+  arrive on one channel (a `resonate-upnp-sinks` thread selecting over them). A
   survey failing in the wrapped backend fails whole, renderers and all: answering the renderers
   alone made a lost graph look like a list whose first sink was a renderer, which the engine then
   chose.

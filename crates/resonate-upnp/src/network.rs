@@ -13,8 +13,8 @@ use std::{
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use parking_lot::Mutex;
 use resonate_audio::{
-    AudioSource, HardwareVolume, Learning, Learnt, Plugged, SinkChange, SinkId, SinkInfo, SinkPort,
-    SinkResult, SinkStream, StreamRequest,
+    AudioSource, HardwareVolume, Learning, Learnt, Plugged, RENDERER_IDS_FROM, SinkChange, SinkId,
+    SinkInfo, SinkPort, SinkResult, SinkStream, StreamRequest,
 };
 use resonate_core::{Gain, Volume};
 
@@ -25,8 +25,6 @@ use crate::{
     stream::{self, Holders},
     words,
 };
-
-const RENDERER_IDS_FROM: u32 = 0xF000_0000;
 
 const SEARCHES_MISSED_BEFORE_GONE: u8 = 2;
 

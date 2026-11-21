@@ -18,11 +18,14 @@ impl SinkId {
 const FNV_OFFSET: u32 = 0x811C_9DC5;
 const FNV_PRIME: u32 = 0x0100_0193;
 
+pub const RECEIVER_IDS_FROM: u32 = 0xE000_0000;
+pub const RENDERER_IDS_FROM: u32 = 0xF000_0000;
+
 pub fn sink_id_of(node: &NodeName) -> SinkId {
     let hash = node.as_str().bytes().fold(FNV_OFFSET, |hash, byte| {
         (hash ^ u32::from(byte)).wrapping_mul(FNV_PRIME)
     });
-    SinkId::new(hash)
+    SinkId::new(hash % RECEIVER_IDS_FROM)
 }
 
 impl fmt::Display for SinkId {

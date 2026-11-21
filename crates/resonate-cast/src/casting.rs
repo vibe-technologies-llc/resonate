@@ -11,8 +11,8 @@ use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, unboun
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 use parking_lot::Mutex;
 use resonate_audio::{
-    AudioSource, HardwareVolume, Learning, Learnt, Plugged, SinkChange, SinkId, SinkInfo, SinkPort,
-    SinkResult, SinkStream, StreamRequest,
+    AudioSource, HardwareVolume, Learning, Learnt, Plugged, RECEIVER_IDS_FROM, RENDERER_IDS_FROM,
+    SinkChange, SinkId, SinkInfo, SinkPort, SinkResult, SinkStream, StreamRequest,
 };
 use resonate_core::{Gain, Volume};
 use resonate_upnp::{FirstSearch, Neighbours, Server};
@@ -25,10 +25,6 @@ use crate::{
     stream::{self, Lanes},
     words,
 };
-
-const RECEIVER_IDS_FROM: u32 = 0xE000_0000;
-
-const RECEIVER_IDS_UNDER: u32 = 0xF000_0000;
 
 const RECEIVERS_AT_MOST: usize = 64;
 
@@ -398,7 +394,7 @@ impl Casting {
     }
 
     pub const fn owns(sink: SinkId) -> bool {
-        sink.get() >= RECEIVER_IDS_FROM && sink.get() < RECEIVER_IDS_UNDER
+        sink.get() >= RECEIVER_IDS_FROM && sink.get() < RENDERER_IDS_FROM
     }
 
     fn device(&self, sink: SinkId) -> Result<Arc<Device>> {
