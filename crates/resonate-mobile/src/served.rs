@@ -1728,10 +1728,10 @@ mod tests {
 
     #[test]
     fn explore_playlists_weave_mix_queue_and_remember_downloads_for_streamed_songs() {
-        let harness = online();
-        let (server, _asked) = fake_asked();
+        let mut harness = online();
+        let (server, asked) = fake_asked();
         let account = of(MusicProvider::Jellyfin, server);
-        harness.player.serve_from(vec![account]);
+        harness.player.serve_from(vec![account.clone()]);
         let mut local = harness.songs[0].clone();
         local.artist = "Pink Floyd".to_owned();
         local.title = "A Local Song".to_owned();
@@ -1746,6 +1746,8 @@ mod tests {
             .player
             .explore_playlists(String::new(), 0, false)
             .expect("explore playlists are generated");
+        let calls_after_first = asked.lock().len();
+        assert!(calls_after_first > 0);
         assert_eq!(feed.services, 1);
         assert_eq!(feed.failed, 0);
         assert!(!feed.playlists.is_empty());
@@ -1778,5 +1780,21 @@ mod tests {
                 },
             ]
         );
+
+        harness.player.served = Arc::new(Served::default());
+        harness.player.serve_from(vec![account]);
+        let cached = harness
+            .player
+            .explore_playlists(String::new(), 0, false)
+            .expect("fresh in-memory cache reads persisted explore playlists from catalog");
+        assert_eq!(cached, feed);
+        assert_eq!(asked.lock().len(), calls_after_first);
+
+        let refreshed = harness
+            .player
+            .explore_playlists(String::new(), 0, true)
+            .expect("explicit refresh queries the service again");
+        assert_eq!(refreshed, feed);
+        assert!(asked.lock().len() > calls_after_first);
     }
 }

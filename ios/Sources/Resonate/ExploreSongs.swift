@@ -99,7 +99,10 @@ struct ExplorePlaylistsSection: View {
             }
             if !request.online {
                 Text("explore.offline").foregroundStyle(.secondary)
-            } else if let loaded, loaded.request == request {
+            } else if let loaded,
+                      loaded.request.online == request.online,
+                      loaded.request.services == request.services,
+                      loaded.request.retry == request.retry {
                 if let feed = loaded.feed {
                     if feed.services == 0 {
                         Text("explore.services").foregroundStyle(.secondary)

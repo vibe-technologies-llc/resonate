@@ -9,8 +9,9 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::{Span, ZoneId};
-use resonate_library::NamedByTheFile;
+use resonate_core::{Span, ZoneId, titles::Rating};
+use resonate_library::{ExploreStore, NamedByTheFile};
+use resonate_providers::{Id, Song};
 use rusqlite::{
     CachedStatement, Connection, OptionalExtension, TransactionBehavior, functions::FunctionFlags,
     hooks::Action, params,
@@ -419,7 +420,35 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     SONGS_DELETED_EVERYWHERE_ARE_TOLD_AND_TAKEN,
     LYRICS_KEEP_HOW_FAR_AHEAD_THEY_RUN,
     A_VERSION_IS_KEPT_BESIDE_ITS_SONG,
+    EXPLORE_SEARCHES_ARE_KEPT,
 ];
+
+pub(crate) const EXPLORE_SEARCHES_ARE_KEPT: &str = "
+CREATE TABLE explore_artists (
+    id         INTEGER PRIMARY KEY,
+    catalog    TEXT NOT NULL,
+    scheme     TEXT NOT NULL,
+    artist_key TEXT NOT NULL,
+    day        INTEGER NOT NULL,
+    UNIQUE (catalog, scheme, artist_key)
+) STRICT;
+CREATE TABLE explore_songs (
+    artist_id  INTEGER NOT NULL REFERENCES explore_artists(id) ON DELETE CASCADE,
+    position   INTEGER NOT NULL,
+    song_id    TEXT NOT NULL,
+    title      TEXT NOT NULL,
+    artist     TEXT,
+    album      TEXT,
+    disc       INTEGER,
+    track      INTEGER,
+    length_ms  INTEGER,
+    suffix     TEXT,
+    cover      TEXT,
+    favourite  INTEGER,
+    rating     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (artist_id, position)
+) STRICT, WITHOUT ROWID;
+";
 
 pub(crate) const SONGS_DELETED_EVERYWHERE_ARE_TOLD_AND_TAKEN: &str = "
 CREATE TABLE songs_deleted_everywhere (
@@ -1351,6 +1380,180 @@ fn placed_by(
 
 pub(crate) fn picture_crc(bytes: &[u8]) -> i64 {
     i64::from(crc32fast::hash(bytes))
+}
+
+const fn rating_code(rating: Rating) -> i64 {
+    match rating {
+        Rating::Unmarked => 0,
+        Rating::Explicit => 1,
+        Rating::Clean => 2,
+    }
+}
+
+const fn rating_of(code: i64) -> Rating {
+    match code {
+        1 => Rating::Explicit,
+        2 => Rating::Clean,
+        _ => Rating::Unmarked,
+    }
+}
+
+impl ExploreStore for Catalog {
+    fn read_cached(
+        &self,
+        catalog: &str,
+        scheme: &str,
+        artist_key: &str,
+        earliest_day: i64,
+        latest_day: i64,
+    ) -> Option<(i64, Vec<Song>)> {
+        let connection = self.0.lock();
+        let read = (|| -> rusqlite::Result<Option<(i64, Vec<Song>)>> {
+            let entry: Option<(i64, i64)> = connection
+                .query_row(
+                    "SELECT id, day FROM explore_artists
+                     WHERE catalog = ?1 AND scheme = ?2 AND artist_key = ?3
+                       AND day >= ?4 AND day <= ?5",
+                    params![catalog, scheme, artist_key, earliest_day, latest_day],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let Some((artist_id, day)) = entry else {
+                return Ok(None);
+            };
+            let mut query = connection.prepare_cached(
+                "SELECT song_id, title, artist, album, disc, track, length_ms,
+                        suffix, cover, favourite, rating
+                 FROM explore_songs
+                 WHERE artist_id = ?1
+                 ORDER BY position",
+            )?;
+            let rows = query.query_map(params![artist_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<i64>>(4)?,
+                    row.get::<_, Option<i64>>(5)?,
+                    row.get::<_, Option<i64>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                    row.get::<_, Option<String>>(8)?,
+                    row.get::<_, Option<i64>>(9)?,
+                    row.get::<_, i64>(10)?,
+                ))
+            })?;
+            let mut songs = Vec::new();
+            for row in rows {
+                let (
+                    song_id,
+                    title,
+                    artist,
+                    album,
+                    disc,
+                    track,
+                    length_ms,
+                    suffix,
+                    cover,
+                    favourite,
+                    rating,
+                ) = row?;
+                let Some(id) = Id::new(&song_id) else {
+                    continue;
+                };
+                songs.push(Song {
+                    id,
+                    title,
+                    artist,
+                    album,
+                    disc: disc.and_then(|value| u32::try_from(value).ok()),
+                    track: track.and_then(|value| u32::try_from(value).ok()),
+                    length: length_ms
+                        .and_then(|value| u64::try_from(value).ok())
+                        .map(Duration::from_millis),
+                    suffix,
+                    cover: cover.as_deref().and_then(Id::new),
+                    favourite: favourite.map(|value| value != 0),
+                    rating: rating_of(rating),
+                });
+            }
+            Ok(Some((day, songs)))
+        })();
+        match read {
+            Ok(cached) => cached,
+            Err(error) => {
+                tracing::debug!(%error, "an explore cache entry could not be read");
+                None
+            }
+        }
+    }
+
+    fn keep_cached(&self, catalog: &str, scheme: &str, artist_key: &str, day: i64, songs: &[Song]) {
+        let mut connection = self.0.lock();
+        let written = (|| -> rusqlite::Result<()> {
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            transaction.execute(
+                "DELETE FROM explore_artists
+                 WHERE catalog = ?1 AND scheme = ?2 AND artist_key = ?3",
+                params![catalog, scheme, artist_key],
+            )?;
+            transaction.execute(
+                "INSERT INTO explore_artists (catalog, scheme, artist_key, day)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![catalog, scheme, artist_key, day],
+            )?;
+            let artist_id = transaction.last_insert_rowid();
+            {
+                let mut insert = transaction.prepare_cached(
+                    "INSERT INTO explore_songs
+                        (artist_id, position, song_id, title, artist, album, disc,
+                         track, length_ms, suffix, cover, favourite, rating)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                )?;
+                for (position, song) in songs.iter().enumerate() {
+                    let length_ms = song
+                        .length
+                        .and_then(|length| i64::try_from(length.as_millis()).ok());
+                    insert.execute(params![
+                        artist_id,
+                        position as i64,
+                        song.id.as_str(),
+                        song.title,
+                        song.artist,
+                        song.album,
+                        song.disc.map(i64::from),
+                        song.track.map(i64::from),
+                        length_ms,
+                        song.suffix,
+                        song.cover.as_ref().map(Id::as_str),
+                        song.favourite.map(i64::from),
+                        rating_code(song.rating),
+                    ])?;
+                }
+            }
+            transaction.commit()
+        })();
+        if let Err(error) = written {
+            tracing::debug!(%error, "an explore cache entry could not be kept");
+        }
+    }
+
+    fn forget_before(&self, earliest_day: i64, latest_day: i64) {
+        let mut connection = self.0.lock();
+        let pruned = (|| -> rusqlite::Result<()> {
+            let transaction =
+                connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            transaction.execute(
+                "DELETE FROM explore_artists WHERE day < ?1 OR day > ?2",
+                params![earliest_day, latest_day],
+            )?;
+            transaction.commit()
+        })();
+        if let Err(error) = pruned {
+            tracing::debug!(%error, "stale explore cache entries could not be pruned");
+        }
+    }
 }
 
 pub(crate) fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {

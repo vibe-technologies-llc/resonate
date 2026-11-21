@@ -197,7 +197,9 @@ impl SuggestionsPane {
         let cache = Arc::clone(&self.explore.cache);
         let sources = request.sources.clone();
         self.explore.playlists_asked = Some(request);
-        self.explore.playlists_page = PlaylistsPage::Loading;
+        if refresh || !matches!(self.explore.playlists_page, PlaylistsPage::Ready(_)) {
+            self.explore.playlists_page = PlaylistsPage::Loading;
+        }
         self.explore.playlists_task = Some(cx.spawn(async move |this, cx| {
             let page = cx
                 .background_executor()
@@ -214,7 +216,7 @@ impl SuggestionsPane {
                 cx.notify();
             });
         }));
-        PlaylistsPage::Loading
+        self.explore.playlists_page.clone()
     }
 
     fn read_mix_explore(&mut self, request: Option<MixRequest>, cx: &mut Context<Self>) -> MixPage {
@@ -238,7 +240,9 @@ impl SuggestionsPane {
         let mix = request.mix.clone();
         let sources = request.sources.clone();
         self.explore.mix_asked = Some(request);
-        self.explore.mix_page = MixPage::Loading;
+        if refresh || !matches!(self.explore.mix_page, MixPage::Ready(_)) {
+            self.explore.mix_page = MixPage::Loading;
+        }
         self.explore.mix_task = Some(cx.spawn(async move |this, cx| {
             let page = cx
                 .background_executor()
@@ -255,7 +259,7 @@ impl SuggestionsPane {
                 cx.notify();
             });
         }));
-        MixPage::Loading
+        self.explore.mix_page.clone()
     }
 }
 

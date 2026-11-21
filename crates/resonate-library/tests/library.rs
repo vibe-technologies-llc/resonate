@@ -34746,3 +34746,89 @@ fn weave_mix_interleaves_streamed_suggestions_and_avoids_adjacent_same_artist() 
         resonate_library::MixEntry::Local(("L7", _))
     ));
 }
+
+#[test]
+fn explore_playlists_persist_across_restarts_until_refreshed_or_expired() -> Result<()> {
+    let (tree, library, database) = a_music_folder_on_disk()?;
+    held_as(&tree, "held.wav", "Held Song", RATE as usize);
+    tree.write(
+        "other.wav",
+        &Wav::new()
+            .frames(RATE as usize)
+            .text(ARTIST, "Solar Drift")
+            .text(TITLE, "Owned Drift")
+            .build(),
+    );
+    scan(&library, &options(&tree))?;
+
+    let mut song_a = explore_song("a1", "Orbit One", "The Orbiters");
+    song_a.album = Some("Album One".to_owned());
+    song_a.disc = Some(1);
+    song_a.track = Some(3);
+    song_a.cover = resonate_providers::Id::new("cov-1");
+    song_a.favourite = Some(true);
+    song_a.rating = resonate_core::titles::Rating::Explicit;
+    let song_b = explore_song("b1", "Drift Away", "Solar Drift");
+
+    let service = Arc::new(ExploreCatalog::with(
+        "first",
+        vec![
+            explore_song("held", "Held Song", "The Orbiters"),
+            song_a,
+            song_b,
+        ],
+    ));
+    let sources = [resonate_providers::SongCatalog::new(
+        "first".to_owned(),
+        service.clone(),
+    )];
+    let first_cache = resonate_library::ExploreCache::default();
+    let first_run = library.explore_playlists(&sources, &first_cache, false)?;
+    assert!(!first_run.playlists.is_empty());
+    let searches_after_cold = service.searched.lock().len();
+    assert_eq!(searches_after_cold, 2);
+    drop(library);
+
+    let reopened = Library::open(&database)?;
+    let fresh_cache = resonate_library::ExploreCache::default();
+    let warm_run = reopened.explore_playlists(&sources, &fresh_cache, false)?;
+    assert_eq!(warm_run, first_run);
+    assert_eq!(service.searched.lock().len(), searches_after_cold);
+
+    let other_server = [resonate_providers::SongCatalog::new(
+        "second-server".to_owned(),
+        service.clone(),
+    )];
+    let other_cache = resonate_library::ExploreCache::default();
+    let other_run = reopened.explore_playlists(&other_server, &other_cache, false)?;
+    assert!(!other_run.playlists.is_empty());
+    assert_eq!(service.searched.lock().len(), searches_after_cold + 2);
+
+    let refreshed = reopened.explore_playlists(&sources, &fresh_cache, true)?;
+    assert_eq!(refreshed, first_run);
+    assert_eq!(service.searched.lock().len(), searches_after_cold + 4);
+
+    let expiry_cache = resonate_library::ExploreCache::default();
+    let blueprints = reopened.explore_blueprints()?;
+    let day = resonate_core::Calendar::local().day_of(SystemTime::now());
+    let still_warm = expiry_cache.hydrate_blueprints_with(
+        day + resonate_library::EXPLORE_CACHE_DAYS - 1,
+        blueprints.clone(),
+        &sources,
+        false,
+        &reopened,
+    );
+    assert!(!still_warm.artists().is_empty());
+    assert_eq!(service.searched.lock().len(), searches_after_cold + 4);
+
+    let expired_cache = resonate_library::ExploreCache::default();
+    let _expired = expired_cache.hydrate_blueprints_with(
+        day + resonate_library::EXPLORE_CACHE_DAYS,
+        blueprints,
+        &sources,
+        false,
+        &reopened,
+    );
+    assert_eq!(service.searched.lock().len(), searches_after_cold + 6);
+    Ok(())
+}

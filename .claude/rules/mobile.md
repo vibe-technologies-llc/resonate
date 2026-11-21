@@ -1336,11 +1336,13 @@ A failed enrichment band measurement in an opted-in recognition pass is marked i
 ### Explore in mixes
 
 `MobilePlayer::explore_playlists` builds generated Explore playlists from the document catalog
-using `explore_blueprints` and the shared per-artist `ExploreCache`, while `ExploreScope`
-still seeds per-mix discovery from the catalogue, a saved search, or a built-in mix filter.
-`MobilePlayer::weave_mix_queue` interleaves streamed `ExploreSong`s into local track IDs as
-`QueueSong`s for mixed playback, `MobilePlayer::mix_suggestions_into_queue` weaves streamed
-suggestions into the active queue, and `MobilePlayer::explore_download_for` hands back the
-remembered download payload (carrying the original catalog namespace so replacing a service
-account's server cannot silently substitute another song under the same ID) for queue and
-Now Playing download buttons.
+using `explore_blueprints` and the shared per-artist `ExploreCache` backed by `Catalog`'s
+`ExploreStore` (step 42, `EXPLORE_SEARCHES_ARE_KEPT`, `explore_artists` and `explore_songs`) so
+cached provider artist searches survive app restarts for `EXPLORE_CACHE_DAYS` without blocking on
+the network, while `ExploreScope` still seeds per-mix discovery from the catalogue, a saved search,
+or a built-in mix filter. `MobilePlayer::weave_mix_queue` interleaves streamed `ExploreSong`s into
+local track IDs as `QueueSong`s for mixed playback, `MobilePlayer::mix_suggestions_into_queue`
+weaves streamed suggestions into the active queue, and `MobilePlayer::explore_download_for` hands
+back the remembered download payload (carrying the original catalog namespace so replacing a service
+account's server cannot silently substitute another song under the same ID) for queue and Now
+Playing download buttons.

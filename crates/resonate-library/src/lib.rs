@@ -110,9 +110,10 @@ pub fn read_a_playlist_sheet(text: &str) {
 }
 
 pub use explore::{
-    ExploreBlueprint, ExploreCache, ExploreOffer, ExplorePlaylist, ExplorePlaylistKind,
-    ExplorePlaylists, ExploreProfile, ExploreResult, ExploreTrack, HydratedBlueprints, MixEntry,
-    artists_for_explore, explore_blueprints, explore_seeds, weave_mix,
+    EXPLORE_CACHE_DAYS, ExploreBlueprint, ExploreCache, ExploreOffer, ExplorePlaylist,
+    ExplorePlaylistKind, ExplorePlaylists, ExploreProfile, ExploreResult, ExploreStore,
+    ExploreTrack, HydratedBlueprints, MixEntry, artists_for_explore, explore_blueprints,
+    explore_seeds, weave_mix,
 };
 
 pub use crate::{

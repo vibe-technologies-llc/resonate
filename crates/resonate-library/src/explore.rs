@@ -5,9 +5,14 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use resonate_core::{Accent, Calendar, MediaLocation, SourceId, TrackId, title_words, titles};
-use resonate_providers::{A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, Named, Song, SongCatalog, led_by};
-use rusqlite::params;
+use resonate_core::{
+    Accent, Calendar, MediaLocation, SourceId, TrackId, title_words,
+    titles::{self, Rating},
+};
+use resonate_providers::{
+    A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY, Id, Named, Song, SongCatalog, led_by,
+};
+use rusqlite::{OptionalExtension as _, params};
 
 use crate::{
     Error, Kinship, Library, Result, SavedQuery, StoreOp, TrackQuery, store,
@@ -409,6 +414,31 @@ fn rotate(artists: &mut [String], day: i64) {
     }
 }
 
+pub const EXPLORE_CACHE_DAYS: i64 = 7;
+
+pub trait ExploreStore {
+    fn read_cached(
+        &self,
+        catalog: &str,
+        scheme: &str,
+        artist_key: &str,
+        earliest_day: i64,
+        latest_day: i64,
+    ) -> Option<(i64, Vec<Song>)>;
+
+    fn keep_cached(&self, catalog: &str, scheme: &str, artist_key: &str, day: i64, songs: &[Song]);
+
+    fn forget_before(&self, earliest_day: i64, latest_day: i64);
+}
+
+fn is_fresh(cached_day: i64, today: i64) -> bool {
+    cached_day <= today && today.saturating_sub(cached_day) < EXPLORE_CACHE_DAYS
+}
+
+fn earliest_cached_day(today: i64) -> i64 {
+    today.saturating_sub(EXPLORE_CACHE_DAYS - 1)
+}
+
 #[derive(Default)]
 pub struct ExploreCache {
     artists: Mutex<VecDeque<CachedArtist>>,
@@ -443,7 +473,29 @@ impl ExploreCache {
         sources: &[SongCatalog],
         refresh: bool,
     ) -> Arc<Explored> {
-        let (by_artist, failed) = self.fetch_unique_artists(day, &seeds, sources, refresh);
+        self.find_in(day, seeds, sources, refresh, None)
+    }
+
+    pub fn find_with(
+        &self,
+        day: i64,
+        seeds: Vec<String>,
+        sources: &[SongCatalog],
+        refresh: bool,
+        store: &dyn ExploreStore,
+    ) -> Arc<Explored> {
+        self.find_in(day, seeds, sources, refresh, Some(store))
+    }
+
+    fn find_in(
+        &self,
+        day: i64,
+        seeds: Vec<String>,
+        sources: &[SongCatalog],
+        refresh: bool,
+        store: Option<&dyn ExploreStore>,
+    ) -> Arc<Explored> {
+        let (by_artist, failed) = self.fetch_unique_artists(day, &seeds, sources, refresh, store);
         let songs = seeds
             .iter()
             .map(|artist| {
@@ -466,6 +518,28 @@ impl ExploreCache {
         sources: &[SongCatalog],
         refresh: bool,
     ) -> HydratedBlueprints {
+        self.hydrate_blueprints_in(day, blueprints, sources, refresh, None)
+    }
+
+    pub fn hydrate_blueprints_with(
+        &self,
+        day: i64,
+        blueprints: Vec<ExploreBlueprint>,
+        sources: &[SongCatalog],
+        refresh: bool,
+        store: &dyn ExploreStore,
+    ) -> HydratedBlueprints {
+        self.hydrate_blueprints_in(day, blueprints, sources, refresh, Some(store))
+    }
+
+    fn hydrate_blueprints_in(
+        &self,
+        day: i64,
+        blueprints: Vec<ExploreBlueprint>,
+        sources: &[SongCatalog],
+        refresh: bool,
+        store: Option<&dyn ExploreStore>,
+    ) -> HydratedBlueprints {
         let mut unique = Vec::new();
         let mut seen = BTreeSet::new();
         for blueprint in &blueprints {
@@ -480,7 +554,7 @@ impl ExploreCache {
                 }
             }
         }
-        let (by_artist, failed) = self.fetch_unique_artists(day, &unique, sources, refresh);
+        let (by_artist, failed) = self.fetch_unique_artists(day, &unique, sources, refresh, store);
         HydratedBlueprints {
             blueprints,
             by_artist,
@@ -499,11 +573,48 @@ impl ExploreCache {
             .lock()
             .iter()
             .find(|entry| {
-                entry.day == day
+                is_fresh(entry.day, day)
                     && entry.artist_key == artist_key
                     && entry.source.same_service(source)
             })
             .map(|entry| Arc::clone(&entry.songs))
+    }
+
+    fn cached_or_stored(
+        &self,
+        day: i64,
+        artist_key: &str,
+        source: &SongCatalog,
+        store: Option<&dyn ExploreStore>,
+    ) -> Option<Arc<[ExploreOffer]>> {
+        if let Some(found) = self.cached_for(day, artist_key, source) {
+            return Some(found);
+        }
+        let store = store?;
+        let service = source.service();
+        let (cached_day, songs) = store.read_cached(
+            source.namespace(),
+            service.scheme().as_str(),
+            artist_key,
+            earliest_cached_day(day),
+            day,
+        )?;
+        let offers: Arc<[ExploreOffer]> = songs
+            .into_iter()
+            .map(|song| ExploreOffer {
+                catalog: source.namespace().to_owned(),
+                service: service.title().to_owned(),
+                location: service.location_of(&Named::Song(song.id.clone())),
+                song,
+            })
+            .collect();
+        self.store_artist(
+            cached_day,
+            artist_key.to_owned(),
+            source.clone(),
+            Arc::clone(&offers),
+        );
+        Some(offers)
     }
 
     fn store_artist(
@@ -515,9 +626,7 @@ impl ExploreCache {
     ) {
         let mut artists = self.artists.lock();
         artists.retain(|entry| {
-            !(entry.day == day
-                && entry.artist_key == artist_key
-                && entry.source.same_service(&source))
+            !(entry.artist_key == artist_key && entry.source.same_service(&source))
         });
         artists.push_front(CachedArtist {
             day,
@@ -534,6 +643,7 @@ impl ExploreCache {
         seeds: &[String],
         sources: &[SongCatalog],
         refresh: bool,
+        store: Option<&dyn ExploreStore>,
     ) -> (BTreeMap<String, Vec<ExploreOffer>>, usize) {
         let mut by_artist: BTreeMap<String, Vec<ExploreOffer>> = BTreeMap::new();
         let mut missing_any = false;
@@ -543,7 +653,7 @@ impl ExploreCache {
                     let Some(key) = artist_key(artist) else {
                         continue;
                     };
-                    if let Some(found) = self.cached_for(day, &key, source) {
+                    if let Some(found) = self.cached_or_stored(day, &key, source, store) {
                         by_artist
                             .entry(key)
                             .or_default()
@@ -559,6 +669,9 @@ impl ExploreCache {
         }
 
         let _searching = self.searching.lock();
+        if let Some(store) = store {
+            store.forget_before(earliest_cached_day(day), day);
+        }
         by_artist.clear();
         let mut failed = 0;
         for source in sources {
@@ -567,7 +680,7 @@ impl ExploreCache {
                 let Some(key) = artist_key(artist) else {
                     continue;
                 };
-                if !refresh && let Some(found) = self.cached_for(day, &key, source) {
+                if !refresh && let Some(found) = self.cached_or_stored(day, &key, source, store) {
                     by_artist
                         .entry(key)
                         .or_default()
@@ -576,7 +689,7 @@ impl ExploreCache {
                 }
                 match service.search(artist) {
                     Ok(found) => {
-                        let matched: Arc<[ExploreOffer]> = found
+                        let songs: Vec<Song> = found
                             .songs
                             .into_iter()
                             .filter(|song| {
@@ -585,6 +698,18 @@ impl ExploreCache {
                                 })
                             })
                             .take(CANDIDATES_PER_SEARCH)
+                            .collect();
+                        if let Some(store) = store {
+                            store.keep_cached(
+                                source.namespace(),
+                                service.scheme().as_str(),
+                                &key,
+                                day,
+                                &songs,
+                            );
+                        }
+                        let matched: Arc<[ExploreOffer]> = songs
+                            .into_iter()
                             .map(|song| ExploreOffer {
                                 catalog: source.namespace().to_owned(),
                                 service: service.title().to_owned(),
@@ -789,7 +914,7 @@ impl Library {
         let filing = self.inner().filing()?;
         let profile = self.explore_profile(now, &filing)?;
         let blueprints = explore_blueprints(&profile, filing.kinship(), day);
-        let hydrated = cache.hydrate_blueprints(day, blueprints, sources, refresh);
+        let hydrated = cache.hydrate_blueprints_with(day, blueprints, sources, refresh, self);
         let held: Vec<_> = self
             .explore_tracks(hydrated.artists())?
             .into_iter()
@@ -812,7 +937,7 @@ impl Library {
         let day = Calendar::local().day_of(now);
         let filing = self.inner().filing()?;
         let seeds = explore_seeds(direct, filing.kinship(), day);
-        let found = cache.find(day, seeds, sources, refresh);
+        let found = cache.find_with(day, seeds, sources, refresh, self);
         let held: Vec<_> = self
             .explore_tracks(found.artists())?
             .into_iter()
@@ -979,4 +1104,184 @@ fn read_mix_artists(library: &Library, query: &SavedQuery) -> Result<Vec<String>
     Ok(artists_for_explore(
         tracks.iter().filter_map(|track| track.artist.as_deref()),
     ))
+}
+
+const fn rating_code(rating: Rating) -> i64 {
+    match rating {
+        Rating::Unmarked => 0,
+        Rating::Explicit => 1,
+        Rating::Clean => 2,
+    }
+}
+
+const fn rating_of(code: i64) -> Rating {
+    match code {
+        1 => Rating::Explicit,
+        2 => Rating::Clean,
+        _ => Rating::Unmarked,
+    }
+}
+
+impl ExploreStore for Library {
+    fn read_cached(
+        &self,
+        catalog: &str,
+        scheme: &str,
+        artist_key: &str,
+        earliest_day: i64,
+        latest_day: i64,
+    ) -> Option<(i64, Vec<Song>)> {
+        let read = self.inner().read(|connection| {
+            let entry: Option<(i64, i64)> = connection
+                .query_row(
+                    "SELECT id, day FROM explore_artists
+                     WHERE catalog = ?1 AND scheme = ?2 AND artist_key = ?3
+                       AND day >= ?4 AND day <= ?5",
+                    params![catalog, scheme, artist_key, earliest_day, latest_day],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            let Some((artist_id, day)) = entry else {
+                return Ok(None);
+            };
+            let mut query = connection
+                .prepare_cached(
+                    "SELECT song_id, title, artist, album, disc, track, length_ms,
+                            suffix, cover, favourite, rating
+                     FROM explore_songs
+                     WHERE artist_id = ?1
+                     ORDER BY position",
+                )
+                .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+            let rows = query
+                .query_map(params![artist_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
+                        row.get::<_, Option<i64>>(5)?,
+                        row.get::<_, Option<i64>>(6)?,
+                        row.get::<_, Option<String>>(7)?,
+                        row.get::<_, Option<String>>(8)?,
+                        row.get::<_, Option<i64>>(9)?,
+                        row.get::<_, i64>(10)?,
+                    ))
+                })
+                .map_err(|source| Error::store(StoreOp::Query, source))?;
+            let mut songs = Vec::new();
+            for row in rows {
+                let (
+                    song_id,
+                    title,
+                    artist,
+                    album,
+                    disc,
+                    track,
+                    length_ms,
+                    suffix,
+                    cover,
+                    favourite,
+                    rating,
+                ) = row.map_err(|source| Error::store(StoreOp::Query, source))?;
+                let Some(id) = Id::new(&song_id) else {
+                    continue;
+                };
+                songs.push(Song {
+                    id,
+                    title,
+                    artist,
+                    album,
+                    disc: disc.and_then(|value| u32::try_from(value).ok()),
+                    track: track.and_then(|value| u32::try_from(value).ok()),
+                    length: length_ms
+                        .and_then(|value| u64::try_from(value).ok())
+                        .map(Duration::from_millis),
+                    suffix,
+                    cover: cover.as_deref().and_then(Id::new),
+                    favourite: favourite.map(|value| value != 0),
+                    rating: rating_of(rating),
+                });
+            }
+            Ok(Some((day, songs)))
+        });
+        match read {
+            Ok(cached) => cached,
+            Err(error) => {
+                tracing::debug!(%error, "an explore cache entry could not be read");
+                None
+            }
+        }
+    }
+
+    fn keep_cached(&self, catalog: &str, scheme: &str, artist_key: &str, day: i64, songs: &[Song]) {
+        let written = self.inner().write(|transaction| {
+            transaction
+                .execute(
+                    "DELETE FROM explore_artists
+                     WHERE catalog = ?1 AND scheme = ?2 AND artist_key = ?3",
+                    params![catalog, scheme, artist_key],
+                )
+                .map_err(|source| Error::store(StoreOp::Delete, source))?;
+            transaction
+                .execute(
+                    "INSERT INTO explore_artists (catalog, scheme, artist_key, day)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![catalog, scheme, artist_key, day],
+                )
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            let artist_id = transaction.last_insert_rowid();
+            let mut insert = transaction
+                .prepare_cached(
+                    "INSERT INTO explore_songs
+                        (artist_id, position, song_id, title, artist, album, disc,
+                         track, length_ms, suffix, cover, favourite, rating)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                )
+                .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+            for (position, song) in songs.iter().enumerate() {
+                let length_ms = song
+                    .length
+                    .and_then(|length| i64::try_from(length.as_millis()).ok());
+                insert
+                    .execute(params![
+                        artist_id,
+                        position as i64,
+                        song.id.as_str(),
+                        song.title,
+                        song.artist,
+                        song.album,
+                        song.disc.map(i64::from),
+                        song.track.map(i64::from),
+                        length_ms,
+                        song.suffix,
+                        song.cover.as_ref().map(Id::as_str),
+                        song.favourite.map(i64::from),
+                        rating_code(song.rating),
+                    ])
+                    .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            }
+            Ok(())
+        });
+        if let Err(error) = written {
+            tracing::debug!(%error, "an explore cache entry could not be kept");
+        }
+    }
+
+    fn forget_before(&self, earliest_day: i64, latest_day: i64) {
+        let pruned = self.inner().write(|transaction| {
+            transaction
+                .execute(
+                    "DELETE FROM explore_artists WHERE day < ?1 OR day > ?2",
+                    params![earliest_day, latest_day],
+                )
+                .map(drop)
+                .map_err(|source| Error::store(StoreOp::Delete, source))
+        });
+        if let Err(error) = pruned {
+            tracing::debug!(%error, "stale explore cache entries could not be pruned");
+        }
+    }
 }

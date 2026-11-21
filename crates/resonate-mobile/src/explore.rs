@@ -110,10 +110,13 @@ impl MobilePlayer {
         let kinship = Kinship::of(&index.genres_of_artists());
         let profile = self.explore_profile(&index, now)?;
         let blueprints = explore_blueprints(&profile, &kinship, day);
-        let hydrated = self
-            .served
-            .explore
-            .hydrate_blueprints(day, blueprints, &sources, refresh);
+        let hydrated = self.served.explore.hydrate_blueprints_with(
+            day,
+            blueprints,
+            &sources,
+            refresh,
+            self.catalog.as_ref(),
+        );
         self.require_online()?;
         let keys: BTreeSet<_> = hydrated.artists().into_iter().map(title_words).collect();
         let current = searching.index(&self.catalog)?;
@@ -187,7 +190,10 @@ impl MobilePlayer {
                 }),
         };
         let day_seeds = explore_seeds(&direct, &Kinship::of(&index.genres_of_artists()), day);
-        let found = self.served.explore.find(day, day_seeds, &sources, refresh);
+        let found =
+            self.served
+                .explore
+                .find_with(day, day_seeds, &sources, refresh, self.catalog.as_ref());
         let keys: BTreeSet<_> = found.artists().into_iter().map(title_words).collect();
         self.require_online()?;
         let current = searching.index(&self.catalog)?;
@@ -294,7 +300,10 @@ impl MobilePlayer {
         let now = SystemTime::now();
         let day = the_listeners_calendar(&time_zone, utc_offset_seconds).day_of(now);
         let seeds = explore_seeds(&direct, &Kinship::of(&index.genres_of_artists()), day);
-        let found = self.served.explore.find(day, seeds, &sources, false);
+        let found =
+            self.served
+                .explore
+                .find_with(day, seeds, &sources, false, self.catalog.as_ref());
         self.require_online()?;
         let keys: BTreeSet<_> = found.artists().into_iter().map(title_words).collect();
         let current = self.services.searching.index(&self.catalog)?;

@@ -66,7 +66,35 @@ const MIGRATIONS: &[&str] = &[
     A_LYRIC_LET_GO_IS_SWEPT_BY_ITS_KEY,
     A_SONG_KEEPS_ITS_VERSIONS_BESIDE_IT,
     A_KEEP_CAN_NAME_ITS_STREAMED_SONG,
+    EXPLORE_SEARCHES_ARE_KEPT,
 ];
+
+const EXPLORE_SEARCHES_ARE_KEPT: &str = "
+CREATE TABLE explore_artists (
+    id         INTEGER PRIMARY KEY,
+    catalog    TEXT NOT NULL,
+    scheme     TEXT NOT NULL,
+    artist_key TEXT NOT NULL,
+    day        INTEGER NOT NULL,
+    UNIQUE (catalog, scheme, artist_key)
+) STRICT;
+CREATE TABLE explore_songs (
+    artist_id  INTEGER NOT NULL REFERENCES explore_artists(id) ON DELETE CASCADE,
+    position   INTEGER NOT NULL,
+    song_id    TEXT NOT NULL,
+    title      TEXT NOT NULL,
+    artist     TEXT,
+    album      TEXT,
+    disc       INTEGER,
+    track      INTEGER,
+    length_ms  INTEGER,
+    suffix     TEXT,
+    cover      TEXT,
+    favourite  INTEGER,
+    rating     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (artist_id, position)
+) STRICT, WITHOUT ROWID;
+";
 
 const A_KEEP_CAN_NAME_ITS_STREAMED_SONG: &str = "
 ALTER TABLE kept_songs ADD COLUMN served_catalog TEXT;

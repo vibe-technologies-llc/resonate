@@ -2908,10 +2908,13 @@ A track keeps its file content advisory as nullable `tracks.explicit`: true for 
 `BeyondArtist`, `GenreDiscovery`, `FavouritesExpansion`, `RediscoverBeyond`) purely from the
 listener's local `ExploreProfile` (artists heard over the last ninety days, favourites,
 largest artist groups, left-behind artists, top genres) and the `Kinship` graph with a daily
-turn. `ExploreCache` caches search results per `(day, artist, SongCatalog)` so multiple
-playlists and mix reads share provider calls instead of re-querying overlapping artists.
-`HydratedBlueprints::curate` excludes held copies (`ExploreTrack::is_the_song`), spreads
-albums and spaces artists across playlists; `weave_mix` interleaves streamed `ExploreOffer`s
-into local mix tracks (`MixEntry`) at a bounded cadence while avoiding adjacent duplicate
-artists. `Library::kept_explored_locations` reports queued served keeps for UI state.
-An absent service costs its offers and the other results still stand.
+turn. `ExploreCache` caches search results per `(artist, SongCatalog)` in memory and persists them
+through `ExploreStore` (`EXPLORE_SEARCHES_ARE_KEPT`: `explore_artists` and `explore_songs`) for
+`EXPLORE_CACHE_DAYS` (seven days), keyed by `(catalog, scheme, artist_key)`, so restarting the app
+curates Explore playlists and mixes without re-querying providers over the network while explicit
+refresh bypasses and overwrites the cache and expired rows are pruned. `HydratedBlueprints::curate`
+excludes held copies (`ExploreTrack::is_the_song`), spreads albums and spaces artists across
+playlists; `weave_mix` interleaves streamed `ExploreOffer`s into local mix tracks (`MixEntry`) at a
+bounded cadence while avoiding adjacent duplicate artists. `Library::kept_explored_locations` reports
+queued served keeps for UI state. An absent service costs its offers and the other results still
+stand.
