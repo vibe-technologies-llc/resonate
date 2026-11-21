@@ -196,6 +196,8 @@ platforms; the catalog seam stays thin.
   device's restamp is overtaken by that later stamp, the value then converging on the restamped
   one (`a_stamp_past_the_bound_is_restamped_to_the_wall_clock_in_every_table_keeping_its_device`,
   `two_devices_holding_a_playlist_stamped_near_the_end_of_time_restamp_apart_and_converge_on_the_next_honest_edit`).
+  The migration test reads SQLite's clock before and after opening the ledger because on Windows
+  SQLite and Rust read the wall clock at different resolutions.
 - **A look diffs the catalog against what was last synced, so no catalog mutator knows about
   sync.** Playlists: a local playlist is `(id, created)` (undo re-inserts under one id and SQLite
   reuses discarded ids); a digest of name and entries (`merge::projection_digest`) moved means an

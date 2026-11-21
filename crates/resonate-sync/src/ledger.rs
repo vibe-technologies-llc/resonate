@@ -4441,8 +4441,6 @@ mod tests {
         assert_eq!(reopened.clock.last(), ahead);
     }
 
-    const A_MILLISECOND_IN_NANOS: i64 = 1_000_000;
-
     const STAMPED_ROWS: [(&str, &str); 9] = [
         (
             "devices",
@@ -4521,6 +4519,16 @@ mod tests {
             .expect("a stamped row")
     }
 
+    fn sqlite_wall_nanos(connection: &Connection) -> i64 {
+        connection
+            .query_row(
+                "SELECT CAST(unixepoch('now', 'subsec') * 1000000000 AS INTEGER)",
+                [],
+                |row| row.get(0),
+            )
+            .expect("the SQLite wall clock")
+    }
+
     #[test]
     fn a_stamp_past_the_bound_is_restamped_to_the_wall_clock_in_every_table_keeping_its_device() {
         let connection = laid_before_the_restamp(i64::MAX);
@@ -4531,18 +4539,15 @@ mod tests {
                 .expect("a row an older build stamped near the end of time");
         }
 
-        let before = wall_nanos();
+        let before = sqlite_wall_nanos(&connection);
 
         let ledger = Ledger::over(connection).expect("carried forward");
-        let after = wall_nanos();
+        let after = sqlite_wall_nanos(&ledger.connection);
 
         for (table, _) in STAMPED_ROWS {
             let (nanos, by, owed) = stamp_and_owed_of(&ledger, table);
 
-            assert!(
-                (before - A_MILLISECOND_IN_NANOS..=after + A_MILLISECOND_IN_NANOS).contains(&nanos),
-                "{table}: {nanos}"
-            );
+            assert!((before..=after).contains(&nanos), "{table}: {nanos}");
             assert_eq!(by, [9_u8], "{table}");
             assert_eq!(owed, 1, "{table}");
         }
