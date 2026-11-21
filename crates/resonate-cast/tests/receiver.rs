@@ -18,7 +18,7 @@ use parking_lot::Mutex;
 use resonate_audio::{
     AudioSource, Backend, Error as SinkError, HardwareVolume, LatencyRequest, Learnt, MediaRole,
     Opener, Plays, SinkChange, SinkId, SinkInfo, SinkResult, SinkStream, StreamEvent,
-    StreamRequest, Surveyor, Trial, TrialVerdict, Unplayed,
+    StreamRequest, Surveyor, Trial, TrialVerdict, Unplayed, sink_id_of,
 };
 use resonate_cast::{CAST_SERVICE, CastId, Casting, Finding, Found, Given, Searching};
 use resonate_codec::{DecodeStatus, Decoder, Sources};
@@ -27,7 +27,7 @@ use resonate_core::{
     TrackId, Volume,
 };
 use resonate_engine::{Command, EngineConfig, Event, NodeName, Player, QueueItem};
-use resonate_upnp::{Beside, FirstSearch, Neighbours};
+use resonate_upnp::{Beside, FirstSearch, Neighbours, Network, Searching as UpnpSearching};
 use rustls::{
     ServerConfig, ServerConnection, StreamOwned,
     crypto::ring,
@@ -848,6 +848,45 @@ fn request(sink: &SinkInfo, spec: StreamSpec) -> StreamRequest {
         force_graph_rate: false,
         no_convert: true,
         realtime: true,
+    }
+}
+
+#[test]
+fn windows_outputs_reach_the_local_graph_beside_network_renderers() {
+    let upnp = Arc::new(Network::resting(UpnpSearching::on_the_network()).expect("UPnP"));
+    let cast = Arc::new(Casting::resting(Searching::on_the_network()).expect("Cast"));
+
+    let backend = Beside::over(Box::new(NoGraph::new()), upnp).and(cast);
+
+    for name in ["wasapi:headphones", "wasapi-exclusive:headphones"] {
+        let sink = sink_id_of(&NodeName::new(name));
+        let request = StreamRequest {
+            target: Some(sink),
+            spec: stereo_sixteen(),
+            latency: LatencyRequest::Auto,
+            role: MediaRole::Music,
+            media_name: String::new(),
+            force_graph_rate: false,
+            no_convert: true,
+            realtime: true,
+        };
+        let refused = backend
+            .opener()
+            .open(
+                &request,
+                Box::new(Poured {
+                    pcm: Vec::new(),
+                    at: 0,
+                }),
+            )
+            .err();
+
+        assert!(
+            matches!(refused, Some(SinkError::NoSink)),
+            "{name} was not sent to the local graph: {refused:?}"
+        );
+
+        backend.set_device_mute(sink, true).expect("local mute");
     }
 }
 

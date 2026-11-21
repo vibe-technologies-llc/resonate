@@ -159,8 +159,9 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   open stream as the device gone, rebind, and fail the row when the next survey dropped it again.
   Bit-perfect on Windows is therefore a choice of device the
   listener makes in the output pane, and following the default never takes a device away from other
-  programs. `SinkId` is an FNV-1a hash of the node name (`sink_id_of`), so the two ways of one
-  endpoint have two ids.
+  programs. The two node names are hashed with FNV-1a and reduced below the network renderer
+  id ranges (`sink_id_of`). The window uses those ranges to route requests through `Beside`.
+  Stored selections use the node names.
 - **The twenty-four bit word is left-aligned for the device.** The ring's `S24` is a sign-extended
   low 24 bits of an `i32`; WASAPI's 24-in-32 container carries the 24 against the top, so
   `fill_buffer` shifts each word left by eight (`wire_of`: S16 is 16/16, S24 32/24, S32 32/32, F32
