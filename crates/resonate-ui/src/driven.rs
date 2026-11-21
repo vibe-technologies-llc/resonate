@@ -1346,6 +1346,7 @@ mod tests {
         let mark = driven.bounds_of("order-tracks");
         let popped = driven.bounds_of("order-sheet");
 
+        assert!(mark.left() >= driven.bounds_of("play-all").right());
         assert!(
             popped.top() >= mark.bottom() && popped.top() <= mark.bottom() + px(16.0),
             "the sort pop-up stands under the mark that opened it"
@@ -4527,6 +4528,10 @@ mod tests {
             .iter()
             .position(|order| *order == SortOrder::Title)
             .expect("the favourites offer their title");
+
+        assert!(
+            driven.bounds_of("order-favourites").left() >= driven.bounds_of("play-all").right()
+        );
 
         driven.click("order-favourites");
 

@@ -1674,7 +1674,7 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   `Section::Collection`; `Pane::Statistics` under `Section::Library`. Each: a variant, a place in
   `Pane::BROWSE`, arms in `label`/`about`/`section`/`icon`, an arm in `RootView::content`, a sidebar
   count, a `mod` line. Favourites stacks artists shelf, albums shelf, track rows; its count is all
-  three. While it lists songs its heading carries *Sort*, *Shuffle* and *Play*. *Sort* opens
+  three. While it lists songs its heading carries *Shuffle*, *Play* and *Sort*. *Sort* opens
   `Ordered::Favourites`, which changes the same order and direction as the column headers, held
   in `Sorting::favourites` and `Sorting::favourites_read` apart from the All Tracks order. It starts
   *Favourited*, newest first, with `#` as `Sortable::Marked` in `sorting::favourites_sorted`.
@@ -1875,6 +1875,8 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   `LOOK_AHEAD < PAGE` is a `const` assertion; `set_query` and `select` reset to one page. A row pressed
   past what is held plays through `play_the_listing_from`'s whole read
   (`a_page_read_past_what_is_held_is_added_to_it_only_where_it_carries_on_from_the_last_row`).
+- **Sort sits at the right edge of each desktop listing header's actions.** Its position holds
+  beside playback, view and other optional controls.
 - **A count is what the query matches, not what the window holds.** `Library::albums_counted`,
   `artists_counted`, `measured` answer over the whole match (the first two share scoping with the
   listings via `narrowed_onto`). `Measured` = rows, total length, lossless count (from `tracks.codec IN

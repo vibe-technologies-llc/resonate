@@ -819,8 +819,8 @@ impl RootView {
             .children(again)
             .children(sung)
             .children(saves)
-            .children(orders)
-            .when_some(plays, |bar, (shuffle, play)| bar.child(shuffle).child(play));
+            .when_some(plays, |bar, (shuffle, play)| bar.child(shuffle).child(play))
+            .children(orders);
 
         Some(
             kit::heading()

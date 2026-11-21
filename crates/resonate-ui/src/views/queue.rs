@@ -1290,7 +1290,6 @@ impl RootView {
                                     cx,
                                 ))
                             })
-                            .child(self.orders_a_listing("order-queue", Ordered::Queue, cx))
                             .child(self.in_the_pane_ring(
                                 kit::button(
                                     "clear-queue",
@@ -1360,6 +1359,9 @@ impl RootView {
                                 },
                                 cx,
                             ))
+                        })
+                        .when(queued, |bar| {
+                            bar.child(self.orders_a_listing("order-queue", Ordered::Queue, cx))
                         }),
                 ),
         )

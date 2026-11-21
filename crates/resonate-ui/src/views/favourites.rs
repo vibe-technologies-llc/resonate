@@ -131,7 +131,6 @@ impl RootView {
         let ordered = Arc::clone(tracks);
 
         kit::actions()
-            .child(self.orders_a_listing("order-favourites", Ordered::Favourites, cx))
             .child(
                 self.shuffle_songs_button(move |this, _, cx| this.play_shuffled(&shuffled, cx), cx),
             )
@@ -142,6 +141,7 @@ impl RootView {
                 },
                 cx,
             ))
+            .child(self.orders_a_listing("order-favourites", Ordered::Favourites, cx))
     }
 
     pub(crate) fn favourites_in_order(&self, cx: &mut Context<Self>) -> Div {

@@ -2083,9 +2083,9 @@ impl RootView {
                             cx,
                         ))
                     })
-                    .child(self.orders_a_listing("order-tracks", Ordered::Tracks, cx))
                     .child(self.shuffle_all(cx))
                     .child(self.play_all(cx))
+                    .child(self.orders_a_listing("order-tracks", Ordered::Tracks, cx))
             });
 
         kit::heading().child(

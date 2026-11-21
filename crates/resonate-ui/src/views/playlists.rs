@@ -468,10 +468,7 @@ impl RootView {
             .when_some(redoable, |bar, redoable| {
                 bar.child(self.redoing(&redoable, cx))
             })
-            .when(any_saved, |bar| {
-                bar.child(self.playlists_drawn_as(cx))
-                    .child(self.orders_a_listing("playlists-sort", Ordered::Playlists, cx))
-            })
+            .when(any_saved, |bar| bar.child(self.playlists_drawn_as(cx)))
             .child(self.in_the_pane_ring(
                 kit::icon_button(
                     "import-playlists",
@@ -495,6 +492,9 @@ impl RootView {
                     },
                     cx,
                 ))
+            })
+            .when(any_saved, |bar| {
+                bar.child(self.orders_a_listing("playlists-sort", Ordered::Playlists, cx))
             });
 
         kit::heading()
