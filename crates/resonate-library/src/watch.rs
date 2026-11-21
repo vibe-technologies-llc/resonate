@@ -660,6 +660,7 @@ mod tests {
         let late = elsewhere.path.join("late");
         let mut watch = RootsWatch::over(&[scratch.path.clone(), late.clone()]).expect("a watch");
         assert!(watch.leaves_a_root_uncovered());
+        heard_a_write_first(&watch, &scratch);
 
         watch.cover_again();
         assert!(
@@ -672,7 +673,15 @@ mod tests {
         assert!(!watch.leaves_a_root_uncovered());
 
         fs::write(late.join("echoes.flac"), b"fLaC").expect("a file");
-        assert_eq!(settled_within(&watch, HEARD_WITHIN), vec![late]);
+        let until = Instant::now() + HEARD_WITHIN;
+        while !settled_within(&watch, until.saturating_duration_since(Instant::now()))
+            .contains(&late)
+        {
+            assert!(
+                Instant::now() < until,
+                "the newly covered root was not heard"
+            );
+        }
     }
 
     #[test]

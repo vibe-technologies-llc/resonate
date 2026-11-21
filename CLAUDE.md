@@ -306,7 +306,7 @@ Invariants the layering protects (the rules files have the rest):
   measured against the system libsoxr, the tables of `docs/RESAMPLING.md` on stdout (`build.md`,
   the `compare-resamplers` skill). Not in CI: it needs libsoxr, and an idle machine for its timings.
 
-CI (`ci.yml`) runs the clippy lines through `cargo xtask lint --locked --verbose` and the nextest lines (the headless one built once as a `cargo nextest archive` and run in four `--partition` jobs, the bus tests among them, under `dbus-run-session`), the DSP ceilings bench, the Windows and macOS builds, the fuzz build, the server package and the Android checks of this list; the other benches, the profiling build, `cargo xwin` (CI builds Windows natively), the iOS checks and the SoXR comparison run locally, and `release.yml` runs on tags only. The debug profile is optimised and `target-cpu=native` is set
+CI (`ci.yml`) runs the clippy lines through `cargo xtask lint --locked --verbose` and the nextest lines (the headless suite runs in one job under `dbus-run-session`, including the bus tests), the DSP ceilings bench, the Windows and macOS builds, the fuzz build, the server package and the Android checks of this list; the other benches, the profiling build, `cargo xwin` (CI builds Windows natively), the iOS checks and the SoXR comparison run locally, and `release.yml` runs on tags only. The debug profile is optimised and `target-cpu=native` is set
 (`build.md`).
 
 `cargo run -- <subcommand> --help` is the grammar (`binary.md`); the binary doubles as the audio

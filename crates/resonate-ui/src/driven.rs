@@ -2597,7 +2597,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn a_queued_track_is_taken_out_of_the_queue_from_its_menu_wherever_it_is_listed(
+    fn a_track_can_be_taken_out_from_the_queue_menu_but_the_tracks_menu_has_no_remove_command(
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
@@ -2606,7 +2606,7 @@ mod tests {
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
         let root = driven.root.clone();
-        let (kept, taken) = driven.cx.update(|window, cx| {
+        let (kept, second) = driven.cx.update(|window, cx| {
             root.update(cx, |root, cx| {
                 let listing = root.library.read(cx).listing();
                 root.play_the_listing_from(&listing.whole(), 0, window, cx);
@@ -2615,7 +2615,16 @@ mod tests {
         });
         driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
 
-        driven.right_click(named("track", taken.get()));
+        driven.right_click(named("track", second.get()));
+        let labels = menu_labels(&mut driven);
+        assert!(labels.iter().any(|label| label == words::menu::play()));
+        assert!(!labels.iter().any(|label| label == words::menu::take_out()));
+        driven.cx.simulate_keystrokes("escape");
+        let queued = driven.read(|root, cx| root.player.read(cx).queue()[1].id);
+        driven.root.update(&mut driven.cx, |root, cx| {
+            root.set_pane(crate::Pane::Queue, cx);
+        });
+        driven.right_click(named("queued", queued.get()));
         pressed_in_the_menu(&mut driven, words::menu::take_out());
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
 

@@ -67,7 +67,22 @@ const MIGRATIONS: &[&str] = &[
     A_SONG_KEEPS_ITS_VERSIONS_BESIDE_IT,
     A_KEEP_CAN_NAME_ITS_STREAMED_SONG,
     EXPLORE_SEARCHES_ARE_KEPT,
+    EXPLORE_COVERS_ARE_KEPT,
 ];
+
+const EXPLORE_COVERS_ARE_KEPT: &str = "
+CREATE TABLE explore_covers (
+    id       INTEGER PRIMARY KEY,
+    catalog  TEXT NOT NULL,
+    scheme   TEXT NOT NULL,
+    named    INTEGER NOT NULL,
+    cover    TEXT NOT NULL,
+    side     INTEGER NOT NULL,
+    day      INTEGER NOT NULL,
+    picture  BLOB NOT NULL,
+    UNIQUE (catalog, scheme, named, cover, side)
+) STRICT;
+";
 
 const EXPLORE_SEARCHES_ARE_KEPT: &str = "
 CREATE TABLE explore_artists (

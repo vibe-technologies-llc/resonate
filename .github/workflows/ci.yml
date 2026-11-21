@@ -22,8 +22,6 @@ env:
     base-devel git rustup clang pkgconf pipewire libpipewire wayland libxkbcommon libxkbcommon-x11
     fontconfig freetype2 ttf-dejavu vulkan-headers vulkan-icd-loader ffmpeg flac wavpack mac lame dbus
     webkit2gtk-4.1 cargo-nextest
-  HEADLESS_RUN_PACKAGES: >-
-    git pipewire libpipewire dbus ffmpeg flac wavpack mac lame cargo-nextest
 
 jobs:
   clippy:
@@ -43,8 +41,8 @@ jobs:
           save-if: "false"
       - run: cargo xtask lint --locked --verbose
 
-  headless-build:
-    name: Build the tests without the window
+  headless:
+    name: Tests without the window
     runs-on: ubuntu-26.04
     container: archlinux:latest
     timeout-minutes: 60
@@ -58,33 +56,7 @@ jobs:
         with:
           cache-on-failure: "true"
           save-if: ${{ github.ref == 'refs/heads/master' }}
-      - run: cargo nextest archive --locked --profile ci --workspace --exclude resonate-ui --no-default-features --archive-file headless.tar.zst
-      - uses: actions/upload-artifact@v7
-        with:
-          name: headless-tests
-          path: headless.tar.zst
-          compression-level: 0
-          retention-days: 1
-          if-no-files-found: error
-
-  headless:
-    name: Tests without the window (${{ matrix.part }} of 4)
-    needs: headless-build
-    runs-on: ubuntu-26.04
-    container: archlinux:latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        part: [1, 2, 3, 4]
-    steps:
-      - name: Install what the tests run with
-        run: pacman -Syu --noconfirm --needed $HEADLESS_RUN_PACKAGES
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          name: headless-tests
-      - run: dbus-run-session -- cargo-nextest nextest run --archive-file headless.tar.zst --extract-to . --workspace-remap . --profile ci --partition hash:${{ matrix.part }}/4
+      - run: dbus-run-session -- cargo nextest run --locked --profile ci --workspace --exclude resonate-ui --no-default-features
 
   workspace:
     name: Tests with everything

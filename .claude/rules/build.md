@@ -24,8 +24,7 @@ added there; off desktop Linux (a `--target` that is not one, or a Windows or Ma
 is left out, as CI's Windows and macOS jobs leave it. `test` is `cargo nextest run --workspace`,
 wrapped in `dbus-run-session` on Linux where it is on the path; `check` is `fmt --check`, `lint`
 and `test`; `android` and `ios` call the phones' own steps. CI's four clippy jobs run `cargo xtask
-lint --locked --verbose` (the arm64 one with `--target aarch64-pc-windows-msvc`); its nextest lines
-stay its own, since the headless one is archived once and partitioned.
+lint --locked --verbose` (the arm64 one with `--target aarch64-pc-windows-msvc`).
 
 - **`--changed`** (`changed.rs`) takes the files differing from the merge base with `origin/master`
   (`--since <rev>`), the working tree and untracked files included, gives each to the member whose
@@ -47,10 +46,8 @@ stay its own, since the headless one is archived once and partitioned.
   (push to `master`, pull requests, `workflow_dispatch`; `archlinux` containers; the token reads
   the repository and nothing more, `permissions: contents: read`): clippy through `cargo xtask lint
   --locked --verbose` (default features, the workspace headless, the binary without `ui` and with each feature alone, so code
-  dead without a feature is warned), headless tests of every crate but the window (built once by
-  `headless-build`, `cargo nextest archive` of the whole nextest line, then run by four `headless`
-  jobs, one a `--partition hash:N/4`, each under `dbus-run-session` so the MPRIS bus tests, which
-  skip without a bus, run in them; the next paragraph) and, in
+  dead without a feature is warned), headless tests of every crate but the window (built and run
+  by `headless` under `dbus-run-session` so the MPRIS bus tests run) and, in
   the whole-workspace job, only the tests of `resonate` and `resonate-ui`, two of the three crates whose
   default features the headless job does not build (the third, `resonate-signin`, whose `window`
   feature is a default, is linted by the full clippy and tested by no job); no job runs `cargo build` before `cargo nextest run`,
@@ -101,7 +98,7 @@ stay its own, since the headless one is archived once and partitioned.
   only the jobs whose build is the longest keep one, each saved by one job on `master` alone
   (`save-if`) and whatever the tests answered (`cache-on-failure`), and read by the others of its
   platform through `shared-key` (the registry, build scripts and proc-macros, which `cargo check`
-  and `cargo build` share): `linux`, saved by `workspace` and read by `clippy`; `headless-build`'s
+  and `cargo build` share): `linux`, saved by `workspace` and read by `clippy`; `headless`'s
   own; `windows`, saved by `windows-tests` and read by `windows`; `macos`, saved by `macos-tests` and
   read by `macos` and `macos-window`; `android`, saved by `android` (both ABIs, debug) and read by
   `android-emulator`. `costs`, `layering`, `fuzz`, `windows-arm64` and `android-release` keep none:
@@ -137,29 +134,9 @@ stay its own, since the headless one is archived once and partitioned.
   the root manifest names and uploaded as the artifact `resonate-android-apk`, nothing published.
   `gh workflow run android-apk.yml --ref <branch>` starts it.
 
-- **The headless tests are built once and spread over four runners.** `headless-build` runs
-  `cargo nextest archive --locked --profile ci --workspace --exclude resonate-ui --no-default-features`
-  with the cargo cache, and uploads the archive (about 1.1 GB, `compression-level: 0` since the
-  archive is zstd already, kept a day) as the artifact `headless-tests`; `headless` is a matrix of
-  four, each downloading it, checking the repository out and running
-  `cargo-nextest nextest run --archive-file headless.tar.zst --extract-to . --workspace-remap . --profile ci --partition hash:N/4`.
-  The test jobs install no toolchain: `cargo-nextest` is called directly, not as `cargo nextest`,
-  since a run from an archive needs no cargo, and `HEADLESS_RUN_PACKAGES` is what the tests run
-  with (`pipewire` and `libpipewire`, the one library the test binaries link and the daemon and
-  `pw-cli` that the reconnect, `formats` and microphone tests host, `dbus`, `ffmpeg`, `flac`,
-  `wavpack`, `mac`, `lame` for the encoded and reference tests, `git` for the checkout) beside
-  nextest. **Each test job extracts into the checkout (`--extract-to .`), at the build job's own
-  path**: a test binary holds `env!("CARGO_MANIFEST_DIR")` and `env!("CARGO_BIN_EXE_resonate")` as
-  absolute paths of the build job, and the tests that read the tree at runtime (the comment, rules
-  and suite checks of `resonate-words-build`) and the ones that run the binary reach it by them, so
-  the checkout and the `target` it gains must sit where the build had them; `--workspace-remap .`
-  tells nextest where the sources are (its config, the working directories) the same way. `hash`
-  partitions by test name, so the four runs hold 1 777, 1 658, 1 713 and 1 700 of the 6 848 tests,
-  the heavy cases (`resonate-analysis`'s `references::`) scattering among them; `fail-fast` is off
-  in the matrix so one failing part does not hide another's. The whole-workspace job (`-p resonate -p resonate-ui`, a
-  few hundred tests behind a build of GPUI) and the Windows and macOS test lines (one build each,
-  the macOS engine tests one at a time) stay one job each: an archive would add a 1 GB upload and
-  as many downloads to save nothing the build does not still cost.
+- **One runner builds and runs the headless suite.** The `headless` job runs
+  `dbus-run-session -- cargo nextest run --locked --profile ci --workspace --exclude resonate-ui --no-default-features`
+  in the checkout with the pinned toolchain and its own cargo cache.
 
 CI and the release jobs install WebKitGTK 4.1 (`webkit2gtk-4.1`, Fedora's `webkit2gtk4.1-devel`,
 Ubuntu's `libwebkit2gtk-4.1-dev`) for `resonate-signin`'s window.

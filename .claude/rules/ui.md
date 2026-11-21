@@ -1720,7 +1720,7 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   card reads its rows off the frame (`RootView::with_the_rows_of`, sibling of
   `with_everything_listed`); *Save* = `Library::save_query` through `LibraryModel::edit`, a taken name a
   `Notice::Trouble`; a card whose search a playlist already fills greys a check.
-- **A suggestion's art is drawn, never stored; a playlist's is the same drawing.** `views/mosaic.rs` is
+- **A suggestion and a playlist assemble their mosaics when drawn.** `views/mosaic.rs` is
   the one builder: `Mosaic` = covers drawn, a mark, a name, rounded all round. `suggestion_art` draws covers in
   `Suggestion::pictured_by` (one whole, or two to four as a 2×2 mosaic). **Where no cover is, the
   ground is neutral**: art with no picture at all is `raised` with its mark in `faint` and its name
@@ -2140,9 +2140,10 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
     greyed with the state as hint; a press only where nothing is asked for yet or `can_be_asked_again`);
     section heading *Press a song to download it*
     (`pressing_an_ncs_song_found_on_musicbrainz_wants_it_and_asks_the_providers_for_it`).
-- **A song in the queue is taken out from its menu wherever listed**: *Take out of the queue* while
+- **The Tracks pane's song menu offers playback and queueing.** The queue's own row menu offers
+  *Take out of the queue* for that row. A shared track menu elsewhere offers it where
   `RootView::is_in_the_queue` finds a row with the same location and span; `take_out_of_the_queue`
-  drops every such row through `drop_rows`.
+  drops every matching row through `drop_queue_runs`.
 - **A song is matched to a recording in a sheet of its own** (`views/matching.rs`). *Identify ›
   Match to a recording…* on a track's menu opens `matching_sheet` (`Sheet::Typing`,
   `MATCHING_PANEL`) on a `Matching` for the track: the `Typed::words` field opens holding the song's
@@ -3241,3 +3242,7 @@ covers so `QueuePane` and the playback bar show Suggested badges, cover art and 
 Download controls (`download_explored`, reflected via `LibraryModel::is_explored_queued`),
 beside `mix_suggestions_into_queue` in the Queue heading. Turning off Show Explore suggestions
 in Online settings hides all Explore surfaces. An explicit keep enters the Downloads queue.
+
+`ServerModel` reads retained Explore artwork on the background executor before asking the service.
+The `Drawer` decodes it at the drawn side for the shelf mosaics and song rows. A missing or unreadable
+entry is fetched from the service, and a successful decode supplies the bytes kept for the next run.

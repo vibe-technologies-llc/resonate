@@ -1281,9 +1281,9 @@ impl RootView {
                 let deleting = Deleting::of(track);
                 let everywhere =
                     syncs_with_other_devices(cx).then(|| deleting.clone().on_every_device());
-                let in_the_queue = this
-                    .is_in_the_queue(&track.location, track.span, cx)
-                    .then(|| (track.location.clone(), track.span));
+                let in_the_queue = (this.pane != Pane::Tracks
+                    && this.is_in_the_queue(&track.location, track.span, cx))
+                .then(|| (track.location.clone(), track.span));
 
                 let pressed = pressed.clone();
 

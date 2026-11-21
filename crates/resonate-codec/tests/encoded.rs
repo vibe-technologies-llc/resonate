@@ -3467,9 +3467,15 @@ fn read_by_ffmpeg_without_a_complaint(path: &Path) -> bool {
     Command::new("ffmpeg")
         .args(["-v", "warning", "-err_detect", "crccheck+explode", "-i"])
         .arg(path)
-        .args(["-f", "null", "-"])
+        .args(["-map_metadata:s", "-1", "-f", "null", "-"])
         .output()
-        .is_ok_and(|output| output.status.success() && output.stderr.is_empty())
+        .is_ok_and(|output| {
+            if !output.status.success() || !output.stderr.is_empty() {
+                eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+                return false;
+            }
+            true
+        })
 }
 
 #[cfg(unix)]

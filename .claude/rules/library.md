@@ -2918,3 +2918,8 @@ playlists; `weave_mix` interleaves streamed `ExploreOffer`s into local mix track
 bounded cadence while avoiding adjacent duplicate artists. `Library::kept_explored_locations` reports
 queued served keeps for UI state. An absent service costs its offers and the other results still
 stand.
+
+`EXPLORE_COVERS_ARE_KEPT` appends `explore_covers` to the desktop catalog. Artwork is kept for
+`EXPLORE_CACHE_DAYS` by catalog, source scheme, cover ID and drawn side, with the song ID as a
+separate key where the service has to find its cover. A write prunes expired entries and keeps the
+newest 256 responses within 64 MiB. A response over 2 MiB can be drawn without being kept.

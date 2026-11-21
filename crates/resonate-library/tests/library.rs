@@ -12,7 +12,7 @@ use std::{
     env,
     ffi::OsStr,
     fs, io,
-    num::NonZeroUsize,
+    num::{NonZeroU32, NonZeroUsize},
     path::{Path, PathBuf},
     process::{self, Command, Stdio},
     slice,
@@ -3344,6 +3344,7 @@ fn a_row_an_older_build_catalogued_for_a_link_hands_its_history_to_the_file_it_n
     Ok(())
 }
 
+#[cfg(unix)]
 fn catalogued_again_at(database: &Path, held: &Path, at: &Path) {
     let catalog = beside(database);
     let columns: Vec<String> = catalog
@@ -3374,6 +3375,7 @@ fn catalogued_again_at(database: &Path, held: &Path, at: &Path) {
     assert_eq!(written, 1);
 }
 
+#[cfg(unix)]
 fn settled_text(path: &Path) -> String {
     path.to_str()
         .expect("a path the catalog can hold")
@@ -34830,5 +34832,59 @@ fn explore_playlists_persist_across_restarts_until_refreshed_or_expired() -> Res
         &reopened,
     );
     assert_eq!(service.searched.lock().len(), searches_after_cold + 6);
+    Ok(())
+}
+
+#[test]
+fn explore_covers_survive_reopening_and_are_shared_by_cover_id_within_a_catalog() -> Result<()> {
+    let (_tree, library, database) = a_music_folder_on_disk()?;
+    let source = SourceId::new("test-cover").expect("a source id");
+    let offer_of = |id: &str, catalog: &str| {
+        let mut song = explore_song(id, "Orbit One", "The Orbiters");
+        song.cover = resonate_providers::Id::new("sleeve");
+        resonate_library::ExploreOffer {
+            catalog: catalog.to_owned(),
+            service: "Test".to_owned(),
+            location: resonate_providers::Named::Song(song.id.clone()).location(&source),
+            song,
+        }
+    };
+    let offer = offer_of("one", "first");
+    let side = NonZeroU32::new(128).expect("a drawn side");
+    let bytes = b"a cover";
+    assert!(library.explore_cover(&offer, side).is_none());
+    library.keep_explore_cover(&offer, side, bytes);
+    drop(library);
+
+    let reopened = Library::open(&database)?;
+    let from_same_album = offer_of("two", "first");
+    assert_eq!(
+        reopened.explore_cover(&from_same_album, side).as_deref(),
+        Some(bytes.as_slice())
+    );
+    assert!(
+        reopened
+            .explore_cover(&offer_of("one", "second"), side)
+            .is_none()
+    );
+    assert!(
+        reopened
+            .explore_cover(&offer, side.saturating_mul(side))
+            .is_none()
+    );
+
+    let connection = rusqlite::Connection::open(&database).expect("the catalog reopens");
+    connection
+        .execute(
+            "UPDATE explore_covers SET day = day - ?1",
+            [resonate_library::EXPLORE_CACHE_DAYS],
+        )
+        .expect("the cover expires");
+    assert!(reopened.explore_cover(&offer, side).is_none());
+    reopened.keep_explore_cover(&offer, side, bytes);
+    assert_eq!(
+        reopened.explore_cover(&offer, side).as_deref(),
+        Some(bytes.as_slice())
+    );
     Ok(())
 }

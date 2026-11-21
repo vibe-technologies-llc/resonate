@@ -10,6 +10,7 @@ const DRAWING_THREAD: &str = "resonate-drawing";
 
 type Job = Box<dyn FnOnce() + Send>;
 
+#[derive(Clone)]
 pub(crate) struct Drawer {
     jobs: Sender<Job>,
 }

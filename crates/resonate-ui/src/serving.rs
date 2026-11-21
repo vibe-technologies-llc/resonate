@@ -7,7 +7,7 @@ use std::{
 use ahash::AHashMap;
 use gpui::{Context, Task};
 use resonate_core::{MediaLocation, SourceId};
-use resonate_library::{CoverArt, ExploreOffer, ImageFormat, SongToKeep};
+use resonate_library::{CoverArt, ExploreOffer, ImageFormat, Library, SongToKeep};
 use resonate_providers::{Error as ProviderError, Named};
 
 use crate::{
@@ -537,7 +537,7 @@ impl ServerModel {
             .cover
             .as_ref()
             .map(|cover| ServedCover(cover.as_str().to_owned()));
-        self.cover(&offer.location, known.as_ref(), drawn, cx)
+        self.draw_cover(&offer.location, known, Some(offer), drawn, cx)
     }
 
     pub(crate) fn cover(
@@ -547,10 +547,30 @@ impl ServerModel {
         drawn: Drawn,
         cx: &mut Context<Self>,
     ) -> Option<Picture> {
-        let serves = self.serving(of).or_else(|| self.serves())?;
+        let explored = self.explored_offer(of).cloned();
         let remembered = known
             .cloned()
             .or_else(|| self.explored(of).and_then(|song| song.cover.clone()));
+        let explored = explored.as_ref().filter(|offer| {
+            offer
+                .song
+                .cover
+                .as_ref()
+                .map(resonate_providers::Id::as_str)
+                == remembered.as_ref().map(|cover| cover.0.as_str())
+        });
+        self.draw_cover(of, remembered, explored, drawn, cx)
+    }
+
+    fn draw_cover(
+        &mut self,
+        of: &MediaLocation,
+        remembered: Option<ServedCover>,
+        explored: Option<&ExploreOffer>,
+        drawn: Drawn,
+        cx: &mut Context<Self>,
+    ) -> Option<Picture> {
+        let serves = self.serving(of).or_else(|| self.serves())?;
         let key = CoverKey::of(of, remembered.as_ref());
         let wanted = AtSide {
             key: key.clone(),
@@ -566,28 +586,32 @@ impl ServerModel {
 
         let side = wanted.side;
         let location = of.clone();
-        let known = remembered;
-        let fetched = cx
-            .background_executor()
-            .spawn(async move { serves.cover(&location, known.as_ref(), side.get()) });
+        let cache = explored.map(|offer| {
+            (
+                Arc::clone(&cx.global::<ResonateApp>().library),
+                offer.clone(),
+            )
+        });
+        let drawer = cx.global::<Drawer>().clone();
+        let fetched = cx.background_executor().spawn(async move {
+            fetch_cover(
+                &drawer,
+                serves.as_ref(),
+                &location,
+                remembered.as_ref(),
+                side,
+                cache.as_ref(),
+            )
+            .await
+        });
         cx.spawn(async move |this, cx| {
-            let bytes = fetched.await;
-            let bytes = match bytes {
-                Ok(bytes) => Some(bytes),
+            let (answered, decoded) = match fetched.await {
+                Ok(picture) => (true, picture),
                 Err(error) => {
                     tracing::debug!(%error, "a cover the server holds could not be fetched");
-                    None
+                    (false, None)
                 }
             };
-            let answered = bytes.is_some();
-            let drawing = this.update(cx, |_, cx| {
-                cx.global::<Drawer>()
-                    .draw(move || bytes.and_then(|bytes| drawn_from(bytes, side)))
-            });
-            let Ok(drawing) = drawing else {
-                return;
-            };
-            let decoded = drawing.await.flatten();
             let _ = this.update(cx, |this, cx| {
                 let landed = if answered {
                     this.fetching.answered(&wanted.key, fetch)
@@ -600,8 +624,8 @@ impl ServerModel {
                 }
                 if answered {
                     this.covers.insert(wanted, decoded).forget(cx);
-                    cx.notify();
                 }
+                cx.notify();
             });
         })
         .detach();
@@ -625,9 +649,35 @@ impl ServerModel {
     }
 }
 
-fn drawn_from(bytes: Vec<u8>, side: NonZeroU32) -> Option<Picture> {
+async fn fetch_cover(
+    drawer: &Drawer,
+    serves: &dyn Serves,
+    location: &MediaLocation,
+    known: Option<&ServedCover>,
+    side: NonZeroU32,
+    cache: Option<&(Arc<Library>, ExploreOffer)>,
+) -> resonate_providers::Result<Option<Picture>> {
+    if let Some((library, offer)) = cache
+        && let Some(bytes) = library.explore_cover(offer, side)
+        && let Some((picture, _)) = drawer.draw(move || drawn_from(bytes, side)).await.flatten()
+    {
+        return Ok(Some(picture));
+    }
+    let bytes = serves.cover(location, known, side.get())?;
+    let Some((picture, bytes)) = drawer.draw(move || drawn_from(bytes, side)).await.flatten()
+    else {
+        return Ok(None);
+    };
+    if let Some((library, offer)) = cache {
+        library.keep_explore_cover(offer, side, &bytes);
+    }
+    Ok(Some(picture))
+}
+
+fn drawn_from(bytes: Vec<u8>, side: NonZeroU32) -> Option<(Picture, Vec<u8>)> {
     let format = ImageFormat::sniff(&bytes)?;
-    drawn_within(&CoverArt { format, bytes }, side)
+    let art = CoverArt { format, bytes };
+    Some((drawn_within(&art, side)?, art.bytes))
 }
 
 fn rows_at(serves: &dyn Serves, place: &Place) -> Result<Vec<Row>, ProviderError> {

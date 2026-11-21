@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
+    num::NonZeroU32,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -33,6 +34,9 @@ const BEYOND_RELATED_SEEDS: usize = 3;
 const GENRE_PLAYLIST_SEEDS: usize = 4;
 const UNIQUE_SEEDS_AT_MOST: usize = 10;
 const CACHE_ARTISTS: usize = 64;
+const EXPLORE_COVER_BYTES_AT_MOST: usize = 2 * 1024 * 1024;
+const EXPLORE_COVERS_HELD: u32 = 256;
+const EXPLORE_COVER_BUDGET: u32 = 64 * 1024 * 1024;
 const LOCAL_PER_SUGGESTION: usize = 3;
 const SHORT_MIX_LOCAL_PER_SUGGESTION: usize = 2;
 const MEDIUM_MIX_AT_LEAST: usize = 7;
@@ -44,6 +48,17 @@ pub struct ExploreOffer {
     pub service: String,
     pub location: MediaLocation,
     pub song: Song,
+}
+
+impl ExploreOffer {
+    fn picture_key(&self) -> (bool, &str) {
+        self.song
+            .cover
+            .as_ref()
+            .map_or((false, self.song.id.as_str()), |cover| {
+                (true, cover.as_str())
+            })
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -892,6 +907,87 @@ fn total_duration(songs: &[ExploreOffer]) -> Option<Duration> {
 }
 
 impl Library {
+    pub fn explore_cover(&self, offer: &ExploreOffer, side: NonZeroU32) -> Option<Vec<u8>> {
+        let today = Calendar::local().day_of(SystemTime::now());
+        let (named, cover) = offer.picture_key();
+        let read = self.inner().read(|connection| {
+            connection
+                .query_row(
+                    "SELECT picture FROM explore_covers
+                     WHERE catalog = ?1 AND scheme = ?2 AND named = ?3 AND cover = ?4
+                       AND side = ?5 AND day BETWEEN ?6 AND ?7",
+                    params![
+                        offer.catalog,
+                        offer.location.source().as_str(),
+                        named,
+                        cover,
+                        side.get(),
+                        earliest_cached_day(today),
+                        today
+                    ],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|source| Error::store(StoreOp::Query, source))
+        });
+        match read {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                tracing::debug!(%error, "a kept explore cover could not be read");
+                None
+            }
+        }
+    }
+
+    pub fn keep_explore_cover(&self, offer: &ExploreOffer, side: NonZeroU32, picture: &[u8]) {
+        if picture.is_empty() || picture.len() > EXPLORE_COVER_BYTES_AT_MOST {
+            return;
+        }
+        let today = Calendar::local().day_of(SystemTime::now());
+        let (named, cover) = offer.picture_key();
+        let kept = self.inner().write(|transaction| {
+            transaction
+                .execute(
+                    "INSERT OR REPLACE INTO explore_covers
+                       (catalog, scheme, named, cover, side, day, picture)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        offer.catalog,
+                        offer.location.source().as_str(),
+                        named,
+                        cover,
+                        side.get(),
+                        today,
+                        picture
+                    ],
+                )
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            transaction
+                .execute(
+                    "DELETE FROM explore_covers
+                     WHERE day NOT BETWEEN ?1 AND ?2 OR id IN (
+                       SELECT id FROM (
+                         SELECT id, row_number() OVER recent AS position,
+                                sum(length(picture)) OVER recent AS bytes
+                         FROM explore_covers WHERE day BETWEEN ?1 AND ?2
+                         WINDOW recent AS (ORDER BY id DESC)
+                       ) WHERE position > ?3 OR bytes > ?4
+                     )",
+                    params![
+                        earliest_cached_day(today),
+                        today,
+                        EXPLORE_COVERS_HELD,
+                        EXPLORE_COVER_BUDGET
+                    ],
+                )
+                .map(drop)
+                .map_err(|source| Error::store(StoreOp::Delete, source))
+        });
+        if let Err(error) = kept {
+            tracing::debug!(%error, "an explore cover could not be kept");
+        }
+    }
+
     pub fn explore_blueprints(&self) -> Result<Vec<ExploreBlueprint>> {
         let now = SystemTime::now();
         let day = Calendar::local().day_of(now);

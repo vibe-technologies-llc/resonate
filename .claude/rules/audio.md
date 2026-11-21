@@ -1849,6 +1849,8 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
 - **Real-file fixtures are built by ffmpeg at test time; the suite skips without it.**
   `crates/resonate-codec/tests/encoded.rs` also builds a rip through `flac`/`metaflac`, MP3s through
   ffmpeg's `libmp3lame`, and writes one CAF itself (ffmpeg's muxer refuses AAC).
+  Its strict decode check disables copying stream metadata to the null output. FFmpeg 9.1 warns
+  when the output encoder discards a stream's `DURATION` tag, even when the input decodes cleanly.
   `RESONATE_REAL_FIXTURES` points the suite at a folder of real files: every file must probe, name a
   known container and codec, report a duration and decode its first block. Unset: skip.
 - **A bus test reaches its own service by the connection's unique name** (`Mpris::unique_name`),
