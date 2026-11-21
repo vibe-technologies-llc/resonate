@@ -5,6 +5,7 @@ use resonate_eq::{Catalogue, DeviceId, search, suggest};
 
 fn assert_stays_inside_a_folder(id: &DeviceId) {
     let path = id.as_str();
+
     assert!(!path.starts_with('/'), "{path}");
     assert!(!path.contains('\\'), "{path}");
     assert!(

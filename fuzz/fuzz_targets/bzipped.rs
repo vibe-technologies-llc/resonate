@@ -10,6 +10,7 @@ const DECODED_AT_MOST: u64 = 64 * 1024 * 1024;
 
 fn by_the_reference(packed: &[u8]) -> io::Result<Vec<u8>> {
     let mut plain = Vec::new();
+
     MultiBzDecoder::new(packed)
         .take(DECODED_AT_MOST)
         .read_to_end(&mut plain)?;
