@@ -15,7 +15,7 @@ use crate::{
         reorder::{Listed, Shift, Step},
         root::{RootView, empty},
         scrollbar::Scrollbars,
-        sorting,
+        sorting::{self, Ordered},
     },
     words,
 };
@@ -99,13 +99,13 @@ impl RootView {
         let playing = self.playing_now(cx).track;
         let nothing = held.is_empty();
 
-        let plays = (held.tracks > 0).then(|| self.play_favourites(&tracks, cx));
+        let actions = (held.tracks > 0).then(|| self.favourite_actions(&tracks, cx));
 
         let shelves = (!nothing).then(|| self.favourite_shelves(held, &artists, &albums, cx));
         let listed = (held.tracks > 0).then(|| self.favourite_rows(&tracks, playing, cx));
 
         kit::pane()
-            .child(favourites_heading(held, &reads, plays))
+            .child(favourites_heading(held, &reads, actions))
             .when(nothing, |pane| {
                 pane.child(if narrowed {
                     empty(
@@ -126,11 +126,12 @@ impl RootView {
             .into_any_element()
     }
 
-    fn play_favourites(&self, tracks: &Arc<[Track]>, cx: &mut Context<Self>) -> Div {
+    fn favourite_actions(&self, tracks: &Arc<[Track]>, cx: &mut Context<Self>) -> Div {
         let shuffled = Arc::clone(tracks);
         let ordered = Arc::clone(tracks);
 
         kit::actions()
+            .child(self.orders_a_listing("order-favourites", Ordered::Favourites, cx))
             .child(
                 self.shuffle_songs_button(move |this, _, cx| this.play_shuffled(&shuffled, cx), cx),
             )
@@ -141,6 +142,24 @@ impl RootView {
                 },
                 cx,
             ))
+    }
+
+    pub(crate) fn favourites_in_order(&self, cx: &mut Context<Self>) -> Div {
+        let sorting = self.library.read(cx).sorting();
+
+        self.order_choices(
+            sorting.favourites,
+            sorting.favourites_read,
+            |this, order, cx| {
+                this.library
+                    .update(cx, |library, cx| library.order_favourites(order, cx));
+            },
+            |this, reading, cx| {
+                this.library
+                    .update(cx, |library, cx| library.read_favourites(reading, cx));
+            },
+            cx,
+        )
     }
 
     fn favourite_shelves(
@@ -235,7 +254,7 @@ impl RootView {
     }
 }
 
-fn favourites_heading(held: Favourited, reads: &[String], plays: Option<Div>) -> Div {
+fn favourites_heading(held: Favourited, reads: &[String], actions: Option<Div>) -> Div {
     let counted = held.counted();
 
     kit::heading()
@@ -253,7 +272,7 @@ fn favourites_heading(held: Favourited, reads: &[String], plays: Option<Div>) ->
                             column.child(kit::subtitle(counted))
                         }),
                 )
-                .children(plays),
+                .children(actions),
         )
         .when(!reads.is_empty(), |heading| {
             heading.child(listing::reads(reads))

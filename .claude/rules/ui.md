@@ -1674,8 +1674,15 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   `Section::Collection`; `Pane::Statistics` under `Section::Library`. Each: a variant, a place in
   `Pane::BROWSE`, arms in `label`/`about`/`section`/`icon`, an arm in `RootView::content`, a sidebar
   count, a `mod` line. Favourites stacks artists shelf, albums shelf, track rows; its count is all
-  three. While it lists songs its heading carries *Shuffle* and *Play* (`play_songs_button`, `shuffle_songs_button`, the browser's words and ids, which `play_all` and `shuffle_all` press too): *Play* turns shuffle off and queues the songs from the first in the order shown, *Shuffle* queues them and turns shuffle on (`favourites_play_from_the_first_song_shown_in_order_and_shuffle_queues_them_all`, `an_empty_favourites_offers_neither_play_nor_shuffle`). Its track rows have their own order, `Sorting::favourites` (*Favourited* newest first until a
-  header is pressed) and `sorting::favourites_sorted`, a `Sorted` with `#` as `Sortable::Marked`.
+  three. While it lists songs its heading carries *Sort*, *Shuffle* and *Play*. *Sort* opens
+  `Ordered::Favourites`, which changes the same order and direction as the column headers, held
+  in `Sorting::favourites` and `Sorting::favourites_read` apart from the All Tracks order. It starts
+  *Favourited*, newest first, with `#` as `Sortable::Marked` in `sorting::favourites_sorted`.
+  *Play* turns shuffle off and queues the songs from the first in the order shown, and *Shuffle*
+  queues them and turns shuffle on (`play_songs_button`, `shuffle_songs_button`, the browser's words
+  and ids, which `play_all` and `shuffle_all` press too). The heading offers these actions only when
+  it lists songs (`favourites_play_from_the_first_song_shown_in_order_and_shuffle_queues_them_all`,
+  `an_empty_favourites_offers_no_track_actions`).
 - **Resonate Wrapped is a sheet over the pane, offered from the Statistics heading and never unasked.** `views/wrapped.rs`: `open_wrapped` reads on the background executor and sets `Social::wrapped`, a `Deck` (the years heard, the review, its slides, the slide shown); `Sheet::Wrapped` keeps the focus, escape closes it, and the plain arrows, which are the seek keys, turn the slide (`turn_the_slide`) because a sheet in front holds them back from the transport. A slide fades in over `HANDS_OVER`, keyed by its place; there is no auto-advance. **The deck is centred over the scrim at one height whatever the slide** (`kit::over_a_scrim`): a stage of `theme::wrapped_stage()` (380, the tallest slide, five ranked rows under a headline and detail) holds each slide centred in it, so the card and its controls stay put as the slides turn and none floats in an empty box; past the window's `DECK_HEIGHT_AT_MOST` the stage gives way and the slide scrolls. The card is the plain sheet, no wash or gradient under it. The head is a progress segment a slide, lit to the one shown (spoken as *n of m*, `slide_of(at, count)`), the figure and a close mark; a `kit::rule` and the foot close it: the years, *Copy* and *Save card*, a hairline, then *Back* and *Next* (primary) together, *Next* becoming *Done* on the last slide. A slide with no rows or bars is centred and draws its headline at `text_lyric`; the eyebrow is in the accent, and the first ranked row is washed in it. The opening slide draws the year's plays, songs, artists, albums and days as one `kit::ledger` of five cells (`tallies_drawn`) in place of its detail line. Each row and bar is a list item saying what it shows. *Copy* takes `YearReview::summary`; *Save card* writes `wrapped_card.rs`'s picture, an SVG written by hand in the worn palette and drawn by `resvg` on the background executor with the system's fonts (`the_arrows_turn_the_slides_and_escape_closes_the_deck_leaving_the_pane_alone`, `a_name_written_on_the_card_cannot_break_out_of_the_drawing`).
 - **The Statistics pane reads top down from one figure to the rankings** (`views/statistics.rs`):
   *Time listened* and its pace over every day the window spans (`the_pace_of`) set on the page at
@@ -3137,8 +3144,8 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   Sort dialogue, and the pressable column header (a press names the order; a second on the one
   in force reverses it; the column in force wears the accent and a chevron). `views/sorting.rs`:
   `Ordering` is the trait the five order enums implement. **The dialogue is one pop-up**
-  (`Orders::ordering`, an `Ordered` naming what it sorts: tracks, albums, artists, playlists, a
-  playlist's rows, the queue, a search being saved; `Sheet::Ordering`): `order_sheet` over
+  (`Orders::ordering`, an `Ordered` naming what it sorts: tracks, favourites, albums, artists,
+  playlists, a playlist's rows, the queue, a search being saved; `Sheet::Ordering`): `order_sheet` over
   `order_choices`, the orders as `kit::checked_row`s (scrolling where a short window cuts them) and the
   direction as two `kit::segment`s worded for the order held (*A to Z*, *Newest first*), a playlist's rows
   adding *Keep this order* under a rule. A press or key applies at once and leaves it open to take the

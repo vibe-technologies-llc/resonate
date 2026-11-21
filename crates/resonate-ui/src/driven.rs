@@ -4088,12 +4088,43 @@ mod tests {
     fn favourites_play_from_the_first_song_shown_in_order_and_shuffle_queues_them_all(
         cx: &mut TestAppContext,
     ) {
+        use resonate_library::{Direction, SortOrder};
+
+        use crate::views::sorting::Ordered;
+
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
         favourite_everything(&library);
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
         driven.click("tab-favourites");
         driven.until(|root, cx| root.library.read(cx).favourite_tracks().len() == 4);
+        let all_tracks = driven.read(|root, cx| root.library.read(cx).sorting());
+        let title = SortOrder::ALL
+            .iter()
+            .position(|order| *order == SortOrder::Title)
+            .expect("the favourites offer their title");
+
+        driven.click("order-favourites");
+        assert_eq!(
+            driven.read(|root, cx| root.orders(cx).ordering),
+            Some(Ordered::Favourites)
+        );
+        driven.click(named("order-choice", title));
+        driven.click(named("order-reading", 1));
+        let sorting = driven.read(|root, cx| root.library.read(cx).sorting());
+        assert_eq!(sorting.favourites, SortOrder::Title);
+        assert_eq!(sorting.favourites_read, Direction::Descending);
+        assert_eq!(sorting.tracks, all_tracks.tracks);
+        assert_eq!(sorting.tracks_read, all_tracks.tracks_read);
+        driven.cx.simulate_keystrokes("escape");
+        driven.until(|root, cx| {
+            root.library
+                .read(cx)
+                .favourite_tracks()
+                .iter()
+                .map(|track| track.title.as_str())
+                .eq(["Us", "Time", "Money", "Echoes"])
+        });
         let shown = favourites_listed(&mut driven);
 
         driven.click("shuffle-all");
@@ -4117,13 +4148,14 @@ mod tests {
     }
 
     #[gpui::test]
-    fn an_empty_favourites_offers_neither_play_nor_shuffle(cx: &mut TestAppContext) {
+    fn an_empty_favourites_offers_no_track_actions(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes"]);
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
         driven.click("tab-favourites");
         driven.settle();
 
+        assert!(driven.cx.debug_bounds("order-favourites").is_none());
         assert!(driven.cx.debug_bounds("play-all").is_none());
         assert!(driven.cx.debug_bounds("shuffle-all").is_none());
     }

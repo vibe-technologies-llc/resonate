@@ -51,6 +51,7 @@ pub(crate) fn shape(label: &'static str) -> Div {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Ordered {
     Tracks,
+    Favourites,
     Albums,
     Artists,
     Playlists,
@@ -62,7 +63,7 @@ pub(crate) enum Ordered {
 impl Ordered {
     fn title(self) -> &'static str {
         match self {
-            Self::Tracks => words::sorting::sort_songs(),
+            Self::Tracks | Self::Favourites => words::sorting::sort_songs(),
             Self::Albums => words::sorting::sort_albums(),
             Self::Artists => words::sorting::sort_artists(),
             Self::Playlists => words::sorting::sort_playlists(),
@@ -210,6 +211,7 @@ impl RootView {
     ) -> Div {
         let choices = match ordered {
             Ordered::Tracks => self.tracks_in_order(cx),
+            Ordered::Favourites => self.favourites_in_order(cx),
             Ordered::Albums => self.albums_in_order(cx),
             Ordered::Artists => self.artists_in_order(cx),
             Ordered::Playlists => self.playlists_order(cx),
