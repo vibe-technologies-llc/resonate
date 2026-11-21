@@ -247,9 +247,9 @@ fn saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_a
 
     let desk = device(&hosted, &folder, &key, "Desk", desk_shelf);
 
-    eventually("the desk telling the server", || {
+    eventually("the server acknowledging the desk's initial sync", || {
         let shown = desk.shown();
-        shown.standing == Standing::Connected && shown.owed == 0
+        shown.standing == Standing::Connected && shown.settled && shown.owed == 0
     });
 
     let derived = key.derived().expect("derived");
@@ -258,7 +258,7 @@ fn saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_a
         .build()
         .expect("a runtime");
 
-    runtime.block_on(async {
+    let compact = async {
         let address = web_address(&format!("ws://{}/", hosted.address)).expect("an address");
         let tls = to_the_web(RootCertStore::empty()).expect("a configuration");
 
@@ -278,13 +278,14 @@ fn saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_a
             .await
             .expect("said hello");
 
-        let head = loop {
-            let heard = incoming.read().await.expect("read").expect("a frame");
-            if let FromServer::Welcome { head, .. } = FromServer::decoded(&heard).expect("a frame")
-            {
-                break head;
-            }
+        let heard = incoming.read().await.expect("read").expect("a frame");
+        let head = match FromServer::decoded(&heard).expect("a frame") {
+            FromServer::Welcome { head, .. } => head,
+            frame => panic!("expected a welcome, got {frame:?}"),
         };
+
+        assert!(head > 0, "the server has no records to compact");
+
         let without_queries =
             sealed(&derived.sealer, derived.space, &encoded_bundle(&[])).expect("sealed");
 
@@ -300,13 +301,22 @@ fn saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_a
             .expect("compacted");
         loop {
             let heard = incoming.read().await.expect("read").expect("a frame");
-            if matches!(
-                FromServer::decoded(&heard).expect("a frame"),
-                FromServer::Compacted { .. }
-            ) {
-                break;
+            match FromServer::decoded(&heard).expect("a frame") {
+                FromServer::Compacted { through } => {
+                    assert_eq!(through, head);
+
+                    break;
+                }
+                FromServer::Refused(refusal) => panic!("compaction was refused: {refusal:?}"),
+                _ => {}
             }
         }
+    };
+
+    runtime.block_on(async {
+        timeout(SETTLES_WITHIN, compact)
+            .await
+            .expect("the server acknowledged the compaction in time");
     });
 
     let phone = device(&hosted, &folder, &key, "Phone", Arc::clone(&phone_shelf));
