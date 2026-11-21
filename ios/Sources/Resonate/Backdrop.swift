@@ -16,17 +16,19 @@ struct BackdropView: View {
     let moving: Bool
     let resting: Bool
     let beneathASheet: Bool
+    let opening: Bool
     @State private var palette: Palette?
     @State private var rendering: BackdropRendering
     @State private var lowPower = ProcessInfo.processInfo.sparesFrames
     @State private var visible = false
     @State private var listening = false
 
-    init(track: Track?, moving: Bool = true, resting: Bool = false, beneathASheet: Bool = false) {
+    init(track: Track?, moving: Bool = true, resting: Bool = false, beneathASheet: Bool = false, opening: Bool = false) {
         self.track = track
         self.moving = moving
         self.resting = resting
         self.beneathASheet = beneathASheet
+        self.opening = opening
         let recalled = track.flatMap { PaletteMemory.recalled(Self.key(of: $0)) }
         _palette = State(initialValue: recalled ?? (moving ? Self.accentPalette() : nil))
         _rendering = State(initialValue: BackdropPipeline.finished ?? .loading)
@@ -45,8 +47,12 @@ struct BackdropView: View {
         .ignoresSafeArea()
         .motion(.easeInOut(duration: 0.4), value: palette == nil)
         .motion(.easeInOut(duration: 0.4), value: rendering.drawsMesh)
-        .task { await prepareRendering() }
-        .task(id: paletteRequest) { await loadPalette() }
+        .task(id: opening) {
+            if !opening { await prepareRendering() }
+        }
+        .task(id: opening ? nil : paletteRequest) {
+            if !opening { await loadPalette() }
+        }
         .onAppear { visible = true }
         .onDisappear {
             visible = false
@@ -136,7 +142,7 @@ struct BackdropView: View {
     }
 
     private var wantsEnergy: Bool {
-        moving && visible && phase == .active && !reduceMotion && rendering.drawsMesh && sounding
+        moving && visible && !opening && phase == .active && !reduceMotion && rendering.drawsMesh && sounding
     }
 
     private func listen(_ wanted: Bool) {

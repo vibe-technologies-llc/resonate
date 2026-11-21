@@ -194,7 +194,6 @@ struct NowPlayingView: View {
     @State private var mode = PlayerMode.artwork
     @State private var settled: PlayerMode?
     @State private var rest = FieldRest()
-    @State private var presence = CoverPresence()
     @State private var tuck = ControlsTuck()
     @State private var asks = PlayerAsks()
 
@@ -216,8 +215,8 @@ struct NowPlayingView: View {
             }
             .padding(.horizontal, Self.gutter)
             .background(NowPlayingField(track: track, rest: rest, asks: asks))
-            .background(PresentationProbe(rest: rest, presence: presence))
-            .environment(presence)
+            .background(PresentationProbe(rest: rest))
+            .environment(rest)
             .task {
                 tuck.rest = rest
                 await open()
@@ -418,24 +417,27 @@ struct NowPlayingView: View {
         .padding(.bottom, large ? 0 : 8)
     }
 
-    @ViewBuilder
     private func focusedContent(_ track: Track?, bleeding: Edge.Set = .horizontal, tuck: ControlsTuck? = nil) -> some View {
-        switch mode {
-        case .lyrics: LyricsPane(track: track, compact: true, tuck: tuck)
-        case .queue, .artwork: UpNextList().padding(bleeding, -Self.gutter)
+        Group {
+            switch mode {
+            case .lyrics: LyricsPane(track: track, compact: true, tuck: tuck)
+            case .queue, .artwork: UpNextList().padding(bleeding, -Self.gutter)
+            }
         }
+        .id(mode)
     }
 
     private func open() async {
         FrameRateBoost.shared.boost(for: Self.openedWithin)
         try? await Task.sleep(for: .seconds(Self.openedWithin))
+        guard !Task.isCancelled else { return }
         rest.leastOpeningPassed()
         guard rest.opening else { return }
         let remaining = Self.openedAtMost - Self.openedWithin
         FrameRateBoost.shared.boost(for: remaining)
         try? await Task.sleep(for: .seconds(remaining))
+        guard !Task.isCancelled else { return }
         rest.openingRanOut()
-        presence.shown = true
     }
 
     private func choose(_ target: PlayerMode) {
@@ -578,9 +580,11 @@ enum NowPlayingOpening {
     }
 
     static func prepare(_ track: Track, features: Features) async {
-        await BackdropView.prepare(track, features: features)
-        guard let bucket = coverBucket ?? estimatedBucket(), !track.isServed, let cover = await features.artwork(track, bucket: bucket) else { return }
-        ShownArtwork.keep(cover, for: track)
+        async let backdrop: Void = BackdropView.prepare(track, features: features)
+        if !track.isServed, let bucket = coverBucket ?? estimatedBucket(), let cover = await features.artwork(track, bucket: bucket) {
+            ShownArtwork.keep(cover, for: track)
+        }
+        await backdrop
     }
 
     private static func estimatedBucket() -> ArtworkBucket? {
@@ -1207,7 +1211,7 @@ struct VolumeRow: View {
     private static let grabSettles: CFTimeInterval = 0.4
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(CoverPresence.self) private var presence: CoverPresence?
+    @Environment(FieldRest.self) private var rest: FieldRest?
     @State private var volume = SystemVolumeLevel()
     @State private var dragging: Float?
     @State private var grabbedAt: Float?
@@ -1254,6 +1258,7 @@ struct VolumeRow: View {
         .accessibilityAdjustableAction { direction in
             let step = direction == .increment ? Self.step : -Self.step
             driven = true
+            volume.watch()
             volume.set(min(max(shown + step, 0), 1))
         }
         .onChange(of: touching) { _, now in
@@ -1268,10 +1273,11 @@ struct VolumeRow: View {
         .onChange(of: volume.level) {
             if volume.steppedOutside, !reduceMotion { FrameRateBoost.shared.boost(for: Self.stepFollowedOver) }
         }
-        .onAppear { volume.watch() }
         .onDisappear { volume.stopWatching() }
-        .task(id: presence?.shown ?? true) {
-            guard presence?.shown ?? true, !driven else { return }
+        .task(id: rest?.opening ?? false) {
+            guard rest?.opening != true else { return }
+            volume.watch()
+            guard !driven else { return }
             try? await Task.sleep(for: Self.driverMountsAfter)
             if !Task.isCancelled { driven = true }
         }
@@ -1294,6 +1300,7 @@ struct VolumeRow: View {
                 let wanted = min(max(start + moved, 0), 1)
 
                 dragging = wanted
+                volume.watch()
                 volume.set(wanted)
             }
             .onEnded { _ in
@@ -1441,6 +1448,7 @@ struct VolumeDriver: UIViewRepresentable {
 struct PlayerModes: View {
     @ScaledMetric(relativeTo: .title3) private var edge: CGFloat = 48
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiate
+    @Environment(FieldRest.self) private var rest: FieldRest?
     let mode: PlayerMode
     let choose: (PlayerMode) -> Void
     @State private var switched = 0
@@ -1449,10 +1457,17 @@ struct PlayerModes: View {
         GlassEffectContainer(spacing: 20) {
             HStack(spacing: 20) {
                 toggle(.lyrics, title: said("player.mode.lyrics"), symbol: "quote.bubble")
-                RoutePicker()
-                    .frame(width: edge, height: edge)
-                    .glassEffect(.regular.interactive(), in: .circle)
-                    .accessibilityLabel("AirPlay")
+                Group {
+                    if rest?.opening != true {
+                        RoutePicker().accessibilityLabel("AirPlay")
+                    } else {
+                        Image(systemName: "airplay.audio")
+                            .font(.title3)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .frame(width: edge, height: edge)
+                .glassEffect(.regular.interactive(), in: .circle)
                 toggle(.queue, title: said("player.mode.up-next"), symbol: "list.bullet")
             }
         }
@@ -1602,32 +1617,22 @@ struct ReachingUnderTheControls: ViewModifier {
     }
 }
 
-@MainActor
-@Observable
-final class CoverPresence {
-    var shown = false
-}
-
 struct PresentationProbe: UIViewControllerRepresentable {
     let rest: FieldRest
-    let presence: CoverPresence
 
     func makeUIViewController(context: Context) -> PresentationProbeController {
         let probe = PresentationProbeController()
         probe.rest = rest
-        probe.presence = presence
         return probe
     }
 
     func updateUIViewController(_ probe: PresentationProbeController, context: Context) {
         probe.rest = rest
-        probe.presence = presence
     }
 }
 
 final class PresentationProbeController: UIViewController {
     var rest: FieldRest?
-    var presence: CoverPresence?
 
     override func loadView() {
         let quiet = UIView()
@@ -1639,7 +1644,6 @@ final class PresentationProbeController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         rest?.presentedFully()
-        presence?.shown = true
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -1657,7 +1661,7 @@ struct NowPlayingField: View {
     let asks: PlayerAsks
 
     var body: some View {
-        BackdropView(track: track, resting: rest.resting, beneathASheet: sheetRaised)
+        BackdropView(track: track, resting: rest.resting, beneathASheet: sheetRaised, opening: rest.opening)
     }
 
     private var sheetRaised: Bool {

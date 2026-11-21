@@ -713,8 +713,9 @@ every route change (a pair of headphones at the same rate included), not from th
   is found), since even at 1 % its knob showed as a faint bubble riding the bar. A level heard from
   the session (the volume buttons, Control Centre) moves the fill in 0.25 s (`steppedOutside`);
   a drag, the first reading and the driver's seed set it at once.
-  The driver (the kept `MPVolumeView`) is mounted 600 ms after the cover has finished presenting
-  (`CoverPresence.shown`, below; at once for a row elsewhere) or at the first touch, so it never lands
+  The volume observer starts when the cover has finished opening (`FieldRest.opening`, below)
+  or when the listener adjusts the volume.
+  The driver (the kept `MPVolumeView`) is mounted 600 ms later, or at the first touch, so it never lands
   inside the zoom: mounted 600 ms after the row appeared, it fell inside the 0.7 s opening and its
   `layoutIfNeeded` and subview search took the main thread there; and `SystemVolumeLevel` reads the session's
   volume only in `watch()`: a `@State` initial value is built on every parent body, and
@@ -737,7 +738,9 @@ every route change (a pair of headphones at the same rate included), not from th
   re-measured a live image every frame). The pane or
   list fades in over `Arrival.animation` (150 ms, settling) as the cover starts to shrink (`NowPlayingView.settled`), not once the
   spring has landed, and fades out in 0.12 s as the cover starts to grow back; both are cheap to
-  build in the spring's first frame (the lyrics are layers, the queue a window); Lyrics to Up next crossfades at once, the cover staying put.
+  build in the spring's first frame (the lyrics are layers, the queue a window). Lyrics and Up next
+  each have their own view identity, so switching between them crossfades the panes over 150 ms
+  while the cover stays in its compact slot.
   **A mode change asks 120 Hz for its 0.8 s** (`FrameRateBoost`, a `CADisplayLink` that lets go once
   the time is up), and the field rests on the frame it shows while the cover moves
   (`BackdropView(resting:)`, `.dormant`, so the renderer's capped step carries on without a jump)
@@ -751,19 +754,24 @@ every route change (a pair of headphones at the same rate included), not from th
   `viewDidAppear` the cover's transition ends with, `FieldRest.presentedFully`), at most
   `openedAtMost` (1.4 s) should it never call; the field flowing at 120 fps under the zooming glass,
   titles and cover held the whole transition below the display's rate, and a fixed 0.7 s woke it
-  under a zoom that ran longer. Its `viewWillDisappear` rests the field again as the cover begins
+  under a zoom that ran longer. During the opening the field uses its remembered palette or the
+  accent. It starts sampling the cover, taking up a late Metal pipeline and subscribing to loudness
+  once the opening ends. The AirPlay slot shows a static glyph until the same point, when the kept
+  picker attaches to the window. The probe's `viewWillDisappear` rests the field again as the cover begins
   to close (`dismissalBegan`, `FieldRest.closing`, 120 Hz for `closesWithin`), and a dismissal
   given up calls `viewDidAppear` again, which wakes it. The 120 Hz is asked as
   `Navigation.nowPlaying` turns true (its `didSet`), so the zoom's first frames have it, not only once the view's
   task starts. **The cover is decoded at its own size before the opening**: `NowPlayingOpening.prepare`, at each
   song change and each time the scene becomes active, decodes the playing song's cover at the bucket the large cover last
   measured (`coverMeasured`), or before any opening has measured one at the bucket the key window's
-  narrower side less the player's gutters fits (`estimatedBucket`), and keeps it as `ShownArtwork`, so
-  an opening draws the sharp cover from its first frame, the first after a launch included; it drew the
-  mini player's small picture and swapped in the large one, decoded and uploaded, partway
-  through the zoom. **The rest is
-  read by the field alone**: `FieldRest` (opening, reshaping, closing, tucking) is an observable only `NowPlayingField` reads, so
-  the field waking at 0.7 s and at a spring's end redraws the field, not Now Playing's body and toolbar,
+  narrower side less the player's gutters fits (`estimatedBucket`), and keeps it as `ShownArtwork`.
+  It decodes the cover alongside the backdrop preparation, so waiting for the small palette sample
+  and Metal placeholder does not hold up the larger cover. The opening can draw the sharp cover
+  from its first frame, since swapping up from the mini player's small picture can decode and upload
+  the larger one partway through the zoom. **The rest is
+  read where it is used**: `NowPlayingField` reads `FieldRest` (opening, reshaping, closing,
+  tucking), and the volume and mode rows read only its opening flag. The field and controls can
+  wake without re-evaluating Now Playing's body and toolbar,
   as two `@State` flags of `NowPlayingView` did, in the zoom's last frames and the spring's.
   **Every other Now Playing motion asks 120 Hz for its length too**: a song's handover with its slot's settle
   (`MovingCover.handedOverWithin`), the pause's spring on the cover (`restedWithin`), a grab of the scrubber or
