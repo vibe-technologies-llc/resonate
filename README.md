@@ -71,7 +71,7 @@ links WebKitGTK.
 Packaging recipes live in `packaging/`: `PKGBUILD`, `resonate.spec`, `deb/build.sh`, the Flatpak
 manifest `org.resonate.Resonate.yml`, `windows/build.ps1` and `macos/build.sh`.
 
-Android: open `android/` in Android Studio (SDK 37, NDK 28.2.13676358, the
+Android: open `android/` in Android Studio (SDK 37.1, NDK 30.0.16248370, the
 `aarch64-linux-android` and `x86_64-linux-android` Rust targets) and run it. Gradle builds the Rust
 library and Kotlin bindings itself. From a terminal, `android/gradlew -p android :app:installDebug`.
 

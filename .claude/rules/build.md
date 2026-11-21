@@ -147,7 +147,7 @@ shaped width.
 
 ## Android
 
-Three Android jobs run side by side. `android` builds the Compose APK against compile SDK 37, runs
+Three Android jobs run side by side. `android` builds the Compose APK against compile SDK 37.1, runs
 Android lint, the JVM tests and `check-native.py`; `android-release` builds the release variant (R8, ARM64 alone, unsigned there) and holds it to
 `android/check-release.py`, which takes the signed `app-release.apk` where it exists and the unsigned
 one otherwise (16 KB zip and ELF alignment, no other ABI, the JNA and boundary classes R8 must keep
@@ -155,7 +155,7 @@ by name); `android-emulator`, a matrix of two, instruments an x86_64 emulator at
 minimum, or API 36, Compose UI tests included, its debug APK built for x86_64 alone
 (`-Presonate.debugAbis=x86_64`, a comma-separated list the debug variant's ABIs default to both
 without), each run's report and result XML uploaded as `resonate-android-tests-api-<level>` whether or not it passed, since the log names no failing test. The Gradle task compiles ARM64 and x86_64 Rust libraries with baseline CPU settings, NDK
-28.2 and 16 KB ELF alignment, running the host binding tool against Android ELF metadata, so no
+r30 LTS and 16 KB ELF alignment, running the host binding tool against Android ELF metadata, so no
 Linux sound server or GUI libraries are needed.
 
 ## Tests run through nextest

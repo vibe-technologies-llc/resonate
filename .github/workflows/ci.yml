@@ -482,7 +482,7 @@ jobs:
           packages: platform-tools
       - name: Install the Android toolchains
         run: |
-          sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "ndk;28.2.13676358"
+          sdkmanager "platforms;android-37.1" "build-tools;36.0.0" "ndk;30.0.16248370"
           rustup toolchain install stable --profile minimal --component clippy
           rustup target add aarch64-linux-android x86_64-linux-android
       - uses: Swatinem/rust-cache@v2
@@ -521,7 +521,7 @@ jobs:
           packages: platform-tools
       - name: Install the Android toolchains
         run: |
-          sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "ndk;28.2.13676358"
+          sdkmanager "platforms;android-37.1" "build-tools;36.0.0" "ndk;30.0.16248370"
           rustup toolchain install stable --profile minimal
           rustup target add aarch64-linux-android
       - uses: gradle/actions/setup-gradle@v6
@@ -551,7 +551,7 @@ jobs:
           packages: platform-tools
       - name: Install the Android toolchains
         run: |
-          sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "ndk;28.2.13676358"
+          sdkmanager "platforms;android-37.1" "build-tools;36.0.0" "ndk;30.0.16248370"
           rustup toolchain install stable --profile minimal
           rustup target add x86_64-linux-android
       - uses: Swatinem/rust-cache@v2

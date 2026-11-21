@@ -12,10 +12,10 @@ in the Gradle project under `android/`. Android Studio opens `android/` and runs
 `Resonate Android` configuration in `android/.run/` (or the generated `app` configuration), which
 runs Gradle before deploying the default Activity, preserving app storage. Gradle builds Rust and
 the generated Kotlin bindings before Kotlin. Android 13 (API 33) is the minimum. ARM64 phones and
-x86_64 emulators share the debug APK; compile SDK 37 (the current Compose, Navigation 3 and
-MaterialKolor releases require it), target SDK 36, AGP 9.4, Gradle 9.8, Kotlin 2.4 (built-in
+x86_64 emulators share the debug APK; compile SDK 37.1 (required by Compose 1.13), target SDK 36,
+AGP 9.5, Gradle 9.9, Kotlin 2.4 (built-in
 Kotlin, with the Compose and serialization compiler plugins at the same version) and NDK
-28.2.13676358 are pinned. Python 3, Cargo and both Rust Android targets are build prerequisites.
+30.0.16248370 are pinned. Python 3, Cargo and both Rust Android targets are build prerequisites.
 Host binding generation reads ELF metadata and needs no PipeWire. `versionName` is the root
 `Cargo.toml`'s `version` read by Gradle, and `versionCode` is derived from it (a pre-release's
 candidate digit, 9 for a final), so a release is versioned in one place.

@@ -14,7 +14,7 @@ args = parser.parse_args()
 repository = Path(__file__).resolve().parent.parent
 output = args.output or repository / "android/app/build/generated"
 target = repository / "android/.cargo-target"
-ndk = args.sdk / "ndk/28.2.13676358"
+ndk = args.sdk / "ndk/30.0.16248370"
 host = {"linux": "linux-x86_64", "darwin": "darwin-x86_64", "win32": "windows-x86_64"}.get(sys.platform)
 if host is None:
     raise SystemExit(f"Android NDK host is not supported: {sys.platform}")
@@ -22,7 +22,7 @@ toolchain = ndk / "toolchains/llvm/prebuilt" / host / "bin"
 compiler_suffix = ".cmd" if sys.platform == "win32" else ""
 executable_suffix = ".exe" if sys.platform == "win32" else ""
 if not toolchain.is_dir():
-    raise SystemExit(f"Install NDK 28.2.13676358 in Android Studio's SDK Manager: {ndk}")
+    raise SystemExit(f"Install NDK 30.0.16248370 in Android Studio's SDK Manager: {ndk}")
 environment = os.environ.copy()
 environment.update(CARGO_TARGET_DIR=str(target), RUSTFLAGS="", CARGO_PROFILE_DEV_DEBUG="0")
 cargo = shutil.which("cargo") or str(Path.home() / ".cargo/bin/cargo")

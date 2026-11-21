@@ -30,8 +30,10 @@ val releaseKeystore = signingValue("resonate.signing.storeFile", "RESONATE_SIGNI
 
 android {
     namespace = "org.resonate.android"
-    compileSdk = 37
-    ndkVersion = "28.2.13676358"
+    compileSdk {
+        version = release(37) { minorApiLevel = 1 }
+    }
+    ndkVersion = "30.0.16248370"
     defaultConfig {
         applicationId = "org.resonate.android"
         minSdk = 33
@@ -165,32 +167,32 @@ androidComponents.onVariants { variant ->
 }
 
 dependencies {
-    implementation(platform("androidx.compose:compose-bom:2026.09.00"))
-    implementation("androidx.compose.material3:material3:1.5.0-beta01")
-    implementation("androidx.compose.material3:material3-adaptive-navigation-suite:1.5.0-beta01")
+    implementation(platform("androidx.compose:compose-bom:2026.11.01"))
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material3:material3-adaptive-navigation-suite")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     implementation("androidx.activity:activity-compose:1.13.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.0")
-    implementation("androidx.navigation3:navigation3-runtime:1.2.0")
-    implementation("androidx.navigation3:navigation3-ui:1.2.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.12.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.1")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-navigation3:2.11.1")
+    implementation("androidx.navigation3:navigation3-runtime:1.2.2")
+    implementation("androidx.navigation3:navigation3-ui:1.2.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.13.0")
     implementation("com.materialkolor:material-kolor:5.0.1")
     implementation("com.google.zxing:core:3.5.4")
-    implementation("androidx.core:core-ktx:1.16.0")
-    implementation("androidx.media3:media3-session:1.9.3")
-    implementation("net.java.dev.jna:jna:5.17.0@aar")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("androidx.core:core-ktx:1.19.1")
+    implementation("androidx.media3:media3-session:1.11.1")
+    implementation("net.java.dev.jna:jna:5.19.1@aar")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
-    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.4.1")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.11.01"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4-accessibility")
 }
