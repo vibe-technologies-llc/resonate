@@ -57,6 +57,7 @@ impl Arguments {
             candidates: None,
         };
         let mut given = env::args_os().skip(1);
+
         while let Some(argument) = given.next() {
             match argument.to_str() {
                 Some("--plots") => {
@@ -84,9 +85,11 @@ impl Arguments {
 
 fn timed(contenders: &[Contender]) -> Result<Vec<(Contender, Pair, Cost)>> {
     let mut costs = Vec::new();
+
     for pair in PAIRS {
         for &contender in contenders {
             let spent = cost(contender, pair)?;
+
             eprintln!(
                 "timed {contender} at {pair}: {:.3} % of a core",
                 spent.share_of_a_core
@@ -110,6 +113,7 @@ fn measured_everywhere(contenders: &[Contender]) -> Result<Vec<Measured>> {
             .map(|_| {
                 scope.spawn(|| {
                     let mut done = Vec::new();
+
                     while let Some(&(pair, contender)) =
                         jobs.get(next.fetch_add(1, Ordering::Relaxed))
                     {
@@ -127,6 +131,7 @@ fn measured_everywhere(contenders: &[Contender]) -> Result<Vec<Measured>> {
     });
 
     let mut all = Vec::new();
+
     for done in finished {
         all.extend(done?);
     }
@@ -142,6 +147,7 @@ fn run() -> Result<()> {
 
     let costs = if arguments.timed {
         let costs = timed(&contenders)?;
+
         if arguments.candidates.is_none() {
             print!(
                 "{}",
@@ -155,6 +161,7 @@ fn run() -> Result<()> {
 
     if arguments.measured {
         let measured = measured_everywhere(&contenders)?;
+
         if arguments.candidates.is_some() {
             print!(
                 "{}",

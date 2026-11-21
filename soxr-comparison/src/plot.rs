@@ -94,6 +94,7 @@ fn response(tones: &[Tone]) -> Vec<(f64, f64)> {
             [heard, leak, image].into_iter().flatten()
         })
         .collect();
+
     points.sort_by(|a, b| a.0.total_cmp(&b.0));
     points
 }
@@ -108,12 +109,14 @@ fn tick_step(span: f64, wanted: f64, steps: &[f64]) -> f64 {
 
 fn chart(title: &str, frame: &Frame, pair: Pair, series: &[(&Measured, &str)]) -> String {
     let mut svg = String::new();
+
     let _ = write!(
         svg,
         r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {HEIGHT}" width="{WIDTH}" height="{HEIGHT}" role="img" aria-label="{title}">{STYLE}<rect class="surface" width="{WIDTH}" height="{HEIGHT}" rx="8"/><text class="title" x="{LEFT}" y="24">{title}</text>"#
     );
 
     let mut legend_x = LEFT;
+
     for (measured, class) in series {
         let name = measured.contender.to_string();
         let _ = write!(
@@ -121,6 +124,7 @@ fn chart(title: &str, frame: &Frame, pair: Pair, series: &[(&Measured, &str)]) -
             r#"<rect class="{class}" x="{legend_x}" y="38" width="14" height="4" rx="2"/><text x="{}" y="44">{name}</text>"#,
             legend_x + 20.0
         );
+
         legend_x += 30.0 + 7.0 * name.len() as f64;
     }
 
@@ -131,6 +135,7 @@ fn chart(title: &str, frame: &Frame, pair: Pair, series: &[(&Measured, &str)]) -
         &[0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 40.0],
     );
     let mut db = (frame.floor_db / db_step).ceil() * db_step;
+
     while db <= frame.ceiling_db + 1e-9 {
         let y = frame.y(db);
         let label = if db_step < 1.0 {
@@ -145,12 +150,14 @@ fn chart(title: &str, frame: &Frame, pair: Pair, series: &[(&Measured, &str)]) -
             LEFT - 8.0,
             y + 4.0
         );
+
         db += db_step;
     }
 
     let khz_span = (frame.to_hz - frame.from_hz) / 1_000.0;
     let khz_step = tick_step(khz_span, 12.0, &[0.5, 1.0, 2.0, 4.0, 5.0, 10.0, 20.0, 25.0]);
     let mut khz = (frame.from_hz / 1_000.0 / khz_step).ceil() * khz_step;
+
     while khz * 1_000.0 <= frame.to_hz + 1e-6 {
         let x = frame.x(khz * 1_000.0);
         let _ = write!(
@@ -158,8 +165,10 @@ fn chart(title: &str, frame: &Frame, pair: Pair, series: &[(&Measured, &str)]) -
             r#"<text x="{x:.1}" y="{}" text-anchor="middle">{khz}</text>"#,
             HEIGHT - BOTTOM + 18.0
         );
+
         khz += khz_step;
     }
+
     let _ = write!(
         svg,
         r#"<text x="{}" y="{}" text-anchor="middle">frequency (kHz)</text><text x="16" y="{}" transform="rotate(-90 16 {})" text-anchor="middle">level (dB)</text>"#,
@@ -174,6 +183,7 @@ fn chart(title: &str, frame: &Frame, pair: Pair, series: &[(&Measured, &str)]) -
         (pair.output_nyquist(), "output Nyquist"),
         (pair.input_nyquist(), "input Nyquist"),
     ];
+
     for (row, (hz, label)) in markers
         .into_iter()
         .filter(|&(hz, _)| hz > frame.from_hz && hz < frame.to_hz)
@@ -236,6 +246,7 @@ pub fn plotted(directory: &Path, pair: Pair, measured: &[Measured]) -> Result<()
         floor_db: -340.0,
         ceiling_db: 10.0,
     };
+
     written(
         &directory.join(format!("response-{}.svg", pair.slug())),
         &chart(

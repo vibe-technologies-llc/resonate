@@ -26,6 +26,7 @@ impl Window<'_> {
     fn basis(&self, hz: &[f64], offset: usize, row: &mut [[f64; 2]]) {
         for (pair, &frequency) in row.iter_mut().zip(hz) {
             let (sine, cosine) = phase_at(frequency, self.first + offset, self.rate).sin_cos();
+
             *pair = [sine, cosine];
         }
     }
@@ -38,6 +39,7 @@ impl Window<'_> {
 
         for (offset, &sample) in self.samples.iter().enumerate() {
             self.basis(hz, offset, &mut row);
+
             let flat = row.as_flattened();
             for (across, &left) in flat.iter().enumerate() {
                 projected[across] += left * sample;
@@ -61,11 +63,13 @@ impl Window<'_> {
 
         for (offset, &sample) in self.samples.iter().enumerate() {
             self.basis(hz, offset, &mut row);
+
             let modelled: f64 = row
                 .iter()
                 .zip(fitted)
                 .map(|(&[sine, cosine], sinusoid)| sine * sinusoid.sine + cosine * sinusoid.cosine)
                 .sum();
+
             energy += (sample - modelled).powi(2);
         }
 
@@ -87,15 +91,18 @@ fn solved(normal: &mut [f64], projected: &mut [f64], width: usize) -> Vec<f64> {
                     .total_cmp(&normal[b * width + pivot].abs())
             })
             .unwrap_or(pivot);
+
         if largest != pivot {
             for column in 0..width {
                 normal.swap(pivot * width + column, largest * width + column);
             }
             projected.swap(pivot, largest);
         }
+
         let lead = normal[pivot * width + pivot];
         for below in pivot + 1..width {
             let factor = normal[below * width + pivot] / lead;
+
             for column in pivot..width {
                 normal[below * width + column] -= factor * normal[pivot * width + column];
             }
@@ -104,10 +111,12 @@ fn solved(normal: &mut [f64], projected: &mut [f64], width: usize) -> Vec<f64> {
     }
 
     let mut solution = vec![0.0; width];
+
     for row in (0..width).rev() {
         let known: f64 = (row + 1..width)
             .map(|column| normal[row * width + column] * solution[column])
             .sum();
+
         solution[row] = (projected[row] - known) / normal[row * width + row];
     }
     solution
@@ -128,6 +137,7 @@ mod tests {
                     + 1e-6 * (phase_at(4_900.0, index, rate) - 1.0).sin()
             })
             .collect();
+
         let window = Window {
             samples: &samples[5_000..15_000],
             first: 5_000,

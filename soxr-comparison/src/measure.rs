@@ -106,6 +106,7 @@ pub fn sweep(pair: Pair) -> Vec<f64> {
 
     if pair.is_down() {
         let near = (PAST_NYQUIST_NEAR_UNTIL * nyquist).min(top);
+
         hz.extend(spaced(
             PAST_NYQUIST_FROM * nyquist,
             near,
@@ -118,6 +119,7 @@ pub fn sweep(pair: Pair) -> Vec<f64> {
     }
 
     let mut hz: Vec<f64> = hz.into_iter().map(on_the_grid).collect();
+
     hz.sort_by(f64::total_cmp);
     hz.dedup();
     hz
@@ -126,6 +128,7 @@ pub fn sweep(pair: Pair) -> Vec<f64> {
 fn settled(output: &[f64], pair: Pair, seconds: f64) -> Window<'_> {
     let rate = pair.output_hz();
     let settle = (SETTLED_SECONDS * rate) as usize;
+
     let last = ((seconds * rate) as usize).min(output.len()) - settle;
 
     Window {
@@ -164,6 +167,7 @@ pub fn tone(contender: Contender, pair: Pair, hz: f64) -> Result<Tone> {
         });
     let modelled: Vec<f64> = iter::once(hz).chain(lands).collect();
     let fitted = window.fitted(&modelled);
+
     let spurious = window.rms_without(&modelled[..1], &fitted[..1]);
 
     Ok(Tone {
@@ -194,11 +198,14 @@ pub fn impulse(contender: Contender, pair: Pair) -> Result<Impulse> {
     let frames = (IMPULSE_SECONDS * pair.input_hz()) as usize;
     let at = frames / 2;
     let mut input = vec![0.0; frames];
+
     input[at] = 1.0;
+
     let output = resampled(contender, pair, &input, MEASURING_BLOCK)?;
 
     let peak = loudest(&output);
     let floor = output[peak].abs() * RING_FLOOR;
+
     let first = output
         .iter()
         .position(|sample| sample.abs() > floor)
@@ -227,7 +234,9 @@ pub fn latency(contender: Contender, pair: Pair) -> Result<f64> {
     let frames = (STREAMED_SECONDS * pair.input_hz()) as usize;
     let at = frames / 2;
     let mut input = vec![0.0; frames];
+
     input[at] = 1.0;
+
     let mut stream = Stream::open(contender, pair, Channels::Mono, 1)?;
     let mut produced = Vec::new();
     let mut fed_when = Vec::new();
@@ -246,6 +255,7 @@ pub fn latency(contender: Contender, pair: Pair) -> Result<f64> {
 pub fn null(contender: Contender, pair: Pair, highest_hz: f64, delay_s: f64) -> Result<f64> {
     let multitone = Multitone::log_spaced(LOWEST_HZ, highest_hz, NULL_TONES, NULL_SEED);
     let frames = (INPUT_SECONDS * pair.input_hz()) as usize;
+
     let input = multitone.rendered(pair.input_hz(), frames);
     let output = resampled(contender, pair, &input, MEASURING_BLOCK)?;
     let window = settled(&output, pair, INPUT_SECONDS);
@@ -276,6 +286,7 @@ pub fn phase_delays(tones: &[Tone], coarse_s: f64) -> Vec<(f64, f64)> {
                 None => (residual + PI).rem_euclid(TAU) - PI,
                 Some(before) => residual - TAU * ((residual - before) / TAU).round(),
             };
+
             previous = Some(unwrapped);
             (hz, coarse_s - unwrapped / angular)
         })

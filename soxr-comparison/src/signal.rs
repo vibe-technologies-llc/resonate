@@ -36,6 +36,7 @@ impl Multitone {
     pub fn log_spaced(lowest: f64, highest: f64, count: usize, seed: u64) -> Self {
         let mut noise = Noise::seeded(seed);
         let spread = (highest / lowest).ln();
+
         let tones = (0..count)
             .map(|index| {
                 let along = index as f64 / (count - 1) as f64;

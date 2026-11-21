@@ -33,9 +33,11 @@ fn parsed<T: std::str::FromStr>(word: Option<&str>, line: &str) -> Result<T> {
 
 fn window_in(word: Option<&str>, line: &str) -> Result<&'static [f64]> {
     let named = word.ok_or_else(|| Error::UnreadableCandidate(line.to_owned()))?;
+
     if named == "-" {
         return Ok(&[]);
     }
+
     let text = fs::read_to_string(named).map_err(|source| Error::Candidates {
         file: named.into(),
         source,
@@ -68,7 +70,9 @@ fn candidate(line: &str) -> Result<Contender> {
     if let Some(soxr) = soxr_named(line) {
         return Ok(soxr);
     }
+
     let mut words = line.split_whitespace();
+
     let quality = words
         .next()
         .and_then(level_named)
@@ -80,6 +84,7 @@ fn candidate(line: &str) -> Result<Contender> {
     let steep_hop_taps: u16 = parsed(words.next(), line)?;
     let window = window_in(words.next(), line)?;
     let phases = quality.params().phases;
+
     let closes_on_nyquist =
         1.0 - f64::from(kaiser_beta) / (std::f64::consts::PI * f64::from(half_taps));
     Ok(Contender::Tuned {
@@ -158,6 +163,7 @@ pub fn verdicts(
                 .join(" ")
         };
         let summary = &cd.summary;
+
         let _ = writeln!(
             text,
             "| {contender} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",

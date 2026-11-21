@@ -282,6 +282,7 @@ impl OurStream {
             params,
         )?;
         let spec = StreamSpec::new(pair.from, channels.layout(), SampleFormat::F32);
+
         let most_out = resampler.prepare(spec, block)?;
         let room = most_out.max(resampler.max_flush_frames()) * channels.count();
 
@@ -298,6 +299,7 @@ impl OurStream {
             let mut rest = block;
             while !rest.is_empty() {
                 let count = self.resampler.process(rest, &mut self.scratch);
+
                 output.extend_from_slice(&self.scratch[..count.frames_out * self.channels]);
                 if count.frames_in == 0 && count.frames_out == 0 {
                     break;
@@ -309,6 +311,7 @@ impl OurStream {
 
     fn finish(&mut self, output: &mut Vec<f64>) {
         let flushed = self.resampler.flush(&mut self.scratch);
+
         output.extend_from_slice(&self.scratch[..flushed * self.channels]);
     }
 }
@@ -327,9 +330,11 @@ impl<F: Framed> SoxrStream<F> {
     ) -> std::result::Result<Self, soxr::Error> {
         let mut spec = QualitySpec::configure(recipe, Rolloff::Small, QualityFlags::empty())
             .with_phase_response(phase.response());
+
         if steep {
             spec.set_passband_end(SOXR_VERY_HIGH_STEEP_PASSBAND_END);
         }
+
         let soxr = Soxr::new_with_params(
             pair.input_hz(),
             pair.output_hz(),
@@ -351,6 +356,7 @@ impl<F: Framed> SoxrStream<F> {
                 .process(F::framed(rest), F::framed_mut(&mut self.scratch))
                 .map_err(|said| said_by_soxr(SoxrOp::Process, &said))?;
             let produced = done.output_frames * F::CHANNELS;
+
             output.extend_from_slice(&self.scratch[..produced]);
             rest = &rest[done.input_frames * F::CHANNELS..];
             if rest.is_empty() && produced < self.scratch.len() {
@@ -368,6 +374,7 @@ impl<F: Framed> SoxrStream<F> {
                 .soxr
                 .drain(F::framed_mut(&mut self.scratch))
                 .map_err(|said| said_by_soxr(SoxrOp::Drain, &said))?;
+
             if drained == 0 {
                 return Ok(());
             }

@@ -75,6 +75,7 @@ pub fn measured(contender: Contender, pair: Pair) -> Result<Measured> {
         .map(|hz| measure::tone(contender, pair, hz))
         .collect::<Result<Vec<_>>>()?;
     let impulse = impulse(contender, pair)?;
+
     let delays = phase_delays(&tones, impulse.peak_offset_s);
     let delay_middle_s = delays
         .iter()

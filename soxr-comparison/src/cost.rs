@@ -27,18 +27,22 @@ pub fn cost(contender: Contender, pair: Pair) -> Result<Cost> {
     let started = Instant::now();
     let first = Stream::open(contender, pair, Channels::Stereo, BLOCK)?;
     let first_build = started.elapsed();
+
     drop(first);
 
     let mut rebuilt = Duration::MAX;
+
     for _ in 0..REBUILDS {
         let started = Instant::now();
         let stream = Stream::open(contender, pair, Channels::Stereo, BLOCK)?;
+
         rebuilt = rebuilt.min(started.elapsed());
         drop(black_box(stream));
     }
 
     let channels = Channels::Stereo.count();
     let frames = pair.from.hz() as usize * TIMED_SECONDS as usize;
+
     let input = Noise::seeded(SEED).samples(frames * channels);
     let mut output = Vec::with_capacity(ROOM_FRAMES * channels);
     let mut fastest = Duration::MAX;
@@ -46,6 +50,7 @@ pub fn cost(contender: Contender, pair: Pair) -> Result<Cost> {
     for _ in 0..RUNS {
         let mut stream = Stream::open(contender, pair, Channels::Stereo, BLOCK)?;
         let started = Instant::now();
+
         for block in input.chunks(BLOCK * channels) {
             output.clear();
             stream.push(black_box(block), &mut output)?;

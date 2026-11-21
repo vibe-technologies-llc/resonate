@@ -63,6 +63,7 @@ fn header(cells: &[&str]) -> String {
         .iter()
         .map(|cell| (*cell).to_owned())
         .collect::<Vec<_>>());
+
     text.push_str(&row(&cells
         .iter()
         .enumerate()
@@ -91,6 +92,7 @@ pub fn quality(contenders: &[Contender], pair: Pair, measured: &[Measured]) -> S
     let mut text = String::new();
 
     let _ = writeln!(text, "### Frequency domain, {pair}\n");
+
     text.push_str(&header(&[
         "Setting",
         "Ripple 20 Hz–10 kHz (dB)",
@@ -107,6 +109,7 @@ pub fn quality(contenders: &[Contender], pair: Pair, measured: &[Measured]) -> S
     ]));
     for measured in &rows {
         let summary = &measured.summary;
+
         text.push_str(&row(&[
             named(measured.contender),
             ripple(summary.ripple_db),
@@ -124,6 +127,7 @@ pub fn quality(contenders: &[Contender], pair: Pair, measured: &[Measured]) -> S
     }
 
     let _ = writeln!(text, "\n### Time domain, {pair}\n");
+
     text.push_str(&header(&[
         "Setting",
         "Delay at 1 kHz (µs)",
@@ -136,6 +140,7 @@ pub fn quality(contenders: &[Contender], pair: Pair, measured: &[Measured]) -> S
     ]));
     for measured in &rows {
         let summary = &measured.summary;
+
         text.push_str(&row(&[
             named(measured.contender),
             microseconds(summary.delay_middle_s),
@@ -161,6 +166,7 @@ pub fn costs(
         String::from("#### Throughput, percent of one core per second of stereo audio\n\n");
     let titles: Vec<String> = pairs.iter().map(ToString::to_string).collect();
     let mut columns = vec!["Setting"];
+
     columns.extend(titles.iter().map(String::as_str));
     text.push_str(&header(&columns));
 
@@ -173,6 +179,7 @@ pub fn costs(
 
     for &contender in contenders {
         let mut cells = vec![named(contender)];
+
         cells.extend(pairs.iter().map(|&pair| {
             found(contender, pair).map_or_else(
                 || DASH.to_owned(),
@@ -183,7 +190,9 @@ pub fn costs(
     }
 
     text.push_str("\n#### Construction, milliseconds\n\n");
+
     let mut columns = vec!["Setting".to_owned()];
+
     for pair in built {
         columns.push(format!("First, {pair}"));
         columns.push(format!("Again, {pair}"));
@@ -193,6 +202,7 @@ pub fn costs(
     ));
     for &contender in contenders {
         let mut cells = vec![named(contender)];
+
         for &pair in built {
             match found(contender, pair) {
                 Some(cost) => {
