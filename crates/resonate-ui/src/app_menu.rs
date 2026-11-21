@@ -3,8 +3,9 @@ use gpui::{App, Menu, MenuItem, OsAction, SystemMenuType};
 use crate::{
     app::{
         About, CloseTheWindow, CycleRepeat, FocusFilter, FocusSearch, Hide, HideOthers, Listen,
-        Minimise, Next, Previous, Quit, ShowAll, Stop, ToggleFullScreen, ToggleMute,
-        TogglePlayPause, ToggleQueue, ToggleShuffle, VolumeDown, VolumeUp, WINDOW_TITLE, Zoom,
+        Minimise, Next, OpenCommandPalette, Previous, Quit, ShowAll, Stop, ToggleFullScreen,
+        ToggleMute, TogglePlayPause, ToggleQueue, ToggleShuffle, VolumeDown, VolumeUp,
+        WINDOW_TITLE, Zoom,
     },
     views::field::{CopySelection, CutSelection, PasteClipboard, Redo, SelectEverything, Undo},
     words,
@@ -82,6 +83,8 @@ fn playback() -> Menu {
 
 fn viewing() -> Menu {
     Menu::new(words::app_menu::view()).items([
+        MenuItem::action(words::app_menu::command_palette(), OpenCommandPalette),
+        MenuItem::separator(),
         MenuItem::action(words::app_menu::queue(), ToggleQueue),
         MenuItem::action(words::app_menu::search(), FocusSearch),
         MenuItem::action(words::app_menu::listen(), Listen),

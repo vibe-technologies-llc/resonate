@@ -203,10 +203,10 @@ fn face(face: Face) -> Div {
 
 #[derive(Clone, Copy)]
 pub(crate) struct PlayingNow {
-    album: Option<AlbumId>,
-    artist: Option<ArtistId>,
+    pub(crate) album: Option<AlbumId>,
+    pub(crate) artist: Option<ArtistId>,
     pub(crate) track: Option<TrackId>,
-    favourite: bool,
+    pub(crate) favourite: bool,
 }
 
 #[derive(Clone, Copy)]

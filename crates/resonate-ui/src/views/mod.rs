@@ -6,6 +6,7 @@ pub(crate) mod better;
 mod browser;
 pub(crate) mod browsing;
 pub(crate) mod chrome;
+pub(crate) mod command_palette;
 pub(crate) mod dropping;
 mod favourites;
 pub(crate) mod field;

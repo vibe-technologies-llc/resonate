@@ -23,6 +23,7 @@ louder = Augmenter le volume
 quieter = Réduire le volume
 mute = Couper le son
 view = Affichage
+command-palette = Palette de commandes
 queue = File d’attente
 search = Rechercher
 listen = Identifier un morceau

@@ -23,6 +23,7 @@ louder = Louder
 quieter = Quieter
 mute = Mute
 view = View
+command-palette = Command palette
 queue = Queue
 search = Search
 listen = Listen

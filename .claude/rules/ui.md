@@ -526,10 +526,27 @@ so `editing` sees it.
     needs its own `dismiss_search` arm (the AutoEq search's `leave_looking`;
     `escape_in_the_autoeq_search_clears_it_and_leaves_the_pane_where_it_was`).
 - **What stands over the pane holds the pane's keys back.** A menu, playlist picker, magnified cover,
-  record card, Listen sheet, Sort pop-up or delete sheet is `something_stands_over_the_pane`; meanwhile reach,
+  record card, Listen sheet, Sort pop-up, command palette or delete sheet is `something_stands_over_the_pane`; meanwhile reach,
   page, widen, move, `enter`, `delete`, undo, redo and typed letters answer nothing. The check sits in
   each gesture, not the bindings; `reach_row` and `play_reached_rows` step and press the menu first.
   Escape is the one key still heard (`views/root.rs`'s driven tests hold each sheet).
+- **The command palette (`views/command_palette/`, `CommandPalette`) opens anywhere on `chord!(command_palette)`**
+  (`ctrl-k` on Linux and Windows, `⌘K` on macOS, bound in `answering_anywhere` as `OpenCommandPalette`,
+  and listed in the *View* menu) and toggles closed on a second press. Its entity owns its `Field`,
+  scroll handle, session MRU (`RECENT_AT_MOST` 4), active `Mode` (`Root`, `Themes`, `Accents`,
+  `Outputs`, `Zones`, `Equaliser`, `Sleep`) and debounced (`LIBRARY_SEARCH_SETTLE`) `Serial`-guarded
+  background library search (`Library::artists`, `albums`, `tracks`). Its card carries
+  `PALETTE_CONTEXT` (`Sheet::CommandPalette`, `PALETTE_PANEL`); `answering_in_the_palette` binds `up`,
+  `down`, `pageup` and `pagedown` over `PALETTE_CONTEXT` (with `GoToTheResults` scoped to
+  `SEARCH_CONTEXT && !PALETTE_CONTEXT`) so navigation outranks `GoToTheResults`, `Submitted` runs the
+  highlighted entry, `DeleteBackward` on an empty sub-mode query pops back to `Mode::Root`, and
+  `escape_command_palette` pops a sub-mode or closes and restores the opener's focus. Queries fold
+  through `folded_letters` (`fuzzy_match`), support prefix scopes (`>` commands, `?` settings, `@`
+  music, `#` playlists), highlight matched runs via `StyledText` and reuse
+  `settings::find::{Category, Page, Group}` and `open_the_place` for settings deep-jumps
+  (`arrows_and_paging_in_the_command_palette_outrank_the_field_and_window`,
+  `command_palette_opens_on_ctrl_k_navigates_to_pane_and_closes`,
+  `command_palette_drills_into_theme_mode_and_switches_theme`).
 - **A slider is grabbed on the press and followed from a window-wide surface, not the rail.**
   `views/slider.rs`: the press starts a `Grab`; `drag_surface` (an absolutely positioned *child* of the
   app, occluding while held) carries move/release listeners. It must be a child: `chrome::frame` adds

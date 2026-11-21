@@ -1170,6 +1170,14 @@ const ACCENT_SWATCH: f32 = 26.0;
 const SWITCH_TRACK: f32 = 32.0;
 const SWITCH_HEIGHT: f32 = 18.0;
 const SWITCH_KNOB: f32 = 14.0;
+const PALETTE_WIDTH: f32 = 580.0;
+const PALETTE_RESULTS_HEIGHT: f32 = 380.0;
+const PALETTE_INPUT_HEIGHT: f32 = 48.0;
+const PALETTE_ROW_HEIGHT: f32 = 40.0;
+const PALETTE_SWATCH: f32 = 14.0;
+const PALETTE_SWATCH_DOT: f32 = 10.0;
+const PALETTE_TOP_INSET: f32 = 88.0;
+const PALETTE_KEYCAP_HEIGHT: f32 = 22.0;
 
 pub const PICKER_ROWS: usize = 9;
 pub const CARET_WIDTH: f32 = 1.5;
@@ -1356,6 +1364,14 @@ measures! {
     switch_track => SWITCH_TRACK,
     switch_height => SWITCH_HEIGHT,
     switch_knob => SWITCH_KNOB,
+    palette_width => PALETTE_WIDTH,
+    palette_results_height => PALETTE_RESULTS_HEIGHT,
+    palette_input_height => PALETTE_INPUT_HEIGHT,
+    palette_row_height => PALETTE_ROW_HEIGHT,
+    palette_swatch => PALETTE_SWATCH,
+    palette_swatch_dot => PALETTE_SWATCH_DOT,
+    palette_top_inset => PALETTE_TOP_INSET,
+    palette_keycap_height => PALETTE_KEYCAP_HEIGHT,
 }
 
 pub fn width(value: f32) -> Pixels {

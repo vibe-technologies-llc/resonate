@@ -109,6 +109,14 @@ impl RootView {
             .is_some_and(|at| self.came_from[at].selection != Selection::Everything)
     }
 
+    pub(crate) fn can_go_back(&self) -> bool {
+        !self.came_from.is_empty()
+    }
+
+    pub(crate) fn can_go_forward(&self) -> bool {
+        !self.goes_forward.is_empty()
+    }
+
     pub(crate) fn go_back(&mut self, cx: &mut Context<Self>) {
         let Some(back) = self.came_from.pop() else {
             return;

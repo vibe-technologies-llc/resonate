@@ -191,6 +191,9 @@ macro_rules! chord {
     (find) => {
         secondary!("f")
     };
+    (command_palette) => {
+        secondary!("k")
+    };
     (find_a_setting) => {
         secondary!(",")
     };
@@ -333,7 +336,7 @@ mod tests {
     use super::{Chord, in_apples_marks, keyed};
     use crate::app;
 
-    const NAMED: [Chord; 54] = [
+    const NAMED: [Chord; 55] = [
         chord!(play_pause),
         chord!(previous),
         chord!(next),
@@ -385,6 +388,7 @@ mod tests {
         chord!(read_the_other_way),
         chord!(take_the_order),
         chord!(find),
+        chord!(command_palette),
         chord!(find_a_setting),
         chord!(cut),
         chord!(copy),
@@ -442,6 +446,7 @@ mod tests {
             (chord!(choose_reached), "ctrl-space"),
             (chord!(open_menu), "shift-f10"),
             (chord!(find), "ctrl-f"),
+            (chord!(command_palette), "ctrl-k"),
             (chord!(find_a_setting), "ctrl-,"),
             (chord!(cut), "ctrl-x"),
         ] {
@@ -453,6 +458,7 @@ mod tests {
     #[test]
     fn a_mac_takes_command_where_the_rest_take_control_and_keeps_the_chords_the_system_owns() {
         assert_eq!(chord!(queue).on(OperatingSystem::Mac), "cmd-u");
+        assert_eq!(chord!(command_palette).on(OperatingSystem::Mac), "cmd-k");
         assert_eq!(chord!(redo).on(OperatingSystem::Mac), "cmd-shift-z");
         assert_eq!(chord!(find_a_setting).on(OperatingSystem::Mac), "cmd-,");
 

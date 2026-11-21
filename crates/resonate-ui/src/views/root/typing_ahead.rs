@@ -218,6 +218,8 @@ impl RootView {
             self.close_wrapped(cx);
         } else if self.social.sharing.is_some() {
             self.close_sharing(cx);
+        } else if self.command_palette.read(cx).is_open() {
+            self.escape_command_palette(window, cx);
         } else if self.orders(cx).ordering.is_some() {
             self.close_the_order(cx);
         } else if self.menu.is_some() {
@@ -238,6 +240,7 @@ impl RootView {
             || self.social.wrapped.is_some()
             || self.social.sharing.is_some()
             || self.orders(cx).ordering.is_some()
+            || self.command_palette.read(cx).is_open()
             || self.listening_open
             || self.deleting.is_some()
             || self.replacing.is_some()
@@ -319,6 +322,7 @@ impl RootView {
         [
             &self.party.read(cx).chat,
             &self.services.read(cx).search,
+            &self.command_palette.read(cx).query,
             &self.typed.search,
             &self.typed.zone_name,
             &self.typed.name,

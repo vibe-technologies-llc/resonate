@@ -51,7 +51,8 @@ use crate::{
     app::{
         About, ChooseReached, CloseTheWindow, CycleRepeat, DropReached, FocusFilter, FocusSearch,
         GoToTheResults, HoldThePicture, HopAbove, HopBelow, LeaveControl, LeaveSearch, Listen,
-        LowerRow, Minimise, Next, NextPane, OpenTheMenu, PasteAway, Pause, PlayPauseUnlessTyping,
+        LowerRow, Minimise, Next, NextPane, OpenCommandPalette, OpenTheMenu, PaletteAbove,
+        PaletteBelow, PalettePageAbove, PalettePageBelow, PasteAway, Pause, PlayPauseUnlessTyping,
         PlayReached, Previous, PreviousPane, Quit, RaiseRow, ReachAbove, ReachBelow,
         ReachEverything, ReachFirst, ReachLast, ReachNext, ReachPageAbove, ReachPageBelow,
         ReachPrevious, RedoEdit, SeekBackward, SeekForward, SeekFurtherBackward,
@@ -73,6 +74,7 @@ use crate::{
         browser::{ArtistShows, OpenedRecord},
         browsing::BrowsePanes,
         chrome,
+        command_palette::CommandPalette,
         dropping::{Incoming, TakingIn},
         field::{self, Field},
         focus::Controls,
@@ -619,6 +621,7 @@ pub struct RootView {
     pub(crate) settings_fields: Entity<SettingsFields>,
     pub(crate) settings_pane: Entity<SettingsPane>,
     pub(crate) browsing: Entity<BrowsePanes>,
+    pub(crate) command_palette: Entity<CommandPalette>,
     pub(crate) listening_open: bool,
     downloads_open: bool,
     downloads_pressed_off: Option<Instant>,
@@ -904,6 +907,21 @@ impl Render for RootView {
             .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
                 this.enter_search(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &OpenCommandPalette, window, cx| {
+                this.toggle_command_palette(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PaletteAbove, _, cx| {
+                this.step_command_palette(-1, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PaletteBelow, _, cx| {
+                this.step_command_palette(1, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PalettePageAbove, _, cx| {
+                this.page_command_palette(false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PalettePageBelow, _, cx| {
+                this.page_command_palette(true, cx);
+            }))
             .on_action(cx.listener(|this, _: &LeaveSearch, window, cx| {
                 this.dismiss_search(window, cx);
             }))
@@ -1023,6 +1041,13 @@ impl Render for RootView {
             })
             .when_some(self.browsing.read(cx).orders.ordering, |app, ordered| {
                 app.child(self.order_sheet(ordered, window.viewport_size(), cx))
+            })
+            .when(self.command_palette.read(cx).is_open(), |app| {
+                app.child(motion::faded_in(
+                    self.command_palette_sheet(window, cx),
+                    "command-palette-scrim",
+                    motion::ARRIVES_OVER,
+                ))
             })
             .when(self.social.party_offered.is_some(), |app| {
                 app.child(motion::faded_in(

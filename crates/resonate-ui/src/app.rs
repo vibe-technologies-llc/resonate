@@ -92,6 +92,8 @@ pub(crate) const RAIL_CONTEXT: &str = stringify!(Rail);
 
 pub(crate) const ORDER_CONTEXT: &str = stringify!(Ordering);
 
+pub(crate) const PALETTE_CONTEXT: &str = stringify!(Palette);
+
 actions!(
     resonate,
     [
@@ -168,6 +170,11 @@ actions!(
         ReadTheFirstWay,
         ReadTheOtherWay,
         TakeTheOrder,
+        OpenCommandPalette,
+        PaletteAbove,
+        PaletteBelow,
+        PalettePageAbove,
+        PalettePageBelow,
     ]
 );
 
@@ -901,6 +908,7 @@ fn answering_anywhere(system: OperatingSystem) -> Vec<KeyBinding> {
         KeyBinding::new(chord!(next_anywhere).on(system), Next, None),
         KeyBinding::new(chord!(previous_anywhere).on(system), Previous, None),
         KeyBinding::new(chord!(find).on(system), FocusSearch, None),
+        KeyBinding::new(chord!(command_palette).on(system), OpenCommandPalette, None),
         KeyBinding::new("tab", ReachNext, None),
         KeyBinding::new("shift-tab", ReachPrevious, None),
         KeyBinding::new(chord!(next_pane).on(system), NextPane, None),
@@ -961,9 +969,11 @@ fn answering_where_the_caret_is(
     on_a_control: Option<&str>,
     system: OperatingSystem,
 ) -> Vec<KeyBinding> {
+    let outside_the_palette = format!("{SEARCH_CONTEXT} && !{PALETTE_CONTEXT}");
+
     vec![
         KeyBinding::new(chord!(leave).on(system), LeaveSearch, Some(SEARCH_CONTEXT)),
-        KeyBinding::new("down", GoToTheResults, Some(SEARCH_CONTEXT)),
+        KeyBinding::new("down", GoToTheResults, Some(&outside_the_palette)),
         KeyBinding::new("tab", TabOnward, Some(SEARCH_CONTEXT)),
         KeyBinding::new("space", PressControl, on_a_control),
         KeyBinding::new("enter", PressControl, on_a_control),
@@ -1015,6 +1025,15 @@ fn answering_in_the_order(in_the_order: Option<&str>, system: OperatingSystem) -
     ]
 }
 
+fn answering_in_the_palette(in_the_palette: Option<&str>) -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new("up", PaletteAbove, in_the_palette),
+        KeyBinding::new("down", PaletteBelow, in_the_palette),
+        KeyBinding::new("pageup", PalettePageAbove, in_the_palette),
+        KeyBinding::new("pagedown", PalettePageBelow, in_the_palette),
+    ]
+}
+
 pub(crate) fn bindings(system: OperatingSystem) -> Vec<KeyBinding> {
     let away_from_search = format!("!{SEARCH_CONTEXT} && !{CONTROL_CONTEXT}");
 
@@ -1029,6 +1048,7 @@ pub(crate) fn bindings(system: OperatingSystem) -> Vec<KeyBinding> {
     bindings.extend(answering_on_a_band(Some(BAND_CONTEXT), system));
     bindings.extend(answering_on_a_rail(Some(RAIL_CONTEXT), system));
     bindings.extend(answering_in_the_order(Some(ORDER_CONTEXT), system));
+    bindings.extend(answering_in_the_palette(Some(PALETTE_CONTEXT)));
     bindings.extend(field::bindings(system));
     bindings
 }
@@ -1620,6 +1640,7 @@ mod tests {
         assert_eq!(bound_to("cmd-u", mac), ["ToggleQueue"]);
         assert_eq!(bound_to("cmd-s", mac), ["Stop"]);
         assert_eq!(bound_to("cmd-f", mac), ["FocusSearch"]);
+        assert_eq!(bound_to("cmd-k", mac), ["OpenCommandPalette"]);
         assert_eq!(bound_to("cmd-up", mac), ["VolumeUp"]);
         assert_eq!(bound_to("ctrl-m", mac), ["ToggleMute"]);
         assert_eq!(bound_to("ctrl-space", mac), ["ChooseReached"]);
@@ -1645,6 +1666,7 @@ mod tests {
 
             assert_eq!(bound_to("ctrl-u", system), ["ToggleQueue"]);
             assert_eq!(bound_to("ctrl-,", system), ["FocusFilter"]);
+            assert_eq!(bound_to("ctrl-k", system), ["OpenCommandPalette"]);
             assert_eq!(bound_to("ctrl-h", system), ["ToggleShuffle"]);
         }
     }
@@ -1713,6 +1735,33 @@ mod tests {
             assert!(
                 first.action().name().ends_with(wanted),
                 "{key} in a field is {}",
+                first.action().name()
+            );
+        }
+    }
+
+    #[test]
+    fn arrows_and_paging_in_the_command_palette_outrank_the_field_and_window() {
+        let keymap = gpui::Keymap::new(bindings(OperatingSystem::Linux));
+        let window = KeyContext::parse(WINDOW_CONTEXT).expect("the window names itself");
+        let palette = KeyContext::parse(PALETTE_CONTEXT).expect("the palette names itself");
+        let search = KeyContext::parse(SEARCH_CONTEXT).expect("the field names itself");
+        let in_palette_field = [window, palette, search];
+
+        for (key, wanted) in [
+            ("up", "PaletteAbove"),
+            ("down", "PaletteBelow"),
+            ("pageup", "PalettePageAbove"),
+            ("pagedown", "PalettePageBelow"),
+        ] {
+            let typed = [Keystroke::parse(key).expect("a key gpui reads")];
+            let (found, _) = keymap.bindings_for_input(&typed, &in_palette_field);
+            let first = found
+                .first()
+                .unwrap_or_else(|| panic!("{key} does nothing in the command palette"));
+            assert!(
+                first.action().name().ends_with(wanted),
+                "{key} in the command palette is {}",
                 first.action().name()
             );
         }

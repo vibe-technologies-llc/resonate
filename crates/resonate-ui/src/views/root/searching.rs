@@ -13,7 +13,7 @@ use crate::{
 };
 
 impl RootView {
-    pub(super) fn enter_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn enter_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.typed
             .search
             .update(cx, |search, cx| search.take_focus_and_select(window, cx));
@@ -78,6 +78,10 @@ impl RootView {
 
     pub(super) fn dismiss_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.close_the_menu(cx) {
+            return;
+        }
+        if self.command_palette.read(cx).is_open() {
+            self.escape_command_palette(window, cx);
             return;
         }
         if self.typed.zone_name.read(cx).is_focused(window) {

@@ -31,6 +31,7 @@ use crate::{
         announcing,
         browser::ArtistShows,
         browsing::BrowsePanes,
+        command_palette,
         field::{Caught, Field, Submitted},
         focus::Controls,
         inspector::InspectorPane,
@@ -298,6 +299,8 @@ impl RootView {
         })
         .detach();
 
+        let command_palette = command_palette::make_command_palette(window, cx);
+
         let view = Self {
             player,
             library,
@@ -315,6 +318,7 @@ impl RootView {
             settings_fields,
             settings_pane,
             browsing,
+            command_palette,
             listening_open: false,
             downloads_open: false,
             downloads_pressed_off: None,

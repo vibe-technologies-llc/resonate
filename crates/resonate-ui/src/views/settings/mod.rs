@@ -569,7 +569,12 @@ impl RootView {
         true
     }
 
-    fn open_the_place(&mut self, category: Category, page: Option<Page>, cx: &mut Context<Self>) {
+    pub(crate) fn open_the_place(
+        &mut self,
+        category: Category,
+        page: Option<Page>,
+        cx: &mut Context<Self>,
+    ) {
         self.settings_fields
             .read(cx)
             .finding

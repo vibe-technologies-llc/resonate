@@ -30,6 +30,8 @@ pub(crate) const LIST_OFFER_PANEL: &str = "list-offer-panel";
 
 pub(crate) const REPLACING_PANEL: &str = "replacing-panel";
 
+pub(crate) const PALETTE_PANEL: &str = "command-palette-panel";
+
 pub(crate) const KEEP_THE_TRACK: &str = "keep-the-track";
 
 pub(crate) const KEEP_THE_LOSSY_SONGS: &str = "keep-the-lossy-songs";
@@ -54,6 +56,7 @@ pub(crate) enum Sheet {
     Wrapped,
     Sharing,
     Ordering,
+    CommandPalette,
     Menu,
 }
 
@@ -79,6 +82,7 @@ impl Sheet {
             Self::Wrapped => Some(WRAPPED_PANEL),
             Self::Sharing => Some(SHARING_PANEL),
             Self::Ordering => Some(ORDER_PANEL),
+            Self::CommandPalette => Some(PALETTE_PANEL),
             Self::Menu => None,
         }
     }
@@ -95,7 +99,7 @@ impl Sheet {
             Self::Wrapped => Welcome::Panel(WRAPPED_PANEL),
             Self::Sharing => Welcome::Panel(SHARING_PANEL),
             Self::Ordering => Welcome::Panel(ORDER_PANEL),
-            Self::Naming | Self::Typing | Self::Menu => Welcome::Nowhere,
+            Self::Naming | Self::Typing | Self::CommandPalette | Self::Menu => Welcome::Nowhere,
         }
     }
 }
@@ -184,6 +188,8 @@ impl RootView {
             Some(Sheet::Wrapped)
         } else if self.social.sharing.is_some() {
             Some(Sheet::Sharing)
+        } else if self.command_palette.read(cx).is_open() {
+            Some(Sheet::CommandPalette)
         } else if self.orders(cx).ordering.is_some() {
             Some(Sheet::Ordering)
         } else if self.menu.is_some() {

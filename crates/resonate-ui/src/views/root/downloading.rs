@@ -24,6 +24,11 @@ use crate::{
 };
 
 impl RootView {
+    pub(crate) fn open_the_downloads(&mut self, cx: &mut Context<Self>) {
+        self.downloads_open = true;
+        cx.notify();
+    }
+
     pub(super) fn download_status(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let library = self.library.read(cx);
         let fetching: Vec<Fetching> = library
