@@ -395,8 +395,10 @@ struct OnlineSongRow: View {
                             .titleLines()
                         OnlineSongCaption(song: song, standing: standing)
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
+                .padding(.vertical, 4)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
@@ -436,32 +438,46 @@ struct OnlineSongCaption: View {
     let standing: DownloadStanding
 
     var body: some View {
-        HStack(spacing: 6) {
-            if let duration = song.durationMs {
-                Text(clock(duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 6) {
+                duration
+                status
             }
-            switch standing {
-            case .available:
-                EmptyView()
-            case .waiting:
-                Text("downloads.job.waiting").font(.caption).foregroundStyle(.secondary)
-            case .running(let fraction):
-                if let fraction {
-                    Text(fraction.formatted(.percent.precision(.fractionLength(0))))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("downloads.job.finding").font(.caption).foregroundStyle(.secondary)
-                }
-            case .held:
-                Label("wanted.held", systemImage: "checkmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.tint)
-            case .failed(let reason):
-                Text(reason).font(.caption).foregroundStyle(Color.failure).titleLines()
-            case .cancelled:
-                Text("downloads.job.cancelled").font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                duration
+                status
             }
+        }
+    }
+
+    @ViewBuilder private var duration: some View {
+        if let duration = song.durationMs {
+            Text(clock(duration)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private var status: some View {
+        switch standing {
+        case .available:
+            EmptyView()
+        case .waiting:
+            Text("downloads.job.waiting").font(.caption).foregroundStyle(.secondary)
+        case .running(let fraction):
+            if let fraction {
+                Text(fraction.formatted(.percent.precision(.fractionLength(0))))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("downloads.job.finding").font(.caption).foregroundStyle(.secondary)
+            }
+        case .held:
+            Label("wanted.held", systemImage: "checkmark.circle.fill")
+                .font(.caption)
+                .foregroundStyle(.tint)
+        case .failed(let reason):
+            Text(reason).font(.caption).foregroundStyle(Color.failure).titleLines()
+        case .cancelled:
+            Text("downloads.job.cancelled").font(.caption).foregroundStyle(.secondary)
         }
     }
 }

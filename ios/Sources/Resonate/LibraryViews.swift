@@ -148,6 +148,13 @@ struct LibrarySearchField: View {
             .padding(.leading, 14)
             .padding(.trailing, search.text.isEmpty ? 14 : 0)
             .frame(minHeight: 44)
+            .background {
+                Button { focused = true } label: {
+                    Color.clear.contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHidden(true)
+            }
             .glassEffect(.regular.interactive(), in: .capsule)
             if focused {
                 Button("common.cancel") {

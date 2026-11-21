@@ -153,7 +153,7 @@ private struct LyricFollowing: View {
             offersFollow: { offersFollow = $0 },
             handsOn: { [tuck, reduceMotion] in tuck?.hands(on: $0, still: reduceMotion) }
         )
-            .contentShape(.rect)
+            .contentShape(setting.touchArea)
             .simultaneousGesture(hand)
             .simultaneousGesture(SpatialTapGesture().onEnded { tap in
                 if let moment = hits.moment(tap.location) { seek(to: moment) }

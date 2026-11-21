@@ -1428,9 +1428,11 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   in a spring (a fade under Reduce Motion) over the rows, never moving the bar or the content, so
   nothing a scroll does lays the page out again; a margin kept for it at the top of the browsed
   shelves stood empty while it was hidden. It stays while focused, while it holds text and while
-  VoiceOver runs. The results and the browsed music are two `List`s (`SongsList`), so a
-  search beginning or ending swaps one list for the other instead of deleting or inserting every
-  browsed row in one. A lit string is kept per text, query and column (`lit`, up to 4096), so a
+  VoiceOver runs. The whole search capsule takes a tap, including its icon and padding, so a tap
+  in the glass focuses the field above the shelf's actions. The results and the browsed music are
+  two `List`s (`SongsList`), so a search beginning or ending swaps one list for the other instead
+  of deleting or inserting every browsed row in one. A lit string is kept per text, query and
+  column (`lit`, up to 4096), so a
   redraw asks `highlights` across the boundary only for text it has not lit. Searching spans the catalog: filters shape browsing
   only, and setting one clears the search. Songs
   are filtered from the *Filters* chip (`FilterButton`, lit and counting while a part is set, opening
@@ -1503,7 +1505,10 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   the chain and its generation refuses whatever was still in flight. The Top view shows the best
   five songs (download, save, *In your library*), six albums and six artists, each with *See all*,
   and a progress row naming the section still awaited; the previous spelling's sections stay until
-  the new one's first lands. Text starting `http://`, `https://` or `spotify:` is one request,
+  the new one's first lands. `OnlineSongRow` reserves the full height of its text with space at
+  the separators. `OnlineSongCaption` puts the status below the duration when both cannot fit on
+  one line, leaving room for the localized *In your library* label and its checkmark. Text starting
+  `http://`, `https://` or `spotify:` is one request,
   opened as a link. Nothing is asked while online features are off; turning them on asks again.
   The query and the last answer live on `Features`, so they outlive the page. An artist, an
   album and a release are pages of their own (`OnlineArtistPage` with *More releases*,
@@ -1764,9 +1769,12 @@ centring and its scroll bounds all read the pane less the foot), so following la
 and nothing is laid out again when the controls go. Only the fade mask moves: it ends above the
 controls while they are shown and reaches the pane's foot while they are away (`LyricFoot.fade`,
 `LyricFootTests`), changed by Core Animation over the spring's length, so the main thread draws
-nothing per frame. The move asks 120 Hz for its length and rests the field (`FieldRest.tucking`),
-as a mode change does. Laying the pane out at a new height every frame threw its layout away
-and redirected the glide each frame, so neither an animated height nor a resize is used.
+nothing per frame. `LyricTouchArea` keeps gestures and accessibility frames above the covered
+band while controls show, including in gaps between controls. A tap also checks the presented
+fade's end so a line still masked during the move cannot seek. The move asks 120 Hz for its length
+and rests the field (`FieldRest.tucking`), as a mode change does. Laying the pane out at a new
+height every frame threw its layout away and redirected the glide each frame, so neither an
+animated height nor a resize is used.
 
 **A song is given lyrics by hand** (`LyricWriter`, `ToolViews.swift`): the Lyrics page's *No
 lyrics* state offers *Add lyrics…* and its toolbar menu (*Refresh* while online, then *Add

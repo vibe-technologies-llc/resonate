@@ -18,8 +18,25 @@ struct LyricSetting {
     var foot: CGFloat = 0
     var footClear = false
 
+    var touchArea: LyricTouchArea {
+        LyricTouchArea(coveredFoot: footClear ? 0 : foot)
+    }
+
     @MainActor var playback: LyricPlayback? {
         heard.map { LyricPlayback(track: $0.track, positionMs: clock.positionMs, playing: $0.playing) }
+    }
+}
+
+struct LyricTouchArea: Shape {
+    let coveredFoot: CGFloat
+
+    func frame(in rect: CGRect) -> CGRect {
+        let height = LyricFoot(height: Double(rect.height), foot: Double(coveredFoot)).aimed
+        return CGRect(origin: rect.origin, size: CGSize(width: rect.width, height: CGFloat(height)))
+    }
+
+    func path(in rect: CGRect) -> Path {
+        Path(frame(in: rect))
     }
 }
 
@@ -143,6 +160,10 @@ final class LyricLayerView: UIView {
 
     private var aimedHeight: CGFloat {
         CGFloat(LyricFoot(height: Double(bounds.height), foot: Double(setting?.foot ?? 0)).aimed)
+    }
+
+    private var touchBounds: CGRect {
+        setting?.touchArea.frame(in: bounds) ?? bounds
     }
 
     private func shapeFade(moving: Bool) {
@@ -429,14 +450,22 @@ final class LyricLayerView: UIView {
         if lines.count != scene.rows.count {
             lines = scene.rows.map { _ in LyricLineElement(accessibilityContainer: self) }
         }
+        let exposed = touchBounds
         for (index, row) in scene.rows.enumerated() where index < laid.rows.count {
             let element = lines[index]
             let frame = laid.rows[index].frame.offsetBy(dx: 0, dy: scene.offset + row.inset).integral
-            let description = LyricLineDescription(frame: frame, blank: row.look.blank, text: row.look.text, moment: row.moment, lit: row.lit)
+            let visible = frame.intersection(exposed)
+            let description = LyricLineDescription(
+                frame: visible.isEmpty ? .zero : visible,
+                hidden: row.look.blank || visible.isEmpty,
+                text: row.look.text,
+                moment: row.moment,
+                lit: row.lit
+            )
             guard element.described != description else { continue }
 
-            if element.described?.frame != frame { element.accessibilityFrameInContainerSpace = frame }
-            if element.described?.blank != description.blank { element.isAccessibilityElement = !description.blank }
+            if element.described?.frame != description.frame { element.accessibilityFrameInContainerSpace = description.frame }
+            if element.described?.hidden != description.hidden { element.isAccessibilityElement = !description.hidden }
             if element.described?.text != description.text { element.accessibilityLabel = description.text }
             if element.described?.moment != description.moment {
                 let moment = description.moment
@@ -470,7 +499,9 @@ final class LyricLayerView: UIView {
     }
 
     func moment(at point: CGPoint) -> UInt64? {
-        guard let shown, let layout else { return nil }
+        guard touchBounds.contains(point), let shown, let layout else { return nil }
+        if let fadeEnd = fade.presentation()?.locations?.last?.doubleValue,
+           point.y >= bounds.minY + bounds.height * CGFloat(fadeEnd) { return nil }
         let onSheet = CGPoint(x: point.x, y: point.y - shown.offset)
         let hit = layout.rows.indices.first { index in
             index < shown.rows.count && layout.rows[index].frame.offsetBy(dx: 0, dy: shown.rows[index].inset).contains(onSheet)
@@ -486,7 +517,7 @@ struct LyricDotLook: Equatable {
 
 struct LyricLineDescription: Equatable {
     let frame: CGRect
-    let blank: Bool
+    let hidden: Bool
     let text: String
     let moment: UInt64?
     let lit: Bool
