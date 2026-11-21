@@ -616,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-core"
-version = "0.16.0"
+version = "0.16.1"
 dependencies = [
  "bytemuck",
  "chardetng",
@@ -633,7 +633,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-dsp"
-version = "0.16.0"
+version = "0.16.1"
 dependencies = [
  "parking_lot",
  "realfft",
@@ -655,7 +655,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-words"
-version = "0.16.0"
+version = "0.16.1"
 dependencies = [
  "fluent-bundle",
  "icu_calendar",
@@ -670,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "resonate-words-build"
-version = "0.16.0"
+version = "0.16.1"
 dependencies = [
  "fluent-syntax",
  "thiserror",
